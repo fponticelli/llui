@@ -1,4 +1,4 @@
-import { div, button, span, p, a, ul, li, img, input, each, text } from '@llui/dom'
+import { div, button, span, p, a, ul, li, img, input, each, branch, text } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { toc } from '@llui/components/toc'
 import { cascadeSelect } from '@llui/components/cascade-select'
@@ -123,6 +123,22 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // toDataUrl helper directly for brevity.
   void qrCode.connect(state.at('qr'), (m) => send({ type: 'qr', msg: m }))
 
+  // A region button — active highlight tracks the level-1 selection (component
+  // state, read fine inside the branch arm); click sets the region.
+  const regionButton = (code: string, label: string): Node =>
+    button(
+      {
+        class: state
+          .at('cascade')
+          .map((c) =>
+            c.values[1] === code ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
+          ),
+        onClick: () =>
+          send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: code } }),
+      },
+      [text(label)],
+    )
+
   return [
     sectionGroup('Content + data', [
       card('Table of Contents', [
@@ -209,73 +225,26 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
               [text('Italy')],
             ),
           ]),
-          // Region buttons — filtered by country
+          // Region buttons — the visible SET depends on the selected country, so
+          // `branch` on the country renders ONLY that country's regions (no CSS
+          // hide-toggling). The per-button active highlight reads the level-1
+          // value from component state, which resolves correctly inside a branch
+          // arm (arms mount on the component state).
           div({ class: 'flex items-center gap-2 flex-wrap' }, [
             span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Region:')]),
-            // Branch-per-country so the visible button set depends on
-            // the value. Buttons without a country get data-ready=false.
-            button(
+            branch(
+              state
+                .at('cascade')
+                .map((c): 'US' | 'IT' | 'none' => (c.values[0] as 'US' | 'IT' | null) ?? 'none'),
               {
-                class: state.at('cascade').map((c) => {
-                  const country = c.values[0]
-                  if (country !== 'US') return 'btn text-xs btn-secondary hidden'
-                  return c.values[1] === 'CA'
-                    ? 'btn text-xs btn-primary'
-                    : 'btn text-xs btn-secondary'
-                }),
-                onClick: () =>
-                  send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: 'CA' } }),
+                none: () => [
+                  span({ class: 'text-xs text-text-muted italic' }, [
+                    text('(pick a country first)'),
+                  ]),
+                ],
+                US: () => [regionButton('CA', 'California'), regionButton('NY', 'New York')],
+                IT: () => [regionButton('MI', 'Milan'), regionButton('RM', 'Rome')],
               },
-              [text('California')],
-            ),
-            button(
-              {
-                class: state.at('cascade').map((c) => {
-                  if (c.values[0] !== 'US') return 'btn text-xs btn-secondary hidden'
-                  return c.values[1] === 'NY'
-                    ? 'btn text-xs btn-primary'
-                    : 'btn text-xs btn-secondary'
-                }),
-                onClick: () =>
-                  send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: 'NY' } }),
-              },
-              [text('New York')],
-            ),
-            button(
-              {
-                class: state.at('cascade').map((c) => {
-                  if (c.values[0] !== 'IT') return 'btn text-xs btn-secondary hidden'
-                  return c.values[1] === 'MI'
-                    ? 'btn text-xs btn-primary'
-                    : 'btn text-xs btn-secondary'
-                }),
-                onClick: () =>
-                  send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: 'MI' } }),
-              },
-              [text('Milan')],
-            ),
-            button(
-              {
-                class: 'btn text-xs',
-                style: state.at('cascade').map((c) => {
-                  if (c.values[0] !== 'IT') return 'display:none;'
-                  return c.values[1] === 'RM'
-                    ? 'background:rgb(37 99 235);color:white;'
-                    : 'background:rgb(241 245 249);'
-                }),
-                onClick: () =>
-                  send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: 'RM' } }),
-              },
-              [text('Rome')],
-            ),
-            span(
-              {
-                class: 'text-xs text-text-muted italic',
-                style: state
-                  .at('cascade')
-                  .map((c) => (c.values[0] === null ? '' : 'display:none;')),
-              },
-              [text('(pick a country first)')],
             ),
           ]),
           // Current selection readout
