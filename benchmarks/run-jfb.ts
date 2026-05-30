@@ -14,7 +14,7 @@
  *   pnpm -w run bench -- --save                # Save new LLui results as baseline
  */
 
-import { execSync } from 'node:child_process'
+import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 
@@ -140,6 +140,30 @@ if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/dist/benchmarkRunner.js'))) {
   console.error(`  cd ${JFB_REPO}/webdriver-ts && npm ci && npm run compile`)
   process.exit(1)
 }
+
+// ── Keep the machine awake (macOS) ──
+// Benchmark runs are long; an idle/display sleep mid-run skews timings. On macOS,
+// hold a `caffeinate` process that watches this PID (-w) so it auto-exits when we
+// do — including on crash — then kill it explicitly at the end for good measure.
+let caffeinate: ChildProcess | undefined
+if (process.platform === 'darwin') {
+  try {
+    caffeinate = spawn('caffeinate', ['-dimsu', '-w', String(process.pid)], {
+      stdio: 'ignore',
+      detached: false,
+    })
+    caffeinate.on('error', () => {
+      caffeinate = undefined
+    })
+  } catch {
+    caffeinate = undefined
+  }
+}
+function stopCaffeinate() {
+  if (caffeinate && !caffeinate.killed) caffeinate.kill()
+  caffeinate = undefined
+}
+process.on('exit', stopCaffeinate)
 
 // ── Build LLui ──
 
@@ -396,5 +420,7 @@ if (saveBaseline) {
   writeFileSync(BASELINE, JSON.stringify(current, null, 2) + '\n')
   console.log(`\n✅ Baseline saved to ${BASELINE}`)
 }
+
+stopCaffeinate()
 
 console.log()
