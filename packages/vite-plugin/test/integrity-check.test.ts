@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { Plugin } from 'vite'
 import llui from '../src/index'
 
@@ -149,34 +149,5 @@ describe('build-time integrity check (v2a §2.4)', () => {
       },
     }
     expect(runGenerateBundle(plugin, bundle)).toBeNull()
-  })
-
-  it('integrates with `transform`: a compiled component leaves the marker in the output', async () => {
-    const plugin = await bootPluginForBuild()
-    const source = `
-      import { component, div, text } from '@llui/dom'
-      export const C = component({
-        name: 'C',
-        init: () => [{ count: 0 }, []],
-        update: (s) => [s, []],
-        view: ({ text }) => [div({}, [text((s) => String(s.count))])],
-      })
-    `
-    const transform = plugin.transform as unknown as (
-      this: unknown,
-      c: string,
-      i: string,
-    ) => Promise<{ code: string } | undefined>
-    const out = await transform.call(
-      {
-        warn: vi.fn(),
-        error: vi.fn(),
-        resolve: vi.fn(async () => null),
-      },
-      source,
-      '/tmp/fixture.ts',
-    )
-    expect(out).toBeDefined()
-    expect(out!.code).toMatch(/__lluiCompilerEmitted/)
   })
 })

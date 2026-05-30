@@ -7,7 +7,6 @@ interface ServerResponseLike {
   setHeader(name: string, value: string): void
   end(body?: string): void
 }
-import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
@@ -15,10 +14,8 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
-  transformLlui,
   transformSignalComponentSource,
   lintSignalSource,
-  crossFileAccessorPaths,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
   COMPILER_RENAMEABLE_KEYS,
@@ -788,35 +785,6 @@ async function handleAgentRequest(
   res.end(buf)
 }
 
-/**
- * Build the cross-file `ts.Program` for v2c pipeline integration. Scans
- * the project root's `tsconfig.json` (or a sensible default) to collect
- * rootNames. Returns null if no tsconfig is reachable — caller falls
- * back to per-file path collection silently.
- *
- * Prototype: builds once, never refreshes. v2c's incremental program is
- * the natural upgrade.
- */
-async function buildCrossFileProgram(root: string): Promise<import('typescript').Program | null> {
-  try {
-    const ts = (await import('typescript')).default
-    const tsconfigPath = ts.findConfigFile(root, ts.sys.fileExists, 'tsconfig.json')
-    if (!tsconfigPath) return null
-    const parsed = ts.getParsedCommandLineOfConfigFile(tsconfigPath, undefined, {
-      ...ts.sys,
-      onUnRecoverableConfigFileDiagnostic: () => {},
-    })
-    if (!parsed) return null
-    const program = ts.createProgram({
-      rootNames: parsed.fileNames,
-      options: { ...parsed.options, noEmit: true, skipLibCheck: true },
-    })
-    return program
-  } catch {
-    return null
-  }
-}
-
 // Virtual-module ID for the dev HUD bootstrap script. Vite serves
 // `\0`-prefixed ids only when referenced via `/@id/__x00__<id>` from
 // HTML, which is the exact pattern used in transformIndexHtml below.
@@ -842,12 +810,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const verbose = options.verbose === true
   const agent = options.agent ?? false
   const transitions = options.transitions ?? false
-  const crossFileMode: false | true | 'silent' = options.crossFile ?? 'silent'
-  // The Program is built lazily on first transform when crossFile is
-  // enabled; cached afterwards for reuse. ts.Program is immutable —
-  // file changes are not reflected without a rebuild (documented above).
-  let crossFileProgram: import('typescript').Program | null = null
-  let crossFileProgramInit = false
   // Set in `configResolved` to the Vite project root. Stays null when
   // `transform` is invoked outside the normal plugin lifecycle (e.g.
   // unit tests that call the hook directly) — those callers don't get
@@ -1408,144 +1370,10 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         return { code: out, map: { mappings: '' } }
       }
 
-      // Pre-resolve cross-file type sources for any `component<S, M, E>()`
-      // call in this file. The extractors look for `type Msg = ...` etc.
-      // in a single source string; if the user keeps `Msg` in a sibling
-      // file, the local extraction returns null and the plugin emits no
-      // annotations. Pre-resolution chases imports and re-exports to
-      // find the declaring file, so the schema/annotation extractors run
-      // against the right source. See cross-file-resolver.ts.
-      //
-      // `this.resolve` may be undefined in test harnesses that call the
-      // hook directly without going through Rollup; in that case skip
-      // pre-resolution and the local extractors handle whatever's in
-      // the source string.
-      const resolverAvailable = typeof this.resolve === 'function'
-      const [typeSources, preExtracted] = resolverAvailable
-        ? await Promise.all([
-            preResolveTypeSources(code, id, this.resolve.bind(this)),
-            // Cross-file + composition-aware extraction. Replaces the
-            // file-local sync extractors when active. Without this step
-            // a `type Msg = ImportedFoo | { type: 'extra' }`
-            // composition would only see the inline `'extra'` variant
-            // and silently emit half-annotations.
-            preExtractCompositional(code, id, this.resolve.bind(this)),
-          ])
-        : [undefined, undefined]
-
-      // Cross-file path resolution (v2c pipeline integration). When
-      // enabled and `configResolved` has run (so we know the project
-      // root), the plugin reuses a shared `ts.Program` across all
-      // transform calls and asks the engine for the union of paths read
-      // through in-repo view-helpers. Builds the Program on first call.
-      let crossFilePaths: ReadonlySet<string> | undefined
-      let crossFileOpaque = false
-      let crossFileOpaqueNode: import('typescript').Node | undefined
-      if (crossFileMode !== false && crossFileRoot !== null) {
-        if (!crossFileProgramInit) {
-          crossFileProgramInit = true
-          crossFileProgram = await buildCrossFileProgram(crossFileRoot)
-        }
-        if (crossFileProgram) {
-          const sf = crossFileProgram.getSourceFile(id)
-          if (sf) {
-            try {
-              const result = crossFileAccessorPaths(crossFileProgram, sf)
-              crossFilePaths = result.paths
-              crossFileOpaque = result.opaque
-              // The walker returns the focal-file accessor that
-              // triggered cross-file opacity. Forward it so the
-              // compiler's diagnostic can emit a precise line —
-              // without it the diagnostic falls back to line 0 and
-              // Rollup can't distinguish multiple offenders in the
-              // same file.
-              crossFileOpaqueNode = result.opaqueNode
-            } catch (err) {
-              if (crossFileMode !== 'silent') {
-                this.warn(
-                  `[llui] cross-file walker failed on ${id}: ${(err as Error).message}. ` +
-                    `Falling back to per-file path collection.`,
-                )
-              }
-            }
-          }
-        }
-      }
-
-      const result = transformLlui(
-        code,
-        id,
-        devMode,
-        Boolean(agent),
-        mcpPort,
-        verbose,
-        typeSources,
-        preExtracted,
-        crossFilePaths,
-        crossFileOpaque,
-        crossFileProgram ?? undefined,
-        crossFileOpaqueNode,
-      )
-      if (!result) return undefined
-
-      // Surface compiler diagnostics to Rollup. Severity 'error' fails
-      // the transform (and the build); 'warning' / 'info' report
-      // non-fatally. Locations are 1-based for Rollup.
-      //
-      // We pass `loc` for structured consumers (IDEs, custom loggers)
-      // AND embed `<relfile>:<line>:` directly in the message body. The
-      // body-embedded form is Path A from the dungeonlogs 2026-05-27
-      // report: Vite/Rolldown's build reporter drops `loc` in many
-      // configurations, leaving users with a bare message and no clue
-      // which file produced it. Embedding the path in the body
-      // survives every reporter without consumer-side config.
-      const diagRoot = crossFileRoot ?? process.cwd()
-      for (const diag of result.diagnostics) {
-        const oneBased = diag.location.range.start.line + 1
-        const loc = {
-          file: diag.location.file,
-          line: oneBased,
-          column: diag.location.range.start.column,
-        }
-        // Use a path relative to the project root when possible — full
-        // absolute paths in build logs are noisy. Fall back to the raw
-        // path if `relative` escapes the project (`../foo`) or if
-        // `crossFileRoot` is unset.
-        const rel = relative(diagRoot, diag.location.file)
-        const displayPath = rel.length > 0 && !rel.startsWith('..') ? rel : diag.location.file
-        // Include the line only when it's meaningful. Pre-plumbing,
-        // cross-file diagnostics emit at line 0 (file-level). With the
-        // node plumbed through, real lines surface; we render them as
-        // `<file>:<line>:` to match the standard editor-jump format.
-        const locPrefix =
-          diag.location.range.start.line > 0 ? `${displayPath}:${oneBased}:` : `${displayPath}:`
-        const formatted = `[${diag.id}] ${locPrefix} ${diag.message}`
-        if (diag.severity === 'error') {
-          this.error({ message: formatted, loc })
-        } else if (diag.severity === 'warning') {
-          this.warn({ message: formatted, loc })
-        } else if (verbose) {
-          console.info(`[llui] ${formatted}`)
-        }
-      }
-
-      // Apply per-statement edits via MagicString for accurate source maps.
-      // Untouched statements keep their original positions.
-      const s = new MagicString(code)
-      for (const edit of result.edits) {
-        if (edit.start === edit.end) {
-          // Insert at position — appendRight for middle, append for end-of-file
-          if (edit.start === code.length) s.append(edit.replacement)
-          else s.appendRight(edit.start, edit.replacement)
-        } else {
-          s.overwrite(edit.start, edit.end, edit.replacement)
-        }
-      }
-
-      return {
-        code: s.toString(),
-        map: s.generateMap({ source: id, includeContent: true, hires: true }),
-      }
+      // Non-signal `.ts`/`.tsx` files pass through untouched. The legacy
+      // accessor compiler was removed in the signal-runtime migration; the
+      // signal branch above is now the only compilation path.
+      return undefined
     },
 
     // Build-time integrity check (v2a §2.4; shared.md §20.12). Every
