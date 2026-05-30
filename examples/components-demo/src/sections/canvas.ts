@@ -1,4 +1,4 @@
-import { div, button, span, p, img, foreign, onMount, text } from '@llui/dom'
+import { div, button, span, p, img, svg, path, foreign, onMount, text } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { signaturePad } from '@llui/components/signature-pad'
 import { imageCropper } from '@llui/components/image-cropper'
@@ -187,30 +187,37 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                 },
                 unmount: (c) => c.remove(),
               }),
-              // Draw strokes reactively via an SVG overlay — simpler
-              // than canvas imperative drawing and stays in sync with
-              // state automatically.
-              div(
+              // Draw strokes reactively as a real SVG overlay (signal svg/path
+              // helpers, not innerHTML — a string innerHTML prop would be set as an
+              // inert attribute and never render). The path `d` is a reactive
+              // signal: dark stroke on the white pad, so it stays visible in both
+              // light and dark themes.
+              svg(
                 {
+                  width: '400',
+                  height: '150',
                   class: 'absolute inset-0 pointer-events-none',
-                  innerHTML: state.at('sig').map((sig) => {
-                    const all = sig.current ? [...sig.strokes, sig.current] : sig.strokes
-                    const paths = all
-                      .filter((stroke) => stroke.length > 0)
-                      .map(
-                        (stroke) =>
-                          'M' +
-                          stroke.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' L'),
-                      )
-                      .join(' ')
-                    return (
-                      '<svg width="400" height="150" xmlns="http://www.w3.org/2000/svg">' +
-                      `<path d="${paths}" stroke="#0f172a" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` +
-                      '</svg>'
-                    )
-                  }),
                 },
-                [],
+                [
+                  path({
+                    d: state.at('sig').map((sig) => {
+                      const all = sig.current ? [...sig.strokes, sig.current] : sig.strokes
+                      return all
+                        .filter((stroke) => stroke.length > 0)
+                        .map(
+                          (stroke) =>
+                            'M' +
+                            stroke.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' L'),
+                        )
+                        .join(' ')
+                    }),
+                    stroke: '#0f172a',
+                    'stroke-width': '2',
+                    fill: 'none',
+                    'stroke-linecap': 'round',
+                    'stroke-linejoin': 'round',
+                  }),
+                ],
               ),
             ],
           ),
