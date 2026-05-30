@@ -21,8 +21,12 @@ export default defineConfig({
         chunkFileNames: '[name].js',
         inlineDynamicImports: true,
       },
-      // Exclude devtools — it's behind import.meta.env.DEV which is false in prod
-      external: [/devtools/],
+      // Do NOT externalize devtools. `installSignalDebug` is called only behind
+      // `import.meta.env.DEV` (false in this prod build), so with @llui/dom's
+      // `sideEffects: false` it tree-shakes away entirely. Marking it `external`
+      // instead LEAVES a runtime `import '../../../packages/dom/dist/.../devtools.js'`
+      // in the bundle — a path that resolves on the FS (Node) but 404s in a browser
+      // served from the bench root, so the module never loads and nothing renders.
     },
   },
 })

@@ -16,7 +16,10 @@ export default defineConfig({
         chunkFileNames: '[name].js',
         inlineDynamicImports: true,
       },
-      external: [/devtools/],
+      // Do NOT externalize devtools — `installSignalDebug` is DEV-gated, so with
+      // @llui/dom's `sideEffects: false` it tree-shakes out of this prod build.
+      // Externalizing instead leaves a runtime `import '.../devtools.js'` that
+      // 404s in a browser served from the bench root → nothing renders.
     },
   },
 })
