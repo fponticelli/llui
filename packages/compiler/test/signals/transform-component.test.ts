@@ -152,4 +152,70 @@ describe('transformSignalComponentSource', () => {
     // a SINGLE statement for both components A and B — not one emit per component.
     expect((out.match(/import \{[^}]*signalText[^}]*\} from '@llui\/dom'/g) ?? []).length).toBe(1)
   })
+
+  describe('block-body views', () => {
+    it('lowers the returned array of a block-body view and preserves the block statements', () => {
+      const src = [
+        "import { component } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ count: 0 }),',
+        '  update: (s) => s,',
+        '  view: ({ state, send }) => {',
+        "    const label = 'Count'",
+        "    return [text(state.at('count')), button({ onClick: () => send({ type: 'inc' }) }, [text('+')])]",
+        '  },',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // the returned array is lowered just like a concise body
+      expect(out).toContain("signalText((s) => s.count, ['count'])")
+      expect(out).toContain(
+        "el(\"button\", { onClick: () => send({ type: 'inc' }) }, [staticText('+')])",
+      )
+      // the block's statements (the local) are preserved verbatim
+      expect(out).toContain("const label = 'Count'")
+    })
+
+    it('leaves a signal-bound LOCAL verbatim (runtime helper consumes the handle)', () => {
+      const src = [
+        "import { component } from '@llui/dom'",
+        'const C = component({',
+        "  init: () => ({ name: '' }),",
+        '  update: (s) => s,',
+        '  view: ({ state }) => {',
+        "    const name = state.at('name')",
+        '    return [text(name)]',
+        '  },',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // `name` is opaque to the static tracer — the text() call stays verbatim so
+      // the runtime authoring helper consumes the handle. It must NOT be lowered to
+      // signalText with a bogus accessor/deps.
+      expect(out).toContain('return [text(name)]')
+      expect(out).not.toContain('signalText((s) => name')
+      // the local binding is preserved
+      expect(out).toContain("const name = state.at('name')")
+    })
+
+    it('emits introspection metadata for a block-body component', () => {
+      const src = [
+        "import { component } from '@llui/dom'",
+        "type Msg = { type: 'inc' }",
+        'const C = component({',
+        '  init: () => ({ count: 0 }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => {',
+        '    const x = 1',
+        "    return [text(state.at('count'))]",
+        '  },',
+        '})',
+      ].join('\n')
+      // before block-body support, `roots && arr` was false for a block body, so
+      // NO metadata was spliced — agent/debug introspection was silently dropped.
+      const out = transformSignalComponentSource(src, { emitAgentMetadata: true })
+      expect(out).toContain('__msgSchema:')
+      expect(out).toContain('__schemaHash:')
+    })
+  })
 })

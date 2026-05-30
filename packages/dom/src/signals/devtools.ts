@@ -278,7 +278,10 @@ function validateAgainstSchema(msg: unknown, schema: object | undefined): Valida
   for (const [field, type] of Object.entries(fields)) {
     if (!(field in m)) errors.push({ path: field, message: `missing field (expected ${type})` })
   }
-  return errors
+  // Contract is `ValidationError[] | null`: a VALID message is `null`, not `[]`.
+  // Callers gate on truthiness (`if (errors) …`) and an empty array is truthy —
+  // returning `[]` here made every schema-valid `send_message` report sent:false.
+  return errors.length > 0 ? errors : null
 }
 
 function clone<T>(v: T): T {

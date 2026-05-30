@@ -172,6 +172,11 @@ export function transformNodeExpr(
       if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
         return `staticText(${arg.getText(sf)})`
       }
+      // Only lower when the arg is rooted in the bag signal. A signal-bound LOCAL
+      // (e.g. `const n = state.at('n'); … text(n)` in a block-body view) is opaque
+      // to the static tracer — leave the call verbatim so the runtime `text`
+      // helper consumes the handle. Same fall-through the props path already uses.
+      if (!isSignalExpr(arg, roots)) return node.getText(sf)
       const { produce, deps } = signalToProduce(arg, sf, roots)
       if (collect) for (const d of deps) collect.add(d)
       return `signalText((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
@@ -181,7 +186,7 @@ export function transformNodeExpr(
       // each(items, { key, render: (item) => [...] }) -> combined-ctx rows.
       const items = node.arguments[0]
       const opts = node.arguments[1]
-      if (items && opts && ts.isObjectLiteralExpression(opts)) {
+      if (items && opts && ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots)) {
         let keySrc = '(x) => x'
         let renderSrc = '() => []'
         const renderDeps = new Set<string>()
@@ -220,7 +225,7 @@ export function transformNodeExpr(
       const cond = node.arguments[0]
       const render = node.arguments[1]
       const orElse = node.arguments[2]
-      if (cond && render) {
+      if (cond && render && isSignalExpr(cond, roots)) {
         const condLowered = signalToProduce(cond, sf, roots)
         const condPath = signalPathOf(cond, roots)
         const narrowed = firstParam(render)
@@ -245,7 +250,13 @@ export function transformNodeExpr(
       const discArg = node.arguments[1]
       const arms = node.arguments[2]
       const disc = discArg ? discriminantProp(discArg) : null
-      if (value && disc !== null && arms && ts.isObjectLiteralExpression(arms)) {
+      if (
+        value &&
+        disc !== null &&
+        arms &&
+        ts.isObjectLiteralExpression(arms) &&
+        isSignalExpr(value, roots)
+      ) {
         const valueLowered = signalToProduce(value, sf, roots)
         const valuePath = signalPathOf(value, roots) // 'view', '' (whole), or null
         const discDep = valuePath === null ? null : valuePath === '' ? disc : `${valuePath}.${disc}`
@@ -278,7 +289,7 @@ export function transformNodeExpr(
       }
       // 2-arg plain form: branch(stringSignal, { arm: () => [...] }) — the value
       // IS the discriminant; arms are keyed by its value, no narrowed param.
-      if (value && discArg && ts.isObjectLiteralExpression(discArg)) {
+      if (value && discArg && ts.isObjectLiteralExpression(discArg) && isSignalExpr(value, roots)) {
         const armsSrc = discArg.properties
           .map((p) =>
             ts.isPropertyAssignment(p)

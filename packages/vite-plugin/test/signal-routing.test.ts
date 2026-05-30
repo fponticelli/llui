@@ -69,9 +69,7 @@ describe('vite-plugin — signal component routing', () => {
     expect(msg).toContain('operator-on-signal')
   })
 
-  it('accepts a block-body signal view (runtime helpers handle the un-lowered view)', async () => {
-    // block bodies aren't lowered by the transform, but the runtime authoring
-    // helpers run them — so it's a valid signal file, not a build error.
+  it('lowers a block-body signal view (returned array rewritten, statements preserved)', async () => {
     const blockBody = [
       "import { component, text } from '@llui/dom'",
       'export const C = component({',
@@ -82,9 +80,10 @@ describe('vite-plugin — signal component routing', () => {
     ].join('\n')
     const out = await runTransform(llui(), blockBody, '/tmp/block.ts')
     expect(out).toBeDefined()
-    // not handed to the legacy compiler (no elSplit / mask emission)
-    expect(out!.code).not.toContain('elSplit')
-    // the signal authoring import is preserved so the runtime helpers resolve
+    // the returned array is lowered (block bodies are no longer skipped)
+    expect(out!.code).toContain("signalText((s) => s.n, ['n'])")
+    // the block's statements survive
+    expect(out!.code).toContain('const x = 1')
     expect(out!.code).toContain('@llui/dom')
   })
 

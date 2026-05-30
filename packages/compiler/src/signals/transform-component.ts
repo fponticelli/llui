@@ -75,16 +75,22 @@ function signalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Roots | 
   return null
 }
 
-/** The returned node array of a view body (concise `=> [...]`), or null. */
+/** The returned node array of a view body — concise (`=> [...]`) OR a block body
+ * (`=> { …; return [...] }`), or null. For a block body, signal-bound locals
+ * declared above the `return` stay in scope: the lowered array references them
+ * verbatim where the static tracer can't follow them (the view transform leaves
+ * non-rooted args to the runtime authoring helpers), so only the array literal is
+ * rewritten — the block's statements are preserved. */
 function returnedArray(
   viewFn: ts.ArrowFunction | ts.FunctionExpression,
 ): ts.ArrayLiteralExpression | null {
-  const body = viewFn.body
-  if (body && ts.isArrayLiteralExpression(body)) return body
-  if (body && ts.isParenthesizedExpression(body) && ts.isArrayLiteralExpression(body.expression)) {
-    return body.expression
+  let body: ts.Node | undefined = viewFn.body
+  // block body: the (first) `return [...]` statement
+  if (body && ts.isBlock(body)) {
+    body = body.statements.find(ts.isReturnStatement)?.expression
   }
-  return null
+  while (body && ts.isParenthesizedExpression(body)) body = body.expression
+  return body && ts.isArrayLiteralExpression(body) ? body : null
 }
 
 /**

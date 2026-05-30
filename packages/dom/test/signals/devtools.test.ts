@@ -59,8 +59,10 @@ describe('installSignalDebug', () => {
     expect(api.evalUpdate({ type: 'inc' })).toEqual({ state: { count: 2 }, effects: [] })
     expect(api.getState()).toEqual({ count: 1 })
 
-    // validateMessage against the schema
-    expect(api.validateMessage({ type: 'inc' })).toEqual([])
+    // validateMessage against the schema: a VALID message is null (not []), so
+    // truthiness-gating callers (e.g. send_message's `if (errors)`) don't treat a
+    // valid message as having errors.
+    expect(api.validateMessage({ type: 'inc' })).toBeNull()
     expect(api.validateMessage({ type: 'nope' })?.[0].path).toBe('type')
 
     // restoreState writes through setState
