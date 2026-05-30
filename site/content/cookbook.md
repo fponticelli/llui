@@ -1194,44 +1194,44 @@ __lluiConnect(5201) // connect to a custom port
 Once connected, the MCP server exposes these tools to any MCP client
 (Claude Desktop, Claude Code, etc.):
 
-| Tool                      | Description                                                                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `llui_get_state`          | Get the current component state                                                                                                                                                    |
-| `llui_send_message`       | Send a message and return new state + effects                                                                                                                                      |
-| `llui_eval_update`        | Dry-run a message without applying it                                                                                                                                              |
-| `llui_get_bindings`       | List all bindings with mask, kind, and last value                                                                                                                                  |
-| `llui_why_did_update`     | Explain why a specific binding updated (mask match, value diff)                                                                                                                    |
-| `llui_validate_message`   | Validate a message against the compiled schema                                                                                                                                     |
-| `llui_get_message_schema` | Get the discriminated union schema for Msg                                                                                                                                         |
-| `llui_decode_mask`        | Translate a dirty-mask number to field names                                                                                                                                       |
-| `llui_search_state`       | Dot-path lookup into state (e.g. `route.data.repos`)                                                                                                                               |
-| `llui_export_trace`       | Export message history as a replayable trace                                                                                                                                       |
-| `llui_snapshot_state`     | Checkpoint the current state                                                                                                                                                       |
-| `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                             |
-| `llui_list_components`    | List all mounted components                                                                                                                                                        |
-| `llui_select_component`   | Switch the active debug target                                                                                                                                                     |
-| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s 41 idiomatic-LLui rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
-| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                           |
-| `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                               |
-| `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                            |
-| `llui_dispatch_event`     | Synthesize a browser event on a selector; returns the Msgs produced and resulting state.                                                                                           |
-| `llui_get_focus`          | Return active-element info: selector, tag name, and text selection range.                                                                                                          |
-| `llui_force_rerender`     | Re-evaluate all bindings and return the indices that produced a new value.                                                                                                         |
-| `llui_each_diff`          | Show per-each-site add/remove/move/reuse counts for the last update.                                                                                                               |
-| `llui_scope_tree`         | Return the scope hierarchy annotated with kind (root/show/each/branch/child/portal).                                                                                               |
-| `llui_disposer_log`       | List recent scope disposals with the cause of each disposal.                                                                                                                       |
-| `llui_list_dead_bindings` | Return bindings that are currently dead or have never changed value.                                                                                                               |
-| `llui_binding_graph`      | Invert the compiler mask legend: map state paths to the binding indices they gate.                                                                                                 |
-| `llui_pending_effects`    | List effects that are currently queued or in-flight.                                                                                                                               |
-| `llui_effect_timeline`    | Phased log of every effect: dispatched → in-flight → resolved/cancelled.                                                                                                           |
-| `llui_mock_effect`        | Register a match→response mock; the next matching effect resolves with the mock value.                                                                                             |
-| `llui_resolve_effect`     | Manually resolve a specific pending effect by id.                                                                                                                                  |
-| `llui_step_back`          | Rewind N messages by replaying from init (pure mode by default).                                                                                                                   |
-| `llui_coverage`           | Return per-Msg variant fire counts and a list of never-fired variants.                                                                                                             |
-| `llui_diff_state`         | Produce a structured JSON diff between two state values.                                                                                                                           |
-| `llui_assert`             | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path.                                                                                                                 |
-| `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                                    |
-| `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                           |
+| Tool                      | Description                                                                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `llui_get_state`          | Get the current component state                                                                                                                                              |
+| `llui_send_message`       | Send a message and return new state + effects                                                                                                                                |
+| `llui_eval_update`        | Dry-run a message without applying it                                                                                                                                        |
+| `llui_get_bindings`       | List all bindings with mask, kind, and last value                                                                                                                            |
+| `llui_why_did_update`     | Explain why a specific binding updated (mask match, value diff)                                                                                                              |
+| `llui_validate_message`   | Validate a message against the compiled schema                                                                                                                               |
+| `llui_get_message_schema` | Get the discriminated union schema for Msg                                                                                                                                   |
+| `llui_decode_mask`        | Translate a dirty-mask number to field names                                                                                                                                 |
+| `llui_search_state`       | Dot-path lookup into state (e.g. `route.data.repos`)                                                                                                                         |
+| `llui_export_trace`       | Export message history as a replayable trace                                                                                                                                 |
+| `llui_snapshot_state`     | Checkpoint the current state                                                                                                                                                 |
+| `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                       |
+| `llui_list_components`    | List all mounted components                                                                                                                                                  |
+| `llui_select_component`   | Switch the active debug target                                                                                                                                               |
+| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s signal lint rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
+| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                     |
+| `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                         |
+| `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                      |
+| `llui_dispatch_event`     | Synthesize a browser event on a selector; returns the Msgs produced and resulting state.                                                                                     |
+| `llui_get_focus`          | Return active-element info: selector, tag name, and text selection range.                                                                                                    |
+| `llui_force_rerender`     | Re-evaluate all bindings and return the indices that produced a new value.                                                                                                   |
+| `llui_each_diff`          | Show per-each-site add/remove/move/reuse counts for the last update.                                                                                                         |
+| `llui_scope_tree`         | Return the scope hierarchy annotated with kind (root/show/each/branch/child/portal).                                                                                         |
+| `llui_disposer_log`       | List recent scope disposals with the cause of each disposal.                                                                                                                 |
+| `llui_list_dead_bindings` | Return bindings that are currently dead or have never changed value.                                                                                                         |
+| `llui_binding_graph`      | Invert the compiler mask legend: map state paths to the binding indices they gate.                                                                                           |
+| `llui_pending_effects`    | List effects that are currently queued or in-flight.                                                                                                                         |
+| `llui_effect_timeline`    | Phased log of every effect: dispatched → in-flight → resolved/cancelled.                                                                                                     |
+| `llui_mock_effect`        | Register a match→response mock; the next matching effect resolves with the mock value.                                                                                       |
+| `llui_resolve_effect`     | Manually resolve a specific pending effect by id.                                                                                                                            |
+| `llui_step_back`          | Rewind N messages by replaying from init (pure mode by default).                                                                                                             |
+| `llui_coverage`           | Return per-Msg variant fire counts and a list of never-fired variants.                                                                                                       |
+| `llui_diff_state`         | Produce a structured JSON diff between two state values.                                                                                                                     |
+| `llui_assert`             | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path.                                                                                                           |
+| `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                              |
+| `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                     |
 
 ## Agent Visibility Surface
 
@@ -1246,7 +1246,7 @@ Four slices compose into one panel:
 | `agentLog`       | Ring-buffered activity timeline (every rpc, with intent + payload detail + diff) |
 | `agentAttention` | Current dispatch's spotlight: which DOM regions to flash when state changes      |
 
-Each is an `init` / `update` / `Msg` / `connect()` triple. The host slots them into its app state via `sliceHandler`, routes inbound `Append { entry }` Msgs from the WS log-append channel to BOTH `agentLog` and `agentAttention` (the framework fans out automatically through the factory), and spreads the prop bags into its own layout.
+Each is an `init` / `update` / `Msg` / `connect()` triple. The host nests each slice's state under its own `agent` field, routes each slice's Msgs through its root `update()` (enveloped as `{ type: 'agent', sub, msg }`), and spreads the slices' signal-handle part bags into its own layout. The `createAgentClient` factory fans inbound WS log-append frames out to both `agentLog` and `agentAttention` via its `wrapMsg` callbacks.
 
 ### Wiring the slices
 
@@ -1294,40 +1294,45 @@ createAgentClient<State, Msg>({
 ### Rendering the panel
 
 ```ts
-// agent-panel.ts — bare bones
-import { div, text, each } from '@llui/dom'
+// agent-panel.ts — bare bones. A view-helper that takes the state signal.
+import { div, text, each, type Signal } from '@llui/dom'
 import { summarizeDiff } from '@llui/agent/client'
 
-function panel() {
+function panel(state: Signal<State>) {
   return div([
-    // Activity feed — the prop bag exposes visibleEntries as a reactive accessor
-    ...each<State, LogEntry>({
-      items: (s) => s.agent.log.entries.slice(-20).reverse(),
-      key: (e) => e.id,
-      render: ({ item }) => [
-        div([
-          text(item((e) => e.kind)), // chip
-          text(item((e) => e.intent ?? e.variant ?? '—')), // headline
-          text(item((e) => e.detail ?? '')), // payload k=v
-          text(item((e) => summarizeDiff(e.stateDiff))), // "3 changes in cart"
-        ]),
-      ],
-    }),
+    // Activity feed — `each` over a derived signal of the recent entries.
+    // Each row gets a `Signal<LogEntry>`; read fields with `.map`.
+    each(
+      state
+        .at('agent')
+        .at('log')
+        .map((log) => log.entries.slice(-20).reverse()),
+      {
+        key: (e) => e.id,
+        render: (item) => [
+          div([
+            text(item.map((e) => e.kind)), // chip
+            text(item.map((e) => e.intent ?? e.variant ?? '—')), // headline
+            text(item.map((e) => e.detail ?? '')), // payload k=v
+            text(item.map((e) => summarizeDiff(e.stateDiff))), // "3 changes in cart"
+          ]),
+        ],
+      },
+    ),
   ])
 }
 ```
 
 ### Visual attention layer
 
-`agentAttention.connect().flashClass(path)` returns the class name `'agent-flash'` when the path is in the most recent dispatch's affected set. Spread it onto regions you want highlightable:
+`agentAttention.connect(state, send).flashClass(path)` returns a `Signal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
 
 ```ts
-const att = agentAttention.connect<State>(
-  (s) => s.agent.attention,
-  (m) => send({ type: 'agent', sub: 'attention', msg: m }),
+const att = agentAttention.connect(state.at('agent').at('attention'), (m) =>
+  send({ type: 'agent', sub: 'attention', msg: m }),
 )
 
-// In your view layout:
+// In your view layout — flashClass('cart') is a Signal, so the class is reactive:
 div({ class: att.flashClass('cart') }, [
   // cart contents — flashes when an agent dispatch touches /cart/*
 ])

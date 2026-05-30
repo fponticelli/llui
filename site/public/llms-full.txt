@@ -332,9 +332,7 @@ view: ({ state, send }) => [
     render: (item) => [
       div([
         text(item.at('label')),
-        button({ onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [
-          text('x'),
-        ]),
+        button({ onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [text('x')]),
       ]),
     ],
   }),
@@ -396,9 +394,7 @@ function todoItem(item: Signal<Todo>, send: Send<Msg>): Node[] {
   return [
     div({ class: 'todo' }, [
       text(item.at('label')),
-      button({ onClick: () => send({ type: 'toggle', id: item.at('id').peek() }) }, [
-        text('done'),
-      ]),
+      button({ onClick: () => send({ type: 'toggle', id: item.at('id').peek() }) }, [text('done')]),
     ]),
   ]
 }
@@ -1413,11 +1409,9 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   view: ({ send }) => [
     div({ class: 'app-shell' }, [
       ToastStack(), // rendered from layout state
-      provide(
-        ToastContext,
-        { show: (msg) => send({ type: 'toast/show', msg }) },
-        () => [main([pageSlot()])],
-      ),
+      provide(ToastContext, { show: (msg) => send({ type: 'toast/show', msg }) }, () => [
+        main([pageSlot()]),
+      ]),
     ]),
   ],
 })
@@ -1644,7 +1638,7 @@ Once connected, the MCP server exposes these tools to any MCP client
 | `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                             |
 | `llui_list_components`    | List all mounted components                                                                                                                                                        |
 | `llui_select_component`   | Switch the active debug target                                                                                                                                                     |
-| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s 41 idiomatic-LLui rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
+| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s signal lint rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
 | `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                           |
 | `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                               |
 | `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                            |
@@ -1680,7 +1674,7 @@ Four slices compose into one panel:
 | `agentLog`       | Ring-buffered activity timeline (every rpc, with intent + payload detail + diff) |
 | `agentAttention` | Current dispatch's spotlight: which DOM regions to flash when state changes      |
 
-Each is an `init` / `update` / `Msg` / `connect()` triple. The host slots them into its app state via `sliceHandler`, routes inbound `Append { entry }` Msgs from the WS log-append channel to BOTH `agentLog` and `agentAttention` (the framework fans out automatically through the factory), and spreads the prop bags into its own layout.
+Each is an `init` / `update` / `Msg` / `connect()` triple. The host nests each slice's state under its own `agent` field, routes each slice's Msgs through its root `update()` (enveloped as `{ type: 'agent', sub, msg }`), and spreads the slices' signal-handle part bags into its own layout. The `createAgentClient` factory fans inbound WS log-append frames out to both `agentLog` and `agentAttention` via its `wrapMsg` callbacks.
 
 ### Wiring the slices
 
@@ -1728,40 +1722,42 @@ createAgentClient<State, Msg>({
 ### Rendering the panel
 
 ```ts
-// agent-panel.ts — bare bones
-import { div, text, each } from '@llui/dom'
+// agent-panel.ts — bare bones. A view-helper that takes the state signal.
+import { div, text, each, type Signal } from '@llui/dom'
 import { summarizeDiff } from '@llui/agent/client'
 
-function panel() {
+function panel(state: Signal<State>) {
   return div([
-    // Activity feed — the prop bag exposes visibleEntries as a reactive accessor
-    ...each<State, LogEntry>({
-      items: (s) => s.agent.log.entries.slice(-20).reverse(),
-      key: (e) => e.id,
-      render: ({ item }) => [
-        div([
-          text(item((e) => e.kind)), // chip
-          text(item((e) => e.intent ?? e.variant ?? '—')), // headline
-          text(item((e) => e.detail ?? '')), // payload k=v
-          text(item((e) => summarizeDiff(e.stateDiff))), // "3 changes in cart"
-        ]),
-      ],
-    }),
+    // Activity feed — `each` over a derived signal of the recent entries.
+    // Each row gets a `Signal<LogEntry>`; read fields with `.map`.
+    each(
+      state.at('agent').at('log').map((log) => log.entries.slice(-20).reverse()),
+      {
+        key: (e) => e.id,
+        render: (item) => [
+          div([
+            text(item.map((e) => e.kind)), // chip
+            text(item.map((e) => e.intent ?? e.variant ?? '—')), // headline
+            text(item.map((e) => e.detail ?? '')), // payload k=v
+            text(item.map((e) => summarizeDiff(e.stateDiff))), // "3 changes in cart"
+          ]),
+        ],
+      },
+    ),
   ])
 }
 ```
 
 ### Visual attention layer
 
-`agentAttention.connect().flashClass(path)` returns the class name `'agent-flash'` when the path is in the most recent dispatch's affected set. Spread it onto regions you want highlightable:
+`agentAttention.connect(state, send).flashClass(path)` returns a `Signal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
 
 ```ts
-const att = agentAttention.connect<State>(
-  (s) => s.agent.attention,
-  (m) => send({ type: 'agent', sub: 'attention', msg: m }),
+const att = agentAttention.connect(state.at('agent').at('attention'), (m) =>
+  send({ type: 'agent', sub: 'attention', msg: m }),
 )
 
-// In your view layout:
+// In your view layout — flashClass('cart') is a Signal, so the class is reactive:
 div({ class: att.flashClass('cart') }, [
   // cart contents — flashes when an agent dispatch touches /cart/*
 ])
@@ -2118,7 +2114,9 @@ Discriminated-union or value-keyed render.
 function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],
-  arms: { [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[] },
+  arms: {
+    [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[]
+  },
 ): Node
 
 // 2-arg: keyed directly on a string/number signal's value

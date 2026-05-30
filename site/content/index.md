@@ -64,7 +64,7 @@ LLui provides first-class tooling for AI workflows:
 - **[llms-full.txt](/llms-full.txt)** — comprehensive reference with all APIs, patterns, and rules (~47KB, fits in most context windows)
 - **[@llui/agent](/api/agent)** — LLM-driven control surface: Claude reads state, enumerates actions, dispatches messages into the live app
 - **[@llui/mcp](/api/mcp)** — MCP server exposing debug tools directly to LLMs via Model Context Protocol
-- **[@llui/compiler](/api/compiler)** — 41 compile-time error rules that catch common LLM mistakes at build time, not as lint warnings
+- **[@llui/compiler](/api/compiler)** — compile-time error rules that catch common LLM mistakes at build time, not as lint warnings
 - **[Debugging](/debugging)** — debug LLui apps interactively from the browser console or an MCP-connected LLM
 - **[Agents](/agents)** — drive any LLui-built app from a Claude conversation
 
@@ -73,7 +73,7 @@ LLui provides first-class tooling for AI workflows:
 | Package                                                       | Description                                                                                |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | [`@llui/dom`](/api/dom)                                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers   |
-| [`@llui/compiler`](/api/compiler)                             | Engine — 3-pass TypeScript transform + 41 compile-time lint rules (all error severity)     |
+| [`@llui/compiler`](/api/compiler)                             | Engine — signal TypeScript transform + compile-time lint rules (all error severity)        |
 | [`@llui/vite-plugin`](/api/vite-plugin)                       | Vite adapter — wires the compiler into Vite, surfaces diagnostics via `this.error()`       |
 | [`@llui/compiler-introspection`](/api/compiler-introspection) | Opt-in compiler module — agent schemas, msg annotations, schema hash emission              |
 | [`@llui/compiler-devtools`](/api/compiler-devtools)           | Opt-in compiler module — `__componentMeta` emission for source navigation                  |
@@ -81,7 +81,7 @@ LLui provides first-class tooling for AI workflows:
 | [`@llui/effects`](/api/effects)                               | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload           |
 | [`@llui/router`](/api/router)                                 | Routing — structured path matching, history/hash mode, guards, link helper                 |
 | [`@llui/transitions`](/api/transitions)                       | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
-| [`@llui/components`](/api/components)                         | 58 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
+| [`@llui/components`](/api/components)                         | 59 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
 | [`@llui/test`](/api/test)                                     | Test harness — testComponent, testView, propertyTest, replayTrace                          |
 | [`@llui/vike`](/api/vike)                                     | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
 | [`@llui/mcp`](/api/mcp)                                       | MCP server — LLM debug tools via Model Context Protocol                                    |
