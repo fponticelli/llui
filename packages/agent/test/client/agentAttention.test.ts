@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, type AgentAttentionState } from '../../src/client/agentAttention.js'
 import type { LogEntry } from '../../src/protocol.js'
 import type { StateDiff } from '../../src/state-diff.js'
+import { rootSignal, read } from './_signal.js'
 
 const makeEntry = (overrides: Partial<LogEntry> = {}): LogEntry => ({
   id: 'e1',
@@ -182,8 +183,8 @@ describe('agentAttention: SetFlashDuration', () => {
 })
 
 describe('agentAttention: connect()', () => {
-  const buildBag = (state: AgentAttentionState, send = vi.fn()) => {
-    return connect<AgentAttentionState>((s) => s, send)
+  const buildBag = (_state: AgentAttentionState, send = vi.fn()) => {
+    return connect(rootSignal<AgentAttentionState>(), send)
   }
 
   it('flashing(path) is true when the path is in latestDispatch.paths', () => {
@@ -198,15 +199,15 @@ describe('agentAttention: connect()', () => {
       }),
     })
     const bag = buildBag(s1)
-    expect(bag.flashing('items')(s1)).toBe(true)
-    expect(bag.flashing('cart')(s1)).toBe(true)
-    expect(bag.flashing('other')(s1)).toBe(false)
+    expect(read(bag.flashing('items'), s1)).toBe(true)
+    expect(read(bag.flashing('cart'), s1)).toBe(true)
+    expect(read(bag.flashing('other'), s1)).toBe(false)
   })
 
   it('flashing returns false when no spotlight is set', () => {
     const [s0] = init()
     const bag = buildBag(s0)
-    expect(bag.flashing('items')(s0)).toBe(false)
+    expect(read(bag.flashing('items'), s0)).toBe(false)
   })
 
   it("matches every path against wildcard '*' (root replace)", () => {
@@ -216,9 +217,9 @@ describe('agentAttention: connect()', () => {
       entry: makeEntry({ stateDiff: diff({ op: 'replace', path: '/', value: {} }) }),
     })
     const bag = buildBag(s1)
-    expect(bag.flashing('items')(s1)).toBe(true)
-    expect(bag.flashing('cart')(s1)).toBe(true)
-    expect(bag.flashing('anything')(s1)).toBe(true)
+    expect(read(bag.flashing('items'), s1)).toBe(true)
+    expect(read(bag.flashing('cart'), s1)).toBe(true)
+    expect(read(bag.flashing('anything'), s1)).toBe(true)
   })
 
   it('flashClass(path) returns the configured class while flashing', () => {
@@ -230,9 +231,9 @@ describe('agentAttention: connect()', () => {
       }),
     })
     const bag = buildBag(s1)
-    expect(bag.flashClass('items')(s1)).toBe('agent-flash')
-    expect(bag.flashClass('items', 'pulse')(s1)).toBe('pulse')
-    expect(bag.flashClass('other')(s1)).toBeUndefined()
+    expect(read(bag.flashClass('items'), s1)).toBe('agent-flash')
+    expect(read(bag.flashClass('items', 'pulse'), s1)).toBe('pulse')
+    expect(read(bag.flashClass('other'), s1)).toBeUndefined()
   })
 
   it('regionAction(path) returns the action metadata when flashing', () => {
@@ -247,16 +248,16 @@ describe('agentAttention: connect()', () => {
       }),
     })
     const bag = buildBag(s1)
-    expect(bag.regionAction('alts')(s1)).toEqual({
+    expect(read(bag.regionAction('alts'), s1)).toEqual({
       entryId: 'e1',
       variant: 'SelectAlt',
       intent: 'Pick alternative',
       at: 1_000,
     })
-    expect(bag.regionAction('other')(s1)).toBeNull()
+    expect(read(bag.regionAction('other'), s1)).toBeNull()
   })
 
-  it('per-path accessors are memoized (stable reference across calls)', () => {
+  it('per-path handles are cached (stable reference across calls)', () => {
     const [s0] = init()
     const bag = buildBag(s0)
     expect(bag.flashing('items')).toBe(bag.flashing('items'))
@@ -269,7 +270,7 @@ describe('agentAttention: connect()', () => {
   it('latestDispatch passes through the raw envelope (or null)', () => {
     const [s0] = init()
     const bag0 = buildBag(s0)
-    expect(bag0.latestDispatch(s0)).toBeNull()
+    expect(read(bag0.latestDispatch, s0)).toBeNull()
     const [s1] = update(s0, {
       type: 'Append',
       entry: makeEntry({
@@ -277,6 +278,6 @@ describe('agentAttention: connect()', () => {
       }),
     })
     const bag1 = buildBag(s1)
-    expect(bag1.latestDispatch(s1)?.entryId).toBe('e1')
+    expect(read(bag1.latestDispatch, s1)?.entryId).toBe('e1')
   })
 })

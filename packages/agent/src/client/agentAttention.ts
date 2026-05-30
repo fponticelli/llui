@@ -178,88 +178,62 @@ function topLevelPaths(diff: StateDiff | undefined): string[] {
   return Array.from(seen)
 }
 
-import type { Send } from '@llui/dom'
+import { type Send, type Signal } from '@llui/dom'
 
-const UNSET: unique symbol = Symbol('agent-attention-unset')
+type RegionAction = {
+  entryId: string
+  variant?: string
+  intent?: string
+  at: number
+} | null
 
-export type ConnectBag<S> = {
+export type ConnectBag = {
   root: { 'data-scope': 'agent-attention' }
   /**
-   * Reactive boolean accessor: true while the spotlight covers `path`.
+   * Reactive boolean signal: true while the spotlight covers `path`.
    * Use as the predicate for a conditional class binding in the host's
-   * own element bag. Memoized by `path` so each `flashing(path)` call
-   * returns the same accessor across renders, keeping the underlying
-   * binding's `lastValue` short-circuit valid.
+   * own element bag. Cached by `path` so each `flashing(path)` call
+   * returns the same handle across renders, keeping the underlying
+   * binding's short-circuit valid.
    */
-  flashing: (path: string) => (s: S) => boolean
+  flashing: (path: string) => Signal<boolean>
   /**
-   * Convenience accessor: returns `className` (default `'agent-flash'`)
+   * Convenience signal: resolves to `className` (default `'agent-flash'`)
    * while flashing, otherwise `undefined`. Spread into element bags
-   * via `class: bag.flashClass('items')`. Memoized per `(path, className)`
+   * via `class: bag.flashClass('items')`. Cached per `(path, className)`
    * pair.
    */
-  flashClass: (path: string, className?: string) => (s: S) => string | undefined
+  flashClass: (path: string, className?: string) => Signal<string | undefined>
   /**
    * Metadata about the action that touched this path, or null when
    * the spotlight isn't on this path. Useful for tooltips or aria-live
    * narration: "agent → SelectAlternative just changed alternatives."
-   * Memoized per `path`.
+   * Cached per `path`.
    */
-  regionAction: (path: string) => (s: S) => {
-    entryId: string
-    variant?: string
-    intent?: string
-    at: number
-  } | null
+  regionAction: (path: string) => Signal<RegionAction>
   /**
-   * Direct accessor on the latest dispatch envelope. Useful for a
+   * Direct signal on the latest dispatch envelope. Useful for a
    * single panel-level "now flashing: X" indicator outside the
    * per-region instrumentation.
    */
-  latestDispatch: (s: S) => AgentAttentionState['latestDispatch']
+  latestDispatch: Signal<AgentAttentionState['latestDispatch']>
 }
 
-export function connect<S>(
-  get: (s: S) => AgentAttentionState,
+export function connect(
+  state: Signal<AgentAttentionState>,
   _send: Send<AgentAttentionMsg>,
-): ConnectBag<S> {
-  // Per-call-shape accessor caches. Two reasons for memoizing:
-  // 1. Stable reference per `(path, className)` lets the underlying
-  //    LLui binding short-circuit on `Object.is(lastValue, newValue)`
-  //    — without it, `bag.flashing('items')` would allocate a fresh
-  //    closure each call and the binding would re-fire even when the
-  //    state hasn't changed.
-  // 2. Hosts iterate `each(visibleEntries, ...)` calling these in tight
-  //    inner loops; per-render allocation costs would compound.
-  const flashingCache = new Map<string, (s: S) => boolean>()
-  const flashClassCache = new Map<string, (s: S) => string | undefined>()
-  const regionActionCache = new Map<
-    string,
-    (s: S) => {
-      entryId: string
-      variant?: string
-      intent?: string
-      at: number
-    } | null
-  >()
+): ConnectBag {
+  // Per-call-shape derived-signal caches. Caching by `(path, className)`
+  // keeps the handle reference stable so the underlying LLui binding
+  // short-circuits — without it, `bag.flashing('items')` would allocate
+  // a fresh handle each call. Hosts also iterate these in tight inner
+  // loops, where per-render allocation costs would compound.
+  const flashingCache = new Map<string, Signal<boolean>>()
+  const flashClassCache = new Map<string, Signal<string | undefined>>()
+  const regionActionCache = new Map<string, Signal<RegionAction>>()
 
-  // Single-slot memo on the parent state ref for `flashing(path)`'s
-  // path → boolean lookup. Hot path: each frame's view evaluates
-  // every region's `flashing(path)` once; on a state where 30 regions
-  // are wired and one is highlighted, the inclusion check is trivial,
-  // but the parent-state-ref invariant still saves the `get(s)` and
-  // `Array.includes` work for the other 29.
-  let lastFlashState: S | typeof UNSET = UNSET
-  let lastDispatch: AgentAttentionState['latestDispatch'] = null
-  const refreshDispatch = (state: S): AgentAttentionState['latestDispatch'] => {
-    if (state === lastFlashState) return lastDispatch
-    lastDispatch = get(state).latestDispatch
-    lastFlashState = state
-    return lastDispatch
-  }
-
-  const matches = (state: S, path: string): boolean => {
-    const d = refreshDispatch(state)
+  const matches = (s: AgentAttentionState, path: string): boolean => {
+    const d = s.latestDispatch
     if (!d) return false
     return d.paths.includes('*') || d.paths.includes(path)
   }
@@ -269,32 +243,30 @@ export function connect<S>(
     flashing: (path) => {
       const cached = flashingCache.get(path)
       if (cached) return cached
-      const accessor = (s: S): boolean => matches(s, path)
-      flashingCache.set(path, accessor)
-      return accessor
+      const handle = state.map((s) => matches(s, path))
+      flashingCache.set(path, handle)
+      return handle
     },
     flashClass: (path, className = 'agent-flash') => {
       const key = `${path}\0${className}`
       const cached = flashClassCache.get(key)
       if (cached) return cached
-      const accessor = (s: S): string | undefined => (matches(s, path) ? className : undefined)
-      flashClassCache.set(key, accessor)
-      return accessor
+      const handle = state.map((s) => (matches(s, path) ? className : undefined))
+      flashClassCache.set(key, handle)
+      return handle
     },
     regionAction: (path) => {
       const cached = regionActionCache.get(path)
       if (cached) return cached
-      const accessor = (
-        s: S,
-      ): { entryId: string; variant?: string; intent?: string; at: number } | null => {
-        const d = refreshDispatch(s)
+      const handle = state.map((s): RegionAction => {
+        const d = s.latestDispatch
         if (!d) return null
         if (!d.paths.includes('*') && !d.paths.includes(path)) return null
         return { entryId: d.entryId, variant: d.variant, intent: d.intent, at: d.at }
-      }
-      regionActionCache.set(path, accessor)
-      return accessor
+      })
+      regionActionCache.set(path, handle)
+      return handle
     },
-    latestDispatch: (s) => get(s).latestDispatch,
+    latestDispatch: state.map((s) => s.latestDispatch),
   }
 }

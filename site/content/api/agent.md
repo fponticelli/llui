@@ -665,16 +665,16 @@ function update(
 
 ### `connect()`
 
-Builds prop bags for the view. Static-bag-with-reactive-accessors
-shape (matches the @llui/components convention); spread directly
-into element helpers.
+Builds prop bags for the view. Static-bag-with-Signal-handles shape
+(matches the @llui/components convention); spread directly into
+element helpers.
 
 ```typescript
-function connect<S>(
-  get: (s: S) => AgentConnectState,
+function connect(
+  state: Signal<AgentConnectState>,
   send: Send<AgentConnectMsg>,
   _opts: AgentConnectConnectOptions = {},
-): ConnectBag<S>
+): ConnectBag
 ```
 
 ## Types
@@ -1374,30 +1374,28 @@ export type AgentConnectConnectOptions = {
 
 ### `ConnectBag`
 
-Static prop bag with reactive accessors. Mirrors the @llui/components
-pattern (e.g. `dialog.connect`): callers spread bag keys directly
-into element helpers, and function-valued props re-evaluate per
-binding-mask hit. The previous shape — `(state) => bag` — required
-callers to wrap every prop access in their own arrow, which the
-documented usage didn't do (and silently produced `undefined` props
-when spread).
+Static prop bag with reactive (Signal-handle) values. Mirrors the
+@llui/components pattern (e.g. `dialog.connect`): callers spread bag
+keys directly into element helpers, and handle-valued props re-evaluate
+per binding-mask hit. The caller passes the `agent-connect` state slice
+as a `Signal`; reactive props are derived from it via `state.map(...)`.
 
 ```typescript
-export type ConnectBag<S> = {
-  root: { 'data-scope': 'agent-connect'; 'data-state': (s: S) => AgentConnectStatus }
-  mintTrigger: { onClick: () => void; disabled: (s: S) => boolean }
-  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': (s: S) => boolean }
-  copyConnectSnippetButton: { onClick: () => void; disabled: (s: S) => boolean }
+export type ConnectBag = {
+  root: { 'data-scope': 'agent-connect'; 'data-state': Signal<AgentConnectStatus> }
+  mintTrigger: { onClick: () => void; disabled: Signal<boolean> }
+  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': Signal<boolean> }
+  copyConnectSnippetButton: { onClick: () => void; disabled: Signal<boolean> }
   sessionsList: { 'data-part': 'sessions-list' }
   sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
   revokeButton: (tid: string) => { onClick: () => void }
-  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': (s: S) => boolean }
+  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': Signal<boolean> }
   resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
   resumeButton: (tid: string) => { onClick: () => void }
   dismissButton: (tid: string) => { onClick: () => void }
   error: {
     'data-part': 'error'
-    'data-visible': (s: S) => boolean
+    'data-visible': Signal<boolean>
     onClick: () => void
   }
 }

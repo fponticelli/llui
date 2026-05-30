@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/client/agentLog.js'
 import type { AgentLogState } from '../../src/client/agentLog.js'
 import type { LogEntry } from '../../src/protocol.js'
+import { rootSignal, read } from './_signal.js'
 
 // Inline fixtures
 const makeEntry = (overrides: Partial<LogEntry> = {}): LogEntry => ({
@@ -87,9 +88,9 @@ describe('agentLog: SetFilter', () => {
 })
 
 describe('agentLog: filtering via visibleEntries (connect)', () => {
-  // Bag is now static; reactive accessors take state at call time.
+  // Bag is now static; reactive values are Signal handles read via `read`.
   const buildBag = (send = vi.fn()) => {
-    const bag = connect<AgentLogState>((s) => s, send)
+    const bag = connect(rootSignal<AgentLogState>(), send)
     return { bag, send }
   }
 
@@ -102,7 +103,7 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e2', kind: 'proposed' }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
     const { bag } = buildBag()
-    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual(['e1'])
+    expect(read(bag.visibleEntries, state).map((e) => e.id)).toEqual(['e1'])
   })
 
   it('SetFilter by since — entries before ts excluded from visibleEntries', () => {
@@ -111,7 +112,7 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'new', at: 2_000 }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { since: 1_000 } })
     const { bag } = buildBag()
-    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual(['new'])
+    expect(read(bag.visibleEntries, state).map((e) => e.id)).toEqual(['new'])
   })
 
   it('list.data-count reflects visible count not raw count', () => {
@@ -123,7 +124,7 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e2', kind: 'proposed' }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
     const { bag } = buildBag()
-    expect(bag.list['data-count'](state)).toBe(1)
+    expect(read(bag.list['data-count'], state)).toBe(1)
   })
 
   it("entryItem(id) returns 'missing' kind for an id not in visible", () => {
@@ -136,7 +137,7 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
     const { bag } = buildBag()
     // e2 is filtered out → 'missing' kind
-    expect(bag.entryItem('e2')['data-kind'](state)).toBe('missing')
+    expect(read(bag.entryItem('e2')['data-kind'], state)).toBe('missing')
   })
 
   it('entryItem(id) returns reactive accessors for a visible entry', () => {
@@ -148,20 +149,20 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     const { bag } = buildBag()
     const item = bag.entryItem('e1')
     expect(item['data-id']).toBe('e1')
-    expect(item['data-kind'](state)).toBe('dispatched')
+    expect(read(item['data-kind'], state)).toBe('dispatched')
   })
 
   it('filterControls.clearButton.disabled when entries is empty', () => {
     const [s0] = init()
     const { bag } = buildBag()
-    expect(bag.filterControls.clearButton.disabled(s0)).toBe(true)
+    expect(read(bag.filterControls.clearButton.disabled, s0)).toBe(true)
   })
 
   it('filterControls.clearButton.disabled is false when entries exist', () => {
     let state = init()[0]
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e1' }) })
     const { bag } = buildBag()
-    expect(bag.filterControls.clearButton.disabled(state)).toBe(false)
+    expect(read(bag.filterControls.clearButton.disabled, state)).toBe(false)
   })
 
   it('filterControls.clearButton.onClick dispatches Clear', () => {
@@ -179,7 +180,7 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
 
 describe('agentLog: entryDiff (connect)', () => {
   const buildBag = (send = vi.fn()) => {
-    const bag = connect<AgentLogState>((s) => s, send)
+    const bag = connect(rootSignal<AgentLogState>(), send)
     return { bag, send }
   }
 
@@ -191,7 +192,7 @@ describe('agentLog: entryDiff (connect)', () => {
       entry: makeEntry({ id: 'e1', kind: 'dispatched', stateDiff: diff }),
     })
     const { bag } = buildBag()
-    expect(bag.entryDiff('e1')(state)).toBe(diff)
+    expect(read(bag.entryDiff('e1'), state)).toBe(diff)
   })
 
   it('returns null when the entry has no stateDiff (e.g. read entries)', () => {
@@ -201,13 +202,13 @@ describe('agentLog: entryDiff (connect)', () => {
       entry: makeEntry({ id: 'r1', kind: 'read' }), // no stateDiff
     })
     const { bag } = buildBag()
-    expect(bag.entryDiff('r1')(state)).toBeNull()
+    expect(read(bag.entryDiff('r1'), state)).toBeNull()
   })
 
   it('returns null when the id is unknown', () => {
     const [s0] = init()
     const { bag } = buildBag()
-    expect(bag.entryDiff('does-not-exist')(s0)).toBeNull()
+    expect(read(bag.entryDiff('does-not-exist'), s0)).toBeNull()
   })
 
   it('looks up entries through the raw list, ignoring filter', () => {
@@ -222,37 +223,37 @@ describe('agentLog: entryDiff (connect)', () => {
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['proposed'] } })
     const { bag } = buildBag()
     // Filter excludes d1 from visibleEntries…
-    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual([])
+    expect(read(bag.visibleEntries, state).map((e) => e.id)).toEqual([])
     // …but entryDiff still finds it.
-    expect(bag.entryDiff('d1')(state)).toBe(diff)
+    expect(read(bag.entryDiff('d1'), state)).toBe(diff)
   })
 
-  it('caches the accessor by id (reference equality across calls)', () => {
+  it('caches the handle by id (reference equality across calls)', () => {
     const { bag } = buildBag()
     const a1 = bag.entryDiff('e1')
     const a2 = bag.entryDiff('e1')
     expect(a1).toBe(a2)
   })
 
-  it('different ids return distinct accessors', () => {
+  it('different ids return distinct handles', () => {
     const { bag } = buildBag()
     const a1 = bag.entryDiff('e1')
     const a2 = bag.entryDiff('e2')
     expect(a1).not.toBe(a2)
   })
 
-  it('the cached accessor reflects later state appends (not snapshot)', () => {
+  it('the cached handle reflects later state appends (not snapshot)', () => {
     let state = init()[0]
     const { bag } = buildBag()
-    const accessor = bag.entryDiff('late')
+    const handle = bag.entryDiff('late')
     // No entry yet → null
-    expect(accessor(state)).toBeNull()
-    // Append the entry; same accessor now resolves.
+    expect(read(handle, state)).toBeNull()
+    // Append the entry; same handle now resolves.
     const diff = [{ op: 'replace' as const, path: '/x', value: 1 }]
     ;[state] = update(state, {
       type: 'Append',
       entry: makeEntry({ id: 'late', kind: 'dispatched', stateDiff: diff }),
     })
-    expect(accessor(state)).toBe(diff)
+    expect(read(handle, state)).toBe(diff)
   })
 })

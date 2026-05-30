@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/client/agentConfirm.js'
 import type { ConfirmEntry, AgentConfirmState } from '../../src/client/agentConfirm.js'
+import { rootSignal, read } from './_signal.js'
 
 // Inline fixtures
 const makeEntry = (overrides: Partial<ConfirmEntry> = {}): ConfirmEntry => ({
@@ -124,16 +125,16 @@ describe('agentConfirm: ExpireStale', () => {
 })
 
 describe('agentConfirm: connect', () => {
-  // Bag is now static; reactive accessors take state at call time.
+  // Bag is now static; reactive values are Signal handles read via `read`.
   const buildBag = (send = vi.fn()) => {
-    const bag = connect<AgentConfirmState>((s) => s, send)
+    const bag = connect(rootSignal<AgentConfirmState>(), send)
     return { bag, send }
   }
 
   it("entry(id)'s 'data-status' resolves 'missing' for an unknown id", () => {
     const [s0] = init()
     const { bag } = buildBag()
-    expect(bag.entry('nonexistent').card['data-status'](s0)).toBe('missing')
+    expect(read(bag.entry('nonexistent').card['data-status'], s0)).toBe('missing')
   })
 
   it('entry(id) returns reactive accessors for an existing entry', () => {
@@ -142,11 +143,11 @@ describe('agentConfirm: connect', () => {
     const [s1] = update(s0, { type: 'Propose', entry })
     const { bag } = buildBag()
     const e = bag.entry('e1')
-    expect(e.card['data-status'](s1)).toBe('pending')
+    expect(read(e.card['data-status'], s1)).toBe('pending')
     expect(e.card['data-id']).toBe('e1')
-    expect(e.intentText(s1)).toBe('Do the thing')
-    expect(e.reasonText(s1)).toBe('because')
-    expect(e.payloadText(s1)).toBe(JSON.stringify(entry.payload, null, 2))
+    expect(read(e.intentText, s1)).toBe('Do the thing')
+    expect(read(e.reasonText, s1)).toBe('because')
+    expect(read(e.payloadText, s1)).toBe(JSON.stringify(entry.payload, null, 2))
   })
 
   it('approveButton.onClick dispatches Approve with correct id', () => {
@@ -167,14 +168,14 @@ describe('agentConfirm: connect', () => {
     const [s1] = update(s0, { type: 'Propose', entry })
     const [s2] = update(s1, { type: 'Approve', id: 'e1' })
     const { bag } = buildBag()
-    expect(bag.entry('e1').approveButton.disabled(s2)).toBe(true)
-    expect(bag.entry('e1').rejectButton.disabled(s2)).toBe(true)
+    expect(read(bag.entry('e1').approveButton.disabled, s2)).toBe(true)
+    expect(read(bag.entry('e1').rejectButton.disabled, s2)).toBe(true)
   })
 
   it('empty is visible when pending list is empty', () => {
     const [s0] = init()
     const { bag } = buildBag()
-    expect(bag.empty['data-visible'](s0)).toBe(true)
+    expect(read(bag.empty['data-visible'], s0)).toBe(true)
   })
 
   it('empty is not visible when there are pending entries', () => {
@@ -182,6 +183,6 @@ describe('agentConfirm: connect', () => {
     const entry = makeEntry({ id: 'e1' })
     const [s1] = update(s0, { type: 'Propose', entry })
     const { bag } = buildBag()
-    expect(bag.empty['data-visible'](s1)).toBe(false)
+    expect(read(bag.empty['data-visible'], s1)).toBe(false)
   })
 })

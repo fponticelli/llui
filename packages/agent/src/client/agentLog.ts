@@ -50,37 +50,33 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send } from '@llui/dom'
-
-// Sentinel for the memoization slot — distinguishable from any
-// possible parent state value (including null/undefined).
-const UNSET: unique symbol = Symbol('agent-log-visible-unset')
+import { tagSend, type Send, type Signal } from '@llui/dom'
 
 /**
- * Static prop bag with reactive accessors. See agentConnect.ts for
- * the rationale.
+ * Static prop bag with reactive (Signal-handle) values. See
+ * agentConnect.ts for the rationale.
  *
- * `visibleEntries` is exposed as a reactive accessor returning the
- * filtered entry list — pass it to `each` directly:
- *   each(bag.visibleEntries, (e) => …)
+ * `visibleEntries` is exposed as a Signal handle of the filtered entry
+ * list — pass it to `each` directly:
+ *   each(bag.visibleEntries, { key, render })
  */
-export type ConnectBag<S> = {
+export type ConnectBag = {
   root: { 'data-scope': 'agent-log' }
-  list: { 'data-part': 'list'; 'data-count': (s: S) => number }
+  list: { 'data-part': 'list'; 'data-count': Signal<number> }
   entryItem: (id: string) => {
     'data-part': 'entry'
     'data-id': string
-    'data-kind': (s: S) => LogKind | 'missing'
+    'data-kind': Signal<LogKind | 'missing'>
   }
   filterControls: {
-    clearButton: { onClick: () => void; disabled: (s: S) => boolean }
+    clearButton: { onClick: () => void; disabled: Signal<boolean> }
     setFilter: (filter: AgentLogFilter) => void
   }
   /** Filtered view of entries — respects state.filter. */
-  visibleEntries: (s: S) => LogEntry[]
+  visibleEntries: Signal<readonly LogEntry[]>
   /**
-   * Reactive accessor for an entry's structural diff (JSON-Patch).
-   * Returns the entry's `stateDiff` when present, `null` otherwise —
+   * Reactive (Signal) value for an entry's structural diff (JSON-Patch).
+   * Resolves to the entry's `stateDiff` when present, `null` otherwise —
    * `null` covers three distinct cases: the entry exists but its kind
    * (read / proposed / etc.) doesn't carry a diff; the entry was filtered
    * out; the entry was evicted by the ring-buffer or never appended.
@@ -93,70 +89,64 @@ export type ConnectBag<S> = {
    * what consumers expect when reading from a sidecar that may outlive
    * the visibility filter.
    */
-  entryDiff: (id: string) => (s: S) => StateDiff | null
+  entryDiff: (id: string) => Signal<StateDiff | null>
 }
 
-export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>): ConnectBag<S> {
-  // Memoize the filter result by parent-state reference. Each render
-  // pass typically calls `visibleEntries`, `list['data-count']`, and
-  // every `entryItem(id)['data-kind']` — without this, an `each` loop
-  // over visibleEntries triggers O(n) filter recomputes per item.
-  // Parent state is immutable (TEA), so reference equality is enough.
-  // Using a single-slot cache rather than a WeakMap because consumers
-  // call from a hot path and a single recent state covers >99% of hits.
-  let lastState: S | typeof UNSET = UNSET
-  let lastResult: LogEntry[] = []
-  const visible = (state: S): LogEntry[] => {
-    if (state === lastState) return lastResult
-    const s = get(state)
-    lastResult = s.entries.filter((e) => {
-      if (s.filter.kinds && !s.filter.kinds.includes(e.kind)) return false
-      if (s.filter.since !== undefined && e.at < s.filter.since) return false
-      return true
-    })
-    lastState = state
-    return lastResult
-  }
-  const findVisible = (state: S, id: string): LogEntry | undefined =>
-    visible(state).find((x) => x.id === id)
+function filterEntries(s: AgentLogState): readonly LogEntry[] {
+  return s.entries.filter((e) => {
+    if (s.filter.kinds && !s.filter.kinds.includes(e.kind)) return false
+    if (s.filter.since !== undefined && e.at < s.filter.since) return false
+    return true
+  })
+}
 
-  // Per-id diff accessor cache. The `each(bag.visibleEntries)` pattern
+export function connect(state: Signal<AgentLogState>, send: Send<AgentLogMsg>): ConnectBag {
+  // A single derived handle for the filtered list; reused by the
+  // per-item lookups below so the filter logic lives in one place.
+  const visible = state.map(filterEntries)
+
+  // Per-id derived-signal cache. The `each(bag.visibleEntries)` pattern
   // calls `bag.entryDiff(entry.id)` once per row at view-construction —
-  // memoizing keeps each row's accessor stable across re-renders, so
-  // the underlying binding's `lastValue` short-circuits repeat reads
-  // when state hasn't changed (parent state ref equality is sufficient
-  // because TEA state is immutable). Without this, every view pass
-  // would allocate a fresh closure and the binding would re-fire even
-  // though the entry's diff is invariant for an entry's lifetime.
-  const diffAccessorCache = new Map<string, (s: S) => StateDiff | null>()
-  const findById = (state: S, id: string): LogEntry | undefined =>
-    get(state).entries.find((x) => x.id === id)
+  // caching keeps each row's handle stable across re-renders, so the
+  // underlying binding short-circuits when state hasn't changed.
+  const diffSignalCache = new Map<string, Signal<StateDiff | null>>()
+  const kindSignalCache = new Map<string, Signal<LogKind | 'missing'>>()
 
   return {
     root: { 'data-scope': 'agent-log' },
     list: {
       'data-part': 'list',
-      'data-count': (s) => visible(s).length,
+      'data-count': visible.map((entries) => entries.length),
     },
     entryItem: (id) => ({
       'data-part': 'entry',
       'data-id': id,
-      'data-kind': (s) => findVisible(s, id)?.kind ?? 'missing',
+      'data-kind': (() => {
+        const cached = kindSignalCache.get(id)
+        if (cached) return cached
+        const handle = state.map(
+          (s): LogKind | 'missing' => filterEntries(s).find((x) => x.id === id)?.kind ?? 'missing',
+        )
+        kindSignalCache.set(id, handle)
+        return handle
+      })(),
     }),
     filterControls: {
       clearButton: {
         onClick: tagSend(send, ['Clear'], () => send({ type: 'Clear' })),
-        disabled: (s) => get(s).entries.length === 0,
+        disabled: state.map((s) => s.entries.length === 0),
       },
       setFilter: (filter) => send({ type: 'SetFilter', filter }),
     },
     visibleEntries: visible,
     entryDiff: (id) => {
-      const cached = diffAccessorCache.get(id)
+      const cached = diffSignalCache.get(id)
       if (cached) return cached
-      const accessor = (s: S): StateDiff | null => findById(s, id)?.stateDiff ?? null
-      diffAccessorCache.set(id, accessor)
-      return accessor
+      const handle = state.map(
+        (s): StateDiff | null => s.entries.find((x) => x.id === id)?.stateDiff ?? null,
+      )
+      diffSignalCache.set(id, handle)
+      return handle
     },
   }
 }

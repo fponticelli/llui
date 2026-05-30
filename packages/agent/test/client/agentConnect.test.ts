@@ -6,6 +6,7 @@ import type {
   AgentConnectInitOpts,
 } from '../../src/client/agentConnect.js'
 import type { AgentEffect } from '../../src/client/effects.js'
+import { rootSignal, read } from './_signal.js'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -440,50 +441,46 @@ describe('agentConnect', () => {
 // ── connect helper tests ──────────────────────────────────────────────────────
 
 describe('agentConnect.connect', () => {
-  type ParentState = { agent: AgentConnectState }
-
-  it('returns a static bag with reactive accessors', () => {
+  it('returns a static bag with reactive (Signal handle) values', () => {
     const [agentState] = init(opts)
-    const parentState: ParentState = { agent: agentState }
-    const bag = connect<ParentState>((s) => s.agent, vi.fn())
+    const bag = connect(rootSignal<AgentConnectState>(), vi.fn())
     expect(bag.root['data-scope']).toBe('agent-connect')
-    // 'data-state' is a function: (s) => string
-    expect(bag.root['data-state'](parentState)).toBe('idle')
+    // 'data-state' is a Signal handle of the status string
+    expect(read(bag.root['data-state'], agentState)).toBe('idle')
     expect(bag.mintTrigger).toBeDefined()
     expect(bag.error).toBeDefined()
   })
 
   it('mintTrigger.onClick dispatches Mint', () => {
     const sendFn = vi.fn()
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
     bag.mintTrigger.onClick()
     expect(sendFn).toHaveBeenCalledWith({ type: 'Mint' })
   })
 
   it('mintTrigger.disabled reflects status — false in idle', () => {
     const [agentState] = init(opts)
-    const parentState: ParentState = { agent: agentState }
-    const bag = connect<ParentState>((s) => s.agent, vi.fn())
-    expect(bag.mintTrigger.disabled(parentState)).toBe(false)
+    const bag = connect(rootSignal<AgentConnectState>(), vi.fn())
+    expect(read(bag.mintTrigger.disabled, agentState)).toBe(false)
   })
 
   it('mintTrigger.disabled is true during minting, pending-claude, and active', () => {
     const sendFn = vi.fn()
     const [s0] = init(opts)
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
 
     const [minting] = update(s0, { type: 'Mint' }, opts)
-    expect(bag.mintTrigger.disabled({ agent: minting })).toBe(true)
+    expect(read(bag.mintTrigger.disabled, minting)).toBe(true)
 
     const [pending] = update(
       minting,
       { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt },
       opts,
     )
-    expect(bag.mintTrigger.disabled({ agent: pending })).toBe(true)
+    expect(read(bag.mintTrigger.disabled, pending)).toBe(true)
 
     const [active] = update(pending, { type: 'ActivatedByClaude' }, opts)
-    expect(bag.mintTrigger.disabled({ agent: active })).toBe(true)
+    expect(read(bag.mintTrigger.disabled, active)).toBe(true)
   })
 
   it('mintTrigger.disabled is false in error state', () => {
@@ -494,27 +491,27 @@ describe('agentConnect.connect', () => {
       { type: 'MintFailed', error: { code: 'internal', detail: 'oops' } },
       opts,
     )
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
-    expect(bag.mintTrigger.disabled({ agent: errState })).toBe(false)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
+    expect(read(bag.mintTrigger.disabled, errState)).toBe(false)
   })
 
   it('revokeButton(tid).onClick dispatches Revoke with that tid', () => {
     const sendFn = vi.fn()
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
     bag.revokeButton(tid).onClick()
     expect(sendFn).toHaveBeenCalledWith({ type: 'Revoke', tid })
   })
 
   it('error.onClick dispatches ClearError', () => {
     const sendFn = vi.fn()
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
     bag.error.onClick()
     expect(sendFn).toHaveBeenCalledWith({ type: 'ClearError' })
   })
 
   it('copyConnectSnippetButton.onClick dispatches CopyConnectSnippet (state read happens in update)', () => {
     const sendFn = vi.fn()
-    const bag = connect<ParentState>((s) => s.agent, sendFn)
+    const bag = connect(rootSignal<AgentConnectState>(), sendFn)
     bag.copyConnectSnippetButton.onClick()
     expect(sendFn).toHaveBeenCalledWith({ type: 'CopyConnectSnippet' })
   })

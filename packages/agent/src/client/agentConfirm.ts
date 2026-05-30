@@ -73,72 +73,70 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send } from '@llui/dom'
+import { tagSend, type Send, type Signal } from '@llui/dom'
 
 /**
- * Static prop bag with reactive accessors. See agentConnect.ts for
- * the rationale; spread directly into element helpers and the LLui
- * runtime re-evaluates function-valued props on dirty bits.
+ * Static prop bag with reactive (Signal-handle) values. See
+ * agentConnect.ts for the rationale; spread directly into element
+ * helpers and the LLui runtime re-evaluates handle-valued props on
+ * dirty bits.
  *
  * Per-entry props are exposed as a function `entry(id)` that returns
- * a sub-bag whose values are themselves reactive — caller passes the
- * id once, gets back a bag they can spread.
+ * a sub-bag whose values are themselves reactive Signal handles —
+ * caller passes the id once, gets back a bag they can spread.
  */
-export type ConnectBag<S> = {
+export type ConnectBag = {
   root: { 'data-scope': 'agent-confirm' }
   /**
-   * Resolves a per-entry sub-bag. The returned bag's accessors look
-   * up the entry by `id` lazily, so the bag stays valid even after
+   * Resolves a per-entry sub-bag. The returned bag's handles look up
+   * the entry by `id` lazily, so the bag stays valid even after
    * approve/reject mutates the entry's status.
    */
   entry: (id: string) => {
     card: {
       'data-part': 'entry'
-      'data-status': (s: S) => 'pending' | 'approved' | 'rejected' | 'missing'
+      'data-status': Signal<'pending' | 'approved' | 'rejected' | 'missing'>
       'data-id': string
     }
-    approveButton: { onClick: () => void; disabled: (s: S) => boolean }
-    rejectButton: { onClick: () => void; disabled: (s: S) => boolean }
-    intentText: (s: S) => string
-    reasonText: (s: S) => string | null
-    payloadText: (s: S) => string
+    approveButton: { onClick: () => void; disabled: Signal<boolean> }
+    rejectButton: { onClick: () => void; disabled: Signal<boolean> }
+    intentText: Signal<string>
+    reasonText: Signal<string | null>
+    payloadText: Signal<string>
   }
-  empty: { 'data-part': 'empty'; 'data-visible': (s: S) => boolean }
+  empty: { 'data-part': 'empty'; 'data-visible': Signal<boolean> }
 }
 
-export function connect<S>(
-  get: (s: S) => AgentConfirmState,
-  send: Send<AgentConfirmMsg>,
-): ConnectBag<S> {
-  const findEntry = (state: S, id: string): ConfirmEntry | undefined =>
-    get(state).pending.find((e) => e.id === id)
+export function connect(state: Signal<AgentConfirmState>, send: Send<AgentConfirmMsg>): ConnectBag {
+  const findEntry = (s: AgentConfirmState, id: string): ConfirmEntry | undefined =>
+    s.pending.find((e) => e.id === id)
 
   return {
     root: { 'data-scope': 'agent-confirm' },
     entry: (id) => ({
       card: {
         'data-part': 'entry',
-        'data-status': (s) => findEntry(s, id)?.status ?? 'missing',
+        'data-status': state.map((s) => findEntry(s, id)?.status ?? 'missing'),
         'data-id': id,
       },
       approveButton: {
         onClick: tagSend(send, ['Approve'], () => send({ type: 'Approve', id })),
-        disabled: (s) => findEntry(s, id)?.status !== 'pending',
+        disabled: state.map((s) => findEntry(s, id)?.status !== 'pending'),
       },
       rejectButton: {
         onClick: tagSend(send, ['Reject'], () => send({ type: 'Reject', id })),
-        disabled: (s) => findEntry(s, id)?.status !== 'pending',
+        disabled: state.map((s) => findEntry(s, id)?.status !== 'pending'),
       },
-      intentText: (s) => findEntry(s, id)?.intent ?? '',
-      reasonText: (s) => findEntry(s, id)?.reason ?? null,
-      payloadText: (s) => {
+      intentText: state.map((s) => findEntry(s, id)?.intent ?? ''),
+      reasonText: state.map((s) => findEntry(s, id)?.reason ?? null),
+      payloadText: state.map((s) => {
         const e = findEntry(s, id)
         return e ? JSON.stringify(e.payload, null, 2) : ''
-      },
+      }),
     }),
     empty: {
       'data-part': 'empty',
-      'data-visible': (s) => get(s).pending.length === 0,
+      'data-visible': state.map((s) => s.pending.length === 0),
     },
   }
 }

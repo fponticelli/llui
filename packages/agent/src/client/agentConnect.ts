@@ -1,4 +1,4 @@
-import { tagSend, type Send } from '@llui/dom'
+import { tagSend, type Send, type Signal } from '@llui/dom'
 import type { AgentSession, AgentToken } from '../protocol.js'
 import type { AgentEffect } from './effects.js'
 
@@ -451,68 +451,65 @@ export type AgentConnectConnectOptions = {
 }
 
 /**
- * Static prop bag with reactive accessors. Mirrors the @llui/components
- * pattern (e.g. `dialog.connect`): callers spread bag keys directly
- * into element helpers, and function-valued props re-evaluate per
- * binding-mask hit. The previous shape — `(state) => bag` — required
- * callers to wrap every prop access in their own arrow, which the
- * documented usage didn't do (and silently produced `undefined` props
- * when spread).
+ * Static prop bag with reactive (Signal-handle) values. Mirrors the
+ * @llui/components pattern (e.g. `dialog.connect`): callers spread bag
+ * keys directly into element helpers, and handle-valued props re-evaluate
+ * per binding-mask hit. The caller passes the `agent-connect` state slice
+ * as a `Signal`; reactive props are derived from it via `state.map(...)`.
  */
-export type ConnectBag<S> = {
-  root: { 'data-scope': 'agent-connect'; 'data-state': (s: S) => AgentConnectStatus }
-  mintTrigger: { onClick: () => void; disabled: (s: S) => boolean }
-  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': (s: S) => boolean }
-  copyConnectSnippetButton: { onClick: () => void; disabled: (s: S) => boolean }
+export type ConnectBag = {
+  root: { 'data-scope': 'agent-connect'; 'data-state': Signal<AgentConnectStatus> }
+  mintTrigger: { onClick: () => void; disabled: Signal<boolean> }
+  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': Signal<boolean> }
+  copyConnectSnippetButton: { onClick: () => void; disabled: Signal<boolean> }
   sessionsList: { 'data-part': 'sessions-list' }
   sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
   revokeButton: (tid: string) => { onClick: () => void }
-  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': (s: S) => boolean }
+  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': Signal<boolean> }
   resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
   resumeButton: (tid: string) => { onClick: () => void }
   dismissButton: (tid: string) => { onClick: () => void }
   error: {
     'data-part': 'error'
-    'data-visible': (s: S) => boolean
+    'data-visible': Signal<boolean>
     onClick: () => void
   }
 }
 
 /**
- * Builds prop bags for the view. Static-bag-with-reactive-accessors
- * shape (matches the @llui/components convention); spread directly
- * into element helpers.
+ * Builds prop bags for the view. Static-bag-with-Signal-handles shape
+ * (matches the @llui/components convention); spread directly into
+ * element helpers.
  */
-export function connect<S>(
-  get: (s: S) => AgentConnectState,
+export function connect(
+  state: Signal<AgentConnectState>,
   send: Send<AgentConnectMsg>,
   _opts: AgentConnectConnectOptions = {},
-): ConnectBag<S> {
+): ConnectBag {
   return {
     root: {
       'data-scope': 'agent-connect',
-      'data-state': (s) => get(s).status,
+      'data-state': state.map((s) => s.status),
     },
     mintTrigger: {
       onClick: tagSend(send, ['Mint'], () => send({ type: 'Mint' })),
-      disabled: (s) => {
-        const cs = get(s)
-        return cs.status === 'minting' || cs.status === 'pending-claude' || cs.status === 'active'
-      },
+      disabled: state.map(
+        (s) => s.status === 'minting' || s.status === 'pending-claude' || s.status === 'active',
+      ),
     },
     pendingTokenBox: {
       'data-part': 'pending-token',
-      'data-visible': (s) => get(s).pendingToken !== null,
+      'data-visible': state.map((s) => s.pendingToken !== null),
     },
     copyConnectSnippetButton: {
       // The handler reads state at click time via the Msg/effect path:
       // CopyConnectSnippet → update() reads pendingToken.connectSnippet
       // → effect AgentClipboardWrite writes to navigator.clipboard.
       // Routing through update() keeps state reads out of event
-      // handlers, which is what makes the static-bag-with-reactive-
-      // accessors shape work cleanly.
+      // handlers, which is what makes the static-bag-with-Signal-
+      // handles shape work cleanly.
       onClick: tagSend(send, ['CopyConnectSnippet'], () => send({ type: 'CopyConnectSnippet' })),
-      disabled: (s) => get(s).pendingToken === null,
+      disabled: state.map((s) => s.pendingToken === null),
     },
     sessionsList: { 'data-part': 'sessions-list' },
     sessionItem: (tid) => ({ 'data-part': 'session-item', 'data-tid': tid }),
@@ -521,7 +518,7 @@ export function connect<S>(
     }),
     resumeBanner: {
       'data-part': 'resume-banner',
-      'data-visible': (s) => get(s).resumable.length > 0,
+      'data-visible': state.map((s) => s.resumable.length > 0),
     },
     resumeItem: (tid) => ({ 'data-part': 'resume-item', 'data-tid': tid }),
     resumeButton: (tid) => ({
@@ -537,7 +534,7 @@ export function connect<S>(
     }),
     error: {
       'data-part': 'error',
-      'data-visible': (s) => get(s).error !== null,
+      'data-visible': state.map((s) => s.error !== null),
       onClick: tagSend(send, ['ClearError'], () => send({ type: 'ClearError' })),
     },
   }
