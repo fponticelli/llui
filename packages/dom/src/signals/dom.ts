@@ -41,6 +41,11 @@ interface BindingSpec {
   deps: readonly string[]
   produce: Producer
   commit: (value: unknown) => void
+  // A structural primitive's spec (show/branch/each): its `produce` is identity
+  // and `commit` reconciles arms/rows owning child scopes. Structural specs make
+  // themselves row-aware at build time (see `c.inRow`), so the enclosing `each`'s
+  // value-spec rebasing must SKIP them rather than rewrite their identity produce.
+  structural?: boolean
 }
 
 interface BuildCtx {
@@ -61,6 +66,11 @@ interface BuildCtx {
    * clone. `ownContexts` tracks whether `contexts` is this build's private copy. */
   contexts: ReadonlyMap<symbol, unknown>
   ownContexts: boolean
+  /** True when this build is INSIDE an `each` row's combined `{ item, state, index }`
+   * ctx (set by `signalEach` for row builds, inherited by nested arm/row builds via
+   * `runBuild`). Structural primitives use it to resolve component-state reads
+   * against `ctx.state` and item/index against the row ctx, at every depth. */
+  inRow: boolean
   /** live agent-affordance registry: tagged-send variant → refcount. SHARED by
    * reference across the whole component (root + every reactive row/arm build),
    * so `each`/`show`/`branch` registrations and their teardowns all affect the
@@ -218,6 +228,10 @@ function runBuild(
   // in-scope contexts at a `pageSlot()` and replays them here so contexts
   // provided ABOVE a slot reach the nested page's SEPARATE build/mount pass.
   seedContexts?: ReadonlyMap<symbol, unknown>,
+  // Force this build's `inRow` true (set by `signalEach` for its row builds).
+  // Otherwise `inRow` is inherited from the parent build, so arm/nested builds
+  // inside a row stay row-aware.
+  forceInRow = false,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
@@ -241,7 +255,8 @@ function runBuild(
   // SHARE the descriptor registry by reference (root one if present) so row/arm
   // registrations and decrements land in the component's single registry.
   const descriptors = parent?.descriptors ?? new Map<string, number>()
-  ctx = { specs, doc, host, teardowns, mounts, contexts, ownContexts: false, descriptors }
+  const inRow = forceInRow || parent?.inRow || false
+  ctx = { specs, doc, host, teardowns, mounts, contexts, ownContexts: false, inRow, descriptors }
   let nodes: readonly Node[]
   try {
     nodes = build()
@@ -386,17 +401,31 @@ function isRowLocalDep(d: string): boolean {
   )
 }
 
-/** Re-root a component-state-rooted row spec so it reads `ctx.state` (the
+/** Re-root a single dependency path from the component state onto the combined
+ * row ctx: a non-row-local component path `p` becomes `state.p` (and the whole
+ * state `''` becomes `state`); row-local paths (`item`/`index`/`state.*`) keep. */
+const rebaseRowDep = (d: string): string =>
+  isRowLocalDep(d) ? d : d === '' ? 'state' : `state.${d}`
+
+/** Re-root a component-state-rooted VALUE row spec so it reads `ctx.state` (the
  * component state) instead of the combined row ctx — the fix that lets a
  * `connect()` part (or any enclosing-view signal) compose inside an authoring
  * `each` row. Row-local specs (and all compiled rows) pass through untouched. */
 function rebaseRowSpec(spec: BindingSpec): BindingSpec {
   if (spec.deps.every(isRowLocalDep)) return spec
   return {
-    deps: spec.deps.map((d) => (isRowLocalDep(d) ? d : d === '' ? 'state' : `state.${d}`)),
+    deps: spec.deps.map(rebaseRowDep),
     produce: (ctx) => spec.produce((ctx as { state: unknown }).state),
     commit: spec.commit,
   }
+}
+
+/** Rebase every VALUE spec in a row/arm build to read `ctx.state`, leaving
+ * STRUCTURAL specs (show/branch/each) untouched — they make themselves row-aware
+ * at build time (`c.inRow`), so rewriting their identity produce would break the
+ * arm/row mount. */
+function rebaseRowSpecs(specs: readonly BindingSpec[]): BindingSpec[] {
+  return specs.map((s) => (s.structural ? s : rebaseRowSpec(s)))
 }
 
 /** Build a chunked-mask reconciler scope over a set of collected bindings. */
@@ -484,6 +513,10 @@ export function signalEach<T>(
 ): Node {
   const c = requireCtx()
   const doc = c.doc
+  // When this each is itself nested in an enclosing row, its reconcile must
+  // receive the component state (`ctx.state`), so its own rows mount with
+  // `ctx.state` = the component state (not the enclosing row ctx).
+  const inRow = c.inRow
   const start = doc.createComment('each')
   const end = doc.createComment('/each')
   const frag = doc.createDocumentFragment()
@@ -545,20 +578,24 @@ export function signalEach<T>(
       if (!row) {
         const ctx: RowCtx<T> = { item, state, index }
         const holder = { ctx }
-        const built = runBuild(doc, () => renderRow(() => holder.ctx), c)
-        // Probe the template once (all rows share it): does any spec need rebasing
-        // (non-row-local dep), and does any binding read component state? Computed
-        // from the ORIGINAL deps before rebasing.
+        // forceInRow: the row build (and every nested arm/row build) operates on
+        // the combined ctx, so structural primitives inside it become row-aware.
+        const built = runBuild(doc, () => renderRow(() => holder.ctx), c, undefined, true)
+        // Probe the template once (all rows share it): does any VALUE spec need
+        // rebasing (non-row-local dep), and does any binding read component state?
+        // Structural specs make themselves row-aware, so they're excluded here.
         if (!templateProbed) {
           templateProbed = true
-          needsRebase = built.specs.some((s) => s.deps.some((d) => !isRowLocalDep(d)))
+          needsRebase = built.specs.some(
+            (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
+          )
           templateReadsState =
             needsRebase ||
             built.specs.some((s) => s.deps.some((d) => d === 'state' || d.startsWith('state.')))
         }
-        // Re-root any component-state-rooted bindings (e.g. connect() parts placed
+        // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
-        if (needsRebase) built.specs = built.specs.map(rebaseRowSpec)
+        if (needsRebase) built.specs = rebaseRowSpecs(built.specs)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
@@ -661,11 +698,13 @@ export function signalEach<T>(
   }
 
   // structural binding: fires when the list deps change; produce returns the
-  // whole component state so reconcile can build each row's combined ctx.
+  // component state so reconcile can build each row's combined ctx. Nested in an
+  // enclosing row, it reads `ctx.state` and its deps rebase onto that combined ctx.
   c.specs.push({
-    deps: source.deps,
-    produce: (s) => s,
+    deps: inRow ? source.deps.map(rebaseRowDep) : source.deps,
+    produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
     commit: (s) => reconcile(s),
+    structural: true,
   })
 
   // On host dispose, tear down every live row (onMount cleanups, foreign
@@ -702,6 +741,12 @@ export function signalShow(
   const c = requireCtx()
   const doc = c.doc
   const ownerHost = c.host
+  // Inside an each row the scope state is the combined ctx `{ item, state }`. The
+  // arm is child-propagated that full ctx, so it must MOUNT on it (not on the
+  // component state); the condition is evaluated against `ctx.state` and the arm's
+  // value specs are rebased to read `ctx.state`.
+  const inRow = c.inRow
+  const stateOf = (s: unknown): unknown => (inRow ? (s as { state: unknown }).state : s)
   const start = doc.createComment('show')
   const end = doc.createComment('/show')
   const frag = doc.createDocumentFragment()
@@ -718,7 +763,7 @@ export function signalShow(
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const on = Boolean(cond.produce(state))
+    const on = Boolean(cond.produce(stateOf(state)))
     if (mounted && mounted.on === on) return // same arm — inner scope handles updates
 
     if (mounted) {
@@ -731,8 +776,9 @@ export function signalShow(
     const arm = on ? render : orElse
     if (arm) {
       const built = runBuild(doc, arm, c)
+      if (inRow) built.specs = rebaseRowSpecs(built.specs) // value reads → ctx.state
       const scope = buildAndPublishScope(built)
-      scope.mount(state) // content reads the component state
+      scope.mount(state) // mount on the same (combined-ctx) state child-prop will feed
       for (const n of built.nodes) parent.insertBefore(n, end)
       ownerHost.scope?.addChild(scope) // receive future state updates while mounted
       runMounts(built.mounts, parent as Element, built.teardowns)
@@ -741,8 +787,15 @@ export function signalShow(
   }
 
   // Gated by the condition's deps (reconcile only when the condition may change);
-  // produce returns the state so reconcile can mount content against it.
-  c.specs.push({ deps: cond.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+  // produce returns the full state so reconcile can mount the arm against it. In a
+  // row, the deps are rebased onto the combined ctx so gating fires on `ctx.state`
+  // changes; `structural: true` keeps the enclosing each from rewriting `produce`.
+  c.specs.push({
+    deps: inRow ? cond.deps.map(rebaseRowDep) : cond.deps,
+    produce: (s) => s,
+    commit: (s) => reconcile(s),
+    structural: true,
+  })
 
   // On host dispose, tear down the currently-mounted arm (onMount cleanups,
   // foreign unmounts) — otherwise reference-counted side effects (scroll lock,
@@ -771,6 +824,11 @@ export function signalBranch(
   const c = requireCtx()
   const doc = c.doc
   const ownerHost = c.host
+  // See signalShow: in an each row the arm is child-propagated the combined ctx,
+  // so the discriminant is evaluated against `ctx.state`, the arm mounts on the
+  // full ctx, and the arm's value specs are rebased to read `ctx.state`.
+  const inRow = c.inRow
+  const stateOf = (s: unknown): unknown => (inRow ? (s as { state: unknown }).state : s)
   const start = doc.createComment('branch')
   const end = doc.createComment('/branch')
   const frag = doc.createDocumentFragment()
@@ -787,7 +845,7 @@ export function signalBranch(
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const key = String(disc.produce(state))
+    const key = String(disc.produce(stateOf(state)))
     if (mounted && mounted.key === key) return // same arm — inner scope handles updates
 
     if (mounted) {
@@ -800,6 +858,7 @@ export function signalBranch(
     const render = arms[key]
     if (render) {
       const built = runBuild(doc, render, c)
+      if (inRow) built.specs = rebaseRowSpecs(built.specs)
       const scope = buildAndPublishScope(built)
       scope.mount(state)
       for (const n of built.nodes) parent.insertBefore(n, end)
@@ -809,7 +868,12 @@ export function signalBranch(
     }
   }
 
-  c.specs.push({ deps: disc.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+  c.specs.push({
+    deps: inRow ? disc.deps.map(rebaseRowDep) : disc.deps,
+    produce: (s) => s,
+    commit: (s) => reconcile(s),
+    structural: true,
+  })
 
   // On host dispose, tear down the mounted arm (see signalShow for rationale).
   c.teardowns.push(() => {
@@ -1213,6 +1277,9 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
 export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   const c = requireCtx()
   const doc = c.doc
+  // Nested in an enclosing row, reconcile reads the component state from the
+  // combined ctx (so rows window/mount against it, not the enclosing row ctx).
+  const inRow = c.inRow
   const overscan = spec.overscan ?? 3
 
   const scroll = doc.createElement('div') as HTMLElement
@@ -1287,7 +1354,10 @@ export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         positionWrapper(wrapper, index)
         const rowCtx: RowCtx<T> = { item, state, index }
         const holder = { ctx: rowCtx }
-        const built = runBuild(doc, () => spec.renderRow(() => holder.ctx), c)
+        // forceInRow + rebase the row's value specs to read ctx.state (same as
+        // signalEach), so component-state reads in a virtual row resolve correctly.
+        const built = runBuild(doc, () => spec.renderRow(() => holder.ctx), c, undefined, true)
+        built.specs = rebaseRowSpecs(built.specs)
         const scope = buildAndPublishScope(built)
         scope.mount(rowCtx)
         for (const n of built.nodes) wrapper.appendChild(n)
@@ -1337,7 +1407,12 @@ export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
 
   // Structural binding gated on the list deps: re-window + resize when items
   // change. produce returns the whole state so reconcile can build row ctxs.
-  c.specs.push({ deps: spec.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+  c.specs.push({
+    deps: inRow ? spec.deps.map(rebaseRowDep) : spec.deps,
+    produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
+    commit: (s) => reconcile(s),
+    structural: true,
+  })
 
   // On host dispose: detach the scroll listener and tear down every live row.
   c.teardowns.push(() => {
