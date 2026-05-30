@@ -11,6 +11,14 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — @llui/dom@0.5.2
+
+**Released:** `@llui/dom@0.5.2`
+
+### `@llui/dom@0.5.2`
+
+- **Fixed** tearing down a `show`/`branch` arm (on swap or dispose) removed only the arm's own nodes, orphaning the content a **nested** `show`/`branch`/`each` had mounted between its own anchors (a sibling, not captured) — so swapping an outer arm left inner content behind in the DOM. Arm teardown now clears everything between the primitive's `start`/`end` anchors, at any nesting depth (the inner primitive's teardown still runs first, for `foreign`/`onMount` cleanups). Dom-family consumers need no republish — `^0.5.0` already accepts `0.5.2`.
+
 ## 2026-05-30 — @llui/dom@0.5.1
 
 **Released:** `@llui/dom@0.5.1`
