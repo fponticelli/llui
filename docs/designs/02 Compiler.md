@@ -1,632 +1,183 @@
-# LLui Vite Plugin Compiler
+# LLui Compiler
 
-The LLui Vite plugin is a compile-time transformation that converts high-level component authoring syntax into a lower-level representation optimised for surgical DOM updates. It runs inside Vite's `transform()` hook, operates on `.ts` and `.tsx` files that import from `'@llui/dom'`, and produces output that is semantically identical but structurally pre-classified for the runtime update loop.
+The LLui compiler is a compile-time transformation that lowers high-level signal authoring syntax into the lower-level runtime form, enforces a set of non-bypassable correctness rules, and emits introspection metadata for the agent/debug surface. It is the `@llui/compiler` package; the `@llui/vite-plugin` package is the Vite adapter that wires it into a build.
 
-This document describes the technology choice, the three compiler passes and their ordering rationale, what genuinely benefits from compile-time analysis, what should not be attempted, common patterns that appear valuable but are not, and directions worth exploring.
+This document describes the technology choice, the single signal transform and the analysis infrastructure it shares, the compile-time lint rules, what genuinely benefits from compile-time work, what should not be attempted, and the correctness invariants the transform must preserve.
+
+There is **one transform path**. The earlier three-pass bitmask compiler — static/dynamic prop split, `__dirty`/`__prefixes` synthesis, mask injection, `elSplit`/`elTemplate` emission, per-message `__handlers`, import elision — was deleted with the legacy runtime. Nothing below describes a fallback to it because it no longer exists.
 
 ---
 
 ## Recommended Technology Stack
 
-**Use the TypeScript Compiler API exclusively.** The recommendation is to stay on `ts.createSourceFile` / `ts.transform` / `ts.factory` for all AST work and not migrate to Babel, SWC, or any custom parser.
+**Use the TypeScript Compiler API exclusively.** All AST work stays on `ts.createSourceFile` / `ts.forEachChild` / `ts.is*` predicates. The transform is source→source: it parses the file, computes byte-offset edits, and splices them back, leaving everything it doesn't touch byte-for-byte intact.
 
-### Why not Babel
+### Why not Babel / SWC / a custom parser
 
-Babel's TypeScript support is a best-effort syntax strip. It does not typecheck; it does not expose `ts.TypeChecker`; and its plugin API operates on a different AST shape (Babel AST vs TypeScript AST) that requires maintaining two mental models if the surrounding codebase is otherwise pure TypeScript. More concretely: Babel cannot answer questions like "what is the declared type of `s.count`?" — a capability this compiler will need as it matures (see Open Questions). Babel is also slower to adopt new TypeScript syntax; users writing TypeScript 5.x features (const type parameters, `using` declarations, variadic tuple improvements) will hit transform failures before Babel catches up.
-
-### Why not SWC
-
-SWC is a syntax transformer. It has no type information in its transform pass and no stable public Rust API for writing custom transforms from JavaScript/TypeScript. The only entry point for custom logic is the experimental `@swc/plugin-transform-visit` WASM interface, which is immature, has no access to type information, and requires compiling Rust. SWC is excellent for production minification but the wrong tool for semantic analysis.
-
-### Why not a custom parser
-
-A custom parser would need to handle: type annotations, generics, decorators, template literal types, satisfies expressions, and every subsequent TypeScript syntax addition. This is an ongoing maintenance commitment with no upside. The TypeScript Compiler API handles all of this for free.
-
-### Why the TypeScript Compiler API
-
-- **Accurate AST.** `ts.createSourceFile` produces the canonical TypeScript AST. Every node kind, every edge case in the language grammar is handled correctly.
-- **Stability.** The AST node kinds and factory API have been stable since TypeScript 4.0. `ts.factory` replaced the older mutating API and is the correct modern entry point.
-- **Type information is available.** A `ts.Program` and `ts.TypeChecker` can be constructed from the same source. The current compiler does not use it, but it is one function call away. This matters for future passes (see Open Questions).
-- **`ts.transform` and `ts.NodeFactory` are ergonomic.** The visitor pattern used by `ts.transform` is well-understood, and `ts.factory.update*` methods preserve source positions for source map generation.
-- **Same language.** The plugin is TypeScript itself. Debugging, profiling, and extending it requires no context switch.
-
-The practical cost of the TypeScript Compiler API is verbosity — constructing a call expression with four arguments takes about fifteen lines of factory calls. This is a reasonable trade-off. The alternative costs are higher.
+Babel's TypeScript support is a best-effort syntax strip with a different AST shape and no `ts.TypeChecker`. SWC has no type information in its transform pass and no stable JS-authored custom-transform API. A custom parser would have to track every TypeScript syntax addition forever. The TypeScript Compiler API gives an accurate, stable AST for free, exposes a `ts.TypeChecker` when cross-file resolution needs one, and is the same language the compiler is written in — no context switch to debug or extend it.
 
 ### Vite Integration
 
-The plugin registers with `enforce: 'pre'` so it runs before Vite's own TypeScript stripping. This is required: if Vite strips types first, the AST the compiler sees has already lost structural information. By running pre, the compiler receives raw TypeScript source and can use `ts.createSourceFile` with `ts.ScriptKind.TS` (or `ts.ScriptKind.TSX` for `.tsx` files).
-
-The `transform()` hook is invoked per file, on demand, as the module graph is resolved. This is the correct granularity: each file is independent. Vite handles HMR invalidation and module caching; the compiler does not need to track which files have been seen.
+The plugin registers with `enforce: 'pre'` so it runs before Vite's own TypeScript stripping; otherwise the AST it sees would already have lost type structure. The `transform()` hook runs per file, on demand, as the module graph resolves — the correct granularity, since each file is analyzed independently (cross-file _resolution_ chases imports explicitly; see below). Vite handles HMR invalidation and module caching.
 
 ---
 
-## The Three Passes
+## Signal File Detection
 
-The compiler performs three logically distinct passes over each source file. They run in a specific order because each pass produces information that the next depends on.
+The adapter treats a `.ts`/`.tsx` file as a **signal file** when it both imports `@llui/dom` and contains a `component(` / `component<` call:
 
-> **Execution order:** Despite the numbering, the actual execution order is: (1) Pass 2 pre-scan runs first to build the `fieldBits` map, (2) Pass 1 transformation + Pass 2 mask injection run together in a single AST visitor, (3) Pass 3 import cleanup runs last. The passes are numbered by conceptual concern, not by execution sequence.
-
-### Pass 1: Static/Dynamic Prop Split
-
-**Input:**
-
-```typescript
-div({ class: 'foo', title: s => s.title, onClick: handler }, [...])
+```ts
+if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom['"]/.test(code)) {
+  /* run lint, lower, emit */
+}
 ```
 
-**Output:**
+This pair is unambiguous: `@llui/dom` _is_ the signal runtime. The closing-quote-anchored import pattern excludes the type-only / SSR-env sub-entries (`@llui/dom/internal`, `@llui/dom/ssr/*`, `@llui/dom/devtools`), so a file that imports only those never trips detection. A signal file may use `.at()`, only `.map()`, or a fully static view — all are handled. Non-signal `.ts`/`.tsx` files pass through untouched.
 
-```typescript
-elSplit(
-  'div',
-  __e => { __e.className = String('foo' ?? ''); },
-  [['click', handler]],
-  [[1, 'attr', 'title', s => s.title]],
-  [...]
-)
-```
+For each detected signal file the adapter, in order: (1) runs the signal lint and throws on any diagnostic via `this.error` (a build error — the only effective channel; see CLAUDE.md), (2) resolves cross-file Msg/State/Effect types for full introspection metadata, (3) lowers the direct view and splices introspection metadata, and (4) in dev with MCP enabled, prepends the relay bootstrap.
 
-Pass 1 classifies every property in a literal props object into one of three categories:
+---
 
-1. **Static** — the value is not an arrow function or function expression. It is applied once at mount via a generated `staticFn(elem)`. The DOM mutation is inlined directly: `elem.className = ...`, `elem.setAttribute(key, ...)`, `elem.style.setProperty(...)`, or `elem[key] = ...` depending on the prop kind. This runs once and is then garbage-collected along with the closure.
+## The Signal Transform
 
-2. **Event handler** — the key matches `/^on[A-Z]/`. The event name is extracted by lowercasing after `on` (e.g. `onClick` → `'click'`). The handler is emitted into an events array as `[eventName, handler]`. `elSplit` wires these via `addEventListener` at mount, registering a disposer on the current scope so they are properly removed when the component is destroyed.
+`transformSignalComponentSource(source, opts)` (`compiler/src/signals/transform-component.ts`) lowers a component's **direct view** to runtime helpers. The lowering is an **optimization**, not a requirement: it erases the runtime signal-handle allocation for views written inline in `component({ ... view: ({ state }) => [ … ] })`. Anything it can't lower — a view that delegates to view-helper functions, a block-body view, an aliased/multi-slice bag — still works, because the authoring helpers (`text`, `div`, `each`, `show`, `branch`, …) are **real runtime functions** that consume signal handles and build the same mask-gated bindings (see 03 Runtime DOM.md and the `signals/authoring.ts` / `signals/handle.ts` modules). The transform never has to handle every shape to stay correct; it lowers the common shape and leaves the rest to the runtime.
 
-3. **Reactive binding** — the value is an arrow function or function expression, and the key is not an event key. The prop is emitted as a `[mask, kind, key, accessor]` tuple in the bindings array. The mask comes from Pass 2 and is initially unknown at this stage — which is why Pass 2 must be a pre-scan.
+### What the lowering does
 
-**Classification of binding kind:**
+The component visitor finds `component({ … })` calls whose `view` is an arrow/function expression that (a) destructures a `state` field from its bag parameter (`({ state })` or `({ state: s })`) and (b) returns a concise array literal (`=> [ … ]` or `=> ([ … ])`). For such a view it rewrites each returned node expression and replaces only the array's byte range.
 
-| Key pattern                                                                                                                                       | Kind      | DOM mutation in runtime                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------- |
-| `class` or `className`                                                                                                                            | `'class'` | `elem.className = value`                            |
-| `style.X`                                                                                                                                         | `'style'` | `elem.style.setProperty('X', value)`                |
-| `value`, `checked`, `selected`, `disabled`, `readOnly`, `multiple`, `indeterminate`, `defaultValue`, `defaultChecked`, `innerHTML`, `textContent` | `'prop'`  | `elem[key] = value`                                 |
-| anything else                                                                                                                                     | `'attr'`  | `elem.setAttribute(key, value)` / `removeAttribute` |
+The view-expression rewrite (`transform-view.ts`) maps authored reactive slots to runtime calls:
 
-The `key` in the tuple for `style.X` is stripped to just `X` (the CSS property name), since that is what `style.setProperty` expects.
+- `text(state.at('count'))` → `signalText((s) => s.count, ['count'])`
+- `text('literal')` → `staticText('literal')`
+- `div({ class: <signal> }, [..])` → `el('div', { class: react((s) => …, [..]) }, [..])`
+- structural primitives → `signalEach` / `signalShow` / `signalBranch` (and `signalForeign`)
 
-**Bail-out conditions.** Pass 1 only transforms literal `ObjectLiteralExpression` as the first argument. Any of the following causes the helper call to be left unchanged:
+Static props, event handlers, and non-signal values are preserved verbatim; children are transformed recursively. Each-row render callbacks rebind roots so an `item` param resolves against `ctx.item` and the component `state` against `ctx.state`.
 
-- The first argument is an identifier, a variable, a spread (`...props`), or a computed property.
-- Any property in the object is not a `PropertyAssignment` or `ShorthandPropertyAssignment`.
-- The property key is not a static identifier or string literal (e.g., `[Symbol.iterator]`).
+The runtime helpers it can emit are `signalText`, `staticText`, `el`, `react`, `signalEach`, `signalShow`, `signalBranch`, and `signalForeign`. After rewriting, the transform injects `import { … } from '@llui/dom'` for exactly the helpers it actually used.
 
-This conservative stance avoids semantic breakage. A prop object in a variable might be mutated elsewhere; the compiler cannot know. Spreads merge unknown properties. Computed keys could alias static keys in unknown ways. The cost of not transforming these cases is that those call sites run through the uncompiled `div()` / `span()` path, which is functionally correct but unoptimised.
+### What is left to the runtime (the un-lowered path)
 
-### Pass 2: Dependency Analysis and Mask Injection
+When a view doesn't match the direct-view shape — it's a block body, it delegates to a helper like `dialog.overlay({ … })`, or its bag is aliased in a way the direct rewrite doesn't cover — the transform leaves the authored calls intact. At runtime, `text`/`div`/`each`/`show`/`branch`/`foreign` (the authoring surface) detect signal handles, pull `produce`+`deps` from them, and build identical bindings. The signal handle (`pathHandle` in `signals/handle.ts`) carries `produce`/`deps` precisely so view-helper composition works without static lowering. (Supporting block-body and multi-slice views in the lowering itself is a tracked optimization, not a correctness gap.)
 
-Pass 2 computes a bitmask for every reactive accessor in the file, injecting masks into the binding tuples and into `text()` calls, and synthesising a `__dirty` function into `component()` definitions.
+### Introspection metadata emission
 
-**Pre-scan phase.** Before the main AST visitor runs, Pass 2 traverses the entire source file to collect all unique state **access paths** referenced by any reactive accessor. A reactive accessor is any arrow function or function expression that:
+When agent metadata or dev mode is enabled, the transform splices metadata properties into the component config after the `view` property:
 
-- Appears as a prop value that would be classified as a reactive binding (Pass 1 criterion).
-- Appears as the first argument to `text()`.
+- `__msgSchema`, `__effectSchema` — discriminated-union schemas of `Msg` / `Effect`.
+- `__stateSchema` — the state shape.
+- `__msgAnnotations` — per-message JSDoc annotations (`@intent`, `@example`, `@humanOnly`, …).
+- `__schemaHash` — a stable hash of the schemas, for hot-reload schema-change detection.
+- `name` — inferred from the binding (`const Counter = component({…})`) unless the author set one.
+- `__componentMeta: { file, line }` — dev-only source location.
 
-The pre-scan extracts access paths through four recognition patterns, listed in order of specificity:
+User-provided fields take precedence (the splicer skips any field already present in the config). Schema extraction reuses the shared analysis infra below; the optional `@llui/compiler-introspection` and `@llui/compiler-devtools` factories (registered by the Vite plugin at import time) supply the introspection and devtools emitters.
 
-1. **Direct property access** — `param.field` or `param['field']` where `param` is the first parameter name. This is the most common pattern. Nested chains up to depth 2 are tracked: `param.user.name` produces the path `user.name`, distinct from `user.email`.
+---
 
-2. **Destructuring of the state parameter** — `const { count, title } = param` where `param` is the first parameter name. Each destructured name maps to a top-level path. Nested destructuring (`const { user: { name } } = param`) maps `name` to the path `user.name`.
+## Shared Analysis Infrastructure
 
-3. **Single-assignment alias** — `const c = param.count` where the initializer is a `PropertyAccessExpression` on the first parameter, and the variable is declared with `const` (or is never reassigned within the accessor body). Subsequent uses of `c` within the accessor map to the path `count`. Chained aliases (`const n = param.user.name`) map to the path `user.name`.
+The cross-cutting analysis modules survive from the prior architecture and back both the transform and the cross-file resolution path:
 
-4. **Element access with string literal** — `param['fieldName']` where the index is a string literal. This is handled as equivalent to `param.fieldName`.
+- **Cross-file resolver** — follows identifier references across import / re-export / barrel boundaries via the TypeChecker (`getAliasedSymbol`) to find a type's or accessor's declaring file.
+- **Msg/State schema extractors** (`msg-schema.ts`, `state-schema.ts`) — read a discriminated union or state shape into a JSON-Schema-subset: literal/primitive field types and `{ enum: [...] }` for string-literal unions; complex types fall back to `'unknown'` (passes validation unconditionally). Composition-aware: a `type Msg = ImportedFoo | { type: 'extra' }` walks into the imported union so the schema/annotations are complete.
+- **Annotation extractor** (`msg-annotations.ts`) — reads per-variant JSDoc.
+- **Accessor / dependency analysis** (`extract-deps.ts`, `collect-deps.ts`) — classifies signal expressions and their dependency paths; this is what the lint and the view-lowering both key off for roots and signal-rootedness.
+- **Schema hash** (`schema-hash.ts`).
 
-Patterns that the pre-scan **does not follow**, and which trigger the conservative `0xFFFFFFFF` bail-out with a compiler diagnostic warning:
+The Vite adapter (`preResolveTypeSources` / `preExtractCompositional`) plumbs cross-file results into the transform via `opts.typeSources` (for `State`, which isn't a union) and `opts.preExtracted` (for the composition-aware `Msg`/`Effect`/annotations). When a type lives in a sibling file, this is what keeps the emitted metadata complete instead of silently half-populated.
 
-- Computed property access with a non-literal key: `param[variable]`, `param[expr()]`.
-- Multi-hop aliases: `const u = param.user; const n = u.name` — the second assignment is not traced.
-- Closure-captured variables from outside the accessor body.
-- Access through a function call: `getUser(param).name`.
-- Spread or rest patterns that obscure which fields are read.
+---
 
-When a bail-out occurs, the compiler emits a warning identifying the exact accessor (file, line, column), the unresolvable expression, and a suggested rewrite. For example: `"Cannot determine state dependency for expression 'u.name' in accessor at line 42. Consider using 'param.user.name' directly."` This ensures the developer always knows when and why mask precision is lost.
+## Compile-Time Lint Rules
 
-This gives the set of all access paths referenced anywhere in the file.
+`lintSignalSource(source, fileName)` (`compiler/src/signals/rules.ts`) runs the signal rules over the authored source and returns diagnostics with resolved line/column. The Vite adapter surfaces **every** diagnostic as a build error through `this.error` — they are non-bypassable by design. LLMs ignore lint warnings; a build that fails closed is the only reliable channel (this is also why there is no `@llui/eslint-plugin` — the rules are compiler errors, ~44 in total across correctness/agent-protocol/conventions).
 
-**Path bits map.** Each unique access path is assigned a power-of-two bit position, in the order first encountered. Paths are the deepest observed property chain, not just top-level fields:
+The signal-specific rules:
 
-```
-user.name   → 0x0001 (bit 0)
-user.email  → 0x0002 (bit 1)
-user.avatar → 0x0004 (bit 2)
-filter      → 0x0008 (bit 3)
-todos       → 0x0010 (bit 4)
-```
+- **`peek-in-slot`** — `sig.peek()` used in a reactive slot. `.peek()` reads once and never updates; legitimate only inside event handlers and `.map`/derived bodies. The walker tracks a `peekOk` flag, flipping it true when descending into `on*` handler props and `.map`/`derived` callback bodies.
+- **`operator-on-signal`** — a reactive signal used as an operand of an arithmetic/comparison/logical binary expression, a template-literal span, a ternary condition, or a unary expression. A signal is not a value; derive with `.map(v => …)`. (A `.peek()` chain yields a plain snapshot and is allowed.)
+- **`no-node-construction-in-body`** — an element/text helper (`div`, `text`, `el`, `signalText`, …) called inside a `.map`/derived body. Derive bodies produce plain values; build DOM with a structural primitive (`each`/`branch`/`show`).
+- **`pure-derive-body`** — a side effect (`fetch`, `send`, `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`), a reactive primitive (`.peek`/`.at`/`.map` on a signal-rooted receiver), or a non-deterministic call (`Date.now`, `Math.random`) inside a `.map`/derived body. **Correctness-critical** — the analyzer's soundness (a path read only through such an expression would be invisible to dependency tracking) depends on these bans.
+- **`whole-state-to-call`** — a bare `state` root (empty dep path) passed straight to a call in a reactive position. Reading the whole state as a binding's dep makes it re-run on every change; pass a slice (`state.at('…')`) to keep the dep narrow.
 
-An accessor reading `s.user` as a whole object (not drilling into a sub-property) gets the **union** of all `user.*` bits — in this example, `0x0001 | 0x0002 | 0x0004 = 0x0007`. This is correct: a binding that consumes the entire `user` object depends on any sub-field change.
-
-**Mask capacity and overflow.** The compiler uses a single `number` mask with graceful overflow:
-
-- **≤31 paths**: each path gets one bit (positions 0–30). The Phase 2 check is one bitwise AND. Common case, fastest path.
-- **32+ paths**: the first 31 paths still get individual bits; paths 32+ receive `FULL_MASK` (-1). Their bindings re-evaluate on every dirty cycle. The compiler emits a warning naming the top-level state fields sorted by path count, so authors know exactly which slice to extract. Example: `Component at line 120 has 45 unique state access paths (14 past the 31-path limit). Top-level fields by path count: form (18), user (12), ui (8), filter (7). Extract the largest fields into child components or slice handlers.`
-
-The 31-path cap is a hard constraint of JavaScript's 32-bit signed integer bitwise operations (bit 31 is the sign bit). The overflow path is cheap (~1–4 microseconds per update at 40–80 paths), but components at that scale almost always benefit from decomposition on architectural grounds — clearer effect lifecycle, easier testing, independent state. The warning pushes authors to that structure before any runtime cost becomes a concern.
-
-**Per-accessor mask computation.** For each reactive accessor, the compiler re-traverses its body to collect the specific paths it accesses, then ORs together their assigned bits. An accessor reading `s.user.name` and `s.filter` gets mask `0x0001 | 0x0008 = 0x0009`. An accessor reading `s.user` (the whole object) gets the union `0x0007`. An accessor that accesses no tracked paths (e.g., it reads a captured local variable `() => String(x)`) gets the conservative full mask `0xFFFFFFFF`, meaning it will be re-evaluated on every update regardless of which paths changed. A compiler diagnostic warning is emitted for every accessor that receives the conservative mask, identifying the specific expression that could not be resolved.
-
-**Opaque-flow classifier.** A "precise" mask built from only the direct reads the walker can see is incorrect when the accessor flows the state identifier into an expression whose state-reading semantics aren't traceable — the binding's `(mask & dirty)` gate then silently skips updates to any field reachable only through the opaque expression. The classifier visits every appearance of the state identifier `s` and treats the use as a leak unless its parent is a known-tracked container:
-
-- The parameter binding itself (the `s` in `(s: State) => …`).
-- The root of a `PropertyAccessExpression` chain (`s.x.y…`).
-- The root of an `ElementAccessExpression` with a literal key (`s['x']`, `s[0]`).
-- `arg0` of a call whose callee is an `Identifier` and not a framework primitive (`text` / `sample` / `item` / `memo` / `unsafeHtml`) — these defer to the delegation branch, which either recurses into a resolvable local helper or marks the call opaque when the callee is a function parameter, import, destructured binding, or otherwise unresolvable.
-
-Every other context is treated as a leak: `NewExpression` arguments (`new Wrapper(s)`), `TaggedTemplateExpression` spans (``tag`${s}` ``), spread (`{ ...s }`), const aliasing (`const x = s`), ternary branches (`cond ? s : other`), method-call arguments (`obj.helper(s)`), dynamic element access (`s[key]` where the key is non-literal), and any argument position past `arg0` of an identifier-callee call. When the classifier sets the opaque flag, the accessor's mask is forced to `FULL_MASK` in **both** the low and high words — the binding then catches a dirty bit regardless of which prefix word the whole-state sentinel below lands in.
-
-**Whole-state sentinel in `__prefixes`.** A `FULL_MASK` binding only fires when `dirty` is non-zero, and `dirty` is computed from `__prefixes` — so a field read _only_ through an opaque expression never enters the prefix table and silently produces `dirty = 0` on any change. When `collect-deps` detects any opaque-flow accessor in the file (or `cross-file-walker` reports opaque flow from an imported view-helper), the synthesis pipeline appends a `(s) => s` sentinel arrow to the tail of `__prefixes`. The sentinel returns the bare state object; because immutable reducers always return a fresh state identity, its prefix bit dirties on every update. `FULL_MASK` bindings — whose mask covers all bits in both words — intersect the sentinel bit and re-evaluate. Precise narrow bindings don't include the sentinel bit (their mask is built from concrete `fieldBits` paths), so they're unaffected by its presence.
-
-This two-layer design — per-binding FULL_MASK + sentinel prefix — ensures correctness even in the worst case (the field is read **only** through the opaque expression and nowhere else in the file) while preserving precision for unrelated bindings in the same component.
-
-**Cross-file accessor resolution.** When a reactive position takes an identifier reference instead of an inline arrow (`text(myAccessor)`, `div({ title: titleOf })`, `show({ when: isRouteA })`), the resolver follows the identifier across file boundaries to find the callable AST node and recurse into its body for path extraction. The resolution is deliberately conservative — anything not in the recognized-shape table flips the file's opaque flag and forces the whole-state sentinel into `__prefixes`. The table below is authoritative; treat shapes not listed as opaque.
-
-| Shape                                                                               | Resolved?                                    | Where it lands                                       | Notes                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Inline arrow / function expression at the call site                                 | ✓                                            | Same file, current accessor                          | Default fast path.                                                                                                                                                                                                        |
-| `memo(arrow)` at the call site                                                      | ✓                                            | Inner arrow extracted                                | `accessor-resolver.ts:isMemoCallWithArrowArg`                                                                                                                                                                             |
-| `const x = (s) => …; …text(x)`                                                      | ✓                                            | File-local const                                     | `resolveLocalConstInitializer` walks parent chains for a `const x = …` matching the use.                                                                                                                                  |
-| `function x(s) { … }; …text(x)`                                                     | ✓                                            | File-local function decl                             | Hoisted, same scope.                                                                                                                                                                                                      |
-| `const x = memo((s) => …); …text(x)`                                                | ✓                                            | Inner arrow extracted                                | `memo` is unwrapped recursively.                                                                                                                                                                                          |
-| `let x = …` / `var x = …`                                                           | ✗                                            | Forces opaque                                        | `let`/`var` are unsafe to follow — later reassignment can't be tracked without dataflow analysis. Use `const`.                                                                                                            |
-| `const x = …, y = …` (multi-declarator)                                             | ✗                                            | Forces opaque                                        | Resolver only handles single-binding declarations. Split into one `const` per name.                                                                                                                                       |
-| `import { x } from './other'; …text(x)` (function decl in other file)               | ✓                                            | Cross-file via type-checker `getAliasedSymbol`       | Requires `accessor-resolver.ts:resolveCrossFileAccessor` (Vite plugin path; not the AST-only test harness).                                                                                                               |
-| `import { x } from './other'; …text(x)` (`export const x = (s) => …` in other file) | ✓                                            | Cross-file                                           | Same as above.                                                                                                                                                                                                            |
-| `import { x } from './other'; …text(x)` (`export const x = memo((s) => …)`)         | ✓                                            | Cross-file, inner arrow extracted                    | Same as above.                                                                                                                                                                                                            |
-| `export { x as y } from './other'` (re-export)                                      | ✓                                            | Followed transitively                                | Alias chain resolved by the checker.                                                                                                                                                                                      |
-| `export * from './other'` (star re-export through a barrel)                         | ✓                                            | First-hit wins                                       | `cross-file-resolver.ts` walks barrel targets in textual order; identical names across barrels resolve to the first declared.                                                                                             |
-| `import * as ns from './other'; …text(ns.x)`                                        | ✓                                            | Namespace member access resolved                     | Same getSymbol/getAliasedSymbol chain.                                                                                                                                                                                    |
-| `import type { X } from './other'` (type-only)                                      | ✗                                            | Forces opaque (or: no decls)                         | Type-only imports carry no value declarations to inspect.                                                                                                                                                                 |
-| `function outer(cb) { return text(cb) }` (callback parameter)                       | ✗                                            | Forces opaque                                        | Function-parameter callees are unresolvable; see `llui/opaque-state-flow` rule.                                                                                                                                           |
-| `obj.helper(s)` (method call with state as arg0)                                    | ✗ (mask-classifier opaque) / ✓ (lint allows) | Forces file-wide opaque flag → `__prefixes` sentinel | The lint deliberately doesn't error (it's the documented headless-components idiom), but the mask classifier still loses precision file-wide. The `llui/opaque-accessor-file-wide-mask` diagnostic surfaces the location. |
-| `helper(s, extra)` (state at any arg position past 0)                               | ✗                                            | Forces opaque                                        | Only arg0 is followed for delegation.                                                                                                                                                                                     |
-
-Practical implications:
-
-- A `view: (h) => ...` that destructures into a same-file `const accessor = (s) => s.foo` and uses it via `h.show({ when: accessor })` keeps precise masks.
-- A `view: (h) => h.show({ when: imports.isRouteA })` (namespace member access) keeps precise masks via the cross-file path.
-- A `view: (h) => h.show({ when: (s) => isRouteA(s) })` where `isRouteA` is `export const isRouteA = (s) => s.route.kind === 'a'` keeps precise masks via the cross-file resolver.
-- A `view: (h) => h.show({ when: getRouter(s).isA })` (method-call-with-state) forces the file's sentinel-prefix even though the lint stays quiet — surfaced by `llui/opaque-accessor-file-wide-mask`.
-
-**Mask injection into binding tuples.** The mask is placed as the first element of the `[mask, kind, key, accessor]` tuple. The runtime update loop uses it as:
-
-```typescript
-if ((binding.mask & dirty) === 0) continue
-```
-
-Where `dirty` is the bitmask computed by `__dirty` comparing old and new state. If no bits overlap, the accessor cannot produce a new value, and the binding is skipped with a single bitwise AND — no function call, no DOM access.
-
-**`text()` mask injection.** `text(s => s.count)` becomes `text(s => s.count, 1)`. The `text` function uses the mask to register a binding with the correct skip logic.
-
-**`__dirty` injection.** For each `component()` call site where reactive bindings were found, the compiler synthesises and injects a `__dirty` property into the config object. The generated function compares at the **path level**, not just the top-level field level:
-
-```typescript
-// For a component accessing user.name, user.email, filter, and todos:
-__dirty: (o, n) =>
-  (Object.is(o.user?.name, n.user?.name) ? 0 : 1) |
-  (Object.is(o.user?.email, n.user?.email) ? 0 : 2) |
-  (Object.is(o.filter, n.filter) ? 0 : 4) |
-  (Object.is(o.todos, n.todos) ? 0 : 8)
-```
-
-Nested path comparisons use optional chaining (`o.user?.name`) to safely handle cases where an intermediate object is `null` or `undefined`. If the parent reference is nullish, `Object.is(undefined, undefined)` returns `true`, correctly reporting no change.
-
-In overflow (32+ paths), the generator follows the same structure but emits `FULL_MASK` (-1) as the bit for any path beyond position 30. Since `__dirty` ORs all bits together, a single mutation to an overflow path yields FULL_MASK, which matches all bindings in Phase 2 — the expected fallback behavior.
-
-`Object.is` is used rather than `!==` because it handles `NaN` and `-0` correctly. The generated function returns a bitmask (or bitmask pair) of which paths changed. The update loop uses this to set `dirty`, which is then used to skip individual bindings. If `__dirty` is absent (uncompiled component), the runtime falls back to `dirty = 0xFFFFFFFF`, re-evaluating all bindings on every update — correct but not optimal.
-
-The compiler checks for an existing `__dirty` property before injecting, so manually written `__dirty` functions are preserved verbatim.
-
-**Why Pass 2 is a pre-scan, not integrated into Pass 1.** Mask injection requires knowing the full set of fields used across the entire file before emitting any tuple. If masks were computed on-the-fly during Pass 1, the bit assignments would depend on the traversal order, and a field first seen late in the file would have a different bit than if it had been seen first. The pre-scan ensures deterministic bit assignment and means Pass 1 can be redone conceptually as a single visitor that embeds masks with stable values.
-
-In practice, `collectAllDeps` (the pre-scan) and the main `visitor` are distinct functions. `collectAllDeps` runs first over the `SourceFile`, builds `fieldBits`, and only then does the transformation visitor run.
-
-### Pass 3: Import Cleanup
-
-After the main transform, the llui import declaration is rewritten:
-
-- Element helper names that were actually compiled (i.e., their call sites were transformed) are removed from the import specifier list.
-- `elSplit` is added if not already present.
-- Non-element helpers (`text`, `branch`, `each`, `component`, `mountApp`, etc.) are left untouched.
-
-**Before:**
-
-```typescript
-import { div, span, text, branch } from '@llui/dom'
-```
-
-**After:**
-
-```typescript
-import { text, branch, elSplit } from '@llui/dom'
-```
-
-The consequence is that `elements.ts` — the module that defines the uncompiled `div`, `span`, etc. helpers — has no references in the bundle. Rollup/Vite's tree-shaker eliminates it entirely. This is not a micro-optimisation: `elements.ts` contains all HTML element helper implementations. For a large application using many elements, eliminating the module removes dead code that would otherwise inflate the bundle.
-
-Note that only helpers that were _actually compiled_ are removed. If a helper was imported but called with a non-literal props object (bail-out condition), the compiler leaves the import intact because the runtime `div()` implementation is still needed.
-
-**Why Pass 3 runs last.** It rewrites the `ImportDeclaration` node. If it ran first, the visitor in Pass 1/2 would lose track of which local names map to which element helpers (since those names could be aliased or renamed). Running it last, after the visitor has accumulated the set of `transformedHelpers`, makes it a simple filter over the import specifier list.
+The walker is **scope-aware**: `each`/`show`/`branch` render callbacks introduce signal-typed params (item, index, narrowed variant) that are checked exactly like the `state` root inside those bodies — `item.at('done') ? a : b` errors in a row just as `state.at('flag') ? a : b` does at the top level. The view body is linted under the same root alias the lowering uses (the bag's `state` alias), so an aliased bag like `({ state: s }) => [text(s.at('n') + 1)]` is checked, not silently passed. `key` callbacks receive a **plain** value and stay un-rooted.
 
 ---
 
 ## What Adds Value
 
-### Compile-time prop classification eliminates runtime branching
+### Direct-view lowering erases handle allocation
 
-Without the compiler, the runtime `div()` helper must inspect each prop key at mount time to decide whether to call `addEventListener`, `setAttribute`, `className =`, etc. With the compiler, this classification is done once at build time and baked into the emitted structure. The runtime `elSplit` function has no branching per prop: it calls `staticFn` once, loops over the events array, and loops over the bindings array. The kind-dispatch in `applyBinding` is a switch over a string literal that the JS engine JIT-compiles to a jump table.
+For the common inline-view shape, lowering `text(state.at('count'))` to `signalText((s) => s.count, ['count'])` removes the per-slot runtime signal-handle object and its `.at`/`.map` chain. The runtime authoring path is correct without it, but the lowered form is the zero-allocation fast path for the hot view.
 
-This matters most for components that mount frequently (list items, table rows) where mount-time prop classification would otherwise run thousands of times per render.
+### Non-bypassable correctness rules
 
-### Bitmask dirty tracking: O(1) skip per binding per update
+Because the rules are build errors, an LLM cannot generate a subtly-wrong reactive slot (a `.peek()` in a slot, an operator on a signal, a side effect in a derive) and have it merely warn. The build fails with a precise message and source location. This is the deliberate inversion of the usual lint model and the reason `@llui/eslint-plugin` was deleted rather than kept.
 
-The update loop in `update.ts` is:
+### Introspection metadata for the agent surface
 
-```typescript
-for (const binding of instance.bindings) {
-  if ((binding.mask & dirty) === 0) continue
-  // ...
-}
-```
+The emitted schemas/annotations let the dev runtime validate messages, advertise affordances, and explain state to an LLM agent without the developer hand-writing any of it. Composition-aware cross-file extraction means types organized across files still yield complete metadata.
 
-A single bitwise AND decides whether an accessor needs to be re-evaluated. Without masks, the loop must call every accessor and compare its result against `lastValue`. With masks, most accessors are skipped before any JavaScript function call.
+### Source→source string output
 
-For a component with 50 bindings spread across 5 state fields, a message that changes only one field results in a `dirty` value with one bit set. At most 10 bindings (those tracking that one field) run their accessor. The other 40 are skipped with 40 bitwise ANDs.
-
-This is the highest-leverage optimisation the compiler produces. The improvement is proportional to the number of bindings and inversely proportional to how many fields change per message — both of which are favourable in real applications.
-
-### `__dirty` eliminates full state diffing in the update loop
-
-Without `__dirty`, the runtime has no way to compute which fields changed without diffing the entire state object. It could walk all keys and compare values, but that is O(fields) work per update regardless of what changed. `__dirty` is a specialised, generated function that only compares the fields that actually have reactive bindings. It is also JIT-friendly: the generated shape is always a chain of ternary expressions ORed together, which the engine can optimise aggressively.
-
-### Import elision enables tree-shaking of element implementations
-
-As described in Pass 3. The `elements.ts` module is eliminated from production bundles when all element calls were compiled. This is a correctness-preserving transformation: the compiled `elSplit` call carries all the information that the runtime element helper would have computed.
-
-### Per-binding masks decouple binding update cost from component size
-
-Without masks, a component with 100 bindings re-evaluates all 100 on every state change. With per-binding masks, the cost of an update scales with the number of bindings that depend on the changed fields, not the total number of bindings. This makes large components with many independent sub-trees cheap to update when only one sub-tree's data changes.
-
-### Static analysis lives in `@llui/eslint-plugin`
-
-The Vite plugin used to emit a stack of usage-pattern diagnostics during transform — `empty-props`, `namespace-import`, `spread-in-children`, `map-on-state`, `exhaustive-update`, `accessibility`, `controlled-input`, `bitmask-overflow`, `static-on`. Those have all moved to ESLint rules in `@llui/eslint-plugin`. The compiler proper now does only the work that requires it: prop classification, dependency analysis, mask injection, import cleanup. Anything that is purely "this AST shape is suspect" runs in the lint pipeline.
-
-The motivation for the move: editor squiggles, autofix capability where applicable, per-rule severity per project, and a single source of truth for static analysis. The previous "build-only" surfacing meant warnings only showed up on `vite build` console output; many were missed in the dev loop until a teammate's CI failed.
-
-What's now in the lint plugin:
-
-- `empty-props` — `div({}, [...])` redundancy.
-- `namespace-import` — `import * as L from '@llui/dom'` disables the helper-call matcher and silently turns off template-clone for the whole file.
-- `spread-in-children` — scope-aware: only fires on genuinely-dynamic spreads. Bounded array literals and `<known-array>.map(...)` cases stay silent because the child count is statically determinable.
-- `map-on-state` (as `map-on-state-array`) — `.map()` on a state-derived array in `view()`; recommend `each()`.
-- `exhaustive-update` — verifies `update()`'s switch handles every variant of the local `Msg` union; `default:` clauses suppress.
-- `accessibility` — `<img>` without `alt`, `onClick` on non-interactive element without `role`.
-- `controlled-input` — reactive `value` binding without `onInput`/`onChange`. Mirrors the binding-model correctness issue: the DOM property would be overwritten on every Phase 2 pass that matches the mask, erasing keystrokes.
-- `bitmask-overflow` — >31 unique state paths fall back to `FULL_MASK`. Includes co-occurrence detection: when every sub-path under a top-level field always fires together, the rule recommends bundling into a single `s.field` read for cheaper budget relief. The cap is a temporary limitation pending multi-word `__prefixes` emit.
-- `static-on` — `scope`/`branch`'s `on` accessor reads no state, so the key never changes and the subtree mounts once and stagnates.
-- `subapp-requires-reason` — `subApp({ ... })` without a non-empty `reason` field. Surfaces the rationale in code review and on the rendered DOM as `data-llui-sub-app-reason`.
-
-The Vite plugin still emits the `[llui]`-prefixed `console.info` logs from `verbose: true` (per-file bit assignments, helper compile/bail counts) — those are pure tracing and not subject to lint policy. Nothing else gets surfaced from the transform anymore.
+The transform computes byte-offset edits and splices them, applied back-to-front so offsets stay valid. Untouched code is preserved exactly, which keeps the diff between authored and emitted source minimal and makes the lowering easy to reason about.
 
 ---
 
 ## What to Avoid
 
-### Regex-based transforms
+### Regex-based structural transforms
 
-Regex transforms on source text are fragile in ways that are difficult to enumerate at design time. They break on:
+Regex on source text breaks on multiline objects, string values containing the target, template literals, comments, and reformatting. The cheap string pre-checks (`/component\s*[<(]/`, the import test) are used only to _decide whether to parse_; all structural work goes through the AST.
 
-- Multiline prop objects.
-- Props with string values containing the regex target.
-- Template literal prop values.
-- Comments inside prop objects.
-- Prettier or ESLint reformatting changing whitespace.
+### Re-introducing the bitmask compiler
 
-A regex that works on `div({ class: 'foo' }, [])` fails on `div({\n  class: 'foo'\n}, [])`. The TypeScript AST is immune to formatting. Never use regex for structural transforms.
+The two-word `mask`/`maskHi`, `__dirty`/`__prefixes` synthesis, `elSplit`/`elTemplate` collapse, per-message `__handlers`, stride-loop detection, and import elision are gone. They served the deleted runtime. The chunked-mask runtime computes dirty sets at runtime from reference-equality (see 03 Runtime DOM.md); the compiler emits no mask tables and no `__dirty`.
 
-### Single-pass transforms
+### Forcing every view shape through the lowering
 
-A single-pass transform that tries to classify props and inject masks simultaneously cannot work correctly. Mask injection requires knowing the full field set before visiting any call site. If pass 1 and pass 2 are merged, the compiler would need to either backpatch already-emitted tuples (which requires a second traversal anyway) or emit placeholder masks and fix them up (which is complex and error-prone). The two-pass structure (pre-scan then transform) is the correct factoring.
-
-### Transforming non-literal prop objects
-
-Transforming `div(myProps, [])` where `myProps` is a variable would require alias analysis to determine the object's shape. This is not safe in general. `myProps` could be mutated between definition and use; it could come from an import; it could be conditionally assigned. The conservative bail-out — only transform inline `ObjectLiteralExpression` — is correct and should not be relaxed without a type-aware analysis path.
-
-### Dataflow analysis beyond the supported patterns
-
-The compiler handles four access patterns: direct property access, destructuring, single-assignment `const` aliases, and string-literal element access (see Pass 2). It is tempting to extend this further — tracking values through conditional expressions (`const cls = s.count > 0 ? 'pos' : 'neg'`), following multi-hop aliases (`const u = s.user; const n = u.name`), or tracing through function calls (`getName(s)`). This requires general-purpose dataflow analysis that is expensive to implement correctly, fragile in the face of reassignment and aliasing, and wrong in cases involving closures over mutable variables. The payoff is marginal — the conservative `0xFFFFFFFF` mask for such accessors is correct, just not maximally precise. The compiler emits a diagnostic warning for every bail-out, giving the developer a clear path to rewrite the accessor using a supported pattern. Do not implement dataflow analysis beyond the four supported patterns.
+The lowering handles the direct-view shape and bails (leaves the source intact) on everything else. That bail is correct: the runtime authoring helpers consume signal handles and build identical bindings. Attempting to statically lower block bodies, helper delegation, and arbitrary bag aliasing would add fragile special-casing for no correctness benefit — only a (sometimes) marginal allocation win. Expand the lowering only where the allocation win is measured and the shape is common.
 
 ### Per-file compilation caching
 
-Vite already caches `transform()` results keyed by file content hash. Adding a secondary cache inside the plugin would duplicate this mechanism, add memory pressure, and introduce cache invalidation bugs (e.g., when the compiler itself changes but cached outputs are stale). Trust Vite's caching.
-
-### Transforming `key` props
-
-The `key` prop is a framework-level identity hint for `each()`. It is explicitly skipped during prop classification (`if (key === 'key') continue`). Never generate DOM mutations for `key` — it has no corresponding DOM attribute.
+Vite already caches `transform()` results by content hash. A second cache would duplicate that and add invalidation bugs.
 
 ---
 
-## What Seems Valuable But Isn't
+## Correctness Invariants the Transform Must Preserve
 
-### Incremental AST (reusing a parsed AST across builds)
+These must hold for every transformed file. A change that violates one is a bug, not an optimization.
 
-`ts.createSourceFile` parses a file in under 2ms for files of typical component size (under 500 lines). Vite triggers `transform()` only when a file changes or is first requested. Storing the parsed AST between invocations would add memory pressure and a cache invalidation mechanism for a saving that is immeasurable in practice. The parse step is not the bottleneck.
+**1. Dependency soundness.** A lowered binding's emitted `deps` must be a conservative **superset** of the paths its accessor reads. The runtime gates a binding out when none of its deps are dirty; a dep that is too narrow strands stale DOM (a silent false negative), while a dep that is too broad merely wastes a `produce` (harmless). The lowering must never emit a `deps` array narrower than the accessor's true reads. This is the compile-time half of the end-to-end guarantee in `mask.ts`; the `pure-derive-body` rule exists to keep the analysis able to see every read.
 
-### Shared cross-file analysis
+**2. Semantic equivalence of lowered vs. authored.** A lowered `signalText`/`el`/`signalEach`/… call must build the same DOM and the same bindings the authoring helper would have built from the signal handle. The two paths coexist by construction (`authoring.ts` delegates to the same `dom.ts` helpers the lowering emits), so the equivalence is structural, not coincidental.
 
-> **Superseded.** This section is retracted as of v2a (see `docs/proposals/v2-compiler/`). The v2 architecture treats the compiler as a standalone engine consumed by adapters (Vite, ESLint, MCP), and v2b introduces a cross-file walker that descends into view-helper calls across file boundaries. The original framing — that there is "no cross-file optimization opportunity" — was true for the v0.x per-file walker but contradicts the v2b dicerun2 sentinel-`show()` win (`v2-compiler/shared.md` Appendix A). The section is kept here so historical readers see the framing it superseded; do not treat it as current.
+**3. The lint must fail closed.** Every signal diagnostic is surfaced as a build error. A rule that detects a known-unsafe shape must not downgrade to a warning. The `pure-derive-body` and `peek-in-slot` rules in particular guard analyzer soundness and reactive correctness respectively.
 
-### AST caching at the plugin level
+**4. Metadata never overrides author intent.** When splicing `__msgSchema`/`name`/etc., any field the author wrote is left untouched. The check is property-name presence in the config AST, not string matching.
 
-As noted in What to Avoid — Vite handles this. Additionally, Vite's module graph invalidation is fine-grained and correct. A plugin-level cache would need to replicate this logic.
+**5. Detection must not catch type-only / SSR-env imports.** The import test is anchored to the closing quote of `'@llui/dom'`, so `@llui/dom/internal`, `@llui/dom/ssr/*`, and `@llui/dom/devtools` do not trip signal-file detection. A file importing only those is not a signal file.
 
-### Inlining `applyBinding` mutations into each reactive tuple
-
-An earlier design considered emitting the DOM mutation directly into the accessor:
-
-```typescript
-// hypothetical — not the current design
-;[
-  1,
-  (__e) => {
-    __e.setAttribute('title', String(s.title ?? ''))
-  },
-  (s) => s.title,
-]
-```
-
-This would eliminate the `applyBinding` switch at runtime. However, it bloats the emitted code significantly (each binding carries its own mutation logic), defeats the `applyBinding` optimisations (boolean → `removeAttribute`, `true` → `setAttribute('')`), and makes the tuple format opaque. The current `[mask, kind, key, accessor]` format is compact and the `applyBinding` switch is a negligible cost compared to the DOM mutation itself.
-
-### Emitting TypeScript type annotations in generated code
-
-The compiler emits plain JavaScript-style TypeScript (no type annotations in generated nodes). Adding explicit type annotations to generated arrow functions and arrays would make the output harder to read and add no runtime benefit. The TypeScript type checker does not see the intermediate output; it checks the source. Generated type annotations would be stripped immediately by Vite's TypeScript handling anyway.
+**6. Untouched source is byte-preserved.** Edits are byte-offset splices applied back-to-front; code outside an edit range is emitted verbatim.
 
 ---
 
 ## Open Questions and Future Directions
 
-### Type-level analysis via `ts.TypeChecker`
+### Lowering block-body and multi-slice views
 
-> **Superseded.** This section is retracted as of v2a (see `docs/proposals/v2-compiler/`). The v2b cross-file walker depends on `ts.TypeChecker` directly (`v2-compiler/v2b.md` §6.3), so framing it as a deferred "v2 enhancement" is now historical. The TypeChecker dependency lands inside the engine (`@llui/compiler`) in v2b, scoped to the Vite adapter — ESLint stays AST-only per `v2-compiler/v2a.md` §2.2. The two capabilities the section names (exhaustive path enumeration, computed access resolution) remain valuable directions; their design home is now `v2-compiler/v2b.md` and `v2-compiler/v2c.md`.
+The direct-view lowering currently requires a `state`-destructuring bag and a concise array body. Block bodies (`view: ({ state }) => { … return [ … ] }`) and multi-slice bags fall back to the runtime authoring path — correct, but they pay the handle-allocation cost. Extending the lowering to these shapes is a tracked optimization (it requires the rewriter to follow locals declared in the block and re-root them), valuable where such views are hot.
 
-### Automatic memo injection for repeated accessors
+### Cross-file accessor lowering
 
-If the same accessor expression appears in multiple bindings within a component's view — for example, `s => s.todos.filter(t => !t.done)` used both for a count display and a list render — the compiler could recognise the duplication and emit a single memoised value:
+Cross-file _type_ resolution (for metadata) is implemented. Lowering a view that calls an in-repo view-helper in a sibling file — folding the paths that helper reads into the host binding's deps so the helper's slots stay narrowly gated — is the harder, deferred direction. Today such a view runs entirely via the runtime authoring helpers (correct, handle-allocating); a cross-file walker that descends into the helper to lower it is future work.
 
-```typescript
-const __m0 = memo((s) => s.todos.filter((t) => !t.done), mask)
-// bindings use () => __m0.value
-```
+### Dead-arm elimination for `branch`
 
-This is valuable when the accessor is expensive (filtering, mapping, sorting). The challenge is detecting semantic equality of accessor expressions: two syntactically identical arrow functions are not guaranteed to be semantically equivalent if they close over different variables. This requires care and should be limited to pure state accessors (no closure captures).
-
-### Dead code elimination for unreachable `branch()` cases
-
-`branch()` takes a discriminant accessor and a cases record. If the state type makes certain case keys unreachable — e.g., the discriminant returns `'a' | 'b'` but a case `'c'` is provided — the compiler could eliminate the unreachable case from the bundle. This requires `ts.TypeChecker` to determine the return type of the discriminant accessor, and Rollup-level tree-shaking to eliminate the dead case factory function.
-
-### Prerendering static subtrees to HTML strings
-
-A component subtree with no reactive bindings, no event handlers, and no structural blocks is entirely static. It produces the same HTML every time it mounts. The compiler could detect this and replace the subtree with:
-
-```typescript
-const __static0 = (() => {
-  const t = document.createElement('template')
-  t.innerHTML = '<div class="footer"><p>Version 1.0</p></div>'
-  return t.content
-})()
-// at mount: container.appendChild(__static0.cloneNode(true))
-```
-
-This eliminates the recursive element construction at mount time for static subtrees. Detecting "fully static" requires that all props are literals (no reactive bindings), all children are also fully static, and there are no event handlers. This is detectable with the current AST analysis.
-
-### Code splitting for `branch()` cases
-
-`branch()` factory functions for inactive cases are included in the initial bundle even if they will never render on first load. If a `branch()` discriminant starts in state `'list'`, the `'detail'` case's view factory does not need to be in the initial chunk. The compiler could emit:
-
-```typescript
-branch({
-  on: (s) => s.view,
-  cases: {
-    list: () => renderList(send),
-    detail: () => import('./detail-view.js').then((m) => m.render(send)),
-  },
-})
-```
-
-This requires the compiler to understand which cases are "hot" at startup (either via annotation or heuristic) and to cooperate with Rollup's dynamic import chunking.
-
-### Dev-mode `__msgSchema` emission for LLM debug protocol
-
-In development mode, the compiler emits a `__msgSchema` property on each component definition. This is a simplified JSON Schema subset derived from the component's `Msg` discriminated union type, enabling runtime message validation by the LLM debug protocol (`window.__lluiDebug.validateMessage()` and the `llui_validate_message` MCP tool — see 07 LLM Friendliness §10).
-
-```typescript
-// Source type:
-type Msg =
-  | { type: 'addItem'; id: string; text: string }
-  | { type: 'removeItem'; id: string }
-  | { type: 'setFilter'; filter: 'all' | 'active' | 'completed' }
-
-// Emitted (dev mode only, tree-shaken in production):
-MyComponent.__msgSchema = {
-  discriminant: 'type',
-  variants: {
-    addItem: { id: 'string', text: 'string' },
-    removeItem: { id: 'string' },
-    setFilter: { filter: { enum: ['all', 'active', 'completed'] } },
-  },
-}
-```
-
-The schema extraction is syntactic: the compiler reads the `Msg` type alias from the component file, identifies discriminated union members by the discriminant field (`type` by convention), and maps each variant's fields to primitive type names or `{ enum: [...] }` for string literal unions. Complex types (generics, mapped types, conditional types, intersection types) fall back to `'unknown'` in the schema, which passes validation unconditionally. This coverage is sufficient for the common case — discriminated unions with literal and primitive fields — which is exactly what well-structured LLui components use.
-
-The `__msgSchema` emission is gated behind `import.meta.env.DEV` and uses the same dead-code elimination path as other dev-only features. Production bundles contain zero bytes for it. The schema is emitted alongside the component definition in the same file, not in a separate module, keeping the dev-mode cost to a single static property assignment per component.
-
-### HMR with state preservation
-
-Vite's HMR system notifies the plugin when a file changes. The plugin can accept the update and re-run the component without a full page reload. LLui's architecture makes state preservation across HMR straightforward because state is a plain serializable object with no instance variables, no closure state, and no hooks order dependency.
-
-The HMR path:
-
-1. **File changes.** Vite invalidates the module and calls the plugin's `handleHotUpdate` hook.
-2. **Replace functions.** The plugin replaces the component's `update()`, `view()`, and `onEffect` functions with the new versions from the changed file. The `init()` function is NOT re-run — the current state is kept.
-3. **Re-run `view()`.** The plugin calls `view(currentState, send)` to rebuild the DOM tree. This is the same one-shot imperative call that happens at mount time. New bindings are registered, old bindings are disposed.
-4. **Re-run Phase 2.** All bindings are evaluated against the current state, bringing the DOM up to date with any view changes (new elements, restructured layout, changed accessors).
-
-**Why this works cleanly.** In React, HMR must preserve hooks state, refs, effects, and their ordering — any mismatch corrupts the component. In Svelte, HMR must re-run reactive declarations and reconcile compiler-generated update blocks. In LLui, state is just data. The new `view()` function reads from the same state object. The new `update()` function will handle the next message. There is no hidden state to preserve or reconcile.
-
-**What does not survive HMR.** In-flight effects — an HTTP request dispatched by `onEffect` before the HMR — continue running because they are owned by the browser, not by the component. The `AbortSignal` from the old component's scope is aborted during disposal, which cancels in-flight requests. The new component receives the current state but no pending effects. This is correct behavior: the developer changed the code, so the old effects may no longer be valid.
-
-**Scope disposal on HMR.** When `view()` is re-run, the old root scope is disposed (cleaning up all bindings, listeners, child scopes, portals, and foreign instances). The new `view()` call creates a fresh scope tree. This is a full re-mount of the DOM subtree, not a patch. For most components, this is imperceptible (< 1ms). For components with expensive `foreign()` instances (Monaco, ProseMirror), the re-mount triggers `destroy` + `mount` on the foreign instance. To preserve foreign instance state across HMR, the plugin can optionally stash the instance reference and pass it to the new `mount` via a dev-only HMR context — this is an optimization, not a correctness requirement.
+If a state type makes a `branch` arm unreachable, the compiler could drop it from the bundle. This needs the TypeChecker to read the discriminant's type and Rollup-level tree-shaking of the dead arm factory.
 
 ### Source map generation
 
-The current compiler uses `ts.createPrinter` to emit the transformed source. The printer does not produce a source map. This means that when a runtime error occurs in transformed code, the stack trace points to generated line numbers, not the original source. `ts.createPrinter` supports a `sourceMapGenerator` option that can emit a source map. This should be added — it is a correctness and developer experience issue, not an optimisation.
-
-The `magic-string` library (already a Vite dependency) provides an alternative: apply targeted string-level patches to the original source while tracking offset transformations, and emit a precise source map. This approach is more complex to implement but produces higher-fidelity maps because the untransformed parts of the source are mapped trivially.
-
----
-
-## Correctness Invariants the Compiler Must Preserve
-
-These are the guarantees that must hold for every transformed file. A compiler change that violates any of these is a bug, not an optimisation.
-
-**1. Semantic equivalence at mount time.** The compiled `elSplit(...)` call must produce an element with exactly the same DOM state as the uncompiled `div(...)` call would have. Every static prop must be applied, every event listener must be registered, every reactive binding must be initialised and registered.
-
-**2. Reactive bindings must be registered with the current scope.** `createBinding` calls `registerBinding`, which attaches the binding to `ctx.currentScope`. If the compiler emits code that calls `createBinding` outside the render context (e.g., at module initialisation time), the binding will not be associated with any scope and will not be cleaned up on unmount. The compiler must not hoist binding creation out of component view functions.
-
-**3. Masks must be conservative.** A mask that is too narrow (missing a path bit that the accessor actually reads) causes silent stale values: the accessor is skipped on updates where the path changed, returning `lastValue` instead of the new value. A mask that is too broad (set to `0xFFFFFFFF` when a precise value is available) is merely suboptimal. The compiler must never emit a mask narrower than the actual path dependencies of the accessor. When uncertain, emit `0xFFFFFFFF` and a diagnostic warning. An accessor reading a parent path (`s.user`) must receive the union of all child path bits (`user.name | user.email | ...`), since the whole-object consumer depends on any sub-field change.
-
-**4. The `__dirty` function must be a conservative superset.** `__dirty(o, n)` must return a non-zero bit for path `p` whenever the value at that path differs between `o` and `n` (by `Object.is`). It may return non-zero for paths that did not change (false positives are harmless — they cause unnecessary binding evaluations). It must never return zero for a bit corresponding to a path that did change (false negatives cause stale DOM). The compiler uses `Object.is` with optional chaining for nested path comparisons (`Object.is(o.user?.name, n.user?.name)`), which is the strictest possible equality and safely handles nullish intermediates. In overflow (32+ paths), paths beyond position 30 use `FULL_MASK` (-1), which satisfies the invariant trivially: any change to an overflow path causes \_\_dirty to return FULL_MASK, matching every binding in Phase 2.
-
-**5. Import elision must only remove actually-compiled helpers.** If `div` was imported but one of its call sites bailed out (non-literal props), the `div` name must remain in the import. The compiler tracks `transformedHelpers` (the set of local names for which at least one call was compiled) separately from `helperLocalNames` (all imported element helpers). Only names in `transformedHelpers` are removed from the import. If a name is in `helperLocalNames` but not `transformedHelpers`, its import specifier is preserved.
-
-**6. `__dirty` injection is idempotent.** The compiler checks for an existing `__dirty` property before injecting. If the user has written a custom `__dirty`, it is left verbatim. This check must be based on property name equality at the AST level, not string matching in the source text.
-
-**7. The `key` prop is never emitted as a DOM binding.** It is silently dropped from all three output arrays (staticFn, events, bindings). The `key` prop is a framework identity hint with no DOM semantics.
-
-**8. Children are passed through unmodified.** The compiler does not inspect or transform the children argument. It is taken as-is and passed as the last argument to `elSplit`. Child nodes may be other `elSplit` calls (which will be transformed by the visitor when encountered), but the compiler does not need to know this — the visitor handles nesting through `ts.visitEachChild`.
-
----
-
-## Additional Compiler Passes (Implemented)
-
-The following passes were added after the initial three-pass design. They run as part of the existing visitor pipeline.
-
-### Pass 0: Item Selector Deduplication
-
-Before element transformation, the compiler scans `each()` render callbacks for repeated `item(selector)` calls. When the same selector appears multiple times (matched by printed source text), the compiler hoists the selector to a local constant and caches the `item()` result:
-
-```typescript
-// Before:
-render: ({ item }) => [
-  tr({ class: (s) => s.selected === item((r) => r.id)() ? 'danger' : '' }, [
-    td([text(item((r) => String(r.id)))]),
-    a({ onClick: () => send({ type: 'select', id: item((r) => r.id)() }) }, [...]),
-  ]),
-]
-
-// After:
-render: ({ item }) => {
-  const __s0 = (r) => r.id
-  const __a0 = item(__s0)
-  return [
-    tr({ class: (s) => s.selected === __a0() ? 'danger' : '' }, [
-      td([text(item((r) => String(r.id)))]),
-      a({ onClick: () => send({ type: 'select', id: __a0() }) }, [...]),
-    ]),
-  ]
-}
-```
-
-This eliminates redundant selector closure allocations and `item()` accessor closures per row.
-
-### Subtree Collapse: Nested Elements → `elTemplate`
-
-When the compiler detects nested element helper calls (e.g., `tr` containing `td` containing `a`), it collapses the entire subtree into a single `elTemplate(html, patchFn)` call. This replaces N `createElement` calls with 1 `cloneNode(true)`.
-
-The analysis (`analyzeSubtree`) recursively checks eligibility:
-
-- All children must be element helpers, `text('literal')`, or `text(accessor)`
-- No structural primitives (`each`, `branch`, `show`)
-- All props must be classifiable (literals, arrows, per-item calls)
-
-The emission generates:
-
-- A static HTML string with placeholder spaces for reactive text positions
-- A patch function that walks to dynamic nodes via `childNodes[idx]`, attaches events, and calls `__bind` for reactive bindings
-
-Reactive text uses **placeholder text nodes** embedded in the template HTML (a space character). The patch function references these existing text nodes via `parentNode.childNodes[idx]` rather than creating new ones with `document.createTextNode()`, saving 2 DOM operations per reactive text child.
-
-### Structural Mask Injection (`tryInjectStructuralMask`)
-
-The compiler injects a `__mask` property into the options object of every `each()`, `branch()`, and `show()` call. The mask is computed by `computeStructuralMask`: it ORs together all path bits read by the block's discriminant/accessor (the `on` function for `branch`/`show`, the `items` function for `each`). At runtime, Phase 1 uses this mask to skip entire structural blocks when none of their dependency paths are dirty (`(block.__mask & dirtyMask) === 0`).
-
-### `__update` Function Generation — REMOVED in v0.4
-
-The compiler used to emit a `__update` function per component that inlined Phase 1 + Phase 2 with the dirty mask threaded in. **Removed in v0.4 (Tier 2.4 of the bundle-size cut)** — empirical perf showed only ~3% wall-time improvement on a 200-binding sparse-update microbench while costing 200–400 bytes per compiled component. The runtime now always uses `genericUpdate` from `update-loop.ts`, which does the same Phase 1 + Phase 2 work without per-component code generation. `buildUpdateBody` (~270 lines) was deleted from `core-synthesis.ts` alongside the runtime dispatch branch in `processMessages`. See `benchmarks/bundle-baseline.json#/phases/2.4` for the measurement.
-
-### `__view` View-Bag Factory Generation
-
-For each `component()` call where the `view` callback destructures the View bag (`view: ({ send, text, each, ... }) => ...`), the compiler synthesises a `__view: ($send) => ({ send: $send, text, each, ... })` property containing **only the primitives the view actually destructures**. The runtime calls `def.__view(send)` instead of `createView(send)` so the all-primitives import chain that `view-helpers.ts` used to pull through (every primitive referenced by `createView`'s body) becomes unreachable in production bundles.
-
-**Pipeline:** `injectViewBag` runs after `applyRegistryEmissions` in the umbrella visitor. It inspects the `view:` arrow's first parameter — if it's an `ObjectBindingPattern`, the destructured names (with aliases) become bag-field keys, and the corresponding primitive identifiers from `VIEW_BAG_FIELD_TO_PRIMITIVE` become the values. `ctx` maps to `useContext` (the one rename). Necessary `@llui/dom` imports for each referenced primitive are added through the existing `cleanupImports` pass.
-
-**Bag caching:** at runtime, `getInstanceViewBag(inst, send)` (in `render-context.ts`) memoises the constructed bag on the `ComponentInstance` so primitives that loop (each.render at 1000 rows) call the factory once per instance, not once per row. The per-row allocation introduced a +31% Select regression in `pnpm bench`; the cache restored parity. See `benchmarks/bundle-baseline.json#/phases/1.2` and `/3.4`.
-
-### Per-Message-Type Handler Generation (`tryBuildHandlers` / `buildCaseHandler`)
-
-The compiler analyzes each `case` in the component's `update()` switch via `analyzeUpdateCases` and generates specialized handler functions per message type. Each handler is a function that knows its exact dirty bits and the appropriate reconciler to call, bypassing the generic Phase 1/2 pipeline at runtime.
-
-**`detectArrayOp`** classifies each case body's array mutation pattern:
-
-- Empty array literal (`[]`) maps to `reconcileClear()`
-- `.slice()` + index mutation maps to `reconcileItems()` (same keys, data-only change)
-- `.filter()` maps to `reconcileRemove()` (parallel-walk removal)
-- Full array replacement/append maps to generic `reconcile()`
-- No array change (e.g., `select`) skips all structural blocks
-
-**`buildCaseHandler`** emits a handler function per case that calls the detected reconciler directly with the pre-computed dirty mask. All handlers delegate to the shared `__handleMsg` runtime function, which handles the update-reconcile-Phase 2 boilerplate. This reduced per-handler generated code from 2039 to 292 bytes.
-
-The generated `__handlers` map is injected as a property on the component definition. The runtime checks for `__handlers` and dispatches single-message updates directly; multi-message batches fall back to the generic path. (Note: `__update` was removed in v0.4 — the runtime now always uses `genericUpdate` for the fallback path. `__dirty` was removed even earlier in favour of the path-keyed `__prefixes` table.)
-
-**Tier 5 attempt (reverted):** dropping `__handlers` was tested in v0.4 and saved 1.4 kB, but `pnpm bench` measured 23–89 % perf regressions on jfb's keyed-each operations (swap, remove, update-10th, select) because the `method` discriminator dispatched directly to specialised `reconcileItems` / `reconcileClear` / `reconcileRemove` / `reconcileChanged` paths that the generic `reconcile()` can't match. `__handlers` stays — see `benchmarks/bundle-baseline.json#/abandoned/5` for the measured regressions.
-
-### Row Factory Generation
-
-When an `each()` render callback does not use `selector.bind()`, the compiler generates a shared row factory function instead of per-row closures. The factory receives the entry context (item accessor, index accessor, send function) as parameters and returns the rendered nodes.
-
-**Detection:** The compiler scans the render callback body for `CallExpression` nodes matching `<identifier>.bind(...)` where the identifier resolves to the scoped accessor parameter. If no `.bind()` calls are found, the render callback is eligible for factory extraction.
-
-**Why `.bind()` disqualifies:** When `selector.bind()` is used, each row's bound function has a different receiver. V8's inline caches at the call site become megamorphic (many different hidden classes), which prevents TurboFan from inlining the call. A shared factory function that dispatches through megamorphic call sites is slower than dedicated per-row closures with monomorphic call sites. The compiler conservatively falls back to per-row closures when any `.bind()` is detected.
-
-**Code generation:** The compiler hoists the render callback body into a module-level function and replaces the inline render with a reference to the factory. The factory is called once per entry with the entry's accessors, producing the same DOM structure as the original inline render but without allocating a new closure per row.
-
-### Stride Loop Detection
-
-The compiler detects `for` loops with constant stride increments in `update()` case bodies and generates handlers that call `reconcileChanged(state, stride)` for O(k) updates.
-
-**Detection:** During `analyzeUpdateCases`, the compiler checks for `ForStatement` nodes where:
-
-- The update expression is `i += <numeric-literal>` or `i = i + <numeric-literal>` with a constant stride > 1
-- The loop body mutates array elements at index `i`
-
-When detected, the compiler records the stride value and emits a handler that calls `reconcileChanged(state, stride)` instead of `reconcileItems(state)`.
-
-**Correctness:** The strided reconciler only visits entries at stride intervals (0, stride, 2\*stride, ...). This is correct when the loop body modifies exactly those indices. If the loop body modifies indices other than `i`, the strided reconciler would miss updates -- the compiler only applies this optimization when the mutation target index matches the loop variable.
-
-### Event Delegation in Templates
-
-When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:
-
-```typescript
-root.addEventListener('click', (__e) => {
-  if (__n1.contains(__e.target)) {
-    handler1(__e)
-    return
-  }
-  if (__n2.contains(__e.target)) {
-    handler2(__e)
-    return
-  }
-})
-```
-
-This replaces N `addEventListener` calls with 1, reducing per-row DOM setup cost.
+The transform emits string output without a source map (`map: { mappings: '' }`), so runtime stack traces point at lowered positions. `magic-string` (already a Vite dependency) tracks offset edits and can emit a precise map while preserving trivial mapping for untouched source — a developer-experience improvement, not an optimization.

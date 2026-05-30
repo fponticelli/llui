@@ -47,18 +47,21 @@ Every LLui component has five parts:
 
 ```typescript
 // src/main.ts
-import { component, mountApp, div, button, input } from '@llui/dom'
+import { component, mountApp, div, button, input, text, each } from '@llui/dom'
+
+type Item = { id: number; label: string }
 
 type State = {
   text: string
-  items: string[]
+  items: Item[]
+  nextId: number
 }
 
-type Msg = { type: 'setText'; value: string } | { type: 'add' } | { type: 'remove'; index: number }
+type Msg = { type: 'setText'; value: string } | { type: 'add' } | { type: 'remove'; id: number }
 
 const TodoApp = component<State, Msg, never>({
   name: 'TodoApp',
-  init: () => [{ text: '', items: [] }, []],
+  init: () => [{ text: '', items: [], nextId: 1 }, []],
 
   update: (state, msg) => {
     switch (msg.type) {
@@ -66,38 +69,43 @@ const TodoApp = component<State, Msg, never>({
         return [{ ...state, text: msg.value }, []]
       case 'add':
         if (!state.text.trim()) return [state, []]
-        return [{ ...state, text: '', items: [...state.items, state.text] }, []]
+        return [
+          {
+            ...state,
+            text: '',
+            items: [...state.items, { id: state.nextId, label: state.text }],
+            nextId: state.nextId + 1,
+          },
+          [],
+        ]
       case 'remove':
-        return [{ ...state, items: state.items.filter((_, i) => i !== msg.index) }, []]
+        return [{ ...state, items: state.items.filter((it) => it.id !== msg.id) }, []]
     }
   },
 
-  view: ({ send, text, each }) => [
+  // The bag is `{ state, send }`. Element/structural helpers are imports.
+  view: ({ state, send }) => [
     div({ class: 'app' }, [
       div({ class: 'input-row' }, [
         input({
           type: 'text',
-          value: (s) => s.text,
+          value: state.at('text'),
           onInput: (e) => send({ type: 'setText', value: (e.target as HTMLInputElement).value }),
-          onKeydown: (e) => {
-            if (e.key === 'Enter') send({ type: 'add' })
+          onKeyDown: (e) => {
+            if ((e as KeyboardEvent).key === 'Enter') send({ type: 'add' })
           },
           placeholder: 'Add item...',
         }),
         button({ onClick: () => send({ type: 'add' }) }, [text('Add')]),
       ]),
-      ...each({
-        items: (s) => s.items,
-        key: (_item, i) => i,
-        render: ({ item, index, send }) => [
+      each(state.at('items'), {
+        key: (it) => it.id,
+        render: (item) => [
           div({ class: 'item' }, [
-            text(() => item()),
-            button(
-              {
-                onClick: () => send({ type: 'remove', index: index() }),
-              },
-              [text('x')],
-            ),
+            text(item.at('label')),
+            button({ onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [
+              text('x'),
+            ]),
           ]),
         ],
       }),
@@ -112,51 +120,49 @@ mountApp(document.getElementById('app')!, TodoApp)
 
 ### Reactive Bindings
 
-In `view()`, arrow functions create **reactive bindings** — they re-evaluate whenever the relevant state changes:
+The view bag carries `state`, a `Signal<State>`. A **reactive slot is a signal** — slice
+with `.at('field')`, derive with `.map(fn)`. A static value is plain. An event handler is a
+plain function. Read a one-shot value with `.peek()` (handlers and effects only).
 
 ```typescript
 // Static (evaluated once):
 div({ class: 'container' }, [...])
 
 // Reactive (updates when state changes):
-div({ class: (s) => s.isActive ? 'active' : 'inactive' }, [...])
-text((s) => `Count: ${s.count}`)
+div({ class: state.at('isActive').map((a) => (a ? 'active' : 'inactive')) }, [...])
+text(state.at('count').map((n) => `Count: ${n}`))
 ```
 
 ### Structural Primitives
 
-LLui provides three structural primitives for conditional and list rendering:
+LLui provides structural primitives for conditional and list rendering. They are module
+imports from `@llui/dom`:
 
-- **`show`** — render/remove nodes based on a boolean condition
+- **`show`** — render/remove nodes based on a truthy condition
 - **`branch`** — switch between named views based on a state value
 - **`each`** — render a list of items with keyed reconciliation
 
 ```typescript
-view: ({ send, text, show, branch, each }) => [
-  // show: boolean toggle
-  ...show({
-    when: (s) => s.isVisible,
-    render: () => [div([text('Visible!')])],
+import { show, branch, each, div, button, text } from '@llui/dom'
+
+view: ({ state, send }) => [
+  // show: truthy toggle — the truthy arm gets the narrowed signal
+  show(state.at('isVisible'), () => [div([text('Visible!')])]),
+
+  // branch: keyed on a string/number signal's value
+  branch(state.at('page'), {
+    home: () => [text('Home page')],
+    about: () => [text('About page')],
+    contact: () => [text('Contact page')],
   }),
 
-  // branch: multi-case switch
-  ...branch({
-    on: (s) => s.page,
-    cases: {
-      home: () => [text('Home page')],
-      about: () => [text('About page')],
-      contact: () => [text('Contact page')],
-    },
-  }),
-
-  // each: keyed list
-  ...each({
-    items: (s) => s.todos,
+  // each: keyed list — render gets a per-row `item` signal
+  each(state.at('todos'), {
     key: (todo) => todo.id,
-    render: ({ item, send }) => [
+    render: (item) => [
       div([
-        text(item.label),
-        button({ onClick: () => send({ type: 'remove', id: item.id() }) }, [text('x')]),
+        text(item.at('label')),
+        button({ onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [text('x')]),
       ]),
     ],
   }),
@@ -205,33 +211,34 @@ const App = component<State, Msg, Effect>({
 
 ### Composition
 
-LLui has a single composition model: **view functions**. A module exports `update()` and `view()` functions; the parent owns all state and the child module operates on a slice of it.
+The default composition model is **view functions**: a module exports a function that
+takes a **signal handle** for its slice plus the parent's `send`. The parent owns all
+state; the child renders a slice.
 
 ```typescript
-// View function — the only composition primitive
-function todoItem(item: Accessor<Todo>, send: (msg: Msg) => void): Node[] {
+import { div, text, button } from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
+
+// A reusable row — takes a per-row signal, not an accessor callback.
+function todoItem(item: Signal<Todo>, send: Send<Msg>): Node[] {
   return [
     div({ class: 'todo' }, [
-      text(() => item.label()),
-      button({ onClick: () => send({ type: 'toggle', id: item.id() }) }, [text('done')]),
+      text(item.at('label')),
+      button({ onClick: () => send({ type: 'toggle', id: item.at('id').peek() }) }, [text('done')]),
     ]),
   ]
 }
 ```
 
-When the parent reducer is mostly mechanical "route by message-type prefix to a sub-reducer," use `combine()`:
+Library components from `@llui/components` use a state-machine + `connect` convention: the
+parent owns the slice, delegates to the component's pure `update`, and routes its messages
+through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the
+[Composition patterns guide](/cookbook#library-components-connect--delegated-update).
 
-```typescript
-import { combine } from '@llui/dom'
-
-const update = combine<State, Msg, Effect>({
-  todos: todosReducer,
-  filter: filterReducer,
-})
-// Dispatch: send({ type: 'todos/toggle', id })
-```
-
-For embedding a genuinely independent app (third-party bundled widget, demo embed), the escape hatch is `subApp({ reason, def, ... })` with a lint-enforced rationale string. Don't reach for it to "isolate a complex component" — path-keyed reactivity gates each binding precisely regardless of nesting depth.
+For embedding a genuinely independent app (third-party bundled widget, an independent
+effect lifecycle), the escape hatch is a full `child()` boundary (or `lazy()` to load one
+asynchronously). Don't reach for it to "isolate a complex component" — the chunked-mask
+reactivity gates each binding precisely regardless of nesting depth.
 
 ### SSR
 

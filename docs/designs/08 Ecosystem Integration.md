@@ -13,8 +13,8 @@ Vike (formerly vite-plugin-ssr) is explicitly designed for the "build your own f
 This matches LLui's architecture precisely. LLui already has:
 
 - A Vite plugin for compilation (composes with Vike's Vite plugin).
-- `__renderToString(state)` for SSR (maps to `onRenderHtml`).
-- `hydrateApp()` with `data-llui-hydrate` markers (maps to `onRenderClient` with `isHydration` check).
+- Signal SSR — `renderToString` / `renderNodes` / `serializeNodes` (maps to `onRenderHtml`).
+- `hydrateSignalApp()` — atomic-swap hydration, no claim markers (maps to `onRenderClient` with an `isHydration` check).
 - Routing as state (Vike handles URL → route mapping; LLui handles route → view via `branch()`).
 
 The alternative considered was Astro. Astro's island architecture is powerful but opinionated — each component is an isolated island with its own hydration boundary. LLui's single-state-tree model does not decompose cleanly into independent islands. Vike's approach — the framework owns the entire page render — is a better architectural match. Astro integration remains possible as a future addition if island-mode LLui components prove useful.
@@ -31,13 +31,13 @@ import vike from 'vike/plugin'
 
 export default defineConfig({
   plugins: [
-    llui(), // Compiles LLui components, generates __dirty, __renderToString
+    llui(), // Lowers signal views to the runtime form; signal lint as build errors
     vike(), // Handles routing, SSR orchestration, data loading
   ],
 })
 ```
 
-**LLui plugin responsibilities:** Compile TypeScript components, generate bitmask `__dirty` functions, emit `__renderToString` for SSR, emit `data-llui-hydrate` markers, tree-shake dev-only code.
+**LLui plugin responsibilities:** Lower the signal direct view to the runtime emitters, surface the signal lint rules as build errors, emit dev/agent introspection metadata, tree-shake dev-only code. (Signal SSR needs no special compiler output — `renderToString` walks the same view; hydration rebuilds and atomic-swaps, so there are no `data-llui-hydrate` markers to emit.)
 
 **Vike plugin responsibilities:** Filesystem routing, page context management, SSR request handling, HTML streaming orchestration, pre-rendering (SSG), deployment adapters.
 
@@ -59,18 +59,21 @@ export { onRenderClient } from '@llui/vike/client'
 
 ### Custom Document Template
 
-Use `createOnRenderHtml` to control the full HTML document:
+Use `createOnRenderHtml` to control the DOM environment, the (optional) layout chain, and the full HTML document:
 
 ```typescript
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
 
 export const onRenderHtml = createOnRenderHtml({
-  document: ({ html, state, pageContext }) => `<!DOCTYPE html>
+  // Async DomEnv factory — jsdom or linkedom; keeps the DOM impl out of the client bundle.
+  domEnv: async () => (await import('@llui/dom/ssr/jsdom')).jsdomEnv(),
+  document: ({ html, state, head }) => `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="/styles.css" />
+    ${head}
   </head>
   <body>
     <div id="app">${html}</div>
@@ -80,32 +83,34 @@ export const onRenderHtml = createOnRenderHtml({
 })
 ```
 
+`createOnRenderHtml` also accepts an optional `Layout` resolver `(pageContext) => AnyLayer[]` for persistent layouts (see Routing Integration). The `document` callback receives `{ html, state, head, pageContext }` — `state` is the already-`JSON.stringify`-ed hydration envelope, `head` is content from `+Head.ts`.
+
 ### Server-Side Rendering: `onRenderHtml`
 
 Internally, `onRenderHtml` does:
 
-1. Lazy-loads `initSsrDom()` to set up jsdom (no-op if already initialized)
-2. Calls `Page.init(data)` to compute initial state
-3. Calls `renderToString(Page, initialState)` to generate HTML with `data-llui-hydrate` markers
-4. Serializes state into a `<script>` tag via `JSON.stringify`
-5. Returns the document wrapped in Vike's `dangerouslySkipEscape` format
+1. Resolves the `DomEnv` (the `domEnv` factory; a `DomEnv` from `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom`).
+2. Seeds each layer's state — in the signal runtime `init()` takes NO data argument, so a layer's per-layer `data` slice is used directly as that layer's seed state (and the layer's own `init()` provides the seed when absent).
+3. Builds the layer node trees with `renderNodes(def, seedState, env)` (composing layout + page at the `pageSlot()` anchor) and serializes them with `serializeNodes`.
+4. Serializes the hydration envelope into a `<script>` tag via `JSON.stringify`.
+5. Returns the document wrapped in Vike's `dangerouslySkipEscape` format.
 
-The state serialization constraint (01 Architecture.md) guarantees `JSON.stringify(initialState)` is lossless. No `Map`, `Set`, `Date`, class instances, or functions in state.
+The state serialization constraint (01 Architecture.md) guarantees `JSON.stringify(initialState)` is lossless. No `Map`, `Set`, `Date`, class instances, or functions in state. Server render is pure — effects (including `onMount`/`portal`) are not dispatched during SSR.
 
 ### Client-Side Hydration: `onRenderClient`
 
 ```typescript
 // Internally:
 if (pageContext.isHydration) {
-  hydrateApp(container, Page, window.__LLUI_STATE__)
+  hydrateSignalApp(target, def, serverState)
 } else {
-  mountApp(container, Page, pageContext.data)
+  mountSignalComponent(target, def, { initialState })
 }
 ```
 
-**Hydration path.** `hydrateApp` reuses the existing DOM created by `renderToString`. It walks the tree, finds `data-llui-hydrate` markers, attaches bindings with their bitmask, and registers structural blocks (`branch`, `each`, `show`). No DOM nodes are created or destroyed during hydration — only binding records and event listeners are attached. The `__dirty` function is the same one used in client-only mode.
+**Hydration path.** `hydrateSignalApp` does NOT reuse server nodes via claim-markers. It rebuilds the (deterministic) client tree against `serverState` (matching the SSR render) and atomically REPLACES the server HTML with the freshly-built tree — the server HTML stays visible until the swap, so there is no flash. `init()`'s effects are skipped by default (the server pass already ran the pure render); pass `runInitEffects: true` for an `init()` that no-ops on the server. Because hydration rebuilds, there are no `data-llui-hydrate` markers and no walk-and-attach step.
 
-**Client navigation path.** When the user navigates to a new page (Vike's client-side routing), `pageContext.isHydration` is `false`. The adapter calls `mountApp`, which runs `init()` → `view()` → Phase 2 from scratch, creating a fresh DOM tree.
+**Client navigation path.** When the user navigates to a new page (Vike's client-side routing), `pageContext.isHydration` is `false`. The adapter calls `mountSignalComponent`, which runs `init()` → builds the view → reconciles from scratch, creating a fresh DOM tree.
 
 ### Routing Integration
 
@@ -119,14 +124,14 @@ pages/
   users/@id/+Page.ts → /users/:id
 ```
 
-Each `+Page.ts` exports a LLui `ComponentDef`. Vike handles URL → page resolution. The LLui component receives the route's `data` (from the `+data.ts` hook) as the argument to `init()`.
+Each `+Page.ts` exports a signal component. Vike handles URL → page resolution. Because the signal `init()` takes no data argument, the route's `data` (from the `+data.ts` hook) is supplied as the page's seed STATE (the adapter overrides the seed; `init()` still runs so its effects are captured).
 
 This composes with LLui's "routing as state" pattern (01 Architecture.md) in a layered way:
 
 - **Page-level routing:** Vike maps URLs to top-level page components. Each page is a separate LLui app with its own state tree.
 - **Intra-page routing:** Within a page, sub-routes (tabs, nested views) are modeled as discriminants in the page's state, driven by `branch()`. Vike does not participate in these — they are pure client-side state transitions.
 
-For applications that need a single state tree across all pages (a single LLui app rather than one per page), `@llui/vike` supports a `+Layout.ts` that wraps all pages in a shared LLui component. The layout component's state persists across page navigations; the page component mounts as a child.
+For applications that need persistent layouts across navigations, `@llui/vike` supports a layout chain. A layout component places `pageSlot()` (from `@llui/vike/client`) where its nested content renders, and the `Layout` resolver passed to `createOnRenderHtml`/`createOnRenderClient` returns the chain of layers for a route. The layout's state persists across page navigations; the nested page mounts at the slot anchor. (Name the file `Layout.ts`, not `+Layout.ts` — Vike reserves the `+` prefix.) Contexts a layout provides above the slot reach the nested page: `pageSlot()` snapshots the in-scope context values and the adapter replays them into the nested layer's separate build.
 
 ### Data Loading
 
@@ -142,62 +147,53 @@ export async function data(pageContext: PageContextServer) {
 }
 ```
 
-The data is passed to the LLui component's `init()`:
+In the signal runtime the page's `init()` takes no argument, so Vike's `data` is supplied as the page's seed STATE. The page's `State` type should therefore be shaped so the route data IS (or embeds) the initial state:
 
 ```typescript
 // pages/users/@id/+Page.ts
 import { component } from '@llui/dom'
 
-type Data = { user: User }
+// `+data.ts` returns this shape; the adapter seeds it as the page's state.
 type State = { user: User; editing: boolean }
 type Msg = { type: 'toggleEdit' } | { type: 'save' }
 
-export default component<State, Msg, Effect>({
+export default component<State, Msg>({
   name: 'UserDetail',
-  init: (data: Data) => [{ user: data.user, editing: false }, []],
+  // init() runs (its effects are captured) but the seed state is overridden by
+  // the route data; provide a sensible fallback for client-only mounts.
+  init: () => [{ user: EMPTY_USER, editing: false }, []],
   update: (state, msg) => {
     /* ... */
   },
-  view: ({ send }) => {
+  view: ({ state, send }) => [
     /* ... */
-  },
+  ],
 })
 ```
 
-`data()` runs on the server for the initial request (SSR) and on the client for subsequent navigations (unless marked `.server.ts`, in which case Vike fetches via an internal RPC). This aligns with TEA's model: data fetching is an effect external to the component, and the component receives already-resolved data in `init()`.
+`data()` runs on the server for the initial request (SSR) and on the client for subsequent navigations (unless marked `.server.ts`, in which case Vike fetches via an internal RPC). This aligns with TEA's model: data fetching is an effect external to the component, and the component receives already-resolved data as its seed state.
 
 ### Pre-rendering (SSG)
 
 Vike supports static site generation via pre-rendering. For LLui, this means:
 
 1. At build time, Vike calls `data()` for each page.
-2. `onRenderHtml` runs `__renderToString(initialState)` to produce static HTML.
-3. The HTML files are written to disk with embedded `__LLUI_STATE__`.
-4. At runtime, `onRenderClient` hydrates as normal.
+2. `onRenderHtml` runs the signal SSR (`renderNodes` + `serializeNodes`, or `renderToString`) to produce static HTML.
+3. The HTML files are written to disk with the embedded `__LLUI_STATE__` envelope.
+4. At runtime, `onRenderClient` hydrates as normal (rebuild + atomic swap).
 
-No additional adapter work needed — `__renderToString` already handles this.
+No additional adapter work needed — the signal SSR path already handles this.
 
 ### Streaming SSR
 
-LLui's `__renderToString` currently returns a complete HTML string. Streaming SSR (sending HTML chunks as they resolve) is a future optimization:
-
-```typescript
-// Future: streaming onRenderHtml
-export const onRenderHtml: OnRenderHtmlAsync = async (pageContext) => {
-  const [initialState] = pageContext.Page.init(pageContext.data)
-  const stream = pageContext.Page.__renderToStream(initialState)
-  return { documentHtml: stream, pageContext: { enableStreamingHtml: true } }
-}
-```
-
-Streaming is deferred to post-v1. The synchronous `__renderToString` is sufficient for v1 — LLui components are fast to render because there is no virtual DOM diffing, just string concatenation of the view tree against a known state.
+The signal SSR path currently returns a complete HTML string (`renderToString` / `serializeNodes`). Streaming SSR (sending HTML chunks as they resolve) is a future optimization and is not part of the current API. The synchronous render is sufficient — LLui builds the node tree once against a known state and serializes it, with no virtual DOM diffing.
 
 ### Package Structure
 
 ```
-@llui/vike               ~1.5KB gzip    Extension config + render hooks
+@llui/vike               Extension config + render hooks (createOnRenderHtml/Client, pageSlot)
   vike (peer dep)                      Vike core
-  llui (peer dep)                      LLui runtime (hydrateApp, mountApp)
+  @llui/dom (peer dep)                 LLui runtime (renderNodes/serializeNodes, hydrateSignalApp, mountApp)
 ```
 
 The adapter is minimal. LLui's Vite plugin and Vike's Vite plugin do the heavy lifting; `@llui/vike` is the glue between them.
@@ -227,7 +223,44 @@ Per-page overrides are supported via `+config.ts` in the page directory.
 
 ---
 
-## 2. Cross-Cutting Concerns
+## 2. Imperative Libraries via `foreign()`
+
+For imperative third-party libraries that own their own DOM — code editors, maps, charts, rich-text editors — the boundary is `foreign()`. It creates a container element, hands it to the library's imperative `mount`, and drives the library from declared `state` signals.
+
+```typescript
+import { foreign } from '@llui/dom'
+import type { Signal } from '@llui/dom'
+
+export function codeView(routeSig: Signal<Route>): Node[] {
+  return [
+    foreign<EditorInstance, { props: Signal<FileProps> }>({
+      tag: 'div', // optional container tag (default 'div')
+      // Declared state signals — derived from the parent's signals:
+      state: { props: routeSig.map(fileProps) },
+      // `state.props` arrives as a LiveSignal (peek + bind), NOT a Signal:
+      mount: ({ el, state }) => {
+        el.className = 'code-viewer'
+        const inst = createEditor(el)
+        // bind() fires immediately with the current value, then on every change.
+        // Mount-time binds auto-dispose on unmount.
+        state.props.bind((props) => inst.render(props))
+        return inst
+      },
+      unmount: (inst) => inst.dispose(),
+    }),
+  ]
+}
+```
+
+Key points for the signal shape:
+
+- The declared `state` map's values are signals (`routeSig.map(...)`, `state.at(...)`, …). Inside `mount`, each is materialized to a `LiveSignal<T>` — a minimal read+subscribe handle with `peek()` and `bind(cb)` (no `at`/`map`/`derived`). `bind` fires synchronously with the current value, then on every change, and returns an unsubscribe; mount-time binds auto-dispose on unmount.
+- The library owns the DOM inside the container; LLui owns the container and drives the declared signals. There is no `props`/`sync`/`destroy` shape — that was the legacy runtime's API.
+- `foreign()` is also the boundary for embedding a genuinely independent app whose state lifetime is distinct from the host's.
+
+`@llui/components` (accordion, dialog, tabs, select, tree-view, …) are built on the signal authoring surface directly (`show`, `portal`, `onMount`, `useContext`, …), not on `foreign()` — `foreign()` is reserved for non-LLui imperative code.
+
+## 3. Cross-Cutting Concerns
 
 ### Dev Server Integration
 
@@ -243,32 +276,30 @@ HMR with state preservation (02 Compiler.md) works within Vike pages: when a LLu
 
 ### Testing
 
-`@llui/test` (04 Test Strategy.md) tests components in isolation — no Vike, no server. The `testComponent` harness calls `init()`, `update()`, and asserts on state and effects. Integration tests that exercise SSR use Vike's test utilities to render a full page and verify the HTML output matches expected hydration markers.
+`@llui/test` (04 Test Strategy.md) tests components in isolation — no Vike, no server. The `testComponent` harness calls `init()`/`update()` and asserts on state and effects; `testView` mounts via the signal runtime under jsdom/happy-dom. Integration tests that exercise SSR call the signal SSR path directly (`renderToString`/`renderNodes` against a `DomEnv`) and assert on the produced HTML, or use Vike's test utilities to render a full page.
 
-For `removed` components, the component's state transitions are testable independently (third-party provides its own test utilities). The LLui adapter's correctness reduces to: "does `normalizeProps` produce the right attributes, and does `useMachine` subscribe correctly?" Both are unit-testable without a browser.
+Hydration tests assert that re-rendering the same `serverState` on the client produces a tree equivalent to the server HTML — there are no hydration markers to match (hydration rebuilds and atomic-swaps).
 
 ### Bundle Size Impact
 
-Detailed in 06 Bundle Size.md. Summary:
+Detailed in 06 Bundle Size.md. Summary (byte figures are stale pending re-measurement against the signal runtime):
 
-| Addition                     | Estimated gzip cost              |
-| ---------------------------- | -------------------------------- |
-| `removed` adapter + wrappers | ~3KB (shared, not per-component) |
-| Per component (Dialog)       | ~3KB                             |
-| Per component (Combobox)     | ~5KB                             |
-| `@llui/vike` adapter         | ~1.5KB                           |
-| Vike client runtime          | ~5KB                             |
+| Addition                                | gzip cost                   |
+| --------------------------------------- | --------------------------- |
+| `@llui/components` (per used component) | re-measure (tree-shakeable) |
+| `@llui/vike` adapter                    | re-measure                  |
+| Vike client runtime                     | separate Vike concern       |
 
-All packages are tree-shakeable. An app using Dialog and Select pays for those two machines plus the shared adapter — unused machines add zero bytes.
+All packages are tree-shakeable. An app pays only for the components it imports.
 
 ---
 
-## 3. Resolved Questions
+## 4. Resolved Questions
 
-**Why not shadcn/ui?** shadcn is a distribution model (copy-paste React components) built on Radix (React-only hooks). Neither the distribution model nor the React dependency translates to LLui. third-party provides the same class of components with a framework-agnostic FSM core.
+**Why not shadcn/ui?** shadcn is a distribution model (copy-paste React components) built on Radix (React-only hooks). Neither the distribution model nor the React dependency translates to LLui. LLui ships its own headless components (`@llui/components`) built on the signal authoring surface.
 
 **Why not Astro?** Astro's island architecture assumes independent, isolated components with separate hydration boundaries. LLui's single-state-tree model does not decompose into independent islands without losing the primary benefit of TEA — a single `update()` that sees all state transitions. Vike lets LLui own the full page render. Astro integration is not ruled out for the island use case but is not the primary server-side story.
 
-**Why not build our own components?** Accessible UI components are extraordinarily hard to get right. Focus management, keyboard navigation, screen reader announcements, ARIA attribute state machines, and cross-browser quirks represent years of iteration. third-party (via third-party) has this iteration built in. Building from scratch would delay LLui's usability by 12+ months for no architectural benefit.
+**How are accessible components provided?** `@llui/components` (accordion, dialog, tabs, select, tree-view, tour, timer, …) ship the focus management, keyboard navigation, ARIA state, and screen-reader behavior, built directly on the signal authoring surface (`show`, `portal`, `onMount`, context). For imperative third-party libraries that own their own DOM, use `foreign()` (§2).
 
 **Why not Vinxi / TanStack Start?** Vinxi is the framework-agnostic server layer under SolidStart. It is architecturally promising but still pre-1.0 and tightly coupled to SolidStart's development cycle. TanStack Start targets React. Both are less mature than Vike for the "bring your own framework" use case.

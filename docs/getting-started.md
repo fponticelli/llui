@@ -37,7 +37,7 @@ export default defineConfig({
 **src/main.ts:**
 
 ```typescript
-import { component, mountApp, div, button, flush } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 // 1. Define your state shape
 type State = { count: number }
@@ -65,11 +65,12 @@ const Counter = component<State, Msg>({
   },
 
   // View — runs once, creates DOM with reactive bindings.
-  // Destructure helpers from the View bag — `text` infers State automatically.
-  view: ({ send, text }) => [
+  // The bag is `{ state, send }`: `state` is a Signal<State>.
+  // Element helpers (div, button, text, …) are imported from @llui/dom.
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
       button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
     ]),
@@ -135,76 +136,67 @@ update: (state, msg) => {
 
 ### view() Runs Once
 
-`view()` builds the DOM at mount time. It's called with `(send, h)` where `h` is a bundle of state-bound helpers. Destructure the ones you need — that pins `State` across every callback, so you never write per-call generics.
+`view()` builds the DOM at mount time. It receives one bag, `{ state, send }`. `state` is a `Signal<State>` — slice into it with `.at('field')`, derive with `.map(fn)`, and read a one-shot value with `.peek()` (for event handlers and effects only).
 
-```typescript
-view: ({ send, show, each, branch, text, memo }) => [
-  ...show({ when: (s) => s.visible, render: () => [...] }),
-]
-```
-
-For values that change, use **accessor functions**:
+For values that change, pass a **signal**; for static values, pass plain values:
 
 ```typescript
 // Static text (never changes):
 text('Hello')
 
-// Reactive text (updates when state changes — destructured `text` infers s: State):
-text((s) => `Count: ${s.count}`)
+// Reactive text (updates when count changes):
+text(state.at('count').map((n) => `Count: ${n}`))
 
-// Reactive attribute on an element helper (annotate s here — element
-// helpers are imported directly and not bound to the component's State):
-div({ class: (s: State) => s.active ? 'on' : 'off' }, [...])
+// Reactive attribute on an element helper:
+div({ class: state.at('active').map((a) => (a ? 'on' : 'off')) }, [...])
 
-// Reactive prop:
-input({ value: (s: State) => s.query, disabled: (s: State) => s.loading })
+// Reactive props:
+input({ value: state.at('query'), disabled: state.at('loading') })
 ```
+
+A reactive slot is a signal; an event handler is a plain function. Never operate on a
+signal as if it were a value (`state.at('n') + 1`) — derive with `.map`. Never use
+`.peek()` in a slot — it reads once and never updates.
 
 ### Conditional Rendering
 
 Use `branch()` for multi-way and `show()` for boolean:
 
 ```typescript
-// Multi-way conditional (destructure `branch` from the view helpers)
-branch({
-  on: (s) => s.page,
-  cases: {
-    home: () => [text('Home page')],
-    about: () => [text('About page')],
-  },
+// Multi-way conditional — keyed on a string/number signal's value
+branch(state.at('page'), {
+  home: () => [text('Home page')],
+  about: () => [text('About page')],
 })
 
-// Boolean conditional
-show({
-  when: (s) => s.isVisible,
-  render: () => [div([text('I am visible')])],
-})
+// Boolean conditional — the truthy arm receives the narrowed signal
+show(state.at('isVisible'), () => [div([text('I am visible')])])
 ```
 
 ### Lists
 
-Use `each()` with a key function and the options bag pattern:
+Use `each()` with a key function. The `render` callback receives per-row `item` and
+`index` **signals**:
 
 ```typescript
-each({
-  items: (s) => s.todos,
+each(state.at('todos'), {
   key: (t) => t.id,
-  render: ({ send, item, index }) => [
+  render: (item) => [
     div({ class: 'todo' }, [
       input({
         type: 'checkbox',
-        checked: item.done,
-        onChange: () => send({ type: 'toggle', id: item.id() }),
+        checked: item.at('done'),
+        onChange: () => send({ type: 'toggle', id: item.at('id').peek() }),
       }),
-      text(item.text),
+      text(item.at('text')),
     ]),
   ],
 })
 ```
 
-`item.text` returns a **per-item accessor** — a zero-arg function that reads the current item's field. It updates automatically when the item changes. Use `item(t => t.expr)` for computed expressions.
-
-Invoke the accessor (`item.id()`) to read the current value imperatively — e.g. inside event handlers.
+`item.at('text')` is a reactive per-row slot — it updates in place when the row's data
+changes. `key` receives the **raw** item value (a plain function). Inside an event
+handler, read the current value with `item.at('id').peek()`.
 
 ## Effects
 
@@ -214,30 +206,35 @@ Effects are plain data objects returned from `update()`:
 import { http } from '@llui/effects'
 
 update: (state, msg) => {
-  case 'fetchUsers':
-    return [
-      { ...state, loading: true },
-      [http({
-        url: '/api/users',
-        onSuccess: (data) => ({ type: 'usersLoaded' as const, payload: data }),
-        onError: (err) => ({ type: 'fetchError' as const, error: err }),
-      })],
-    ]
-  case 'usersLoaded':
-    return [{ ...state, users: msg.payload, loading: false }, []]
+  switch (msg.type) {
+    case 'fetchUsers':
+      return [
+        { ...state, loading: true },
+        [
+          http({
+            url: '/api/users',
+            // onSuccess/onError are CALLBACKS that return a Msg:
+            onSuccess: (data) => ({ type: 'usersLoaded' as const, payload: data }),
+            onError: (err) => ({ type: 'fetchError' as const, error: err }),
+          }),
+        ],
+      ]
+    case 'usersLoaded':
+      return [{ ...state, users: msg.payload, loading: false }, []]
+  }
 }
 ```
 
-Handle effects with `handleEffects()`:
+Handle effects with `handleEffects()`. It consumes the built-in effects (`http`,
+`cancel`, `debounce`, …); `.else()` receives one `{ effect, send, signal }` context for
+the remaining custom variants:
 
 ```typescript
 import { handleEffects } from '@llui/effects'
 
-onEffect: handleEffects<Effect, Msg>()
-  .use(routingPlugin)              // plugins handle specific effect types
-  .else(({ effect, send }) => {    // catch-all for app-specific effects
-    // custom effect handling
-  }),
+onEffect: handleEffects<Effect, Msg>().else(({ effect, send }) => {
+  // custom effect handling — `effect` is narrowed to your non-built-in variants
+}),
 ```
 
 ## Routing
@@ -261,15 +258,12 @@ const routing = connectRouter(router)
 In the view:
 
 ```typescript
-view: ({ send, branch }) => [
+view: ({ state, send }) => [
   routing.link(send, { page: 'home' }, {}, [text('Home')]),
   ...routing.listener(send),
-  ...branch({
-    on: (s) => s.route.page,
-    cases: {
-      home: () => homePage(send),
-      user: () => userPage(send),
-    },
+  branch(state.at('route').at('page'), {
+    home: () => homePage(state, send),
+    user: () => userPage(state, send),
   }),
 ]
 ```

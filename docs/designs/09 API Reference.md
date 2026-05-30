@@ -1,656 +1,529 @@
 # API Reference
 
-This document provides the authoritative type signatures for every public export in the LLui framework and its companion packages. For design rationale and usage patterns, see the document referenced in each section.
+This document provides the authoritative type signatures for the public exports of the LLui framework and its companion packages. For design rationale and usage patterns, see the document referenced in each section.
+
+There is a single import surface for the runtime: **`@llui/dom`**. Server-only and compiler-only surfaces live under sub-entries (`@llui/dom/ssr`, `@llui/dom/ssr/jsdom`, `@llui/dom/ssr/linkedom`, `@llui/dom/devtools`, `@llui/dom/internal`). There is no `/signals` subpath and no separate legacy runtime.
 
 ---
 
-## Core Runtime (`llui`)
+## Core Runtime (`@llui/dom`)
 
-### `component<S, M, E, D>(def)`
+### `component<S, M, E>(spec)`
 
-Creates a component definition. This is the entry point for every LLui component.
+Defines a signal component. Identity at runtime — the value passed in is the definition the compiler annotates and the runtime mounts.
 
 ```typescript
-function component<S, M, E = never, D = void>(
-  def: ComponentDef<S, M, E, D>,
-): ComponentDef<S, M, E, D>
+function component<S, M, E = never>(spec: SignalComponentSpec<S, M, E>): SignalComponentDef<S, M, E>
 
-interface ComponentDef<S, M, E = never, D = void> {
-  name: string
-  init: (data: D) => [S, E[]]
-  update: (state: S, msg: M) => [S, E[]]
-  view: (h: View<S, M>) => Node[]
-  onEffect?: (bag: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
-
-  // Level 2 composition only:
-  propsMsg?: (props: any) => M
-  receives?: Record<string, (params: any) => M>
-
-  // @internal — compiler-injected, not part of the public API:
-  // __prefixes (path-keyed reactivity table — replaces the older __dirty
-  //   field which was removed when path-keyed reactivity landed),
-  // __view ((send) => view-bag containing only the destructured primitives —
-  //   added in v0.4 to close the view-helpers tree-shaking leak),
-  // __handlers (per-message-type specialized handlers — dispatches single-
-  //   message updates to specialized reconcile paths via _handleMsg),
-  // __renderToString, __msgSchema, __maskLegend, __componentMeta,
-  // __compilerVersion, __schemaHash, __stateSchema, __effectSchema,
-  // __lluiCompilerEmitted (umbrella integrity marker), __bindingDescriptors.
-  //
-  // Notably absent: __update — the per-component Phase 1/2 fast path was
-  // removed in v0.4 (only ~3% perf benefit, 200-400 bytes per component).
-  // The runtime always uses genericUpdate now.
+interface SignalComponentSpec<S, M, E = never> {
+  /** optional name — debug registry / agent identity */
+  name?: string
+  /** initial state, optionally with initial effects */
+  init: () => S | [S, E[]]
+  /** pure reducer; returns next state, optionally with effects (bare S accepted) */
+  update: (state: S, msg: M) => [S, E[]] | S
+  /** build the view once; reactive reads are signal bindings */
+  view: (bag: SignalViewBag<S, M>) => readonly Node[]
+  /** handle an effect; may return a cleanup function */
+  onEffect?: (effect: E, api: { send: Send<M>; state: Signal<S> }) => void | (() => void)
 }
+
+interface SignalViewBag<S, M> {
+  state: Signal<S>
+  send: Send<M>
+}
+
+type Send<M> = (msg: M) => void
 ```
 
 **Constraints:**
 
 - `S` must be JSON-serializable (no `Map`, `Set`, `Date`, class instances, functions).
-- `M` should be a discriminated union with a `type` field.
-- `E` should be a discriminated union with a `type` field.
-- `update()` must be pure — no side effects, no DOM access, no async.
-- `view()` runs once at mount time. Do not call view primitives outside this context.
-- `h` is a `View<S, M>` bundle of state-bound helpers — see [`View<S, M>`](#views-m) below. Using `h.show(...)` / `h.text(...)` / `h.each(...)` removes the need for per-call generic annotations because `S` is pinned by the enclosing `component<S, M, _>` call.
+- `M` and `E` should be discriminated unions with a `type` field.
+- `init()` takes **no arguments**.
+- `update()` must be pure — no side effects, no DOM access, no async. A bare `S` return is normalized to `[S, []]`.
+- `view` runs once at mount. Its bag carries `state: Signal<S>` and `send` — **not** element helpers. Element and structural helpers are module imports from `@llui/dom`.
 
-See: 01 Architecture.md, 07 LLM Friendliness.md
+The compiler injects optional introspection metadata (`__msgSchema`, `__stateSchema`, `__effectSchema`, `__msgAnnotations`, `__schemaHash`, `__componentMeta`) into the definition in dev/agent builds; these are tree-shaken from production. They are not part of the authored API.
+
+See: 01 Architecture.md, 02 Compiler.md, 07 LLM Friendliness.md
 
 ---
 
-### `View<S, M>`
+### `Signal<T>`
 
-A bundle of state-bound view helpers passed as the second argument to `view`. Every method is typed over the component's `S` and `M`, so callbacks like `when: s => ...` and `items: s => ...` infer `s: S` without explicit generics at each call site.
+The reactive view of a value. The entire reactive vocabulary is three methods plus the standalone `derived`.
 
 ```typescript
-interface View<S, M> {
-  send: (msg: M) => void
-  show(opts: ShowOptions<S, M>): Node[]
-  branch(opts: BranchOptions<S, M>): Node[]
-  scope(opts: ScopeOptions<S, M>): Node[]
-  each<T>(opts: EachOptions<S, T, M>): Node[]
-  text(accessor: ((s: S) => string) | string, mask?: number): Text
-  memo<T>(accessor: (s: S) => T): (s: S) => T
-  selector<V>(field: (s: S) => V): SelectorInstance<V>
-  ctx<T>(c: Context<T>): (s: S) => T
-  /** One-shot imperative read of current state; no binding created. */
-  sample<R>(selector: (s: S) => R): R
+interface Signal<T> {
+  /** slice into a sub-signal via a statically-typed dot path */
+  at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
+  /** derive a single-source signal */
+  map<U>(fn: (value: T) => U): Signal<U>
+  /** one-shot, non-reactive read — handlers / effects / lifecycle only */
+  peek(): T
 }
 ```
 
-**`slice(h, selector)`** (standalone export from `@llui/dom`) returns a narrower `View<Sub, M>` for view-functions that read a sub-slice of the parent state. All state-bound accessors written against the sub view are composed with `selector` under the hood:
+- `.at('a.b')` narrows to a sub-path signal; the path is statically validated against `T` (`ValidPath<T>`), and the result type is `PathValue<T, P>` with nullability bubbled through optional/array segments.
+- `.map(fn)` derives. Deps carry through unchanged — a mapped value can only change when its source path changes. `.at()` on a mapped signal is unsupported (slice with `.at()` _before_ `.map()`).
+- `.peek()` reads the current value once with no binding. Using it in a reactive slot is a compile error (`peek-in-slot`).
 
-```typescript
-import { slice } from '@llui/dom'
+A reactive slot is a signal: `text(state.at('count').map(String))`, `div({ class: state.at('open').map(o => o ? 'on' : '') })`. Operating on a signal directly (`state.at('n') + 1`, ternary on a signal, template span) is a compile error (`operator-on-signal`) — derive with `.map`.
 
-view: ({ send, branch }) => {
-  const routeView = slice({ send }, s => s.route)
-  return routeView.branch({
-    on: r => r.data.type === 'loading' ? 'loading' : 'ready',
-    cases: { ... },
-  })
-}
-```
-
-`slice` is a standalone function (not a View method) so apps that don't use it don't pay its bundle cost.
-
-**Compiler integration.** The Vite plugin treats destructured aliases (`{ text, show }`) and member-expression calls (`h.text(...)`, `h.show(...)`) identically to bare imports for mask injection. Destructured names are tracked through the first parameter of `view: ({ send, text }) => ...` arrows and `(h: View<S, M>)` parameter annotations on extracted helpers.
-
-**Destructuring vs. `h.`:** destructure view helpers in `view: ({ send, text, show }) => ...`. For extracted view-functions, accept `h: View<S, M>` and destructure from it. The compiler handles both forms equivalently.
-
-See: 01 Architecture.md, 07 LLM Friendliness.md
-
----
-
-### `mountApp(container, def, data?)`
-
-Mounts a component into the DOM. Runs `init(data)`, then `view()`, then Phase 2.
-
-```typescript
-function mountApp<S, M, E, D>(
-  container: HTMLElement,
-  def: ComponentDef<S, M, E, D>,
-  data: D,
-): AppHandle
-
-interface AppHandle {
-  dispose(): void // Disposes the root scope, removes all DOM, cancels all effects.
-  flush(): void // Alias for the global flush() scoped to this app.
-}
-```
-
-The returned `AppHandle` is the only way to tear down a mounted app — required for SPA page transitions, test cleanup, and HMR. Calling `dispose()` is idempotent; calling it twice is a no-op.
-
-See: 08 Ecosystem Integration.md
-
----
-
-### `hydrateApp(container, def, serverState)`
-
-Hydrates server-rendered HTML. Walks existing DOM, attaches bindings to `data-llui-hydrate` markers, and registers structural blocks without creating new DOM nodes.
-
-```typescript
-function hydrateApp<S, M, E, D>(
-  container: HTMLElement,
-  def: ComponentDef<S, M, E, D>,
-  serverState: S,
-): AppHandle
-```
-
-Returns the same `AppHandle` as `mountApp`. On mismatch between server HTML and client state, falls back to full client render for the affected subtree with a development-mode console warning.
-
-See: 08 Ecosystem Integration.md
-
----
-
-### `mountAtAnchor(anchor, def, data?, options?)`
-
-Mounts a component relative to a comment anchor rather than inside a container element. Inserts a synthesized end sentinel (`<!-- llui-mount-end -->`) immediately after the anchor and places the component's nodes between the pair. Requires `anchor.parentNode !== null`.
-
-```typescript
-function mountAtAnchor<S, M, E, D>(
-  anchor: Comment,
-  def: ComponentDef<S, M, E, D>,
-  data: D,
-  options?: MountOptions,
-): AppHandle
-```
-
-The caller's anchor is preserved across the handle's lifetime; only the content between the pair (and the end sentinel itself) is removed by `dispose()`. Used by `@llui/vike` to mount chain layers without a wrapper element. Also suitable for embedding reactive components inside markdown-rendered content or any other context where a wrapper element is undesirable.
-
-See: `docs/superpowers/specs/2026-04-17-anchor-mount-design.md`
-
----
-
-### `hydrateAtAnchor(anchor, def, serverState, options?)`
-
-Hydration counterpart to `mountAtAnchor`. Uses `serverState` as the initial state and preserves `init()`'s effects for post-mount dispatch (analogous to `hydrateApp`'s behavior).
-
-```typescript
-function hydrateAtAnchor<S, M, E, D = void>(
-  anchor: Comment,
-  def: ComponentDef<S, M, E, D>,
-  serverState: S,
-  options?: MountOptions,
-): AppHandle
-```
-
-Atomic-swap: removes whatever is between the anchor and its end sentinel (reusing an existing sentinel or synthesizing one) and inserts fresh client-rendered nodes in their place. Never throws for a missing sentinel — the `@llui/vike` chain's outer `hydrateApp` call wipes inner layers' end sentinels, so inner-layer `hydrateAtAnchor` calls routinely find nothing to reuse.
-
-See: `docs/superpowers/specs/2026-04-17-anchor-mount-design.md`
-
----
-
-### `send(msg)`
-
-Enqueues a message for the next update cycle. Available as the second argument to `view()` and to `onEffect`. Multiple `send()` calls within the same synchronous execution coalesce into one update cycle.
-
-```typescript
-type Send<M> = (msg: M) => void
-```
+`derived(sigs, fn)` combines N independent signals into a derived signal (use `.map` for a single source); it is the type surface, runtime support is not implemented.
 
 See: 01 Architecture.md, 03 Runtime DOM.md
 
 ---
 
-### `flush()`
+### `mountApp(container, def)`
 
-Forces the pending update cycle to execute synchronously. After `flush()` returns, the DOM reflects all queued messages. No-op if no messages are pending.
+Mounts a component into a container element and drives its update loop.
 
 ```typescript
-function flush(): void
+function mountApp<S, M, E = never>(
+  container: Element,
+  def: SignalComponentDef<S, M, E>,
+): SignalComponentHandle<S, M>
 ```
 
-Use for: (1) imperative DOM measurement after `send()`, (2) test harnesses needing synchronous assertions.
+A fresh mount appends the built nodes; init effects are dispatched after mount. Returns the component handle (below).
 
-**Reentrancy:** If `flush()` is called while an update cycle is already in progress (e.g., from inside an effect handler), it is a no-op — the current cycle will already process all pending messages. Messages enqueued by effects during the cycle are picked up in the next microtask drain, not in the current `flush()`.
-
-See: 03 Runtime DOM.md
+See: 08 Ecosystem Integration.md
 
 ---
 
-### `onMount(callback)`
+### `mountSignalComponent(target, def, opts?)`
 
-Registers a callback that fires via `queueMicrotask` after DOM insertion. The callback receives the element's root DOM node. Must be called during `view()` execution. The callback is silently dropped if the owning scope is disposed before the microtask fires.
+The full mount entry — `mountApp` is the container-only convenience over it.
 
 ```typescript
-function onMount(callback: (el: Element) => (() => void) | void): void
+function mountSignalComponent<S, M, E = never>(
+  target: Element | MountTarget,
+  def: SignalComponentDef<S, M, E>,
+  opts?: MountSignalOptions<S>,
+): SignalComponentHandle<S, M>
+
+type MountTarget =
+  | { container: Element; mode?: 'append' | 'replace' }
+  | { anchor: Comment; mode?: 'append' | 'replace' }
+
+interface MountSignalOptions<S> {
+  /** hydrate over server HTML: seed with serverState, atomically replace */
+  hydrate?: { serverState: S; runInitEffects?: boolean }
+  /** seed state instead of init()'s result (init() still runs for its effects) */
+  initialState?: S
+  /** context values exposed at the build root (see provide/useContext) */
+  contexts?: ReadonlyMap<symbol, unknown>
+}
 ```
 
-The optional return value is a cleanup function registered as a disposer on the current scope.
+A bare `Element` is treated as `{ container, mode: hydrate ? 'replace' : 'append' }`. An `{ anchor }` target inserts nodes after a comment anchor, bracketed by a synthesized `<!--llui-mount-end-->` sentinel — used by `@llui/vike` and by `lazy` to mount a nested layer without owning the parent element.
+
+See: 03 Runtime DOM.md, 08 Ecosystem Integration.md
+
+---
+
+### `hydrateSignalApp(target, def, serverState, options?)`
+
+Hydrates server-rendered HTML.
+
+```typescript
+function hydrateSignalApp<S, M, E = never>(
+  target: Element | MountTarget,
+  def: SignalComponentDef<S, M, E>,
+  serverState: S,
+  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
+): SignalComponentHandle<S, M>
+```
+
+Builds the client tree against `serverState` (matching the SSR render) and atomically swaps it in — server HTML stays visible until the swap, so no flash. `init()`'s effects are skipped by default (the server already ran them); pass `runInitEffects: true` for init()s that no-op on the server. Hydration does **not** claim server nodes; there are no `data-llui-hydrate` markers.
+
+See: 03 Runtime DOM.md, 08 Ecosystem Integration.md
+
+---
+
+### `SignalComponentHandle<S, M>`
+
+The handle returned by mounting — the agent / test / HMR contract.
+
+```typescript
+interface SignalComponentHandle<S, M> {
+  send(msg: M): void
+  getState(): S
+  /** no-op: signal send is synchronous (kept for harness/agent parity) */
+  flush(): void
+  /** run all effect cleanups + the build's teardowns */
+  dispose(): void
+  /** fires synchronously after every state-changing update; returns unsubscribe */
+  subscribe(listener: (state: S) => void): () => void
+  /** run the reducer in isolation against current state; no commit/dispatch */
+  runReducer(msg: M): { state: S; effects: unknown[] } | null
+  /** Msg variants dispatchable from currently-rendered UI (live tagSend regs) */
+  getBindingDescriptors(): Array<{ variant: string }>
+  /** hot-swap the reducer (and optionally onEffect) without rebuilding the DOM */
+  swapUpdate(
+    newUpdate: (state: unknown, msg: unknown) => [unknown, unknown[]] | unknown,
+    newOnEffect?: unknown,
+  ): void
+  /** install a hook for binding-accessor throws during an update */
+  setOnBindingError(hook: ((e: BindingError) => void) | null): void
+}
+
+interface BindingError {
+  kind: string
+  key?: string
+  message: string
+  stack?: string
+}
+```
+
+`subscribe` backs the agent protocol's state-update frames; `runReducer` backs `would_dispatch`; `getBindingDescriptors` backs `list_actions`; `swapUpdate` is the HMR escape hatch for pure `update.ts` edits (keeps live state + DOM); `setOnBindingError` backs the dispatch envelope's `drain.errors` (the runtime leaves a throwing binding's DOM at its prior value and continues with siblings).
+
+See: 03 Runtime DOM.md, 10 Agent Protocol.md
+
+---
+
+### `send` / `flush`
+
+`send` is the second field of the view bag and the `api.send` in `onEffect`. It runs the pure reducer **synchronously**; if the new state differs by reference, it commits to the reconciler, notifies subscribers, then dispatches effects. There is no message queue — each `send` is its own update cycle.
+
+`handle.flush()` is a no-op (signal `send` is synchronous); it exists for parity with harnesses/agents that assume an async batch model.
+
+See: 01 Architecture.md, 03 Runtime DOM.md
+
+---
+
+### `text(value)`
+
+Reactive or static text node.
+
+```typescript
+function text(value: Reactive<string | number>): Node
+type Reactive<T> = Signal<T> | T
+```
+
+A signal value (`text(state.at('count').map(String))`) becomes a reactive text binding; a plain value (`text('-')`) becomes a static text node. The compiler lowers a direct-view `text(...)` to `signalText`/`staticText`; in view-helper code it runs as a real function consuming the signal handle.
 
 See: 01 Architecture.md
 
 ---
 
-### Event Listeners
+### Element Helpers (`div`, `span`, `button`, …)
 
-Event handlers are the second argument category in element props (keys matching `/^on[A-Z]/`). The `send` function is captured from the enclosing `view(send)` closure — handlers call `send()` to dispatch messages.
+HTML element helpers. Each accepts `tag(children)`, `tag(props, children)`, `tag(props)`, or `tag()` — a leading array literal is children.
 
 ```typescript
-button({ onClick: () => send({ type: 'increment' }) }, [text('+')])
-input({ onInput: (e) => send({ type: 'typed', value: e.target.value }) })
+interface ElementHelper {
+  (children: readonly Node[]): Node
+  (props?: ElProps, children?: readonly Node[]): Node
+}
+
+type AttrValue = Reactive<string | number | boolean | null | undefined>
+type ElProps = Record<string, AttrValue | ((ev: Event) => void)>
 ```
 
-Handlers are registered via `addEventListener` at mount time and removed when the owning scope is disposed. **Handlers are not reactive** — the handler identity is captured once at mount. If a handler needs to read current state, capture the needed values via reactive accessors or dispatch a message and read state in `update()`.
+Props: a signal value becomes a reactive binding; an `on*` function becomes an event listener (`onClick` → `click`); everything else is a static attribute. A `style.X` prop sets an individual style property; `null`/`false` removes the attribute, `true` sets it to `''`.
+
+Exported HTML helpers: `div span p a button input label form ul ol li section header footer nav main h1 h2 h3 h4 h5 h6 img small strong em table thead tbody tr td th pre code canvas aside article figure figcaption blockquote hr br select option optgroup textarea fieldset legend dl dt dd caption time details summary`.
+
+See: 01 Architecture.md
 
 ---
-
-### Addressed Effects
-
-Components can declare named command handlers via `receives` in `ComponentDef`. This enables typed cross-component communication through the effect system.
-
-```typescript
-// Child declares what it receives:
-const DataTable = component({
-  receives: {
-    scrollToRow: (params: { id: string }) => ({ type: 'scrollToRow', id: params.id }),
-    resetSort: () => ({ type: 'resetSort' }),
-  },
-  // ...
-})
-
-// Parent sends addressed effects:
-import { toDataTable } from './data-table'
-return [state, [toDataTable.scrollToRow({ id: msg.id })]]
-```
-
-**Component registry:** Each `child()` instance registers itself in a per-app component registry keyed by `child.key`. `dispatchEffect` resolves the `__targetKey` field on addressed effects against this registry at dispatch time. If the target component is not mounted, the effect is dropped with a development-mode warning. If multiple children share a key, the last-mounted instance wins (this is a bug — keys must be unique).
-
-The `component()` call auto-generates a typed `address` builder (exported as `toComponentName`) from the `receives` map. Invalid handler names or mismatched parameter types are caught at compile time.
-
----
-
-## View Primitives
-
-### `text(accessor)`
-
-Creates a reactive text node. The accessor is re-evaluated on state changes matching its bitmask.
-
-```typescript
-function text<S>(accessor: (s: S) => string): Text
-function text(staticValue: string): Text
-```
-
-The compiler injects a mask as a second argument: `text(accessor, mask)`.
-
-See: 01 Architecture.md, 03 Runtime DOM.md
-
----
-
-### Element Helpers (`div`, `span`, `button`, etc.)
-
-Approximately 50 functions, one per HTML element. All share the same signature pattern:
-
-```typescript
-function div<S>(props?: ElementProps<S>, children?: Node[]): HTMLDivElement
-function button<S>(props?: ElementProps<S>, children?: Node[]): HTMLButtonElement
-function input<S>(props?: ElementProps<S>): HTMLInputElement
-// ... etc for all HTML elements
-```
-
-**Props are classified by the compiler into three categories:**
-
-- **Static** — literal values applied once at mount: `{ class: 'container', id: 'root' }`
-- **Event handlers** — keys matching `/^on[A-Z]/`: `{ onClick: () => send({ type: 'click' }) }`
-- **Reactive bindings** — arrow functions re-evaluated on state changes: `{ class: s => s.active ? 'on' : 'off' }`
-
-After compilation, all element helper calls are rewritten to `elSplit()` and the helpers are tree-shaken from the bundle.
-
-See: 02 Compiler.md, 06 Bundle Size.md
 
 ### SVG Element Helpers
 
-55 SVG elements created via `document.createElementNS('http://www.w3.org/2000/svg', tag)`. Same prop/binding API as HTML elements — reactive attributes, event handlers, static props all work identically.
-
-```typescript
-import {
-  svg,
-  circle,
-  rect,
-  path,
-  g,
-  defs,
-  linearGradient,
-  stop,
-  svgText,
-  filter,
-  feGaussianBlur,
-} from '@llui/dom'
-
-// Container/structural: svg, g, defs, symbol, use
-// Shapes: circle, ellipse, line, path, polygon, polyline, rect
-// Text: svgText (aliased to avoid conflict with text()), tspan, textPath
-// Paint: clipPath, linearGradient, radialGradient, stop, mask, pattern, marker
-// Filters: filter, feBlend, feColorMatrix, feComposite, feGaussianBlur, feFlood, feOffset, feMerge, feMergeNode, + 12 more
-// Embedded: image, foreignObject
-// Animation: animate, animateMotion, animateTransform, set, mpath
-// Descriptive: desc, svgTitle (aliased), metadata
-```
-
-Note: SVG `text` is exported as `svgText` and SVG `title` as `svgTitle` to avoid conflicts with the `text()` primitive and HTML `title` element.
-
-### MathML Element Helpers
-
-31 MathML elements created via `document.createElementNS('http://www.w3.org/1998/Math/MathML', tag)`.
-
-```typescript
-import {
-  math,
-  mi,
-  mn,
-  mo,
-  mfrac,
-  msqrt,
-  mroot,
-  msup,
-  msub,
-  mrow,
-  mtable,
-  mtr,
-  mtd,
-} from '@llui/dom'
-
-// Top-level: math
-// Tokens: mi, mn, mo, ms, mtext
-// Layout: mrow, mfrac, msqrt, mroot, msup, msub, msubsup, munder, mover, munderover, mmultiscripts, mprescripts, mnone
-// Table: mtable, mtr, mtd
-// Spacing/visual: mspace, mpadded, mphantom, menclose, merror
-// Interactive: maction
-// Semantics: semantics, annotation, annotationXml
-```
+Namespaced SVG helpers, same call forms as HTML helpers: `svg path g circle rect line polyline polygon ellipse`, plus `svgText` (the SVG `<text>` element — named to avoid colliding with the `text()` node helper).
 
 ---
 
 ## Structural Primitives
 
-### `branch(opts)`
+### `each(items, opts)`
 
-Conditional rendering keyed on a string-valued discriminant. When the discriminant changes, the old arm's lifetime is disposed depth-first (removing all bindings, listeners, and nested structural blocks) and the new arm's builder runs from scratch.
+Keyed list. `items` is a signal of the array; rows are reconciled by key, each row its own scope mounted on a combined item+state context.
 
 ```typescript
-function branch<S, M>(opts: {
-  on: (s: S) => string
-  cases?: Record<string, (h: View<S, M>) => Node[]>
-  default?: (h: View<S, M>) => Node[]
-  enter?: (nodes: Node[]) => void | Promise<void>
-  leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
-}): Node[]
+function each<T>(
+  items: Signal<readonly T[]>,
+  opts: {
+    key: (item: T) => string | number
+    render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+  },
+): Node
 ```
 
-- `on(state)` returns a string. Coerce numeric/boolean discriminants at the call site (`on: (s) => String(s.code)` or `on: (s) => s.flag ? 'yes' : 'no'`).
-- `cases` is optional. The reconciler looks up `cases[on(state)]`; if no case matches, `default(h)` runs. If neither matches, the arm is empty.
-- `default` is the canonical shape for "any unmatched key rebuilds here" — use `scope()` below if you want no enumerated cases at all.
+`render` receives per-row `item` and `index` **signals** — `item.at('field')` is a reactive per-row slot; `item.at('id').peek()` reads the current value inside an event handler. `key` receives the **raw** item value (a plain function, not reactive). Kept rows are mutated in place; the keyed diff moves only displaced rows. (See `examples/todomvc/src/main.ts`.)
 
-The `leave` callback fires before node removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` fires after insertion. `onTransition` fires first when both are specified (for FLIP animations), then `enter`/`leave` fire for their respective elements.
-
-See: 03 Runtime DOM.md, 01 Architecture.md
+See: 03 Runtime DOM.md
 
 ---
 
-### `scope(opts)`
+### `show(cond, render, orElse?)`
 
-Rebuild a subtree when a derived string-valued key changes. Sugar over `branch({ on, cases: {}, default: render, __disposalCause: 'scope-rebuild' })` — same reconcile machinery, named for intent.
+Conditional render keyed on a truthiness.
 
 ```typescript
-function scope<S, M>(opts: {
-  on: (s: S) => string
-  render: (h: View<S, M>) => Node[]
-  enter?: (nodes: Node[]) => void | Promise<void>
-  leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
-}): Node[]
+function show<T>(
+  cond: Signal<T>,
+  render: (narrowed: Signal<NonNullable<T>>) => readonly Node[],
+  orElse?: () => readonly Node[],
+): Node
 ```
 
-On initial mount, `on(state)` is computed, a fresh Lifetime is created, and `render(h)` is invoked in that lifetime. On each dirty tick where the scope's compiler-injected `__mask` overlaps, `on(state)` is recomputed; a new key disposes the current arm and runs `render(h)` against a fresh Lifetime. Bindings inside are recreated each rebuild.
+Mounts `render`'s content when `cond` is truthy, `orElse`'s when falsy (or nothing). The `render` arm receives the **narrowed** signal (the cond handle, non-null), so it can read narrowed fields. A same-truthiness state update does not remount — the mounted arm's own scope handles its inner reactivity.
 
-Use `sample()` (below) inside `render` to capture a snapshot of state at rebuild time without creating a reactive binding — the idiomatic pattern for "rebuild when an epoch counter bumps, build from the current data".
-
-See: `docs/superpowers/specs/2026-04-18-scope-primitive-design.md`
+See: 03 Runtime DOM.md
 
 ---
 
-### `each(opts)`
+### `branch(value, …)`
 
-Reactive keyed list rendering with reconciliation.
+Discriminated-union or value-keyed render.
 
 ```typescript
-function each<S, T, M>(opts: {
-  items: (s: S) => T[]
-  key: (item: T) => string | number
-  render: (bag: { send: Send<M>; item: ItemAccessor<T>; index: () => number }) => Node[]
-  enter?: (nodes: Node[]) => void | Promise<void>
-  leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
-}): Node[]
+// 3-arg: discriminant selector + narrowed arms
+function branch<U extends object, D extends keyof U>(
+  value: Signal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[]
+  },
+): Node
 
-// ItemAccessor is a proxy-function: callable for computed expressions,
-// with per-field shorthand properties.
-type ItemAccessor<T> = (<R>(selector: (t: T) => R) => () => R) & {
-  [K in keyof T]: () => T[K]
-}
+// 2-arg: keyed directly on a string/number signal's value
+function branch<K extends string | number>(
+  value: Signal<K>,
+  arms: Partial<Record<K, () => readonly Node[]>>,
+): Node
 ```
 
-**Parameter types differ intentionally:**
+The 3-arg form selects the union's tag field (`v => v.type`); each arm receives the **narrowed variant signal**, so it reads variant-only fields with full types (`v.at('data')`). Swapping the discriminant value unmounts the old arm and mounts the new one; a same-key update does not remount; an absent arm renders nothing.
 
-- `key` receives the **raw item value** `T` — it is a pure identity function evaluated during Phase 1.
-- `render` receives a **scoped accessor** `item` and an `index` getter. Use `item.field()` for a direct field read (the shorthand for `item(t => t.field)()`), or `item(t => expr)` for computed expressions that produce a reactive binding.
-
-See: 03 Runtime DOM.md, 01 Architecture.md
+See: 03 Runtime DOM.md
 
 ---
 
 ### `virtualEach(opts)`
 
-Virtualized list — renders only items currently visible in the scroll viewport plus an overscan buffer. Use for lists with 1k+ items where a regular `each()` would be too expensive. Fixed-height rows only.
+Windowed keyed list — only rows in the scroll viewport (+overscan) exist in the DOM.
 
 ```typescript
-function virtualEach<S, T, M>(opts: {
-  items: (s: S) => T[]
+function virtualEach<T>(opts: {
+  items: Signal<readonly T[]>
   key: (item: T) => string | number
-  itemHeight: number // fixed pixel height per row
-  containerHeight: number // pixel height of the scroll container
-  overscan?: number // extra rows to render above/below viewport (default: 3)
-  class?: string // optional class for the scroll container
-  render: (opts: {
-    send: Send<M>
-    item: ItemAccessor<T>
-    acc: <R>(selector: (t: T) => R) => () => R
-    index: () => number
-  }) => Node[]
-}): Node[]
+  itemHeight: number
+  containerHeight: number
+  overscan?: number
+  class?: string
+  render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+}): Node
 ```
 
-`virtualEach` creates its own scroll container (`overflow: auto`) and an inner spacer sized to `items.length * itemHeight`. Visible rows are absolutely positioned at `index * itemHeight`. As the user scrolls, rows outside the viewport have their scopes disposed; new rows entering the viewport are built fresh. When the items array changes in state, the component's update loop triggers a reconcile.
-
-**Limitations (current):**
-
-- Fixed row height only — dynamic heights not supported
-- No transitions / animations
-- Items that scroll out of view are fully disposed and rebuilt when re-entering (no pooling)
+A scroll container (`containerHeight`) holds a spacer sized to `items.length * itemHeight`; each visible row is absolutely positioned at `index * itemHeight`. Reuses `each`'s per-row scope machinery. The window recomputes on scroll and when the items deps change. **Fixed `itemHeight` only.**
 
 See: 03 Runtime DOM.md
-
----
-
-### `show(opts)`
-
-Boolean conditional rendering. Implemented as a two-case `branch` — the scope is disposed when the condition becomes false and rebuilt when it becomes true.
-
-```typescript
-function show<S, M>(opts: {
-  when: (s: S) => boolean
-  render: (h: View<S, M>) => Node[]
-  fallback?: (h: View<S, M>) => Node[]
-  enter?: (nodes: Node[]) => void | Promise<void>
-  leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
-}): Node[]
-```
-
-See: 03 Runtime DOM.md
-
----
-
-### `portal(opts)`
-
-Renders a subtree outside the component's natural DOM position (e.g., to `document.body` for modals). Bindings participate in the same update cycle. The portal's scope is a child of the originating scope — disposal removes portal nodes from the target.
-
-```typescript
-function portal(opts: { target: HTMLElement | string; render: () => Node[] }): Node[]
-```
-
-When `target` is a `string`, it is resolved via `document.querySelector(target)` at mount time. If the target element is not found, a development-mode warning is emitted and the portal renders nothing. If the target element is removed from the DOM after mount, portal nodes are removed with it — the scope's disposers still fire on the next parent scope disposal.
-
-Bindings inside the portal participate in the same update cycle as the rest of the component. The portal's scope is a child of the originating scope — disposing the parent disposes the portal.
-
-See: 01 Architecture.md
-
----
-
-### `clientOnly(opts)`
-
-Marks a subtree as browser-only. SSR emits an anchor-bracketed placeholder (optionally backed by a server-rendered fallback subtree); the real render callback only runs on the client at mount or hydrate.
-
-```typescript
-function clientOnly<S, M>(opts: {
-  render: (bag: View<S, M>) => Node[]
-  fallback?: (bag: View<S, M>) => Node[]
-}): Node[]
-```
-
-SSR emits `<!--llui-client-only-start-->` + (optional) fallback nodes + `<!--llui-client-only-end-->`. The `render` callback is not invoked during SSR — it's free to touch `window` / `document` or import browser-only modules. On the client (both fresh mount and hydrate), `render` runs inline with the host component's `View<S, M>` bag; LLui's atomic-swap hydration discards the server DOM, so the anchors are an SSR-output artifact only.
-
-Gate heavy browser-only imports via dynamic `import()` inside `render` — the module graph elides them from the SSR bundle. The current `isBrowser` flag on the `DomEnv` is the SSR-vs-client discriminator: jsdom/linkedom envs don't set it, `browserEnv()` does.
-
-See: 03 Runtime DOM.md
-
----
-
-### `foreign(opts)`
-
-Opaque container for imperative third-party libraries. LLui owns the container element; the library owns everything inside it.
-
-```typescript
-function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
-  mount: (bag: { container: HTMLElement; send: (msg: M) => void }) => Instance
-  props: (s: S) => T
-  sync:
-    | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
-    | {
-        [K in keyof T]?: (bag: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
-      }
-  destroy: (instance: Instance) => void
-  container?: { tag?: string; attrs?: Record<string, string> }
-}): Node[]
-```
-
-All four generic parameters (`S`, `M`, `T`, `Instance`) are inferred by TypeScript. The `sync` record form diffs per-field and dispatches only changed fields.
-
-See: 01 Architecture.md
-
----
-
-### `child(opts)`
-
-Level 2 composition — creates a full component boundary with its own bitmask, update cycle, and scope tree. Use only when the child has 30+ state paths, encapsulated internals, or an independent effect lifecycle.
-
-```typescript
-function child<S, ChildS, ChildM, ChildE>(opts: {
-  def: ComponentDef<ChildS, ChildM, ChildE>
-  key: string | number
-  props: (s: S) => Record<string, unknown>
-  onMsg?: (msg: ChildM) => ParentMsg | null
-}): Node[]
-```
-
-The props accessor has a bitmask derived from its parent state dependencies. The runtime: (1) checks the bitmask first — if no relevant parent state paths changed, the props accessor is not called at all; (2) when the bitmask matches, calls the accessor and compares each field of the returned object via `Object.is` with the previous props; (3) only if at least one field changed, calls `def.propsMsg(newProps)` and enqueues the result into the child's message queue. `onMsg` maps child messages selectively to parent messages — return `null` for messages the parent should ignore.
-
-See: 01 Architecture.md
 
 ---
 
 ### `lazy(opts)`
 
-Asynchronously load a component on demand. Renders `fallback` immediately, then swaps in the loaded component when the loader's Promise resolves. On rejection, renders `error` (or nothing if no error handler is provided). If the parent scope is disposed before the loader resolves, the load is cancelled — the loaded component is never mounted.
+Asynchronously load a signal component on demand.
 
 ```typescript
-function lazy<S, M, D = undefined>(opts: {
-  loader: () => Promise<LazyDef<D>>
-  fallback: (h: View<S, M>) => Node[]
-  error?: (err: Error, h: View<S, M>) => Node[]
-  data?: (s: S) => D
-}): Node[]
+function lazy<LS = unknown, LM = unknown, LE = unknown>(opts: {
+  loader: () => Promise<SignalComponentDef<LS, LM, LE>>
+  fallback: () => readonly Node[]
+  error?: (err: Error) => readonly Node[]
+  initialState?: LS
+}): Node
 ```
 
-`LazyDef<D>` is a type-erased component definition — any `ComponentDef<S, M, E, D>` is
-structurally assignable to `LazyDef<D>` regardless of `S`, `M`, `E`. The loaded
-component's internal types are invisible to the caller; only `D` (init data) survives
-because the caller provides it via `data`.
-
-Typical use:
-
-```typescript
-view: ({ text }) => [
-  ...lazy({
-    loader: () => import('./Chart').then((m) => m.default),
-    fallback: ({ text }) => [div([text('Loading...')])],
-    error: (err, { text }) => [div([text(`Failed: ${err.message}`)])],
-    data: (s) => ({ points: s.chartData }),
-  }),
-]
-```
-
-The loader is called once per `lazy()` instance. Integrates with Vite's dynamic `import()` for code splitting.
+Renders `fallback()` immediately (reactive, built in the current build), then on `loader()` resolution removes the fallback and mounts the loaded component at an anchor via `mountSignalComponent`. On reject it swaps in `error(err)` (or nothing). If the surrounding build is torn down before the loader settles, the deferred mount is cancelled and any already-mounted child is disposed. The loaded component's `S`/`M`/`E` are erased to the loader's type parameters — the single documented type-erasure boundary. Integrates with Vite's dynamic `import()` for code splitting.
 
 See: 06 Bundle Size.md
 
 ---
 
-### `memo(accessor)`
+### `foreign(spec)`
 
-Memoizes an accessor using a two-level cache: (1) the bitmask check skips re-evaluation when no relevant state paths changed, and (2) `Object.is` comparison on the return value prevents downstream updates when the computation produces the same result despite input changes.
+Imperative-library boundary. LLui owns the host element; the library owns everything inside it.
 
 ```typescript
-function memo<S, T>(accessor: (s: S) => T): (s: S) => T
+function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
+  tag?: string // host element tag, default 'div'
+  state?: State // declared reactive inputs
+  mount: (args: {
+    el: Element
+    state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
+  }) => Inst
+  unmount?: (instance: Inst) => void
+}): Node
+
+interface LiveSignal<T> {
+  peek(): T
+  bind(cb: (value: T) => void): () => void // fires immediately + on change
+}
 ```
 
-Use for expensive derived computations referenced by multiple bindings.
+Each declared `state` signal is materialized to a `LiveSignal` (peek + bind) and handed to `mount`, which builds the third-party instance into the host element. When a declared input changes, its `LiveSignal` fires bound callbacks. Communicate out via `send` closed over from the view bag. `unmount` runs on the owning component's dispose. The analyzer sees the declared deps; the imperative body is opaque.
 
 See: 01 Architecture.md
 
 ---
 
-### `sample(selector)`
+### `onMount(callback)`
 
-One-shot imperative read of the current state inside a render context. No binding is created, no mask is assigned, the call is a synchronous read.
+Run a callback after the surrounding view's nodes are inserted.
 
 ```typescript
-function sample<S, R>(selector: (s: S) => R): R
+function onMount(cb: (root: Element) => void | (() => void)): Node
 ```
 
-Use when a builder needs the current state snapshot — e.g. to pass a record to an imperative renderer inside a `scope()` rebuild — and a reactive binding would be wrong semantically. The top-level import works in every render context (including `each.render`, whose bag does not carry View methods); `h.sample(…)` is the View-bag form for destructure-from-`h` callers.
+Receives the mounted parent element. A returned function is registered as a teardown (run on unmount/dispose). Returns a marker comment node for the view array.
 
-`sample()` is a **construction-time** primitive. It throws if called outside a render context, and it also throws if called from inside an accessor — `each.key`, `each.items`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, or a binding accessor like `text(s => …)`. Accessors run during the update phase (no render context) and must be pure functions of their parameter; `sample()` reads outside the parameter, which the compiler's mask analysis can't see. The lint rule `llui/no-sample-in-accessor` catches the same antipattern at edit time. To depend on outer state inside an accessor, lift the dep into the parameter (e.g. for `each.key`, bake it into the items map: `items: (s) => s.rows.map(it => ({ it, rev: s.rev }))`).
-
-See: `docs/superpowers/specs/2026-04-18-scope-primitive-design.md`
+See: 03 Runtime DOM.md
 
 ---
 
-### `errorBoundary(opts)`
+### `portal(content, target?)`
 
-Wraps a scoped builder in a try/catch. Renders fallback subtree on error. Independently tree-shakeable.
+Render content out-of-tree while keeping it in the current scope.
 
 ```typescript
-function errorBoundary(opts: {
-  render: () => Node[]
-  fallback: (error: Error) => Node[]
-  onError?: (error: Error) => void
-}): Node[]
+function portal(content: () => readonly Node[], target?: Element): Node
 ```
 
-Protects three zones: (1) view construction errors, (2) binding evaluation errors in Phase 2, (3) effect handler errors. Does NOT wrap `update()` — a throwing `update()` is a bug.
+Renders `content()` into `target` (default `document.body`); the content's bindings join the current scope (so it stays reactive), and a teardown removes the nodes on unmount/dispose. Returns an inline placeholder comment. During SSR the server `DomEnv` has no `document.body`, so a portal needs an explicit target.
 
-See: 01 Architecture.md
+See: 03 Runtime DOM.md
+
+---
+
+### Context: `createContext` / `provide` / `useContext`
+
+Build-time dependency injection.
+
+```typescript
+interface Context<T> {
+  readonly id: symbol
+  readonly default: T
+}
+function createContext<T>(defaultValue: T, name?: string): Context<T>
+function provide<T>(context: Context<T>, value: T, render: () => readonly Node[]): Node
+function useContext<T>(context: Context<T>): T
+```
+
+`provide` sets a value for everything `render` builds, then restores. `useContext` reads the nearest provided value (or the default — outside a build it returns the default rather than throwing). Values may be plain or signals; provided values flow into nested builds (each rows, show/branch arms).
+
+See: 03 Runtime DOM.md
+
+---
+
+### `tagSend(send, variants, handler)`
+
+Tag an event handler with the Msg variants it can dispatch, for the agent affordance registry.
+
+```typescript
+function tagSend<F extends (...args: never[]) => unknown>(
+  send: unknown,
+  variants: readonly string[],
+  fn: F,
+): F
+```
+
+The tagged handler registers its variants live (refcounted per mounted scope) so `handle.getBindingDescriptors()` / the agent's `list_actions` can report which actions the rendered UI currently affords. Used throughout `@llui/components`' `connect()` parts.
+
+See: 10 Agent Protocol.md, 11 Agent Annotations and Tools.md
+
+---
+
+### Signal handle utilities
+
+Advanced/test composition: build a signal handle outside a component bag.
+
+```typescript
+function pathHandle<T>(get: () => unknown, base: string): SignalHandle<T>
+function isSignalHandle(v: unknown): v is SignalHandle<unknown>
+
+interface SignalHandle<T> extends Signal<T> {
+  readonly produce: (state: unknown) => T
+  readonly deps: readonly string[]
+}
+```
+
+`pathHandle(get, base)` constructs a runtime `Signal` rooted at a path: `produce` resolves `base` from the binding's state; `peek` reads the live value via `get`; `.at` extends the path; `.map` derives. The runtime realizes the bag's `state` handle this way. Most application code never imports these.
+
+---
+
+## SSR (`@llui/dom` + `@llui/dom/ssr`)
+
+### `renderToString(def, initialState, env)`
+
+```typescript
+function renderToString<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  initialState: S | undefined,
+  env: ServerDoc,
+): string
+```
+
+Builds the component's DOM against a server `DomEnv` and serializes it to an HTML string. Effects are not dispatched (server render is pure). `initialState` defaults to `init()`'s state.
+
+### `renderNodes(def, initialState, env, contexts?)`
+
+```typescript
+function renderNodes<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  initialState: S | undefined,
+  env: ServerDoc,
+  contexts?: ReadonlyMap<symbol, unknown>,
+): { nodes: readonly Node[]; dispose: () => void }
+```
+
+Returns the built (detached) nodes plus a `dispose` that runs the build's teardowns — for adapters that compose multiple node trees (layout + page) before one final serialization. `contexts` replays a layout's in-scope `provide` values into the nested build.
+
+### `serializeNodes(nodes)`
+
+```typescript
+function serializeNodes(nodes: readonly Node[]): string
+```
+
+Serialize already-built DOM nodes to HTML (event handlers are dropped; void elements self-close).
+
+### `ServerDoc` / `DomEnv` / env factories
+
+```typescript
+type ServerDoc = SignalDoc // node-factory subset the build needs
+type DomEnv // from @llui/dom/ssr — the env contract + browserEnv() helper
+
+// @llui/dom/ssr/jsdom
+function jsdomEnv(): Promise<DomEnv>
+// @llui/dom/ssr/linkedom
+function linkedomEnv(): Promise<DomEnv>
+```
+
+`@llui/dom/ssr` exports the `DomEnv` contract and `browserEnv()` but imports no DOM implementation; pick a backend via `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom` and pass the resulting env to `renderToString`/`renderNodes`.
+
+See: 08 Ecosystem Integration.md
+
+---
+
+## Debug API (`@llui/dom/devtools`)
+
+Dev-only surface for the MCP/agent relay. Installed automatically by `mountSignalComponent` when `import.meta.env.DEV` is true.
+
+```typescript
+function installSignalDebug(hooks: SignalDebugHooks): () => void
+// plus exported types: LluiDebugAPI, SignalDebugHooks, SignalMessageRecord,
+// MessageRecord, StateDiff, ValidationError, BindingDebugInfo, UpdateExplanation,
+// ComponentInfo, MessageSchemaInfo, BindingLocation, ElementReport, HydrationDivergence
+```
+
+The Vite plugin injects a `startRelay(port)` bootstrap into dev signal bundles when MCP is enabled; `@llui/mcp` connects to it. Production builds tree-shake the whole surface.
+
+See: 07 LLM Friendliness.md, 10 Agent Protocol.md
 
 ---
 
@@ -661,940 +534,101 @@ Composable effect description builders and a runtime chain for interpreting them
 ### Effect Builders
 
 ```typescript
-function http(opts: {
+function http<M>(opts: {
   url: string
   method?: string
-  body?: any
+  body?: unknown
+  contentType?: string
   headers?: Record<string, string>
-  onSuccess: string // tag name: runtime wraps response into { type: tag, payload: responseData }
-  onError: string // tag name: runtime wraps error into { type: tag, error: errorData }
-}): HttpEffect
+  timeout?: number
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
+  onSuccess: (data: unknown, headers: Headers) => M
+  onError: (error: ApiError) => M
+}): HttpEffect<M>
 
 function cancel(token: string): CancelEffect
-function cancel(token: string, inner: Effect): CancelReplaceEffect
+function cancel(token: string, inner: BuiltinEffect): CancelReplaceEffect
 
-function debounce(key: string, ms: number, inner: Effect): DebounceEffect
-
-function sequence(effects: Effect[]): SequenceEffect
-
-function race(effects: Effect[]): RaceEffect
+function debounce(key: string, ms: number, inner: BuiltinEffect): DebounceEffect
+function timeout<M>(ms: number, msg: M): TimeoutEffect
+function interval<M>(key: string, ms: number, msg: M): IntervalEffect
 ```
 
-All builders return plain data objects (JSON-serializable). They are returned from `update()`, not executed directly.
+`onSuccess`/`onError` are **functions** mapping the response (or `ApiError`) to a `Msg` — not string tags. All builders return plain data objects, returned from `update()`, not executed directly. (`@llui/effects` also ships builders for storage/broadcast/websocket/upload/clipboard/notification/geolocation; see the package source.)
 
-### `handleEffects<E>()`
+### `handleEffects<E, M>()`
 
 ```typescript
-function handleEffects<E extends { type: string }>(): {
-  else<R extends E>(
-    handler: (bag: { effect: R; send: Send<Msg>; signal: AbortSignal }) => void,
-  ): OnEffectHandler<E>
+interface EffectCtx<E, M> {
+  effect: E
+  send: Send<M>
+  signal: AbortSignal
+}
+function handleEffects<E extends { type: string }, M = never>(): {
+  else(handler: (ctx: EffectCtx<E, M>) => void): (ctx: EffectCtx<E, M>) => void
 }
 ```
 
-Canonical `onEffect` handler. Consumes `http`, `cancel`, `debounce`, `sequence`, `race` effects. The `.else()` callback receives only the remaining custom effect types (TypeScript narrows automatically). The chain tracks cancellation tokens and debounce timers in a per-component closure and uses the `AbortSignal` for cleanup on unmount.
+The canonical `onEffect` handler. Consumes the built-in effects (`http`, `cancel`, `debounce`, `timeout`, `interval`, …); `.else(handler)` receives a single `{ effect, send, signal }` context for the remaining custom effect types (TypeScript narrows `effect` to those automatically). The chain tracks cancellation tokens and debounce timers in a per-component closure and uses `signal` (aborted on dispose) for cleanup.
 
 See: 01 Architecture.md
-
-### `_setEffectInterceptor(hook | null)` (dev only)
-
-```typescript
-function _setEffectInterceptor(
-  hook: ((effect: unknown) => { mocked: true; response: unknown } | { mocked: false }) | null,
-): void
-```
-
-Registers a dev-only interceptor that runs at effect dispatch time. Return `{ mocked: true, response }` to short-circuit the real handler; return `{ mocked: false }` to pass the effect through unchanged. Call with `null` to remove the interceptor. The function is a no-op in production — only the `import.meta.env.DEV` branch exists in the bundle. Used internally by `llui_mock_effect` and `llui_resolve_effect`.
 
 ---
 
 ## `@llui/test`
 
-All exports are devDependencies — zero production bundle cost.
+Test harnesses. DevDependency only — zero production bundle cost.
 
-### `testComponent(def, initialData?)`
+### `testComponent(def)`
 
-Zero-DOM component harness. Runs in Node, no browser needed.
+Zero-DOM harness over `init`/`update`. Runs in Node.
 
 ```typescript
-function testComponent<S, M, E, D>(
-  def: ComponentDef<S, M, E, D>,
-  initialData: D,
-): {
+function testComponent<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E>
+
+interface TestHarness<S, M, E> {
   state: S
-  effects: E[]
-  allEffects: E[]
+  effects: E[] // effects from the last send
+  allEffects: E[] // effects accumulated across all sends (incl. init)
   history: Array<{ prevState: S; msg: M; nextState: S; effects: E[] }>
-  send: (msg: M) => void
-  sendAll: (msgs: M[]) => S
+  send(msg: M): void
+  sendAll(msgs: M[]): S
 }
 ```
+
+`init()`'s state and effects seed the harness; `send` runs the reducer and records history.
 
 ### `testView(def, state)`
 
-Runs `view()` once against a lightweight DOM shim.
+Mounts the component against a fresh container, seeding it with `state` (not `init()`'s data), and returns an interactive harness with auto-flush.
 
 ```typescript
-function testView<S, M, E, D>(
-  def: ComponentDef<S, M, E, D>,
-  state: S,
-): {
-  query: (selector: string) => Element | null
-  queryAll: (selector: string) => Element[]
+function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
+
+interface ViewHarness<S, M> {
+  readonly container: HTMLElement
+  readonly handle: SignalComponentHandle<S, M>
+  query(selector: string): Element | null
+  queryAll(selector: string): Element[]
+  text(selector: string): string
+  attr(selector: string, name: string): string | null
+  send(msg: M): void
+  click(selector: string): void
+  input(selector: string, value: string): void
+  fire(selector: string, type: string, init?: EventInit): void
+  unmount(): void
 }
 ```
 
-The shim supports `querySelector`, `querySelectorAll`, `textContent`, `getAttribute`, `children`. No layout, CSS, focus, or events.
+`click`/`input`/`fire` simulate events and flush so tests chain assertions naturally; `unmount` disposes and removes the DOM (idempotent).
 
-### `assertEffects(actual, expected)`
+### Also exported
 
-Partial deep matching — extra fields in actual effects are ignored.
-
-```typescript
-function assertEffects<E>(actual: E[], expected: Partial<E>[]): void
-```
-
-### `propertyTest(def, config)`
-
-Generative invariant testing via random message sequences.
-
-```typescript
-function propertyTest<S, M, E, D>(
-  def: ComponentDef<S, M, E, D>,
-  config: {
-    invariants: Array<(state: S, effects: E[]) => boolean>
-    messageGenerators: Record<string, ((state: S) => M) | (() => M)>
-    runs?: number // default: 1000
-    maxSequenceLength?: number // default: 50
-  },
-): void
-```
-
-On failure, shrinks to minimal reproduction.
-
-### `replayTrace(def, trace)`
-
-Regression testing from recorded sessions. Canonical import from `@llui/test`; implementation lives in `llui/trace`.
-
-```typescript
-function replayTrace<S, M, E, D>(def: ComponentDef<S, M, E, D>, trace: LluiTrace<S, M, E>): void
-
-interface LluiTrace<S, M, E> {
-  lluiTrace: 1
-  component: string
-  generatedBy: string
-  timestamp: string
-  entries: Array<{
-    msg: M
-    expectedState: S
-    expectedEffects: E[]
-  }>
-}
-```
+- **`defineTestComponent(input)`** — build a `SignalComponentDef` inline for a test (seed state in `init()`), returned ready to hand to `testComponent`/`testView`.
+- **`reducer(def, opts?)`** — a zero-DOM reducer driver over `update` alone, for pure state-transition assertions.
+- **`assertEffects(actual, expected)`** — structural assertion over an effect array.
+- **`propertyTest(...)`** — property/fuzz harness that drives random `Msg` sequences and checks invariants.
+- **`replayTrace(def, trace)`** — re-run a recorded message trace against a component and assert the resulting states.
+- **`recordAgentSession` / `replayAgentSession`** — capture and replay an agent-driven dispatch session (see 10 Agent Protocol.md).
 
 See: 04 Test Strategy.md
-
----
-
-## `@llui/components` — Styles
-
-### CSS Theme
-
-```typescript
-import '@llui/components/styles/theme.css' // light theme + all component styles
-import '@llui/components/styles/theme-dark.css' // dark mode overrides (separate file)
-```
-
-`theme.css` declares design tokens in a `@theme` block and styles all 54 components via `[data-scope][data-part]` attribute selectors. `theme-dark.css` overrides color/shadow tokens for dark mode via `prefers-color-scheme: dark` and `[data-theme="dark"]`.
-
-### Variant Engine
-
-```typescript
-import { createVariants, cx } from '@llui/components/styles'
-
-function createVariants<V extends VariantRecord>(
-  config: VariantConfig<V>,
-): (props?: VariantProps<V>) => string
-function cx(...classes: ClassValue[]): string
-
-type ClassValue = string | false | null | undefined
-```
-
-### Class Helpers
-
-Each component exports a class helper from `@llui/components/styles/<name>`:
-
-```typescript
-import { tabsClasses } from '@llui/components/styles/tabs'
-
-const cls = tabsClasses({ size: 'sm', variant: 'pill' })
-// Returns: { root: string, list: string, trigger: string, panel: string, indicator: string }
-```
-
-All 54 components have class helpers. Each returns an object mapping part names to Tailwind utility class strings. Most accept optional `size` and `variant`/`colorScheme` props with defaults.
-
----
-
-## Internal Types
-
-### `Scope`
-
-```typescript
-interface Scope {
-  id: number
-  parent: Scope | null
-  children: Scope[]
-  disposers: Array<() => void>
-  bindings: Binding[]
-  eachItemStable: boolean
-}
-```
-
-See: 03 Runtime DOM.md
-
-### `Binding`
-
-```typescript
-interface Binding {
-  mask: number // paths 0–30 get their own bit; 32+ overflow to FULL_MASK (-1)
-  accessor: (state: any) => any
-  lastValue: any
-  kind: 'text' | 'prop' | 'attr' | 'class' | 'style'
-  node: Node
-  key?: string // for prop, attr, style kinds
-  ownerScope: Scope
-  perItem: boolean
-}
-```
-
-See: 03 Runtime DOM.md
-
-### Dev-mode Debug Types (exported from `@llui/dom`, dev only)
-
-These types back the `window.__lluiDebug` API. They are tree-shaken from production builds.
-
-```typescript
-/** Detailed inspection report for a single DOM element. */
-interface ElementReport {
-  selector: string
-  tagName: string
-  attributes: Record<string, string>
-  classes: string[]
-  dataAttributes: Record<string, string>
-  textContent: string | null
-  computedStyle: Record<string, string>
-  boundingBox: { x: number; y: number; width: number; height: number }
-  bindingIndices: number[]
-}
-
-/** One node in the scope tree returned by getScopeTree(). */
-interface LifetimeNode {
-  id: number
-  kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal'
-  bindingCount: number
-  children: LifetimeNode[]
-}
-
-/** Add/remove/move/reuse record for one reconciliation pass of an each() site. */
-interface EachDiff {
-  siteId: string
-  messageIndex: number
-  added: string[]
-  removed: string[]
-  moved: Array<{ key: string; from: number; to: number }>
-  reused: string[]
-}
-
-/** One scope disposal event recorded by the runtime. */
-interface DisposerEvent {
-  scopeId: number
-  kind: LifetimeNode['kind']
-  cause: 'parent' | 'branch' | 'show' | 'each' | 'dispose'
-  timestamp: number
-}
-
-/** An effect that is queued or currently in-flight. */
-interface PendingEffect {
-  effectId: string
-  effect: unknown
-  status: 'queued' | 'in-flight'
-  dispatchedAt: number
-}
-
-/** One entry in the effect timeline log. */
-interface EffectTimelineEntry {
-  effectId: string
-  effect: unknown
-  phase: 'dispatched' | 'in-flight' | 'resolved' | 'cancelled' | 'error'
-  timestamp: number
-  result?: unknown
-  error?: unknown
-}
-
-/** A registered effect mock for llui_mock_effect. */
-interface EffectMatch {
-  mockId: string
-  match: Partial<Record<string, unknown>>
-  response: unknown
-  once: boolean
-}
-
-/** Structured diff between two state values. */
-interface StateDiff {
-  path: string
-  kind: 'added' | 'removed' | 'changed'
-  oldValue?: unknown
-  newValue?: unknown
-}
-
-/** Per-Msg variant fire counts, from getCoverage(). */
-interface CoverageSnapshot {
-  counts: Record<string, number>
-  neverFired: string[]
-  totalMessages: number
-}
-```
-
-`MessageRecord` is already defined in §10 of `07 LLM Friendliness.md` as part of `LluiDebugAPI`. It is the canonical type — no re-export needed.
-
----
-
-## `window.__lluiDebug` — Phase 1 Extensions
-
-The base `LluiDebugAPI` interface is specified in `07 LLM Friendliness.md §10`. The Phase 1 expansion adds the following methods. All are tree-shaken from production builds.
-
-### View and DOM
-
-```typescript
-/** Rich inspection report for a DOM element matching the selector. */
-inspectElement(selector: string): ElementReport | null
-
-/** outerHTML of the element matching selector (default = mount root). Truncated to maxLength if provided. */
-getRenderedHtml(selector?: string, maxLength?: number): string
-
-/** Synthesize a browser event on the element; returns messages produced and the resulting state. */
-dispatchDomEvent(
-  selector: string,
-  type: string,
-  init?: EventInit,
-): { dispatched: boolean; messagesProducedIndices: number[]; resultingState: unknown }
-
-/** Info about the currently focused element. */
-getFocus(): { selector: string; tagName: string; selectionStart: number | null; selectionEnd: number | null }
-```
-
-### Bindings and Scope
-
-```typescript
-/** Force all bindings to re-evaluate; returns indices of bindings whose value changed. */
-forceRerender(): { changedBindings: number[] }
-
-/** Each-site reconciliation diffs since messageIndex (default = all). */
-getEachDiff(sinceIndex?: number): EachDiff[]
-
-/** Scope hierarchy rooted at scopeId (default = root), truncated at depth. */
-getScopeTree(opts?: { depth?: number; scopeId?: number }): LifetimeNode
-
-/** Recent scope disposal events, newest first. */
-getDisposerLog(limit?: number): DisposerEvent[]
-
-/** Inverted binding index: maps state paths to the binding indices that read them. */
-getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }>
-
-/** Bindings that are either detached or whose value has never changed since mount. */
-listDeadBindings(): BindingDebugInfo[]
-```
-
-### Effects
-
-```typescript
-/** All currently queued or in-flight effects. */
-getPendingEffects(): PendingEffect[]
-
-/** Chronological effect phase log, newest first. */
-getEffectTimeline(limit?: number): EffectTimelineEntry[]
-
-/**
- * Register a mock: the next effect matching `match` (subset equality) resolves with `response`.
- * Set opts.once = false for a persistent mock. Returns the mock ID.
- */
-mockEffect(
-  match: Partial<Record<string, unknown>>,
-  response: unknown,
-  opts?: { once?: boolean },
-): { mockId: string }
-
-/** Manually resolve a specific pending effect by ID. */
-resolveEffect(effectId: string, response: unknown): { resolved: boolean }
-```
-
-### Time Travel and Utilities
-
-```typescript
-/**
- * Rewind N messages by replaying from init.
- * mode = 'pure' (default) replays update() only; mode = 'full' also re-runs effects.
- */
-stepBack(n: number, mode?: 'pure' | 'full'): { state: unknown; rewindDepth: number }
-
-/** Per-Msg variant fire counts and variants that have never fired. */
-getCoverage(): CoverageSnapshot
-
-/** Evaluate arbitrary JS in the page context; returns the result and any side effects observed. */
-evalInPage(code: string): { result: unknown; sideEffects: { messagesSent: number[]; effectsDispatched: unknown[] } }
-```
-
-`diffState`, `assert`, and `searchHistory` map to the `StateDiff`, assertion, and filtered `MessageRecord[]` types defined in the Dev-mode Debug Types section above.
-
----
-
-## `@llui/components` — Locale & i18n
-
-### `LocaleContext`
-
-Context for component label translations. English defaults built-in — apps that don't call `provide()` get English for free.
-
-```typescript
-import { en, LocaleContext, type Locale } from '@llui/components'
-import { provide } from '@llui/dom'
-
-// Non-English app: provide locale at the root
-provide(LocaleContext, (s) => s.locale, () => [...])
-
-// Per-instance override still works:
-dialog.connect(get, send, { id: 'x', closeLabel: 'Cerrar' })
-```
-
-### RTL Support
-
-Components with directional keyboard navigation (tabs, slider, radio-group, tree-view, etc.) automatically flip ArrowLeft↔ArrowRight when inside a `dir="rtl"` context. Vertical arrows are never flipped.
-
-```typescript
-import { resolveDir, flipArrow } from '@llui/components'
-
-resolveDir(element) // 'ltr' | 'rtl' — walks up to nearest [dir] ancestor
-flipArrow(key, element) // swaps ArrowLeft↔ArrowRight in RTL, passes others through
-```
-
----
-
-## `@llui/components` — Format Utilities
-
-Locale-aware wrappers for `Intl.*` APIs. Formatter instances are LRU-cached (max 64). Locale defaults to `navigator.language` in browsers, `'en'` in SSR. All accept an optional `locale` string in the options bag.
-
-```typescript
-import {
-  formatNumber,
-  formatDate,
-  formatTime,
-  formatDateTime,
-  formatRelativeTime,
-  formatList,
-  formatPlural,
-  formatDisplayName,
-  formatFileSize,
-  resolvePluralCategory,
-} from '@llui/components'
-
-formatNumber(1234.5, { style: 'currency', currency: 'USD', locale: 'en-US' }) // '$1,234.50'
-formatDate(new Date(), { dateStyle: 'full' })
-formatTime(new Date(), { timeStyle: 'short', hour12: true })
-formatDateTime(new Date(), { dateStyle: 'medium', timeStyle: 'short' })
-formatRelativeTime(-2, 'day', { numeric: 'auto' }) // '2 days ago'
-formatList(['a', 'b', 'c'], { type: 'conjunction' }) // 'a, b, and c'
-formatPlural(5, { one: '{count} item', other: '{count} items' }) // '5 items'
-formatDisplayName('USD', 'currency') // 'US Dollar'
-formatFileSize(2.5 * 1024 * 1024) // '2.5 MB'
-resolvePluralCategory(1, { locale: 'en' }) // 'one'
-```
-
-Date values accept `Date`, ISO string, or Unix timestamp (ms).
-
----
-
-## `@llui/components` — In View
-
-IntersectionObserver state machine for scroll-triggered behavior.
-
-```typescript
-import { inView } from '@llui/components'
-
-// State machine
-const state = inView.init() // { visible: false }
-const [s1] = inView.update(state, { type: 'enter' }) // { visible: true }
-const [s2] = inView.update(s1, { type: 'leave' }) // { visible: false }
-
-// Connect for ARIA attributes
-const parts = inView.connect<S>(get, send, { id: 'hero' })
-// parts.root: { 'data-scope': 'in-view', 'data-part': 'root', 'data-state': 'visible' | 'hidden' }
-
-// Observer setup (call in onMount)
-const cleanup = inView.createObserver(element, send, {
-  threshold: 0.5, // 0-1, default 0
-  rootMargin: '0px', // default '0px'
-  once: true, // disconnect after first enter, default false
-})
-```
-
----
-
-## `@llui/components` — Form
-
-Submit lifecycle state machine plus Standard Schema integration. The form tracks `status` (`'idle' | 'submitting' | 'submitted' | 'error'`) and per-field `touched` flags. Field values live in the parent component's state — `form` is a coordinator, not a data store.
-
-```typescript
-interface FormState {
-  status: 'idle' | 'submitting' | 'submitted' | 'error'
-  touched: Record<string, boolean>
-  submitError: string | null
-}
-
-type FormMsg =
-  | { type: 'touch'; field: string }
-  | { type: 'touchAll'; fields: string[] }
-  | { type: 'submit' }
-  | { type: 'submitSuccess' }
-  | { type: 'submitError'; error: string }
-  | { type: 'reset' }
-
-function init(): FormState
-function update(state: FormState, msg: FormMsg): [FormState, never[]]
-function connect<S>(
-  get: (s: S) => FormState,
-  send: Send<FormMsg>,
-  opts: { id: string },
-): FormParts<S>
-```
-
-### `validateSchema(schema, values)`
-
-Synchronous validation against a Standard Schema (Zod v3.24+, Valibot v1+, ArkType, etc.). Throws if the schema is async — use `validateSchemaAsync` for those. Returns `{ isValid, errors, issues }` where `errors` is a field-name→first-message map.
-
-```typescript
-function validateSchema<T>(
-  schema: StandardSchemaV1<T>,
-  values: unknown,
-): {
-  isValid: boolean
-  errors: Partial<Record<keyof T, string>>
-  issues: readonly StandardSchemaV1.Issue[]
-}
-
-async function validateSchemaAsync<T>(
-  schema: StandardSchemaV1<T>,
-  values: unknown,
-): Promise<ValidateResult<T>>
-```
-
-Bring your own validation library — `@llui/components` only imports types from `@standard-schema/spec` (zero runtime footprint).
-
----
-
-## `@llui/components` — Sortable
-
-Pointer + keyboard reorderable list. Single-container by default; set distinct `id` on multiple connect calls for cross-container drag-and-drop.
-
-```typescript
-interface DragState {
-  id: string
-  startIndex: number
-  currentIndex: number
-  fromContainer: string
-  toContainer: string
-}
-
-interface SortableState {
-  dragging: DragState | null
-}
-
-type SortableMsg =
-  | { type: 'start'; id: string; index: number; container: string }
-  | { type: 'move'; index: number; container: string }
-  | { type: 'drop' }
-  | { type: 'cancel' }
-  | { type: 'toggleGrab'; id: string; index: number; container: string }
-  | { type: 'moveBy'; delta: number }
-
-function connect<S>(
-  get: (s: S) => SortableState,
-  send: Send<SortableMsg>,
-  opts: { id: string },
-): SortableParts<S>
-
-function reorder<T>(arr: readonly T[], from: number, to: number): T[]
-```
-
-**Parts returned by `connect`:**
-
-- `root` — scroll container, handles `pointermove`/`pointerup`/`pointercancel`, tagged with `data-container-id`
-- `item(id, index)` — per-row data attributes (`data-dragging`, `data-over`) for CSS feedback
-- `handle(id, index)` — `role="button"`, `tabIndex=0`, `aria-grabbed`, full keyboard support (Space/Enter to pick up and drop, Arrow keys to move, Escape to cancel)
-
-The app's reducer listens for `drop` (or watches `state.sort.dragging` changes) and computes the final array via `reorder(arr, from, to)` — or for cross-container drops, by combining both arrays.
-
----
-
-## `@llui/components` — Theme Switch
-
-Light/dark/system theme toggle with `data-theme` on `<html>`.
-
-```typescript
-type Theme = 'light' | 'dark' | 'system'
-type ResolvedTheme = 'light' | 'dark'
-
-interface ThemeSwitchState {
-  theme: Theme
-}
-
-type ThemeSwitchMsg = { type: 'setTheme'; theme: Theme } | { type: 'toggle' }
-
-function init(theme?: Theme): ThemeSwitchState
-function update(state: ThemeSwitchState, msg: ThemeSwitchMsg): [ThemeSwitchState, never[]]
-function connect<S>(
-  get: (s: S) => ThemeSwitchState,
-  send: Send<ThemeSwitchMsg>,
-  opts: { id: string; label?: string },
-): ThemeSwitchParts<S>
-
-// Utilities
-function resolveTheme(theme: Theme): ResolvedTheme
-function applyTheme(resolved: ResolvedTheme): void
-function watchSystemTheme(cb: (theme: ResolvedTheme) => void): () => void
-```
-
-`resolveTheme('system')` reads `prefers-color-scheme`. `applyTheme('dark')` sets `document.documentElement.dataset.theme = 'dark'` so CSS selectors like `[data-theme='dark'] { ... }` take effect. `watchSystemTheme` listens for OS theme changes.
-
----
-
-## Agent
-
-> For the wire protocol, token model, and security details, see `docs/designs/10 Agent Protocol.md`.
-
----
-
-### `@llui/agent/protocol`
-
-Shared types for LAP (LLui Agent Protocol) endpoints, WebSocket frames, tokens, and audit. No runtime code — types only.
-
-| Type                         | Description                                                                                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LapErrorCode`               | Union of error code strings: `'auth-failed' \| 'revoked' \| 'paused' \| 'rate-limited' \| 'invalid' \| 'schema-error' \| 'timeout' \| 'internal'` |
-| `LapError`                   | HTTP error envelope: `{ error: { code, detail?, retryAfterMs? } }`                                                                                |
-| `MessageAnnotations`         | Per-Msg-variant annotation record: `{ intent?, alwaysAffordable?, requiresConfirm?, humanOnly? }`                                                 |
-| `MessageSchemaEntry`         | Schema + annotations for one Msg variant: `{ payloadSchema, intent, alwaysAffordable, requiresConfirm, humanOnly }`                               |
-| `LapDescribeResponse`        | `/describe` response: app name, version, state schema, message schema, docs, schemaHash                                                           |
-| `LapStateRequest`            | `/state` request: `{ path?: string }` (JSON Pointer)                                                                                              |
-| `LapStateResponse`           | `/state` response: `{ state: unknown }`                                                                                                           |
-| `LapActionsResponse`         | `/actions` response: `{ actions: Array<{ variant, intent, requiresConfirm, source, selectorHint, payloadHint }> }`                                |
-| `LapMessageRequest`          | `/message` request: `{ msg, reason?, waitFor?, timeoutMs? }`                                                                                      |
-| `LapMessageRejectReason`     | Union: `'humanOnly' \| 'user-cancelled' \| 'timeout' \| 'invalid' \| 'schema-error' \| 'revoked' \| 'paused'`                                     |
-| `LapMessageResponse`         | `/message` discriminated union: `dispatched \| pending-confirmation \| confirmed \| rejected`                                                     |
-| `LapConfirmResultRequest`    | `/confirm-result` request: `{ confirmId, timeoutMs? }`                                                                                            |
-| `LapConfirmResultResponse`   | `/confirm-result` discriminated union: `confirmed \| rejected \| still-pending`                                                                   |
-| `LapWaitRequest`             | `/wait` request: `{ path?, timeoutMs? }`                                                                                                          |
-| `LapWaitResponse`            | `/wait` discriminated union: `changed \| timeout` (long-poll)                                                                                     |
-| `LapQueryDomRequest`         | `/query-dom` request: `{ name, multiple? }`                                                                                                       |
-| `LapQueryDomResponse`        | `/query-dom` response: `{ elements: Array<{ text, attrs, path }> }`                                                                               |
-| `OutlineNode`                | One node in the visible-content outline; discriminated by `kind`                                                                                  |
-| `LapDescribeVisibleResponse` | `/describe-visible` response: `{ outline: OutlineNode[] }`                                                                                        |
-| `LapContextResponse`         | `/context` response: `{ context: AgentContext }`                                                                                                  |
-| `AgentDocs`                  | Static app documentation: `{ purpose, overview?, cautions? }`                                                                                     |
-| `AgentContext`               | Dynamic per-state context: `{ summary, hints?, cautions? }`                                                                                       |
-| `LapEndpointMap`             | Map of short endpoint names to full LAP paths                                                                                                     |
-| `LapPath`                    | Union of valid LAP path strings                                                                                                                   |
-| `LapRequest<P>`              | Generic LAP request envelope parameterized on the path                                                                                            |
-| `LapResponse<P>`             | Generic LAP response envelope parameterized on the path                                                                                           |
-| `LogKind`                    | `'proposed' \| 'dispatched' \| 'confirmed' \| 'rejected' \| 'blocked' \| 'read' \| 'error'`                                                       |
-| `LogEntry`                   | One log entry: `{ id, at, kind, variant?, intent?, detail? }`                                                                                     |
-| `HelloFrame`                 | Browser → server WS handshake frame (carries schema + docs)                                                                                       |
-| `RpcReplyFrame`              | Browser → server RPC reply: `{ t: 'rpc-reply', id, result }`                                                                                      |
-| `RpcErrorFrame`              | Browser → server RPC error: `{ t: 'rpc-error', id, code, detail? }`                                                                               |
-| `ConfirmResolvedFrame`       | Browser → server confirm outcome: `{ t: 'confirm-resolved', confirmId, outcome, stateAfter? }`                                                    |
-| `StateUpdateFrame`           | Browser → server state push for `/wait`: `{ t: 'state-update', path, stateAfter }`                                                                |
-| `LogAppendFrame`             | Browser → server log mirror: `{ t: 'log-append', entry }`                                                                                         |
-| `ClientFrame`                | Union of all browser-sends-server WS frame types                                                                                                  |
-| `RpcFrame`                   | Server → browser RPC dispatch: `{ t: 'rpc', id, tool, args }`                                                                                     |
-| `RevokedFrame`               | Server → browser revocation notice: `{ t: 'revoked' }`                                                                                            |
-| `ServerFrame`                | Union of all server-sends-browser WS frame types                                                                                                  |
-| `AgentToken`                 | Opaque signed token string type alias                                                                                                             |
-| `TokenPayload`               | Decoded token payload: `{ tid, iat, exp, scope }`                                                                                                 |
-| `TokenStatus`                | `'awaiting-ws' \| 'awaiting-claude' \| 'active' \| 'pending-resume' \| 'revoked'`                                                                 |
-| `TokenRecord`                | Full token store record (see §5.5 of Agent Protocol doc)                                                                                          |
-| `AgentSession`               | Session record as seen by the browser client                                                                                                      |
-| `MintRequest`                | `/agent/mint` request body                                                                                                                        |
-| `MintResponse`               | `/agent/mint` response: `{ token, tid, wsUrl, lapUrl, expiresAt }`                                                                                |
-| `ResumeListRequest`          | `/agent/resume/list` request: `{ tids: string[] }`                                                                                                |
-| `ResumeListResponse`         | `/agent/resume/list` response: `{ sessions: AgentSession[] }`                                                                                     |
-| `ResumeClaimRequest`         | `/agent/resume/claim` request: `{ tid: string }`                                                                                                  |
-| `ResumeClaimResponse`        | `/agent/resume/claim` response: `{ token, wsUrl }`                                                                                                |
-| `RevokeRequest`              | `/agent/revoke` request: `{ tid: string }`                                                                                                        |
-| `RevokeResponse`             | `/agent/revoke` response: `{ status: 'revoked' }`                                                                                                 |
-| `SessionsResponse`           | `/agent/sessions` response: `{ sessions: AgentSession[] }`                                                                                        |
-| `AuditEvent`                 | Union of audit event name strings (see §6 of Agent Protocol doc)                                                                                  |
-| `AuditEntry`                 | Structured audit log entry: `{ at, tid, uid, event, detail }`                                                                                     |
-
----
-
-### `@llui/agent/server`
-
-Server library. Mount in your backend; no MCP SDK dependency.
-
-```typescript
-function createLluiAgentServer(opts: ServerOptions): AgentServerHandle
-```
-
-Returns an `AgentServerHandle` with:
-
-- `router: (req: Request) => Promise<Response | null>` — Web-standards request handler; mount under `/agent/`.
-- `wsUpgrade: (req, socket, head) => void` — Node.js `'upgrade'` event handler for `/agent/ws`.
-
-```typescript
-interface ServerOptions {
-  signingKey: string // ≥ 32 bytes; HMAC-SHA256 key
-  tokenStore?: TokenStore // default: InMemoryTokenStore
-  identityResolver?: IdentityResolver // default: null (anonymous)
-  auditSink?: AuditSink // default: consoleAuditSink
-  rateLimiter?: RateLimiter // default: defaultRateLimiter
-  rateLimit?: { perToken?: string; perIdentity?: string } // e.g. '30/minute'
-  corsOrigins?: string[] // for session meta-endpoints
-  lapBasePath?: string // default: '/agent/lap/v1'
-  pairingGraceMs?: number // default: 15 * 60 * 1000
-  slidingTtlMs?: number // default: 60 * 60 * 1000
-}
-
-interface AgentServerHandle {
-  router(req: Request): Promise<Response | null>
-  wsUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void
-}
-```
-
-**Interfaces and reference implementations:**
-
-```typescript
-interface TokenStore {
-  create(record: TokenRecord): Promise<void>
-  findByTid(tid: string): Promise<TokenRecord | null>
-  listByIdentity(uid: string): Promise<TokenRecord[]>
-  touch(tid: string, now: number): Promise<void>
-  markPendingResume(tid: string, until: number): Promise<void>
-  markActive(tid: string, label: string, now: number): Promise<void>
-  revoke(tid: string): Promise<void>
-}
-
-class InMemoryTokenStore implements TokenStore {
-  /* Map<tid, TokenRecord> + TTL sweep */
-}
-
-interface IdentityResolver {
-  (req: Request): Promise<string | null>
-}
-
-function defaultIdentityResolver(opts: { cookieName: string; signingKey: string }): IdentityResolver
-function signCookieValue(value: string, key: string): string
-
-interface AuditSink {
-  write(entry: AuditEntry): void | Promise<void>
-}
-
-const consoleAuditSink: AuditSink // JSON lines to stdout
-
-interface RateLimiter {
-  check(
-    key: string,
-    bucket: 'token' | 'identity',
-  ): Promise<{ allowed: boolean; retryAfterMs?: number }>
-}
-
-const defaultRateLimiter: RateLimiter // in-memory token bucket; not suitable for multi-instance
-```
-
----
-
-### `@llui/agent/client`
-
-Browser-side runtime. Zero server imports.
-
-```typescript
-function createAgentClient(opts: CreateAgentClientOpts): AgentClient
-```
-
-```typescript
-interface CreateAgentClientOpts {
-  handle: AppHandle // from mountApp()
-  def: ComponentDef<any, any, any>
-  rootElement: HTMLElement
-  slices: {
-    getConnect: (s: unknown) => agentConnect.State
-    getConfirm: (s: unknown) => agentConfirm.State
-    wrapConnectMsg: (m: agentConnect.Msg) => unknown
-    wrapConfirmMsg: (m: agentConfirm.Msg) => unknown
-  }
-}
-
-interface AgentClient {
-  start(): void
-  stop(): void
-  effectHandler: AgentEffectHandler
-}
-```
-
-**Headless component namespaces** — each follows the `@llui/components` convention (`init`, `update`, `connect`):
-
-```typescript
-// agentConnect — session minting, resume, revoke, session list
-namespace agentConnect {
-  type State = { status, pendingToken, sessions, resumable, error }
-  type Msg = Mint | MintSucceeded | MintFailed | WsOpened | WsClosed | ResumeList | ...
-  function init(): State
-  function update(state: State, msg: Msg): [State, AgentEffect[]]
-  function connect<S>(get: (s: S) => State, send: (m: Msg) => void, opts: { mintUrl: string }): AgentConnectParts<S>
-}
-
-// agentConfirm — confirmation queue UI
-namespace agentConfirm {
-  type State = { pending: ConfirmEntry[] }
-  type Msg = Propose | Approve | Reject | ExpireStale
-  function init(): State
-  function update(state: State, msg: Msg): [State, AgentEffect[]]
-  function connect<S>(get: (s: S) => State, send: (m: Msg) => void): AgentConfirmParts<S>
-}
-
-// agentLog — ring-buffer log of agent actions
-namespace agentLog {
-  type State = { entries: LogEntry[]; filter: { kinds?: LogKind[]; since?: number } }
-  type Msg = Append | Clear | SetFilter
-  function init(): State
-  function update(state: State, msg: Msg): [State, never[]]
-  function connect<S>(get: (s: S) => State, send: (m: Msg) => void): AgentLogParts<S>
-}
-```
-
-**Effect type and handler:**
-
-```typescript
-type AgentEffect =
-  | { type: 'AgentMintRequest'; mintUrl: string }
-  | { type: 'AgentOpenWS'; token: string; wsUrl: string }
-  | { type: 'AgentCloseWS' }
-  | { type: 'AgentResumeCheck'; tids: string[] }
-  | { type: 'AgentResumeClaim'; tid: string }
-  | { type: 'AgentRevoke'; tid: string }
-  | { type: 'AgentSessionsList' }
-
-type AgentEffectHandler = (bag: {
-  effect: AgentEffect
-  send: (msg: unknown) => void
-  signal: AbortSignal
-}) => void
-```
-
-Chain `client.effectHandler` as the `.else()` of your `handleEffects` chain:
-
-```typescript
-const onEffect = handleEffects<MyEffect | AgentEffect>().when('http', ...).else(client.effectHandler)
-```
-
----
-
-### `llui-agent` (CLI / bridge)
-
-Not programmatically imported. Install once into Claude Desktop's `mcpServers` config:
-
-```json
-{
-  "mcpServers": {
-    "llui": { "command": "npx", "args": ["-y", "llui-agent"] }
-  }
-}
-```
-
-Registers MCP tools (`describe_app`, `get_state`, `list_actions`, `send_message`, etc.) and the `llui-connect` MCP prompt. Stateless about app logic; stores one `{ lapUrl, token }` binding per MCP session (per Claude chat). See `packages/agent-bridge/` for implementation.
-
----
-
-### `@llui/vite-plugin` — Agent option
-
-```typescript
-interface LluiPluginOptions {
-  // ...existing options...
-
-  /**
-   * Emit agent metadata: __msgAnnotations, __bindingDescriptors, __schemaHash.
-   * Default: false. Set true in production builds that ship @llui/agent/client.
-   * Required for list_actions, describe_app, and /lap/v1/wait to work correctly.
-   */
-  agent?: boolean
-}
-```
-
-When `agent: true`, the compiler's second pass also:
-
-1. Extracts JSDoc annotations (`@intent`, `@alwaysAffordable`, `@requiresConfirm`, `@humanOnly`) from Msg union variants into `__msgAnnotations`.
-2. Emits `__bindingDescriptors` — a per-component table mapping event-handler call sites to their Msg variant + shape.
-3. Computes `__schemaHash` — a stable hash over `__msgSchema + __stateSchema + annotations` for cache invalidation.
-
----
-
-### `@llui/dom` — Agent extensions
-
-**Compiler-emitted fields** (not authored by hand; injected by the vite plugin when `agent: true`):
-
-```typescript
-interface ComponentDef<S, M, E, D> {
-  // ...existing fields...
-
-  /** @internal — compiler-injected. Per-variant annotation records. */
-  __msgAnnotations?: Record<string, MessageAnnotations>
-
-  /** @internal — compiler-injected. Per-binding-site descriptor for list_actions. */
-  __bindingDescriptors?: Array<{ variant: string }>
-
-  /** @internal — compiler-injected. Stable hash for describe_app cache invalidation. */
-  __schemaHash?: string
-}
-```
-
-**Authoring fields** (declared by the developer on the component record):
-
-```typescript
-interface ComponentDef<S, M, E, D> {
-  // ...existing fields...
-
-  /**
-   * Msgs that Claude can always dispatch, independent of which bindings are
-   * currently rendered. Pure function of state; evaluated lazily on list_actions.
-   */
-  agentAffordances?: (state: S) => Array<{ type: string; [k: string]: unknown }>
-
-  /**
-   * Static documentation surfaced to Claude via describe_app. Cached for the
-   * pairing lifetime. If absent, docs: null is returned.
-   */
-  agentDocs?: AgentDocs
-
-  /**
-   * Dynamic per-state context surfaced to Claude via describe_context.
-   * Not cached; invoked fresh on every /lap/v1/context call.
-   */
-  agentContext?: (state: S) => AgentContext
-}
-```
-
-**New `AppHandle` method:**
-
-```typescript
-interface AppHandle {
-  dispose(): void
-  flush(): void
-  send(msg: unknown): void
-  getState(): unknown
-
-  /**
-   * Register a listener called synchronously after every update cycle completes.
-   * Receives the new state. Returns an unsubscribe function. Safe to call after
-   * dispose() (returns a no-op unsubscribe). Does NOT fire for the initial mount.
-   * Used by @llui/agent/client to emit state-update frames for /lap/v1/wait.
-   */
-  subscribe(listener: (state: unknown) => void): () => void
-}
-```

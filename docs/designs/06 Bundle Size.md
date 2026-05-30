@@ -42,47 +42,34 @@ Measure at two levels:
 
 ## How the Compiler Reduces Bundle Size
 
-The Vite plugin does three distinct things that reduce the final bundle. Understanding each mechanism is prerequisite to diagnosing when they fail.
+The signal transform lowers an authored component's DIRECT view to the runtime form, then standard Rollup tree-shaking does the elimination. Two mechanisms matter for size. Understanding each is prerequisite to diagnosing when they fail.
 
-### 1. Element helper elision
+### 1. Authoring-helper lowering
 
-`elements.ts` exports approximately fifty functions — `div`, `span`, `button`, `input`, `ul`, `li`, and so on. Each is a thin wrapper around `document.createElement(tag)` that applies the LLui prop and child conventions. In source code, a developer writes:
+The authoring helpers in `@llui/dom` — `div`, `span`, `button`, … (each built by `elementHelper(tag)`), plus `text`, `each`, `show`, `branch`, `foreign`, `lazy`, `virtualEach` — are real runtime functions so view code factored into helper functions composes. But in a component's direct view, those calls are an OPTIMIZATION target: the transform rewrites them to the lower-level runtime emitters and rewrites the import accordingly. In source a developer writes:
 
 ```ts
-import { div, span, button } from '@llui/dom'
+import { div, span, button, text } from '@llui/dom'
 
-view: ({ send }) =>
+view: ({ state, send }) => [
   div({ class: 'container' }, [
-    span([text(() => state.label)]),
+    span([text(state.map((s) => s.label))]),
     button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
-  ])
+  ]),
+]
 ```
 
-After the compiler runs, every call to `div(...)`, `span(...)`, `button(...)` is rewritten to `elSplit(tag, ...)` where `tag` is the string literal for the element name. The compiler simultaneously removes those names from the import statement. The resulting code imports nothing from `elements.ts`. Rollup's module graph analysis sees no remaining references to any export of `elements.ts` and eliminates the entire module. Without the compiler, all ~50 element helpers are included in every bundle regardless of which elements the app actually uses.
+After the transform, `div(...)`/`span(...)`/`button(...)` become `el(tag, props, children)` calls (with the tag as a string literal), a reactive `text(state.map(...))` becomes `signalText(produce, deps)`, and a static `text('Go')` becomes `staticText('Go')`. The transform drops the authoring names it lowered away from the import statement. Where the whole direct view is lowered, the per-tag helper closures (`div`, `span`, …) are no longer referenced and Rollup eliminates them; what survives is the small fixed set of emitters (`el`, `signalText`, `staticText`, `react`, plus whichever structural emitters are used).
 
-The precondition for elision is that the compiler's import-cleanup pass correctly rewrites every call site and removes every imported name. If a single reference to `div` survives (e.g., because the compiler misidentified a call site — a `div` imported from a user module with the same name), that reference keeps `elements.ts` alive. Verify elision is working with `rollup-plugin-visualizer`: `elements.ts` must not appear in the treemap for any app that used the compiler.
+The precondition is that the transform recognizes every call site and prunes the matching import names. If a helper reference survives (e.g. an aliased import the transform did not match, or a helper used outside a direct view), that reference keeps the helper closures alive. Verify with `rollup-plugin-visualizer`: the per-tag helper closures should not dominate the treemap for a compiled app.
 
-### 2. Static prop extraction
+### 2. Static vs reactive prop / text split
 
-A prop is static when its value does not depend on state — it is a literal string, a literal number, a non-reactive callback, or any expression that does not contain an arrow function of the form `(s: S) => expr`. For static props, the compiler emits direct property assignments in the `staticFn` pass:
+A prop or text value is static when it does not depend on state — a literal, or any expression with no signal read (`state.map`/`state.at`/`derived`). The transform emits those as plain values (`staticText('Go')`, a literal prop in the `el(...)` props object) with no binding. Reactive values — those reading a signal — lower to a `produce` function plus the dependency-path array (`signalText(s => …, ['label'])`, or a reactive prop via `react(produce, deps)`). The binding/reconciler machinery is instantiated only for the reactive ones, so a view full of static attributes does not scale binding allocation with attribute count.
 
-```ts
-// Source
-div({ class: 'container', id: 'root' }, [...])
+### 3. Dead import removal (standard tree-shaking)
 
-// After compilation (conceptual)
-const el = elSplit('div', [...]);
-el.className = 'container';
-el.id = 'root';
-```
-
-The binding infrastructure — `createBinding`, `applyBinding`, the mask comparison, the `lastValue` tracking — is never instantiated for these assignments. Because those code paths are not reachable from any call site in the bundle, Rollup's reachability analysis eliminates them. This does not eliminate the binding infrastructure entirely (reactive props still need it), but it prevents the infrastructure's per-binding allocation overhead from scaling with the number of static props.
-
-### 3. Dead import removal
-
-The compiler makes import statements progressively shorter as it identifies which names are no longer referenced. Each name removed from an import statement is one fewer edge in Rollup's module graph. When all names from a given module are removed, the module becomes unreachable and is eliminated in full. This works at import granularity, not export granularity — a module with twenty exports is kept alive by a single reference to any one of them.
-
-The practical consequence: if your application imports `branch` but not `each`, `each`'s reconciliation algorithm is not in your bundle. If it imports neither, neither is present. The compiler does not need to do anything special for this — it is standard Rollup tree-shaking — but the compiler's element elision pass makes it possible for the element module to be fully eliminated, which would not happen otherwise.
+Each authoring/runtime name the transform removes from an import statement is one fewer edge in Rollup's module graph. Because the structural emitters are independently importable, an app that uses `branch` but not `each` does not carry `signalEach`'s reconciliation algorithm. The transform does nothing special here beyond pruning imports — it is standard Rollup tree-shaking — but the lowering in mechanism 1 is what lets the per-tag helper closures drop out, which would not happen if every `div(...)` call survived verbatim.
 
 ---
 
@@ -92,73 +79,75 @@ Rollup (and therefore Vite) performs tree-shaking by constructing a module graph
 
 **Side-effect-free modules are a prerequisite.** If a module has top-level statements with observable side effects — DOM access, module-level `Map` initialization, global registration — Rollup must include it regardless of whether any of its exports are referenced, because dropping it would change program behavior. Every LLui module must have `"sideEffects": false` declared in `package.json` (or scoped to the relevant paths). Verify this is set; without it, Rollup conservatively includes every module imported by any other included module.
 
-**The core runtime cannot be tree-shaken below its minimum.** `mountApp`, `processMessages`, `applyBinding`, scope creation and disposal, and the dirty-bit evaluation loop are all required by every LLui application. They are reachable from the entry point unconditionally. This is the irreducible minimum — approximately 3–4 kB gzip for the full runtime. No compiler optimization eliminates this floor.
+**The core runtime cannot be tree-shaken below its minimum.** `mountSignalComponent` (behind `mountApp`/`component`), the synchronous `send` loop, scope creation and disposal, and the chunked-mask reconciler (dirty-path gate + output-equality skip) are required by every LLui application. They are reachable from the entry point unconditionally. This is the irreducible minimum. No compiler optimization eliminates this floor.
 
-**Structural primitives are independently tree-shakeable.** `branch`, `each`, `show`, `portal`, `foreign`, `child`, `memo`, `errorBoundary` are each separate exports. They are only reachable if the application imports them. The compiler does not need to do anything here — standard tree-shaking handles it. The only requirement is that these exports do not call each other at module initialization time (they do not; they are factory functions).
+**Structural primitives are independently tree-shakeable.** `each`/`signalEach`, `show`/`signalShow`, `branch`/`signalBranch`, `portal`, `foreign`/`signalForeign`, `lazy`/`signalLazy`, `virtualEach`/`signalVirtualEach`, `onMount`, and the context primitives (`createContext`/`provide`/`useContext`) are each separate exports, reachable only if the application imports them (directly or via the lowered emitter). Standard tree-shaking handles this. There is no `child`, `memo`, `combine`, or `errorBoundary` export in the signal runtime — composition is view functions, so a "child" adds no runtime primitive at all.
 
-**`elSplit` is always included.** The compiler replaces all element helper calls with `elSplit` calls. `elSplit` is therefore always referenced in compiled output. It is a small function — a few dozen bytes — but it cannot be eliminated. This is the cost of the element helper elision optimization: you replace ~50 individually-reachable functions with one always-reachable function. The net result is a large win, but `elSplit` is fixed overhead in every app.
+**The element emitter `el` is always included.** The transform lowers element-helper calls to `el(tag, props, children)` (and `elNS` for SVG). `el` is therefore referenced in essentially every compiled output. It is small, but it is fixed overhead — the cost of replacing the per-tag helper closures with one shared emitter. `signalText`/`staticText` and `react` are similarly reachable whenever the view has any text or reactive prop.
 
-**Barrel file imports break tree-shaking for some bundlers.** An import like `import { div, span, each, branch } from '@llui/dom'` re-exports everything from `llui/index.ts`. If `index.ts` is a barrel that re-exports from sub-modules, Rollup handles it correctly. But some environments (Jest with `moduleNameMapper`, older webpack configurations, Parcel 1) treat barrel files as atomic and include everything. The Vite plugin's template for generated code should use direct sub-module imports where possible. User-facing imports from `'llui'` are fine for development; the build output should not contain them verbatim after the compiler runs.
+**Barrel file imports break tree-shaking for some bundlers.** `@llui/dom`'s package root re-exports from `src/signals/index.ts`. Rollup handles this re-export barrel correctly. But some environments (Jest with `moduleNameMapper`, older webpack configurations, Parcel 1) treat barrel files as atomic and include everything. This is a property of the consuming bundler, not of `@llui/dom`; Vite/Rollup users are unaffected.
 
 ---
 
 ## Per-Primitive Cost Analysis
 
-The following is a conceptual breakdown of what each primitive contributes to the bundle when imported and used. All figures must be measured empirically against the actual implementation and reported as gzip delta from the previous baseline. These are estimates based on functional complexity; treat them as hypotheses to verify, not as guarantees.
+The following is a conceptual breakdown of what each primitive contributes to the bundle when imported and used, under the signal runtime. **The concrete byte figures below are STALE — they were measured against the deleted mask-binding runtime and have not been re-measured against the signal runtime. Treat every number as a placeholder to re-measure, not as a current value or a guarantee.** Use the per-feature microbenchmark methodology (above) to regenerate them; report each as a gzip delta from the core-runtime baseline.
 
-**Core runtime** (always included, ~3–4 kB gzip)
+**Core runtime** (always included — re-measure floor)
 
-- `mountApp` and the component initialization path
-- `processMessages`: the message queue drain loop (microtask-batched `send()`)
-- `flush()`: synchronous update cycle trigger (~5 lines, negligible addition)
-- Scope creation, child scope registration, `disposeLifetime`
-- `applyBinding` and the binding update loop
-- `__dirty` injection infrastructure (the runtime side of the dirty-bit protocol)
-- `elSplit`: the compiled element constructor
+- `mountSignalComponent` and the component initialization path (`mountApp`/`component` route here)
+- the synchronous `send` loop (queue + reducer + reconcile + effect dispatch)
+- `flush()`: a no-op kept for harness/agent parity (synchronous `send` has nothing to flush)
+- scope creation, child-scope registration, teardown/disposal
+- the chunked-mask reconciler: the dirty-path gate and output-equality skip
+- `el` / `elNS`: the element emitters the transform lowers helper calls to
+- `signalText` / `staticText` / `react`: text and reactive-prop emitters
 
-This is the floor. Every application pays it.
+This is the floor. Every application pays it. (Floor byte figure: re-measure.)
 
-**+ `text()`** (negligible; included in core)
-`text()` creates a `Text` node and registers a binding against it. The infrastructure for this is part of `applyBinding` in the core. `text()` itself is a two-line function.
+**+ reactive `text`** (negligible; emitters are in core)
+A reactive `text(state.map(...))` lowers to `signalText(produce, deps)` — a `Text` node plus one path-keyed binding. A static `text('x')` lowers to `staticText` (no binding). The emitters are part of the core floor.
 
-**+ `branch()`** (estimate: +400–700 bytes gzip)
-`branch` adds: discriminant evaluation, scope swap logic, comment-node placeholder management, and the case-builder invocation path. It does not include the reconciliation algorithm (that is `each`'s domain). Branch is the most commonly used structural primitive after `text`.
+**+ `branch()` / `signalBranch`** (stale estimate: re-measure)
+`branch` adds discriminant evaluation, scope swap, comment-node placeholder management, and arm invocation. It does not include keyed reconciliation (that is `each`'s domain).
 
-**+ `show()`** (estimate: +50–100 bytes gzip beyond `branch`)
-`show` is implemented as a two-case `branch` where one case is an empty builder. It imports and calls `branch`. If `branch` is already in the bundle, `show` adds only its wrapper logic.
+**+ `show()` / `signalShow`** (stale estimate: re-measure)
+`show` is a two-arm conditional (the truthy arm, optional `orElse`). Small wrapper over the same scope-swap machinery `branch` uses.
 
-**+ `each()`** (estimate: +800–1200 bytes gzip)
-`each` adds: key-based reconciliation, entry management (creation, keyed lookup, reuse), and the DOM reordering algorithm. The reordering algorithm — deciding whether to insert, move, or remove DOM nodes to match a new array — is the largest single piece of code in the structural primitives. It dominates `each`'s cost.
+**+ `each()` / `signalEach`** (stale estimate: re-measure — likely the largest primitive)
+`each` adds key-based reconciliation: per-row scope + `item`/`index` signal construction, keyed lookup/reuse, and the DOM reordering algorithm (insert/move/remove to match the new keyed array). The reordering algorithm dominates its cost.
 
-**+ `child()`** (estimate: +300–500 bytes gzip) — Level 2 composition only
-`child` adds: props watcher (shallow-diff of props accessor output, `propsMsg` conversion and enqueue), child component registry, recursive mount into a `<llui-child>` wrapper, and disposer registration. If the application uses typed addressed effects, the global component registry and address builder infrastructure are also pulled in. Applications that use only Level 1 composition (view functions) do not import `child()` and pay zero cost for it — it is fully tree-shakeable.
+**+ `virtualEach()` / `signalVirtualEach`** (stale estimate: re-measure)
+`virtualEach` adds windowing on top of `each`'s keyed model: scroll-offset math, an overscan window, and a spacer to preserve scroll height. Only the viewport rows (+overscan) exist in the DOM.
 
-**+ `portal()`** (estimate: +150–250 bytes gzip)
-`portal` adds: target-element resolution, node insertion at the target, and disposer registration to remove those nodes when the owning scope is disposed. No reconciliation — portal does not manage lists.
+**+ `portal()`** (stale estimate: re-measure)
+`portal(render, target?)` adds target resolution, node insertion at the target, and teardown to remove those nodes when the owning scope disposes. No reconciliation.
 
-**+ `foreign()`** (estimate: +200–350 bytes gzip)
-`foreign` adds: container element creation, instance lifecycle management (mount/destroy), a single binding registration for the `props` accessor with shallow-equality comparison, and the `sync` dispatch on prop change. No reconciliation, no structural blocks, no DOM walking inside the container. The container is an opaque boundary — LLui tracks the `props` accessor via the standard bitmask infrastructure and calls `sync` when it changes. Applications that do not import `foreign()` pay nothing for it — it is independently tree-shakeable. The cost is comparable to `portal` plus one binding.
+**+ `foreign()` / `signalForeign`** (stale estimate: re-measure)
+`foreign` adds container creation, instance lifecycle (`mount`/`unmount`), and materialization of each declared `state` signal to a `LiveSignal` (`peek` + `bind`) handed to `mount`. The library owns the DOM inside the container; LLui owns the container and drives the declared signals. Independently tree-shakeable.
 
-**+ `memo()`** (estimate: +50–100 bytes gzip)
-`memo` is a closure that caches its last input and output. It is the smallest non-trivial primitive. Most of its cost is already paid by the binding infrastructure it uses.
+**+ `lazy()` / `signalLazy`** (stale estimate: re-measure)
+`lazy` renders a fallback immediately, then swaps in an asynchronously loaded component (or an error arm on reject). Adds the loader/swap path on top of scope management.
 
-**+ `onMount()`** (estimate: +50–100 bytes gzip)
-`onMount` queues a microtask via `queueMicrotask` and registers a cancellation disposer. The function body is ~10 lines.
+**+ `onMount()`** (stale estimate: re-measure)
+`onMount(cb)` runs `cb(rootEl)` after insertion and registers its returned cleanup as a teardown.
 
-**+ `errorBoundary()`** (estimate: +100–200 bytes gzip)
-`errorBoundary` wraps a scoped builder in a try/catch and renders a fallback subtree on throw. It is independently tree-shakeable — apps that do not import it do not pay for it.
+**+ context (`createContext` / `provide` / `useContext`)** (stale estimate: re-measure)
+A typed provider/consumer pair scoped to the build. `provide(ctx, value, render)` exposes a value to a subtree; `useContext(ctx)` reads it (or the default). Independently tree-shakeable.
 
-**+ `delay` and `log` effect handlers** (estimate: +50–100 bytes gzip each) — built-in, core runtime
-`delay` is `setTimeout` with message dispatch. `log` is `console.log` with a structured prefix. Both are trivial and always available.
+> There is no `child`, `memo`, `combine`, or `errorBoundary` in the signal runtime — none of them contribute bytes. Composition is view functions (zero runtime primitive); a derived value used in multiple slots is just a `state.map(...)` per slot, gated by the reconciler.
 
-**+ `@llui/effects` package** (estimate: +500–800 bytes gzip, tree-shakeable)
-The `@llui/effects` package provides two things: (1) composable effect description builders — `http`, `cancel` (overloaded: `cancel(token)` for cancel-only, `cancel(token, inner)` for cancel-and-replace), `debounce`, `sequence`, `race` — which are small factory functions that produce plain data objects, and (2) `handleEffects<Effect>()`, a chain that interprets those descriptions at runtime inside `onEffect`. The chain includes a cancellation token registry, debounce timer map, and `AbortSignal` integration for cleanup on unmount. Each builder is independently tree-shakeable — an application that uses only `http` and `cancel` pays only for those builders plus the shared chain runtime (~200–300 bytes gzip). The `.else()` and `.on()` methods add negligible overhead. The `.done()` terminal is compile-time only (zero runtime cost). This package is versioned separately from the core runtime.
+**+ core `delay` and `log` effects** (stale estimate: re-measure) — built-in
+`delay` is `setTimeout` + dispatch; `log` is a structured `console.log`. Trivial and always available through the core effect path.
 
-**+ `@llui/vike` adapter** (estimate: ~1.5KB gzip)
-The Vike integration adapter configures `onRenderHtml` and `onRenderClient` hooks. The Vike client runtime adds ~5KB gzip. Both are tree-shakeable in SPA mode (where Vike is not used). See 08 Ecosystem Integration §2.
+**+ `@llui/effects` package** (stale estimate: re-measure, tree-shakeable)
+Two parts: (1) composable effect-description builders — `http`, `cancel` (overloaded: `cancel(token)` cancel-only, `cancel(token, inner)` cancel-and-replace), `debounce`, `timeout`, `interval`, storage/broadcast builders, `sequence`, `race` — small factories that produce plain data objects; and (2) `handleEffects<E, M>()`, a chain whose `.use(plugin)` adds pass-through handlers and `.else(handler)` returns the terminal `(ctx) => void` handler. The chain keeps a cancellation-controller registry, debounce timer map, and `AbortSignal` integration for cleanup. Each builder is independently tree-shakeable. Note the wiring: `handleEffects().else(...)` returns a `(ctx: { effect, send, signal }) => void` function, whereas a component's `onEffect` is `(effect, api)`; bridge them by capturing a lifecycle `AbortController` and calling `handler({ effect, send: api.send, signal })`.
+
+**+ `@llui/vike` adapter** (stale estimate: re-measure)
+The Vike adapter wires `createOnRenderHtml`/`createOnRenderClient` (and `pageSlot` for persistent layouts). The Vike client runtime is separate. Both are absent in SPA mode. See 08 Ecosystem Integration §1.
 
 **`@llui/test` package** (devDependency — zero production bytes)
-The `@llui/test` package (`testComponent`, `testView`, `assertEffects`, `propertyTest`, `replayTrace`) is a devDependency and contributes zero bytes to production bundles. It imports the component definition type but does not import the runtime — `testComponent()` calls `update()` directly, accumulates effects, and exposes `.state` and `.effects` for assertions. `testView()` mounts a component in a JSDOM or lightweight DOM and returns a query API, but this runs only in the test environment. Because `@llui/test` never appears in application import graphs, Rollup's reachability analysis excludes it unconditionally. No `sideEffects` annotation or special build configuration is needed — standard devDependency semantics handle it. Estimated install size: ~5–10 kB (uncompressed source), dominated by the `propertyTest` fuzzer and the `replayTrace` serializer.
+The `@llui/test` package (`testComponent`, `testView`, `defineTestComponent`, `assertEffects`, `propertyTest`, `replayTrace`, `reducer`, `recordAgentSession`/`replayAgentSession`) is a devDependency and contributes zero bytes to production bundles. The reducer-level harnesses (`testComponent`, `propertyTest`, `replayTrace`) call `update()` directly and never import the DOM runtime; `testView` does import `mountApp`, but only runs in the test environment (jsdom/happy-dom). Because `@llui/test` never appears in application import graphs, Rollup's reachability analysis excludes it unconditionally — no `sideEffects` annotation or special build configuration needed.
 
 ---
 
@@ -266,32 +255,31 @@ After building, open the generated `stats.html`. `elements.ts` must not appear i
 
 ### 2. Audit the core runtime for unused branches
 
-The core runtime is always included, but it may contain conditional branches that are never exercised. For example: if the application does not use `errorBoundary`, that export's code should not appear in the visualizer. Verify that each structural primitive appears in the visualizer only when the application uses it. If `branch` appears but the application only uses `show`, there is a transitive import pulling `branch` in when it should not be.
+The core runtime is always included, but it may contain conditional branches that are never exercised. Verify that each structural primitive appears in the visualizer only when the application uses it. If `signalEach` appears but the application only uses `show`, there is a transitive import pulling it in when it should not be.
 
-Identify dead branches within the always-included core. If `processMessages` contains a path that only executes for addressed effects but the application never uses `AddressedEffect`, consider splitting that path into a separate export that is only pulled in when needed.
+Identify dead branches within the always-included core. If a core path only executes for a primitive the application never uses (e.g. context resolution when no `provide`/`useContext` is present), consider splitting that path into a separate export that is only pulled in when needed.
 
-### 3. Split branch/each/show into separate entry points
+### 3. Split the structural emitters into separate entry points
 
-Currently, if `each`'s reconciliation algorithm and `branch`'s scope-swap logic live in the same module, importing either pulls in both. Separate them at the module boundary so that an application using only `branch` does not pay for `each`'s reordering algorithm. This is a refactor with no user-facing API change — only the internal module structure changes. Expected impact: saving `each`'s ~800–1200 bytes gzip for apps that do not use lists.
+If `signalEach`'s reconciliation algorithm and `signalBranch`'s scope-swap logic live in the same module, importing either pulls in both. Separate them at the module boundary so an application using only `branch` does not pay for `each`'s reordering algorithm. This is a refactor with no user-facing API change — only the internal module structure changes. (Re-measure the `each`-only saving for list-free apps.)
 
-### 4. Eliminate the elSplit runtime helper via compiler inlining
+### 4. Reduce the `el` emitter footprint via further lowering
 
-`elSplit` is a runtime function that every compiled application currently calls. With more aggressive compiler inlining, the compiler could emit direct DOM construction code:
+The transform lowers element-helper calls to `el(tag, props, children)`. A more aggressive transform could emit direct DOM construction for static-heavy elements:
 
 ```ts
-// Instead of: const el = elSplit('div', children, staticFn, bindFn)
+// Instead of: el('div', { class: 'container' }, children)
 // Emit:
-const el = document.createElement('div');
-el.className = 'container';
-el.append(...children);
-scope.bindings.push({ node: el, accessor: s => s.count, ... });
+const _el = document.createElement('div')
+_el.className = 'container'
+_el.append(...children)
 ```
 
-This eliminates `elSplit` from the bundle entirely and makes the element construction code directly minifiable. The tradeoff is that the compiler must emit more code per call site (higher raw bytes before compression) and the compiler itself becomes substantially more complex. The compression ratio for repeated `document.createElement` calls is favorable — gzip and brotli compress repeated strings well — so the net gzip impact may be negative (smaller). This is high-complexity, high-payoff; defer until the compiler architecture is stable.
+This shrinks the shared `el` emitter's responsibilities and makes construction directly minifiable. The tradeoff is more emitted code per call site (higher raw bytes; gzip recovers most of it via string reuse) and a more complex transform. High-complexity, high-payoff; defer until the compiler architecture is stable.
 
 ### 5. Prerender static subtrees to HTML template cloning
 
-If an entire subtree has no reactive bindings — no accessor functions, no `branch`, no `each` — it will look identical on every render. The compiler can detect this and emit a `<template>` element clone instead:
+If an entire subtree has no reactive bindings — no signal reads, no `branch`/`each`/`show` — it looks identical on every build. The transform can detect this and emit a `<template>` clone instead:
 
 ```ts
 // Source: a static header with no bindings
@@ -303,25 +291,25 @@ _tmpl.innerHTML = '<header class="app-header"><h1>My App</h1></header>'
 const el = _tmpl.content.cloneNode(true)
 ```
 
-Template cloning is faster than imperative construction and the emitted code is smaller. The compiler must prove that no binding exists anywhere in the subtree — including deeply nested children. This is a conservative analysis; any dynamic expression anywhere in the subtree disqualifies the optimization. Expected impact: meaningful for apps with large static layout shells; negligible for apps where most nodes are reactive.
+Template cloning is faster than imperative construction and the emitted code is smaller. The transform must prove that no binding exists anywhere in the subtree — including nested children. Conservative: any signal read or structural primitive disqualifies it. Meaningful for large static layout shells; negligible for reactive-heavy apps.
 
-### 6. Annotate pure factory calls with `/*@__PURE__*/`
+### 6. Annotate pure emitter calls with `/*@__PURE__*/`
 
-Terser and esbuild recognize the `/*@__PURE__*/` annotation as a hint that a function call has no side effects and its result can be discarded if unused. Annotate `elSplit`, `branch`, `each`, and all other LLui factory calls:
+Terser and esbuild treat `/*@__PURE__*/` as a hint that a call has no side effects and its result is droppable if unused. Annotate the emitted `el`, `signalText`, `signalEach`, `signalBranch`, … calls:
 
 ```ts
-const el = /*@__PURE__*/ elSplit('div', ...);
+const el = /*@__PURE__*/ el('div', ...)
 ```
 
-This enables the minifier to eliminate entire subtrees in dead-code branches. Without the annotation, the minifier conservatively retains calls whose results are unused because it cannot prove they have no side effects. Impact is small for typical apps but meaningful in generated code with many conditional paths.
+This lets the minifier eliminate whole subtrees in dead-code arms. Small for typical apps, meaningful in generated code with many conditional paths.
 
-### 7. Constant folding for zero masks
+### 7. Fold zero-dependency reactive slots to static
 
-If the compiler determines that a prop has no reactive bindings (mask is 0), the binding object itself is unnecessary — the value should just be set once in `staticFn` and never tracked. The compiler currently handles this for fully-static props, but may not handle the edge case where a prop's expression touches no state fields despite being written as an arrow function. Identifying and folding these zero-mask bindings eliminates binding allocation and registration overhead per instance.
+A reactive slot whose `produce` reads no state (empty `deps`) never changes — it should be emitted as a static value (`staticText`, a literal prop) with no binding. The transform already emits literals as static; this catches the edge case where an arrow function touches no signal despite being written reactively. Folding these eliminates the binding allocation and reconciler registration per instance.
 
-### 8. Avoid barrel re-exports in internal plugin templates
+### 8. Keep emitted imports specific
 
-When the LLui Vite plugin generates output code (e.g., the `elSplit` import), it should import from the specific module that defines `elSplit`, not from `'llui'` index. If it imports from the index and the index re-exports from multiple modules, bundlers that do not support deep barrel optimization will include more than is necessary.
+When the transform emits runtime imports (e.g. for `el`/`signalText`), it imports the internal helpers from `@llui/dom/internal` (a dedicated subpath), not from the package root barrel. This keeps the emitted import specifier stable under the bundler's property-rename pass and avoids pulling more than necessary on bundlers without deep barrel optimization.
 
 ---
 
@@ -384,6 +372,6 @@ done
 
 **Per-feature isolation vs. full-app measurement.** Resolved: both are required, at different cadences. Per-feature microbenchmarks run on every PR (CI regression gate). Full-app measurements run on release milestones (competitive comparison). Per-feature microbenchmarks use a minimal harness that imports exactly one primitive, builds through the full Vite pipeline, and reports gzip delta from a baseline that imports only the core runtime. Full-app measurements use the TodoMVC subset. Artifacts from microbenchmarks are not meaningful — a single use of `branch` does not exercise code-splitting paths, but the delta still catches regressions in the primitive's implementation size.
 
-**Static subtree prerendering tradeoff.** Resolved: implement in v1 with a conservative heuristic — only subtrees where every node is a literal element with literal string/number props and literal `text()` children qualify. No type-checker integration required; the analysis is syntactic: "does this subtree contain any arrow function, any identifier that is not a known literal, or any structural primitive (`branch`, `each`, `show`)?" If not, emit a `<template>` clone. This handles nav bars, footers, icon components, and static layout shells — the most common cases. Subtrees with even one reactive binding are ineligible. The compiler complexity is low (one additional AST pass after the element elision pass) because the heuristic is conservative. Expected coverage: 10–30% of nodes in typical applications.
+**Static subtree prerendering tradeoff.** Resolved: implement in v1 with a conservative heuristic — only subtrees where every node is a literal element with literal string/number props and literal `text()` children qualify. No type-checker integration required; the analysis is syntactic: "does this subtree contain any arrow function, any identifier that is not a known literal, or any structural primitive (`branch`, `each`, `show`)?" If not, emit a `<template>` clone. This handles nav bars, footers, icon components, and static layout shells — the most common cases. Subtrees with even one reactive binding are ineligible. The compiler complexity is low (one additional AST pass after the signal-lowering pass) because the heuristic is conservative. Expected coverage: 10–30% of nodes in typical applications.
 
-**Bundle size scaling with component count.** Resolved: measure empirically using a synthetic scaling harness. Generate apps with 1, 5, 10, 25, 50 components of identical structure (each has the same number of bindings, same structural primitives). Plot total gzip against component count. The expected curve is: fixed core runtime + linear per-component cost, where the per-component cost is dominated by `elSplit` calls and binding registrations. The `elSplit` string arguments (`'div'`, `'span'`, etc.) compress well under gzip (high symbol reuse), so the observed growth rate should be sub-linear in gzip bytes even if raw bytes grow linearly. Include this scaling harness in the benchmark suite and report the per-component marginal gzip cost.
+**Bundle size scaling with component count.** Resolved: measure empirically using a synthetic scaling harness. Generate apps with 1, 5, 10, 25, 50 components of identical structure (each has the same number of bindings, same structural primitives). Plot total gzip against component count. The expected curve is: fixed core runtime + linear per-component cost, where the per-component cost is dominated by `el` calls and reactive-slot (`signalText`/`react`) registrations. The `el` tag arguments (`'div'`, `'span'`, etc.) compress well under gzip (high symbol reuse), so the observed growth rate should be sub-linear in gzip bytes even if raw bytes grow linearly. Include this scaling harness in the benchmark suite and report the per-component marginal gzip cost.

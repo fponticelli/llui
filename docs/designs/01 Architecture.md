@@ -4,99 +4,90 @@
 
 LLui is a compile-time-optimized web framework built around The Elm Architecture (TEA). The core loop is identical to Elm's: state is immutable, the only way to change it is to dispatch a `Msg`, `update()` folds the message over the current state and returns a new state plus a list of effects, and the runtime executes those effects outside the pure function boundary.
 
-The critical departure from Elm — and from virtually every other TEA-inspired framework — is what happens when state changes arrive at the DOM. Traditional approaches re-run a virtual DOM diffing pass over the entire tree. LLui does not have a virtual DOM. `view()` is a one-shot imperative call that runs exactly once at mount time, building real DOM nodes and recording _where_ state is consumed. Every arrow function passed to an element helper or `text()` is a _binding_: an accessor `(state: S) => T` attached to a specific DOM node. After mount, state changes skip `view()` entirely. The runtime instead drives two subsequent phases:
+The critical departure from Elm — and from virtually every other TEA-inspired framework — is what happens when state changes arrive at the DOM. Traditional approaches re-run a virtual DOM diffing pass over the entire tree. LLui has no virtual DOM. `view` is a one-shot imperative call that runs exactly once at mount, building real DOM nodes and recording _where_ state is consumed. Every reactive value passed to an element helper or `text()` becomes a **binding**: an accessor `produce(state)` paired with the dependency paths it reads and a `commit(value)` that writes a specific DOM node. After mount, state changes skip `view` entirely.
 
-**Phase 1 — Structural reconciliation.** `branch`, `each`, and `show` are structural primitives. They own comment-node markers and lists of scopes. When the discriminant or item array changes, Phase 1 surgically removes old DOM subtrees (disposing their scopes), creates new ones by re-invoking the case or item builder functions, and splices them into the live DOM. Transitions hook in here via `enter`/`leave`/`onTransition` fields on the primitive's object parameter. `foreign()` creates an opaque container for third-party imperative components (ProseMirror, Monaco, etc.) — LLui owns the container but not its contents; a typed `sync` bridge handles state propagation. `clientOnly()` marks a subtree as browser-only — SSR emits an anchor-bracketed placeholder (optionally backed by a fallback subtree), and the real render runs only at client mount / hydrate time.
+Reactivity is expressed through **signals**. The view bag carries `state`, a `Signal<State>` handle. You slice into it with `.at('field')` to get a sub-path signal, derive with `.map(fn)`, and read a one-shot snapshot with `.peek()`. A reactive slot is a signal: `text(state.at('count').map(String))`, `div({ class: state.at('open').map(o => o ? 'on' : '') }, [...])`. A static value is a plain value; an event handler is a plain function. `.peek()` is for event handlers and effects — never as a slot value, because a peek reads once and never updates.
 
-**Phase 2 — Binding updates.** Every non-structural reactive value is a `Binding` record: `{ node, kind, accessor, lastValue, mask }`. Phase 2 iterates the flat binding list and, for each binding, checks `(binding.mask & dirty) === 0` to skip it cheaply, then calls `Object.is(newValue, lastValue)` to skip identity-equal values, then calls `applyBinding`. Nothing else touches the DOM.
+When state changes, the runtime drives a single mask-gated sweep over the flat binding array (`packages/dom/src/signals/runtime.ts`):
 
-The `dirty` bitmask is injected by the Vite plugin at compile time. The plugin's TypeScript transform scans every reactive accessor in the file, extracts the **access paths** each accessor reads from the state parameter — not just top-level fields but nested property chains up to depth 2 (e.g., `s.user.name`, `s.user.email`, `s.filter`) — assigns each unique path a bit position, and synthesizes a `__dirty(oldState, newState): number` function that ORs together bits for paths whose values changed. An accessor reading `s.user.name` gets a different bit from one reading `s.user.email`, so changing the user's name does not trigger re-evaluation of email bindings. An accessor reading a parent path (`s.user` as a whole object) gets the union of all child path bits, correctly marking it as dependent on any sub-field change.
+1. **Compute the dirty set.** From old→new state, reference-equality at each tracked path yields a dirty chunk-set (`mask.ts`). Because TEA reducers return immutable, structurally-shared state, an unchanged field is reference-identical and dirties nothing; an unchanged subtree short-circuits all its leaves with one `Object.is`. If nothing a scope reads changed, its whole sweep is skipped.
+2. **Gate by mask.** Each binding carries a sparse mask of the dependency-path chunks it reads. A binding whose mask doesn't intersect the dirty set is skipped without calling `produce` — no accessor invocation, no DOM access.
+3. **Output equality.** A binding that passes the gate runs `produce`; `commit` fires only if the value actually changed (`Object.is` against the last value). A coarse dependency wastes a `produce` but never a DOM write.
 
-The compiler uses a **single-word mask** with graceful overflow:
+The mask is a chunked bitset: a `PathTable` assigns each unique dependency path a bit across N 32-bit chunks, and each binding's sparse mask lists only the chunks it touches. There is **no path ceiling** — a 200-path component uses 7 chunks and each binding's gate is still a handful of integer ANDs. (This replaces the older fixed two-word `mask`/`maskHi` design with its 62-path limit.)
 
-- **≤31 paths**: each path gets its own bit (positions 0..30). The Phase 2 check is a single bitwise AND: `(binding.mask & dirty) === 0`. This is the fastest path and the common case.
-- **32+ paths (overflow)**: the first 31 paths still get individual bits; paths 32+ use `FULL_MASK` (-1), meaning their bindings always re-evaluate when anything dirties. The compiler emits a warning naming the top-level state fields by path count, so the developer knows exactly where to extract a child component or slice handler.
+Structural primitives — `show`, `branch`, `each` — are not plain bindings. Each registers a structural binding gated on its own deps, but its `commit` _reconciles_ (swaps an arm, diffs keyed rows) and owns child scopes. Non-structural slots are gated bindings. Both kinds live in the same sweep; structural reconcile and binding commits happen as their deps dirty.
 
-The overflow path is cheap (~1 microsecond per update at 40–80 paths) but the diagnostic exists because components at that scale usually benefit from decomposition on architectural grounds — clearer effect lifecycle, easier testing, independent state. The warning names the largest top-level fields so authors know which slice to extract.
+**`send()` is synchronous.** `send(msg)` runs the pure reducer immediately; if the returned state differs by reference, it commits to the reconciler, notifies subscribers, then dispatches effects to `onEffect`. There is no microtask queue and no combined-dirty coalescing — each `send` is its own update cycle. `flush()` is retained as a no-op on the handle, for harness/agent parity with frameworks that batch. (An effect that calls `send` again is an ordinary synchronous reducer step, not re-entrant reconciliation.)
 
-This is inserted as a `__dirty` property on the `component({...})` call. At runtime, `processMessages` calls `__dirty(oldState, newState)` and passes the result through both phases. Bindings whose mask has no overlap with the dirty bits are unconditionally skipped — not inspected, not called, not compared. For arrays, path tracking stops at the array field itself (`s.todos` is a single bit); per-item granularity is handled by the `eachItemStable` mechanism in Phase 2 rather than by the bitmask.
+The scope tree is the ownership graph. Every binding, every event listener, every `onMount` callback, every portal, every `foreign` instance, and every mounted `show`/`branch` arm or `each` row is owned by a `SignalScope`. Disposal runs the scope's teardowns (onMount cleanups, foreign unmounts, subscription disposal) and removes its nodes. When a `show` flips or an `each` row drops, its scope's teardowns fire before the nodes leave. No GC roots remain; the lifetime of every DOM resource is the lifetime of the scope that created it.
 
-**Batching: `send()` and `flush()`.** `send(msg)` does not execute an update cycle immediately. It enqueues the message and schedules a microtask if one is not already pending. When the microtask fires, `processMessages` drains the queue: it folds every pending message through `update()` in order, OR-merges their individual dirty masks into a single combined mask, then runs Phase 1 and Phase 2 exactly once with that combined mask. Multiple rapid `send()` calls — e.g., a WebSocket handler forwarding a burst of messages, or a drag event handler updating both position and hover target — coalesce into one update cycle with one set of DOM writes. This is LLui's primary batching mechanism: it eliminates redundant intermediate renders without developer opt-in.
+`onMount(cb)` runs after the surrounding nodes are inserted, receiving the mounted parent element; a returned function becomes a teardown. If the owning scope is disposed before the callback can register meaningfully (a `show` arm that opens and closes within one cycle), the cleanup is still owned by that scope and runs on its disposal.
 
-`flush()` forces the pending update cycle to execute synchronously, right now. After `flush()` returns, the DOM reflects all messages sent up to that point. `flush()` exists for two cases: (1) imperative code that must read DOM state immediately after a state change (e.g., measuring an element's position after toggling visibility), and (2) test harnesses that need deterministic step-by-step assertions. If no messages are pending, `flush()` is a no-op. `flush()` does not change the batching model — it simply advances the scheduled microtask to "now."
-
-```ts
-// Batching: three sends, one update cycle, one DOM write.
-send({ type: 'setX', value: 10 })
-send({ type: 'setY', value: 20 })
-send({ type: 'setLabel', value: 'moved' })
-// DOM unchanged here — microtask hasn't fired yet.
-// After the current synchronous JS completes, one update cycle runs.
-
-// flush(): when you need the DOM now.
-send({ type: 'togglePanel' })
-flush()
-// DOM is now updated; safe to measure.
-const rect = panelEl.getBoundingClientRect()
-```
-
-The scope tree is the ownership graph. Every binding, every event listener, every `onMount` callback, every portal, and every child component is registered under a `Scope`. When a branch swaps arms or an each entry is removed, `disposeLifetime` walks the subtree and fires all disposers: bindings are spliced out of the flat component array, `PropsWatcher` entries are marked `removed`, child component instances are unmounted, portal nodes are removed from their target elements. No GC roots remain. The lifetime of every DOM resource is exactly the lifetime of the scope that created it.
-
-`onMount` fires via `queueMicrotask` after DOM insertion. The scope registers a disposer that sets a `cancelled` flag. If the owning scope is disposed before the microtask fires — possible when a branch swaps back within the same message-flush cycle — the callback is silently dropped. This is the correct behavior: a branch arm that existed for zero frames has nothing to focus or measure.
-
-**Composition: one model, one tree.** All composition in LLui uses **view functions** — plain modules that export an `update` function (or a reducer slice composed via `combine()`) and a `view` function. The parent owns the state; child modules operate on slices of it. This is pure Elm-style composition: no component instances, no `PropsWatcher`, no lifecycle hooks for prop changes. View functions follow the `(props, send)` convention: a typed props object (generic over the parent state `<S>`) containing named accessor fields, and a `send` callback as the second argument. The parent's `update()` delegates to child reducers via `combine()`, or hand-routes by destructuring the message type. Reactivity is **path-keyed**: the compiler walks each accessor body and assigns one bit per minimal reference-stable prefix it reads. Depth doesn't matter — `s.dashboard.toolbar.menuOpen` gets its own bit, just as `s.count` does. There is no second composition tier.
-
-For the rare case where genuine state isolation is required — embedding an independent app whose lifetime is distinct from the host's, or a library bundle that ships its own complete TEA loop — `subApp({ reason, def, data, onHandle })` is the documented escape hatch. The `reason` field is required and surfaces in the rendered DOM as `data-llui-sub-app-reason`; the `llui/subapp-requires-reason` ESLint rule enforces that it's non-empty and references a documented escape-hatch case. Use sparingly: every `subApp` is a boundary the unified composition model can't see across, and the inability to share state with the host is the cost.
-
-Effects are plain data objects. `update()` returns them; the runtime dispatches them after DOM updates have been applied. The core runtime handles two built-in effect types directly: `delay` (setTimeout + message delivery) and `log` (structured console output). All other effects — including HTTP, cancellation, debounce, sequencing, and racing — are consumed by the component's `onEffect` handler. The `@llui/effects` package provides `handleEffects<Effect>()`, a composable chain that interprets `http`, `cancel`, `debounce`, `sequence`, and `race` effects, tracks cancellation tokens and debounce timers in a per-component closure, and passes unrecognized effects through to a `.else()` callback where the developer handles custom effect types. The chain provides exhaustiveness: TypeScript narrows the `.else()` callback to only the effect variants that `handleEffects` doesn't consume, and `noImplicitReturns` catches missing cases. The runtime passes an `AbortSignal` tied to the component's lifetime — when the component unmounts, the signal aborts, and `handleEffects` cleans up all in-flight HTTP requests, pending timers, and debounce entries automatically.
+Effects are plain data objects. `update()` returns `[newState, effects]` (a bare `S` return is normalized to `[S, []]`); the runtime dispatches each effect to `onEffect(effect, { send, state })` after the DOM is updated. `onEffect` may return a cleanup function, registered for disposal. The core runtime hands all effects to `onEffect`; the `@llui/effects` package provides `handleEffects<Effect>()`, a composable chain that interprets `http`, `cancel`, `debounce`, `sequence`, and `race` effect descriptions, tracks cancellation tokens and debounce timers in a per-component closure, and passes unrecognized effects to a `.else()` callback where the developer handles custom types. TypeScript narrows `.else()` to only the variants the chain doesn't consume.
 
 This means effects are serialisable, loggable, and testable without mocking the DOM or the runtime — you test `update()` in isolation.
 
 ```ts
 // The complete shape of a component. No surprises.
-type State = { count: number }
-type Msg = { type: 'increment' }
+import { component, mountApp, div, button, text, show } from '@llui/dom'
 
-export const Counter = component<State, Msg>({
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
+
+const Counter = component<State, Msg>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
-      case 'increment':
-        return [{ count: state.count + 1 }, []]
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+      case 'reset':
+        return [{ count: 0 }, []]
     }
   },
-  view: ({ send, text }) => {
-    return div([
-      text((s) => String(s.count)),
-      button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
-    ])
-  },
+  view: ({ state, send }) => [
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text(state.at('count').map(String)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+    ]),
+    show(
+      state.at('count').map((c) => c > 0),
+      () => [button({ class: 'reset', onClick: () => send({ type: 'reset' }) }, [text('Reset')])],
+    ),
+  ],
 })
+
+mountApp(document.getElementById('app')!, Counter)
 ```
+
+The view bag is `{ state, send }` — `state: Signal<State>`, `send: (msg: M) => void`. Element and structural helpers (`div`, `button`, `text`, `each`, `show`, `branch`, …) are **module imports** from `@llui/dom`, not bag fields. There is a single import surface: `@llui/dom`. There is no `/signals` subpath, no separate legacy runtime, and no `@llui/eslint-plugin`.
 
 For a component with effects:
 
 ```ts
+import { component, div, input, text } from '@llui/dom'
 import { handleEffects, http, cancel, debounce } from '@llui/effects'
 
 type State = { query: string; results: Item[]; loading: boolean }
 type Msg =
   | { type: 'setQuery'; value: string }
   | { type: 'clearSearch' }
-  | { type: 'results'; items: Item[] }
-  | { type: 'error'; msg: string }
-  | { type: 'analytics'; event: string } // custom effect
+  | { type: 'results'; payload: Item[] }
+  | { type: 'error'; error: string }
+  | { type: 'analytics'; event: string } // custom effect's resulting msg
 type Effect =
-  | { type: 'http'; url: string; onSuccess: string; onError: string } // string tags: runtime wraps response into { type: tag, payload: responseData } or { type: tag, error: errorData }
+  | { type: 'http'; url: string; onSuccess: string; onError: string }
   | { type: 'cancel'; token: string; inner?: Effect }
   | { type: 'debounce'; key: string; ms: number; inner: Effect }
   | { type: 'analytics'; event: string }
 
-export const Search = component<State, Msg, Effect>({
+const Search = component<State, Msg, Effect>({
   name: 'Search',
-  // ...
-
+  init: () => [{ query: '', results: [], loading: false }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'setQuery':
@@ -110,8 +101,8 @@ export const Search = component<State, Msg, Effect>({
                 300,
                 http({
                   url: `/api?q=${msg.value}`,
-                  onSuccess: (data) => ({ type: 'results', payload: data }),
-                  onError: (err) => ({ type: 'error', error: err }),
+                  onSuccess: (data) => ({ type: 'results', payload: data as Item[] }),
+                  onError: (err) => ({ type: 'error', error: err.message }),
                 }),
               ),
             ),
@@ -119,178 +110,78 @@ export const Search = component<State, Msg, Effect>({
           ],
         ]
       case 'clearSearch':
-        // cancel-only: abort any in-flight or debounced search, no replacement
         return [{ ...state, query: '', results: [], loading: false }, [cancel('search')]]
-      // ...
+      case 'results':
+        return [{ ...state, results: msg.payload, loading: false }, []]
+      case 'error':
+        return [{ ...state, loading: false }, []]
+      case 'analytics':
+        return [state, []]
     }
   },
-
-  // onEffect receives { effect, send, signal }. handleEffects() consumes http/cancel/debounce.
-  // .else() receives only the remaining types — here, just 'analytics'.
-  onEffect: handleEffects<Effect>().else(({ effect, send, signal }) => {
+  // handleEffects consumes http/cancel/debounce; .else() sees only the rest.
+  // The handler receives one ctx object: { effect, send, signal }.
+  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
     switch (effect.type) {
       case 'analytics':
         window.analytics?.track(effect.event)
         break
     }
   }),
+  view: ({ state, send }) => [
+    input({
+      value: state.at('query'),
+      onInput: (e: Event) =>
+        send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
+    }),
+  ],
 })
 ```
 
-After the Vite plugin runs, the `div` and `button` calls are rewritten to `elSplit(...)` calls with static props applied immediately, event listeners attached once, and reactive tuples `[mask, kind, key, accessor]` registered as bindings. The element helper imports are stripped from the llui import statement; the bundler tree-shakes `elements.ts` entirely.
+After the Vite plugin runs, the inline `view` is **lowered** to runtime helpers (`signalText`, `el`, `react`, `signalEach`, …) as an optimization — erasing the signal-handle allocation for the hot view. Views it can't lower (helper functions, block bodies) run via the runtime authoring helpers, which consume the same signal handles. Either way the runtime builds the same mask-gated bindings (see 02 Compiler.md).
 
 ---
 
 ## Composition Model
 
-LLui is designed for **LLM-first authoring**: an LLM generates the code, a human reviews and makes small changes. This means optimizing for pattern predictability (the LLM always uses the same shape), exhaustiveness checking (TypeScript catches missing cases), and scanability (the human reviewer can verify correctness by local inspection). The composition model follows from this: it should be the simplest thing that works, with no hidden mechanisms.
+LLui is designed for **LLM-first authoring**: an LLM generates the code, a human reviews and makes small changes. This means optimizing for pattern predictability (the LLM always uses the same shape), exhaustiveness checking (TypeScript catches missing cases), and scanability (the reviewer verifies correctness by local inspection). The composition model follows from this: it should be the simplest thing that works, with no hidden mechanisms.
 
-### View Functions — the only decomposition primitive
+### View functions — the default decomposition primitive
 
-A "child component" is not a component. It is a module that exports typed `update` and `view` functions. The parent owns the state.
+A "child component" is not a component. It is a module that exports typed `update` / `view` (or `connect`) functions operating on a slice of the parent's state. The parent owns all state; the child reads a `Signal` of its slice and sends through the parent's `send`. This is pure Elm-style composition: no component instances, no props watcher, no lifecycle hooks.
 
-```typescript
-// toolbar.ts
-export type ToolbarSlice = { menuOpen: boolean }
-export type ToolbarMsg =
-  | { type: 'toggleMenu' }
-  | { type: 'closeMenu' }
-  | { type: 'selectTool'; id: string }
+The convention used across `@llui/components` is a **state machine + `connect`**: `init` / `update` are pure functions over the slice, and `connect(state: Signal<Slice>, send: Send<SliceMsg>)` returns reactive (signal-based) props to spread onto elements. For example, a toggle's `connect` returns:
 
-export type ToolbarProps<S> = {
-  tools: (s: S) => Tool[]
-  toolbar: (s: S) => ToolbarSlice
-}
-
-export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlice {
-  switch (msg.type) {
-    case 'toggleMenu':
-      return { ...slice, menuOpen: !slice.menuOpen }
-    case 'closeMenu':
-      return { ...slice, menuOpen: false }
-    case 'selectTool':
-      return { ...slice, menuOpen: false }
+```ts
+export function connect(state: Signal<ToggleState>, send: Send<ToggleMsg>): ToggleParts {
+  return {
+    root: {
+      type: 'button',
+      role: 'button',
+      'aria-pressed': state.map((s) => s.pressed),
+      'data-state': state.map((s) => (s.pressed ? 'on' : 'off')),
+      disabled: state.map((s) => s.disabled),
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+    },
   }
 }
-
-export function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void) {
-  div([
-    button({ onClick: () => send({ type: 'toggleMenu' }) }, [text('Tools')]),
-    show({
-      when: (s) => props.toolbar(s).menuOpen,
-      render: () =>
-        each({
-          items: props.tools,
-          key: (t) => t.id,
-          render: ({ item }) =>
-            button(
-              {
-                onClick: () => send({ type: 'selectTool', id: item.id() }),
-              },
-              [text(item.name)],
-            ),
-        }),
-    }),
-  ])
-}
 ```
 
-```typescript
-// dashboard.ts — the parent owns all state
-import { ToolbarSlice, ToolbarMsg, ToolbarProps, toolbarUpdate, toolbarView } from './toolbar'
-import { SidebarSlice, SidebarMsg, SidebarProps, sidebarUpdate, sidebarView } from './sidebar'
+The parent destructures its slice with `state.at('toggle')` and routes child messages through its own `Msg` union: `send({ type: 'toggle', msg })`. The parent's `update` delegates `case 'toggle': return [{ ...state, toggle: toggleUpdate(state.toggle, msg.msg) }, []]`. A reviewer sees every state transition in one flat switch; an LLM generates it mechanically from the types.
 
-type State = {
-  toolbar: ToolbarSlice
-  sidebar: SidebarSlice
-  tools: Tool[]
-}
+Reactivity has no nesting tax: `state.at('dashboard').at('toolbar').at('menuOpen')` (or `state.map(s => s.dashboard.toolbar.menuOpen)`) gets its own dependency path, just as `state.at('count')` does. Under a structural-sharing reducer, unchanged subtrees stay reference-equal across old/new, so every signal reading into them gates out. There is no second composition tier needed for reactivity reasons.
 
-type Msg =
-  | { type: 'toolbar'; msg: ToolbarMsg }
-  | { type: 'sidebar'; msg: SidebarMsg }
-  | { type: 'backgroundClick' }
+### `child()` — the full-boundary escape hatch
 
-export const Dashboard = component<State, Msg>({
-  init: () => [
-    { toolbar: { menuOpen: false }, sidebar: { openSectionId: null }, tools: defaultTools },
-    [],
-  ],
+For the rare case of genuine isolation — embedding an independent app whose lifetime is distinct from the host's, a library bundle shipping its own complete TEA loop, or an independent effect lifecycle — a full child component boundary is the escape hatch (mounted as an anchor-bracketed region with its own scope tree and update loop; `lazy()` uses the same machinery to load a child component asynchronously). Use sparingly: a child boundary is a region the unified reactivity model can't see across. Reach for view functions first; the chunked-mask reactivity scales precisely with the number of paths read, not with state depth, so a large flat state is fine.
 
-  update: (state, msg) => {
-    switch (msg.type) {
-      case 'toolbar':
-        return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]
-      case 'sidebar':
-        return [{ ...state, sidebar: sidebarUpdate(state.sidebar, msg.msg) }, []]
-      case 'backgroundClick':
-        // Parent directly controls child state — no message routing needed.
-        return [{ ...state, toolbar: { ...state.toolbar, menuOpen: false } }, []]
-    }
-  },
+### `tagSend` — agent affordances
 
-  view: ({ send }) =>
-    div({ onClick: () => send({ type: 'backgroundClick' }) }, [
-      toolbarView({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
-        send({ type: 'toolbar', msg }),
-      ),
-      sidebarView({ sidebar: (s) => s.sidebar }, (msg) => send({ type: 'sidebar', msg })),
-    ]),
-})
-```
-
-No `child()` call, no `PropsWatcher`, no `propsMsg`, no `onMsg`. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. The compiler traces every accessor's reference-stable prefixes — `s.toolbar.menuOpen` gets its own bit, just as `s.tools` does — and a binding only re-evaluates when one of the prefixes it actually reads changes. A human reviewer sees every possible state transition in one flat `update()` switch. An LLM generates this mechanically from the types. View functions use the `(props, send)` convention: a typed props object as the first argument (generic over the parent's state `<S>`), and `send` as the second. This mirrors the `view(send)` signature on components and makes every call site self-documenting — named fields eliminate positional ambiguity.
-
-### Reducer composition with `combine()`
-
-When the parent's `update()` switch becomes a mechanical "route by `msg.type` prefix to a slice reducer" pass, `combine()` collapses it. Each slice reducer is `(state: Slice, msg: Msg) => [Slice, Effect[]]`; the slice map keys are message-type prefixes:
-
-```typescript
-import { combine } from '@llui/dom'
-
-const update = combine<State, Msg, Effect>({
-  toolbar: (slice, msg) => toolbarUpdate(slice, msg),
-  sidebar: (slice, msg) => sidebarUpdate(slice, msg),
-})
-
-// Messages dispatched as `{ type: 'toolbar/toggleMenu' }` route to the
-// toolbar slice with `msg.type` rewritten to `'toggleMenu'` before the
-// slice reducer runs. The returned slice is structurally merged into
-// the top-level state at `state.toolbar`. Returning the same reference
-// for the slice preserves reference equality at the top level — the
-// dirty walker sees no change to `s.toolbar.*` prefixes and skips
-// every binding that reads from that slice.
-```
-
-`combine()` is a tactical convenience — for small parent reducers the explicit switch is just as clear. The escape hatch from `combine()` is also `combine()`: pass a `_top` reducer as the second argument to handle top-level messages that aren't slice-prefixed.
-
-### `subApp` — the escape hatch
-
-A component definition can be embedded as an independent, isolated app via `subApp`:
-
-```typescript
-import { subApp } from '@llui/dom/escape-hatch'
-
-// In a view function:
-subApp({
-  reason: 'third-party widget owns its own TEA loop and state lifetime',
-  def: SomeBundledApp,
-  data: { theme: 'dark' }, // optional init data
-  onHandle: (handle) => {
-    /* hold the AppHandle to imperatively send/getState */
-  },
-})
-```
-
-Every `subApp` carries a non-empty `reason` string — surfaced as `data-llui-sub-app-reason` on the wrapper element and enforced at lint time by `llui/subapp-requires-reason`. The host cannot read the subApp's state, the subApp cannot read the host's; messages do not cross the boundary except through the `onHandle` callback's imperative API. Use only for: third-party bundled apps, demo embeds, or components whose effect lifetime must outlive the host's render cycle.
-
-If you reach for `subApp` to "isolate a complex component" — you don't need it. The path-keyed dirty walker is precise enough that the per-prefix mask of a 50-field root is no more wasteful than the per-prefix mask of a 5-field subtree. Reach for view functions and `combine()` first.
+Wrapping a handler with `tagSend(send, ['variant', …], handler)` tags it with the Msg variants it can dispatch. The runtime maintains a live registry of these (refcounted per mounted scope), so an agent can ask the running app which actions are currently dispatchable (`getBindingDescriptors` / `list_actions`). This is how headless components advertise their affordances to the agent protocol (see 10 Agent Protocol.md, 11 Agent Annotations and Tools.md).
 
 ### LLM-First Boilerplate
 
-TEA's explicit message types are a feature, not a cost, in LLM-first development. The `Msg` union is the complete menu of valid transitions. The `update()` switch is a mechanical enumeration. The LLM never decides "should this be a hook, a ref, a callback, or state?" — the answer is always "a message."
-
-For forms with many fields, the idiomatic pattern uses a generic `setField` message to avoid per-field boilerplate:
+TEA's explicit message types are a feature, not a cost, in LLM-first development. The `Msg` union is the complete menu of valid transitions; the `update` switch is a mechanical enumeration. The LLM never decides "hook, ref, callback, or state?" — the answer is always "a message." For forms with many fields, the idiomatic pattern uses a generic `setField` message to avoid per-field boilerplate:
 
 ```typescript
 type Msg =
@@ -300,427 +191,182 @@ type Msg =
   | { type: 'submitError'; error: string }
 ```
 
-The reviewer sees 4 cases, not 13. The `setField` case is mechanical. The interesting logic is in `submit`, `submitSuccess`, `submitError`. The LLM system prompt should prescribe this pattern for forms.
+The reviewer sees 4 cases, not 13; the interesting logic is in `submit`/`submitSuccess`/`submitError`.
 
 ---
 
 ## What Adds Value
 
-**Surgical DOM updates without a virtual DOM.** The two-phase update with bitmask gating means the cost of an update scales with what changed, not with the size of the component tree. A message that changes one field touches only bindings whose mask includes that field's bit. A counter with fifty bindings to fields other than `count` pays zero binding-evaluation cost when `count` changes. This is not a heuristic or a diff optimisation — it is a static guarantee expressed in integers.
+**Surgical DOM updates without a virtual DOM.** The mask-gated sweep means update cost scales with what changed, not with tree size. A message that changes one field touches only the bindings whose mask includes that path's chunk. A 50-binding component pays one integer-AND gate per unrelated binding when an irrelevant field changes — and nothing at all if no path it reads changed. This is a static structural property, not a diff heuristic.
 
-**Compile-time dependency tracking with path-level granularity.** The Vite plugin's TypeScript AST walk extracts access paths from accessor bodies — direct property access (`s.fieldName`, `s['fieldName']`), destructuring patterns (`const { count, title } = s`), single-assignment aliases (`const c = s.count`), and nested property chains up to depth 2 (`s.user.name`). Each unique path is assigned a bit, per-binding masks are computed, and `__dirty` is synthesized. The developer writes `(s: State) => s.user.name` and gets correct granularity for free — a change to `s.user.email` will not trigger re-evaluation. The fallback when the component is uncompiled or props are dirty is `0xFFFFFFFF` — all bindings run, nothing breaks, it degrades gracefully to the same behavior as a naively implemented fine-grained reactive system. When the compiler cannot determine which paths an accessor reads (computed property access, multi-hop aliases, closure-captured variables), it emits a diagnostic warning identifying the exact accessor and the reason for the bail-out, then assigns the conservative `0xFFFFFFFF` mask.
+**Chunked-mask reactivity with no path ceiling.** Sparse per-binding masks over N 32-bit chunks make the gate ~constant regardless of total path count, and remove the old two-word 62-path limit. A 200-path component is no more expensive per binding than a 5-path one. Dirty computation short-circuits unchanged subtrees with a single `Object.is`, which is what keeps `each` updates proportional to the rows that changed.
 
-**Effects as data, tested in isolation.** Because `update()` returns effect descriptions rather than executing side effects, the entire business logic of a component is a pure function. The `@llui/test` package provides `testComponent()` to wrap a component definition with a test harness that calls `update()` and accumulates effects, and `assertEffects()` for structural matching of effect trees (including nested `cancel`/`debounce`/`http` compositions). `propertyTest()` fuzzes arbitrary message sequences against developer-defined invariants, catching edge cases that hand-written tests miss. The async loading pattern — optimistic update, http effect, rollback on error — is fully testable without a browser, a fetch mock, or a DOM.
+**Signals as the authoring surface.** `state.at('a.b')`, `.map(fn)`, `.peek()` are the entire reactive vocabulary. A slot is a signal; a static value is plain; a handler is a function. The compiler lowers the common inline-view shape to allocation-free runtime calls, and the runtime handles every other shape by consuming signal handles directly — so view-helper composition Just Works.
+
+**Effects as data, tested in isolation.** Because `update()` returns effect descriptions, the business logic is a pure function. `@llui/test`'s `testComponent(def)` runs `init`/`update` with no DOM and tracks state/effects/history; `testView(def, state)` mounts against a real container and exposes query/click/input/send helpers that auto-flush. The async loading pattern is fully testable without a browser or fetch mock.
 
 ```ts
-// testComponent wraps update() with send/state/effects tracking.
-import { testComponent, assertEffects } from '@llui/test'
-const t = testComponent(MyComponent)
-t.send({ type: 'fetch' })
-expect(t.state.phase).toBe('loading')
-assertEffects(t.effects, [{ type: 'http', url: '/api/data' }])
+import { testComponent } from '@llui/test'
+const t = testComponent(Search)
+t.send({ type: 'setQuery', value: 'milk' })
+expect(t.state.loading).toBe(true)
+expect(t.effects[0]).toMatchObject({ type: 'cancel', token: 'search' })
 ```
 
-**Scope-managed lifetimes.** Every resource that has a lifetime — binding, listener, onMount callback, portal, child component — is owned by a scope. Disposing a scope is a complete cleanup: no leaks, no stale listeners, no zombie child components. This is especially valuable for structural primitives: when `branch` swaps arms, the leaving scope's disposal fires immediately, before the entering arm's builder runs.
+**Scope-managed lifetimes.** Every resource with a lifetime — binding, listener, onMount callback, portal, `foreign` instance, mounted arm/row — is owned by a scope. Disposing a scope is complete cleanup: no leaks, no stale listeners. When a `show` arm leaves, its teardowns fire before its nodes are removed.
 
-**`memo()` for shared derived state.** The `memo` helper memoizes an accessor using a two-level cache. First, the bitmask check gates evaluation: if no relevant state paths changed (per the accessor's dirty mask), the cached result is returned without calling the accessor. Second, when the accessor does re-run, `memo` compares its return value via `Object.is` with the previous result — if the output is identical despite input changes, downstream bindings skip their updates. This two-level strategy (bitmask fast path + output stability) ensures one computation per update cycle regardless of how many consumers reference the memoized value. The todo list example uses `memo(filteredTodos)` and passes the result to both `each()` and the count `text()`: one computation per update cycle, however many consumers reference it.
+**Per-row scopes in `each`.** Each row is its own scope mounted on a combined `{ item, state, index }` context, so a shared-state change fans out only to the row bindings that read it, an item change hits only that row, and kept rows are mutated in place rather than recreated.
 
-**Per-item stability optimization in `each`.** The `each()` render callback receives a **scoped accessor** `item` — a function `<R>(selector: (t: T) => R) => Binding<R>` — rather than the item value directly. The `item` accessor returns a reactive binding, not a resolved value. `item(t => t.name)` produces a zero-argument closure that the runtime evaluates during Phase 2, enabling per-item dirty checking. Bindings created via `item(t => t.title)` are tagged `perItem: true`. When `updateEach` detects that an entry's item reference is unchanged (`Object.is(existing.item, item)`), it sets `eachItemStable = true` on the entry's scope. Phase 2 checks `binding.perItem && binding.ownerScope.eachItemStable` and skips the binding entirely. A list update that appends one item does no work for the unchanged rows' per-item bindings. The scoped accessor pattern mirrors the component-level `s => s.field` pattern — `item(t => t.title)` reads like the item-level equivalent of `text(s => s.title)` — making the reactive intent unambiguous without requiring closure-calling syntax like `getItem().title`.
+**`foreign()` for imperative libraries.** ProseMirror, Monaco, MapboxGL and friends own their own DOM and event loops. `foreign()` hands LLui-owned `LiveSignal`s (peek + bind) for declared reactive inputs to a `mount` callback that builds the third-party instance; communication out is via `send`. The declared inputs participate in the same mask gating; `unmount` runs on disposal.
 
-**`onMount` with implicit cancellation.** Focus management, third-party library initialization, and layout measurements all require the DOM to be live. `onMount` fires asynchronously after insertion. The cancellation-by-scope-disposal pattern correctly handles transient views — a branch arm that opens and closes within one update cycle will have its `onMount` silently dropped.
-
-**`portal` as a first-class primitive.** Portal nodes are rendered out-of-tree (to `document.body` or any other target) but bindings inside the portal participate in the same update cycle as the rest of the component. Portals are disposed when their owning scope is disposed. There is no separate subscription, no cross-component event bus, and no manual cleanup.
-
-**Path-keyed reactivity over depth.** The compiler walks each accessor's body and assigns one bit per minimal reference-stable prefix it reads. `s.dashboard.toolbar.menuOpen` gets its own bit; `s.user.profile.address.city` gets its own bit. Reactivity has no depth ceiling and no nesting tax — a binding that reads three levels down pays the same as one that reads a top-level field. Under a structural-sharing reducer (immutable splice), unchanged subtrees stay reference-equal across `prev`/`next`, so every prefix accessor reading into them skips. This is what makes the unified composition model work: there is no second tier because the reactivity model doesn't need one.
+**`onMount`, `portal`, context as first-class primitives.** `onMount` runs after insertion with the parent element. `portal(content, target?)` renders out-of-tree (default `document.body`) while keeping the content's bindings in the current scope and reactive. `createContext`/`provide`/`useContext` give build-time dependency injection that flows into nested builds (each rows, arms).
 
 ---
 
 ## What to Avoid
 
-**Mutating state inside `update()`.** LLui's entire update optimization — bitmask computation, `Object.is` comparisons, `memo` caching — depends on state immutability. If `update()` mutates the existing state object and returns it, `__dirty` will see `Object.is(o.field, n.field) === true` for every field (because `o` and `n` are the same object), compute a dirty mask of zero, and skip every binding. The component will appear frozen. Always return a new state: `return [{ ...state, count: state.count + 1 }, []]`.
+**Mutating state inside `update()`.** The dirty computation is reference-equality per path. A reducer that mutates and returns the same object produces zero dirty bits, and the UI appears frozen. Always return new state: `return [{ ...state, count: state.count + 1 }, []]`.
 
-**Calling `view()` primitives outside `view()`.** The render context is a module-level singleton set up by `withRenderContext` during the one-shot `view()` call. Calling `text()`, `branch()`, `each()`, `onMount()`, etc. outside this window throws a `NO_RENDER_CONTEXT` error. There is no equivalent of React's hooks dependency array to defer effects — side-effectful view work that needs to happen after mount belongs in `onMount`.
+**`.peek()` in a reactive slot.** `text(state.at('count').peek())` reads once at build time and never updates. Slots and props must be signals (`.at`/`.map`); `.peek()` belongs in event handlers and `.map` bodies. The compiler's `peek-in-slot` rule rejects this at build time.
 
-**Storing DOM references across re-renders.** Because `view()` runs once, the DOM nodes it returns are stable for the component's lifetime — _except_ inside `branch` and `each` subtrees. Nodes inside a branch arm are created fresh when the arm activates and destroyed when it deactivates. Holding a reference to such a node past the arm's lifetime is a leak and a logic error. If you need a stable reference, hoist the node outside the structural primitive or use `onMount` within the arm's builder.
+**Operating on a signal as if it were a value.** `state.at('n') + 1`, `` `${state.at('s')}` ``, `state.at('flag') ? a : b` operate on the handle, not its contents. Derive: `state.at('n').map(n => n + 1)`. The `operator-on-signal` rule rejects these.
 
-**Using `branch` keys that change identity on every render.** `branch` uses `Object.is(newKey, currentKey)` to detect arm changes. If the discriminant accessor returns a new object or string on every call even when logically equal, every update triggers a full DOM tear-down and rebuild. Discriminants should return primitive values (`string | number | boolean`), which is what the type signature enforces.
+**Side effects or DOM construction inside a `.map` body.** A derive body must be pure over plain values — no `send`/`fetch`/timers, no `Date.now`/`Math.random`, no `.at`/`.map`/`.peek` on a signal, no element/text helpers. Use a structural primitive to build conditional DOM. The `pure-derive-body` and `no-node-construction-in-body` rules enforce this; the bans are correctness-critical because a path read only through such an expression would be invisible to dependency analysis.
 
-**Reading DOM immediately after `send()` without `flush()`.** Because `send()` enqueues a message and defers the update cycle to a microtask, the DOM is not yet updated when `send()` returns. Code that calls `send({ type: 'show' })` and then immediately reads `element.offsetHeight` will see the pre-update value. Use `flush()` after `send()` when imperative DOM reads depend on the updated state. This is the only case where `flush()` is needed in application code — in normal reactive flows, the microtask batching handles everything automatically.
+**Passing the whole `state` to a call in a slot.** `text(makeLabel(state))` makes the binding depend on the entire state object — it re-runs on every change. Pass a slice: `text(makeLabel(state.at('label')))`. The `whole-state-to-call` rule flags this.
 
-**Using `subApp` to "isolate complex components."** `subApp` is for embedding a foreign TEA loop whose state lifetime is genuinely independent of the host's — a bundled third-party widget, a demo embed inside a larger page, or a separately-versioned library that ships its own complete app. It is NOT a substitute for view functions. If you reach for it because a component "got too big," you don't need it: the path-keyed walker scales precisely with the number of reactive paths read, not with the depth of the state tree. Split the view into smaller modules with their own `(props, send)` functions and let `combine()` route their slice reducers. The `llui/subapp-requires-reason` lint rule enforces that every `subApp` call carries a non-empty `reason` string, which surfaces in the DOM as `data-llui-sub-app-reason` and shows up in code review.
+**Calling view primitives outside `view`.** The build context is a module-level singleton set during the one-shot view build. Calling `text()`/`each()`/`onMount()`/`portal()` outside it throws. Post-mount imperative work belongs in `onMount` or an effect.
 
-**Using `.map()` on state arrays in `view()`.** Because `view()` runs once at mount time, `state.items.map(item => div(...))` creates DOM nodes from the initial array and never updates them. If the array changes, the nodes are stale. Always use `each({ items, key, render })` for arrays that come from state. `.map()` is only valid for truly static arrays (constants, hardcoded lists) that never change for the component's lifetime.
-
-**Reaching for `subApp` instead of decomposing the view.** Repeating the point from above because it's the most common LLM-authored mistake: a 50-field state tree is fine. A 200-binding view is fine. Path-keyed reactivity gates each binding by the specific prefixes its accessor reads; a binding that touches one field pays for one comparison regardless of how many other fields exist. If you want to organize a large view for readability, extract view functions; if you want to organize a large reducer, use `combine()`. `subApp` exists for genuine state-lifetime isolation, not for code organization.
-
-**Letting accessors read derived properties.** Path-keyed reactivity tracks reference-stable prefixes. `(s) => s.items.length` reads `s.items` (a reference-stable prefix) and then computes `.length` from it — that works. But `(s) => s.items.filter(x => x.active).length` allocates a new array every call; even if the filtered length is the same, the dirty walker can't see "this prefix didn't change" because the accessor doesn't return one. Wrap derived computations in `memo()` so the per-update-cycle stability check kicks in, or restructure state to make the derived value a reference-stable field.
-
-**Using `innerHTML` bindings for user-supplied content.** The `PROP_KEYS` set in the transform includes `innerHTML`, making it a valid reactive prop. This is correct for template-authored content but is an XSS vector for user-supplied strings. It exists for completeness; use `text()` for user content and reserve `innerHTML` for pre-sanitized or developer-authored markup.
+**Holding DOM references across a structural swap.** `view` runs once, so its nodes are stable for the component's lifetime — _except_ inside `show`/`branch` arms and `each` rows, which are built fresh on mount and removed on unmount. Hoist a needed reference outside the structural primitive, or capture it in `onMount` within the arm/row.
 
 ---
 
 ## What Seems Valuable But Isn't
 
-**A fine-grained reactive signal layer inside state.** Because LLui already computes dirty bitmasks at compile time, adding a signal graph (MobX-style observable fields) would be redundant. The bitmask is strictly cheaper for the common case — a flat-ish state object with well-typed fields — and requires no subscription bookkeeping. Signal systems (Solid, Preact Signals) track dependencies lazily during effect execution, which is efficient for deep trees but adds per-read bookkeeping during reactive scope evaluation. LLui pays nothing at read time and O(n bindings with matching masks) at write time. The bitmask approach trades flexibility (depth-2 ceiling, flat state bias) for lower constant overhead in the common case.
+**A separate fine-grained signal graph with per-binding subscriptions.** The chunked mask already gives per-path selectivity at the cost of a few integer ANDs, with no subscription objects and no per-read bookkeeping. Bindings are pulled, not pushed: the reconciler iterates the flat array and gates by mask. A subscription per `(binding, path)` would add GC pressure for selectivity that's already there.
 
-**Memoizing `update()` or skipping it when state reference is unchanged.** `update()` is a pure function that takes the previous state and returns a new one. If the message doesn't change state, `update()` should return the same reference: `return [state, []]`. The update loop detects `Object.is(oldState, newState)` and can short-circuit before Phase 1 and Phase 2. There is no value in caching `update()` at the call site; the correct response to a no-op update is `return [state, []]`.
+**Memoizing or skipping `update()` when state is unchanged.** `update()` is pure; if a message doesn't change state it should return the same reference (`return [state, []]`). `send` detects `Object.is(next, state)` and skips the reconcile. There is nothing to cache at the call site.
 
-**A JSX transform.** The Vite plugin already does what a JSX transform does — it rewrites `div({ class: 'foo' }, [...])` calls to `elSplit(...)` with separated static, event, and reactive concerns. JSX would require an additional parse step, a custom pragma, and would obscure the fact that LLui's element helpers are regular function calls that can be used imperatively. The `view()` model is already JavaScript; the plugin works on TypeScript AST, not a separate syntax layer.
+**A JSX transform.** The view is already JavaScript — element helpers are regular function calls usable imperatively. The compiler works on the TypeScript AST, not a separate syntax layer, and lowers signal slots directly. JSX would add a parse step and a pragma for no gain.
 
-**A virtual DOM for structural reconciliation.** The `each` reconciler does keyed diffing with several fast paths: same reference → skip everything; no reordering + only appends → single fragment insert; exactly two entries swapped → two targeted moves; otherwise → full fragment rebuild. This covers the realistic distribution of list mutations without the overhead of virtual node allocation, diffing two trees, and patching. The real-DOM reconciler is both faster in the common case and simpler to reason about.
+**A virtual DOM for structural reconciliation.** `each` does keyed diffing with a minimal-move cursor: rows already in position aren't touched, only displaced or new rows move, and DOM mutations are proportional to moved rows. `show`/`branch` swap a whole arm keyed on a discriminant — there's nothing to diff. The real-DOM reconciler is faster in the common case and simpler.
 
-**Subscriptions as a first-class effect type.** Elm has a `Sub` mechanism for external event sources (WebSocket messages, timer ticks, keyboard events). LLui handles these through the `onEffect` handler: a custom effect `{ type: 'ws:subscribe'; topic: string }` is defined in the component's `Effect` union and handled in the `.else()` callback of the `handleEffects` chain. The handler opens a WebSocket, pipes messages back via `send()`, and uses the `AbortSignal` to clean up on unmount. The pattern is slightly more verbose than Elm's `Sub` but gives the developer full control over connection lifecycle, reconnection strategy, and message parsing — all outside the pure update loop where they can use async/await and imperative patterns naturally.
+**Re-introducing a microtask `send` queue.** The signal runtime applies each `send` synchronously and writes its DOM mutations before the next paint. Coalescing sends into one reconcile would re-add a scheduler and the `flush()` semantics it needed; under synchronous TEA the mask-gated reconcile is cheap enough that it isn't warranted. `flush()` stays only as a no-op handle method for harness/agent parity.
 
-**Component-level shouldUpdate guards.** React's `shouldComponentUpdate` / `memo` exist because re-rendering is expensive and you need an escape hatch. In LLui, the bitmask eliminates the need. A component only pays for bindings whose masks overlap the dirty field set. There is no "re-render" to prevent because there is no render function to suppress — Phase 2 is already a filtered iteration.
+**Component-level shouldUpdate guards.** A component pays only for bindings whose mask overlaps the dirty set. There is no render function to suppress — the sweep is already a filtered iteration.
 
 ---
 
 ## Design Decisions (Resolved)
 
-**Reactivity model: resolved — path-keyed dirty walker with unbounded prefix depth.** The compiler walks each accessor body and assigns one bit per minimal reference-stable prefix it reads. `s.user.name` and `s.user.profile.address.city` each get their own bit; nesting depth is not capped. The runtime emits a `__prefixes` array on the component definition — one closure per bit, hoisted at module scope — and computes dirty by reference-comparing `prefix(prev) !== prefix(next)` for each entry. Under structural-sharing reducers (immutable splice), unchanged subtrees stay reference-equal and every prefix reading into them skips. The single-word mask budget is 31 bits today; components with 32+ distinct reactive prefixes currently fall back to `FULL_MASK` (-1) with a compiler warning. Multi-word emit (bigint or two-word) is the next planned compiler change for very large state trees. Arrays remain single-bit because per-index tracking is not statically resolvable; `eachItemStable` provides the per-item granularity. The old top-level-field `__dirty` bitmask still exists as a runtime-fallback path for user-supplied `__dirty` functions, but the compiler now emits `__prefixes` by default.
+**Reactivity model: resolved — signals over a chunked-mask reconciler.** The view bag carries `state: Signal<State>`; slots are signals (`state.at('a.b')`, `.map`, with `.peek` for handlers/effects). At build time the compiler lowers the common inline-view shape to runtime helpers carrying `(produce, deps)`; other shapes run via the authoring helpers, which consume signal handles. At update time, the runtime computes a dirty chunk-set by reference-equality per tracked path, gates each binding by its sparse mask, and commits only changed values. There is no fixed path budget — paths are packed into N 32-bit chunks. This replaces the prior two-phase, two-word `mask`/`maskHi`, `elSplit`, `__dirty` design, which was deleted.
 
-**Animated transitions: resolved — `TransitionOptions` with coordinated enter/leave via `onTransition`.** The `TransitionOptions` API provides two levels. The simple level: `enter(nodes)` fires immediately after DOM insertion, `leave(nodes)` fires before removal and defers removal until the returned Promise resolves. This handles CSS class-based transitions and is the common case. The coordinated level: `onTransition({ entering, leaving, parent })` receives both entering and leaving node sets simultaneously in the same cycle. This enables FLIP animations — the handler reads leaving nodes' layout positions (`getBoundingClientRect`), inserts entering nodes, reads their new positions, and animates the delta. `onTransition` composes with `enter`/`leave` when both are specified: `onTransition` fires first (for FLIP position capture and layout animation), then `enter` and `leave` fire for their respective elements (for per-element CSS transitions like fades or slides). The `leaving` nodes remain in the DOM until the returned Promise resolves, at which point `disposeLifetime` removes them. The `entering` nodes are already inserted but may be styled with `opacity: 0` or `transform` offsets that the animation resolves. Both `branch` and `each` support `TransitionOptions`; `show` inherits it through `branch`. The FLIP calculation runs synchronously before the browser paints (it fires inside the update cycle, before yielding to the microtask boundary), ensuring no visible flash of unstyled content.
+**Composition: resolved — view functions + `connect`, with `child()`/`lazy()` as the isolation escape hatch.** The parent owns all state; child modules export `update`/`connect` over a `Signal` slice and route messages through the parent's `Msg` union. `child()` is the full-boundary escape hatch (own scope tree, update loop, effect lifecycle); `lazy()` loads a child component asynchronously over the same anchor-mount machinery.
 
-**Server-side rendering: resolved — compiler-driven static HTML emission for v1.** `view()` calls `document.createElement` directly and cannot run on the server. Instead of abstracting the DOM (which would add runtime cost to client-side rendering), the Vite plugin emits a parallel `__renderToString(state)` function at compile time for each component. The compiler already knows the full view tree structure, which props are static, and which are reactive. For static subtrees, it emits literal HTML strings. For reactive bindings, it evaluates the accessor against the provided state and interpolates the result. Structural primitives (`branch`, `each`, `show`) are evaluated eagerly: the compiler emits the branch arm or list items that match the initial state. The output is a plain HTML string with `data-llui-hydrate` markers on nodes that have reactive bindings or structural primitives. On the client, `hydrateApp()` walks the existing DOM, attaches bindings to the marked nodes, and registers structural blocks — without recreating any DOM nodes. The hydration path reuses the same bitmask infrastructure; the `__dirty` function is the same. Mismatches between server HTML and client hydration (different state at hydration time) are handled by falling back to full client render for the affected subtree, with a development-mode console warning identifying the mismatch. `__renderToString` is tree-shakeable from client bundles (it is only imported by the server entry point).
+**Effects: resolved — effects as data, interpreted by `@llui/effects`.** `update()` returns `[state, effects]`; the runtime hands each effect to `onEffect(effect, { send, state })`. `handleEffects<Effect>().else(handler)` interprets `http`/`cancel`/`debounce`/`sequence`/`race` and narrows `.else()` to the remaining custom variants. `cancel(token)` aborts in-flight work for that token; `cancel(token, inner)` aborts and dispatches `inner` as the replacement.
 
-**Composition: resolved — single-model decomposition via view functions, slice reducers, and `combine()`.** The unified composition model replaces the earlier two-tier `component()` + `child()` design. View functions are the sole decomposition primitive; the parent owns all state; slice reducers compose via `combine()` (which routes by `${slice}/${action}` namespace and preserves top-level reference equality when slices return unchanged). The previous primitives — `child()`, `propsMsg`, `onMsg`, `addressOf`, `setAddressedDispatcher`, typed addressed effects — were removed in 2026-05. `subApp({ reason, def, data, onHandle })` is the documented escape hatch for cases where genuine state-lifetime isolation is required (third-party bundled apps, demo embeds). The `llui/subapp-requires-reason` ESLint rule enforces that each `subApp` carries a non-empty `reason` string. See `docs/proposals/unified-composition-model.md` for the original rationale and `docs/proposals/unified-composition-model-spike-result.md` for the validation measurements.
+**Server-side rendering: resolved — signal SSR + atomic-swap hydration.** `renderToString(def, initialState, env)` (and `renderNodes`/`serializeNodes`) build the component's DOM against a server `DomEnv` and serialize it to HTML; effects are not dispatched (server render is pure). On the client, `hydrateSignalApp(container, def, serverState)` rebuilds the deterministic client tree against `serverState` and atomically swaps it in — server HTML stays visible until the swap, so no flash, and the client owns reconciliation from there. There are no `data-llui-hydrate` markers; hydration does not claim server nodes. See 08 Ecosystem Integration.md.
 
-**Recursive `each` for tree views: resolved — nested `each` with transparent scope optimization.** Nested `each` calls work today: a `renderItem` callback may itself call `each({ items: ..., key: ..., render: ... })` inside a `show` for expanded/collapsed state. Previously, each nesting level registered its structural blocks in the parent component's flat `structuralBlocks` list, making Phase 1 iteration `O(total visible nodes)` even when only a leaf changed. The v1 optimization: the runtime detects when an `each` is created inside another `each`'s render callback and registers its structural blocks with the parent `each`'s scope rather than the component's flat list. This creates a tree of scopes mirroring the data tree. When a node's children change, only that subtree's structural blocks are reconciled — sibling subtrees are untouched. The reconciliation algorithm at each level uses the same keyed-diff fast paths as flat `each` (append-only, single swap, full rebuild). No new primitive (`eachTree`) is needed — the optimization is transparent to the developer. The API surface stays the same: developers write nested `each` + `show` as they do today, and the runtime handles hierarchical scoping automatically.
-
-**Effect composition and consumption: resolved via `@llui/effects`.** The core runtime handles only `delay` and `log` directly. The `@llui/effects` package provides two things: (1) composable effect description builders — `http(opts)`, `cancel(token)` / `cancel(token, effect)`, `debounce(key, ms, effect)`, `sequence([...effects])`, `race([...effects])` — which are pure data objects that `update()` returns, and (2) `handleEffects<Effect>()`, a chain that interprets those effect descriptions at runtime in `onEffect`. The chain tracks cancellation tokens and debounce timers in a per-component closure, uses the `AbortSignal` (third argument to `onEffect`) for cleanup on unmount, and passes unrecognized effects to `.else()` where the developer handles custom types. TypeScript narrows the `.else()` callback to only the custom effect variants, providing exhaustiveness checking.
-
-`cancel` has two forms: `cancel(token, inner)` cancels any in-flight effect with the same token and dispatches `inner` as its replacement. `cancel(token)` (no inner) cancels only — it aborts the in-flight request, clears any pending debounce timer sharing that token, and discards pending sequence/race entries, without starting anything new. The token is the universal handle for a logical operation; `cancel('search')` clears everything associated with the `'search'` token regardless of whether it's an HTTP request, a debounced timer, or a composed sequence.
-
-The generation-counter workaround for cancellation is no longer needed: `cancel('search', http({ url, onSuccess, onError }))` replaces it with a one-liner. The package is tree-shakeable and versioned independently from the core runtime.
-
-**DevTools integration: resolved — `@llui/devtools` hook with per-transition recording.** The runtime exposes a `__lluiDevTools` global hook point. When the DevTools extension is connected, `processMessages` emits a `{ component, oldState, msg, newState, effects, dirtyMask, timestamp }` record for each individual `update()` call — not per flush, per message. A burst of 5 `send()` calls that coalesce into one DOM update produces 5 transition records followed by one `{ type: 'flush', dirtyMask: combinedMask }` record. This gives the DevTools time-travel per-message granularity while showing the user which messages were batched into a single DOM write.
-
-The DevTools panel displays: (1) a message log with expandable state diffs per transition, (2) a component tree with live state inspection, (3) effect tracking — which effects were dispatched, which are in-flight, which were cancelled, (4) a time-travel slider that replays transitions by re-running `update()` from `init` through message N and calling `flush()` to update the DOM. The `replayTrace()` function and the `LluiTrace` type live in the core `llui/trace` module (not in `@llui/test`), making them the shared contract between DevTools and the test harness. The DevTools can export any session as a trace file; `@llui/test` re-exports `replayTrace()` for convenience. Both packages import the same format — no coupling between them.
-
-The hook is inert when DevTools are not connected — no allocation, no recording, no performance impact. The check is a single `if (window.__lluiDevTools)` guard at the top of `processMessages`. The `@llui/devtools` package (browser extension + panel) is versioned independently from the core runtime.
-
-**LLM Debug Protocol: resolved — `window.__lluiDebug` API + `@llui/mcp` server (v1 scope).** The dev runtime exposes a `window.__lluiDebug` API that gives LLM agents direct access to the TEA state machine: read state, send typed messages, inspect effects, replay traces, dry-run `update()` calls (`evalUpdate`), validate messages against the component's `Msg` type (`validateMessage`), and explain binding re-evaluations (`whyDidUpdate`). This is architecturally distinct from DOM-level debugging — the LLM operates on the state machine directly, not on its DOM projection. The `@llui/mcp` package wraps this API as an MCP server, connected to the Vite dev server via a `llui:debug` WebSocket channel, exposing native tools like `llui_get_state`, `llui_send_message`, `llui_eval_update`, and `llui_replay_trace`. Both layers are dev-only (tree-shaken in production, zero bundle cost). The debug API shares infrastructure with the DevTools hook — both consume the same per-transition records from `processMessages` and the same `LluiTrace` format from `llui/trace`. The full protocol specification, including type contracts and MCP tool schemas, is in 07 LLM Friendliness §10.
-
-**Server framework: resolved — Vike via `@llui/vike` adapter.** Vike is a Vite-based server framework designed for "build your own framework" integration. The `@llui/vike` package configures two hooks: `onRenderHtml` calls `__renderToString(state)` for SSR, and `onRenderClient` calls `hydrateApp()` or `mountApp()` depending on `isHydration`. Vike provides filesystem routing, data loading (`+data.ts`), pre-rendering (SSG), and deployment adapters. LLui's Vite plugin and Vike's Vite plugin compose without conflict. See 08 Ecosystem Integration §2 for the full specification.
-
-**Third-party component embedding: resolved — `foreign()` primitive with typed imperative bridge.** Complex imperative components (ProseMirror, Monaco, Lexical, CodeMirror, MapboxGL, D3 visualizations) manage their own internal state, DOM, and event loops. They are fundamentally incompatible with LLui's declarative binding model — you cannot express a ProseMirror editor as a pure function of state. The `foreign()` primitive creates an explicit, typed handoff boundary: LLui creates and owns a container element, the library owns everything inside it, and a typed bridge synchronizes state in both directions.
+**Third-party embedding: resolved — `foreign()` with `LiveSignal` inputs.** `foreign({ tag?, state?, mount, unmount? })` declares reactive inputs as a record of signals; the runtime materializes each to a `LiveSignal` (`peek` + `bind`) and hands them to `mount({ el, state })`, which builds the instance. When a declared input changes, its `LiveSignal` fires bound callbacks; `unmount` runs on the owning component's dispose. Communicate out via `send` closed over from the view. The analyzer sees the declared deps; the imperative body is opaque.
 
 ```typescript
-function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
-  /** Create the third-party instance. Runs once at mount time. */
-  mount: (bag: { container: HTMLElement; send: (msg: M) => void }) => Instance
-  /** Accessor for the state slice relevant to this foreign component.
-   *  Participates in bitmask tracking — sync only fires when props change. */
-  props: (s: S) => T
-  /** Push state changes to the imperative instance.
-   *  Function form: called with full props and prev on any change.
-   *  Record form: per-field handlers, each called only when that field changes. */
-  sync:
-    | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
-    | {
-        [K in keyof T]?: (bag: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
-      }
-  /** Clean up the instance. Runs when the owning scope is disposed. */
-  destroy: (instance: Instance) => void
-  /** Optional container configuration. Defaults to a plain div. */
-  container?: { tag?: string; attrs?: Record<string, string> }
-}): Node[]
-```
+import { foreign } from '@llui/dom'
 
-The four generic parameters are fully inferred and type-checked:
-
-- `S` — parent state type (inferred from the component context)
-- `M` — parent message type (inferred from the component context)
-- `T` — the props type (inferred from the `props` accessor return type, constrained to `Record<string, unknown>`)
-- `Instance` — the third-party instance type (inferred from `mount`'s return type)
-
-If the developer writes `mount: ({ container, send }) => new EditorView(container, config)`, TypeScript infers `Instance = EditorView`. The `sync` and `destroy` functions must accept `EditorView` — a type mismatch is a compile error. The `props` accessor return type flows into `sync`'s type — if `props` returns `{ readonly: boolean, theme: string }`, both sync forms are type-checked against those exact fields.
-
-**`sync` has two forms.** The function form receives the full props object and previous props — the developer diffs manually. The record form maps each field to its own handler — the runtime diffs per-field and dispatches only changed fields:
-
-```typescript
-// Function form — manual diffing, full control
-sync: ({ instance: editor, props, prev }) => {
-  if (!prev || props.readonly !== prev.readonly)
-    editor.setProps({ editable: () => !props.readonly })
-  if (!prev || props.theme !== prev.theme)
-    editor.setTheme(props.theme)
-}
-
-// Record form — runtime diffs per-field, each handler fires independently
-sync: {
-  readonly: ({ instance: editor, value }) => editor.setProps({ editable: () => !value }),
-  theme: ({ instance: editor, value }) => editor.setTheme(value),
-}
-```
-
-The function form is appropriate when fields interact (e.g., setting `readonly` and `theme` together in a single `updateOptions` call). The record form is appropriate when each field maps cleanly to a single imperative API call — which is the common case for libraries like Monaco, MapboxGL, and CodeMirror.
-
-**Runtime behavior of record sync.** When `sync` is a record, the runtime calls the `props` accessor, shallow-diffs each key of the result against the previous props object (using `Object.is`), and for each key where the value changed, calls `sync[key]({ instance, value: newValue, prev: prevValue })`. Keys not present in the `sync` record are ignored — the developer can track fields that are read by the library without writing a handler. On the first call after mount (where `prev` is `undefined`), all handlers fire with `prev` as `undefined`.
-
-**Source of truth semantics.** The critical design principle for `foreign()` is that the foreign library often owns its own content state. A ProseMirror editor's document state lives inside ProseMirror, not in LLui state. The LLui state may hold a _snapshot_ of the content (for persistence, validation, or derived computations), but the editor is authoritative during active editing. This means the `sync` flow is asymmetric:
-
-- **LLui → library** (via `sync`): configuration changes — readonly flag, theme, language mode, external cursor position. These are _metadata_, not content.
-- **Library → LLui** (via `send` in `mount`): content changes — the editor dispatches messages when the user types, selects, or formats text. These become `Msg` values in the parent component's `update()`.
-
-Content is typically NOT pushed from LLui → library during active editing. If external state forces a content reset (e.g., loading a new document), the `sync` function handles it explicitly — the developer checks whether the content actually changed from an external source vs. from the editor itself.
-
-**Runtime behavior.** `foreign()` creates a container element (default: `<div>`) and registers it with the current scope. On mount, it calls `mount({ container, send })` and stores the returned instance. The `props` accessor is registered as a binding with a mask derived by the compiler — it participates in the same bitmask dirty-tracking as any other binding. When the mask matches and the accessor's result differs from the previous value (by shallow equality), the runtime calls `sync({ instance, props: newProps, prev: prevProps })`. On scope disposal (the `foreign()` node leaves the DOM), the runtime calls `destroy(instance)`, then removes the container from the DOM.
-
-**No transitions on `foreign()` itself.** The foreign component manages its own DOM, so LLui's `enter`/`leave`/`onTransition` don't apply to its internals. To animate the container's appearance, wrap `foreign()` in `show({ when, render: () => foreign(...), enter, leave })`. The container element receives the CSS classes; the library inside is unaware.
-
-**No Phase 2 bindings inside the container.** LLui does not walk the foreign component's DOM subtree during Phase 2. No bindings, no structural blocks, no scope children exist inside the container. The container is an opaque boundary — the only communication is through `sync` (LLui → library) and `send` (library → LLui). This is enforced at the type level: `mount`'s `container` field is a plain `HTMLElement`, not a LLui render context. Calling `text()`, `div()`, `each()`, etc. inside `mount` would throw `NO_RENDER_CONTEXT`.
-
-**Error handling.** If `mount` throws, `errorBoundary` catches it (zone 1 — view construction). If `sync` throws, it is caught per-binding (zone 2). If `destroy` throws, the error is logged but disposal continues — partial cleanup is better than a leaked instance. The `send` callback is the same `send` as the parent component's; messages dispatched from the foreign library enter the normal message queue and are processed by `update()`.
-
-**Error boundary propagation: resolved — three protection zones with explicit boundaries.** `errorBoundary` protects three distinct zones:
-
-(1) **View construction errors.** If a builder function (inside `branch`, `each`, `show`, or the initial `view()` call) throws during scope creation, `errorBoundary` catches it, disposes the partially-created scope, and renders the fallback subtree. This is synchronous and fully protected — the DOM is never left in an intermediate state because the builder runs inside a try/catch before any nodes are inserted.
-
-(2) **Binding evaluation errors (Phase 2).** If an accessor `(s: S) => T` throws during `applyBinding`, `errorBoundary` catches it for all bindings within its scope. The binding's `lastValue` is not updated, so the DOM retains its previous value. The error is reported to the boundary's `onError` callback with the binding location. Phase 2 continues for bindings outside the boundary's scope — one failing binding does not halt the entire update cycle.
-
-(3) **Effect handler errors.** If `onEffect` (or a handler inside the `handleEffects` chain) throws, the error is caught by the nearest `errorBoundary` in the throwing component's scope chain. The effect is considered failed — no retry, no partial execution. The boundary's `onError` callback receives the effect object and the error, giving the developer enough information to dispatch a recovery message.
-
-**What is NOT protected:** `update()` is a pure function and must not throw. If it does, the error propagates to `processMessages`, which logs it and drops the message. This is intentional — a throwing `update()` is a bug, not a recoverable error. The framework does not wrap `update()` in a try/catch per message because a throwing `update()` is a programmer error (a bug in a pure function), not a recoverable runtime condition — wrapping it in try/catch would mask bugs. Instead, `errorBoundary` catches errors that propagate from `update()` at the component boundary level. If `update()` needs to signal an error condition, it returns an error state and an effect — it does not throw.
-
-**State serialization constraint: state must be JSON-serializable.** Multiple features depend on state being serializable: `replayTrace()` serializes state snapshots to JSON, the DevTools hook records state diffs as JSON, the LLM debug protocol exposes state via `window.__lluiDebug.getState()` and `llui_get_state`, SSR's `__renderToString()` evaluates accessors against a state object that was deserialized from the server, and HMR preserves state across file changes by keeping the plain object reference. If state contains non-serializable values — `Map`, `Set`, `Date`, class instances, functions, `Symbol` keys, circular references, `undefined` values (dropped by `JSON.stringify`) — these features fail silently or produce incorrect results.
-
-The constraint: state (`S`) must be a plain object tree composed of JSON-compatible types: `string`, `number`, `boolean`, `null`, arrays, and nested plain objects. This is the same constraint Elm enforces on its `Model` type. It does not limit expressiveness — a `Map<string, T>` is `Record<string, T>`, a `Set<T>` is `T[]` with uniqueness enforced in `update()`, a `Date` is an ISO string or a Unix timestamp number.
-
-The compiler emits a diagnostic warning when it detects non-serializable patterns in `init()` return values or `update()` return values: `new Map()`, `new Set()`, `new Date()`, class constructors, or function expressions assigned to state fields. The detection is syntactic (pattern-matching on `NewExpression` and `ArrowFunctionExpression` in state-producing positions) and conservative — it catches the obvious cases but cannot detect non-serializable values injected through function calls or imports. The warning message includes the specific field and a suggested serializable alternative.
-
-**Compile-time accessibility diagnostics: five checks.** The compiler detects common accessibility violations at build time through five diagnostics (warnings, not errors — see 02 Compiler.md for the authoritative specification): (1) `<img>` without `alt` attribute, (2) interactive elements (`button`, `a`) without an accessible name (text content or `aria-label`), (3) `onClick` on a non-interactive element without `role` and `tabIndex`, (4) form `input`/`textarea`/`select` without label association (`id` + `<label for>` or `aria-label`), and (5) reactive value binding on a controlled input without a corresponding `onInput` handler. Check (5) is also a correctness diagnostic — without `onInput`, the binding overwrites user keystrokes. These checks are per-element, per-file; cross-element analysis (e.g., matching `<label for>` to `<input id>`) is not performed because structural primitives build subtrees at runtime. The full specification and error message formats are in 02 Compiler.md.
-
----
-
-**Routing: state-driven, mechanism-agnostic.** LLui does not ship a router. The framework's architecture makes routing a natural consequence of the state model: the current route is a field in state, URL changes map to messages, and `branch()` renders the active route's view. Different applications need different routing mechanisms (hash-based, history API, static generation, SSR with server-provided routes), so the framework provides the primitives without prescribing a specific router.
-
-The canonical pattern:
-
-```typescript
-type Route = 'home' | 'about' | 'users' | 'userDetail'
-
-type State = {
-  route: Route
-  routeParams: Record<string, string>  // e.g., { id: '123' } for /users/123
-  // ... per-route state slices
-}
-
-type Msg =
-  | { type: 'navigate'; route: Route; params?: Record<string, string> }
-  | { type: 'popstate'; route: Route; params?: Record<string, string> }
-  // ... per-route messages
-
-// In update():
-case 'navigate':
-  return [
-    { ...state, route: msg.route, routeParams: msg.params ?? {} },
-    [{ type: 'pushUrl', url: routeToUrl(msg.route, msg.params) }],
-  ]
-case 'popstate':
-  return [{ ...state, route: msg.route, routeParams: msg.params ?? {} }, []]
-```
-
-The URL is an _effect_, not state. `update()` returns a `pushUrl` effect; the effect handler calls `history.pushState()`. The browser's `popstate` event is captured in `onMount` and dispatched as a `popstate` message. This keeps URL manipulation outside `update()` while keeping route state fully in the TEA cycle.
-
-Route rendering is `branch()`:
-
-```typescript
-branch({
-  on: (s) => s.route,
-  cases: {
-    home: () => homeView(homeProps, send),
-    about: () => aboutView(aboutProps, send),
-    users: () => usersView(usersProps, send),
-    userDetail: () => userDetailView(userDetailProps, send),
+foreign({
+  state: {
+    readonly: state.at('document').at('locked'),
+    placeholder: state.at('document').at('placeholder'),
   },
+  mount: ({ el, state }) => {
+    const view = new EditorView(el, {
+      /* … */
+    })
+    state.readonly.bind((ro) => view.setProps({ editable: () => !ro }))
+    state.placeholder.bind((ph) => view.setProps({ attributes: { 'data-placeholder': ph } }))
+    return view
+  },
+  unmount: (view) => view.destroy(),
 })
 ```
 
-The compiler's exhaustive `branch()` diagnostic ensures all routes are handled. Code splitting for inactive `branch()` cases is an open compiler optimization (see 02 Compiler.md — "Code splitting for `branch()` cases"): the compiler could emit dynamic imports for cases that are not active at initial load. The mechanism for this — how a synchronous case builder integrates with an async `import()` — requires framework-level support for lazy case loading, which is not yet specified. Route transitions use `onTransition` on the `branch()` for page-level animations.
+**State serialization constraint: state must be JSON-serializable.** `S` must be a plain object tree of `string`/`number`/`boolean`/`null`/arrays/nested plain objects — no `Map`, `Set`, `Date`, class instances, functions, `Symbol` keys, or circular references. Multiple features depend on it: the dev debug protocol exposes state as JSON, SSR renders against a state object, HMR preserves state across edits, and the agent protocol serializes state frames. A `Map<string, T>` is `Record<string, T>`; a `Set<T>` is `T[]` with uniqueness enforced in `update()`; a `Date` is an ISO string or a Unix timestamp. This is the same constraint Elm enforces on its `Model`.
 
-**The framework does not prescribe how URLs map to routes.** A simple app uses `switch` on `location.pathname`. A complex app uses a URL pattern library (`URLPattern`, `path-to-regexp`). An SSR app receives the initial route from the server. The `navigate` / `popstate` message pattern works with all of these — only the URL→Route parsing logic changes.
+**Compile-time correctness rules are non-bypassable errors.** All framework lint (the ~44 correctness / agent-protocol / convention rules) are compile-time **errors** in `@llui/compiler`, surfaced by the Vite plugin via `this.error`. LLMs ignore warnings, so a build that fails closed is the only effective channel. There is no `@llui/eslint-plugin`. The signal-specific rules (`peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `whole-state-to-call`) are detailed in 02 Compiler.md.
+
+**LLM Debug Protocol: resolved — dev debug API + `@llui/mcp` server.** In dev, the runtime installs a debug API (`installSignalDebug`) exposing read state, send typed messages, dry-run the reducer (`runReducer`), and inspect live affordances (`getBindingDescriptors`). The `@llui/mcp` package wraps this as an MCP server connected over a relay the Vite plugin injects into dev builds. Both are dev-only (tree-shaken in production). See 07 LLM Friendliness §10 and 10 Agent Protocol.md.
+
+**Server framework: resolved — Vike via `@llui/vike` adapter.** `@llui/vike` configures `onRenderHtml` (signal SSR via `renderNodes`/`serializeNodes`, composing layout + page node trees) and `onRenderClient` (`hydrateSignalApp` or `mountApp`). It mounts nested layers at comment anchors so layouts and pages stitch at slot positions, replaying in-scope `provide` contexts across the separate build pass. See 08 Ecosystem Integration §2.
+
+---
+
+**Routing: state-driven, mechanism-agnostic.** LLui ships `@llui/router`, but routing is fundamentally a state field: the current route lives in state, URL changes map to messages, and `branch()` renders the active route's view. The URL is an _effect_, not state — `update()` returns a `pushUrl` effect; the handler calls `history.pushState()`. The browser's `popstate` is captured in `onMount` and dispatched as a message.
+
+```typescript
+type Route = { type: 'home' } | { type: 'users' } | { type: 'userDetail'; id: string }
+
+type State = { route: Route /* … per-route slices */ }
+type Msg = { type: 'navigate'; route: Route } | { type: 'popstate'; route: Route }
+
+// In view: branch on the route discriminant.
+branch(state.at('route'), (r) => r.type, {
+  home: () => homeView(send),
+  users: () => usersView(send),
+  userDetail: (r) => userDetailView(r, send), // r: Signal<{ type:'userDetail'; id:string }>
+})
+```
+
+The 3-arg `branch` selects the discriminant (`r => r.type`) and gives each arm the **narrowed variant signal**, so `userDetail`'s arm can read `r.at('id')` with full types. **The framework does not prescribe how URLs map to routes** — `switch` on `location.pathname`, a `URLPattern`, or a server-provided initial route all work with the same `navigate`/`popstate` message pattern.
 
 ---
 
 ## Styling
 
-Components are fully headless by default — they emit `data-scope` / `data-part` attributes on every element but prescribe no visual appearance. An opt-in styling layer provides two complementary mechanisms:
+Components are headless by default — they emit `data-scope` / `data-part` attributes on every element and prescribe no visual appearance. An opt-in styling layer provides two mechanisms:
 
-**CSS theme (`theme.css`).** A single CSS import that styles all 54 components via attribute selectors. Design tokens are declared in a Tailwind 4 `@theme` block (colors, radii, spacing, shadows, transitions, z-indexes). Components get layout, state-driven visuals (hover, active, checked, disabled, open/closed), and enter/exit animations. Override any token by redeclaring it in your own `@theme` block. Dark mode lives in a separate `theme-dark.css` file — it must be imported after `theme.css` to avoid Tailwind 4's theme scanner merging dark values into the root defaults.
+**CSS theme (`theme.css`).** A single CSS import that styles all components via attribute selectors, with design tokens in a Tailwind 4 `@theme` block (colors, radii, spacing, shadows, transitions, z-indexes). Override any token by redeclaring it. Dark mode lives in a separate `theme-dark.css`, imported after `theme.css`.
 
-**JS class helpers (`styles/`).** Each component has a function (e.g. `tabsClasses({ size: 'sm', variant: 'pill' })`) that returns an object of Tailwind utility strings per part. Powered by a `createVariants()` engine with compound variant support. This mechanism is for apps that use Tailwind utilities rather than plain CSS attribute selectors. Both mechanisms can coexist — the CSS theme applies via attribute selectors while class helpers add or override via the `class` attribute.
+**JS class helpers (`styles/`).** Each component has a function (e.g. `tabsClasses({ size: 'sm', variant: 'pill' })`) returning Tailwind utility strings per part, powered by a `createVariants()` engine with compound-variant support. For apps using utilities rather than attribute selectors. Both mechanisms coexist.
 
-**Shared utilities.** `theme.css` also provides `.btn` / `.btn-primary` / `.btn-secondary` / `.btn-danger` button classes, `.confirm-dialog` pattern styles, `.sr-only`, and marquee keyframes.
+**Shared utilities.** `theme.css` also provides `.btn`/`.btn-primary`/`.btn-secondary`/`.btn-danger`, `.confirm-dialog`, `.sr-only`, and marquee keyframes.
 
 ---
 
 ## Expressibility Catalogue
 
-**Counter.** The canonical pattern: `State = { count: number }`, `Msg = Increment | Decrement | Reset`. `update()` returns a new state each time; the compiler assigns `count` bit 1. The text binding `text((s) => String(s.count))` gets mask `0b1`. After `Increment`, `__dirty` returns `0b1`, Phase 2 evaluates only that binding. `branch` handles the `counting`/`resetting` phase distinction without a boolean flag, as shown in the counter example.
+**Counter.** `State = { count: number }`, `Msg = inc | dec | reset`. `text(state.at('count').map(String))` is the reactive count; `show(state.at('count').map(c => c > 0), () => [...])` reveals a reset button. After `inc`, only `count` dirties, so only the count text and the `show` condition re-evaluate.
 
-**Form.** The idiomatic form pattern uses a single `setField` message type for all fields, per-field error state, and `memo`-wrapped derived validation. With 10 fields in state, each binding's mask targets exactly one access path bit; typing in one input triggers Phase 2 only for that path's bindings.
+**Form.** A single `setField` message type for all fields, per-field error state, derived validation via `.map`. With 10 fields in state, each binding's mask targets exactly its path; typing in one input dirties only that field. `keyof Fields` on `setField` makes a typo a compile error. Validation runs in `update()` (pure, testable); errors are part of state. A controlled input must pair `value: state.at('name')` with an `onInput` that sends `setField` — otherwise the binding overwrites keystrokes.
 
-```typescript
-type Fields = { name: string; email: string; phone: string }
-type Errors = Partial<Record<keyof Fields, string>>
-type State = { fields: Fields; errors: Errors; submitted: boolean }
+**Todo list.** `each(state.map(s => filter(s)), { key: t => t.id, render: (item) => [...] })`. The items accessor derives the filtered array; the row render receives per-row `item`/`index` signals. `item.at('completed')` is a reactive per-row slot; an event handler reads `item.at('id').peek()`. Adding a todo changes the array reference; the keyed diff inserts only the new row. (See `examples/todomvc/src/main.ts`.)
 
-type Msg =
-  | { type: 'setField'; field: keyof Fields; value: string }
-  | { type: 'submit' }
-  | { type: 'submitResult'; success: boolean; errors?: Errors }
+**Async loading / optimistic updates.** Model state as a discriminated union (`idle | loading | success | error`); `branch(state.at('phase'), p => p.type, { ... })` renders the active arm. `update()` on `submit` transitions to `loading` and returns an `http` effect with `onSuccess`/`onError` message tags. Optimistic updates transition to success in `update()` and roll back on the error message — pure state manipulation, no undo stack.
 
-// update():
-case 'setField':
-  const fields = { ...state.fields, [msg.field]: msg.value }
-  return [{ ...state, fields, errors: validate(fields) }, []]
-case 'submit':
-  const errors = validate(state.fields)
-  if (Object.keys(errors).length > 0) return [{ ...state, errors, submitted: true }, []]
-  return [{ ...state, submitted: true }, [http({ url: '/api/submit', method: 'POST', body: state.fields, onSuccess: (data) => ({ type: 'submitResult', payload: data }), onError: (err) => ({ type: 'submitResult', error: err }) })]]
-```
+**Multi-step wizard.** A `phase` discriminant drives `branch` with one arm per step. Navigating disposes the current arm's scope and mounts the next; collected data lives in the carried state. Per-step validation runs in `update()` before the transition.
 
-The `setField` pattern avoids the LLM anti-pattern of creating one message type per field (`SetName`, `SetEmail`, `SetPhone`). The `keyof Fields` constraint ensures type safety — `send({ type: 'setField', field: 'address', value: '...' })` is a compile error if `address` is not in `Fields`. Validation runs in `update()` on every keystroke (pure, testable) and errors are part of state (renderable, inspectable). Form-level derived state (`isValid`, `isDirty`) uses `memo()` to compute once per update cycle regardless of how many bindings reference it:
+**Modal / dialog.** `show(state.at('open'), () => [portal(() => [div({ ...parts.content }, [...])])])`. The portal renders into `document.body`, escaping `overflow: hidden`. Focus trap, body-scroll lock, and dismissable wiring go in `onMount` inside the portal builder; their cleanups are teardowns that fire when `show` flips false. `@llui/components`' `dialog.overlay({ … })` packages this (see `packages/components/src/components/dialog.ts`).
 
-```typescript
-const isValid = memo((s: State) => Object.keys(validate(s.fields)).length === 0)
-const isDirty = memo((s: State) => !deepEqual(s.fields, initialFields))
+**Tooltip / popover.** Same as modal but triggered by `mouseenter`/`mouseleave` sending show/hide messages; the tooltip lives in a `show`-guarded `portal`. Positioning (`getBoundingClientRect`) runs in `onMount`.
 
-// In view:
-button({ disabled: (s) => !isValid(s) || !isDirty(s), onClick: () => send({ type: 'submit' }) }, [
-  text('Submit'),
-])
-```
+**Drag and drop with reordering.** Drag state (`{ dragging, overIndex }`) lives in state. `each`'s keyed minimal-move reconcile preserves DOM identity during reorder — moving one item past one other moves only the displaced row's nodes before the cursor. Drag events send messages that reorder the array.
 
-The `controlled-input` lint rule (in `@llui/eslint-plugin`) catches the most common form bug: an `input({ value: s => s.fields.name })` without an `onInput` handler. Per-field rendering follows the standard element pattern — no special form primitive needed.
+**Typeahead / autocomplete.** Keystrokes send `setQuery`; `update()` returns `cancel('search', debounce('search', 300, http({ … })))`. The `cancel` wrapper discards any pending search, `debounce` delays 300ms, `http` fetches. No generation counter. Results render via `each` keyed by id.
 
-**Todo list.** `each({ items: memo(filteredTodos), key: t => t.id, render: renderItem })` is the idiomatic form. The `memo` wrapper prevents the filter from running once per each binding per update. The scoped accessor `item` in the render callback enables per-item bindings like `item(t => t.text)` that are automatically stable-checked: unchanged todo items pay zero Phase 2 cost. Adding a todo appends to the array reference, triggering structural reconciliation for the new entry only.
+**Infinite scroll.** `{ items, cursor, loading }` in state; an `IntersectionObserver` on a sentinel (set up in `onMount`) sends `loadMore`. On success `update()` appends to `items`; the keyed `each` inserts the new tail rows only. Or use `virtualEach` for very large lists — only viewport rows (+overscan) exist in the DOM.
 
-**Async loading / optimistic updates.** Model state as a discriminated union: `idle | loading | success | error`. `update()` on a `submit` message transitions to `loading` and returns an `http` effect with `onSuccess` and `onError` message types. For optimistic updates, transition directly to the success state in `update()` and include both the http effect and a rollback effect (or track the pre-optimistic state). If `fetchError` arrives, `update()` restores the pre-optimistic state. The rollback is purely state manipulation — no DOM callbacks, no undo stack, just immutable state replacement.
+**Real-time / WebSocket.** A custom `ws:connect` effect handled in `.else()`: the handler opens the socket, pipes incoming messages via `send`, and registers a cleanup (returned from `onEffect`) that closes it on dispose. Reconnection logic lives in the handler closure, not in state.
 
-**Multi-step wizard.** A `phase` discriminant field drives `branch({ on: s => s.phase, cases: { ... } })` with one arm per step. Each step is a scope; navigating forward disposes the current scope, creates the next, and carries forward any collected data in the state object. State accumulates across steps because `update()` always receives the full current state. Validation for each step runs in `update()` before the phase transition — if invalid, `update()` returns the same state with error fields populated.
+**Rich text editor (ProseMirror) / code editor (Monaco).** The canonical `foreign()` use cases. The editor owns its document; LLui owns everything outside. Declare config inputs (readonly, theme, language) as a `state` record of signals; `bind` each in `mount` to call the editor's imperative API on change. Content flows back via `send` in the editor's transaction/change hook. `unmount` calls `view.destroy()` / `editor.dispose()`.
 
-**Modal / dialog.** `show({ when: s => s.modalOpen, render: () => portal({ target: document.body, render: () => div({ class: 'modal' }, [...]) }) })` is the canonical form. The portal renders into `document.body`, escaping any `overflow: hidden` container. Focus trap and initial focus go in `onMount` inside the portal builder. When `modalOpen` becomes false, `show` disposes its scope, which disposes the portal scope, which removes the modal nodes from `document.body` and fires the focus-trap's cleanup disposer.
+**Parent-child coordination — view functions.** The parent owns a state slice for the child; the child exports `update`/`connect` over a `Signal` slice. The parent's `update` delegates (`case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]`) and its view spreads `connect(state.at('toolbar'), msg => send({ type: 'toolbar', msg }))`'s parts. The parent can directly control child state (e.g. close a menu on background click). No child instance, no props watcher.
 
-**Tooltip / popover.** Same as modal but typically triggered by `mouseenter`/`mouseleave` events on a trigger element rather than an explicit message. The trigger element's event handler sends `{ type: 'showTooltip' }` / `{ type: 'hideTooltip' }`. The tooltip itself lives in a `show`-guarded `portal({ target, render })` call. Positioning logic (e.g., using `getBoundingClientRect`) runs in `onMount`. Because `onMount` fires asynchronously, the tooltip is positioned after it is in the DOM and measurable.
+**Tree view.** Recursive `each`: a row's render may itself call `each` (inside a `show` for expand/collapse) over the node's children. Each level's rows are their own scopes nested under the parent row's scope, so collapsing a node disposes its subtree depth-first.
 
-**Drag and drop with reordering.** The drag state (`{ dragging: id | null, overIndex: number | null }`) lives in the component state. `each` uses the item key to preserve DOM node identity during reorder; the `updateEach` swap-detection fast path handles the common case of dragging one item past one other (exactly two positions change) with two DOM moves. Drag events dispatch messages that update the order in the `todos` array. The enter/leave transitions on `each` can animate items sliding into position.
+**Data table with sort, filter, paginate.** All three dimensions in state; derive the filtered+sorted+paged array with `.map` and feed it to `each`. A page change dirties only `page`, so the sort/filter derive (if its inputs are unchanged) re-runs but commits nothing past the output-equality check.
 
-**Typeahead / autocomplete.** Keystrokes send `setQuery` messages. `update()` returns a composed effect: `cancel('search', debounce('search', 300, http({ url: \`/api/search?q=\${state.query}\`, onSuccess: (data) => ({ type: 'results', payload: data }), onError: (err) => ({ type: 'searchError', error: err }) })))`. The `cancel`wrapper discards any pending search when a new keystroke arrives; the`debounce`wrapper delays the HTTP request by 300ms; the`http`wrapper performs the fetch. No generation counter, no manual cancellation tracking. The component state is just`{ query, results, loading }`. Results render via `each` keyed by result id.
+**Accordion.** Independent `show` per section (`show(state.at('openSections').map(o => o.includes('faq')), () => [...])`), each gated on `openSections`. Single-open exclusion is enforced in `update()`. State stays JSON-serializable — `string[]` with uniqueness enforced in `update()`, not `Set`.
 
-**Infinite scroll.** State holds `{ items: T[], cursor: string | null, loading: boolean }`. An `onMount` (or an event listener disposer registered via a scope disposer) observes an intersection observer on the sentinel element at the list bottom. When the sentinel is visible, it sends `loadMore`. `update()` returns the http effect and sets `loading: true`. On success, `update()` appends to `items` and updates `cursor`. `each` with key-by-id appends new entries at the tail; `updateEach` detects the append-at-end fast path and inserts a single fragment.
+**Tab panels.** `branch(state.at('activeTab'), t => t, { home: () => HomePanel(), settings: () => SettingsPanel() })`. Per-tab class via `state.at('activeTab').map(t => t === 'home' ? 'active' : '')`. Switching swaps the arm, disposing the leaving panel's scope (and its effects) and mounting the entering one (firing its `onMount`).
 
-**Real-time / WebSocket.** The custom `ws:connect` effect is handled in the `.else()` callback of the `handleEffects` chain. The handler opens the WebSocket, calls `send()` with incoming messages, and uses the `AbortSignal` to close the connection on unmount: `signal.addEventListener('abort', () => ws.close())`. Reconnection logic lives entirely in the handler closure (retry count, backoff timer) without polluting component state. Because effects are dispatched after DOM updates, the first `ws:connect` effect fires after the initial render. The component's `update()` handles the messages the handler forwards and is unaware of the connection details.
+**Presence / exit animations.** The `presence` state machine (`packages/components/src/components/presence.ts`) tracks `closed → opening → open → closing`, advanced by an `animationEnd` message, so an element can stay mounted through its exit animation before unmounting. Its `connect` exposes reactive `data-state`/`hidden` props plus `onAnimationEnd`/`onTransitionEnd` handlers.
 
-**Rich text editor (ProseMirror) — record sync.** The canonical `foreign()` use case. ProseMirror owns its document state; LLui owns everything outside the editor. Uses the record sync form because each config field maps to one ProseMirror API call.
-
-```typescript
-type EditorMsg =
-  | { type: 'contentChanged'; html: string; text: string }
-  | { type: 'selectionChanged'; from: number; to: number }
-  | { type: 'focused' }
-  | { type: 'blurred' }
-
-foreign<State, { readonly: boolean; placeholder: string }, EditorView>({
-  mount: (container, send) => {
-    const view = new EditorView(container, {
-      state: EditorState.create({ schema, plugins }),
-      dispatchTransaction: (tr) => {
-        const newState = view.state.apply(tr)
-        view.updateState(newState)
-        if (tr.docChanged) {
-          send({
-            type: 'contentChanged',
-            html: serializer.serializeFragment(newState.doc.content),
-            text: newState.doc.textContent,
-          })
-        }
-        if (tr.selectionSet) {
-          send({
-            type: 'selectionChanged',
-            from: newState.selection.from,
-            to: newState.selection.to,
-          })
-        }
-      },
-    })
-    view.dom.addEventListener('focus', () => send({ type: 'focused' }))
-    view.dom.addEventListener('blur', () => send({ type: 'blurred' }))
-    return view
-  },
-  props: (s) => ({ readonly: s.document.locked, placeholder: s.document.placeholder }),
-  // Record sync — each field fires independently when it changes.
-  // Content is NOT a prop — ProseMirror is the source of truth during editing.
-  sync: {
-    readonly: (view, val) => view.setProps({ editable: () => !val }),
-    placeholder: (view, val) => view.setProps({ attributes: { 'data-placeholder': val } }),
-  },
-  destroy: (view) => view.destroy(),
-  container: { tag: 'div', attrs: { class: 'editor-container' } },
-})
-```
-
-The `props` accessor tracks `s.document.locked` and `s.document.placeholder` — these get bitmask bits. When `readonly` changes, only the `sync.readonly` handler fires. When `placeholder` changes, only `sync.placeholder` fires. No manual diffing. The editor's content changes flow back to LLui via `send()` in the `dispatchTransaction` hook.
-
-**Code editor (Monaco) — function sync.** Uses the function sync form because `readOnly` and `theme` interact (both go through `updateOptions` or global API calls, and the developer may want to batch them).
-
-```typescript
-foreign<
-  State,
-  { language: string; readOnly: boolean; theme: string },
-  editor.IStandaloneCodeEditor
->({
-  mount: (container, send) => {
-    const ed = monaco.editor.create(container, {
-      value: '',
-      language: 'typescript',
-      automaticLayout: true,
-    })
-    ed.onDidChangeModelContent(() => {
-      send({ type: 'codeChanged', value: ed.getValue() })
-    })
-    ed.onDidChangeCursorPosition((e) => {
-      send({ type: 'cursorMoved', line: e.position.lineNumber, col: e.position.column })
-    })
-    return ed
-  },
-  props: (s) => ({
-    language: s.editor.language,
-    readOnly: s.editor.readOnly,
-    theme: s.editor.theme,
-  }),
-  // Function sync — manual diffing, needed because language uses a global API
-  // while readOnly uses instance options.
-  sync: (ed, props, prev) => {
-    if (!prev || props.language !== prev.language)
-      monaco.editor.setModelLanguage(ed.getModel()!, props.language)
-    if (!prev || props.readOnly !== prev.readOnly) ed.updateOptions({ readOnly: props.readOnly })
-    if (!prev || props.theme !== prev.theme) monaco.editor.setTheme(props.theme)
-  },
-  destroy: (ed) => ed.dispose(),
-  container: { attrs: { style: 'width:100%;height:400px' } },
-})
-```
-
-The two examples demonstrate both sync forms. Record sync is cleaner when fields are independent (ProseMirror). Function sync gives full control when fields interact or use different API patterns (Monaco). The type system enforces correctness in both: record sync handlers receive the exact field type from `T`, function sync receives the full `T` and `T | undefined`.
-
-**Parent-child coordination — view functions.** The only composition model. The parent owns a state slice for the child; the child module exports `update` and `view` functions that operate on that slice. The parent's `update()` delegates: `case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]`. The parent's `view()` calls: `toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))`. No `child()` call, no `PropsWatcher`, no `onMsg`. The parent directly controls the child's state — including closing the toolbar's menu on a background click: `return [{ ...state, toolbar: { ...state.toolbar, menuOpen: false } }, []]`. The compiler traces `s.toolbar.menuOpen` as a reference-stable prefix with its own bit, regardless of nesting depth. When the parent's switch becomes purely mechanical "route by slice prefix," `combine({ toolbar: toolbarUpdate, sidebar: sidebarUpdate })` replaces it.
-
-**Embedding an isolated app — `subApp`.** Reserved for cases where the embedded code must own its own TEA loop with a state lifetime independent of the host: a third-party bundled app, a demo embed, a separately-versioned library shipping its own complete app. `subApp({ reason, def, data, onHandle })`. The `reason` field is required and non-empty; it surfaces on the wrapper element as `data-llui-sub-app-reason` and is enforced at lint time by `llui/subapp-requires-reason`. The host cannot read the subApp's state and the subApp cannot read the host's; messages cross only through `onHandle`'s imperative `AppHandle`. This is NOT a tool for decomposing complex views — for that, extract view functions and use `combine()`. The previous `child()` primitive (and `propsMsg` / `onMsg` / addressed effects) were removed in 2026-05.
-
-**Tree view.** Recursive `each` works today: `renderItem` may itself call `each({ items: n => n.children, ... })` inside a `show`. Each nesting level registers its structural blocks with the parent component's flat `structuralBlocks` list. The runtime optimizes nested `each` calls by detecting when an `each` is created inside another `each`'s render callback and registering its structural blocks with the parent `each`'s scope rather than the component's flat list. This keeps reconciliation scoped to the changed subtree — a leaf node expansion touches only that node's sibling list, not the entire tree. A practical mitigation for very deep trees (100+ levels) is to make subtrees child components at a reasonable depth, amortizing the scope tree overhead.
-
-**Data table with sort, filter, paginate.** All three dimensions live in state. `memo(applyFiltersAndSort)` produces the filtered+sorted array; `memo(currentPage)` slices it for display. Column header clicks send `setSort` messages; filter inputs send `setFilter` messages; page controls send `setPage`. The `__dirty` bitmask for a table with these fields will assign separate bits to `sortField`, `sortDir`, `filters`, `page`, and `rows`; a page change touches only `page`, so the filter/sort computation — if already memoized — is not re-run.
-
-**Form validation (sync + async).** Synchronous validation runs inside `update()`: the new state carries `errors` derived from the submitted values. Async validation (e.g., username availability check) returns a cancellable http effect: `cancel('validate-username', http({ url: \`/api/check?name=\${state.username}\`, onSuccess: (data) => ({ type: 'usernameAvailable', payload: data }), onError: (err) => ({ type: 'validationError', error: err }) }))`. The `cancel`wrapper discards any pending validation when the user types again. The form is in a`validating`phase while the check is in flight; the submit button is disabled via a binding`(s) => s.phase === 'validating'` with the appropriate mask.
-
-**Animated transitions.** `branch`, `each`, and `show` all accept transition fields on their object parameter: `enter?`, `leave?`, and `onTransition?`. `leave` is called with the departing nodes before removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` is called immediately after insertion. CSS class-based transitions work naturally: `each({ items: ..., key: ..., render: ..., enter: nodes => { nodes.forEach(n => n.classList.add('entering')); return waitForTransition(nodes[0]) } })`. For coordinated enter/leave (cross-fades, FLIP animations), `onTransition({ entering, leaving, parent })` fires first, followed by individual `enter`/`leave` handlers — they compose rather than override.
-
-**Keyboard navigation and focus management.** Focus state can live in component state or be managed imperatively. For a listbox, state holds `{ focusedIndex: number }`; arrow key handlers send `moveFocus` messages; Phase 2 updates an `aria-activedescendant` binding. Actual `.focus()` calls — needed for roving tabindex patterns — go in `onMount` inside the focused item's render, or in a cleanup-safe disposer pattern registered on the scope. The `onMount`-on-branch pattern works for panels that should focus their first interactive element on activation.
-
-**Tab panels.** `branch({ on: s => s.activeTab, cases: { home: () => HomePanel(), settings: () => SettingsPanel() } })`. The tab button group uses per-tab class bindings `(s) => s.activeTab === 'home' ? 'active' : ''` — each gets a mask for `activeTab` only. Switching tabs swaps the branch arm, disposing the leaving panel's scope (and any active effects within it) and creating the entering panel's scope (firing its `onMount`). Panel state resets on tab switch unless persisted in the parent's state before the transition.
-
-**Accordion.** Multiple independent `show` primitives, one per section. `show({ when: s => s.openSection === 'faq', render: () => FaqContent() })`. `show` is a two-case `branch` — when the condition becomes false, the scope is disposed and nodes are removed; when it becomes true again, the builder re-runs from scratch. Mutual exclusion (only one section open) is enforced by `update()` if the accordion is single-open. For multi-open accordions, `s.openSections: string[]` with per-section `show({ when: s => s.openSections.includes('faq'), render: ... })` bindings, each with mask for `openSections`. (State must be JSON-serializable — use `string[]` with uniqueness enforced in `update()`, not `Set<string>`.)
-
-**Collaborative editing.** Multiple message sources — local user actions, WebSocket messages from other users, and periodic sync operations — all flow through `send()`. The effect handler receives `ws:subscribe` and pipes remote operations as messages. `update()` applies operational transforms or CRDT merges and returns new state. Because all updates go through the same pure `update()` function, the order of application is deterministic and testable. Conflict resolution logic is entirely in `update()`, isolated from DOM and network concerns.
+**Collaborative editing.** All message sources — local actions, WebSocket messages, periodic sync — flow through `send`. A `ws:subscribe` effect pipes remote ops as messages; `update()` applies OT/CRDT merges and returns new state. Deterministic and testable because everything goes through the pure reducer.

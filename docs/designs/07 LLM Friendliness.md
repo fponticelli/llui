@@ -30,7 +30,7 @@ Four properties determine that reliability:
 
 ### 2.1 The TEA State Machine Is Pre-Learned
 
-The pattern `init → state; update(state, msg) → [newState, effects]; view(send) → DOM` appears in thousands of training examples under many names: The Elm Architecture, Redux + middleware, the Model-View-Update loop, Hyperapp, Imba. When an LLM sees `ComponentDef<S, M, E>`, it immediately maps this to a known template. The `init`, `update`, and `view` fields are predictable: the LLM has high confidence about their signatures and their relationships.
+The pattern `init → state; update(state, msg) → [newState, effects]; view({ state, send }) → DOM` appears in thousands of training examples under many names: The Elm Architecture, Redux + middleware, the Model-View-Update loop, Hyperapp, Imba. When an LLM sees `component<State, Msg, Effect>({ ... })` (typed by `SignalComponentSpec<S, M, E>`), it immediately maps this to a known template. The `init`, `update`, and `view` fields are predictable: the LLM has high confidence about their signatures and their relationships.
 
 Contrast this with a framework that introduces a novel ownership model or an unusual lifecyle ordering. The LLM's priors are wrong, and the errors it makes will not be the simple errors (wrong field name, off-by-one) that a type checker catches — they will be structural errors (wrong conceptual model) that produce syntactically valid but semantically broken code.
 
@@ -48,62 +48,68 @@ A stringly-typed system (`dispatch('SET_COUNT', { value: 3 })`) provides none of
 
 ```typescript
 type Effect =
-  | { type: 'http'; url: string; onSuccess: Msg; onError: Msg }
+  | { type: 'http'; url: string; onSuccess: (data: unknown) => Msg; onError: (e: ApiError) => Msg }
   | { type: 'cancel'; token: string; inner?: Effect }
   | { type: 'analytics'; event: string } // custom
 ```
 
 Effects as discriminated unions give the LLM the same benefit for side effects that Msg unions give for messages. The LLM can see what effects exist. It can enumerate them. `update()` returning `[newState, [cancel('search', http({ ... }))]]` is a pattern the LLM has seen in Elm (Cmd) and in Hyperapp.
 
-The consumption model is equally LLM-friendly: `handleEffects<Effect>().else(...)` is the canonical `onEffect` handler. The LLM generates a single line — `handleEffects<Effect>()` — that consumes all `@llui/effects` types, and writes a switch in `.else()` for custom types only. TypeScript narrows the `.else()` callback to the custom variants, so exhaustiveness checking works. The pattern is mechanical: if the `Effect` union includes `http`/`cancel`/`debounce`, use `handleEffects`; handle the rest in `.else()`.
+The consumption model is equally LLM-friendly: `handleEffects<Effect, Msg>()` produces a handler that consumes all `@llui/effects` types, with custom types handled in `.else(({ effect, send, signal }) => …)`. The pattern is mechanical: if the `Effect` union includes `http`/`cancel`/`debounce`, use `handleEffects`; handle the rest in `.else()`. Because the component's `onEffect` is `(effect, api)` and `handleEffects().else(...)` returns a `(ctx) => void`, the canonical `onEffect` captures a lifecycle `AbortController` once and forwards: `onEffect: (effect, api) => handler({ effect, send: api.send, signal })`.
 
 ### 2.4 `view()` Is a Pure Function
 
 The LLM generates DOM construction code in a style virtually identical to React's JSX or lit-html's tagged templates:
 
 ```typescript
-view: ({ send, text }) => {
-  return div({ class: 'counter' }, [
-    text((s) => String(s.count)),
+view: ({ state, send }) => [
+  div({ class: 'counter' }, [
+    text(state.at('count').map(String)),
     button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
-  ])
-}
+  ]),
+]
 ```
 
-The `view` argument is a bundle of state-bound helpers (`View<State, Msg>`). Destructuring the helpers the component uses — `{ show, each, branch, text, memo }` — removes per-call generics (`show<State>` becomes `show`) because `S` is pinned by the enclosing `component<State, Msg, _>` call. The LLM never has to repeat the state type.
+The `view` argument is a single bag, `{ state, send }`, where `state` is a `Signal<State>`. Element and structural helpers (`div`, `button`, `text`, `each`, `show`, `branch`, …) are plain module imports from `@llui/dom`, not bag fields. A reactive value is derived from `state` with `.map(fn)` (transform) or narrowed with `.at('path')` (slice into a sub-signal). The LLM never repeats the state type — `state` is already typed.
 
-No lifecycle rules apply. There is no `useEffect` with a dependency array that the LLM will get wrong. There are no class components. The function runs once at mount time and the bindings handle updates automatically. The LLM's strong intuition about "return a tree of nodes" applies directly.
+No lifecycle rules apply. There is no `useEffect` with a dependency array that the LLM will get wrong. There are no class components. The view runs once at mount time and the signal bindings handle updates automatically. The LLM's strong intuition about "return a tree of nodes" applies directly.
 
-### 2.5 Reactive Values Are Arrow Functions
+### 2.5 Reactive Values Are Signal Derivations
 
-The distinction between static and reactive prop values is expressed as the presence or absence of an arrow function:
+The distinction between static and reactive values is the presence or absence of a `state` read:
 
 ```typescript
 // Static — applied once at mount:
 div({ class: 'container' }, [...])
 
-// Reactive — re-evaluated on state change:
-div({ class: s => s.active ? 'on' : 'off' }, [...])
+// Reactive — re-evaluated when the read paths change:
+div({ class: state.map(s => s.active ? 'on' : 'off') }, [...])
+
+// Narrow first, then map (preferred when reading one field):
+div({ class: state.at('active').map(a => a ? 'on' : 'off') }, [...])
 ```
 
-The pattern `(s) => expression` is the same pattern the LLM uses for array callbacks, React selectors, and every other accessor-style API. It requires no new concept. The LLM's existing probability mass over "when do I use an arrow function here" is correct: always when the value depends on state, never when it is constant.
+`state.map(fn)` and `state.at('path')` are the entire reactive vocabulary for views (plus `.peek()` for one-shot reads in handlers/effects). The `.map(fn)` shape is the same map the LLM uses for arrays and selectors everywhere; the only new idea is "read from `state`, don't capture a plain value." The LLM's existing probability mass over "transform a value with `.map`" applies directly.
 
 ### 2.6 No Hook Rules
 
-React hooks have ordering constraints that produce confusing errors ("hooks must not be called inside conditions or loops") that LLMs violate with regularity. This is a significant source of generated code failures. LLui has no hooks. `onMount` is a simple callback registered during `view()`:
+React hooks have ordering constraints that produce confusing errors ("hooks must not be called inside conditions or loops") that LLMs violate with regularity. This is a significant source of generated code failures. LLui has no hooks. `onMount` is a node-producing helper placed in the view tree:
 
 ```typescript
-view: ({ send }) => {
-  onMount((el) => {
-    el.focus()
-  })
-  return input({ type: 'text' })
-}
-// Helpers are the second arg (`view: ({ send, ... }) => …`). `onMount` is
-// imported directly — it does not depend on the component's state type.
+import { input, onMount } from '@llui/dom'
+
+view: ({ send }) => [
+  input({ type: 'text' }),
+  onMount((rootEl) => {
+    rootEl.focus()
+    return () => {
+      /* optional cleanup, runs on dispose */
+    }
+  }),
+]
 ```
 
-No ordering constraints. No dependency arrays. The function registers a callback; the callback fires after DOM insertion. LLMs handle this pattern correctly.
+No ordering constraints. No dependency arrays. `onMount(cb)` returns a node; `cb(rootEl)` fires after DOM insertion and may return a cleanup. `onMount` is a plain import — it does not depend on the component's state type. LLMs handle this pattern correctly.
 
 ### 2.7 Plain Object Literal Component Definition
 
@@ -112,12 +118,12 @@ export const Counter = component<State, Msg, Effect>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => { ... },
-  view: ({ send }) => { ... },
-  onEffect: handleEffects<Effect>().else((effect, send, signal) => { ... }),
+  view: ({ state, send }) => [ ... ],
+  onEffect: (effect, { send }) => { ... },
 });
 ```
 
-LLMs are excellent at filling in object literal fields. Given `ComponentDef<S, M, E>` in context, the LLM knows exactly which fields to populate and what their types are. TypeScript's excess property checking catches any field the LLM invents. The pattern (export a plain object, pass it to a wrapper function) appears throughout modern TypeScript codebases. The `handleEffects<Effect>().else(...)` pattern for `onEffect` is a single canonical form — the LLM does not need to decide which effects to handle; `handleEffects` consumes the known types and `.else()` narrows to the rest.
+LLMs are excellent at filling in object literal fields. Given `SignalComponentSpec<S, M, E>` in context, the LLM knows exactly which fields to populate and what their types are. TypeScript's excess property checking catches any field the LLM invents. The pattern (export a plain object, pass it to a wrapper function) appears throughout modern TypeScript codebases. The component's `onEffect` signature is `(effect: E, api: { send, state }) => void | (() => void)`. For the `@llui/effects` builders (`http`/`cancel`/`debounce`/…), wire `handleEffects` into that callback: `handleEffects().else(...)` returns a `(ctx: { effect, send, signal }) => void` handler, so bridge it by capturing a lifecycle `AbortController` and calling `handler({ effect, send: api.send, signal })`.
 
 ### 2.8 Plain `.ts` Files
 
@@ -127,136 +133,134 @@ LLui components are TypeScript files. There is no `.llui` extension, no `.svelte
 
 ## 3. What Hurts LLMs
 
-### 3.1 `elSplit` in Compiled Output
+### 3.1 Compiled Emitter Output (`el` / `signalText`)
 
-`elSplit` is an implementation detail of the Vite plugin. It never appears in source files written by developers. However, if an LLM sees compiled output — in error messages that quote transformed code, in stack traces, or in examples that use the compiled form — it encounters a function with no documentation and a non-obvious signature:
+The runtime emitters the transform lowers to — `el`, `signalText`, `signalEach`, … — are implementation details. They never appear in source files written by developers. If an LLM sees compiled output — in error messages that quote transformed code, in stack traces, or in examples that use the compiled form — it encounters functions with non-obvious signatures:
 
 ```typescript
-elSplit(
-  'div',
-  (__e) => {
-    __e.className = 'counter'
+el('div', { class: 'counter' }, [signalText((s) => String(s.count), ['count'])])
+```
+
+An LLM that sees this and tries to write it directly will produce code that depends on internal signatures subject to change. The rule is absolute: the lowered emitters must never appear in user-facing documentation, examples, or developer-facing error messages. If a runtime error quotes a compiled stack frame, the error message should reference the original source location via source maps.
+
+### 3.2 `each()` Signal Render Pattern
+
+```typescript
+each(
+  state.map((s) => s.todos),
+  {
+    key: (todo) => todo.id,
+    render: (item) => [li([text(item.at('text'))])],
   },
-  [['click', handler]],
-  [[1, 'attr', 'title', (s) => s.title]],
-  [children],
 )
 ```
 
-An LLM that sees this and tries to write it directly will produce uncompilable code — the signature is internal and subject to change. The rule is absolute: `elSplit` must never appear in user-facing documentation, examples, or error messages that surface to the developer. If a runtime error quotes a compiled stack frame, the error message should reference the original source location via source maps.
+`each(items, { key, render })` takes a `Signal<readonly T[]>` (derived from `state` with `.map`/`.at`) and a `render(item, index)` callback. `item` is a `Signal<T>` and `index` is a `Signal<number>` — narrow with `item.at('field')` for a reactive slot, or read imperatively with `item.at('id').peek()` inside an event handler.
 
-### 3.2 `each()` Scoped Accessor Pattern
-
-```typescript
-each({
-  items: (s) => s.todos,
-  key: (todo) => todo.id,
-  render: ({ item }) => li([text(item.text)]),
-})
-```
-
-The `each()` render callback receives a **scoped accessor** `item` — a proxy-function with two forms: `item.text` (property-access shorthand) returns a per-field accessor, and `item(t => expr)` remains available for computed expressions. Both return `() => V`. Invoke the accessor (`item.text()`) to read imperatively inside event handlers.
-
-A common LLM error pattern is bypassing the scoped accessor to read state directly:
+A common LLM error is reading the parent `state` instead of the per-row `item` signal:
 
 ```typescript
-// WRONG — accessing state directly, bypassing the scoped accessor:
-each({
-  items: (s) => s.todos,
-  key: (t) => t.id,
-  render: ({ item }) => li([text((s) => s.todos[0].text)]), // hardcoded index, not per-item
-})
+// WRONG — reads the parent state with a hardcoded index, not the row:
+each(
+  state.map((s) => s.todos),
+  {
+    key: (t) => t.id,
+    render: () => [li([text(state.map((s) => s.todos[0].text))])],
+  },
+)
 
-// CORRECT — scoped accessor (property-access shorthand):
-each({
-  items: (s) => s.todos,
-  key: (t) => t.id,
-  render: ({ item }) => li([text(item.text)]),
-})
+// CORRECT — read the per-row item signal:
+each(
+  state.map((s) => s.todos),
+  {
+    key: (t) => t.id,
+    render: (item) => [li([text(item.at('text'))])],
+  },
+)
 ```
 
-The accessor proxy gives `item.text` — typed as `() => T['text']` — which threads naturally into bindings. TypeScript infers field types from `T`, so `item.text` and `item.done` are distinct types. The compiler also emits diagnostics for common misuse patterns.
+`item` is a `Signal<T>`, so `item.at('text')` and `item.at('done')` are distinct typed sub-signals. The signal lint rules reject misuse such as `.peek()` in a reactive slot.
 
-The main residual risk is forgetting that `item.field` is the _accessor_, not the value — e.g. writing `item.text + '!'` inside an event handler (concatenating a function). The correct imperative read is `item.text()`.
+The residual risk is forgetting that an event handler reads the CURRENT value with `.peek()`: `onClick: () => send({ type: 'toggle', id: item.at('id').peek() })`, not `item.at('id')` (a signal).
 
-### 3.3 `memo()` Omission
+### 3.3 Over-deriving in Multiple Slots
 
-LLMs do not know when `memo()` is needed. The incorrect form:
+There is no `memo()` in the signal runtime. A value used in several slots is simply derived per slot with `state.map(...)`:
 
 ```typescript
-const filteredTodos = (s: State) => s.todos.filter((t) => !t.done)
-
-// view:
-each({ items: filteredTodos, key: (t) => t.id, render: renderItem })
-text((s) => `${filteredTodos(s).length} remaining`)
+// Each slot derives independently; the reconciler gates each on its read paths.
+text(state.map((s) => `${s.todos.filter((t) => !t.done).length} remaining`))
 ```
 
-This produces a filter computation for every binding that references `filteredTodos`, every update cycle. The correct form:
-
-```typescript
-const filteredTodos = memo((s: State) => s.todos.filter((t) => !t.done))
-```
-
-The difference is invisible to the LLM: both forms compile, both produce correct output, the performance difference only manifests at scale. An LLM has no way to know it should use `memo()` without being told explicitly. The rule to communicate: "wrap any accessor used in multiple places, or any accessor that performs significant computation, in `memo()`."
+The reconciler only re-runs a derivation when one of its dependency paths changes, and skips the DOM write when the produced value is unchanged. So the old "wrap shared accessors in `memo()`" rule does not apply — there is no shared-accessor footgun to warn about. The remaining guidance is ordinary: keep `.map`/`derived` bodies pure (the `pure-derive-body` lint rule enforces this) and do not build DOM inside them (`no-node-construction-in-body`).
 
 ### 3.4 Composition: View Functions are the Only Primitive
 
-LLMs trained on React will default to component instances for every piece of reusable UI. In LLui there is no such thing: the unified composition model has one decomposition primitive — view functions — and the parent owns all state. A "child component" is just a module exporting `update` and `view` functions.
+LLMs trained on React will default to component instances for every piece of reusable UI. In LLui the decomposition primitive is the view function, and the parent owns all state. A "child component" is just a module exporting a `view(props, send)` function and an `update(slice, msg)` reducer; the parent imports both, holds the child's slice in its own state, and namespaces the child's messages.
 
 ```typescript
-// LLM default (wrong — there is no `child()` primitive):
-child({ def: Toolbar, key: 'toolbar', props: (s) => ({ tools: s.tools }) })
+// LLM default (wrong — there is no component boundary for sub-components):
+SomeChildComponent({ tools: state.map((s) => s.tools) })
 
-// Correct LLui pattern — view function with (props, send) convention:
-toolbarView({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
+// Correct LLui pattern — view function with (props, send) convention. props
+// are signals derived from the parent's state; send wraps the child message.
+toolbarView({ tools: state.map((s) => s.tools), toolbar: state.at('toolbar') }, (msg) =>
   send({ type: 'toolbar', msg }),
 )
 ```
 
-The system prompt must state: "Use view functions for all composition. State lives in one tree, owned by the root component. Slice reducers compose via `combine()`. There is no `component()` boundary for sub-components." If the embedded code is a genuinely independent app whose state lifetime is distinct from the host's — a third-party bundled app, a demo embed — use `subApp({ reason, def, ... })` with a non-empty rationale string. The `llui/subapp-requires-reason` lint rule enforces the reason; if the LLM cannot articulate why isolation is required, it should not be using `subApp`.
+The system prompt must state: "Use view functions for all composition. State lives in one tree, owned by the root component. Pass signals down (`state.map`/`state.at`) and a wrapped `send` callback up. There is no separate component boundary for sub-components, and no `combine`/`subApp`/`child` primitive — the parent's reducer routes namespaced messages to slice reducers with a plain switch."
 
-When reducer composition becomes "route by slice prefix to a sub-reducer," prefer `combine({ slice: reducer, ... })` over a hand-written switch. The `combine()` helper routes messages of shape `{ type: '${slice}/${action}', ... }` to the corresponding slice reducer and preserves top-level reference equality when slices return unchanged — which keeps the path-keyed dirty walker precise.
+For independent embedded apps whose state lifetime is genuinely distinct from the host's (a third-party bundled app, a demo embed), the boundary is `foreign()` — embed the imperative library and drive its declared state signals. Reach for it only when the embedded thing truly owns its own lifecycle.
+
+When the parent's reducer is "route by message prefix to a sub-reducer," write the switch by hand:
+
+```typescript
+update: (state, msg) => {
+  switch (msg.type) {
+    case 'toolbar':
+      return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]
+    // ... other top-level cases
+  }
+}
+```
 
 ### 3.5 `.map()` vs `each()` for Lists
 
 LLMs trained on React will use `.map()` for list rendering. In LLui, `.map()` inside `view()` creates static DOM nodes from the initial state — they never update when the array changes. This is the single most common LLM error for LLui.
 
 ```typescript
-// WRONG — static nodes, never update:
-div(state.items.map((item) => div([text(item.name)])))
+// WRONG — Array.prototype.map over a plain array → static nodes, never update:
+div(state.peek().items.map((item) => div([text(item.name)])))
 
-// CORRECT — reactive keyed list:
-each({
-  items: (s) => s.items,
-  key: (t) => t.id,
-  render: ({ item }) => div([text(item.name)]),
-})
+// CORRECT — reactive keyed list over a derived Signal of the array:
+each(
+  state.map((s) => s.items),
+  {
+    key: (t) => t.id,
+    render: (item) => [div([text(item.at('name'))])],
+  },
+)
 ```
 
-The compiler emits a diagnostic warning for `.map()` on state-derived arrays, but the system prompt should also include an explicit rule: "Never use `.map()` on state arrays in `view()`. Always use `each()`."
+Note the distinction: `state.map(fn)` (a Signal method that DERIVES a reactive value) is correct and idiomatic; `Array.prototype.map` over a plain array to build nodes is the bug. The system prompt should include the rule: "Build lists with `each(state.map(s => s.items), { key, render })`. Never build DOM by calling `Array.prototype.map` over a state array."
 
 ### 3.6 Inter-component Coordination
 
-All coordination between view-function "components" happens through the shared parent state. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. Cross-cutting concerns (toasts, modals, global indicators) become slices on the root state — `state.toasts: Toast[]` — and any view function can dispatch `{ type: 'toasts/add', payload: '...' }` to enqueue one. There is no addressed-effect registry, no global dispatcher, no string-keyed sends.
+All coordination between view-function "components" happens through the shared parent state. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. Cross-cutting concerns (toasts, modals, global indicators) become slices on the root state — `state.toasts: Toast[]` — and any view function can dispatch `{ type: 'addToast', message: '...' }` to enqueue one. There is no addressed-effect registry, no global dispatcher, no string-keyed sends. Context (`createContext`/`provide`/`useContext`) is available when a value must reach deep into the tree without prop-threading.
 
-For adapter layers that hold an `AppHandle` externally (e.g., a router that needs to push navigation events into a mounted app), use `handle.send(msg)` imperatively. The handle is returned from `mountApp` / `mountAtAnchor` / `hydrateApp` / `hydrateAtAnchor` and from `subApp`'s `onHandle` callback.
+For adapter layers that hold a handle externally (e.g., a router that needs to push navigation events into a mounted app), use `handle.send(msg)` imperatively. The `SignalComponentHandle` is returned from `mountApp` (and `mountSignalComponent` / `hydrateSignalApp`); it exposes `send`, `getState`, `subscribe`, `dispose`, and `runReducer`.
 
 ### 3.7 `branch()` vs `show()`
 
-`branch()` handles named states; `show()` handles a boolean condition. The distinction is correct, but the LLM will use them interchangeably:
+`branch()` handles named/discriminated states; `show()` handles a boolean condition. The distinction is correct, but the LLM will use them interchangeably:
 
 ```typescript
 // LLM will often write this (works but wrong pattern):
-branch({
-  on: (s) => (s.open ? 'shown' : 'hidden'),
-  cases: {
-    shown: () => modal(),
-    hidden: () => [],
-  },
-})
+branch(state.at('open'), { true: () => modal(), false: () => [] })
 
-// Canonical form:
-show({ when: (s) => s.open, render: () => modal() })
+// Canonical form — show takes a condition signal, a render arm, and an optional else:
+show(state.at('open'), () => modal())
 ```
 
 The inverse error — using `show` when a named discriminant is correct — is harder to detect because `show` offers no structural signal that only two states exist.
@@ -266,7 +270,8 @@ The inverse error — using `show` when a named discriminant is correct — is h
 The most catastrophic silent error:
 
 ```typescript
-// WRONG — mutates state in place; __dirty returns 0; DOM freezes:
+// WRONG — mutates state in place; the reconciler sees the same reference
+// (Object.is(next, prev) is true), skips the update, and the DOM freezes:
 update: (state, msg) => {
   if (msg.type === 'increment') {
     state.count++ // mutation
@@ -286,24 +291,16 @@ update: (state, msg) => {
 
 LLMs with strong Redux training will get this right. LLMs that have seen more MobX or Vue Composition API will get it wrong. The rule must be in the system prompt.
 
-### 3.9 `send()` Batching and `flush()`
+### 3.9 `send()` Is Synchronous
 
-`send()` does not update the DOM synchronously — it enqueues a message and defers the update cycle to a microtask. LLMs trained on React (`setState` is also async) will have some prior knowledge here, but the specific pattern of using `flush()` to force synchronous updates is novel and unlikely to appear in training data.
-
-The common LLM mistake: reading DOM state immediately after `send()` without `flush()`.
+In the signal runtime, `send(msg)` runs the reducer, reconciles the DOM, and dispatches effects synchronously before it returns. There is no message queue and no microtask deferral. So reading DOM state immediately after `send()` already sees the updated DOM:
 
 ```typescript
-// WRONG — DOM not yet updated:
 send({ type: 'showPanel' })
-const height = panelEl.offsetHeight // reads pre-update value
-
-// CORRECT:
-send({ type: 'showPanel' })
-flush()
-const height = panelEl.offsetHeight // reads post-update value
+const height = panelEl.offsetHeight // already reflects the update
 ```
 
-In practice, most component code never needs `flush()` — reactive bindings handle DOM updates automatically. The foot-gun appears in `onMount` callbacks or effect handlers that need to measure layout after a state change. The system prompt rule ("use `flush()` only when you need to read DOM state immediately") is sufficient to prevent misuse. LLMs that over-apply `flush()` (calling it after every send) will produce correct but suboptimally batched code — a performance issue, not a correctness issue, which is the safer failure mode.
+LLMs trained on React (`setState` is async) may reach for a flush. The handle exposes `flush()` for harness/agent parity, but it is a no-op — there is nothing to flush. The system prompt should state: "`send()` applies updates synchronously; you never need `flush()`." An LLM that calls `flush()` anyway produces correct (if redundant) code — a no-op, not a bug.
 
 ---
 
@@ -311,7 +308,7 @@ In practice, most component code never needs `flush()` — reactive bindings han
 
 ### 4.1 Very Short API Surface (Under 5 Functions)
 
-An API that exposes only `component`, `text`, `div`, and `mount` forces the LLM to reinvent `branch`, `each`, `show`, `memo`, and `onMount` using imperative DOM manipulation. The LLM's reinventions will be incorrect: they will mutate state, leak event listeners, or produce non-reactive output. The right API size is one export per distinct concept. Cutting the API to reduce "cognitive load" produces more errors, not fewer.
+An API that exposes only `component`, `text`, `div`, and `mountApp` forces the LLM to reinvent `branch`, `each`, `show`, and `onMount` using imperative DOM manipulation. The LLM's reinventions will be incorrect: they will mutate state, leak event listeners, or produce non-reactive output. The right API size is one export per distinct concept. Cutting the API to reduce "cognitive load" produces more errors, not fewer.
 
 ### 4.2 Heavy Scaffolding in Generated Code
 
@@ -319,29 +316,27 @@ An LLM that generates 60 lines of boilerplate before the first interesting line 
 
 ### 4.3 "Helpful" Default Behaviors That Change Semantics
 
-Auto-memoizing every accessor by default seems like it would help. In practice it makes the LLM's mental model wrong: the LLM will reason about when computation happens and produce incorrect analysis, because the framework silently changed the evaluation semantics. Explicit `memo()` is better even though it requires extra knowledge, because the LLM's model of the code matches reality.
+Auto-deduplicating identical derivations behind the LLM's back seems like it would help. In practice it makes the LLM's mental model wrong: the LLM reasons about when computation happens and produces incorrect analysis, because the framework silently changed the evaluation semantics. The signal model is already predictable without hidden memoization — each `state.map(...)` is a derivation gated by its read paths and skipped on unchanged output, with no shared-cell aliasing the LLM has to track.
 
 ### 4.4 Aliases for the Same Concept
 
-If `show(condition, builder)` is an alias for `branch(condition, { true: builder, false: () => [] })`, and both are exported, the LLM has two valid spellings. The LLM's probability mass is split. Some generations will use `show`, some will use `branch`. More importantly, the LLM may use `branch` when `show` was the canonical choice and produce code that fails the idiomatic review criterion. Pick one canonical form per concept. If both are needed for different semantic reasons, make the semantic distinction airtight in the type signatures.
+If `show(cond, render)` were a pure alias for `branch(cond, { true: render, false: () => [] })`, and both were exported for the same job, the LLM's probability mass would split. The signal API keeps the distinction semantic: `show(cond, render, orElse?)` narrows a boolean/nullable condition (the render arm receives the NON-NULLABLE narrowed signal), while `branch` discriminates a tagged union (each arm receives the narrowed variant signal). Pick one canonical form per concept and let the type signatures carry the distinction.
 
 ### 4.5 JSDoc on Every Function Instead of Accurate Types
 
 Prose descriptions require the LLM to parse natural language and map it to code structure. Type signatures require the LLM to parse TypeScript syntax it already understands. The signature:
 
 ```typescript
-function each<S, T, M>(opts: {
-  items: (state: S) => T[]
-  key: (item: T) => string | number
-  render: (opts: {
-    send: Send<M>
-    item: <R>(selector: (t: T) => R) => Binding<R>
-    index: () => number
-  }) => Node[]
-}): Node[]
+function each<T>(
+  items: Signal<readonly T[]>,
+  opts: {
+    key: (item: T) => string | number
+    render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+  },
+): Node
 ```
 
-communicates more about usage than a paragraph of prose. The object parameter means the LLM cannot mix up positional arguments — every field is named. The `item: <R>(selector: (t: T) => R) => Binding<R>` type in the `render` callback makes explicit that `item` is a function that takes a selector and returns a reactive binding — the LLM cannot plausibly produce `item.text` because the type has no properties. The selector pattern `item(t => t.text)` mirrors the component-level `text(s => s.count)` pattern, so the LLM's existing probability mass over "pass an arrow function to read a value" applies directly.
+communicates more about usage than a paragraph of prose. `items: Signal<readonly T[]>` makes explicit that the source is a derived signal (`state.map(s => s.items)`), not a plain array. `item: Signal<T>` in the `render` callback tells the LLM that `item` is a signal — to read a field reactively it must `item.at('text')`, and to read imperatively in a handler it must `item.at('id').peek()`. The `.at`/`.map` vocabulary mirrors the component-level `state.at(...)` / `state.map(...)`, so the LLM's existing probability mass applies directly.
 
 ---
 
@@ -360,30 +355,28 @@ Measuring LLM-friendliness by intuition produces confident but wrong conclusions
 
 ### Metrics Per Task
 
-| Metric          | Range   | Description                                                                                                                                                                                        |
-| --------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compile rate    | 0 or 1  | `tsc --noEmit` exits 0 with zero errors                                                                                                                                                            |
-| Render rate     | 0 or 1  | Initial DOM matches spec (correct elements, correct text, correct attributes)                                                                                                                      |
-| Full pass rate  | 0 or 1  | All assertions pass                                                                                                                                                                                |
-| Assertion score | 0.0–1.0 | Fraction of individual assertions that pass (partial credit)                                                                                                                                       |
-| Console clean   | 0 or 1  | Zero console errors or warnings during the entire test run                                                                                                                                         |
-| Idiomatic score | 0 or 1  | Human review: correct use of `memo()`, correct `each()` scoped accessor pattern, no state mutation, `show` vs `branch` correct, tests use `testComponent`/`assertEffects` (not manual DOM queries) |
+| Metric          | Range   | Description                                                                                                                                                                                                                                                                         |
+| --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compile rate    | 0 or 1  | `tsc --noEmit` exits 0 with zero errors                                                                                                                                                                                                                                             |
+| Render rate     | 0 or 1  | Initial DOM matches spec (correct elements, correct text, correct attributes)                                                                                                                                                                                                       |
+| Full pass rate  | 0 or 1  | All assertions pass                                                                                                                                                                                                                                                                 |
+| Assertion score | 0.0–1.0 | Fraction of individual assertions that pass (partial credit)                                                                                                                                                                                                                        |
+| Console clean   | 0 or 1  | Zero console errors or warnings during the entire test run                                                                                                                                                                                                                          |
+| Idiomatic score | 0 or 1  | Human review: correct `each(state.map(...), { key, render })` with per-row `item` signals, no state mutation, `show` vs `branch` correct, reactive reads via `state.map`/`state.at` (not captured plain values), tests use `testComponent`/`assertEffects` (not manual DOM queries) |
 
 Compile rate is a prerequisite gate. If the output does not compile, skip all subsequent metrics and record 0 for each. The compile gate is the most important single metric: a framework that produces compilable output on the first attempt is measurably more usable than one that requires iteration.
 
 Idiomatic score requires human review of each passing output. The reviewer checks:
 
-- `memo()` present wherever a derived value is referenced in multiple places or involves significant computation
-- `each()` renderItem uses the scoped accessor pattern `item(t => t.field)`, not direct property access or captured outer variables
-- `each()` used for state-derived arrays in `view()`, never `.map()`
+- Reactive reads go through `state.map(...)` / `state.at('path')`; handlers/effects read with `.peek()`, never a frozen plain value
+- `each(state.map(s => s.items), { key, render })` with per-row `item` signals (`item.at('field')`), not `Array.prototype.map` over a state array
 - `update()` returns a new state object, not a mutation
-- `show` used for boolean conditions, `branch` for named states
-- Composition uses view functions with the `(props, send)` convention; no `child()`, no `propsMsg`, no `onMsg` (those primitives no longer exist)
-- Reducer composition uses `combine()` when the parent's switch is purely "route by slice prefix"; otherwise a hand-written switch is fine
-- `subApp` is used only when a `reason` field can articulate why state-lifetime isolation is required (lint-enforced)
-- Forms use `setField` pattern when there are 3+ text fields, not one message type per field
-- Cross-component coordination happens through shared parent state and view-function callbacks — no addressed effects, no global registries
-- No hardcoded DOM manipulation that bypasses the reactive binding system
+- `show` used for boolean/nullable conditions, `branch` for tagged-union states
+- Composition uses view functions with the `(props, send)` convention; props are signals derived from the parent state; there is no `child`/`combine`/`subApp`/`propsMsg`/`onMsg` primitive
+- Reducer composition is a plain switch routing namespaced messages (`{ type: 'toolbar'; msg }`) to slice reducers
+- Forms use a `setField` pattern when there are 3+ text fields, not one message type per field
+- Cross-component coordination happens through shared parent state and view-function callbacks (or context) — no addressed effects, no global registries
+- No hardcoded DOM manipulation that bypasses the signal binding system
 
 ### Aggregation
 
@@ -457,8 +450,8 @@ Assertions: 20 items visible initially; clicking Load more → 40 items visible,
 A parent component owns an array of counter slices. Each counter is rendered by a `counterView()` view function. Each counter has its own increment button. The parent shows the total count across all counters. An "Add counter" button appends a new counter slice.
 Assertions: total shows 0 initially; clicking Increment on counter 1 → total shows 1; clicking Add counter → total unchanged; clicking Increment on the new counter → total shows 2.
 
-**TASK 10b — Slice reducer composition with `combine()`**
-Same requirements as Task 10, but the parent's `update()` is constructed via `combine({ counters: countersReducer, ui: uiReducer })`. Messages are dispatched as `{ type: 'counters/increment', index: number }` and route to the `countersReducer` with `msg.type` rewritten to `'increment'`. Tests reducer composition correctness and reference-equality preservation (top-level state object reference must be preserved when only one slice changes).
+**TASK 10b — Slice reducer composition (hand-routed)**
+Same requirements as Task 10, but the parent's `update()` delegates to slice reducers (`countersUpdate`, `uiUpdate`) via a plain switch on namespaced messages (`{ type: 'counters'; msg: CountersMsg }`). Tests reducer composition correctness and reference-equality preservation (the top-level state object reference, and unaffected slice references, must be preserved when only one slice changes — so the reconciler skips bindings that read only unchanged paths).
 Assertions: same as Task 10, plus: dispatching a slice message updates only that slice; bindings reading from non-affected slices do not re-evaluate (observable through a coverage tracker or DOM-mutation observer).
 
 **TASK 15 — Real-time updates (WebSocket)**
@@ -506,10 +499,10 @@ Group failures by symptom:
 - **Compile fails, type errors in `update()`**: LLM is not reading `Msg` union; check that `Msg` type is in context.
 - **Compile passes, render fails**: LLM is generating incorrect reactive vs static prop syntax (missing or misplaced arrow functions).
 - **Render passes, assertions fail**: LLM is not handling edge cases correctly (debounce, floor at 0, key identity).
-- **List never updates**: LLM used `.map()` instead of `each()` on a state-derived array. Check for `.map()` in `view()` body.
-- **Idiomatic fails on passing tasks**: LLM is using `branch` where `show` belongs, omitting `memo()`, reaching for `subApp` to "isolate" a component instead of extracting a view function, or defining N message types for N form fields instead of `setField`.
-- **`subApp` overuse**: LLM used `subApp({ reason: '...', ... })` for a component that should be a view function with `(props, send)`. Reason: "isolating complex component" or "encapsulating state" is not a legitimate reason; lint rule rejects it. The unified composition model gives precise path-keyed reactivity at any depth — there is no performance reason to isolate.
-- **Console errors on passing tasks**: LLM is generating uncaught promise rejections or calling `text()` outside `view()`.
+- **List never updates**: LLM used `Array.prototype.map` over a state array instead of `each(state.map(...), { key, render })`. Check the `view` body for `.map(` applied to a plain array rather than to a signal.
+- **Idiomatic fails on passing tasks**: LLM is using `branch` where `show` belongs, capturing a frozen plain value instead of deriving with `state.map`, inventing a component boundary instead of a view function, or defining N message types for N form fields instead of `setField`.
+- **Invented composition primitive**: LLM reached for `child`/`combine`/`subApp` (none exist). The fix is a view function with `(props, send)` and a plain switch in the parent reducer.
+- **Console / build errors on passing tasks**: a signal lint rule fired (`peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `whole-state-to-call`) — these are hard compile errors, so they actually show up as a compile failure, not a runtime console error.
 - **Test harness misuse**: LLM writes raw `assert.deepEqual` on `update()` instead of using `testComponent()` and `assertEffects()` from `@llui/test`. This still passes but misses effect accumulation and state tracking. The system prompt should include a correct `testComponent` example for tasks that require test output.
 
 ### Regression Protocol
@@ -524,11 +517,11 @@ When a framework change is made (new API, removed alias, changed signature), run
 
 The system prompt must:
 
-- Provide the type signatures for `ComponentDef`, `each`, `branch`, `show`, `memo`, `combine`, `subApp`, and `onMount` — not prose descriptions, actual TypeScript.
-- Show one complete minimal example (under 50 lines) with `init`, `update`, `view`, and `onEffect`.
-- State the rules that are frequently violated: no mutation, reactive vs static, scoped accessor (`item(t => t.field)`) usage.
+- Provide the type signatures for `SignalComponentSpec`, `Signal`, `each`, `branch`, `show`, and `onMount` — not prose descriptions, actual TypeScript.
+- Show one complete minimal example (under 50 lines) with `init`, `update`, `view`, and (where relevant) `onEffect`.
+- State the rules that are frequently violated: no mutation, reactive reads via `state.map`/`state.at`, `.peek()` only in handlers/effects.
 - Stay under 300 words for the core system prompt. Task-specific type definitions may bring the total under 450 words. Longer prompts dilute the LLM's attention on the task. The system prompt is not documentation — it is context injection.
-- Not explain `elSplit`, the Vite plugin, bitmask arithmetic, or any internal mechanism.
+- Not explain the lowered emitters (`el`/`signalText`), the Vite plugin, the reconciler, or any internal mechanism.
 - Not duplicate information that is in the task prompt.
 
 ### Concrete System Prompt
@@ -540,84 +533,61 @@ You are writing a TypeScript component using the LLui framework.
 
 ## Pattern
 
-LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view(send, h)` returns
-DOM nodes once at mount and binds state to the DOM through accessor functions.
-State is immutable. Effects are plain data objects returned from `update()`.
+LLui uses The Elm Architecture: `init` returns initial state (optionally with
+effects); `update(state, msg)` returns the next state (optionally `[state, effects]`);
+`view({ state, send })` returns DOM nodes once at mount. State is immutable.
+Effects are plain data objects. `send` applies updates synchronously.
+`state` is a `Signal<State>`: read it reactively with `.map`/`.at`.
 
 ## Key Types
 
 ```typescript
-interface ComponentDef<S, M, E, D = void> {
-  name: string;
-  init: (data: D) => [S, E[]];
-  update: (state: S, msg: M) => [S, E[]];
-  view: (h: View<S, M>) => Node[];
-  onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void;
+interface SignalComponentSpec<S, M, E = never> {
+  name?: string
+  init: () => S | [S, E[]]
+  update: (state: S, msg: M) => [S, E[]] | S
+  view: (bag: { state: Signal<S>; send: (msg: M) => void }) => readonly Node[]
+  onEffect?: (effect: E, api: { send: (msg: M) => void; state: Signal<S> }) => void | (() => void)
 }
 
-// Reducer composition for slice routing:
-function combine<S, M extends { type: string }, E>(
-  slices: { [SliceKey: string]: (state: any, msg: any) => [any, E[]] },
-  top?: (state: S, msg: M) => [S, E[]],
-): (state: S, msg: M) => [S, E[]];
-// Messages dispatched as `{ type: '${slice}/${action}', ... }` route to the
-// matching slice reducer; top handles unprefixed messages.
+// Signal — the reactive read surface:
+interface Signal<T> {
+  at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>> // narrow into a sub-signal
+  map<U>(fn: (value: T) => U): Signal<U>                       // derive a value
+  peek(): T                                                    // one-shot read (handlers/effects)
+}
 
-// `h: View<S, M>` is a bundle of state-bound helpers. Destructure it in
-// `view` to drop per-call generics — every accessor infers `s: S`:
-//   view: ({ send, show, each, branch, text, memo }) => [...]
+// Element + structural helpers are MODULE IMPORTS from '@llui/dom':
+function text(value: Signal<string | number> | string | number): Node
+function each<T>(items: Signal<readonly T[]>, opts: {
+  key: (item: T) => string | number
+  render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+}): Node
+// show(cond, render, orElse?) — render arm gets the NON-NULLABLE narrowed signal:
+function show<T>(cond: Signal<T>, render: (v: Signal<NonNullable<T>>) => readonly Node[],
+  orElse?: () => readonly Node[]): Node
+// branch — discriminate a tagged union; each arm gets the narrowed variant signal:
+function branch<U extends object, D extends keyof U>(value: Signal<U>, discriminant: (u: U) => U[D],
+  arms: { [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[] }): Node
+function onMount(cb: (rootEl: Element) => void | (() => void)): Node
 
 // Effect consumption — import from @llui/effects:
-function handleEffects<E extends { type: string }>(): EffectChain<E>;
-// EffectChain methods:
-//   .else(handler: (eff: CustomEffects<E>, send, signal) => void): EffectHandler<E>
-//   .on(type, handler): EffectChain<E, narrowed>
-//   .done(): EffectHandler<E>  // compile error if unhandled types remain
-
-// Structural primitives (call only inside view()) — all use object parameters:
-function branch<S, M>(opts: {
-  on: (s: S) => string | number | boolean,
-  cases: Record<string, (h: View<S, M>) => Node[]>,
-  enter?: (nodes: Node[]) => void | Promise<void>,
-  leave?: (nodes: Node[]) => void | Promise<void>,
-  onTransition?: (ctx: { entering: Node[], leaving: Node[], parent: Node }) => void | Promise<void>,
-}): Node[];
-function show<S, M>(opts: {
-  when: (s: S) => boolean,
-  render: (h: View<S, M>) => Node[],
-  enter?: ..., leave?: ..., onTransition?: ...,
-}): Node[];
-function each<S, T, M>(opts: {
-  items: (s: S) => T[],
-  key: (item: T) => string | number,
-  render: (opts: { send: Send<M>, item: <R>(sel: (t: T) => R) => Binding<R>, index: () => number }) => Node[],
-  enter?: ..., leave?: ..., onTransition?: ...,
-}): Node[];
-function portal(opts: { target: Element | string, render: () => Node[] }): Node[];
-function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
-  mount: (container: HTMLElement, send: (msg: Msg) => void) => Instance,
-  props: (s: S) => T,
-  sync:
-    | ((instance: Instance, props: T, prev: T | undefined) => void)
-    | { [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void },
-  destroy: (instance: Instance) => void,
-  container?: { tag?: string; attrs?: Record<string, string> },
-}): Node[];
-function memo<S, T>(accessor: (s: S) => T): (s: S) => T;
-function onMount(callback: (el: Element) => (() => void) | void): void;
+function handleEffects<E extends { type: string }, M>(): {
+  use(plugin): this
+  else(handler: (ctx: { effect: E; send: (m: M) => void; signal: AbortSignal }) => void):
+    (ctx: { effect: E; send: (m: M) => void; signal: AbortSignal }) => void
+}
 ````
 
 ## Example
 
 ```typescript
-import { component, div, button, text } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
-type Effect = never
 
-export const Counter = component<State, Msg, Effect>({
+export const Counter = component<State, Msg>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
@@ -628,126 +598,83 @@ export const Counter = component<State, Msg, Effect>({
         return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: ({ send, text }) =>
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
+  ],
 })
+
+mountApp(document.getElementById('app')!, Counter)
 ```
 
 ## Rules
 
 - Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
-- Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
-- Static values are literals: `div({ class: 'container' })`.
-- Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
-- Structural primitives use object parameters:
-  `each({ items: s => s.todos, key: t => t.id, render: ({ item, index }) => ... })`
-  `branch({ on: s => s.phase, cases: { idle: () => ..., loading: () => ... } })`
-  `show({ when: s => s.open, render: () => ... })`
-  `portal({ target: document.body, render: () => ... })`
-- In `each()`, `render` receives `item` (a scoped accessor) and `index` (a getter).
-  Read item properties via selector: `item(t => t.text)`, not `item.text`.
-- Wrap derived values used in multiple places in `memo()`:
-  `const filtered = memo((s: State) => s.items.filter(i => i.active))`.
-- Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
-- For composition, use view functions with the `(props, send)` convention:
-  `function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void)`.
-  State lives in one tree, owned by the root component. There is no `child()` primitive.
-- For reducer composition, use `combine()` when routing by message-type prefix:
-  `update: combine<State, Msg, Effect>({ toolbar: toolbarReducer, sidebar: sidebarReducer })`.
-  Hand-written switch is fine when the parent has its own non-slice cases.
-- For forms with many fields, use a single `setField` message:
-  `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
-- For cross-component coordination, route through the shared parent's state and `update()`.
-  Adapter layers that mount an instance imperatively can call `handle.send(msg)` on the returned `AppHandle`.
-- The escape hatch for genuine state-lifetime isolation is `subApp({ reason, def, data, onHandle })`.
-  `reason` is required (non-empty string); the `llui/subapp-requires-reason` lint rule rejects empty or placeholder reasons.
-  Do not use `subApp` to "isolate a complex component" — the path-keyed dirty walker handles depth without overhead.
-- For third-party imperative components (editors, maps, charts), use `foreign()`:
-  `foreign({ mount: (el, send) => lib.create(el), props: s => s.config, sync: ..., destroy: inst => inst.dispose() })`
-  `sync` is a function `(inst, props, prev) => void` for manual diffing, or a record `{ field: (inst, val, prev) => void }` for per-field handlers.
-  The library owns the DOM inside the container. LLui owns the container. `sync` pushes config changes; `send` in `mount` pushes events back to LLui.
-- Effects are dispatched after DOM updates via `onEffect(effect, send, signal)`.
-  Core effects `delay` and `log` are handled by the runtime automatically.
-  For `http`, `cancel`, `debounce`, `sequence`, `race`: import `handleEffects` from `@llui/effects`.
-  Use `onEffect: handleEffects<Effect>().else((eff, send, signal) => { switch... })`.
-  `cancel(token, inner)` cancels and replaces; `cancel(token)` cancels only (no replacement).
-  Wrap cancellable effects: `cancel(token, http({ ... }))`.
-- `send()` batches via microtask. Multiple sends coalesce into one DOM update.
-  Use `flush()` after `send()` only when you need to read DOM state immediately.
-- Accessibility: every `img()` needs `alt`. Every `button()`/`a()` needs visible text or `aria-label`.
-  `onClick` on non-interactive elements (div, span) requires `role` and `tabIndex`.
-  Every form input needs a label (`id` + `label({ for: id })` or `aria-label`).
-  The compiler enforces these — violations are hard errors (see 02 Compiler.md).
+- `view` returns an ARRAY of nodes and destructures `{ state, send }`. Helpers (`div`, `text`, `each`, `show`, `branch`, `onMount`, …) are imports from `@llui/dom`.
+- Reactive values come from `state`: `text(state.map(s => s.label))`, `div({ class: state.at('active').map(a => a ? 'on' : '') })`. Static values are literals: `div({ class: 'container' })`.
+- In handlers/effects, read the current value with `.peek()`: `onClick: () => send({ type: 'pick', id: item.at('id').peek() })`. Never `.peek()` inside a slot.
+- Lists: `each(state.map(s => s.todos), { key: t => t.id, render: (item) => [li([text(item.at('text'))])] })`. `item` is a `Signal<T>`. Never build DOM with `Array.prototype.map` over a state array.
+- `show(cond, render, orElse?)` for boolean/nullable conditions; `branch(value, u => u.kind, { ... })` for tagged unions.
+- `.map`/`derived` bodies must be pure and must not build DOM (both are compile errors).
+- Composition: write a view function `viewFn(props, send)` where props are signals derived from the parent state (`state.map`/`state.at`); the parent owns all state and routes namespaced messages (`{ type: 'toolbar'; msg }`) to slice reducers with a plain switch. There is no `child`/`combine`/`subApp` primitive.
+- For forms with many fields, use a single `setField` message instead of one message per field.
+- Cross-component coordination goes through shared parent state and callbacks, or context (`createContext`/`provide`/`useContext`). Adapters holding the handle can call `handle.send(msg)`.
+- Imperative libraries (editors, maps, charts): `foreign({ tag?, state: { x: state.map(...) }, mount: ({ el, state }) => { state.x.bind(v => ...); return inst }, unmount: inst => ... })`. Declared `state` signals become `LiveSignal`s (`peek` + `bind`) for `mount`.
+- Effects: `update` returns `[state, [effect, ...]]`. Core `delay`/`log` are handled automatically. For `http`/`cancel`/`debounce`/`sequence`/`race`, import `handleEffects` from `@llui/effects` and bridge it in `onEffect`:
+  `onEffect: (effect, api) => handler({ effect, send: api.send, signal })` where `handler = handleEffects<Effect, Msg>().else(({ effect, send }) => { ... })` and `signal` comes from a lifecycle `AbortController`.
+  `cancel(token, inner)` cancels and replaces; `cancel(token)` cancels only. Wrap cancellable effects: `cancel(token, http({ ... }))`.
+- `send()` is synchronous — it updates the DOM before returning; you never need `flush()`.
+- Accessibility: every `img()` needs `alt`. Every `button()`/`a()` needs visible text or `aria-label`. `onClick` on non-interactive elements (div, span) requires `role` and `tabIndex`. Every form input needs a label. The compiler enforces these — violations are hard errors (see 02 Compiler.md).
 
 ````
 
 ### System Prompt Variants for Complex Tasks
 
-For tasks involving async effects, prepend the effect type definitions relevant to that task. For tasks involving `combine()` or `subApp`, add the relevant signature. Do not pad the system prompt with information irrelevant to the task. A system prompt for the Async Fetch task should include:
+For tasks involving async effects, prepend the effect type definitions relevant to that task. Do not pad the system prompt with information irrelevant to the task. A system prompt for the Async Fetch task should include:
 
 ```typescript
 // In the system prompt for async tasks:
 import { handleEffects, http, cancel, debounce } from '@llui/effects'
 
-type Effect =
-  | { type: 'http'; url: string; onSuccess: Msg; onError: Msg }
-  | { type: 'delay'; ms: number; onDone: Msg }
-  | { type: 'cancel'; token: string; inner?: Effect }
-  | { type: 'debounce'; key: string; ms: number; inner: Effect };
-
-// In update(): return cancel('search', http({ url, onSuccess: ..., onError: ... }))
-// In onEffect: handleEffects<Effect>().done()  // no custom effects, all handled by chain
-// Or if custom effects exist:
-// onEffect: handleEffects<Effect>().else((eff, send, signal) => { switch (eff.type) { ... } })
-````
-
-For the reducer-composition task, add the `combine()` signature and an example:
-
-```typescript
-import { combine } from '@llui/dom'
-
-const update = combine<State, Msg, Effect>({
-  counters: (slice: CountersSlice, msg: Msg) => {
-    // msg.type has been rewritten — original was 'counters/increment',
-    // here it arrives as 'increment'.
-    switch (msg.type) {
-      case 'increment':
-        return [{ ...slice, count: slice.count + 1 }, []]
-    }
-    return [slice, []]
-  },
-  ui: (slice: UiSlice, msg: Msg) => {
-    /* ... */
-  },
+// http() builds an effect; onSuccess/onError are functions that build a Msg:
+//   http({ url, onSuccess: (data, headers) => ({ type: 'ok', data }),
+//          onError: (err) => ({ type: 'fail', err }) })
+// cancel(token, inner) cancels+replaces; debounce(key, ms, inner) delays.
+// In update(): return [next, [cancel('search', debounce('search', 300, http({ ... })))]]
+// In onEffect, bridge handleEffects into the (effect, api) shape:
+const handler = handleEffects<Effect, Msg>().else(({ effect, send }) => {
+  /* custom effect types only */
 })
-
-// Dispatch:
-send({ type: 'counters/increment' })
+const lifecycle = new AbortController()
+// onEffect: (effect, api) => handler({ effect, send: api.send, signal: lifecycle.signal })
 ```
 
 For composition tasks that introduce view functions, add:
 
 ```typescript
-// View functions — the only decomposition primitive. Parent owns state.
-// toolbar.ts
-export type ToolbarProps<S> = {
-  tools: (s: S) => Tool[]
-  toolbar: (s: S) => ToolbarSlice
+// View functions — the decomposition primitive. Parent owns state.
+// toolbar.ts — props are SIGNALS derived from the parent state.
+import type { Signal } from '@llui/dom'
+export type ToolbarProps = { tools: Signal<Tool[]>; toolbar: Signal<ToolbarSlice> }
+export function toolbarView(props: ToolbarProps, send: (msg: ToolbarMsg) => void): readonly Node[] {
+  /* ... build view from props.tools.map(...), props.toolbar.at('menuOpen'), ... */
 }
-export function toolbarView<S>(
-  props: ToolbarProps<S>,
-  send: (msg: ToolbarMsg) => void,
-) { ... }
+export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlice {
+  /* ... */
+}
 
-// parent.ts — wraps child messages:
-toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))
+// parent.ts — derive the child's slice signals, wrap its messages:
+toolbarView(
+  { tools: state.map(s => s.tools), toolbar: state.at('toolbar') },
+  (msg) => send({ type: 'toolbar', msg }),
+)
+// parent update routes: case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]
 ```
 
-See 08 Ecosystem Integration §1 for the full `@llui/zag` adapter specification, component anatomy, and the `foreign()` vs Ark distinction.
+See 08 Ecosystem Integration §2 for imperative-library embedding via `foreign()`.
 
 Task-specific context injected into the system prompt produces measurably better results than a single universal system prompt. Keep the core system prompt under 300 words; add task-specific type definitions to bring the total under 450 words.
 
@@ -759,62 +686,59 @@ Steps are ordered by expected impact on compile rate and full pass rate, based o
 
 ### Step 1 — Publish a `.d.ts` type reference file
 
-A single `llui.d.ts` that defines `ComponentDef`, all element helpers, `each`, `branch`, `show`, `memo`, `child`, `onMount`, and `portal` with accurate signatures. This file should be importable into the LLM's context window directly. Type signatures communicate more information per token than prose, and LLMs reason about TypeScript types reliably.
+A single `llui.d.ts` that defines `SignalComponentSpec`, `Signal`, all element helpers, `each`, `branch`, `show`, `onMount`, `portal`, `foreign`, and the context primitives with accurate signatures. This file should be importable into the LLM's context window directly. Type signatures communicate more information per token than prose, and LLMs reason about TypeScript types reliably.
 
 The file should be under 150 lines. Every additional line reduces the attention the LLM pays to individual types.
 
-### Step 2 — Leverage `each()` scoped accessor type safety
+### Step 2 — Leverage `Signal<T>` type safety in `each()`
 
-The `each()` scoped accessor API (`item: <R>(sel: (t: T) => R) => R`) is significantly more type-safe than the previous closure-based approach. The type system now catches the most common error — direct property access on `item` — because `item` is typed as a function, not as `T`. The compiler additionally emits diagnostics for direct property access on the `item` parameter.
+`each(items: Signal<readonly T[]>, { key, render: (item: Signal<T>, index: Signal<number>) })` is type-safe by construction: `items` must be a signal (so the LLM derives it with `state.map(s => s.items)`, not a plain array), and `item` is a `Signal<T>` (so reads go through `item.at('field')`, never raw property access). The signal lint rules catch the residual misuse: `.peek()` in a reactive slot, or using a signal directly as an operand.
 
-The remaining LLM error patterns are: (1) calling `item()` without a selector, which is a TypeScript error the LLM can correct with one round of feedback, and (2) destructuring the result of `item(t => t)` into a local variable and using it across multiple bindings, losing reactivity. For (2), add JSDoc to the `renderItem` parameter:
+The remaining LLM error patterns are: (1) forgetting that a handler reads the current value with `.peek()` (`item.at('id').peek()`), correctable in one round of TypeScript feedback; and (2) feeding a plain array to `each`. For (1), add JSDoc to the `render` parameter:
 
 ```typescript
 /**
- * @param renderItem - Called once per item at mount time. Receives:
- *   - `item` — a scoped accessor. Read properties via selector: `item(t => t.text)`.
- *     Each `item(...)` call creates a reactive binding. Do not store the result in a
- *     variable and reuse it — each binding site should call `item(...)` independently.
- *   - `index` — call `index()` to read the current index.
+ * @param render - Called once per row at build time. Receives:
+ *   - `item: Signal<T>` — narrow a field for a reactive slot with `item.at('text')`;
+ *     read the current value in a handler/effect with `item.at('id').peek()`.
+ *   - `index: Signal<number>` — the row's reactive index.
  */
-function each<S, T, M>(opts: {
-  items: (state: S) => T[]
-  key: (item: T) => string | number
-  render: (opts: {
-    send: Send<M>
-    item: <R>(sel: (t: T) => R) => Binding<R>
-    index: () => number
-  }) => Node[]
-}): Node[]
+function each<T>(
+  items: Signal<readonly T[]>,
+  opts: {
+    key: (item: T) => string | number
+    render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+  },
+): Node
 ```
 
-### Step 3 — Frame composition as a single primitive
+### Step 3 — Frame composition as a view function
 
-All composition uses view functions with the `(props, send)` convention: the view function takes a typed props object (generic over `<S>`) and a `send` callback. The LLM exports a function, defines a `Props<S>` type, and the parent calls it with named accessors. This pattern is identical to how React composition works (props down, callbacks up) and will be generated correctly from existing training data.
+All composition uses view functions with the `(props, send)` convention: the function takes props that are signals derived from the parent state, plus a `send` callback. The LLM exports a function and a `Props` type, and the parent calls it with derived signals. This pattern is identical to how React composition works (props down, callbacks up) and generates correctly from existing training data.
 
-There is no `child()` primitive, no `propsMsg`, no `onMsg`. State lives in one tree, owned by the root component. The system prompt must state this explicitly because the most common LLM failure mode — driven by React training data — is to instantiate "child components" for every reusable piece of UI. Direct that instinct toward view functions.
+There is no separate component boundary for sub-components, and no `child`/`combine`/`subApp`/`propsMsg`/`onMsg` primitive. State lives in one tree, owned by the root component. The system prompt must state this explicitly because the most common LLM failure mode — driven by React training data — is to instantiate "child components" for every reusable piece of UI. Direct that instinct toward view functions.
 
-When the parent's `update()` is purely "route by message-type prefix to a sub-reducer," `combine({ slice: reducer, ... })` collapses it. The unified model relies on slice-prefix message naming (`{ type: 'counters/increment' }`) for `combine()` to route correctly. The escape hatch for state-lifetime isolation is `subApp({ reason, def, ... })` with a non-empty `reason` field; the lint rule rejects unjustified or empty reasons. The LLM should not invoke `subApp` unless it can articulate why the embedded code must own its own TEA loop.
+The parent's `update()` routes namespaced messages (`{ type: 'toolbar'; msg }`) to slice reducers with a plain switch — no helper. For a genuinely independent embedded app, the boundary is `foreign()` (an imperative library that owns its own DOM and lifecycle).
 
 ### Step 4 — Include a correct `each()` example in the system prompt for list tasks
 
-The scoped accessor pattern eliminates the need for a separate `list()` primitive. A single `each()` API with the `item(t => t.text)` selector pattern is learnable from one example. For tasks involving lists (tier 2+), include a correct `each()` example in the system prompt:
+A single `each()` API with `Signal<T>` rows is learnable from one example. For tasks involving lists (tier 2+), include a correct `each()` example in the system prompt:
 
 ```typescript
 // System prompt example for list tasks:
-each({
-  items: (s) => s.items,
+each(state.map((s) => s.items), {
   key: (t) => t.id,
-  render: ({ item, index }) =>
+  render: (item, index) => [
     li([
-      text(item.label),
-      span({ class: item((t) => (t.done ? 'done' : '')) }),
-      text(() => `#${index()}`),
+      text(item.at('label')),
+      span({ class: item.at('done').map((d) => (d ? 'done' : '')) }),
+      text(index.map((i) => `#${i}`)),
     ]),
+  ],
 })
 ```
 
-This example communicates: `item.field` is the shorthand for a reactive field binding, `item(fn)` handles computed expressions, `index()` is a zero-arg getter. The shorthand mirrors the component-level `text(s => s.count)` idiom applied to item scope.
+This example communicates: `item.at('field')` is a reactive field slot, `.map(...)` derives a computed value, and `index` is a `Signal<number>` (derive its display with `.map`). The vocabulary mirrors the component-level `state.at(...)` / `state.map(...)` idiom applied to row scope.
 
 ### Step 5 — Enforce compilation and `@llui/test` in the evaluation pipeline
 
@@ -824,17 +748,17 @@ The pipeline's second stage should use `@llui/test` primitives, not raw DOM asse
 
 Without tool use (pure generation), compile rate is the ceiling for all subsequent metrics. Every improvement to type accuracy — more precise `Msg` union types in the system prompt, accurate `each()` signature — directly raises the compile-rate ceiling.
 
-### Step 6 — Provide a `memo()` lint hint
+### Step 6 — Surface the signal lint rules as actionable errors
 
-Add a lint rule (or runtime warning in development mode) that detects when the same non-memoized accessor function reference is passed to multiple `text()` or prop bindings within the same component. The warning output: "Accessor `filteredTodos` is referenced in 3 bindings without `memo()`. Wrap it: `const filteredTodos = memo(...)`." This gives the LLM's tool-assisted correction loop a signal for a class of error that is otherwise invisible.
+The signal lint rules — `peek-in-slot`, `operator-on-signal`, `whole-state-to-call`, `pure-derive-body`, `no-node-construction-in-body` — are hard compile errors with messages that name the fix (e.g. `operator-on-signal`: "Signal used in …; operate on the value with .map() instead"). Because they fail the build, they feed the LLM's tool-assisted correction loop directly — the error text tells the LLM exactly what to change. There is no `memo()` footgun to lint for (the primitive does not exist); the equivalent class of error in the signal model is impure/DOM-building derive bodies, which these rules already catch.
 
 ### Step 7 — Add difficulty-tiered example sets to the system prompt
 
 For tier 3+ tasks (async, multi-step), the single counter example in the base system prompt is insufficient. Add one additional example relevant to the task's domain:
 
-- Async task: show a fetch effect example with loading/success/error states using `@llui/effects` (`http`, `cancel`).
-- Multi-component task: show a view function with `(props, send)` for shared-state composition; for reducer composition show `combine({ slice: reducer, ... })`. For genuine state-lifetime isolation (rare), show `subApp({ reason: '...', def, ... })`.
-- Each/list task: show a correct `each()` with scoped accessor `item(t => t.field)` usage.
+- Async task: show a fetch effect example with loading/success/error states using `@llui/effects` (`http`, `cancel`) and the `handleEffects` → `onEffect` bridge.
+- Multi-component task: show a view function `viewFn(props, send)` where props are signals derived from the parent state, plus the parent's plain-switch routing to the slice reducer.
+- Each/list task: show a correct `each(state.map(s => s.items), { key, render })` with per-row `item` signals (`item.at('field')`).
 
 Each additional example adds approximately 20–30 lines to the system prompt. Keep the total system prompt under 450 words by removing examples unrelated to the task when adding task-specific ones.
 
@@ -856,9 +780,9 @@ LLui's TEA architecture eliminates this indirection. State is a plain serializab
 
 This is not an incremental improvement over DOM-level debugging. It is a category shift: from observing a black box to conversing with a transparent state machine.
 
-### Layer 1: `window.__lluiDebug` API
+### Layer 1: the debug API (`installSignalDebug` / `LluiDebugAPI`)
 
-The foundation. The LLui dev runtime (enabled by the Vite plugin in development mode, tree-shaken in production) exposes a structured debug API on `window`. This API is the contract that all higher layers build on — the MCP server, the DevTools extension, and manual console debugging all call the same functions.
+The foundation. The signal runtime registers a structured debug API in development mode (gated on `import.meta.env.DEV`, tree-shaken in production) via `installSignalDebug(...)` — see `@llui/dom`'s exported `LluiDebugAPI` and `installSignalDebug`. This API is the contract that all higher layers build on — the MCP server (`@llui/mcp`), the DevTools surface, and manual console debugging all call the same functions. `installSignalDebug` registers a required subset; binding/scope/effect introspection methods are optional and present only when the build emits them.
 
 ```typescript
 interface LluiDebugAPI {
@@ -866,23 +790,23 @@ interface LluiDebugAPI {
   /** Current state object, JSON-serializable. */
   getState(): unknown
 
-  /** Component tree: name, state summary, binding count, child components. */
+  /** Component tree: name, state summary, binding count, child scopes. */
   getComponentTree(): ComponentDebugNode[]
 
   /** Chronological log of effects dispatched since mount or last clearLog(). */
   getEffectsLog(): EffectRecord[]
 
-  /** Full message history with state-before, state-after, effects, dirtyMask. */
+  /** Full message history with state-before, state-after, effects. */
   getMessageHistory(): MessageRecord[]
 
-  /** All active bindings: mask, lastValue, accessor source location, DOM target. */
+  /** Active bindings: dependency paths, last value, accessor source location, DOM target. */
   getBindings(): BindingDebugInfo[]
 
   // ── Write ─────────────────────────────────────────────────
-  /** Send a message. Enqueues into the component's message queue. */
+  /** Send a message. Applies synchronously (reducer → reconcile → effects). */
   send(msg: unknown): void
 
-  /** Force synchronous update cycle (drain queue + Phase 1 + Phase 2). */
+  /** No-op in the signal runtime (send is synchronous). Kept for parity. */
   flush(): void
 
   // ── Replay ────────────────────────────────────────────────
@@ -896,7 +820,7 @@ interface LluiDebugAPI {
   /** Dry-run: call update(state, msg) without applying. Returns [newState, effects]. */
   evalUpdate(msg: unknown): { state: unknown; effects: unknown[] }
 
-  /** Explain why a binding re-evaluated: which mask bits were dirty, what the accessor returned, what the previous value was. */
+  /** Explain why a binding re-evaluated: which dependency paths changed, what the accessor returned, what the previous value was. */
   whyDidUpdate(bindingId: string): UpdateExplanation
 
   /** Validate a message against the component's Msg type. Returns errors or null. */
@@ -914,7 +838,6 @@ interface ComponentDebugNode {
   id: string
   stateSnapshot: unknown
   bindingCount: number
-  dirtyMask: number
   children: ComponentDebugNode[]
 }
 
@@ -925,7 +848,8 @@ interface MessageRecord {
   stateBefore: unknown
   stateAfter: unknown
   effects: unknown[]
-  dirtyMask: number
+  /** Present only on the (deleted) legacy runtime, which computed a dirty mask per update. Absent on the signal runtime. */
+  dirtyMask?: number
 }
 
 interface EffectRecord {
@@ -938,21 +862,23 @@ interface EffectRecord {
 }
 
 interface BindingDebugInfo {
-  id: string
+  index: number
   mask: number
   lastValue: unknown
-  domTarget: string // CSS selector path to the bound DOM node
-  accessorSource?: string // source location if available from compiler
+  kind: string
+  key: string | undefined
+  dead: boolean
+  perItem: boolean
 }
 
 interface UpdateExplanation {
-  bindingId: string
-  dirtyMask: number
+  bindingIndex: number
   bindingMask: number
-  matched: boolean // (dirtyMask & bindingMask) !== 0
+  lastDirtyMask: number
+  matched: boolean
   accessorResult: unknown
   lastValue: unknown
-  changed: boolean // accessorResult !== lastValue
+  changed: boolean
 }
 
 interface ValidationError {
@@ -963,11 +889,13 @@ interface ValidationError {
 }
 ```
 
+> The `LluiDebugAPI` type contract (exported from `@llui/dom`) is the single source of truth for what a relay may call. `installSignalDebug` registers the REQUIRED subset — `getState`, `send`, `evalUpdate`/`pureUpdate`, message history, message-schema validation. The binding/scope/effect-introspection methods (`getBindings`, `whyDidUpdate`, scope-tree walks, effect timelines) and the per-binding `mask` fields above are carried in the contract for relay compatibility but are LEGACY-runtime concepts the signal runtime does not implement yet; tools probe for the method and degrade gracefully (the relay reports "unknown method") when it is absent. Treat the mask-bearing shapes as forward-compatible placeholders, not signal-runtime guarantees.
+
 **Key capabilities that DOM debugging cannot provide:**
 
-`evalUpdate(msg)` is the most powerful diagnostic. The LLM sends a hypothetical message and sees what `update()` would return — without touching the running app. It can explore "what happens if the user clicks delete?" by calling `evalUpdate({ type: 'deleteItem', id: '123' })` and reading the resulting state and effects. This is pure computation — `update()` is a pure function, so the dry-run is identical to the real execution. No other framework offers this because no other framework guarantees `update()` purity at the type level.
+`evalUpdate(msg)` is the most powerful diagnostic. The LLM sends a hypothetical message and sees what `update()` would return — without touching the running app. It can explore "what happens if the user clicks delete?" by calling `evalUpdate({ type: 'deleteItem', id: '123' })` and reading the resulting state and effects. This is pure computation — `update()` is a pure function, so the dry-run is identical to the real execution. The signal handle backs this directly via `runReducer(msg)`.
 
-`validateMessage(msg)` catches malformed messages before they enter the queue. The compiler emits type metadata for each component's `Msg` union. The validator checks discriminant field, required properties, and property types against this metadata. An LLM constructing a message from the type signature gets immediate structured feedback if it makes a mistake — before any state transition occurs.
+`validateMessage(msg)` catches malformed messages before dispatch. The compiler emits `__msgSchema` type metadata for each component's `Msg` union (a JSON-schema subset). The validator checks discriminant field, required properties, and property types against this metadata. An LLM constructing a message from the type signature gets immediate structured feedback if it makes a mistake — before any state transition occurs.
 
 `whyDidUpdate(bindingId)` answers the question "why did this text change?" at the framework level — which mask bits were dirty, what the accessor returned, what the previous value was. The LLM does not need to diff screenshots; it asks the framework directly.
 
@@ -1059,7 +987,7 @@ The Vite dev server already maintains a WebSocket for HMR. The LLui Vite plugin 
 | `llui_find_msg_producers` | Grep the project for send({type: "..."}) call sites. Returns file, line, and context.     |
 | `llui_find_msg_handlers`  | Grep the project for update() case branches for a specific Msg variant.                   |
 | `llui_run_test`           | Run a vitest test file and return pass/fail status with captured output.                  |
-| `llui_lint_project`       | Run @llui/eslint-plugin across a directory. Returns a 0–20 score and per-file violations. |
+| `llui_lint_project`       | Run the `@llui/compiler` signal lint rules across a directory. Returns a score and per-file violations. |
 
 **Phase 5 additions (2 SSR tools):**
 
@@ -1092,7 +1020,7 @@ A user files a bug report with a trace file (exported from DevTools or `@llui/te
 ```
 
 **Workflow 2: Speculative diagnosis.**
-The LLM suspects a binding is not updating. Instead of adding `console.log` and refreshing, it calls `llui_why_did_update(bindingId)`. The response tells it: the dirty mask was `0b0010`, the binding's mask is `0b0100`, and `(0b0010 & 0b0100) === 0` — the binding was correctly skipped because the relevant state path did not change. The bug is upstream: the `update()` function is not modifying the field the binding reads. The LLM now knows exactly where to look.
+The LLM suspects a binding is not updating. Rather than diff screenshots, it queries the state machine: it dry-runs the message with `llui_eval_update` (`runReducer`) and compares the proposed state to the current state — the dependency path the binding reads is unchanged, so the reconciler correctly skipped it. The bug is upstream: the `update()` function is not modifying the field the binding reads. The LLM now knows exactly where to look. (On builds that emit per-binding introspection, `llui_why_did_update` returns the same conclusion directly; the signal runtime treats that method as optional.)
 
 **Workflow 3: State exploration.**
 The LLM needs to understand a complex state shape. It calls `llui_search_state('$.orders[?(@.status=="pending")]')` and gets back only the pending orders, not the entire state tree. For a state object with 200 fields, this targeted query is the difference between useful context and context window pollution.
@@ -1145,23 +1073,24 @@ expect(result.effects).toContainEqual({ type: 'http', url: '/api/items', method:
 
 **Temperature 0 reproducibility.** Resolved: pin model versions and record them in evaluation metadata. The N=5 protocol (§5) handles intra-session variance. Cross-session variance from model updates is addressed by: (1) always use a pinned model version string in API calls (e.g., `claude-sonnet-4-6-20260301`, not `claude-sonnet-4-6-latest`), (2) record the exact model string in the evaluation output JSON alongside scores, (3) when a new model version is released, re-run the full canonical task set and compare against the previous version's results. Temperature 0 is deterministic within a model version; it is not deterministic across versions. The evaluation protocol treats model version as an independent variable, not a constant.
 
-**`list()` vs. `each()`.** Resolved: `each()` with the scoped accessor API (`item(t => t.field)`) is the single list primitive. The compiler emits a diagnostic warning when `.map()` is used on state-derived arrays inside `view()`, catching the most common LLM error at compile time. Adding `list()` would split probability mass. The scoped accessor type signature makes the correct pattern structurally enforced — `item` is typed as a function, so `item.text` is a type error.
+**`list()` vs. `each()`.** Resolved: `each(items: Signal<readonly T[]>, { key, render })` is the single list primitive. Its types enforce the correct shape — `items` must be a derived signal (`state.map(s => s.items)`) and each row is a `Signal<T>` read via `item.at('field')`. Adding `list()` would split probability mass. The most common LLM error — building DOM with `Array.prototype.map` over a state array — produces static nodes; the signal types steer toward `each` because a plain array is not assignable to `Signal<readonly T[]>`.
 
 **System prompt length sweet spot.** Resolved: the universal system prompt (§8) targets 300–400 words. Task-specific variants (§8 "System Prompt Variants for Complex Tasks") extend to 400–500 words by appending relevant type definitions. This is validated empirically: run each tier of the canonical task set with 200-, 300-, 400-, and 500-word system prompts, plot compile rate and full pass rate vs. prompt length. The hypothesis is that 300–400 words is optimal for zero-shot tiers 1–3, and 400–500 words (with task-specific types) is optimal for tiers 4+. If the data contradicts this — for example, if 200 words produces equivalent results to 400 — shorten the prompt. The evaluation pipeline (§5) already specifies N=5 repetitions per task, providing sufficient statistical power to detect a 15+ percentage point difference in compile rate.
 
 **Hard-fail vs. warning on TypeScript errors.** Resolved: hard-fail. `tsc --noEmit` errors cause the evaluation pipeline to record a compile failure for that sample. TypeScript errors indicate the LLM's model of the API is incorrect, even when the specific error is harmless at runtime. A framework where the LLM routinely produces type errors is not type-safe in practice — the type system's value is that it catches mistakes before runtime, and an LLM that bypasses it defeats the purpose. Hard-fail produces a cleaner signal: it forces improvements in either the system prompt, the type definitions, or the API surface design, rather than accumulating silently passing type-incorrect code.
 
-**Automated idiomatic scoring.** Resolved: implement as a TypeScript AST visitor (`@llui/lint-idiomatic`) that detects the six canonical anti-patterns and produces a numeric score. The six patterns, each worth equal weight (1 point deduction per violation, from a base score of 5):
+**Automated idiomatic scoring.** Resolved: implement as a TypeScript AST visitor that detects the canonical anti-patterns and produces a numeric score. Note that several of these are already hard compile errors via the `@llui/compiler` signal lint rules (`peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `whole-state-to-call`), so the idiomatic visitor focuses on the patterns the lint rules do not gate. The patterns, each worth equal weight (1 point deduction per violation):
 
 1. **State mutation:** AST pattern `state.field = ...` or `state.field.push(...)` in `update()` body. Detection: assignment expression where the left-hand side's root identifier matches the `update()` function's state parameter name.
-2. **Missing `memo()`:** Same accessor arrow function (structurally identical AST) passed to two or more binding call sites without `memo()` wrapping. Detection: hash the AST of each accessor, group by hash, flag groups with count ≥ 2.
-3. **`each()` closure violation:** In an `each()` render callback, an identifier is used that was assigned from the parent scope rather than obtained via the scoped accessor (`item(t => t.field)`). Detection: scope analysis — resolve each identifier in the render body, flag those whose declaration is outside the render callback and is not a function parameter.
-4. **`.map()` on state arrays:** `.map()` call on a state-derived value inside `view()` body. Detection: call expression with `.map()` callee where the receiver is a call expression whose callee's parameters include the state type.
-5. **Unnecessary `subApp`:** `subApp({ reason, ... })` used where the reason string is empty, a placeholder ("TODO", "isolation"), or describes a problem that view functions would solve (e.g., "complex component", "encapsulation"). Detection: the `llui/subapp-requires-reason` ESLint rule already enforces non-empty reason; extend it with a deny-list of placeholder phrases.
+2. **`Array.prototype.map` for lists:** `.map(...)` building DOM over a plain (non-signal) state array inside the view, rather than `each(state.map(...), { key, render })`. Detection: a `.map` whose receiver resolves to a plain array (not a `Signal`) and whose callback returns nodes.
+3. **Frozen plain value in a slot:** reading a value out of `state.peek()` (or capturing a plain local) and placing it in a reactive slot, so it never updates. (The `peek-in-slot` lint rule already hard-fails the direct `state.at(...).peek()`-in-slot form; this catches the indirect variants.)
+4. **Wrong conditional primitive:** `branch` used for a boolean/nullable where `show` is canonical, or `show` forcing a tagged union into a boolean.
+5. **Invented composition primitive:** any reference to `child`/`combine`/`subApp`/`propsMsg`/`onMsg` (none exist) instead of a view function + plain-switch routing.
 6. **Form boilerplate:** Multiple message types in the `Msg` union that differ only by a field name string (e.g., `SetName`, `SetEmail`, `SetPhone` instead of `SetField`). Detection: structural comparison of union members after normalizing string literal types.
 
-The AST visitor runs as part of the evaluation pipeline (§5) after the compile check passes. Human review is required only when the visitor reports ambiguous cases (e.g., pattern 5 where the component has exactly 10 paths).
+The AST visitor runs as part of the evaluation pipeline (§5) after the compile check passes. Human review is required only when the visitor reports ambiguous cases.
 
 **Few-shot vs. zero-shot for tier 4+ tasks.** Resolved: measure empirically and adopt few-shot when the data justifies it. Protocol: run all tier 4, 5, and 6 tasks with 0-shot, 1-shot, and 3-shot prompts. The examples for few-shot are drawn from the scored example library (§9 Step 8). Compute full pass rate improvement per additional example. Decision rule: if 1 example raises full pass rate by ≥20 percentage points on any tier, adopt 1-shot as the standard for that tier and above. If 3 examples provide ≥10 additional percentage points over 1-shot, adopt 3-shot. If the improvement is <20 points even with 3 examples, the issue is in the system prompt or API surface, not in example count — investigate root causes instead. Few-shot examples must be excluded from the evaluation task set to avoid data contamination.
 
 **Effect type vocabulary.** Resolved: the core runtime ships `delay` and `log` as built-in effects with unprefixed names. The `@llui/effects` package ships `http`, `cancel`, `debounce`, `sequence`, and `race` as composable effect descriptions. The names match what LLMs naturally produce — no `llui:` prefix. The `@llui/effects` package is tree-shakeable; unused effect types add zero bytes. The system prompt includes effect types relevant to each task (see §8 variants).
+````

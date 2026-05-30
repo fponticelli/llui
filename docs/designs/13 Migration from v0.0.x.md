@@ -1,416 +1,290 @@
-# Migration from v0.0.x to the unified composition model
+# Migration to the signal runtime
 
-This doc covers the breaking changes that landed on the
-`explore/controlled-components` branch (merged 2026-05) and how to update
-an existing app written against the two-tier `component()` / `child()`
-model.
+This doc covers how to update an app written against the legacy
+mask-binding runtime (closure accessors `s => s.x`, the two-tier
+`component()` / `child()` model, compiler-synthesized `__dirty` /
+bitmask gating) to the current **signal runtime**.
 
-The branch deletes ~1,600 LOC of legacy primitives and replaces them
-with a single composition model: view functions for decomposition,
-`combine()` for reducer composition, and `subApp` as a lint-enforced
-escape hatch for genuine state-lifetime isolation.
+The legacy runtime and the legacy 3-pass bitmask compiler have been
+DELETED. `@llui/dom` is now the single import surface — there is no
+`/signals` subpath and no `@llui/eslint-plugin`. The framework lint
+rules are compile-time errors in `@llui/compiler` (surfaced through
+`@llui/vite-plugin`).
 
-## At a glance — what was removed
+## At a glance — what changed
 
-| Removed                                | Replacement                                              |
-| -------------------------------------- | -------------------------------------------------------- |
-| `child({ def, props, onMsg, ... })`    | A view function: a module exporting `update` + `view`    |
-| `propsMsg`                             | Direct slice ownership; or `onLayerDataChange` for vike  |
-| `receives` + addressed effects         | Shared parent state; or `AppHandle.send` from an adapter |
-| `addressOf` / `setAddressedDispatcher` | Same as above                                            |
-| User-authored `__dirty`                | Compiler-emitted `__prefixes` (throws if user-supplied)  |
-| ESLint `unnecessary-child`             | (rule deleted — `child()` no longer exists)              |
-| ESLint `child-static-props`            | (rule deleted)                                           |
+| Legacy                                          | Signal runtime                                                       |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| `view: (h: View<S,M>) => Node[]`                | `view: ({ state, send }) => readonly Node[]` (`state: Signal<S>`)    |
+| Destructured helpers from the `View` bag        | Element/structural helpers are MODULE imports from `@llui/dom`       |
+| Reactive read: closure `text(s => s.count)`     | Reactive read: `text(state.map(s => s.count))` / `state.at('count')` |
+| `each({ items, key, render: ({item}) => … })`   | `each(state.map(s => s.items), { key, render: (item, index) => … })` |
+| `each` scoped accessor `item(t => t.field)`     | `item` is a `Signal<T>`: `item.at('field')`; read with `.peek()`     |
+| `show({ when, render })`                        | `show(cond, render, orElse?)`                                        |
+| `branch({ on, cases })`                         | `branch(value, u => u.tag, { … })` (or 2-arg `branch(value, { … })`) |
+| `init: (data: D) => [S, E[]]` (data arg)        | `init: () => S \| [S, E[]]` (NO data arg)                            |
+| `onEffect: ({ effect, send, signal }) => …`     | `onEffect: (effect, { send, state }) => void \| (() => void)`        |
+| `send()` microtask-batched; `flush()` to force  | `send()` applies synchronously; `flush()` is a no-op                 |
+| Compiler-synthesized `__dirty` / bitmask gating | A `produce`+`deps` lowering, gated by the chunked-mask reconciler    |
+| `child()` / `subApp()` / `combine()`            | View functions + plain-switch routing (no such primitives)           |
+| `@llui/eslint-plugin` rules                     | `@llui/compiler` signal lint rules (compile-time errors)             |
+| SSR `__renderToString` + `data-llui-hydrate`    | `renderToString` / `renderNodes` / `serializeNodes` (no markers)     |
+| `hydrateApp()` (walk + attach)                  | `hydrateSignalApp()` (rebuild + atomic swap)                         |
 
-| Added                              | Purpose                                                |
-| ---------------------------------- | ------------------------------------------------------ |
-| `combine({ slice: reducer, ... })` | Compose slice reducers by `${slice}/${action}` prefix  |
-| `subApp({ reason, def, ... })`     | Escape hatch — embed an isolated TEA loop              |
-| ESLint `subapp-requires-reason`    | Enforces a non-empty rationale for every `subApp` call |
+## #1 — `view` takes `{ state, send }`; helpers are imports
 
-## #1 — `child()` → view function
+The largest change. The view receives a single bag `{ state, send }`
+where `state` is a `Signal<S>`. Element and structural helpers are no
+longer fields on a `View` bag — they are plain imports from `@llui/dom`.
+Reactive reads come from `state` via `.map(fn)` (derive) and
+`.at('path')` (narrow into a sub-signal).
 
-The largest change. Every `child()` call site moves to a view function
-that the parent invokes directly, with the parent owning all state.
-
-### Before
+### Before (legacy)
 
 ```ts
-// dashboard.ts
-type State = { /* dashboard-specific */ }
-type Msg = { type: 'click' } | { type: 'toolbarMsg'; msg: ToolbarMsg }
-
-export const Dashboard = component<State, Msg>({
-  name: 'Dashboard',
-  init: () => [{ ... }, []],
+export const Counter = component<State, Msg, Effect>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, []],
   update: (state, msg) => {
-    switch (msg.type) {
-      case 'click': return [{ ...state, clicked: true }, []]
-      // Note: 'toolbarMsg' isn't actually handled here — child() owns
-      // the toolbar's state machine and routes messages internally
-    }
+    /* … */
   },
-  view: ({ send }) =>
-    div({}, [
-      child({
-        def: Toolbar,
-        key: 'toolbar',
-        props: (s) => ({ tools: s.tools }),
-        onMsg: (msg) =>
-          msg.type === 'toolSelected'
-            ? { type: 'toolSelected', id: msg.id }
-            : null,
-      }),
+  view: ({ send, text, show }) =>
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text((s) => String(s.count)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+      show({ when: (s) => s.count > 0, render: () => button([text('Reset')]) }),
     ]),
-})
-
-// toolbar.ts — its own ComponentDef with its own state, propsMsg, etc.
-export const Toolbar = component<ToolbarState, ToolbarMsg, never, ToolbarProps>({
-  name: 'Toolbar',
-  init: (props) => [{ tools: props.tools, menuOpen: false }, []],
-  propsMsg: (props) => ({ type: 'propsChanged', props }),
-  update: (state, msg) => { /* ... */ },
-  view: ({ send }) => [/* ... */],
 })
 ```
 
-### After
+### After (signal)
 
 ```ts
-// toolbar.ts — exports update + view functions, NOT a component
-export type ToolbarSlice = { menuOpen: boolean }
-export type ToolbarMsg = { type: 'toggleMenu' } | { type: 'selectTool'; id: string }
-export type ToolbarProps<S> = {
-  tools: (s: S) => Tool[]
-  toolbar: (s: S) => ToolbarSlice
-}
+import { component, div, button, text, show } from '@llui/dom'
 
-export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlice {
-  switch (msg.type) {
-    case 'toggleMenu':
-      return { ...slice, menuOpen: !slice.menuOpen }
-    case 'selectTool':
-      return { ...slice, menuOpen: false }
-  }
-}
-
-export function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void) {
-  return div({}, [
-    button({ onClick: () => send({ type: 'toggleMenu' }) }, [text('Tools')]),
-    show({
-      when: (s) => props.toolbar(s).menuOpen,
-      render: () =>
-        each({
-          items: props.tools,
-          key: (t) => t.id,
-          render: ({ item }) =>
-            button({ onClick: () => send({ type: 'selectTool', id: item.id() }) }, [
-              text(item.name),
-            ]),
-        }),
-    }),
-  ])
-}
-
-// dashboard.ts — parent owns the toolbar slice
-type State = {
-  toolbar: ToolbarSlice
-  tools: Tool[]
-  /* ... */
-}
-
-type Msg = { type: 'toolbar'; msg: ToolbarMsg } | { type: 'click' }
-
-export const Dashboard = component<State, Msg>({
-  name: 'Dashboard',
-  init: () => [{ toolbar: { menuOpen: false }, tools: [] /* ... */ }, []],
+export const Counter = component<State, Msg, Effect>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, []],
   update: (state, msg) => {
-    switch (msg.type) {
-      case 'toolbar':
-        return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]
-      case 'click':
-        return [{ ...state, clicked: true }, []]
-    }
+    /* … */
   },
-  view: ({ send }) =>
-    div({}, [
-      toolbarView<State>({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
-        send({ type: 'toolbar', msg }),
-      ),
+  view: ({ state, send }) => [
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text(state.at('count').map(String)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
+    show(
+      state.at('count').map((c) => c > 0),
+      () => [button([text('Reset')])],
+    ),
+  ],
 })
 ```
 
 **What changes:**
 
-- The child module exports a `(props, send)` view function and an
-  `update(slice, msg)` reducer instead of a `ComponentDef`. The parent
-  imports both.
-- The parent's `Msg` union namespaces the child's messages:
-  `{ type: 'toolbar'; msg: ToolbarMsg }`. The parent's reducer routes
-  by `msg.type === 'toolbar'` to the child reducer.
-- The parent's state owns the child's slice directly — no `props`
-  diffing, no `propsMsg` cascade. Path-keyed reactivity (compiler-
-  emitted `__prefixes`) tracks `s.toolbar.menuOpen` precisely.
-- No `child()` call in the view. Just invoke `toolbarView(props, send)`
-  inline.
+- `view` returns an ARRAY of nodes and destructures `{ state, send }`.
+- Import `div`/`button`/`text`/`show`/… from `@llui/dom`.
+- Every closure accessor `s => expr` becomes a signal derivation:
+  `text(s => String(s.count))` → `text(state.at('count').map(String))`
+  (or `text(state.map(s => String(s.count)))`).
+- Static values stay literals: `div({ class: 'container' })`.
 
-**When you have many slices**: replace the parent's `update()` with
-`combine()` (see #4 below).
-
-## #2 — `propsMsg` → opt-in callback (vike) or direct slice ownership
-
-`propsMsg` was the mechanism `child()` used to translate parent
-property changes into messages for the embedded child's update loop.
-The unified model has no `child()` boundary, so `propsMsg` has nothing
-to translate.
-
-The one production consumer was `@llui/vike`'s persistent-layout chain,
-which now exposes `onLayerDataChange` on `RenderClientOptions`:
+## #2 — `each`: derive a `Signal` of the array; rows are signals
 
 ```ts
-// Before — Layout component declared propsMsg
-const NavAwareLayout: ComponentDef<LayoutState, LayoutMsg, never, NavData> = {
-  // ...
-  propsMsg: (props) => ({ type: 'navChanged', data: props as NavData }),
-  // ...
-}
-
-// After — vike adapter dispatches imperatively
-createOnRenderClient({
-  Layout: NavAwareLayout,
-  onLayerDataChange: ({ def, handle, newData }) => {
-    if (def === NavAwareLayout) {
-      handle.send({ type: 'navChanged', data: newData as NavData })
-    }
-  },
-})
-```
-
-The user discriminates on `def` (or `def.name`) and dispatches through
-the framework-supplied `AppHandle`. No special framework support
-needed; no implicit prop-diffing.
-
-For non-vike `propsMsg` consumers: any pattern that pushed data INTO
-the child becomes either (a) direct slice ownership by a parent, or
-(b) an `AppHandle.send` from whoever holds the handle externally.
-
-## #3 — `receives` + addressed effects → shared parent state
-
-Addressed effects (`toToastManager.show({ message: '...' })`) used a
-runtime registry keyed by component name. Each target component
-declared a `receives` map of typed handlers; the sender imported the
-target's `address` builder.
-
-The unified model handles cross-cutting concerns through shared parent
-state:
-
-```ts
-// Before — toast manager was its own component
-const ToastManager = component<ToastState, ToastMsg, ToastEffect>({
-  name: 'toast-manager',
-  receives: {
-    show: (params: { message: string }) => ({ type: 'add', message: params.message }),
-  },
-  // ...
+// Before — closure items + scoped accessor:
+each({
+  items: (s) => s.todos,
+  key: (t) => t.id,
+  render: ({ item }) => li([text(item.text)]),
 })
 
-// Some unrelated component dispatched:
-return [state, [toToastManager.show({ message: 'Saved!' })]]
-
-// After — toasts are a slice on the root state
-type AppState = {
-  toasts: Toast[]
-  /* ... */
-}
-
-type AppMsg =
-  | { type: 'toasts/add'; payload: string }
-  | { type: 'toasts/dismiss'; id: string }
-  | /* other app messages */
-
-const update = combine<AppState, AppMsg, AppEffect>({
-  toasts: (slice: Toast[], msg) => {
-    switch (msg.type) {
-      case 'add':
-        return [[...slice, { id: nextId(), message: msg.payload }], []]
-      case 'dismiss':
-        return [slice.filter((t) => t.id !== msg.id), []]
-    }
-  },
-})
-
-// Anywhere in the view that wants to dispatch:
-button({ onClick: () => send({ type: 'toasts/add', payload: 'Saved!' }) })
-```
-
-For coordination across genuinely independent apps (where shared state
-isn't an option), use `AppHandle.send` from an adapter layer that
-holds both handles. The framework no longer has a global dispatcher.
-
-## #4 — `mergeHandlers` + `sliceHandler` → `combine()`
-
-`mergeHandlers(handlerA, handlerB, ...)` and `sliceHandler({ narrow })`
-are still exported (no behavior change). They predate `combine()` and
-work fine for hand-routing.
-
-`combine()` is the preferred new shape for parent reducers that are
-mostly "route by message-type prefix":
-
-```ts
-// Before — manual switch
-const update = (state: State, msg: Msg): [State, Effect[]] => {
-  switch (msg.type) {
-    case 'counters/increment':
-      return [{ ...state, counters: countersUpdate(state.counters, { type: 'increment' }) }, []]
-    case 'counters/decrement':
-      return [{ ...state, counters: countersUpdate(state.counters, { type: 'decrement' }) }, []]
-    case 'ui/toggleSidebar':
-      return [{ ...state, ui: uiUpdate(state.ui, { type: 'toggleSidebar' }) }, []]
-    /* etc. */
-  }
-}
-
-// After — combine routes by slice prefix
-import { combine } from '@llui/dom'
-
-const update = combine<State, Msg, Effect>({
-  counters: countersUpdate, // gets msg.type === 'increment' / 'decrement' (stripped of `counters/` prefix)
-  ui: uiUpdate,
-})
-```
-
-Messages must be dispatched as `{ type: '${slice}/${action}', ... }`.
-`combine()` rewrites `msg.type` to the un-prefixed form before calling
-the slice reducer.
-
-If the parent also handles top-level (non-prefixed) messages, pass a
-second argument:
-
-```ts
-const update = combine<State, Msg, Effect>(
-  { counters: countersUpdate, ui: uiUpdate },
-  (state, msg) => {
-    switch (msg.type) {
-      case 'shutdown':
-        return [{ ...state, alive: false }, []]
-    }
-    return [state, []]
+// After — items is a derived Signal; item is a Signal<T>:
+each(
+  state.map((s) => s.todos),
+  {
+    key: (t) => t.id,
+    render: (item) => [li([text(item.at('text'))])],
   },
 )
 ```
 
-## #5 — User-authored `__dirty` → error
+- The first argument is a `Signal<readonly T[]>` (`state.map(...)` /
+  `state.at(...)`), not a closure.
+- `render(item, index)` receives `item: Signal<T>` and
+  `index: Signal<number>`. Narrow with `item.at('field')` for a
+  reactive slot; read the current value in a handler with
+  `item.at('id').peek()`.
+- `render` returns an array of nodes.
 
-The compiler used to emit a `__dirty(o, n)` function that compared each
-top-level state field via `Object.is`, returning a bitmask of changed
-field bits. Some apps hand-authored their own `__dirty` for hot-path
-optimization.
+`virtualEach` follows the same shape, plus `itemHeight`/`containerHeight`.
 
-The compiler now emits `__prefixes` (path-keyed reactivity) instead —
-per-prefix accessors that the runtime reference-compares. This is
-strictly more precise (one bit per _prefix_, not per _top-level field_)
-and supports 62 prefixes via two-word masks instead of the old 31-field
-ceiling.
-
-**User-supplied `__dirty` is rejected at mount.** The runtime throws:
-
-```
-[llui] Component "MyComponent" defines `__dirty` directly. This field
-is no longer accepted — the compiler emits `__prefixes` (path-keyed
-reactivity) automatically. Remove `__dirty` from the ComponentDef;
-either the compiler will regenerate the correct prefix table, or
-uncompiled components will fall back to FULL_MASK.
-```
-
-**Migration:** delete the `__dirty` field from the `ComponentDef`. If
-the component is compiled with `@llui/vite-plugin`, the new
-`__prefixes` emission replaces it automatically with finer-grained
-gating. If the component is uncompiled (rare — most LLui apps run
-through the Vite plugin), the runtime falls back to `FULL_MASK` and
-every binding re-evaluates every cycle. Adding the plugin gives you
-the precision back.
-
-## #6 — `subApp` — the new escape hatch
-
-For the small set of cases where `child()` was used to truly isolate
-an independent TEA loop (third-party bundled apps, demo embeds inside
-a host page, library components that ship their own complete app),
-the replacement is `subApp`:
+## #3 — `show` / `branch` are positional
 
 ```ts
-import { subApp } from '@llui/dom/escape-hatch'
+// show: condition signal, render arm (gets the NON-NULLABLE narrowed signal),
+// optional else arm:
+show(
+  state.at('user'),
+  (user) => [text(user.at('name'))], // user: Signal<NonNullable<User>>
+  () => [text('signed out')],
+)
 
-// In a view function:
-subApp({
-  reason: 'third-party bundled widget owns its own state lifetime',
-  def: SomeBundledApp,
-  data: { theme: 'dark' }, // optional init data
-  onHandle: (handle) => {
-    // Optional: capture the handle for imperative send/getState later
-  },
+// branch (discriminated union): value signal, discriminant fn, narrowed arms:
+branch(state.at('route'), (r) => r.kind, {
+  home: () => [homeView()],
+  post: (r) => [postView(r.at('slug'))], // r narrowed to the 'post' variant
 })
+
+// branch (plain string/number key): 2-arg form, no narrowing:
+branch(state.at('tab'), { code: () => [codeView()], issues: () => [issuesView()] })
 ```
 
-The `reason` field is required and **must be a non-empty string** —
-the `llui/subapp-requires-reason` ESLint rule rejects empty or
-placeholder reasons. The string is surfaced in the rendered DOM as
-`data-llui-sub-app-reason` so reviewers can see the rationale during
-code review.
+## #4 — `init()` takes no data; effects shape
 
-**Do not use `subApp` to "isolate a complex component" or "encapsulate
-state."** The unified composition model has path-keyed reactivity that
-scales precisely with the number of prefixes read — depth of nesting
-doesn't tax the dirty walker. If you reach for `subApp`, the lint rule
-will demand a reason; if the reason is "complexity" or "encapsulation,"
-you don't need `subApp` — extract a view function instead.
+The signal `init()` takes NO argument: `init: () => S | [S, E[]]`. Where
+the legacy `init(data)` consumed external data (e.g. a route loader),
+the data is now supplied as the component's SEED STATE by the adapter
+(see SSR below) — `init()` still runs so its effects are captured, but
+its returned state is overridden.
+
+`onEffect` is `(effect, api)` where `api` is `{ send, state }` (`state`
+is a `Signal<S>`), and it may return a cleanup function. To use the
+`@llui/effects` builders, bridge `handleEffects` — which returns a
+`(ctx: { effect, send, signal }) => void` handler — into that shape:
+
+```ts
+import { handleEffects } from '@llui/effects'
+
+const handler = handleEffects<Effect, Msg>()
+  .use(routing.handleEffect)
+  .else(({ effect, send, signal }) => {
+    /* custom effect types only */
+  })
+const lifecycle = new AbortController()
+
+// In the component:
+onEffect: (effect, api) => handler({ effect, send: api.send, signal: lifecycle.signal })
+```
+
+`update`/`init` may return a bare `S` or a `[S, E[]]` tuple; the runtime
+normalizes either form.
+
+## #5 — `send()` is synchronous
+
+`send(msg)` runs the reducer, reconciles the DOM, and dispatches effects
+synchronously before it returns. There is no message queue and no
+microtask batching. Reading the DOM immediately after `send()` already
+sees the update. The handle's `flush()` is a no-op kept for harness /
+agent parity — remove any `flush()` calls that existed only to force a
+pending update; they are unnecessary now (calling it is harmless).
+
+## #6 — Reactivity is `produce` + `deps`, not `__dirty`
+
+The legacy compiler synthesized a `__dirty(old, new)` function and gated
+bindings with a bitmask. The signal transform instead lowers each
+reactive slot to a `produce` function plus its absolute dependency paths
+(`state.at('user.name')` → deps `['user.name']`). The chunked-mask
+reconciler re-runs only the bindings whose dependency paths changed and
+skips the DOM write when the produced value is unchanged.
+
+**Delete any hand-authored `__dirty`** — there is no such field on the
+signal component spec. The reconciler derives gating from the lowered
+deps; no user-supplied dirty function exists.
+
+The signal lint rules replace the old correctness lint rules and are
+compile-time ERRORS:
+
+- `peek-in-slot` — `.peek()` inside a reactive slot (freezes the value).
+- `operator-on-signal` — using a `Signal` as an operand; `.map(...)` its value.
+- `whole-state-to-call` — passing a whole-state signal straight into a call.
+- `pure-derive-body` — side effect / non-deterministic call in a `.map`/`derived` body.
+- `no-node-construction-in-body` — building DOM inside a `.map`/`derived` body.
+
+## #7 — Composition: view functions, no `child`/`combine`/`subApp`
+
+There are no `child()`, `combine()`, or `subApp()` primitives in the
+signal runtime. Decompose with view functions: a module exports a
+`view(props, send)` function and an `update(slice, msg)` reducer; the
+parent owns the slice, derives the child's props as signals, and routes
+namespaced messages with a plain switch.
+
+```ts
+// toolbar.ts — props are SIGNALS derived from the parent state.
+import type { Signal } from '@llui/dom'
+export type ToolbarProps = { tools: Signal<Tool[]>; toolbar: Signal<ToolbarSlice> }
+export function toolbarView(props: ToolbarProps, send: (msg: ToolbarMsg) => void): readonly Node[] {
+  /* … build from props.tools.map(...), props.toolbar.at('menuOpen'), … */
+}
+export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlice {
+  /* … */
+}
+
+// parent.ts
+view: ({ state, send }) => [
+  toolbarView({ tools: state.map((s) => s.tools), toolbar: state.at('toolbar') }, (msg) =>
+    send({ type: 'toolbar', msg }),
+  ),
+]
+// parent update routes:
+//   case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]
+```
+
+Cross-cutting concerns (toasts, modals) live as slices on the root
+state. For values that must reach deep into the tree without
+prop-threading, use context: `createContext` / `provide` / `useContext`.
+For genuinely independent imperative code, use `foreign()` (see
+08 Ecosystem Integration §2).
+
+## #8 — SSR + hydration
+
+| Legacy                                  | Signal                                                                |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `__renderToString(state)`               | `renderToString(def, state, env)` (or `renderNodes`/`serializeNodes`) |
+| `data-llui-hydrate` markers in the HTML | none — hydration rebuilds the tree                                    |
+| `hydrateApp` walks markers and attaches | `hydrateSignalApp(target, def, serverState)` — rebuild + atomic swap  |
+
+`renderToString`/`renderNodes` take a server `DomEnv` from
+`@llui/dom/ssr/jsdom` (`jsdomEnv()`) or `@llui/dom/ssr/linkedom`. Server
+render is pure — effects (including `onMount`/`portal`) are not
+dispatched. `hydrateSignalApp` builds the client tree against
+`serverState` (matching the SSR render) and atomically replaces the
+server HTML, so there is no flash; `init()`'s effects are skipped by
+default (pass `runInitEffects: true` for an `init()` gated to no-op on
+the server).
+
+For `@llui/vike`, the adapter wires this via `createOnRenderHtml`
+(`{ domEnv, Layout?, document }`) and `createOnRenderClient`. Because
+the signal `init()` takes no data, each layer's route `data` is supplied
+as that layer's seed state. Persistent layouts place `pageSlot()` (from
+`@llui/vike/client`) where the nested page renders — name the file
+`Layout.ts`, not `+Layout.ts`.
 
 ## Mechanical sweep checklist
 
-For an app like `dicerun2` with 62 `child()` call sites, here's the
-order of operations that minimizes broken-intermediate states:
+1. **Convert each component's `view`** to `({ state, send }) => [...]`
+   and add element/structural imports from `@llui/dom`.
+2. **Rewrite closure reads** `s => expr` as `state.map(...)` /
+   `state.at('path')`; move imperative reads in handlers to `.peek()`.
+3. **Convert `each`/`show`/`branch`** to the positional signal forms
+   (#2, #3). Rows become `Signal<T>`; use `item.at('field')`.
+4. **Drop the data arg from `init()`**; route external data through the
+   adapter's seed-state path.
+5. **Bridge `onEffect`** to `(effect, api)` and forward into
+   `handleEffects().else(...)` with a lifecycle `AbortController`.
+6. **Delete every hand-authored `__dirty`** and any `flush()` calls
+   that only forced a pending update.
+7. **Replace `child`/`combine`/`subApp`** with view functions +
+   plain-switch routing (#7).
+8. **Update SSR/hydration** to `renderToString`/`renderNodes` +
+   `hydrateSignalApp` (#8); remove any `data-llui-hydrate` assumptions.
+9. **Fix lint failures** surfaced as compile errors by the signal lint
+   rules (#6).
 
-1. **Define slice types and reducers in the child modules.** Export a
-   `Slice` type, a `Msg` union, an `update(slice, msg)` reducer, and a
-   `view(props, send)` function. Don't delete the old `ComponentDef`
-   yet.
-2. **In the parent, add the child's slice to State and namespace its
-   messages in Msg.** State grows; the parent's reducer learns to
-   route the new prefix.
-3. **Replace the `child()` call with the view function invocation.**
-   `child({ def: X, ... })` becomes `xView(props, msg => send({ type: 'x', msg }))`.
-4. **Verify the migration site by site.** Each `child()` replacement
-   is independent; commit them in small batches.
-5. **Once all `child()` sites are gone**, delete the old `ComponentDef`
-   exports from each child module. The `(props, send)` view function
-   is the only surface left.
-6. **Replace any hand-routing in the parent reducer with `combine()`**
-   when the switch becomes "case 'x': xUpdate; case 'y': yUpdate; ..."
-   shaped.
-7. **Sweep for any remaining `propsMsg`, `receives`, `addressOf`,
-   `__dirty` references.** Each becomes an error under the new types.
-
-## Help and notes
-
-- The runtime throw on user-supplied `__dirty` is intentional — it's a
-  loud failure rather than a silent degradation.
-- If the `bitmask-overflow` lint rule fires on a component that
-  previously fit, your migration probably split a single top-level
-  field into many path-keyed prefixes. The new 62-prefix ceiling
-  accommodates almost all real shapes; if you genuinely exceed 62,
-  restructure to nest the over-broad fields under a smaller number of
-  reference-stable parents.
-- View functions inherit the parent's `View<S, M>` bag through the
-  `send` callback's type — there's no `View<S, M>` generic to thread
-  through.
-- The compiler skips emit on files without a `component(...)` call.
-  Pure view-function modules don't need it; they're walked by the
-  parent's compile pass which inlines accessor analysis through
-  delegated calls.
-
-For the historical rationale behind these changes:
-
-- `docs/proposals/unified-composition-model.md` — original design
-- `docs/proposals/unified-composition-model-spike-result.md` — benchmark validation
-- `docs/proposals/unified-composition-model-status.md` — branch status with all four items resolved
-- `docs/designs/01 Architecture.md` and `docs/designs/07 LLM Friendliness.md` — rewritten around the new model
+For the canonical signal authoring shape, see the examples
+(`examples/counter`, `examples/todomvc`, `examples/vike-layout`),
+`packages/components/src/components/dialog.ts`, and the type signatures
+in 09 API Reference.md.

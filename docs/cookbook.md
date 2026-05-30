@@ -10,10 +10,10 @@ Common patterns and recipes.
 type State = { name: string }
 type Msg = { type: 'setName'; value: string }
 
-view: ({ send }) => [
+view: ({ state, send }) => [
   input({
     type: 'text',
-    value: (s: State) => s.name,
+    value: state.at('name'),
     onInput: (e: Event) =>
       send({
         type: 'setName',
@@ -23,27 +23,32 @@ view: ({ send }) => [
 ]
 ```
 
+A controlled `value:` binding is a signal — the framework writes whatever it produces to
+`el.value` on every commit where it differs. Keep state in sync via `onInput` as above.
+
 ### Form Submission
 
 ```typescript
-form({
-  onSubmit: (e: Event) => {
-    e.preventDefault()
-    send({ type: 'submitForm' })
+form(
+  {
+    onSubmit: (e: Event) => {
+      e.preventDefault()
+      send({ type: 'submitForm' })
+    },
   },
-}, [
-  input({ value: (s: State) => s.email, onInput: ... }),
-  button({ type: 'submit', disabled: (s: State) => s.loading }, [text('Submit')]),
-])
+  [
+    input({ value: state.at('email'), onInput: ... }),
+    button({ type: 'submit', disabled: state.at('loading') }, [text('Submit')]),
+  ],
+)
 ```
 
 ### Error Display
 
 ```typescript
-each<State, string, Msg>({
-  items: (s) => s.errors,
+each(state.at('errors'), {
   key: (e) => e,
-  render: ({ item }) => [li({ class: 'error' }, [text(item((e) => e))])],
+  render: (error) => [li({ class: 'error' }, [text(error)])],
 })
 ```
 
@@ -56,21 +61,21 @@ import type { Async, ApiError } from '@llui/effects'
 
 type State = { users: Async<User[], ApiError> }
 
-// In view:
-branch<State, Msg>({
-  on: (s) => s.users.type,
-  cases: {
-    idle: () => [text('Click to load')],
-    loading: () => [text('Loading...')],
-    success: () => [
-      each<State, User, Msg>({
-        items: (s) => (s.users.type === 'success' ? s.users.data : []),
-        key: (u) => u.id,
-        render: ({ item }) => [text(item((u) => u.name))],
-      }),
-    ],
-    failure: () => [text((s: State) => (s.users.type === 'failure' ? s.users.error.kind : ''))],
-  },
+// In view — `branch` selects the discriminant and gives each arm the
+// narrowed variant signal:
+branch(state.at('users'), (u) => u.type, {
+  idle: () => [text('Click to load')],
+  loading: () => [text('Loading...')],
+  success: (u) => [
+    each(
+      u.map((s) => s.data),
+      {
+        key: (user) => user.id,
+        render: (user) => [text(user.at('name'))],
+      },
+    ),
+  ],
+  failure: (u) => [text(u.map((s) => s.error.kind))],
 })
 ```
 
@@ -165,53 +170,60 @@ case 'loadUser':
 
 ## Composition
 
-### Level 1: View Functions (default)
+### View functions (default)
 
-Split views into separate modules. Parent owns state, child operates on a slice.
+Split views into separate modules. The parent owns all state; a child view function
+takes a **signal handle** for its slice plus the parent's `send`.
 
 ```typescript
+import { nav, button, text } from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
+
 // views/header.ts
-export function header(send: Send<Msg>): Node[] {
+export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Node[] {
   return [
     nav([
-      text((s: State) => s.user?.name ?? 'Guest'),
+      text(user.map((u) => u?.name ?? 'Guest')),
       button({ onClick: () => send({ type: 'logout' }) }, [text('Logout')]),
     ]),
   ]
 }
 
-// main component view:
-view: ({ send }) => [header(send), mainContent(send)]
+// main component view — pass a sliced signal handle:
+view: ({ state, send }) => [header(state.at('user'), send), mainContent(state, send)]
 ```
 
-### View functions with typed props: `Props<T, S>`
+A child view function receives whatever signal granularity it needs — `state.at('user')`
+for a narrow slice, or `state.map((s) => …)` for a derived view. Reactivity has no nesting
+tax: `state.at('dashboard').at('toolbar').at('menuOpen')` gets its own dependency path.
 
-When a view function needs data from state, make **every field an accessor**.
-Raw values captured at mount are frozen — a silent reactivity bug.
+### Toolbar example — sliced signals + per-row data
 
 ```typescript
-import type { Props, Send } from '@llui/dom'
+import { div, text, each } from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
 
-type ToolbarData = {
-  tools: Tool[]
-  theme: 'light' | 'dark'
-  activeId: string | null
-}
+type Tool = { id: string; label: string }
 
-// Generic over S — parent supplies its own state type:
-export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<ToolbarMsg>): Node[] {
+export function toolbar(
+  tools: Signal<Tool[]>,
+  activeId: Signal<string | null>,
+  send: Send<ToolbarMsg>,
+): Node[] {
   return [
-    div({ class: (s) => `toolbar theme-${props.theme(s)}` }, [
-      each({
-        items: props.tools,
+    div({ class: 'toolbar' }, [
+      each(tools, {
         key: (t) => t.id,
-        render: ({ item, send }) => [
+        render: (tool) => [
           div(
             {
-              class: (s) => (props.activeId(s) === item.id() ? 'tool active' : 'tool'),
-              onClick: () => send({ type: 'pick', id: item.id() }),
+              // derive the row's class from both the per-row signal and activeId:
+              class: derived([tool, activeId], (t, active) =>
+                active === t.id ? 'tool active' : 'tool',
+              ),
+              onClick: () => send({ type: 'pick', id: tool.at('id').peek() }),
             },
-            [text(item.label)],
+            [text(tool.at('label'))],
           ),
         ],
       }),
@@ -219,124 +231,121 @@ export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<ToolbarMsg>)
   ]
 }
 
-// Caller — each field is an accessor. TypeScript errors if you pass a raw value:
-view: ({ send }) =>
-  toolbar<State>(
-    {
-      tools: (s) => s.tools,
-      theme: (s) => s.settings.theme,
-      activeId: (s) => s.selectedId,
-    },
-    (msg) => send({ type: 'toolbar', msg }),
-  )
+// Caller — pass sliced signals and route child messages through the parent's union:
+view: ({ state, send }) =>
+  toolbar(state.at('tools'), state.at('selectedId'), (msg) => send({ type: 'toolbar', msg }))
 ```
 
-`Props<T, S>` maps `{ tools: Tool[] }` to `{ tools: (s: S) => Tool[] }` — making the
-reactive-accessor contract explicit and type-enforced.
+`derived([sigA, sigB], fn)` combines multiple signals into one derived signal. Import it
+from `@llui/dom`.
 
 ### Minimal Intent Pattern
 
 Event handlers inside `each()` send minimal data — `update()` resolves the rest from state:
 
 ```typescript
-// In each() render — only sends the item id
-onClick: () => send({ type: 'selectItem', id: item.id() })
+// In each() render — only sends the row id (read with .peek() in a handler)
+onClick: () => send({ type: 'selectItem', id: item.at('id').peek() })
 
 // In update() — has full state access
-case 'selectItem':
-  const fullItem = state.items.find(i => i.id === msg.id)
+case 'selectItem': {
+  const fullItem = state.items.find((i) => i.id === msg.id)
   return [{ ...state, selected: fullItem }, []]
+}
 ```
 
-### Composable Update with `mergeHandlers`
+### Library components: `connect()` + delegated `update`
+
+`@llui/components` use a state-machine + `connect` convention. `init` / `update` are pure
+functions over the slice; `connect(state: Signal<Slice>, send: Send<SliceMsg>, opts?)`
+returns reactive props to spread onto elements. The parent owns the slice and routes the
+child's messages through its own `Msg` union.
 
 ```typescript
-import { mergeHandlers } from '@llui/dom'
-
-const update = mergeHandlers<State, Msg, Effect>(
-  routerHandler,     // handles 'navigate' messages
-  authHandler,       // handles 'login', 'logout'
-  (state, msg) => {  // everything else
-    switch (msg.type) { ... }
-  },
-)
-```
-
-### Embedding a sub-component with `sliceHandler`
-
-`sliceHandler` lifts a sub-component's reducer into one that operates on the
-parent's full state + message type. The sub-component's state lives at a slice
-of the parent state, and the parent wraps sub-messages in its own discriminant.
-Pair with `mergeHandlers` to compose:
-
-```typescript
-import { mergeHandlers, sliceHandler } from '@llui/dom'
-import * as dialog from './components/dialog'
+import { dialog } from '@llui/components/dialog'
+import { button, h2, div, text } from '@llui/dom'
 
 // Parent state owns a slice for the dialog:
-type State = { confirm: dialog.State; todos: Todo[] }
-type Msg = { type: 'confirm'; msg: dialog.Msg } | { type: 'addTodo'; text: string }
+type State = { confirm: dialog.DialogState; todos: Todo[] }
+type Msg = { type: 'dialog'; msg: dialog.DialogMsg } | { type: 'addTodo'; text: string }
 
-const update = mergeHandlers<State, Msg, Effect>(
-  sliceHandler({
-    get: (s) => s.confirm,
-    set: (s, v) => ({ ...s, confirm: v }),
-    narrow: (m) => (m.type === 'confirm' ? m.msg : null),
-    sub: dialog.update,
-  }),
-  (state, msg) => {
-    // Only sees messages the slice handler didn't claim:
-    switch (msg.type) {
-      case 'addTodo':
-        return [{ ...state, todos: [...state.todos, { text: msg.text }] }, []]
-    }
-  },
-)
+// Parent update delegates to the dialog's pure update:
+update: (state, msg) => {
+  switch (msg.type) {
+    case 'dialog':
+      return [{ ...state, confirm: dialog.update(state.confirm, msg.msg)[0] }, []]
+    case 'addTodo':
+      return [{ ...state, todos: [...state.todos, { text: msg.text }] }, []]
+  }
+}
+
+// View — connect() returns spreadable parts; overlay() renders the dialog tree:
+view: ({ state, send }) => {
+  const sendDialog = (m: dialog.DialogMsg) => send({ type: 'dialog', msg: m })
+  const parts = dialog.connect(state.at('confirm'), sendDialog, { id: 'confirm' })
+  return [
+    button({ ...parts.trigger, class: 'btn' }, [text('Delete')]),
+    dialog.overlay({
+      state: state.at('confirm'),
+      send: sendDialog,
+      parts,
+      content: () => [
+        div({ ...parts.content, class: 'dialog' }, [
+          h2({ ...parts.title }, [text('Are you sure?')]),
+          button({ ...parts.closeTrigger, class: 'btn' }, [text('Cancel')]),
+        ]),
+      ],
+    }),
+  ]
+}
 ```
 
-**When to reach for this:** embedding a reusable component (dialog, combobox,
-date-picker) that ships its own `State`, `Msg`, and `update`. The parent stays
-type-safe: each sub-component gets a branded message variant (`{ type: 'confirm',
-msg: dialog.Msg }`) so the parent's `Msg` union is exhaustive and routing is
-explicit.
-
-**When NOT to use it:** for view-function composition (Level 1), where the
-parent owns the state directly and passes accessors down via `Props<T, S>`.
-`sliceHandler` is for genuine sub-components with their own update logic.
+A reviewer sees every state transition in one flat switch; an LLM generates it mechanically
+from the types. For genuine isolation (an independent app, a library bundle with its own
+effect lifecycle), reach for `child()`/`lazy()` — but reach for view functions first.
 
 ### Context: avoiding prop drilling
 
 For ambient data that many components need (theme, user session, i18n) without
 threading through every view function:
 
+Context values are resolved **once, at view-construction time** — the idiomatic value is a
+stable record (a dispatcher, a locale, a design-token set), not a per-keystroke value.
+
 ```typescript
-import { createContext, provide, useContext } from '@llui/dom'
+import { createContext, provide, useContext, div, button, text } from '@llui/dom'
 
-// Declare a typed context. Pass a default to make unprovided consumers resolve;
-// omit to make `useContext` throw at mount.
-const ThemeContext = createContext<'light' | 'dark'>('light')
+interface ToastDispatcher {
+  show: (msg: string) => void
+}
 
-// Provide a reactive accessor to every descendant rendered inside children():
-view: ({ send }) =>
-  provide(ThemeContext, (s: State) => s.theme, () => [
+// Declare a typed context with a default value:
+const ToastContext = createContext<ToastDispatcher>({ show: () => {} }, 'Toast')
+
+// Provide a value to every descendant built inside the render callback:
+view: ({ send }) => [
+  provide(ToastContext, { show: (msg) => send({ type: 'toast', msg }) }, () => [
     header(send),
-    main(send),
-  ])
+    main([]),
+  ]),
+]
 
-// Consume anywhere in the subtree — returns a `(s) => T` accessor:
-export function card(): Node[] {
-  const theme = useContext(ThemeContext)
-  return [div({ class: (s) => `card theme-${theme(s)}` }, [...])]
+// Consume anywhere in the subtree — returns the provided value:
+export function saveButton(): Node[] {
+  const toast = useContext(ToastContext)
+  return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
 }
 ```
 
-Nested providers shadow outer ones within their subtree; the outer value
-is restored for sibling subtrees automatically. Context works across
-`show`/`branch`/`each` boundaries, including re-mounts.
+`provide` sets a value for everything `render` builds, then restores it for siblings.
+`useContext` reads the nearest provided value (or the context default). Provided values
+flow into nested builds (each rows, show/branch arms). The value is read once at build —
+for a value that must track parent state, read it from a sliced `state.at(...)` signal in
+the view instead.
 
-**When to use context:** theme, route, user session, feature flags, design
-tokens. **When NOT to use it:** data that's specific to a subtree — pass
-via `Props<T, S>` instead.
+**When to use context:** theme tokens, user session, i18n locale, feature flags, layout
+dispatchers. **When NOT to use it:** per-keystroke data specific to a subtree — pass a
+sliced signal handle to the view function instead.
 
 ## Routing
 
@@ -379,15 +388,12 @@ routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
 ### Page Switching
 
 ```typescript
-view: ({ send, branch }) => [
+view: ({ state, send }) => [
   ...routing.listener(send), // listens for popstate/hashchange
-  ...branch({
-    on: (s) => s.route.page,
-    cases: {
-      home: () => homePage(send),
-      search: () => searchPage(send),
-      repo: () => repoPage(send),
-    },
+  branch(state.at('route').at('page'), {
+    home: () => homePage(state, send),
+    search: () => searchPage(state, send),
+    repo: () => repoPage(state, send),
   }),
 ]
 ```
@@ -396,73 +402,95 @@ view: ({ send, branch }) => [
 
 ### Server-Side Data Loading
 
-```typescript
-import { initSsrDom } from '@llui/dom/ssr'
-import { renderToString } from '@llui/dom'
-import { resolveEffects } from '@llui/effects'
+`renderToString(def, initialState, env)` builds the component against a server `DomEnv`
+and serializes it to HTML. Effects are not dispatched on the server, so run any data
+loading yourself and seed the state you pass in.
 
-await initSsrDom()
+```typescript
+import { renderToString } from '@llui/dom'
+import { jsdomEnv } from '@llui/dom/ssr/jsdom'
 
 export async function render(url: string) {
-  const state = initialState(url)
-  const [routeState, effects] = update(state, { type: 'navigate', route: state.route })
-
-  // Execute HTTP effects server-side
-  const loaded = await resolveEffects(routeState, effects, update)
-  const html = renderToString(appDef, loaded)
-
-  return { html, state: JSON.stringify(loaded) }
+  const env = await jsdomEnv()
+  const state = await loadInitialState(url) // your own data loading
+  const html = renderToString(appDef, state, env)
+  return { html, state: JSON.stringify(state) }
 }
 ```
 
+For composing multiple node trees (layout + page) before one serialization, use
+`renderNodes(def, state, env, contexts?)` + `serializeNodes(nodes)`. On Cloudflare Workers,
+use `linkedomEnv` from `@llui/dom/ssr/linkedom` instead of `jsdomEnv`.
+
 ### Client Hydration
 
-```typescript
-import { mountApp, hydrateApp } from '@llui/dom'
+`hydrateSignalApp(container, def, serverState)` rebuilds the client tree against
+`serverState` (matching the SSR render) and atomically swaps it in — server HTML stays
+visible until the swap, so no flash.
 
-const serverState = document.getElementById('__state')
-if (serverState && container.children.length > 0) {
-  hydrateApp(container, App, JSON.parse(serverState.textContent!))
+```typescript
+import { mountApp, hydrateSignalApp } from '@llui/dom'
+
+const stateEl = document.getElementById('__state')
+const container = document.getElementById('app')!
+if (stateEl && container.children.length > 0) {
+  hydrateSignalApp(container, App, JSON.parse(stateEl.textContent!))
 } else {
   mountApp(container, App)
 }
 ```
 
+`init()`'s effects are skipped by default during hydration (the server already produced
+the state); pass `{ runInitEffects: true }` for init()s that no-op on the server.
+
 ## Foreign Libraries
+
+`foreign({ tag?, state?, mount, unmount? })` declares reactive inputs as a record of
+signals. The runtime materializes each to a `LiveSignal` (`peek` + `bind`) and hands them
+to `mount({ el, state })`, which builds the third-party instance. `bind` fires immediately
+and on every change.
 
 ### Shadow DOM for Style Isolation
 
 ```typescript
-foreign<State, { html: string }, { root: ShadowRoot }>({
-  mount: (container) => {
-    const root = container.attachShadow({ mode: 'open' })
+import { foreign } from '@llui/dom'
+import type { Signal } from '@llui/dom'
+
+foreign<{ root: ShadowRoot }, { html: Signal<string> }>({
+  state: { html: state.at('readmeHtml') },
+  mount: ({ el, state: sig }) => {
+    const root = el.attachShadow({ mode: 'open' })
     root.innerHTML = '<style>h1 { color: blue }</style><div class="content"></div>'
+    sig.html.bind((html) => {
+      root.querySelector('.content')!.innerHTML = html
+    })
     return { root }
   },
-  props: (s) => ({ html: s.readmeHtml }),
-  sync: (instance, { html }) => {
-    instance.root.querySelector('.content')!.innerHTML = html
-  },
-  destroy: () => {},
+  unmount: () => {},
 })
 ```
 
 ### Imperative DOM (Line-Numbered Code)
 
 ```typescript
-foreign<State, { content: string }, { el: HTMLElement }>({
-  mount: (container) => ({ el: container }),
-  props: (s) => ({ content: s.fileContent }),
-  sync: ({ el }, { content }) => {
-    el.innerHTML = ''
-    const lines = content.split('\n')
-    for (let i = 0; i < lines.length; i++) {
-      const row = document.createElement('div')
-      row.textContent = `${i + 1}: ${lines[i]}`
-      el.appendChild(row)
-    }
+import { foreign } from '@llui/dom'
+import type { Signal } from '@llui/dom'
+
+foreign<{ el: HTMLElement }, { content: Signal<string> }>({
+  state: { content: state.at('fileContent') },
+  mount: ({ el, state: sig }) => {
+    sig.content.bind((content) => {
+      el.innerHTML = ''
+      const lines = content.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        const row = document.createElement('div')
+        row.textContent = `${i + 1}: ${lines[i]}`
+        el.appendChild(row)
+      }
+    })
+    return { el }
   },
-  destroy: () => {},
+  unmount: () => {},
 })
 ```
 

@@ -8,7 +8,7 @@ description: A compile-time-optimized web framework built on The Elm Architectur
 LLui is the first web framework built from the ground up for AI-assisted development. Its architecture — strict types, pure functions, effects as data, and a flat component model — maps directly to how LLMs reason about code.
 
 ```typescript
-import { component, mountApp, div, button } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -24,10 +24,10 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: ({ send, text }) => [
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],
@@ -46,15 +46,15 @@ mountApp(document.getElementById('app')!, Counter)
 
 **Effects as data, not callbacks.** Side effects are plain objects returned from `update()`, not imperative calls scattered through the code. An LLM can reason about what a component _does_ by reading its return values. Testing is just `deepEqual` on the effect array.
 
-**No hidden runtime magic.** `view()` runs once. There's no virtual DOM diffing, no dependency tracking, no re-rendering. Reactive bindings are explicit arrow functions: `text((s) => s.count)`. An LLM can see exactly which state drives which DOM node.
+**No hidden runtime magic.** `view()` runs once. There's no virtual DOM diffing, no re-rendering. Reactive bindings are explicit signals: `text(state.at('count').map(String))`. An LLM can see exactly which state drives which DOM node.
 
-**Flat composition.** Components compose via view functions (state slice + send), not through nested provider trees. There's one level of indirection, not five. LLMs can follow the data flow in a single pass.
+**Flat composition.** Components compose via view functions (a signal slice + send), not through nested provider trees. There's one level of indirection, not five. LLMs can follow the data flow in a single pass.
 
 ## How it works
 
-- **`view()` runs once.** DOM nodes are created at mount time with reactive bindings that update surgically when state changes. No re-rendering.
-- **Two-phase update.** Phase 1 reconciles structural changes (`branch`, `each`, `show`). Phase 2 iterates a flat binding array with bitmask gating — `(mask & dirty) === 0` skips irrelevant updates in constant time.
-- **Compiler optimization.** The Vite plugin extracts state access paths, assigns bitmask bits, and synthesizes `__dirty()` per component. Zero runtime dependency tracking overhead.
+- **`view()` runs once.** DOM nodes are created at mount time with reactive bindings that update surgically when state changes. No re-rendering, no virtual DOM.
+- **Chunked-mask reconciliation.** When state changes, the runtime computes a dirty set by reference-equality per tracked path, then gates each binding by a sparse mask — a binding whose mask doesn't intersect the dirty set is skipped without calling its accessor. Update cost scales with what changed, not with tree size, and there is no path ceiling.
+- **Compiler optimization.** The Vite plugin extracts each signal's dependency paths and lowers the common inline-view shape to allocation-free runtime calls. Zero runtime dependency-tracking overhead.
 
 ## LLM integration
 

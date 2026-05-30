@@ -1,303 +1,276 @@
 ---
 title: Composition Patterns
-description: "How generic UI helpers compose with the framework's reactivity model. The canonical migration target for the `llui/opaque-state-flow` diagnostic."
+description: 'How to factor reactive UI into reusable view functions and library components using signal handles.'
 ---
 
-# Composition Patterns for Generic Helpers
+# Composition Patterns
 
-How to write generic UI helpers (`paramRow`, `tagSelector`, `dieNode`, …) that compose cleanly with the framework's reactivity model. This is the canonical answer to the question that comes up the moment you try to factor reactive UI into reusable functions: **how does the helper know what state to read?**
+How to factor reactive UI into reusable functions that compose cleanly with the signal
+reactivity model. This is the answer to the question that comes up the moment you try to
+split a view into reusable pieces: **how does the helper know what state to read?**
 
-This file is the spec for the `llui/opaque-state-flow` lint rule's recommended migrations. When the diagnostic fires on `function-parameter callee`, the migration target is one of the patterns described here.
+The answer is uniform: a reusable view function takes a **signal handle** for the slice it
+renders. It never takes a `(s) => …` callback, and it never reads the whole component
+state. Reactivity flows through signals, and the runtime gates each binding by exactly the
+paths its signal reads.
 
 ## TL;DR — pick the pattern by shape
 
-| Helper shape                                                 | Pattern                      | Composition surface                                                                         |
-| ------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------- |
-| Iterating helper (renders a list of rows)                    | **4 — items-bag lift**       | Helper accepts `ItemAccessor<Row>`, caller builds row data in `items: (s) => …`             |
-| Single reactive value (button label, status text, one badge) | **1 — accessor passthrough** | Helper accepts `(s: S) => T`, plugs directly into a primitive (`text(value)`, `class: cls`) |
-| Form row / multi-field chrome                                | **2 — pre-built Nodes**      | Helper accepts `Node` slots; caller wires up bindings at the call site                      |
-| Layout chrome (header, sidebar, dialog frame)                | **3 — Node[] slots**         | Helper accepts `children: Node[]` (and other slots); caller builds the slot content         |
-
-The diagnostic fires on a fifth shape — **function-parameter callback** (`getX: (s: S) => X`) — which is the anti-pattern. See the bottom of this file for why.
+| Helper shape                                  | Pattern                           | Composition surface                                                                 |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| Renders a slice of state                      | **1 — sliced signal**             | Helper takes `Signal<Slice>`; caller passes `state.at('slice')`                     |
+| Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `Signal<Row[]>`; per-row `item` signal feeds the cell bindings         |
+| Renders a single derived value                | **3 — derived signal**            | Helper takes `Signal<T>`; caller passes `state.map(fn)` or a `.at()` slice          |
+| Layout chrome (header, sidebar, dialog frame) | **4 — `Node[]` slots**            | Helper takes `children: Node[]`; caller fills slots with its own bindings           |
+| Library component with its own state machine  | **5 — `connect()` + delegation**  | Component exports `init`/`update`/`connect`; parent owns the slice, routes messages |
 
 ---
 
-## Pattern 4 — items-bag lift (primary)
+## Pattern 1 — sliced signal (primary)
 
-**When**: A generic helper that derives any value from host state in a reactive position AND iterates over a collection.
+**When**: a reusable view function renders a sub-tree of state.
 
-**Composition**: The helper accepts row data via the items-bag. The caller does state reading in the `items:` accessor at the call site. The helper reads via `item.*` field accessors — no `(s) => …` callbacks cross the boundary.
+**Composition**: the helper takes a `Signal<Slice>`. The caller slices at the call site
+with `.at('field')`. The helper reads via the signal's own `.at`/`.map` — no `(s) => …`
+callbacks cross the boundary, and the helper's type is decoupled from the parent's full
+state shape.
 
 ```ts
-// BEFORE — function-parameter callback (anti-pattern, fires `llui/opaque-state-flow`)
-function tagRow<PS>(opts: {
-  getProps: (s: PS) => { selected: string[]; editing: { highlightIdx: number } | null }
-  tag: string
-  index: () => number
-}): Node {
-  return span({
-    class: (s: PS) => {
-      const sel = opts.getProps(s).selected.includes(opts.tag) // ← opaque
-      const e = opts.getProps(s).editing // ← opaque
-      const highlighted = e?.field === 'tags' && e.highlightIdx === opts.index()
-      return `${highlighted ? 'highlight' : ''} ${sel ? 'bg-blue' : 'hover:bg-card'}`
-    },
-  })
+import { div, text, span } from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
+
+type UserSlice = { name: string; email: string; active: boolean }
+
+// The helper only knows about its slice — not the host state type.
+function userCard(user: Signal<UserSlice>, send: Send<Msg>): Node[] {
+  return [
+    div({ class: user.at('active').map((a) => (a ? 'card active' : 'card')) }, [
+      span([text(user.at('name'))]),
+      span([text(user.at('email'))]),
+    ]),
+  ]
 }
 
-// AFTER — items-bag lift
-type TagRow = {
-  tag: string
-  selected: boolean
-  highlighted: boolean
+// CALLER — slice the parent state to the shape the helper wants:
+view: ({ state, send }) => [userCard(state.at('currentUser'), send)]
+```
+
+What you get:
+
+- The helper's type signature is tight (`Signal<UserSlice>`), decoupled from the host.
+- Each binding inside reads a precise path (`currentUser.active`, `currentUser.name`, …),
+  so the runtime gates it on exactly those paths.
+- Adding the helper to a new host is just passing the right slice.
+
+---
+
+## Pattern 2 — `each` over a sliced list
+
+**When**: a generic helper renders a list of rows whose per-row fields change in place.
+
+**Composition**: the helper takes a `Signal<Row[]>`. `each` gives the row render a per-row
+`item: Signal<Row>` (and an `index: Signal<number>`). Cell bindings read `item.at('field')`
+so they update surgically when that row's data changes.
+
+```ts
+import { each, tr, td, text, show, span } from '@llui/dom'
+import type { Signal } from '@llui/dom'
+
+interface Row {
+  id: string
+  title: string
+  banned: boolean
 }
 
-function tagList(items: (s: HostState) => TagRow[]): Node[] {
-  return each<TagRow>({
-    items,
-    key: (r) => r.tag,
-    render: ({ item }) => [
-      span({
-        // class derives from item.* — precise per-binding mask, no opaque flow.
-        class: () =>
-          `${item.highlighted() ? 'highlight' : ''} ${item.selected() ? 'bg-blue' : 'hover:bg-card'}`,
-      }),
-    ],
-  })
+function table(rows: Signal<Row[]>): Node[] {
+  return [
+    each(rows, {
+      key: (r) => r.id, // ← plain id; do NOT include mutable fields
+      render: (item) => [
+        tr({}, [
+          // Reactive cell — re-reads when this row's `title` changes:
+          td([text(item.at('title'))]),
+          td([show(item.at('banned'), () => [span({ class: 'badge' }, [text('banned')])])]),
+        ]),
+      ],
+    }),
+  ]
+}
+```
+
+Key points:
+
+- **`item.at('title')` is a reactive per-row slot.** The runtime mutates kept rows in place
+  rather than recreating them.
+- **`key` is `(r) => r.id` only.** Including mutable fields (`` `${r.id}:${r.editedAt}` ``)
+  forces a remove+insert of the whole row on every change — focus, scroll position, and
+  transitions all reset.
+- **Read the row id in handlers with `.peek()`**:
+  `onClick: () => send({ type: 'select', id: item.at('id').peek() })`.
+
+If a cell needs to combine the row signal with a parent signal (e.g. "is this the active
+row?"), use `derived`:
+
+```ts
+import { derived } from '@llui/dom'
+
+render: (item) => [
+  tr({ class: derived([item, activeId], (r, active) => (active === r.id ? 'active' : '')) }, [
+    /* … */
+  ]),
+]
+```
+
+---
+
+## Pattern 3 — derived signal (single reactive value)
+
+**When**: a generic helper renders one reactive value (button label, status badge, error
+text). No iteration.
+
+**Composition**: the helper takes a `Signal<T>` and plugs it directly into a primitive.
+The caller does the derivation at the call site with `.map` or a `.at()` slice.
+
+```ts
+import { span, text } from '@llui/dom'
+import type { Signal } from '@llui/dom'
+
+// Helper takes the already-derived signal — no callback, no host state type.
+function statusBadge(className: Signal<string>): Node {
+  return span({ class: className })
 }
 
-// CALLER
-tagList((s) =>
-  s.tags.map((tag, idx) => ({
-    tag,
-    selected: s.selectedTags.includes(tag),
-    highlighted: s.editForm?.field === 'tags' && s.editForm?.highlightIdx === idx,
-  })),
+// CALLER derives against literal state reads:
+statusBadge(
+  state
+    .at('session')
+    .at('active')
+    .map((a) => (a ? 'active' : 'inactive')),
 )
 ```
 
-What you traded:
-
-- The helper's API surface no longer accepts `getX: (s) => X` callbacks. It takes one input: how to compute rows.
-- The caller does the state reading once per item-list rebuild, not per binding.
-- The runtime gets precise per-binding masks (reads from `item.selected`, `item.highlighted` — distinct bits).
-- The compiler can analyze the items accessor statically — `s.tags`, `s.selectedTags`, `s.editForm` enter `__prefixes` precisely.
-
-What it costs:
-
-- The caller's items accessor concentrates all the state reads. If you're hitting the 62-path mask budget, this is where the pressure lands first. Mitigate by splitting into multiple `each`s or by using `child()` for rich rows (see CLAUDE.md §"Bitmask").
-- Migrating an existing callback-based helper is bespoke work. Each helper's row-data shape is different; each caller's items accessor synthesizes the row data its way. The transformation is mechanical per-site but not automatable — the framework can't infer which fields the helper's bindings will need.
-
-### Reference case: paramControlsView
-
-_Placeholder for the worked example from dicerun2's paramControlsView migration. Will land once the consumer's diffs are available._
-
-```ts
-// Before/after diffs of paramControlsView's signature and call sites here.
-// The migration template the other helpers follow:
-//   1. Identify every `opts.getX(s)` call in the helper's bindings.
-//   2. Bundle the values those calls produce into a row data shape.
-//   3. Change the helper API: replace callbacks with `items: (s) => Row[]`.
-//   4. At each call site, write the items accessor that builds the row data
-//      from concrete state reads.
-```
+The caller's `.map` reads `session.active` literally, so the binding's mask is precise. If
+the value depends on multiple reads, combine them with `derived([sigA, sigB], fn)` at the
+call site.
 
 ---
 
-## Pattern 1 — accessor passthrough (single reactive value)
+## Pattern 4 — `Node[]` slots (layout chrome)
 
-**When**: A generic helper renders a single reactive value (button label, status badge, error text). No iteration.
+**When**: a generic helper provides outer-layout structure (header, sidebar, dialog frame,
+panel) with content rendered by the page.
 
-**Composition**: The helper accepts a `(s: S) => T` accessor function. Plugs it directly into a primitive — `text(accessor)` or `{class: accessor}`. The helper writes NO arrow wrapping the accessor.
-
-```ts
-// BEFORE — wrapping arrow is the anti-pattern
-function statusBadge<S>(opts: { isActive: (s: S) => boolean }): Node {
-  return span({
-    class: (s: S) => (opts.isActive(s) ? 'active' : 'inactive'), // ← opaque
-  })
-}
-
-// AFTER — pass the accessor as a direct binding source
-function statusBadge<S>(opts: { className: (s: S) => string }): Node {
-  return span({ class: opts.className }) // direct passthrough; no arrow
-}
-
-// CALLER does the derivation, against literal state reads
-statusBadge<HostState>({
-  className: (s) => (s.session.isActive ? 'active' : 'inactive'),
-})
-```
-
-What you traded:
-
-- The helper exposes a less semantic API (`className: (s) => string` instead of `isActive: (s) => boolean`). The trade-off is that the helper itself emits no opaque flow.
-- The caller's accessor reads `s.session.isActive` literally → precise mask.
-- If multiple callers all derive the same boolean → string mapping, the deriver lives in a free function the callers reuse — still keeps the binding-position accessor simple.
-
-When this isn't enough:
-
-- If the derivation depends on multiple state reads (`s.foo` AND `s.bar` → string), the deriver still lives at the caller (the helper stays simple). Closure-capturing constants from the helper's args is fine — only `s` reads need to be literal.
-
----
-
-## Pattern 2 — pre-built Nodes (form row chrome)
-
-**When**: A generic helper provides structural chrome around multiple reactive fields (form rows: label, input, error message).
-
-**Composition**: The helper accepts `Node` slots. The caller wires up bindings at the call site.
+**Composition**: the helper takes `Node[]` slot(s). The caller fills them with whatever
+bindings the page needs, tied to its own state.
 
 ```ts
-// BEFORE — function-parameter callbacks at every field
-function fieldRow<S>(opts: {
-  label: string
-  value: (s: S) => string
-  error: (s: S) => string | undefined
-  onInput: (v: string) => void
-}): Node {
-  return div({}, [
-    span({}, [text(opts.label)]),
-    input({ value: opts.value, onInput: (e) => opts.onInput(e.target.value) }),
-    span({ class: (s: S) => (opts.error(s) ? 'err' : 'hidden') }, [
-      text((s: S) => opts.error(s) ?? ''), // ← opaque
-    ]),
-  ])
-}
+import { header, nav } from '@llui/dom'
 
-// AFTER — Node slots; caller wires bindings
-function fieldRow(opts: { label: string; input: Node; error: Node }): Node {
-  return div({}, [span({}, [text(opts.label)]), opts.input, opts.error])
-}
-
-// CALLER
-fieldRow({
-  label: 'Name',
-  input: input({
-    value: (s: HostState) => s.form.name,
-    onInput: (e) => send({ type: 'setName', value: e.target.value }),
-  }),
-  error: span({ class: (s: HostState) => (s.form.errors.name ? 'err' : 'hidden') }, [
-    text((s: HostState) => s.form.errors.name ?? ''),
-  ]),
-})
-```
-
-What you traded:
-
-- "DRY violation" concern: the caller writes more verbose call sites. In practice, the row's structural template (label-input-error layout, label styling, error position) IS the reuse — that stays in `fieldRow`. The bindings naturally live where the state is.
-- Each binding reads state literally → precise masks.
-
-When this isn't enough:
-
-- For deeply nested forms with consistent binding shapes, write a thin layer over `fieldRow` per state shape: `myFormFieldRow(s, fieldKey)` reads `s.form[fieldKey]` and emits the bindings. That layer is application-specific; the framework-generic `fieldRow` stays Node-typed.
-
----
-
-## Pattern 3 — `Node[]` slots (layout chrome)
-
-**When**: A generic helper provides outer-layout structure (header, sidebar, dialog frame, panel) with content rendered by the page.
-
-**Composition**: The helper accepts `Node[]` slot(s). The caller fills them with whatever bindings the page needs.
-
-```ts
-// BEFORE — host-state-typed generic, threading callbacks through
-function headerView<S>(opts: {
-  pathname: (s: S) => string
-  isAuthed: (s: S) => boolean
-  userName: (s: S) => string | null
-  onLogout: () => void
-}): Node {
-  return header({}, [
-    nav({}, [
-      // …complicated chrome with multiple opaque getProps calls…
-    ]),
-  ])
-}
-
-// AFTER — Node[] slots
 function headerView(opts: { navItems: Node[]; userBadge: Node }): Node {
   return header({}, [nav({}, opts.navItems), opts.userBadge])
 }
 
-// CALLER fills slots with bindings tied to its concrete state shape
+// CALLER fills slots with bindings tied to its concrete state shape:
 headerView({
   navItems: [
-    a({ href: '/dashboard', class: (s: HostState) => (s.route === '/dashboard' ? 'active' : '') }, [
-      text('Dashboard'),
-    ]),
-    // …
+    a(
+      {
+        href: '/dashboard',
+        class: state.at('route').map((r) => (r === '/dashboard' ? 'active' : '')),
+      },
+      [text('Dashboard')],
+    ),
   ],
-  userBadge: span({ class: (s: HostState) => (s.user ? 'auth' : 'anon') }, [
-    text((s: HostState) => s.user?.name ?? 'Sign in'),
+  userBadge: span({ class: state.at('user').map((u) => (u ? 'auth' : 'anon')) }, [
+    text(state.at('user').map((u) => u?.name ?? 'Sign in')),
   ]),
 })
 ```
 
-What you traded:
+The header is no longer a state-generic component — it's a chrome layout that accepts
+content. Each page's call site fills the slots with bindings for its own state shape.
 
-- The header is no longer a state-generic component (`<S>`). It's a chrome layout that accepts content.
-- Each page's call site fills the slots with bindings for its own state shape.
-- The header has no opaque flow because it has no state callbacks.
-
-When this isn't enough:
-
-- If the chrome itself has its own state (`isOpen`, `expanded`, …), that's a separate `child()` component (Level 2 composition per CLAUDE.md). Don't conflate "chrome owns local UI state" with "chrome accepts host state callbacks." Local state goes in `child()`; host state flows through slots.
+If the chrome itself has local UI state (`isOpen`, `expanded`), model it as a slice the
+host owns and pass the sliced signal in (Pattern 1), or — for genuine isolation — use a
+full `child()` boundary.
 
 ---
 
-## Anti-pattern — function-parameter callbacks
+## Pattern 5 — `connect()` + delegated update (library components)
 
-**When**: Any helper that takes `getX: (s: S) => X` from its caller and uses the result inside a reactive accessor body.
+**When**: embedding a reusable component (dialog, combobox, date-picker) that ships its own
+`State`, `Msg`, and `update`.
 
-**Why it's anti-pattern**: The closure passed at the call site is opaque to per-binding analysis. The compiler can't trace what `getX(s)` reads, so the binding falls back to FULL_MASK + sentinel — re-evaluating on every state change instead of only when its actual reads change. The runtime is correct, but the perf cliff is invisible to the author and persists indefinitely.
+**Composition**: this is the convention used across `@llui/components`. The component
+exports pure `init` / `update` functions plus `connect(state: Signal<Slice>, send, opts?)`
+which returns reactive props to spread onto elements. The parent owns the slice in its
+state, delegates to the component's `update`, and routes the component's messages through
+its own `Msg` union.
 
-The `llui/opaque-state-flow` rule fires on this shape:
+```ts
+import { toggle } from '@llui/components/toggle'
+import { button, text } from '@llui/dom'
 
+type State = { bold: toggle.ToggleState; /* … */ }
+type Msg = { type: 'bold'; msg: toggle.ToggleMsg } | /* … */
+
+// Parent update delegates to the component's pure update:
+update: (state, msg) => {
+  switch (msg.type) {
+    case 'bold':
+      return [{ ...state, bold: toggle.update(state.bold, msg.msg)[0] }, []]
+    // …
+  }
+}
+
+// View — connect() returns spreadable, signal-based props:
+view: ({ state, send }) => {
+  const parts = toggle.connect(state.at('bold'), (m) => send({ type: 'bold', msg: m }))
+  return [button({ ...parts.root, class: 'btn' }, [text('Bold')])]
+}
 ```
-Reactive accessor flows state opaquely — call to an unresolvable callee
-`getX(s)` (function parameter, import, or destructured binding).
-The compiler ships a correct binding (FULL_MASK + whole-state sentinel),
-but it re-evaluates on every state change. This callee is a function
-parameter — the closure passed at the call site is opaque to per-binding
-analysis. The framework expects per-row dynamic state to flow through
-`each` items (slot data on `item.*`) rather than through `(s) => ...`
-callback parameters; restructure the helper so its bindings read
-`item.*` and the call site builds the slot data once in
-`items: (s) => …`.
-```
 
-The diagnostic's recommended migration is **Pattern 4** when iterating, or one of **Patterns 1–3** otherwise. The mapping by shape lives at the top of this file.
+The parent stays type-safe: each component gets a branded message variant
+(`{ type: 'bold'; msg: toggle.ToggleMsg }`) so the parent's `Msg` union is exhaustive and
+routing is explicit. A reviewer sees every state transition in one flat switch; an LLM
+generates it mechanically from the types.
 
-### What about `track({deps})`?
-
-`track({deps: (s) => [getX(s), …]})` does NOT silence the diagnostic in a way that helps here, even though `llui/opaque-state-flow` is suppressed inside `track.deps` (0.5.4+). If the deps body itself reads via opaque callees, the runtime extracts no useful paths from it — `track` collapses to the same FULL_MASK + sentinel behavior the diagnostic was warning about. `track` only helps when its deps body is statically extractable (literal property-access chains).
-
-See `track.ts`'s docstring for the canonical use cases (plugin registries, useContext chains where the provider is two-plus files away).
+Components that render an overlay (dialog, popover, tooltip) also export an `overlay()`
+view helper that builds the portal tree and wires accessibility utilities — see the
+[Composition recipe in the cookbook](cookbook.md#library-components-connect--delegated-update).
 
 ---
 
-## Bitmask budget under items-bag lift
+## What to avoid
 
-Pattern 4 concentrates state reads in the items accessor at the call site. If a single `each`'s items reads from many top-level State paths, that's many bits on a single binding. The cap is 62 bits before FULL_MASK kicks in (with a compiler diagnostic naming the fields to extract).
+**Passing a `(s) => T` callback across a helper boundary.** The signal runtime has no
+notion of an accessor callback — reactivity flows through signals. A helper that wants a
+reactive value takes a `Signal<T>`; the caller derives it at the call site.
 
-Mitigations, in order of preference:
+**Reading the whole `state` signal in a helper.** Pass a sliced signal
+(`state.at('slice')`), not the root `state`. A helper that maps over the entire state
+object depends on every field and re-runs on every change.
 
-1. **Split into multiple `each`s.** If a "rich row" pulls from 30+ State paths, the row probably represents two structural concerns — split the items into two `each`s and let each accumulate fewer bits.
-2. **Use `child()` at the row boundary.** Level 2 composition exists for exactly this: a `child()`'d row gets its own bitmask, takes typed props derived from the parent, and is opaque to the parent's mask.
-3. **Restructure State.** If a set of fields are always co-read, group them under a single key. Each top-level key is one bit; nesting under it is free.
+**`.peek()` in a slot.** `text(signal.peek())` reads once at build time and never updates.
+`.peek()` belongs in event handlers, effects, and `onMount` — never as a slot value.
 
-The 62-path budget is intentionally tight — it's what lets the runtime gate updates with two integer ANDs.
+**Operating on a signal as if it were a value.** `signal + 1`, `` `${signal}` ``,
+`signal ? a : b` operate on the handle, not its contents. Derive: `signal.map((n) => n + 1)`.
+
+**Side effects or DOM construction inside a `.map` body.** A derive body must be pure over
+plain values — no `send`/`fetch`/timers, no `.at`/`.map`/`.peek` on a signal, no element or
+text helpers. Use a structural primitive (`show`/`branch`/`each`) to build conditional DOM.
 
 ---
 
-## When a helper genuinely can't pick a pattern
+## When to reach for `child()`
 
-Sometimes a helper is too deeply generic for any of these patterns to apply cleanly — for example, plugin-registry dispatch where the row data shape isn't known until runtime. That's the case `track({deps: (s) => [s.pluginRegistry, s.activePluginName]})` exists for — explicit declaration of the host's read set, no per-binding precision possible.
+For genuine isolation — embedding an independent app whose lifetime is distinct from the
+host's, a library bundle shipping its own complete TEA loop, or an independent effect
+lifecycle — use a full `child()` boundary (its own scope tree and update loop; `lazy()`
+loads one asynchronously over the same machinery).
 
-Reach for `track` only when:
-
-- Plugin registries dispatched by name.
-- Helpers stored in arrays and dispatched by index.
-- `useContext` chains where the provider lives two-plus files away.
-
-A clean codebase has zero `track()` calls. If you find yourself reaching for it on a normal helper, the helper is probably the function-parameter anti-pattern in disguise — Patterns 1–4 fit it.
+Use it sparingly. A child boundary is a region the unified reactivity model can't see
+across. The chunked-mask reactivity scales precisely with the number of paths read, not
+with state depth, so a large flat state shared through sliced signals is fine — reach for
+view functions first.
