@@ -11,6 +11,55 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — 0.5.0 (the signal runtime) · @llui/compiler@0.6.0
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.5.0`; `llui-agent@0.5.0`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin}@0.6.0`; `@llui/mcp@0.6.0`
+
+The signal runtime ships. LLui's rendering core moves off the legacy mask-binding runtime and the 3-pass compiler onto the **signal** model: `view()` runs once at mount, building real DOM nodes with reactive bindings; a chunked-mask reconciler commits only the values that actually change. The legacy runtime and the legacy 3-pass transform are deleted. `@llui/dom` is the single import surface.
+
+### Breaking
+
+- **`@llui/dom@0.5.0`** — complete runtime rewrite. Components author against `state: Signal<State>` (`.at(path)` / `.map(fn)` / `.peek()`); element + structural helpers (`div`, `each`, `show`, `branch`, …) are module imports, not bag members; there is no virtual DOM. Legacy-runtime code must be rewritten — see `docs/designs/01 Architecture.md` and `docs/designs/13 Migration from v0.0.x.md`.
+- **`@llui/dom` — the `@llui/dom/signals` subpath is removed.** Import everything from `@llui/dom`.
+- **`@llui/compiler@0.6.0`** — the legacy 3-pass transform is gone; the signal transform is the only compilation route. Framework lint rules are non-bypassable compile-time errors (never ESLint).
+
+### Migration
+
+- Repoint any `@llui/dom/signals` imports to `@llui/dom`.
+- Rewrite components to the signal `view({ state, send })` shape; read state via `state.at(...)` / `.map(...)` / `.peek()` instead of a plain value.
+- No codemod is shipped (Franco controls all consumers); follow `docs/designs/13 Migration from v0.0.x.md`.
+
+### `@llui/dom@0.5.0`
+
+- **Added** the signal runtime: `component` / `mountApp`, `text` + the element-helper set, structural `each` / `show` / `branch`, `provide` / `useContext`, `portal`, `onMount`, `foreign`, `lazy`, `virtualEach`, and signal SSR (`renderToString` + `hydrateSignalApp`).
+- **Added** `derived([a, b, …], fn)` runtime implementation — combine N independent signals into one. It was previously a type-surface-only stub that threw at runtime; the view-helper path (e.g. form-validation's `field()`) now works.
+- **Fixed** keyed `each` reconcile is minimal-move (longest-increasing-subsequence): a 2-row swap is 2 DOM moves and a single removal is 0, where the old cursor walk degraded to O(n) (swap/remove had regressed to ~6×/4× slower than peer frameworks; both are now faster than solid/svelte).
+- **Improved** pure in-place list updates skip the reorder bookkeeping; rows whose `item`/`index` are unchanged skip `scope.update` when the row template reads no component state; contexts are copy-on-write per build; a full clear removes rows in one `Range` op.
+- **Fixed** structural primitives tear down mounted content on host dispose; `useContext` returns its default outside a build.
+
+### `@llui/compiler@0.6.0`
+
+- **Added** the signal view transform (lowers reactive text/element slots and `each` / `show` / `branch` to runtime helpers), cross-file Msg/State/Effect resolution, and introspection metadata emission.
+- **Fixed** `each` / `show` / `branch` stay verbatim when a render leaks its row or narrowed param into a helper call or event handler — lowering it emitted a free variable that threw at mount.
+- **Fixed** block-body views lower correctly, and dynamic children passed to an element helper are no longer dropped.
+
+### `@llui/vite-plugin@0.6.0`
+
+- **Added** single signal-transform wiring; signal lint rules enforced as build errors; fails loudly when a direct view can't be lowered.
+- **Fixed** the dev HUD is no longer injected into the HTML under Vike — Vike owns the document pipeline and rejected the injected `<script>` with a "Wrong Usage" error, blanking every page.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.5.0` · `llui-agent@0.5.0`
+
+- **Changed** ported to the signal runtime — `connect()` / `overlay()` return Signal-handle part bags, SSR runs through the signal renderer, and `peerDependencies["@llui/dom"]` moves to `^0.5.0`.
+
+### `@llui/mcp@0.6.0`
+
+- **Changed** ported to the signal debug API, with graceful degradation for the binding-introspection methods the signal runtime omits.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.6.0`
+
+- **Changed** republished against the signal `@llui/compiler`.
+
 ## 2026-05-27 — @llui/compiler@0.5.13
 
 **Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.13`; `@llui/vite-plugin@0.5.14`; `@llui/mcp@0.5.16`
