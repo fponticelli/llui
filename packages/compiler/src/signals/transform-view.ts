@@ -156,17 +156,34 @@ function arrowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
   return null
 }
 
-/** Transform a render arrow's returned node array under the given roots,
- * collecting the bindings' deps into `collect` if provided. */
-function renderArraySrc(
+/**
+ * Lower a structural arm/render callback's returned node array to `[node, ...]`
+ * source under `armRoots`, collecting binding deps into `collect`, or return null
+ * when it can't be SAFELY lowered. Unsafe means either (a) the body isn't a
+ * concise array literal — e.g. a block body `(v) => { return [...] }`, which the
+ * old code returned verbatim, producing the malformed `() => (v) => {...}` (a
+ * function that yields the arrow instead of calling it) — or (b) a bound callback
+ * param in `guardParams` survives as a free identifier in the lowered output,
+ * meaning it leaked into a verbatim position (a helper call like `row(item)` or an
+ * event handler) that the lowered, param-less `() => [...]` arm cannot bind.
+ *
+ * When this returns null the caller MUST emit the whole structural primitive
+ * (each/show/branch) verbatim, so the runtime authoring helper — which binds the
+ * real item/index/narrowed signal handle — renders it. Forgoing the lowering
+ * optimization is always correct; emitting a free variable is a runtime crash.
+ */
+function lowerArmArray(
   fn: ts.Expression,
   sf: ts.SourceFile,
-  roots: Roots,
+  armRoots: Roots,
+  guardParams: readonly (string | null)[],
   collect?: Set<string>,
-): string {
+): string | null {
   const arr = arrowReturnArray(fn)
-  if (!arr) return fn.getText(sf) // non-array body — leave verbatim
-  return `[${arr.elements.map((e) => transformNodeExpr(e, sf, roots, collect)).join(', ')}]`
+  if (!arr) return null
+  const src = `[${arr.elements.map((e) => transformNodeExpr(e, sf, armRoots, collect)).join(', ')}]`
+  for (const p of guardParams) if (p !== null && loweredLeaksIdent(src, p)) return null
+  return src
 }
 
 /** Rewrite a node-producing expression to its signal-runtime source. */
@@ -203,39 +220,32 @@ export function transformNodeExpr(
       const opts = node.arguments[1]
       if (items && opts && ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots)) {
         let keySrc = '(x) => x'
-        let renderSrc = '() => []'
+        let renderFn: ts.Expression | null = null
         let itemParam = 'item'
         let indexParam: string | null = null
-        const renderDeps = new Set<string>()
         for (const p of opts.properties) {
           if (!ts.isPropertyAssignment(p)) continue
           const name = p.name.getText(sf)
           if (name === 'key') keySrc = p.initializer.getText(sf)
           else if (name === 'render') {
-            const fn = p.initializer
-            if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
-              if (fn.parameters[0] && ts.isIdentifier(fn.parameters[0].name))
-                itemParam = fn.parameters[0].name.text
-              if (fn.parameters[1] && ts.isIdentifier(fn.parameters[1].name))
-                indexParam = fn.parameters[1].name.text
+            renderFn = p.initializer
+            if (ts.isArrowFunction(renderFn) || ts.isFunctionExpression(renderFn)) {
+              if (renderFn.parameters[0] && ts.isIdentifier(renderFn.parameters[0].name))
+                itemParam = renderFn.parameters[0].name.text
+              if (renderFn.parameters[1] && ts.isIdentifier(renderFn.parameters[1].name))
+                indexParam = renderFn.parameters[1].name.text
             }
-            // rows read ctx.item.* and ctx.state.*; collect their deps
-            renderSrc = `() => ${renderArraySrc(fn, sf, eachRoots(itemParam), renderDeps)}`
           }
         }
-        // The lowering rewrites the row param to `ctx.item` only inside RECOGNIZED
-        // signal slots (text/element props/each/show/branch). If the render passes
-        // the param to a helper call or reads it in an event handler — e.g.
-        // `render: (item) => [activityItem(item, ...)]` — that reference stays
-        // verbatim while the lowered render `() => [...]` has no `item` binding, so
-        // it would throw `item is not defined` at runtime. Detect a leaked param
-        // and leave the WHOLE `each(...)` verbatim — the runtime authoring `each`
-        // binds real item/index handles and renders correctly. (False positives,
-        // e.g. the word in a string literal, only forgo the optimization.)
-        const leaks =
-          loweredLeaksIdent(renderSrc, itemParam) ||
-          (indexParam !== null && loweredLeaksIdent(renderSrc, indexParam))
-        if (!leaks) {
+        // rows read ctx.item.* and ctx.state.* — `eachRoots` rewrites the item
+        // param to `ctx.item`; `lowerArmArray` guards against either row param
+        // leaking into a verbatim helper call / handler (the dashboard crash) and
+        // against a non-array render body. Either case -> verbatim runtime `each`.
+        const renderDeps = new Set<string>()
+        const body =
+          renderFn &&
+          lowerArmArray(renderFn, sf, eachRoots(itemParam), [itemParam, indexParam], renderDeps)
+        if (body != null) {
           // source: items accessor (component roots) + deps = items deps PLUS the
           // component-state paths the rows read (render `state.*` deps, un-namespaced)
           const itemsLowered = signalToProduce(items, sf, roots)
@@ -244,9 +254,9 @@ export function transformNodeExpr(
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
           const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
-          return `signalEach(${source}, ${keySrc}, ${renderSrc})`
+          return `signalEach(${source}, ${keySrc}, () => ${body})`
         }
-        // leaked row param -> fall through to verbatim (runtime authoring each)
+        // unlowerable render -> fall through to verbatim (runtime authoring each)
       }
     }
 
@@ -268,9 +278,18 @@ export function transformNodeExpr(
                 [narrowed, { value: condLowered.produce, dep: condPath }],
               ]) as Roots)
             : roots
-        const thenSrc = `() => ${renderArraySrc(render, sf, thenRoots)}`
-        const elseSrc = orElse ? `, () => ${renderArraySrc(orElse, sf, roots)}` : ''
-        return `signalShow(${specSrc(cond, sf, roots)}, ${thenSrc}${elseSrc})`
+        // Like `each`, the then-arm's narrowed param is rebased only inside
+        // recognized slots — if it leaks into a verbatim helper call / handler (or
+        // the cond isn't a simple path, so it isn't rebased at all), or either arm
+        // is a non-array body, the lowered `() => [...]` arm can't bind it. Fall
+        // back to the runtime authoring `show`, which binds a real narrowed handle.
+        const thenBody = lowerArmArray(render, sf, thenRoots, [narrowed])
+        const elseBody = orElse ? lowerArmArray(orElse, sf, roots, [firstParam(orElse)]) : null
+        if (thenBody != null && (!orElse || elseBody != null)) {
+          const elseSrc = orElse ? `, () => ${elseBody}` : ''
+          return `signalShow(${specSrc(cond, sf, roots)}, () => ${thenBody}${elseSrc})`
+        }
+        // unlowerable arm -> fall through to verbatim (runtime authoring show)
       }
     }
 
@@ -295,41 +314,64 @@ export function transformNodeExpr(
         const discSpec = `{ produce: (${paramOf(roots)}) => (${valueLowered.produce}).${disc}, deps: ${depsArr(
           discDep !== null ? [discDep] : valueLowered.deps,
         )} }`
-        const armsSrc = arms.properties
-          .map((p) => {
-            if (!ts.isPropertyAssignment(p)) return p.getText(sf)
-            const fn = p.initializer
-            const vParam =
-              (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
-              fn.parameters[0] &&
-              ts.isIdentifier(fn.parameters[0].name)
-                ? fn.parameters[0].name.text
-                : null
-            // narrow only when the value is a simple path; otherwise the arm
-            // body falls back to the component roots (no `v` narrowing).
-            const armRoots =
-              vParam !== null && valuePath !== null
-                ? (new Map([
-                    ...roots,
-                    [vParam, { value: valueLowered.produce, dep: valuePath }],
-                  ]) as Roots)
-                : roots
-            return `${p.name.getText(sf)}: () => ${renderArraySrc(fn, sf, armRoots)}`
-          })
-          .join(', ')
-        return `signalBranch(${discSpec}, { ${armsSrc} })`
+        // An arm is lowerable only if it's a `PropertyAssignment` whose body is a
+        // concise array that doesn't leak its narrowed `v` param into a verbatim
+        // helper call / handler (or that doesn't use `v` when the value isn't a
+        // simple path, so it can't be rebased). If ANY arm — or a spread / accessor
+        // property — can't be lowered, emit the WHOLE branch verbatim so the
+        // runtime authoring `branch` binds real narrowed handles for every arm.
+        const armsSrc: string[] = []
+        let armsOk = true
+        for (const p of arms.properties) {
+          if (!ts.isPropertyAssignment(p)) {
+            armsOk = false
+            break
+          }
+          const fn = p.initializer
+          const vParam =
+            (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+            fn.parameters[0] &&
+            ts.isIdentifier(fn.parameters[0].name)
+              ? fn.parameters[0].name.text
+              : null
+          // narrow only when the value is a simple path; otherwise the arm
+          // body falls back to the component roots (no `v` narrowing).
+          const armRoots =
+            vParam !== null && valuePath !== null
+              ? (new Map([
+                  ...roots,
+                  [vParam, { value: valueLowered.produce, dep: valuePath }],
+                ]) as Roots)
+              : roots
+          const armBody = lowerArmArray(fn, sf, armRoots, [vParam])
+          if (armBody == null) {
+            armsOk = false
+            break
+          }
+          armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
+        }
+        if (armsOk) return `signalBranch(${discSpec}, { ${armsSrc.join(', ')} })`
+        // unlowerable arm -> fall through to verbatim (runtime authoring branch)
       }
       // 2-arg plain form: branch(stringSignal, { arm: () => [...] }) — the value
       // IS the discriminant; arms are keyed by its value, no narrowed param.
       if (value && discArg && ts.isObjectLiteralExpression(discArg) && isSignalExpr(value, roots)) {
-        const armsSrc = discArg.properties
-          .map((p) =>
-            ts.isPropertyAssignment(p)
-              ? `${p.name.getText(sf)}: () => ${renderArraySrc(p.initializer, sf, roots)}`
-              : p.getText(sf),
-          )
-          .join(', ')
-        return `signalBranch(${specSrc(value, sf, roots)}, { ${armsSrc} })`
+        const armsSrc: string[] = []
+        let armsOk = true
+        for (const p of discArg.properties) {
+          if (!ts.isPropertyAssignment(p)) {
+            armsOk = false
+            break
+          }
+          const armBody = lowerArmArray(p.initializer, sf, roots, [firstParam(p.initializer)])
+          if (armBody == null) {
+            armsOk = false
+            break
+          }
+          armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
+        }
+        if (armsOk) return `signalBranch(${specSrc(value, sf, roots)}, { ${armsSrc.join(', ')} })`
+        // unlowerable arm -> fall through to verbatim (runtime authoring branch)
       }
     }
 

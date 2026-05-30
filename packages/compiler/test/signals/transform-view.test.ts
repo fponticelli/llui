@@ -125,6 +125,40 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(tx(src)).toBe(src)
   })
 
+  it('leaves an each VERBATIM when the render is a block body (not a concise array)', () => {
+    // A block-body render `(item) => { return [...] }` used to be returned whole by
+    // renderArraySrc, producing the malformed `signalEach(..., () => (item) => {...})`
+    // — a render that yields the arrow instead of nodes. Stay verbatim.
+    const src =
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { return [text(item.at('name'))] } })"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves a SHOW verbatim when the then-arm leaks its narrowed param to a helper', () => {
+    // show(cond, (u) => [profileCard(u)]) lowered to `() => [profileCard(u)]` — the
+    // narrowed `u` is free. Stay verbatim so the runtime show binds a real handle.
+    const src = "show(state.at('user'), (u) => [profileCard(u)])"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves a SHOW verbatim when an arm is a block body', () => {
+    const src = "show(state.at('open'), () => { return [text('x')] })"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves a BRANCH verbatim when a narrowed arm leaks its param to a helper', () => {
+    // branch(value, disc, { loaded: (v) => [loadedView(v)] }) — `v` is free in the
+    // lowered param-less arm. Stay verbatim; runtime branch binds the variant handle.
+    const src =
+      "branch(state.at('view'), (x) => x.kind, { loading: () => [text('…')], loaded: (v) => [loadedView(v)] })"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves a BRANCH verbatim when an arm is a block body', () => {
+    const src = "branch(state.at('filter'), { all: () => { return [text('a')] } })"
+    expect(tx(src)).toBe(src)
+  })
+
   it('lowers show to signalShow (cond spec, content under state root)', () => {
     const out = tx("show(state.at('open'), () => [text(state.at('name'))])")
     expect(out).toBe(
