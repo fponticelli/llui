@@ -412,6 +412,38 @@ export interface RowCtx<T> {
 }
 
 /**
+ * Indices into `a` that form a longest strictly-increasing subsequence, skipping
+ * entries `< 0` (used for keyed reorder: entries are old DOM positions and `-1`
+ * marks a freshly-created row). Patience-sorting with parent links, O(n log n).
+ * The returned set marks the rows that are ALREADY in correct relative order and
+ * therefore need no DOM move — every other row is inserted/moved.
+ */
+function lisIndices(a: readonly number[]): Set<number> {
+  const piles: number[] = [] // piles[l] = index in `a` of the smallest tail of a length-(l+1) subseq
+  const prev = new Array<number>(a.length).fill(-1)
+  for (let i = 0; i < a.length; i++) {
+    const v = a[i]!
+    if (v < 0) continue // new row — never part of the kept (LIS) set
+    let lo = 0
+    let hi = piles.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (a[piles[mid]!]! < v) lo = mid + 1
+      else hi = mid
+    }
+    if (lo > 0) prev[i] = piles[lo - 1]!
+    piles[lo] = i
+  }
+  const keep = new Set<number>()
+  let k = piles.length > 0 ? piles[piles.length - 1]! : -1
+  while (k >= 0) {
+    keep.add(k)
+    k = prev[k]!
+  }
+  return keep
+}
+
+/**
  * Keyed list primitive. A structural binding gated on the list's deps (items
  * path + row-state paths); on change it reconciles by key. Each row is its OWN
  * signal scope mounted on a combined `{ item, state }` context — so a row reacts
@@ -419,8 +451,10 @@ export interface RowCtx<T> {
  * state change fans out only to the row bindings that read it; item changes hit
  * only that row). Kept rows are mutated in place, never recreated.
  *
- * Index accessor and move-minimizing reorder are deferred (correct-but-simple
- * reorder: rows are re-inserted in order before the end anchor).
+ * Reorder is move-minimizing via a longest-increasing-subsequence pass over the
+ * rows' previous DOM positions: only `n − |LIS|` rows move, so a 2-row swap is 2
+ * DOM moves and a single removal is 0 — not the O(n) re-insert the naive cursor
+ * walk degraded to (swap/remove were ~6×/4× slower than peer frameworks).
  */
 export function signalEach<T>(
   source: EachSource<T>,
@@ -445,23 +479,29 @@ export function signalEach<T>(
     spare: RowCtx<T> // scratch ctx, swapped in on the next update (no per-tick alloc)
     teardowns: Array<() => void> // onMount cleanups + foreign unmount for this row
     holder: { ctx: RowCtx<T> } // live-ctx box for runtime item handles (.peek)
+    // onMount callbacks, run once after the row's nodes are first inserted (phase 3).
+    mounts: ReadonlyArray<(root: Element) => void | (() => void)>
+    mounted: boolean
   }
   const rows = new Map<string, Row>()
+  // Keys in current DOM order — the previous reconcile's desired order. Drives the
+  // LIS move-minimization (old position of each surviving key).
+  let order: string[] = []
 
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
     const items = source.items(state)
+    const n = items.length
+    const newKeys = new Array<string>(n)
+    const newRows = new Array<Row>(n)
     const seen = new Set<string>()
-    // Minimal-move reconcile: walk the desired order keeping a cursor `pos` at
-    // the DOM node the current row should start at. Rows already in position are
-    // not touched (zero DOM moves for the common in-place-update case); only
-    // displaced or new rows are inserted before `pos`. O(n) work, but DOM
-    // mutations proportional to the number of MOVED rows, not total rows.
-    let pos: Node = start.nextSibling ?? end
-    for (let index = 0; index < items.length; index++) {
+
+    // ── Phase 1: create-or-update every desired row (NO DOM moves yet) ──
+    for (let index = 0; index < n; index++) {
       const item = items[index]!
       const k = String(key(item))
+      newKeys[index] = k
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
@@ -480,40 +520,68 @@ export function signalEach<T>(
           spare: { item, state, index },
           teardowns: built.teardowns,
           holder,
+          mounts: built.mounts,
+          mounted: false,
         }
         rows.set(k, row)
-        for (const n of row.nodes) parent.insertBefore(n, pos) // new row, in order before pos
-        runMounts(built.mounts, parent as Element, built.teardowns)
-        continue
-      }
-      // existing row: re-run only the bindings whose part of the ctx changed.
-      // Reuse the spare ctx buffer (no allocation); swap it in as the new
-      // current. old (row.ctx) and new (next) stay distinct refs, so the diff
-      // sees item/state changes correctly.
-      const next = row.spare
-      next.item = item
-      next.state = state
-      next.index = index
-      row.scope.update(row.ctx, next)
-      row.spare = row.ctx
-      row.ctx = next
-      row.holder.ctx = next // keep runtime item handles' .peek() current
-      const first = row.nodes[0]
-      if (first === pos) {
-        // already in place — no DOM move; advance the cursor past this row
-        pos = row.nodes[row.nodes.length - 1]!.nextSibling ?? end
       } else {
-        // displaced — move this row's nodes before pos (pos stays)
-        for (const n of row.nodes) parent.insertBefore(n, pos)
+        // existing row: re-run only the bindings whose part of the ctx changed.
+        // Reuse the spare ctx buffer (no allocation); swap it in as the new
+        // current. old (row.ctx) and new (next) stay distinct refs, so the diff
+        // sees item/state changes correctly.
+        const next = row.spare
+        next.item = item
+        next.state = state
+        next.index = index
+        row.scope.update(row.ctx, next)
+        row.spare = row.ctx
+        row.ctx = next
+        row.holder.ctx = next // keep runtime item handles' .peek() current
+      }
+      newRows[index] = row
+    }
+
+    // ── Phase 2: remove rows no longer present ──
+    if (rows.size > n || seen.size < rows.size) {
+      for (const [k, row] of rows) {
+        if (!seen.has(k)) {
+          for (const t of row.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
+          for (const node of row.nodes) if (node.parentNode === parent) parent.removeChild(node)
+          rows.delete(k)
+        }
       }
     }
-    for (const [k, row] of rows) {
-      if (!seen.has(k)) {
-        for (const t of row.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
-        for (const n of row.nodes) if (n.parentNode === parent) parent.removeChild(n)
-        rows.delete(k)
-      }
+
+    // ── Phase 3: order the DOM with minimal moves (LIS over old positions) ──
+    // sources[i] = the old DOM position of the row now wanted at i, or -1 if it
+    // was created this pass. Rows in the LIS are already correctly ordered and
+    // stay put; every other row (and every new row) is inserted before the anchor
+    // as we walk right-to-left. Moves = n − |LIS|.
+    const oldPos = new Map<string, number>()
+    for (let i = 0; i < order.length; i++) oldPos.set(order[i]!, i)
+    const sources = new Array<number>(n)
+    for (let i = 0; i < n; i++) {
+      const p = oldPos.get(newKeys[i]!)
+      sources[i] = p === undefined ? -1 : p
     }
+    const keep = lisIndices(sources)
+    let anchor: Node = end
+    for (let i = n - 1; i >= 0; i--) {
+      const row = newRows[i]!
+      if (sources[i] === -1) {
+        for (const node of row.nodes) parent.insertBefore(node, anchor)
+        if (!row.mounted) {
+          row.mounted = true
+          runMounts(row.mounts, parent as Element, row.teardowns)
+        }
+      } else if (!keep.has(i)) {
+        for (const node of row.nodes) parent.insertBefore(node, anchor)
+      }
+      // anchor for the next (leftward) row is this row's first node
+      anchor = row.nodes[0] ?? anchor
+    }
+
+    order = newKeys
   }
 
   // structural binding: fires when the list deps change; produce returns the
