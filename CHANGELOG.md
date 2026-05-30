@@ -11,6 +11,14 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — @llui/dom@0.5.1
+
+**Released:** `@llui/dom@0.5.1`
+
+### `@llui/dom@0.5.1`
+
+- **Fixed** a component-state read (`state.map`/`state.at`) inside a `show`/`branch` **arm** — or a nested `each`/`virtualEach` — within an `each` row resolved against the combined row ctx (`{ item, state, index }`) instead of the component state, throwing `Cannot read properties of undefined` on the first update after mount. The `each` rebased only its row's _direct_ specs; arm and nested-scope specs (built lazily) escaped it. Structural primitives are now row-aware at every depth: `show`/`branch` evaluate their condition against `ctx.state` and rebase their arm's value reads, while `each`/`virtualEach` read the component state from the row ctx for their reconcile. `virtualEach` rows are now rebased at all (they never were). Dom-family consumers need no republish — their `@llui/dom` peer range (`^0.5.0`) already accepts `0.5.1`.
+
 ## 2026-05-30 — @llui/compiler@0.6.1
 
 **Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.1`
