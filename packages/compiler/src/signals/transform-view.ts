@@ -33,6 +33,21 @@ function eachRoots(itemParam: string): Roots {
   ])
 }
 
+// True if a lowered render string still references `ident` as a free identifier
+// (i.e. as a standalone word not reached through a member access and not inside a
+// string). The lowering rewrites legitimate row-param reads to `ctx.item` /
+// `ctx.index` (the word there is preceded by `.`) and records deps as quoted
+// strings like `'item.title'` (preceded by a quote); a bare occurrence elsewhere
+// means the param leaked into a verbatim position — an event handler or a helper
+// call like `activityItem(item, ...)` — that the lowered `() => [...]` render
+// can't bind. Such an `each` must stay verbatim so the runtime authoring `each`
+// (which binds real item/index handles) renders it. We exclude `.`/quote-prefixed
+// occurrences; any false positive only forgoes the optimization, so this is safe.
+function loweredLeaksIdent(src: string, ident: string): boolean {
+  const escaped = ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![.\\w$'"\`])${escaped}(?![\\w$])`).test(src)
+}
+
 const ELEMENT_HELPERS = new Set([
   'div',
   'span',
@@ -183,12 +198,14 @@ export function transformNodeExpr(
     }
 
     if (callee === 'each') {
-      // each(items, { key, render: (item) => [...] }) -> combined-ctx rows.
+      // each(items, { key, render: (item, index) => [...] }) -> combined-ctx rows.
       const items = node.arguments[0]
       const opts = node.arguments[1]
       if (items && opts && ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots)) {
         let keySrc = '(x) => x'
         let renderSrc = '() => []'
+        let itemParam = 'item'
+        let indexParam: string | null = null
         const renderDeps = new Set<string>()
         for (const p of opts.properties) {
           if (!ts.isPropertyAssignment(p)) continue
@@ -196,25 +213,40 @@ export function transformNodeExpr(
           if (name === 'key') keySrc = p.initializer.getText(sf)
           else if (name === 'render') {
             const fn = p.initializer
-            const itemParam =
-              (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
-              fn.parameters[0] &&
-              ts.isIdentifier(fn.parameters[0].name)
-                ? fn.parameters[0].name.text
-                : 'item'
+            if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+              if (fn.parameters[0] && ts.isIdentifier(fn.parameters[0].name))
+                itemParam = fn.parameters[0].name.text
+              if (fn.parameters[1] && ts.isIdentifier(fn.parameters[1].name))
+                indexParam = fn.parameters[1].name.text
+            }
             // rows read ctx.item.* and ctx.state.*; collect their deps
             renderSrc = `() => ${renderArraySrc(fn, sf, eachRoots(itemParam), renderDeps)}`
           }
         }
-        // source: items accessor (component roots) + deps = items deps PLUS the
-        // component-state paths the rows read (render `state.*` deps, un-namespaced)
-        const itemsLowered = signalToProduce(items, sf, roots)
-        const rowStateDeps = [...renderDeps]
-          .filter((d) => d === 'state' || d.startsWith('state.'))
-          .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
-        const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
-        const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
-        return `signalEach(${source}, ${keySrc}, ${renderSrc})`
+        // The lowering rewrites the row param to `ctx.item` only inside RECOGNIZED
+        // signal slots (text/element props/each/show/branch). If the render passes
+        // the param to a helper call or reads it in an event handler — e.g.
+        // `render: (item) => [activityItem(item, ...)]` — that reference stays
+        // verbatim while the lowered render `() => [...]` has no `item` binding, so
+        // it would throw `item is not defined` at runtime. Detect a leaked param
+        // and leave the WHOLE `each(...)` verbatim — the runtime authoring `each`
+        // binds real item/index handles and renders correctly. (False positives,
+        // e.g. the word in a string literal, only forgo the optimization.)
+        const leaks =
+          loweredLeaksIdent(renderSrc, itemParam) ||
+          (indexParam !== null && loweredLeaksIdent(renderSrc, indexParam))
+        if (!leaks) {
+          // source: items accessor (component roots) + deps = items deps PLUS the
+          // component-state paths the rows read (render `state.*` deps, un-namespaced)
+          const itemsLowered = signalToProduce(items, sf, roots)
+          const rowStateDeps = [...renderDeps]
+            .filter((d) => d === 'state' || d.startsWith('state.'))
+            .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
+          const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
+          const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
+          return `signalEach(${source}, ${keySrc}, ${renderSrc})`
+        }
+        // leaked row param -> fall through to verbatim (runtime authoring each)
       }
     }
 

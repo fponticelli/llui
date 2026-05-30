@@ -103,6 +103,28 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(out).toContain("react((ctx) => ctx.state.mode, ['state.mode'])")
   })
 
+  it('leaves an each VERBATIM when the render passes the row param to a helper call', () => {
+    // `render: (item) => [activityItem(item, ...)]` — the row param leaks into a
+    // verbatim helper call the lowered `() => [...]` render can't bind, so lowering
+    // would emit a free `item` -> `item is not defined` at runtime. Stay verbatim:
+    // the runtime authoring `each` binds a real item handle. (dashboard demo bug.)
+    const src =
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [activityItem(item, state.at('locale'))] })"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves an each VERBATIM when the render reads the index param in a helper call', () => {
+    const src =
+      "each(state.at('rows'), { key: (r) => r.id, render: (item, index) => [priorityItem(item, index, parts)] })"
+    expect(tx(src)).toBe(src)
+  })
+
+  it('leaves an each VERBATIM when the row param is read inside an event handler', () => {
+    const src =
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => item.peek() }, [text(item.at('name'))])] })"
+    expect(tx(src)).toBe(src)
+  })
+
   it('lowers show to signalShow (cond spec, content under state root)', () => {
     const out = tx("show(state.at('open'), () => [text(state.at('name'))])")
     expect(out).toBe(
