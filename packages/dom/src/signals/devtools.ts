@@ -347,3 +347,162 @@ export function installSignalDebug(hooks: SignalDebugHooks): () => void {
     if (g.__lluiDebug === api) g.__lluiDebug = undefined
   }
 }
+
+// ── MCP relay ───────────────────────────────────────────────────────
+//
+// Browser-side WebSocket bridge between the MCP server and the live
+// `globalThis.__lluiDebug` API that `installSignalDebug` registers.
+// Runtime-agnostic — it only reads the global registry, so it works
+// identically for any debug API shape. Dev-mode only; the vite-plugin
+// emits `startRelay(port)` into compiled dev bundles.
+//
+// On-demand: tries a SINGLE connection on page load. If it succeeds
+// (MCP server already running) the relay stays open and reconnects on
+// drop. If it fails, no retry loop — just registers
+// `window.__lluiConnect(port?)` so the developer can connect later from
+// the console or when the MCP server starts.
+
+let relayPort = 5200
+let relayConnected = false
+
+interface RelayRequest {
+  id: string
+  method: keyof LluiDebugAPI | '__listComponents' | '__selectComponent'
+  args: unknown[]
+}
+
+function handleRelayMessage(ws: WebSocket, event: MessageEvent): void {
+  let req: RelayRequest
+  try {
+    req = JSON.parse(String(event.data)) as RelayRequest
+  } catch {
+    return
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any
+  if (req.method === '__listComponents') {
+    const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
+    const active =
+      g.__lluiDebug && g.__lluiComponents
+        ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ?? null)
+        : null
+    ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
+    return
+  }
+  if (req.method === '__selectComponent') {
+    const key = (req.args?.[0] as string | undefined) ?? ''
+    const entry = g.__lluiComponents?.[key]
+    if (!entry) {
+      ws.send(JSON.stringify({ id: req.id, error: `unknown component: ${key}` }))
+      return
+    }
+    g.__lluiDebug = entry
+    ws.send(JSON.stringify({ id: req.id, result: { active: key } }))
+    return
+  }
+
+  const api = g.__lluiDebug as LluiDebugAPI | undefined
+  if (!api) {
+    ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
+    return
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fn = (api as any)[req.method]
+  if (typeof fn !== 'function') {
+    ws.send(JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` }))
+    return
+  }
+  try {
+    const result = fn.apply(api, req.args ?? [])
+    ws.send(JSON.stringify({ id: req.id, result: result ?? null }))
+  } catch (e) {
+    ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))
+  }
+}
+
+function connectRelay(port: number, isInitial: boolean): void {
+  if (typeof WebSocket === 'undefined') return
+
+  let ws: WebSocket
+  try {
+    ws = new WebSocket(`ws://127.0.0.1:${port}`)
+  } catch {
+    if (!isInitial) console.warn(`[LLui MCP] failed to connect to ws://127.0.0.1:${port}`)
+    return
+  }
+
+  ws.onopen = () => {
+    relayConnected = true
+    console.log(`[LLui MCP] connected to ws://127.0.0.1:${port}`)
+  }
+  ws.onmessage = (event) => handleRelayMessage(ws, event)
+  ws.onclose = () => {
+    if (relayConnected) {
+      relayConnected = false
+      console.log('[LLui MCP] disconnected — call __lluiConnect() to reconnect')
+    }
+  }
+  ws.onerror = () => {
+    // onclose fires after onerror — nothing to do here
+  }
+}
+
+type McpStatusResult =
+  | { kind: 'found'; port: number }
+  | { kind: 'not-running' } // every path responded but with non-200/no port
+  | { kind: 'network-error' } // every path threw — no server reachable
+
+/**
+ * Try the canonical Vite middleware path; if it 404s (Cloudflare
+ * plugin's catch-all routes everything to the worker), fall back to
+ * `/cdn-cgi/llui_mcp_status` which the Vite plugin also registers.
+ *
+ * Distinguishes "MCP not running" (404 from a real Vite server) from
+ * "no Vite server" (fetch threw). Callers handle these differently.
+ */
+async function resolveMcpStatus(): Promise<McpStatusResult> {
+  let allThrew = true
+  for (const path of ['/__llui_mcp_status', '/cdn-cgi/llui_mcp_status']) {
+    try {
+      const res = await fetch(path)
+      allThrew = false
+      if (!res.ok) continue
+      const data = (await res.json()) as { port?: unknown }
+      if (typeof data.port === 'number') return { kind: 'found', port: data.port }
+    } catch {
+      // Network error on this path — try the next.
+    }
+  }
+  return allThrew ? { kind: 'network-error' } : { kind: 'not-running' }
+}
+
+/**
+ * Register the MCP relay for this page. Discovery: fetch the Vite
+ * plugin's `/__llui_mcp_status` marker for the live port and connect; if
+ * unreachable, fall back to the compile-time `port`. No retry loop —
+ * `window.__lluiConnect(port?)` is exposed for manual/late connection,
+ * and the vite-plugin's `llui:mcp-ready` HMR event also forwards here.
+ */
+export function startRelay(port = 5200): void {
+  relayPort = port
+  if (typeof WebSocket === 'undefined') return
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any
+  g.__lluiConnect = (p?: number) => {
+    connectRelay(p ?? relayPort, false)
+  }
+
+  if (typeof fetch !== 'undefined') {
+    void resolveMcpStatus().then((result) => {
+      if (result.kind === 'found') {
+        relayPort = result.port
+        connectRelay(result.port, true)
+      } else if (result.kind === 'network-error') {
+        connectRelay(port, true)
+      }
+    })
+  } else {
+    connectRelay(port, true)
+  }
+}

@@ -16,6 +16,16 @@ import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import type { Signal } from './types.js'
 
+// Vite/Rollup substitute `import.meta.env.DEV` at build time; bundlers
+// without the substitution (raw tsc / vitest) see it as undefined, so
+// the dev path stays off. The augmentation is declared here (rather than
+// pulling in `vite/client`) so `@llui/dom` carries no build-tool dep.
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+
 /** The bag's `state` is a `Signal<S>` so authored handler code reads it the same
  * way as the view (`state.at('x').peek()`). At runtime it's a read handle: `.at`
  * narrows, `.peek` reads the current value; `.map` is a view-build-time concept

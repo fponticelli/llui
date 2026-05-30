@@ -9,8 +9,8 @@
       "import": "./dist/index.js"
     },
     "./devtools": {
-      "types": "./dist/devtools.d.ts",
-      "import": "./dist/devtools.js"
+      "types": "./dist/signals/devtools.d.ts",
+      "import": "./dist/signals/devtools.js"
     },
     "./ssr": {
       "types": "./dist/ssr-dom.d.ts",
@@ -23,18 +23,6 @@
     "./ssr/linkedom": {
       "types": "./dist/ssr/linkedom.d.ts",
       "import": "./dist/ssr/linkedom.js"
-    },
-    "./ssr/legacy": {
-      "types": "./dist/ssr/legacy.d.ts",
-      "import": "./dist/ssr/legacy.js"
-    },
-    "./hmr": {
-      "types": "./dist/hmr.d.ts",
-      "import": "./dist/hmr.js"
-    },
-    "./escape-hatch": {
-      "types": "./dist/escape-hatch.d.ts",
-      "import": "./dist/escape-hatch.js"
     },
     "./internal": {
       "types": "./dist/internal.d.ts",

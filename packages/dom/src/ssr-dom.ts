@@ -1,17 +1,17 @@
 /**
- * `@llui/dom/ssr` — the generic SSR entry.
+ * `@llui/dom/ssr` — the generic SSR env entry.
  *
- * Exports the render API + the `DomEnv` contract + a `browserEnv()`
- * helper. Does NOT import jsdom, linkedom, or any DOM implementation.
- * Consumers pick their DOM via a sub-entry (`@llui/dom/ssr/jsdom` or
- * `@llui/dom/ssr/linkedom`) and pass the resulting env to
- * `renderToString` / `renderNodes` explicitly.
+ * Exports the `DomEnv` contract + a `browserEnv()` helper. Does NOT
+ * import jsdom, linkedom, or any DOM implementation. Consumers pick
+ * their DOM via a sub-entry (`@llui/dom/ssr/jsdom` or
+ * `@llui/dom/ssr/linkedom`) and pass the resulting env to the signal
+ * SSR renderer (`renderToString` / `renderNodes` from
+ * `@llui/dom/signals`) explicitly.
  *
- * The deprecated `initSsrDom()` shim lives in `@llui/dom/ssr/legacy`
- * so bundles that don't import it don't pay jsdom's bundle cost.
+ * The legacy `renderToString` / `initSsrDom()` shim that used to live
+ * here was removed with the legacy runtime; signal SSR ships from
+ * `@llui/dom/signals`.
  */
 
 export type { DomEnv } from './dom-env.js'
 export { browserEnv } from './dom-env.js'
-
-export { renderToString, renderNodes, serializeNodes } from './ssr.js'
