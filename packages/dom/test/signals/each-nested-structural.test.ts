@@ -187,6 +187,52 @@ describe('component-state reads inside structural primitives nested in an each r
     h.dispose()
   })
 
+  // When an outer arm whose content includes a NESTED structural primitive is
+  // swapped/torn down, the inner primitive's dynamically-mounted content (a
+  // sibling between its own anchors, not in the outer arm's built.nodes) must be
+  // removed too — else it orphans in the DOM (the decisive.space edit-overlay bug).
+  it('swapping an outer branch arm removes a nested branch arm content', () => {
+    const { h, txt } = mount((state) => [
+      branch(
+        state.map((s) => (s.flagged ? 'edit' : 'route')),
+        {
+          route: () => [
+            branch(
+              state.map(() => 'opts'),
+              { opts: () => [div([text('AddOption')])] },
+            ),
+          ],
+          edit: () => [div([text('CreateOption')])],
+        },
+      ),
+    ])
+    expect(txt()).toBe('AddOption')
+    h.send({ type: 'toggleFlag' }) // route -> edit
+    expect(txt()).toBe('CreateOption') // ← was 'AddOptionCreateOption' (leak)
+    h.send({ type: 'toggleFlag' }) // edit -> route, back to nested branch
+    expect(txt()).toBe('AddOption')
+    h.dispose()
+  })
+
+  it('swapping an outer show arm removes a nested show arm content', () => {
+    const { h, txt } = mount((state) => [
+      show(
+        state.map((s) => !s.flagged),
+        () => [
+          show(
+            state.map(() => true),
+            () => [text('Inner')],
+          ),
+        ],
+        () => [text('Else')],
+      ),
+    ])
+    expect(txt()).toBe('Inner')
+    h.send({ type: 'toggleFlag' })
+    expect(txt()).toBe('Else') // nested 'Inner' must be gone
+    h.dispose()
+  })
+
   it('top-level show/branch (not in a row) still works (regression)', () => {
     const { h, txt } = mount((state) => [
       branch(

@@ -420,6 +420,20 @@ function rebaseRowSpec(spec: BindingSpec): BindingSpec {
   }
 }
 
+/** Remove every node strictly between the `start` and `end` anchors. Used to tear
+ * down a show/branch arm: it clears the arm's nodes AND any content a NESTED
+ * structural primitive mounted between its own anchors (which is a sibling here,
+ * not captured in the arm's `built.nodes`), so swapping/disposing an arm never
+ * leaks inner content. The anchors themselves are left in place. */
+function removeBetween(start: Node, end: Node): void {
+  let n = start.nextSibling
+  while (n && n !== end) {
+    const next = n.nextSibling
+    n.parentNode?.removeChild(n)
+    n = next
+  }
+}
+
 /** Rebase every VALUE spec in a row/arm build to read `ctx.state`, leaving
  * STRUCTURAL specs (show/branch/each) untouched — they make themselves row-aware
  * at build time (`c.inRow`), so rewriting their identity produce would break the
@@ -769,7 +783,7 @@ export function signalShow(
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
       for (const t of mounted.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
-      for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
+      removeBetween(start, end) // arm nodes + any nested-structural content
       mounted = null
     }
 
@@ -799,11 +813,15 @@ export function signalShow(
 
   // On host dispose, tear down the currently-mounted arm (onMount cleanups,
   // foreign unmounts) — otherwise reference-counted side effects (scroll lock,
-  // focus trap, dismissable) leak when the component unmounts while open.
+  // focus trap, dismissable) leak when the component unmounts while open. Also
+  // remove the arm's nodes (incl. nested-structural content) so that disposing an
+  // OUTER arm — which runs this teardown for an inner show/branch — clears the
+  // inner content rather than orphaning it between the (now-removed) anchors.
   c.teardowns.push(() => {
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
       for (const t of mounted.teardowns.splice(0)) t()
+      removeBetween(start, end)
       mounted = null
     }
   })
@@ -851,7 +869,7 @@ export function signalBranch(
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
       for (const t of mounted.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
-      for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
+      removeBetween(start, end) // arm nodes + any nested-structural content
       mounted = null
     }
 
@@ -880,6 +898,7 @@ export function signalBranch(
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
       for (const t of mounted.teardowns.splice(0)) t()
+      removeBetween(start, end)
       mounted = null
     }
   })
