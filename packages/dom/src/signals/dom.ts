@@ -487,6 +487,15 @@ export function signalEach<T>(
   // Keys in current DOM order — the previous reconcile's desired order. Drives the
   // LIS move-minimization (old position of each surviving key).
   let order: string[] = []
+  // Whether the row template has ANY binding that reads component state (`state` /
+  // `state.*` deps, after rebasing). Probed once from the first built row — every
+  // row shares the template, so it's a property of the `each`, not the row. When
+  // false, a row whose `item` + `index` are unchanged needs no re-evaluation even
+  // though the component-state ref changed (its bindings can't depend on it), so we
+  // skip its `scope.update` — turning an N-row in-place update into work
+  // proportional to the rows that actually changed.
+  let templateReadsState = true
+  let templateProbed = false
 
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
@@ -517,6 +526,12 @@ export function signalEach<T>(
         // Re-root any component-state-rooted bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state.
         built.specs = built.specs.map(rebaseRowSpec)
+        if (!templateProbed) {
+          templateProbed = true
+          templateReadsState = built.specs.some((s) =>
+            s.deps.some((d) => d === 'state' || d.startsWith('state.')),
+          )
+        }
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
@@ -530,11 +545,11 @@ export function signalEach<T>(
           mounted: false,
         }
         rows.set(k, row)
-      } else {
-        // existing row: re-run only the bindings whose part of the ctx changed.
-        // Reuse the spare ctx buffer (no allocation); swap it in as the new
-        // current. old (row.ctx) and new (next) stay distinct refs, so the diff
-        // sees item/state changes correctly.
+      } else if (templateReadsState || item !== row.ctx.item || index !== row.ctx.index) {
+        // existing row that may have changed: re-run only the bindings whose part
+        // of the ctx changed. Reuse the spare ctx buffer (no allocation); swap it
+        // in as the new current. old (row.ctx) and new (next) stay distinct refs,
+        // so the diff sees item/state changes correctly.
         const next = row.spare
         next.item = item
         next.state = state
@@ -543,6 +558,8 @@ export function signalEach<T>(
         row.spare = row.ctx
         row.ctx = next
         row.holder.ctx = next // keep runtime item handles' .peek() current
+        // No else: item + index unchanged and no binding reads component state, so
+        // the row's output can't have changed — skip the diff + binding re-eval.
       }
       newRows[index] = row
     }

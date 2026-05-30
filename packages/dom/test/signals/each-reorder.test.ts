@@ -128,6 +128,42 @@ describe('keyed each — minimal-move reorder', () => {
     h.dispose()
   })
 
+  it('skip-unchanged-rows opt keeps item-only rows correct when only state changes', () => {
+    // The reconcile skips scope.update for rows whose item+index are unchanged when
+    // the template reads no component state. A state-only change (rows refs stable)
+    // must still leave rows correct, and a later item change must still update.
+    interface S2 {
+      rows: Row[]
+      tick: number
+    }
+    type M2 = { type: 'tick' } | { type: 'set'; rows: Row[] }
+    const container = document.createElement('div')
+    const rows = mk(3)
+    const h = mountSignalComponent<S2, M2>(container, {
+      init: () => ({ rows, tick: 0 }),
+      update: (s, m) => (m.type === 'tick' ? { ...s, tick: s.tick + 1 } : { ...s, rows: m.rows }),
+      // rows read ONLY item.label — no component-state read → skip path active
+      view: ({ state }) => [
+        ul([
+          each(
+            state.map((s) => s.rows),
+            { key: (r: Row) => r.id, render: (item) => [li([text(item.map((r) => r.label))])] },
+          ),
+        ]),
+      ],
+    })
+    const labels = () => [...container.querySelectorAll('li')].map((el) => el.textContent)
+    expect(labels()).toEqual(['l1', 'l2', 'l3'])
+
+    h.send({ type: 'tick' }) // state changes, row item refs unchanged → rows skipped
+    expect(labels()).toEqual(['l1', 'l2', 'l3']) // still correct (no stale/blank)
+
+    // change one item's data (new ref) → that row must re-evaluate
+    h.send({ type: 'set', rows: [rows[0]!, { id: 2, label: 'CHANGED' }, rows[2]!] })
+    expect(labels()).toEqual(['l1', 'CHANGED', 'l3'])
+    h.dispose()
+  })
+
   it('in-place label update moves nothing but still applies reactively (fast path)', () => {
     const rows = mk(4)
     const { h, ids, labels, reset, counts } = mount(rows)
