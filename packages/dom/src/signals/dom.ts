@@ -496,12 +496,18 @@ export function signalEach<T>(
     const newKeys = new Array<string>(n)
     const newRows = new Array<Row>(n)
     const seen = new Set<string>()
+    // Track whether the key sequence is positionally identical to the previous
+    // DOM order. If so this is a pure in-place update (no create/remove/move) and
+    // we can skip the ordering bookkeeping (old-position map + LIS) entirely — the
+    // hot path for `update`/`replace`-in-place, which must not pay reorder cost.
+    let sameOrder = order.length === n
 
     // ── Phase 1: create-or-update every desired row (NO DOM moves yet) ──
     for (let index = 0; index < n; index++) {
       const item = items[index]!
       const k = String(key(item))
       newKeys[index] = k
+      if (sameOrder && order[index] !== k) sameOrder = false
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
@@ -539,6 +545,13 @@ export function signalEach<T>(
         row.holder.ctx = next // keep runtime item handles' .peek() current
       }
       newRows[index] = row
+    }
+
+    // Fast path: identical key sequence → no creates, removes, or moves. The DOM
+    // is already in the right order; rows were updated in place above.
+    if (sameOrder) {
+      order = newKeys
+      return
     }
 
     // ── Phase 2: remove rows no longer present ──

@@ -42,6 +42,7 @@ function mount(initial: Row[]) {
   const insertSpy = vi.spyOn(listEl, 'insertBefore')
   const removeSpy = vi.spyOn(listEl, 'removeChild')
   const ids = () => [...listEl.querySelectorAll('li')].map((el) => el.id)
+  const labels = () => [...listEl.querySelectorAll('li')].map((el) => el.textContent)
   const reset = () => {
     insertSpy.mockClear()
     removeSpy.mockClear()
@@ -49,6 +50,7 @@ function mount(initial: Row[]) {
   return {
     h,
     ids,
+    labels,
     reset,
     counts: () => ({ inserts: insertSpy.mock.calls.length, removes: removeSpy.mock.calls.length }),
   }
@@ -126,16 +128,20 @@ describe('keyed each — minimal-move reorder', () => {
     h.dispose()
   })
 
-  it('in-place label update moves nothing', () => {
+  it('in-place label update moves nothing but still applies reactively (fast path)', () => {
     const rows = mk(4)
-    const { h, ids, reset, counts } = mount(rows)
+    const { h, ids, labels, reset, counts } = mount(rows)
+    expect(labels()).toEqual(['l1', 'l2', 'l3', 'l4'])
 
     const relabeled = rows.map((r) => ({ ...r, label: r.label + '!' }))
     reset()
     h.send({ type: 'set', rows: relabeled })
-    expect(ids()).toEqual(['r1', 'r2', 'r3', 'r4'])
-    expect(counts().inserts).toBe(0)
+
+    expect(ids()).toEqual(['r1', 'r2', 'r3', 'r4']) // same order
+    expect(counts().inserts).toBe(0) // fast path: no DOM moves/bookkeeping
     expect(counts().removes).toBe(0)
+    // …but per-row bindings still re-ran (phase 1 runs before the fast-path exit)
+    expect(labels()).toEqual(['l1!', 'l2!', 'l3!', 'l4!'])
     h.dispose()
   })
 })
