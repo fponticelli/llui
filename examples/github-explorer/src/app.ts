@@ -1,7 +1,7 @@
 /**
  * Shared app definition — used by both client and server entry points.
  */
-import { component, branch } from '@llui/dom/signals'
+import { component, branch } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
 import { agentConnect, agentConfirm, agentLog, agentAttention } from './types'

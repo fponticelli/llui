@@ -1,7 +1,7 @@
 /**
  * SSR entry point — fetches data server-side, then serializes state.
  *
- * NOTE: this app now uses the signal runtime (@llui/dom/signals), which has
+ * NOTE: this app now uses the signal runtime (@llui/dom), which has
  * no server-side renderer yet — there is no signal equivalent of the legacy
  * `renderToString`/`hydrateApp`. So the server pre-loads route data and ships
  * the serialized state, but emits an empty app shell; the client mounts fresh

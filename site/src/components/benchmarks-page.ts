@@ -1,4 +1,4 @@
-import { component, div, h1, h2, article, text, onMount } from '@llui/dom/signals'
+import { component, div, h1, h2, article, text, onMount } from '@llui/dom'
 import type { BenchmarksPageData } from '../../pages/benchmarks/+data'
 import { siteLayout, type LayoutMsg } from './site-layout'
 import { rawHtml } from './raw-html'

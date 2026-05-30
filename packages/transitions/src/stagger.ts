@@ -1,4 +1,4 @@
-import type { TransitionOptions } from '@llui/dom/signals'
+import type { TransitionOptions } from '@llui/dom'
 
 export interface StaggerOptions {
   /** Delay between each item in milliseconds (default: 30). */

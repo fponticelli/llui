@@ -7,19 +7,7 @@
 // init/update/Msg are plain TEA (unchanged from the legacy impl). The view uses
 // the signal authoring surface; the compiler lowers it.
 
-import {
-  component,
-  mountApp,
-  div,
-  span,
-  table,
-  tbody,
-  tr,
-  td,
-  h1,
-  text,
-  each,
-} from '@llui/dom/signals'
+import { component, mountApp, div, span, table, tbody, tr, td, h1, text, each } from '@llui/dom'
 import { initialState, initialDashboard } from '../../../shared/data.js'
 import {
   generateTick,

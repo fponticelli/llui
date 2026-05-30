@@ -3,7 +3,7 @@
 // Detects `component({ ... view: ({ state, send }) => [ <nodes> ] ... })` whose
 // view destructures a `state` bag (the signal-component shape), rewrites the
 // returned node array via the view transform (transform-view.ts), and prepends
-// an `import { … } from '@llui/dom/signals'` for the runtime helpers it emits.
+// an `import { … } from '@llui/dom'` for the runtime helpers it emits.
 //
 // Source→source string output. The Vite plugin calls this and feeds the result
 // to esbuild/rollup. Legacy (arrow-accessor) components are left untouched.
@@ -202,7 +202,7 @@ export function transformSignalComponentSource(
   // inject import for the helpers actually used
   const used = RUNTIME_HELPERS.filter((h) => new RegExp(`\\b${h}\\(`).test(out))
   if (used.length > 0) {
-    out = `import { ${used.join(', ')} } from '@llui/dom/signals'\n${out}`
+    out = `import { ${used.join(', ')} } from '@llui/dom'\n${out}`
   }
   return out
 }

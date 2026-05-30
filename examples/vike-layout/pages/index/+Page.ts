@@ -1,4 +1,4 @@
-import { component, div, h1, p, button, text, useContext } from '@llui/dom/signals'
+import { component, div, h1, p, button, text, useContext } from '@llui/dom'
 import { ToastContext, SessionContext } from '../../src/contexts'
 
 type HomeState = { clicks: number }

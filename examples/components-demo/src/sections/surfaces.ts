@@ -1,5 +1,5 @@
-import { div, button, span, h3, p, onMount, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, h3, p, onMount, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { tour, type TourStep } from '@llui/components/tour'
 import { floatingPanel } from '@llui/components/floating-panel'
 import { navigationMenu } from '@llui/components/navigation-menu'

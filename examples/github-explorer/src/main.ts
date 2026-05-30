@@ -2,7 +2,7 @@
  * Client entry point.
  * Hydrates server-rendered HTML when present, otherwise mounts fresh.
  */
-import { mountApp } from '@llui/dom/signals'
+import { mountApp } from '@llui/dom'
 import {
   createAgentClient,
   agentConnect,

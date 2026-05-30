@@ -1,4 +1,4 @@
-import type { TransitionOptions } from '@llui/dom/signals'
+import type { TransitionOptions } from '@llui/dom'
 import type { Styles } from './types.js'
 import { transition } from './transition.js'
 import { asElements, forceReflow } from './style-utils.js'

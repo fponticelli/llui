@@ -1,4 +1,4 @@
-import type { SignalComponentDef } from '@llui/dom/signals'
+import type { SignalComponentDef } from '@llui/dom'
 
 /** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple; collapse
  * to the tuple form using the same heuristic as the signal runtime. */

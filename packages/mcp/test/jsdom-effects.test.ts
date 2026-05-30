@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { mountSignalComponent, el, signalText } from '@llui/dom/signals'
-import type { LluiDebugAPI } from '@llui/dom/signals'
+import { mountSignalComponent, el, signalText } from '@llui/dom'
+import type { LluiDebugAPI } from '@llui/dom'
 import { LluiMcpServer } from '../src/index'
 
 afterEach(() => {

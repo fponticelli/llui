@@ -1,5 +1,5 @@
-import type { Send, Signal } from '@llui/dom/signals'
-import { useContext, tagSend } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext, en } from '../locale.js'
 
 /**

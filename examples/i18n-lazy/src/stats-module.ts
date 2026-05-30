@@ -5,8 +5,8 @@
  * etc. Keeping it out of the initial bundle improves first-paint time
  * significantly for users who never click the button.
  */
-import { component, div, h2, p, ul, li, span, text, each } from '@llui/dom/signals'
-import type { Signal } from '@llui/dom/signals'
+import { component, div, h2, p, ul, li, span, text, each } from '@llui/dom'
+import type { Signal } from '@llui/dom'
 import { formatNumber } from '@llui/components'
 
 interface StatItem {

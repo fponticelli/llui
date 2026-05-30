@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { testView } from '../src/test-view'
-import { component, div, ul, li, span, h1, text, each, button, input } from '@llui/dom/signals'
+import { component, div, ul, li, span, h1, text, each, button, input } from '@llui/dom'
 
 type State = { items: string[]; title: string }
 

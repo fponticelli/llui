@@ -50,7 +50,7 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send } from '@llui/dom/signals'
+import { tagSend, type Send } from '@llui/dom'
 
 // Sentinel for the memoization slot — distinguishable from any
 // possible parent state value (including null/undefined).

@@ -4,7 +4,7 @@
 // event handlers, show() (conditional mount), effects-as-data (update returns
 // effects -> onEffect), and a handler reading current state via .peek().
 
-import { component, div, button, span, text, show } from '@llui/dom/signals'
+import { component, div, button, span, text, show } from '@llui/dom'
 
 interface State {
   count: number

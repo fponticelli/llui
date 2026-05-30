@@ -1,4 +1,4 @@
-import { renderNodes, serializeNodes } from '@llui/dom/signals'
+import { renderNodes, serializeNodes } from '@llui/dom'
 import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'

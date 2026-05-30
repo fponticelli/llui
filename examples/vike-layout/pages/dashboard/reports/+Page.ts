@@ -1,17 +1,4 @@
-import {
-  component,
-  div,
-  h1,
-  p,
-  table,
-  thead,
-  tbody,
-  tr,
-  th,
-  td,
-  text,
-  each,
-} from '@llui/dom/signals'
+import { component, div, h1, p, table, thead, tbody, tr, th, td, text, each } from '@llui/dom'
 
 interface Report {
   month: string

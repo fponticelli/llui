@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
-import { mountApp, component } from '@llui/dom/signals'
+import { mountApp, component } from '@llui/dom'
 
 type Route = { page: 'home' } | { page: 'article'; slug: string } | { page: 'admin' }
 

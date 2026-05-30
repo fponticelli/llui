@@ -1,4 +1,4 @@
-import { createContext } from '@llui/dom/signals'
+import { createContext } from '@llui/dom'
 
 /**
  * Dispatchers the AppLayout provides to every page below the slot.

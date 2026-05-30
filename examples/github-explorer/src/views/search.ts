@@ -1,6 +1,6 @@
-import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom/signals'
+import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom'
 import type { Msg, Repo, Route } from '../types'
-import type { Send, Signal } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
 import { routing } from '../router'
 
 const LANG_COLORS: Record<string, string> = {

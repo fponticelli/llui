@@ -3,8 +3,8 @@
 // Authoring (component, mountApp, element helpers, each/show/branch, …)
 // and the compiler-emitted runtime (signalText, el, react, …) all live
 // in `./signals`. This barrel re-exports that surface so `@llui/dom` and
-// `@llui/dom/signals` are interchangeable; the compiler still emits
-// `@llui/dom/signals` imports (see @llui/compiler signals transform).
+// `@llui/dom` are interchangeable; the compiler still emits
+// `@llui/dom` imports (see @llui/compiler signals transform).
 //
 // The legacy (non-signal) runtime — two-phase update loop, arrow-accessor
 // bindings, the `View` bag, structural primitives, el-split/el-template,

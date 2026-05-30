@@ -1,5 +1,5 @@
 import type { Router } from './index.js'
-import { a, onMount } from '@llui/dom/signals'
+import { a, onMount } from '@llui/dom'
 
 // ── Router Effects ───────────────────────────────────────────────
 

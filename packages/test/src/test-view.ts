@@ -1,5 +1,5 @@
-import type { SignalComponentDef, SignalComponentHandle } from '@llui/dom/signals'
-import { mountApp } from '@llui/dom/signals'
+import type { SignalComponentDef, SignalComponentHandle } from '@llui/dom'
+import { mountApp } from '@llui/dom'
 
 export interface ViewHarness<S, M> {
   /** Mounted container — useful for advanced cases. */

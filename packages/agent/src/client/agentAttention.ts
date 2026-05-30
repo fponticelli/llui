@@ -178,7 +178,7 @@ function topLevelPaths(diff: StateDiff | undefined): string[] {
   return Array.from(seen)
 }
 
-import type { Send } from '@llui/dom/signals'
+import type { Send } from '@llui/dom'
 
 const UNSET: unique symbol = Symbol('agent-attention-unset')
 

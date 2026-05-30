@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
 import { en } from '../locale.js'
 
 /**

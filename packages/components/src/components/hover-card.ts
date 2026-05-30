@@ -1,5 +1,5 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
-import { show, portal, onMount, div } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import { show, portal, onMount, div } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**

@@ -1,16 +1,4 @@
-import {
-  component,
-  div,
-  header,
-  main,
-  nav,
-  a,
-  span,
-  button,
-  text,
-  each,
-  provide,
-} from '@llui/dom/signals'
+import { component, div, header, main, nav, a, span, button, text, each, provide } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 import { ToastContext, SessionContext } from '../src/contexts'
 

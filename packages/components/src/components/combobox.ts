@@ -1,5 +1,5 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'

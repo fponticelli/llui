@@ -13,7 +13,7 @@ describe('transformSignalComponentSource', () => {
     ].join('\n')
 
     const out = transformSignalComponentSource(src)
-    expect(out).toContain("import { signalText, staticText, el } from '@llui/dom/signals'")
+    expect(out).toContain("import { signalText, staticText, el } from '@llui/dom'")
     expect(out).toContain("signalText((s) => s.count, ['count'])")
     expect(out).toContain(
       "el(\"button\", { onClick: () => send({ type: 'inc' }) }, [staticText('+')])",
@@ -37,7 +37,7 @@ describe('transformSignalComponentSource', () => {
     const out = transformSignalComponentSource(src)
     // 'ul' is an element helper -> el; the inner each(...) is left verbatim (not yet
     // lowered) so no signalEach import unless present. Assert el import at least.
-    expect(out).toContain("from '@llui/dom/signals'")
+    expect(out).toContain("from '@llui/dom'")
     expect(out).toContain('el("ul"')
   })
 
@@ -148,6 +148,8 @@ describe('transformSignalComponentSource', () => {
     const out = transformSignalComponentSource(src)
     expect(out).toContain("signalText((s) => s.a, ['a'])")
     expect(out).toContain("signalText((s) => s.b, ['b'])")
-    expect((out.match(/from '@llui\/dom\/signals'/g) ?? []).length).toBe(1) // single import
+    // The emitted runtime import (the one carrying signalText) is deduplicated to
+    // a SINGLE statement for both components A and B — not one emit per component.
+    expect((out.match(/import \{[^}]*signalText[^}]*\} from '@llui\/dom'/g) ?? []).length).toBe(1)
   })
 })

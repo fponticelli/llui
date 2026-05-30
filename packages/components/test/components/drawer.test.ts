@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { component, mountApp, div, button, text } from '@llui/dom/signals'
+import { component, mountApp, div, button, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/drawer'
 import type { DrawerState, DrawerMsg } from '../../src/components/drawer'
 import { rootSignal, read } from '../_signal'

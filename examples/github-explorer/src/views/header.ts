@@ -1,6 +1,6 @@
-import { div, input, form, text } from '@llui/dom/signals'
+import { div, input, form, text } from '@llui/dom'
 import type { Msg } from '../types'
-import type { Send, Signal } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
 import { routing } from '../router'
 
 export function header(query: Signal<string>, send: Send<Msg>): Node {

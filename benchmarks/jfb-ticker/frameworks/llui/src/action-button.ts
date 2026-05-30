@@ -3,7 +3,7 @@
 // a component `view`, not helper bodies — so it builds DOM with the RUNTIME signal
 // helpers (el / staticText) directly rather than the authoring ones.
 
-import { el, staticText } from '@llui/dom/signals'
+import { el, staticText } from '@llui/dom'
 
 type ButtonMsg =
   | { type: 'mount' }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, a, text } from '@llui/dom/signals'
+import { component, mountApp, div, a, text } from '@llui/dom'
 import { toc, type TocState, type TocMsg, type TocEntry } from '../../src/components/toc'
 
 type S = { t: TocState }

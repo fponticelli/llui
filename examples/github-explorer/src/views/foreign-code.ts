@@ -1,5 +1,5 @@
-import { foreign } from '@llui/dom/signals'
-import type { Signal } from '@llui/dom/signals'
+import { foreign } from '@llui/dom'
+import type { Signal } from '@llui/dom'
 import type { Route } from '../types'
 
 interface FileProps {

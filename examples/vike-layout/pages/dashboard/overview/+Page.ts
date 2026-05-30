@@ -1,4 +1,4 @@
-import { component, div, h1, p, ul, li, button, text, each } from '@llui/dom/signals'
+import { component, div, h1, p, ul, li, button, text, each } from '@llui/dom'
 
 type OverviewState = { widgets: readonly string[] }
 type OverviewMsg =

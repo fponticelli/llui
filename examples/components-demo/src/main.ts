@@ -10,7 +10,7 @@
  * Overlays is rendered first so its handlers are registered before any other
  * section's view() runs.
  */
-import { mountApp } from '@llui/dom/signals'
+import { mountApp } from '@llui/dom'
 import { App } from './app'
 
 mountApp(document.getElementById('app')!, App)

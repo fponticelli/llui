@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div } from '@llui/dom/signals'
+import { component, mountApp, div } from '@llui/dom'
 import {
   angleSlider,
   type AngleSliderState,

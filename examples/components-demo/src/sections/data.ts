@@ -1,5 +1,5 @@
-import { div, button, span, h3, img, svg, path, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, h3, img, svg, path, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'

@@ -59,7 +59,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
   it('Counter: at/map slot, event handler, show, effects, peek', () => {
     const SRC = `
       import { component, mountApp } from '@llui/dom'
-      import { text, div, button, show } from '@llui/dom/signals'
+      import { text, div, button, show } from '@llui/dom'
       export const Counter = component({
         init: () => [{ count: 0, log: [] }, []],
         update: (s, m) => {
@@ -101,7 +101,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
   it('Todos: each (keyed rows), branch (empty/list), in-place row update', () => {
     const SRC = `
       import { component } from '@llui/dom'
-      import { text, ul, li, div, each, branch } from '@llui/dom/signals'
+      import { text, ul, li, div, each, branch } from '@llui/dom'
       export const Todos = component({
         init: () => [{ todos: [] }, []],
         update: (s, m) => {
@@ -152,7 +152,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
   it('Panel: branch(value, disc, arms) narrows per arm; same-arm update is in place', () => {
     const SRC = `
       import { component } from '@llui/dom'
-      import { text, div, branch } from '@llui/dom/signals'
+      import { text, div, branch } from '@llui/dom'
       export const Panel = component({
         init: () => [{ view: { type: 'loading' } }, []],
         update: (s, m) => {
@@ -197,7 +197,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
   it('Profile: show narrowed then-arm + else arm (reacts in place, toggles)', () => {
     const SRC = `
       import { component } from '@llui/dom'
-      import { text, div, show } from '@llui/dom/signals'
+      import { text, div, show } from '@llui/dom'
       export const Profile = component({
         init: () => [{ user: { name: 'ada' } }, []],
         update: (s, m) => {

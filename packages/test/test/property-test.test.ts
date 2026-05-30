@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { propertyTest } from '../src/property-test'
 import { defineTestComponent } from '../src/defineTestComponent'
-import { component, each, li, ol, text } from '@llui/dom/signals'
+import { component, each, li, ol, text } from '@llui/dom'
 
 describe('propertyTest', () => {
   it('passes when all invariants hold', () => {

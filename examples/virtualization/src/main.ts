@@ -10,7 +10,7 @@ import {
   text,
   virtualEach,
   onMount,
-} from '@llui/dom/signals'
+} from '@llui/dom'
 
 // ── Data ────────────────────────────────────────────────────────
 

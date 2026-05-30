@@ -1,5 +1,5 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
-import { show, portal, onMount, div, tagSend } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 
 /**

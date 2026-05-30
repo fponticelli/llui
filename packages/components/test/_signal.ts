@@ -5,7 +5,7 @@
 // against a given state in a unit test, pass `rootSignal()` to connect() and read
 // a prop with `read(prop, stateValue)`.
 
-import { pathHandle, isSignalHandle, type Signal } from '@llui/dom/signals'
+import { pathHandle, isSignalHandle, type Signal } from '@llui/dom'
 
 /** A root signal placeholder: `rootSignal<S>().map(fn).produce(s) === fn(s)`, so a
  * connect() built over it yields props readable against any state via `read`. */

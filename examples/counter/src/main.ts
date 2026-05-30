@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text, show } from '@llui/dom/signals'
+import { component, mountApp, div, button, text, show } from '@llui/dom'
 import './styles.css'
 
 type State = { count: number }

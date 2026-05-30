@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, text } from '@llui/dom/signals'
+import { component, mountApp, div, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/context-menu'
 import type { ContextMenuState, ContextMenuMsg } from '../../src/components/context-menu'
 

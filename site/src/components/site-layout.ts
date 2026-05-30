@@ -1,5 +1,5 @@
-import { div, nav, a, span, button, text, onMount } from '@llui/dom/signals'
-import type { Signal, Send } from '@llui/dom/signals'
+import { div, nav, a, span, button, text, onMount } from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
 
 export type LayoutMsg = { type: 'toggleMenu' }
 

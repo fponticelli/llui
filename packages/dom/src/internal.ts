@@ -9,7 +9,7 @@
 // The legacy runtime's internal helpers (__bindUncertain,
 // __cloneStaticTemplate, __runPhase2, __handleMsg) were removed with the
 // legacy runtime; the signal transform emits no internal helpers, and
-// `__registerScopeVariants` ships from `@llui/dom/signals`.
+// `__registerScopeVariants` ships from `@llui/dom`.
 
 import type { SignalComponentDef } from './signals/component.js'
 

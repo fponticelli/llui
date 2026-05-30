@@ -73,7 +73,7 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send } from '@llui/dom/signals'
+import { tagSend, type Send } from '@llui/dom'
 
 /**
  * Static prop bag with reactive accessors. See agentConnect.ts for

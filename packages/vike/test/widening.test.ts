@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { browserEnv } from '@llui/dom/ssr'
-import { component, div, text } from '@llui/dom/signals'
-import type { SignalComponentDef } from '@llui/dom/signals'
+import { component, div, text } from '@llui/dom'
+import type { SignalComponentDef } from '@llui/dom'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client'
 import { createOnRenderHtml } from '../src/on-render-html'
 

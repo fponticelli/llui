@@ -1,17 +1,4 @@
-import {
-  component,
-  mountApp,
-  div,
-  h1,
-  table,
-  tbody,
-  tr,
-  td,
-  a,
-  span,
-  text,
-  each,
-} from '@llui/dom/signals'
+import { component, mountApp, div, h1, table, tbody, tr, td, a, span, text, each } from '@llui/dom'
 import { actionButton } from './action-button.js'
 
 // ── Data generation (matches krausest spec exactly) ──

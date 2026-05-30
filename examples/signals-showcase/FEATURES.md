@@ -32,4 +32,4 @@ canonical reference for authoring LLui with signals.
 `component`, `mountApp` are kept by the compiler; `text` / `div` / `each` / `show`
 / `branch` / … are **rewritten** by `@llui/vite-plugin` into the runtime form
 (`signalText` / `el` / `signalEach` / …). `pnpm dev` compiles and serves it;
-`pnpm check` type-checks the authored source against `@llui/dom/signals`.
+`pnpm check` type-checks the authored source against `@llui/dom`.

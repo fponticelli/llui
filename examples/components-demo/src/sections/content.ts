@@ -1,5 +1,5 @@
-import { div, button, span, p, a, ul, li, img, input, each, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, p, a, ul, li, img, input, each, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { toc } from '@llui/components/toc'
 import { cascadeSelect } from '@llui/components/cascade-select'
 import { asyncList, type AsyncListState, type AsyncListMsg } from '@llui/components/async-list'

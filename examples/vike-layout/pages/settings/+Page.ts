@@ -1,4 +1,4 @@
-import { component, div, h1, p, label, input, button, text, useContext } from '@llui/dom/signals'
+import { component, div, h1, p, label, input, button, text, useContext } from '@llui/dom'
 import { ToastContext } from '../../src/contexts'
 
 type SettingsState = {

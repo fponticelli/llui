@@ -73,7 +73,7 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
         return {
           pre: source,
           post: null,
-          note: 'File contains no @llui/dom/signals component / no reactive content; nothing to transform.',
+          note: 'File contains no @llui/dom component / no reactive content; nothing to transform.',
         }
       }
       return { pre: source, post: output }

@@ -22,7 +22,7 @@ async function runTransform(
 }
 
 const SIGNAL_COMPONENT = [
-  "import { component, text, button } from '@llui/dom/signals'",
+  "import { component, text, button } from '@llui/dom'",
   'export const Counter = component({',
   '  init: () => ({ count: 0 }),',
   '  update: (s) => ({ count: s.count + 1 }),',
@@ -31,10 +31,10 @@ const SIGNAL_COMPONENT = [
 ].join('\n')
 
 describe('vite-plugin — signal component routing', () => {
-  it('lowers a signal component and injects the @llui/dom/signals import', async () => {
+  it('lowers a signal component and injects the @llui/dom import', async () => {
     const out = await runTransform(llui(), SIGNAL_COMPONENT, '/tmp/counter.ts')
     expect(out).toBeDefined()
-    expect(out!.code).toContain("from '@llui/dom/signals'")
+    expect(out!.code).toContain("from '@llui/dom'")
     expect(out!.code).toContain("signalText((s) => s.count, ['count'])")
     expect(out!.code).toContain('el("button"')
     // the legacy compiler did NOT run: no elSplit / mask emission
@@ -45,7 +45,7 @@ describe('vite-plugin — signal component routing', () => {
   it('halts the build (this.error) when a signal component violates a lint rule', async () => {
     // operator on a signal in a reactive slot — operator-on-signal
     const bad = [
-      "import { component, text } from '@llui/dom/signals'",
+      "import { component, text } from '@llui/dom'",
       'export const Bad = component({',
       '  init: () => ({ n: 0 }),',
       '  update: (s) => s,',
@@ -73,7 +73,7 @@ describe('vite-plugin — signal component routing', () => {
     // block bodies aren't lowered by the transform, but the runtime authoring
     // helpers run them — so it's a valid signal file, not a build error.
     const blockBody = [
-      "import { component, text } from '@llui/dom/signals'",
+      "import { component, text } from '@llui/dom'",
       'export const C = component({',
       '  init: () => ({ n: 0 }),',
       '  update: (s) => s,',
@@ -85,7 +85,7 @@ describe('vite-plugin — signal component routing', () => {
     // not handed to the legacy compiler (no elSplit / mask emission)
     expect(out!.code).not.toContain('elSplit')
     // the signal authoring import is preserved so the runtime helpers resolve
-    expect(out!.code).toContain('@llui/dom/signals')
+    expect(out!.code).toContain('@llui/dom')
   })
 
   it('injects the MCP relay startup into signal files in dev (guarded once)', async () => {
@@ -99,18 +99,6 @@ describe('vite-plugin — signal component routing', () => {
     const out = await runTransform(plugin, SIGNAL_COMPONENT, '/tmp/counter.ts')
     expect(out!.code).toContain('__llui_startRelay(5200)')
     expect(out!.code).toContain('__lluiRelayStarted') // start-once guard
-    expect(out!.code).toContain("from '@llui/dom/signals'") // still lowered
-  })
-
-  it('does not touch a file with no .at( signal usage', async () => {
-    const legacy = [
-      "import { component } from '@llui/dom'",
-      'const L = component({ init: () => ({ n: 0 }), update: (s) => s, view: (h) => [h.text((s) => String(s.n))] })',
-    ].join('\n')
-    // legacy path may or may not transform, but it must NOT be the signal lowering
-    const out = await runTransform(llui(), legacy, '/tmp/legacy.ts')
-    const code = out?.code ?? legacy
-    expect(code).not.toContain("from '@llui/dom/signals'")
-    expect(code).not.toContain('signalText(')
+    expect(out!.code).toContain("from '@llui/dom'") // still lowered
   })
 })

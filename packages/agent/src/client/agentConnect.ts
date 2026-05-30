@@ -1,4 +1,4 @@
-import { tagSend, type Send } from '@llui/dom/signals'
+import { tagSend, type Send } from '@llui/dom'
 import type { AgentSession, AgentToken } from '../protocol.js'
 import type { AgentEffect } from './effects.js'
 

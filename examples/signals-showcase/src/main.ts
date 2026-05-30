@@ -1,5 +1,5 @@
 // Signals showcase — entry. Mounts each demo component with the signal mountApp.
-import { mountApp } from '@llui/dom/signals'
+import { mountApp } from '@llui/dom'
 import { Counter } from './counter'
 import { Todos } from './todos'
 import { Editor } from './editor'

@@ -2,7 +2,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import type { Server as HttpServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { LluiDebugAPI } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom'
 import type { RelayTransport } from '../tool-registry.js'
 
 /**

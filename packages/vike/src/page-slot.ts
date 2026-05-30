@@ -1,6 +1,6 @@
-import { __currentBuildInfo } from '@llui/dom/signals'
+import { __currentBuildInfo } from '@llui/dom'
 
-// `@llui/dom/signals`'s `__currentBuildInfo()` is the adapter-layer hook a
+// `@llui/dom`'s `__currentBuildInfo()` is the adapter-layer hook a
 // framework adapter like `@llui/vike` uses to participate in the signal build:
 // it exposes the in-progress build's `doc` (to create anchor nodes that belong
 // to the same document) plus a SNAPSHOT of the context values in scope at the
@@ -53,7 +53,7 @@ let pendingSlot: PendingSlot | null = null
  *
  * ```ts
  * // pages/Layout.ts    ← not +Layout.ts
- * import { component, div, main, header } from '@llui/dom/signals'
+ * import { component, div, main, header } from '@llui/dom'
  * import { pageSlot } from '@llui/vike/client'
  *
  * export const AppLayout = component<LayoutState, LayoutMsg>({

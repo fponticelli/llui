@@ -54,7 +54,7 @@ describe('llui_static_show_compiled', () => {
     }
     expect(result.pre).toContain('component<State, Msg>')
     expect(result.post).not.toBeNull()
-    expect(result.post).toContain("from '@llui/dom/signals'")
+    expect(result.post).toContain("from '@llui/dom'")
     expect(result.post).toContain('signalText')
   })
 

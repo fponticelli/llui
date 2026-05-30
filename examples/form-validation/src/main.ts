@@ -13,8 +13,8 @@ import {
   text,
   show,
   derived,
-} from '@llui/dom/signals'
-import type { Signal, Send } from '@llui/dom/signals'
+} from '@llui/dom'
+import type { Signal, Send } from '@llui/dom'
 import { form, validateSchema } from '@llui/components'
 import type { FormState } from '@llui/components'
 import { z } from 'zod'

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { browserEnv } from '@llui/dom/ssr'
-import { component, div, text, renderNodes } from '@llui/dom/signals'
-import type { SignalComponentDef } from '@llui/dom/signals'
+import { component, div, text, renderNodes } from '@llui/dom'
+import type { SignalComponentDef } from '@llui/dom'
 import { pageSlot } from '../src/page-slot.js'
 import { _renderChain } from '../src/on-render-html.js'
 

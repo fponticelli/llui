@@ -1,5 +1,5 @@
-import { div, button, span, h3, p, input, svg, path, each, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, h3, p, input, svg, path, each, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'

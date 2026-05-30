@@ -1,4 +1,4 @@
-import type { TransitionOptions } from '@llui/dom/signals'
+import type { TransitionOptions } from '@llui/dom'
 import { asElements } from './style-utils.js'
 
 export interface FlipOptions {

@@ -4,7 +4,7 @@
  * These are pure data/type utilities — they compose `(state, msg) => [state,
  * effects]` reducers, with no dependency on any runtime. They live here (rather
  * than being imported from a package) so the demo stays on the signal surface
- * (`@llui/dom/signals`) without pulling the legacy `@llui/dom` entry.
+ * (`@llui/dom`) without pulling the legacy `@llui/dom` entry.
  */
 
 /** Extract the state type from a component module's update function. */

@@ -1,5 +1,5 @@
-import { div, button, span, input, p, onMount, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, input, p, onMount, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { timer } from '@llui/components/timer'
 import { angleSlider } from '@llui/components/angle-slider'
 import { dateInput } from '@llui/components/date-input'

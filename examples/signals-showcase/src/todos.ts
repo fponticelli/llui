@@ -4,18 +4,7 @@
 // discriminant, derived() across independent signals, nested deep .at() paths,
 // reactive attributes per row, and a deferred (HTTP-style) effect.
 
-import {
-  component,
-  div,
-  ul,
-  li,
-  span,
-  button,
-  text,
-  each,
-  branch,
-  derived,
-} from '@llui/dom/signals'
+import { component, div, ul, li, span, button, text, each, branch, derived } from '@llui/dom'
 
 interface Todo {
   id: number

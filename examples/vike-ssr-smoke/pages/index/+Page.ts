@@ -7,7 +7,7 @@
 // Together those four imports are the exact set that broke production
 // builds before issue #5's follow-up fix. The fixture's only purpose
 // is to keep them in the emitted server bundle.
-import { component, div, button, text } from '@llui/dom/signals'
+import { component, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg =

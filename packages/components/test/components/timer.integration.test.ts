@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, text, button } from '@llui/dom/signals'
+import { component, mountApp, div, text, button } from '@llui/dom'
 import { timer, type TimerState, type TimerMsg } from '../../src/components/timer'
 
 type S = { t: TimerState }

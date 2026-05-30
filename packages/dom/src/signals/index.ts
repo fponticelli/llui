@@ -1,5 +1,6 @@
-// Public entry for the signals reactive surface (opt-in; see
-// docs/proposals/signals). Imported by signal modules as `@llui/dom/signals`.
+// The signal reactive surface — re-exported as the `@llui/dom` package root
+// (`src/index.ts` is `export * from './signals/index.js'`). This is THE public
+// entry; there is no separate legacy runtime or `/signals` subpath anymore.
 //
 // Two layers share this entry:
 //  - AUTHORING (what humans write): component, mountApp, text, div/span/…, each,

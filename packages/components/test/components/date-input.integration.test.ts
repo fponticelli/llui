@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, input } from '@llui/dom/signals'
+import { component, mountApp, div, input } from '@llui/dom'
 import { dateInput, type DateInputState, type DateInputMsg } from '../../src/components/date-input'
 
 type S = { d: DateInputState }

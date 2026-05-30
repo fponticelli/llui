@@ -1,4 +1,4 @@
-import { component, type SignalComponentDef } from '@llui/dom/signals'
+import { component, type SignalComponentDef } from '@llui/dom'
 
 export interface ReducerOptions<S, M, E = never> {
   init: () => [S, E[]]

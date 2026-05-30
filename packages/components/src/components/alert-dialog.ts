@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom'
 import {
   init,
   update,

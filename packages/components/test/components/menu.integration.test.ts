@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, button, div, text } from '@llui/dom/signals'
+import { component, mountApp, button, div, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/menu'
 import type { MenuState, MenuMsg } from '../../src/components/menu'
 

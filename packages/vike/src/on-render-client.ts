@@ -1,6 +1,6 @@
-import { mountSignalComponent, hydrateSignalApp } from '@llui/dom/signals'
-import type { SignalComponentHandle, MountTarget } from '@llui/dom/signals'
-import type { TransitionOptions } from '@llui/dom/signals'
+import { mountSignalComponent, hydrateSignalApp } from '@llui/dom'
+import type { SignalComponentHandle, MountTarget } from '@llui/dom'
+import type { TransitionOptions } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 

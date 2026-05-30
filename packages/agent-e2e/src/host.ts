@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text } from '@llui/dom/signals'
+import { component, mountApp, div, button, text } from '@llui/dom'
 import type { AgentDocs, AgentContext } from '@llui/agent/protocol'
 import {
   createAgentClient,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, button, text } from '@llui/dom/signals'
+import { component, mountApp, div, button, text } from '@llui/dom'
 import { tour, type TourState, type TourMsg, type TourStep } from '../../src/components/tour'
 
 type S = { t: TourState }

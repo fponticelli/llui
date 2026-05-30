@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, div, input, text } from '@llui/dom/signals'
+import { component, mountApp, div, input, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/combobox'
 import type { ComboboxState, ComboboxMsg } from '../../src/components/combobox'
 

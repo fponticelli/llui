@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, button, text } from '@llui/dom/signals'
+import { component, mountApp, button, text } from '@llui/dom'
 import { init, update, view, openWith } from '../../src/patterns/confirm-dialog'
 import type { ConfirmDialogState, ConfirmDialogMsg } from '../../src/patterns/confirm-dialog'
 

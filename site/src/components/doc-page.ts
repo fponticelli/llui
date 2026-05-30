@@ -1,4 +1,4 @@
-import { component, h1, article, text } from '@llui/dom/signals'
+import { component, h1, article, text } from '@llui/dom'
 import type { DocData } from '../markdown'
 import { siteLayout, type LayoutMsg } from './site-layout'
 import { rawHtml } from './raw-html'

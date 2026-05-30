@@ -311,7 +311,7 @@ export function installSignalDebug(hooks: SignalDebugHooks): () => void {
     exportTrace: () => ({
       lluiTrace: 1 as const,
       component: hooks.name,
-      generatedBy: '@llui/dom/signals devtools',
+      generatedBy: '@llui/dom devtools',
       timestamp: new Date().toISOString(),
       entries: hooks.history.map((r) => ({
         msg: r.msg,

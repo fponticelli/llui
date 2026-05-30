@@ -4,7 +4,7 @@
 // Declared `state` signals are materialized to LiveSignals for `mount`; the
 // widget pushes edits back out via `send`. Also a derived word count via .map().
 
-import { component, div, text, foreign } from '@llui/dom/signals'
+import { component, div, text, foreign } from '@llui/dom'
 
 interface State {
   content: string

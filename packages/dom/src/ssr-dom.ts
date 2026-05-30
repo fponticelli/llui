@@ -6,11 +6,11 @@
  * their DOM via a sub-entry (`@llui/dom/ssr/jsdom` or
  * `@llui/dom/ssr/linkedom`) and pass the resulting env to the signal
  * SSR renderer (`renderToString` / `renderNodes` from
- * `@llui/dom/signals`) explicitly.
+ * `@llui/dom`) explicitly.
  *
  * The legacy `renderToString` / `initSsrDom()` shim that used to live
  * here was removed with the legacy runtime; signal SSR ships from
- * `@llui/dom/signals`.
+ * `@llui/dom`.
  */
 
 export type { DomEnv } from './dom-env.js'

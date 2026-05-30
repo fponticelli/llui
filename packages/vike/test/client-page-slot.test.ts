@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, div, text } from '@llui/dom/signals'
+import { component, div, text } from '@llui/dom'
 import { pageSlot } from '../src/page-slot.js'
 import {
   createOnRenderClient,

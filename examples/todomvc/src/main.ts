@@ -15,7 +15,7 @@ import {
   text,
   show,
   each,
-} from '@llui/dom/signals'
+} from '@llui/dom'
 
 type Todo = { id: number; text: string; completed: boolean }
 type Filter = 'all' | 'active' | 'completed'

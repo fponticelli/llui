@@ -1,5 +1,5 @@
-import { signalForeign, isSignalHandle } from '@llui/dom/signals'
-import type { Signal } from '@llui/dom/signals'
+import { signalForeign, isSignalHandle } from '@llui/dom'
+import type { Signal } from '@llui/dom'
 
 interface RawHtmlInstance {
   el: Element

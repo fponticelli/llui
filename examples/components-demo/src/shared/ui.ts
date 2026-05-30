@@ -1,4 +1,4 @@
-import { div, h2, text } from '@llui/dom/signals'
+import { div, h2, text } from '@llui/dom'
 
 export function sectionGroup(title: string, sections: Node[]): Node {
   return div([

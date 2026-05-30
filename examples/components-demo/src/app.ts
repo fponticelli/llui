@@ -15,7 +15,7 @@
  * registerConfirmHandler) are registered before any other section's view runs
  * and potentially calls showToast / askConfirm.
  */
-import { component, div, main } from '@llui/dom/signals'
+import { component, div, main } from '@llui/dom'
 import * as overlays from './sections/overlays'
 import * as inputs from './sections/inputs'
 import * as data from './sections/data'

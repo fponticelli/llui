@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
 
 /**
  * Presence — track mount/unmount lifecycle with exit-delay support.

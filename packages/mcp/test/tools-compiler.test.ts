@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { LluiMcpServer } from '../src/index'
-import type { LluiDebugAPI } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom'
 
 function mkApi(overrides?: Partial<LluiDebugAPI>): LluiDebugAPI {
   return {

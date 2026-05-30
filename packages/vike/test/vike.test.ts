@@ -8,8 +8,8 @@ import {
   _resetChainForTest,
 } from '../src/on-render-client'
 import { browserEnv } from '@llui/dom/ssr'
-import type { TransitionOptions } from '@llui/dom/signals'
-import { component, div, text } from '@llui/dom/signals'
+import type { TransitionOptions } from '@llui/dom'
+import { component, div, text } from '@llui/dom'
 
 const env = browserEnv()
 const domEnv = () => env

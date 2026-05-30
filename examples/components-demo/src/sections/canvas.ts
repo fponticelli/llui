@@ -1,5 +1,5 @@
-import { div, button, span, p, img, foreign, onMount, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, p, img, foreign, onMount, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { signaturePad } from '@llui/components/signature-pad'
 import { imageCropper } from '@llui/components/image-cropper'
 import { sectionGroup, card } from '../shared/ui'

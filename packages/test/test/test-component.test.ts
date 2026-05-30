@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { component, type SignalComponentDef } from '@llui/dom/signals'
+import { component, type SignalComponentDef } from '@llui/dom'
 import { testComponent } from '../src/test-component'
 
 type CounterState = { count: number }

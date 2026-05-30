@@ -1,17 +1,5 @@
-import {
-  component,
-  mountApp,
-  div,
-  h1,
-  h2,
-  p,
-  button,
-  text,
-  show,
-  lazy,
-  provide,
-} from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { component, mountApp, div, h1, h2, p, button, text, show, lazy, provide } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { LocaleContext, en, formatDate, formatRelativeTime, dialog } from '@llui/components'
 import type { Locale, DialogState, DialogMsg } from '@llui/components'
 

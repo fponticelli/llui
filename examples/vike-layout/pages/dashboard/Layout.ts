@@ -1,4 +1,4 @@
-import { component, div, aside, section, nav, a, text } from '@llui/dom/signals'
+import { component, div, aside, section, nav, a, text } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
 type DashboardState = { lastVisited: string | null }

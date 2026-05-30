@@ -6,8 +6,8 @@
 // the signal authoring barrel directly, and so the shape matches the other
 // reducer-driving harnesses.
 
-import { component, type SignalComponentDef } from '@llui/dom/signals'
-import type { SignalViewBag } from '@llui/dom/signals'
+import { component, type SignalComponentDef } from '@llui/dom'
+import type { SignalViewBag } from '@llui/dom'
 
 export interface DefineTestComponentInput<S, M, E = never> {
   name: string

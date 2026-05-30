@@ -1,5 +1,5 @@
-import { div, button, span, label, input, each, onMount, text } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { div, button, span, label, input, each, onMount, text } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 import { switchMachine } from '@llui/components/switch'
 import { toggle } from '@llui/components/toggle'
 import { checkbox } from '@llui/components/checkbox'

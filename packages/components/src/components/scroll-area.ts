@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom/signals'
-import type { Send, Signal } from '@llui/dom/signals'
+import { tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom'
 
 /**
  * Scroll area — custom-styled scroll container with scrollbars that

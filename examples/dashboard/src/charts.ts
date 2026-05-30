@@ -1,4 +1,4 @@
-import { svg, rect, line, path, circle, text, svgText as svgTextEl } from '@llui/dom/signals'
+import { svg, rect, line, path, circle, text, svgText as svgTextEl } from '@llui/dom'
 
 // Small convenience over the framework's `svgText` element helper: accept plain
 // string children (charts are static presentation — no reactive bindings).

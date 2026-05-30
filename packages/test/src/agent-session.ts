@@ -1,4 +1,4 @@
-import type { SignalComponentHandle } from '@llui/dom/signals'
+import type { SignalComponentHandle } from '@llui/dom'
 
 /** Agent-session msgs are JSON objects with a `type` discriminant. */
 type AgentMsg = { type: string; [k: string]: unknown }

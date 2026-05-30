@@ -1,6 +1,6 @@
-import { div, button, span, p, text, branch, each } from '@llui/dom/signals'
+import { div, button, span, p, text, branch, each } from '@llui/dom'
 import type { State, Msg } from '../types'
-import type { Send, Signal } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom'
 
 type AgentState = State['agent']
 import { agentConfirm, summarizeDiff } from '@llui/agent/client'

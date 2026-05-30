@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
-import type { LluiDebugAPI } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom'
 
 function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugAPI {
   let currentState = { ...state }

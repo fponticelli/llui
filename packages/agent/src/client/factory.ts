@@ -1,4 +1,4 @@
-import type { SignalComponentHandle } from '@llui/dom/signals'
+import type { SignalComponentHandle } from '@llui/dom'
 import type { AgentEffect } from './effects.js'
 import type { AgentConfirmState } from './agentConfirm.js'
 import type {

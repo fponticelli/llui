@@ -1307,19 +1307,17 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
 
-      // Signal components: if this file uses the signal authoring surface
-      // (a `view: ({ state, … }) => [...]` bag with `state.at(…)`), lower it to
-      // the `@llui/dom/signals` runtime and SKIP the legacy accessor compiler.
-      // A file is either signal-flavored or legacy (per-file-flip migration).
-      // Cheap string pre-check avoids the extra parse on non-signal files.
-      // A SIGNAL FILE: imports the @llui/dom/signals surface and has a component.
-      // (No `.at()` requirement — a signal component may use only `.map()` or a
-      // static view; importing the signals surface + `component(` is unambiguous.)
-      // The transform LOWERS the direct view (an optimization); anything it can't
-      // lower (view-helper functions, block bodies) runs via the runtime authoring
-      // helpers (text/el/each/… consume runtime signal handles). We always: enforce
-      // lint, lower-what-we-can, inject the relay, and SKIP the legacy compiler.
-      if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom\/signals['"]/.test(code)) {
+      // A SIGNAL FILE: imports the `@llui/dom` runtime surface and has a
+      // `component(`. That pair is unambiguous — `@llui/dom` IS the signal runtime
+      // (the legacy runtime is gone), and a file may use `.at()`, only `.map()`, or
+      // a fully static view. The transform LOWERS the direct view (an
+      // optimization); anything it can't lower (view-helper functions, block
+      // bodies) runs via the runtime authoring helpers (text/el/each/… consume
+      // runtime signal handles). A cheap string pre-check avoids the extra parse on
+      // non-component files. (`@llui/dom/internal`, `/ssr/*`, `/devtools` don't
+      // match the closing-quote-anchored pattern, so type-only or SSR-env imports
+      // never trip it.)
+      if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom['"]/.test(code)) {
         sawSignalComponent = true
         // Enforce signal lint rules as build errors (the only effective channel —
         // see CLAUDE.md). Lint the AUTHORED source; `this.error` throws → halts.

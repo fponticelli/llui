@@ -1,5 +1,5 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
-import { button, text, div, h2, p } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import { button, text, div, h2, p } from '@llui/dom'
 import {
   init as dialogInit,
   update as dialogUpdate,
