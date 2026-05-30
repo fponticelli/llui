@@ -11,7 +11,7 @@ import {
   show,
   branch,
 } from '../../src/signals/authoring'
-import { derived } from '../../src/signals/types'
+import { derived } from '../../src/signals/handle'
 
 // Type-level guards for the AUTHORING surface — `pnpm check` is the assertion.
 // These mirror exactly what an example file writes; if they type-check, example

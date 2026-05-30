@@ -88,21 +88,6 @@ export interface LiveSignal<T> {
   bind(cb: (value: T) => void): () => void
 }
 
-/**
- * Combine N independent signals into a derived signal. Use when the inputs have
- * no shared parent signal (cross-tree or per-iteration + parent). For a single
- * source, use {@link Signal.map} instead.
- *
- * The tuple form takes one signature for any arity; the callback receives the
- * values spread, not as a tuple.
- *
- * Runtime is not implemented yet — this is the type surface (step 1 of the
- * signals roadmap). The compiler will lower `derived(...)` to a mask-gated memo
- * cell; this stub exists so the module is importable and type-testable.
- */
-export function derived<T extends readonly unknown[], U>(
-  _sigs: { readonly [K in keyof T]: Signal<T[K]> },
-  _fn: (...values: T) => U,
-): Signal<U> {
-  throw new Error('derived: signals runtime not implemented yet (type surface only)')
-}
+// `derived(...)` — combine N signals into one — lives with the other runtime
+// handle constructors in `./handle.ts` (it builds a `SignalHandle`). The compiler
+// lowers it inside a direct view; the runtime handle backs view-helper composition.

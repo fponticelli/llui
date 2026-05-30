@@ -1,5 +1,5 @@
 import { describe, it } from 'vitest'
-import { derived } from '../../src/signals/types'
+import { derived } from '../../src/signals/handle'
 import type { Signal, LiveSignal } from '../../src/signals/types'
 
 // Type-level surface guards, mirroring the repo convention (scope-types.test.ts):

@@ -74,3 +74,39 @@ function derivedHandle<T>(
       )) as Signal<T>['map'],
   }
 }
+
+/**
+ * Combine N independent signals into one derived signal. Use when the inputs have
+ * no shared parent signal (cross-tree, or a per-row item signal + a component-state
+ * signal); for a single source, prefer {@link Signal.map}.
+ *
+ * The compiler lowers `derived(...)` inside a DIRECT view to an inline call. This
+ * is the equivalent RUNTIME handle for view-helper composition (where there is no
+ * statically-known path): `produce`/`peek` apply `fn` over the resolved sources and
+ * `deps` is the UNION of the sources' deps — so the chunked-mask reconciler fires
+ * the binding whenever ANY source changes, and commits only on an output change.
+ * All inputs must resolve against the same binding state (the common case: each is
+ * rooted at the component state, or all at the same row ctx).
+ */
+export function derived<T extends readonly unknown[], U>(
+  sigs: { readonly [K in keyof T]: Signal<T[K]> },
+  fn: (...values: T) => U,
+): Signal<U> {
+  const handles: SignalHandle<unknown>[] = []
+  for (const s of sigs) {
+    if (!isSignalHandle(s)) {
+      throw new TypeError('derived(): every input must be a signal (got a non-signal value)')
+    }
+    handles.push(s)
+  }
+  // Resolving N sources yields a value array spread into `fn(...values: T)`. The
+  // array IS `T` by construction (handles[i] produces T[i]), but that invariant is
+  // erased at runtime, so call through an unknown-arity view of `fn` — the single
+  // unavoidable cast at this type-erasure boundary.
+  const apply = fn as (...values: readonly unknown[]) => U
+  return derivedHandle<U>(
+    () => apply(...handles.map((h) => h.peek())),
+    (state) => apply(...handles.map((h) => h.produce(state))),
+    [...new Set(handles.flatMap((h) => h.deps))],
+  )
+}
