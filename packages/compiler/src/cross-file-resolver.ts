@@ -5,7 +5,41 @@ import {
   type MsgField,
   type TypeIndex,
   buildFieldDescriptor,
+  extractMsgSchema,
+  extractEffectSchema,
 } from './msg-schema.js'
+import { extractStateSchema } from './state-schema.js'
+import { extractMsgAnnotations } from './msg-annotations.js'
+
+/**
+ * Resolved external type sources for the file under analysis: the source
+ * string + local alias name for each of the `State` / `Msg` / `Effect`
+ * type arguments that the host adapter (vite-plugin) chased to their
+ * declaring file via `findTypeSource`. The schema/annotation extractors
+ * run against these instead of the focal file when the alias lives
+ * elsewhere. All fields optional — absent ones fall back to file-local
+ * extraction.
+ */
+export interface ExternalTypeSources {
+  state?: { source: string; typeName: string }
+  msg?: { source: string; typeName: string }
+  effect?: { source: string; typeName: string }
+}
+
+/**
+ * Schemas already extracted by the adapter's async cross-file /
+ * composition-aware hook before invoking the signal transform. Used when
+ * the file-local sync extractors can't see the whole picture — the
+ * Msg/Effect/State alias lives in another file, or the union composes
+ * inline literals with imported TypeReferences. When provided, the
+ * transform uses these instead of running its own file-local extractors.
+ */
+export interface PreExtractedSchemas {
+  msgSchema?: ReturnType<typeof extractMsgSchema>
+  msgAnnotations?: ReturnType<typeof extractMsgAnnotations>
+  stateSchema?: ReturnType<typeof extractStateSchema>
+  effectSchema?: ReturnType<typeof extractEffectSchema>
+}
 
 /**
  * Cross-file type resolver.

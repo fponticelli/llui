@@ -51,13 +51,13 @@ import {
 import ts from 'typescript'
 
 /**
- * Pre-resolution step run before `transformLlui`. Scans the source for
- * `component<State, Msg, Effect>(...)` calls; for each type argument that
- * is an identifier (the common case), walks imports and re-exports to
- * find the source file declaring that alias. The result is plumbed into
- * `transformLlui` so the schema/annotation extractors operate on the
- * declaring file's source instead of silently returning `null` when the
- * type lives in a separate file.
+ * Pre-resolution step run before the signal transform. Scans the source
+ * for `component<State, Msg, Effect>(...)` calls; for each type argument
+ * that is an identifier (the common case), walks imports and re-exports
+ * to find the source file declaring that alias. The result is plumbed
+ * into `transformSignalComponentSource` so the schema/annotation
+ * extractors operate on the declaring file's source instead of silently
+ * returning `null` when the type lives in a separate file.
  *
  * Returns `undefined` (no external sources) when:
  *   - No `component<...>()` call is in the file

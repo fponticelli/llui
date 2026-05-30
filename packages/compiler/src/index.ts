@@ -23,35 +23,15 @@ export { findComponentCalls } from './modules/_shared.js'
 // (above) so the orchestrator can read the slot without depending on
 // the introspection package.
 // componentMetaModule moved to @llui/compiler-devtools (v2c/decomp-27).
-export { maskLegendModule, type MaskLegendModuleOptions } from './modules/mask-legend.js'
-export { compilerStampModule } from './modules/compiler-stamp.js'
-export {
-  eachMemoModule,
-  EACH_MEMO_SLOT,
-  type EachMemoModuleOptions,
-  type EachMemoSlot,
-} from './modules/each-memo.js'
-export {
-  structuralMaskModule,
-  type StructuralMaskModuleOptions,
-} from './modules/structural-mask.js'
-export { textMaskModule, type TextMaskModuleOptions } from './modules/text-mask.js'
-export { itemDedupModule, type ItemDedupModuleOptions } from './modules/item-dedup.js'
-export {
-  elementRewriteModule,
-  ELEMENT_REWRITE_SLOT,
-  type ElementRewriteModuleOptions,
-  type ElementRewriteSlot,
-} from './modules/element-rewrite.js'
-export { rowFactoryModule, type RowFactoryModuleOptions } from './modules/row-factory.js'
-export {
-  coreSynthesisModule,
-  CORE_SYNTHESIS_SLOT,
-  type CoreSynthesisModuleOptions,
-  type CoreSynthesisSlot,
-} from './modules/core-synthesis.js'
+//
+// The legacy 3-pass transform (`transform.ts`) and its emission modules
+// (element-rewrite, core-synthesis, row-factory, item-dedup, text-mask,
+// structural-mask, mask-legend, each-memo, compiler-stamp) plus the
+// legacy lint runner (`lint-modules.ts`) were removed in the
+// signal-runtime migration. Signal components compile via
+// `transformSignalComponentSource` and lint via `lintSignalSource`
+// (both re-exported above).
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
 export * from './state-schema.js'
-export * from './transform.js'

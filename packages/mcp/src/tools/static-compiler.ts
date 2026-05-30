@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  transformLlui,
+  transformSignalComponentSource,
   collectDeps,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
@@ -63,15 +63,20 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
           error: `Could not read file: ${(err as Error).message}`,
         }
       }
-      const result = transformLlui(source, absPath, false, false)
-      if (!result) {
+      const output = transformSignalComponentSource(source, {
+        emitAgentMetadata: true,
+        fileName: absPath,
+      })
+      // The signal transform returns the source unchanged when the file has
+      // no signal `component()` to lower; surface that as a no-op note.
+      if (output === source) {
         return {
           pre: source,
           post: null,
-          note: 'File contains no @llui/dom imports / no reactive content; nothing to transform.',
+          note: 'File contains no @llui/dom/signals component / no reactive content; nothing to transform.',
         }
       }
-      return { pre: source, post: result.output }
+      return { pre: source, post: output }
     },
   )
 

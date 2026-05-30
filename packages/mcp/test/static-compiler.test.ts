@@ -32,19 +32,19 @@ describe('llui_static_show_compiled', () => {
     return registry.dispatch(toolName, args, { relay: null, cdp: null })
   }
 
-  it('returns pre/post for a compiled component file', async () => {
+  it('returns pre/post for a compiled signal component file', async () => {
     const file = join(tmp, 'comp.ts')
     writeFileSync(
       file,
       `
-        import { component, div, text } from '@llui/dom'
-        type S = { n: number }
-        type M = { type: 'inc' }
-        export const C = component<S, M>({
+        import { component, text } from '@llui/dom'
+        type State = { n: number }
+        type Msg = { type: 'inc' }
+        export const C = component<State, Msg>({
           name: 'C',
-          init: () => [{ n: 0 }, []],
-          update: (s) => [s, []],
-          view: ({ text }) => [div({}, [text((s) => String(s.n))])],
+          init: () => ({ n: 0 }),
+          update: (s) => s,
+          view: ({ state }) => [text(state.at('n'))],
         })
       `,
     )
@@ -52,13 +52,13 @@ describe('llui_static_show_compiled', () => {
       pre: string
       post: string | null
     }
-    expect(result.pre).toContain('component<S, M>')
+    expect(result.pre).toContain('component<State, Msg>')
     expect(result.post).not.toBeNull()
-    expect(result.post).toContain('__prefixes')
-    expect(result.post).toContain('__compilerVersion')
+    expect(result.post).toContain("from '@llui/dom/signals'")
+    expect(result.post).toContain('signalText')
   })
 
-  it('returns null + note for a file with no @llui/dom imports', async () => {
+  it('returns null + note for a file with no signal component', async () => {
     const file = join(tmp, 'plain.ts')
     writeFileSync(file, `export const x = 1`)
     const result = (await runTool('llui_static_show_compiled', { file })) as {
@@ -67,7 +67,7 @@ describe('llui_static_show_compiled', () => {
       note?: string
     }
     expect(result.post).toBeNull()
-    expect(result.note).toMatch(/no @llui\/dom/)
+    expect(result.note).toMatch(/nothing to transform/)
   })
 
   it('returns an error string when the file cannot be read', async () => {

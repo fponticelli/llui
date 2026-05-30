@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { z } from 'zod'
-import { transformLlui } from '@llui/compiler'
+import { lintSignalSource } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
 
@@ -87,7 +87,7 @@ export function registerSourceTools(registry: ToolRegistry): void {
     {
       name: 'llui_compiler_diagnostics',
       description:
-        'Run @llui/compiler against every .ts/.tsx file in a directory and return the union of structured diagnostics. Each diagnostic has { id, severity, category, message, location: { file, range } } — same shape the vite-plugin surfaces as build errors. Use this to inspect a project for LLui rule violations without spinning up a full Vite build.',
+        'Run the @llui/compiler signal lint rules against every .ts/.tsx file in a directory and return the union of structured diagnostics. Each diagnostic has { id, severity, category, message, file, line, column } — the same rules the vite-plugin surfaces as build errors. Use this to inspect a project for LLui rule violations without spinning up a full Vite build.',
       schema: z.object({
         rootDir: z.string().optional().describe('Directory to scan (defaults to workspace root)'),
         idFilter: z
@@ -123,33 +123,32 @@ export function registerSourceTools(registry: ToolRegistry): void {
           failed++
           continue
         }
-        let result: ReturnType<typeof transformLlui>
+        let msgs: ReturnType<typeof lintSignalSource>
         try {
-          result = transformLlui(source, file)
+          msgs = lintSignalSource(source, file)
         } catch (err) {
           failed++
           diagnostics.push({
             id: 'llui/internal-error',
             severity: 'error',
             category: 'internal',
-            message: `transformLlui threw: ${(err as Error).message ?? String(err)}`,
+            message: `lintSignalSource threw: ${(err as Error).message ?? String(err)}`,
             file: relative(rootDir, file),
             line: 1,
             column: 1,
           })
           continue
         }
-        if (!result) continue
-        for (const d of result.diagnostics) {
-          if (idFilter && !d.id.includes(idFilter)) continue
+        for (const m of msgs) {
+          if (idFilter && !m.rule.includes(idFilter)) continue
           diagnostics.push({
-            id: d.id,
-            severity: d.severity,
-            category: d.category,
-            message: d.message,
-            file: relative(rootDir, d.location.file),
-            line: d.location.range.start.line + 1,
-            column: d.location.range.start.column + 1,
+            id: m.rule,
+            severity: 'error',
+            category: 'signal',
+            message: m.message,
+            file: relative(rootDir, file),
+            line: m.line,
+            column: m.column + 1,
           })
         }
       }
