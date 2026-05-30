@@ -218,4 +218,58 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain('__schemaHash:')
     })
   })
+
+  describe('element helpers with dynamic args', () => {
+    // Regression: `div(section(...))` — a children argument that is a function
+    // CALL returning Node[], not an array literal — was lowered to
+    // `el("div", {}, [])`, DROPPING the children. (This blanked every section of
+    // the components-demo, which composes `main([div(section.view(...)), …])`.)
+    // The call must be left verbatim so the runtime authoring helper's
+    // Array.isArray dispatch routes the Node[] arg to children.
+    it('does not drop a dynamic (call-expression) children argument', () => {
+      const src = [
+        "import { component, div, main } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ sec: { n: 0 } }),',
+        '  update: (s) => s,',
+        "  view: ({ state, send }) => [main([div(section(state.at('sec'), send))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // the children are NOT dropped to an empty element
+      expect(out).not.toContain('el("div", {}, [])')
+      // the dynamic call is preserved verbatim (runtime helper handles it)
+      expect(out).toContain('div(section(state.at(')
+    })
+
+    it('does not drop dynamic children passed after a props literal', () => {
+      const src = [
+        "import { component, div } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({}),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div({ class: 'wrap' }, makeRows())],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // props + dynamic children -> not statically analyzable -> verbatim
+      expect(out).toContain("div({ class: 'wrap' }, makeRows())")
+      expect(out).not.toContain('el("div", { class: \'wrap\' }, [])')
+    })
+
+    it('still lowers statically-analyzable element forms', () => {
+      const src = [
+        "import { component, div, span } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div({ class: 'box' }, [span([text(state.at('n'))])])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).toContain('el("div", { class:')
+      expect(out).toContain('el("span"')
+      expect(out).toContain("signalText((s) => s.n, ['n'])")
+    })
+  })
 })

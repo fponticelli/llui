@@ -329,15 +329,31 @@ export function transformNodeExpr(
     if (ELEMENT_HELPERS.has(callee)) {
       const a0 = node.arguments[0]
       const a1 = node.arguments[1]
-      // forms: tag(children[]) | tag(props, children[]) | tag(props) | tag()
+      // Statically-lowerable forms: tag() | tag([children]) | tag({props}) |
+      // tag({props}, [children]). Anything else — a DYNAMIC children/props
+      // expression like `div(section.view(...))` or `div(props, makeRows())` —
+      // can't be analyzed at compile time. Leave the WHOLE call verbatim so the
+      // runtime authoring helper handles it (its `Array.isArray(a0)` dispatch
+      // routes a Node[] arg to children); lowering those would otherwise DROP the
+      // dynamic children (emit `el(tag, {}, [])`).
       let propsExpr: ts.ObjectLiteralExpression | undefined
       let childrenExpr: ts.ArrayLiteralExpression | undefined
-      if (a0 && ts.isArrayLiteralExpression(a0)) {
+      let analyzable = false
+      if (!a0) {
+        analyzable = true // tag()
+      } else if (ts.isArrayLiteralExpression(a0)) {
         childrenExpr = a0
-      } else if (a0 && ts.isObjectLiteralExpression(a0)) {
+        analyzable = true
+      } else if (ts.isObjectLiteralExpression(a0)) {
         propsExpr = a0
-        if (a1 && ts.isArrayLiteralExpression(a1)) childrenExpr = a1
+        if (!a1) analyzable = true
+        else if (ts.isArrayLiteralExpression(a1)) {
+          childrenExpr = a1
+          analyzable = true
+        }
+        // a1 present but not an array literal -> dynamic children -> not analyzable
       }
+      if (!analyzable) return node.getText(sf)
       const propsSrc = propsExpr ? transformProps(propsExpr, sf, roots, collect) : '{}'
       const childrenSrc = childrenExpr
         ? `[${childrenExpr.elements.map((c) => transformNodeExpr(c, sf, roots, collect)).join(', ')}]`
