@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { ul, li, text, each } from '../../src/signals/authoring'
+import { onMount } from '../../src/signals/dom'
 
 // Regression: the keyed `each` reconciler must move the MINIMAL number of rows
 // (n − |LIS|), not re-insert in order on every change. The old cursor walk
@@ -161,6 +162,45 @@ describe('keyed each — minimal-move reorder', () => {
     // change one item's data (new ref) → that row must re-evaluate
     h.send({ type: 'set', rows: [rows[0]!, { id: 2, label: 'CHANGED' }, rows[2]!] })
     expect(labels()).toEqual(['l1', 'CHANGED', 'l3'])
+    h.dispose()
+  })
+
+  it('clearing to empty removes all rows (bulk clear) and re-adds correctly', () => {
+    const { h, ids, reset } = mount(mk(5))
+    reset()
+    h.send({ type: 'set', rows: [] })
+    expect(ids()).toEqual([]) // bulk-clear path (n === 0)
+    h.send({ type: 'set', rows: mk(3) })
+    expect(ids()).toEqual(['r1', 'r2', 'r3']) // re-populates after a clear
+    h.dispose()
+  })
+
+  it('bulk clear runs each row’s onMount teardown', () => {
+    let cleanups = 0
+    const container = document.createElement('div')
+    const h = mountSignalComponent<S, M>(container, {
+      init: () => ({ rows: mk(3) }),
+      update: (_s, m) => ({ rows: m.rows }),
+      view: ({ state }) => [
+        ul([
+          each(
+            state.map((s) => s.rows),
+            {
+              key: (r: Row) => r.id,
+              render: (item) => [
+                li([text(item.map((r) => r.label))]),
+                onMount(() => () => {
+                  cleanups++
+                }),
+              ],
+            },
+          ),
+        ]),
+      ],
+    })
+    expect(cleanups).toBe(0)
+    h.send({ type: 'set', rows: [] }) // full clear → every row's teardown runs
+    expect(cleanups).toBe(3)
     h.dispose()
   })
 

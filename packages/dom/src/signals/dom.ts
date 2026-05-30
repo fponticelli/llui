@@ -55,8 +55,12 @@ interface BuildCtx {
    * nodes are inserted; their returned cleanups join the teardown list. */
   mounts: Array<(root: Element) => void | (() => void)>
   /** context values in scope during this build (provide/useContext). Inherited
-   * into nested builds (each rows, show/branch arms). */
-  contexts: Map<symbol, unknown>
+   * into nested builds (each rows, show/branch arms) by SHARING the parent's map
+   * (no clone); `provide` copy-on-writes a private map before mutating, so a build
+   * that never calls `provide` (the vast majority — every plain `each` row) pays no
+   * clone. `ownContexts` tracks whether `contexts` is this build's private copy. */
+  contexts: ReadonlyMap<symbol, unknown>
+  ownContexts: boolean
   /** live agent-affordance registry: tagged-send variant → refcount. SHARED by
    * reference across the whole component (root + every reactive row/arm build),
    * so `each`/`show`/`branch` registrations and their teardowns all affect the
@@ -64,6 +68,10 @@ interface BuildCtx {
   descriptors: Map<string, number>
 }
 let ctx: BuildCtx | null = null
+
+// Shared read-only sentinel for builds with no inherited/seeded contexts — avoids
+// allocating an empty Map per build (provide() copy-on-writes before any mutation).
+const EMPTY_CONTEXTS: ReadonlyMap<symbol, unknown> = new Map()
 
 const REACT = Symbol('llui.react')
 
@@ -225,13 +233,15 @@ function runBuild(
   const teardowns: Array<() => void> = []
   const mounts: Array<(root: Element) => void | (() => void)> = []
   // inherit in-scope context values so provide() above an each/show is visible
-  // inside its rows/arms (which build in this nested context). Seeded adapter
-  // contexts apply only when there's no parent build to inherit from.
-  const contexts = new Map(parent?.contexts ?? seedContexts)
+  // inside its rows/arms (which build in this nested context). SHARE the parent's
+  // (or seeded) map by reference — `provide` copy-on-writes before mutating, so a
+  // build with no provide never clones. Seeded adapter contexts apply only when
+  // there's no parent build to inherit from.
+  const contexts: ReadonlyMap<symbol, unknown> = parent?.contexts ?? seedContexts ?? EMPTY_CONTEXTS
   // SHARE the descriptor registry by reference (root one if present) so row/arm
   // registrations and decrements land in the component's single registry.
   const descriptors = parent?.descriptors ?? new Map<string, number>()
-  ctx = { specs, doc, host, teardowns, mounts, contexts, descriptors }
+  ctx = { specs, doc, host, teardowns, mounts, contexts, ownContexts: false, descriptors }
   let nodes: readonly Node[]
   try {
     nodes = build()
@@ -320,15 +330,23 @@ export function createContext<T>(defaultValue: T, name = 'context'): Context<T> 
 /** Provide `value` for `context` to everything `render` builds, then restore. */
 export function provide<T>(context: Context<T>, value: T, render: () => readonly Node[]): Node {
   const c = requireCtx()
-  const had = c.contexts.has(context.id)
-  const prev = c.contexts.get(context.id)
-  c.contexts.set(context.id, value)
+  // Copy-on-write: the build shares its parent's contexts map by reference until
+  // the first provide, which clones a private copy so the mutation doesn't leak to
+  // the parent or sibling builds.
+  if (!c.ownContexts) {
+    c.contexts = new Map(c.contexts)
+    c.ownContexts = true
+  }
+  const m = c.contexts as Map<symbol, unknown>
+  const had = m.has(context.id)
+  const prev = m.get(context.id)
+  m.set(context.id, value)
   const frag = c.doc.createDocumentFragment()
   try {
     for (const n of render()) frag.appendChild(n)
   } finally {
-    if (had) c.contexts.set(context.id, prev)
-    else c.contexts.delete(context.id)
+    if (had) m.set(context.id, prev)
+    else m.delete(context.id)
   }
   return frag
 }
@@ -495,6 +513,11 @@ export function signalEach<T>(
   // skip its `scope.update` — turning an N-row in-place update into work
   // proportional to the rows that actually changed.
   let templateReadsState = true
+  // Whether any row spec has a non-row-local dep (a bare component-state path from
+  // an uncompiled connect-part) needing rebasing to `state.*`. Probed once — when
+  // false (compiled rows / item-only rows) the per-row `rebaseRowSpec` map is pure
+  // overhead, so it's skipped.
+  let needsRebase = true
   let templateProbed = false
 
   const reconcile = (state: unknown): void => {
@@ -523,15 +546,19 @@ export function signalEach<T>(
         const ctx: RowCtx<T> = { item, state, index }
         const holder = { ctx }
         const built = runBuild(doc, () => renderRow(() => holder.ctx), c)
-        // Re-root any component-state-rooted bindings (e.g. connect() parts placed
-        // in the row by an uncompiled each) to read ctx.state.
-        built.specs = built.specs.map(rebaseRowSpec)
+        // Probe the template once (all rows share it): does any spec need rebasing
+        // (non-row-local dep), and does any binding read component state? Computed
+        // from the ORIGINAL deps before rebasing.
         if (!templateProbed) {
           templateProbed = true
-          templateReadsState = built.specs.some((s) =>
-            s.deps.some((d) => d === 'state' || d.startsWith('state.')),
-          )
+          needsRebase = built.specs.some((s) => s.deps.some((d) => !isRowLocalDep(d)))
+          templateReadsState =
+            needsRebase ||
+            built.specs.some((s) => s.deps.some((d) => d === 'state' || d.startsWith('state.')))
         }
+        // Re-root any component-state-rooted bindings (e.g. connect() parts placed
+        // in the row by an uncompiled each) to read ctx.state — only when needed.
+        if (needsRebase) built.specs = built.specs.map(rebaseRowSpec)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
@@ -568,6 +595,25 @@ export function signalEach<T>(
     // is already in the right order; rows were updated in place above.
     if (sameOrder) {
       order = newKeys
+      return
+    }
+
+    // Full clear: drop all rows' teardowns, then remove every row node between the
+    // anchors in ONE Range op (where supported) instead of N removeChild calls.
+    if (n === 0 && rows.size > 0) {
+      for (const row of rows.values()) for (const t of row.teardowns.splice(0)) t()
+      const ownerDoc = (parent as Node).ownerDocument
+      const range = typeof ownerDoc?.createRange === 'function' ? ownerDoc.createRange() : null
+      if (range) {
+        range.setStartAfter(start)
+        range.setEndBefore(end)
+        range.deleteContents()
+      } else {
+        for (const row of rows.values())
+          for (const node of row.nodes) if (node.parentNode === parent) parent.removeChild(node)
+      }
+      rows.clear()
+      order = newKeys // empty
       return
     }
 
