@@ -19,7 +19,7 @@ A follow-up to the signal release, surfaced migrating a real app to the signal A
 
 ### `@llui/compiler@0.6.1`
 
-- **Fixed** `whole-state-to-call` no longer false-positives on composition or non-view code. It flagged whole `state` passed to ANY call — breaking the canonical top-level `view: ({ state }) => [shell(state)]` (handing whole state to a view-helper that narrows internally via its own per-binding masks is fine, not a coarse dep), and flagging a plain `state` reducer param that happens to shadow the view root. It now fires only when the whole-state argument lands in a reactive VALUE slot: a `text`/`react` argument, a reactive element prop, or an operator/template/ternary operand.
+- **Removed** the `whole-state-to-call` lint rule. It flagged whole `state` passed to any call and false-positived on the canonical top-level `view: ({ state }) => [shell(state)]` (handing whole state to a view-helper that narrows internally is fine) and on a plain `state` reducer param shadowing the view root. The rule was also redundant: rendering a whole-state object is already a **type** error (`text`/`AttrValue` accept `Reactive<string | number>`), and a `Signal` coerced into a template/operator is caught by **`operator-on-signal`** — which, unlike the removed rule, catches the type-invisible cases and isn't circumventable by rewriting `fmt(state)` as `state.map(fmt)`. Coarse-but-correct whole-state derivations are bounded by output-equality and are no longer a build error. (Surfaced migrating a real app to the signal API.)
 
 ### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.1`
 

@@ -72,7 +72,7 @@ Sixteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | `@llui/agent-bridge`           | Browser bridge that connects a running app to the agent host                                                        | @llui/dom      |
 | `@llui/agent-e2e`              | End-to-end fixtures and tests for the agent surface                                                                 | @llui/dom      |
 
-**Note for future LLMs:** framework lint rules are compile-time ERRORS in `@llui/compiler` (run by `@llui/vite-plugin`), never ESLint rules. The signal lint set (`packages/compiler/src/signals/rules.ts`) covers `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `whole-state-to-call`, plus the shared cross-file/agent/convention checks. Do NOT reintroduce `@llui/eslint-plugin` or recreate rules as ESLint rules: LLMs ignore lint warnings, so non-bypassable compiler errors are the only effective channel.
+**Note for future LLMs:** framework lint rules are compile-time ERRORS in `@llui/compiler` (run by `@llui/vite-plugin`), never ESLint rules. The signal lint set (`packages/compiler/src/signals/rules.ts`) covers `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, plus the shared cross-file/agent/convention checks. Do NOT reintroduce `@llui/eslint-plugin` or recreate rules as ESLint rules: LLMs ignore lint warnings, so non-bypassable compiler errors are the only effective channel.
 
 Build order is computed by Turbo via `"dependsOn": ["^build"]`. Roots: `@llui/dom` and `@llui/effects` (no deps); everything else layers on top.
 

@@ -200,7 +200,6 @@ compile-time ERRORS:
 
 - `peek-in-slot` — `.peek()` inside a reactive slot (freezes the value).
 - `operator-on-signal` — using a `Signal` as an operand; `.map(...)` its value.
-- `whole-state-to-call` — passing a whole-state signal straight into a call.
 - `pure-derive-body` — side effect / non-deterministic call in a `.map`/`derived` body.
 - `no-node-construction-in-body` — building DOM inside a `.map`/`derived` body.
 

@@ -242,7 +242,7 @@ interface BuildCtx {
 
 **Building DOM or causing side effects inside a `.map` body.** A derive body must be a pure function of plain values — no element/text construction (use a structural primitive), no `send`/`fetch`/timers, no `.at`/`.map`/`.peek` on a signal, no `Date.now`/`Math.random`. The `no-node-construction-in-body` and `pure-derive-body` rules enforce analyzer soundness here.
 
-**Passing whole `state` to a call in a slot.** `text(makeLabel(state))` reads the entire state object as the binding's dep, so the binding re-runs on every change. Pass a slice: `text(makeLabel(state.at('label')))`. The `whole-state-to-call` rule flags this.
+**Passing whole `state` to a value slot.** `text(makeLabel(state))` reads the entire state object as the binding's dep, so it re-runs on every change. Prefer a slice — `text(makeLabel(state.at('label')))`. Output-equality still gates the commit, so this is a perf preference, not an error (no lint gates it). Rendering whole `state` directly is a _type_ error (slots take `Reactive<string | number>`), and a `Signal` coerced in a template/operator is caught by `operator-on-signal`.
 
 ---
 

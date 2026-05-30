@@ -15,7 +15,7 @@ LLui's architecture eliminates this entanglement:
 - **`update()` is a pure function.** Every state transition, every validation rule, every conditional, every edge case lives in `(state, msg) → [newState, effects]`. No DOM. No browser. No async. Testable with `assert.deepEqual`.
 - **Effects are data.** "Was an HTTP request made with the right URL?" is not a question about `fetch` — it is a question about what object `update()` returned. No mocks needed.
 - **`view()` runs once.** The binding graph is established at mount time and never re-evaluated. The framework's update mechanism (the chunked-mask reconciler's dirty-path gate + output-equality skip) is tested by the framework, not by every application.
-- **The compiler verifies bindings statically.** The signal lint rules — `operator-on-signal` (operating on a `Signal` instead of `.map(...)`-ing its value), `peek-in-slot` (calling `.peek()` in a reactive slot), `pure-derive-body` / `no-node-construction-in-body` (impure or DOM-building `.map`/`derived` bodies), `whole-state-to-call` — are compile-time errors, caught at build time, not test time.
+- **The compiler verifies bindings statically.** The signal lint rules — `operator-on-signal` (operating on a `Signal` instead of `.map(...)`-ing its value), `peek-in-slot` (calling `.peek()` in a reactive slot), `pure-derive-body` / `no-node-construction-in-body` (impure or DOM-building `.map`/`derived` bodies) — are compile-time errors, caught at build time, not test time.
 
 This means the testing pyramid inverts:
 
@@ -514,7 +514,7 @@ The LLui compiler replaces an entire class of tests with build-time guarantees:
 
 **Dependency-path correctness.** The signal transform lowers each reactive slot to a `produce` function plus the absolute state dependency paths it reads (`state.at('user.name')` → deps `['user.name']`). The reconciler gates re-runs on those paths. If the analysis is wrong, the framework's compiler tests catch it. Application code does not need to test "did the right binding update" — the compiler guarantees it.
 
-**Reactive-method misuse in slots.** Calling `.peek()` inside a reactive slot (`peek-in-slot`) — which would freeze the value at its mount-time reading — is a compile error. So is feeding a whole-state `Signal` straight into a call (`whole-state-to-call`) or using a `Signal` as an operand instead of `.map`-ing its value (`operator-on-signal`).
+**Reactive-method misuse in slots.** Calling `.peek()` inside a reactive slot (`peek-in-slot`) — which would freeze the value at its mount-time reading — is a compile error. So is using a `Signal` as an operand (or coercing it in a template) instead of `.map`-ing its value (`operator-on-signal`). Feeding a whole-state object into a value slot is caught by the slot types (`Reactive<string | number>`), not a lint rule.
 
 **Impure / DOM-building derive bodies.** A `.map`/`derived` body that performs a side effect or non-deterministic call (`pure-derive-body`) or constructs DOM (`no-node-construction-in-body`) is rejected — derives must be pure transforms of plain values.
 
