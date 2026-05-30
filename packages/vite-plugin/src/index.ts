@@ -838,6 +838,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let hudInjectEnabled = false
   let hudEntryPath: string | null = null
   let hudOptionsJson = '{}'
+  // Whether to inject the HUD <script> via `transformIndexHtml`. Disabled when
+  // Vike owns the HTML pipeline: Vike probes `transformIndexHtml` with a fixed
+  // fake document and rejects ANY plugin that mutates it (it injects the page's
+  // assets itself, via onRenderHtml), so a body-injected HUD tag throws a
+  // "Wrong Usage" error. Vike apps that want the HUD mount it from their own
+  // document template instead.
+  let hudHtmlInject = false
 
   // Resolved router state. `resolvedRouter` is non-null when the
   // attention router should run; `solveEnabled` is the boolean signal
@@ -976,6 +983,21 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           hudEntryPath = resolveDevmodeAnnotateEntry()
           if (hudEntryPath) {
             hudInjectEnabled = true
+            // Vike intercepts the HTML pipeline; injecting our HUD tag via
+            // transformIndexHtml trips Vike's "Wrong Usage" guard. Detect Vike in
+            // the resolved plugin list and skip the HTML injection (the notes API,
+            // vmod, and middleware stay live for view-helper / manual use).
+            const vikePresent = (config.plugins ?? []).some(
+              (p) => typeof p?.name === 'string' && p.name.startsWith('vike'),
+            )
+            hudHtmlInject = !vikePresent
+            if (vikePresent) {
+              process.stderr.write(
+                '[llui:devmode-annotate] Vike detected — the dev HUD is not auto-injected into the\n' +
+                  '                        HTML (Vike owns the document pipeline). Mount it from your\n' +
+                  '                        document template, or set `devmodeAnnotate: { hud: false }` to silence.\n',
+              )
+            }
             const forwarded: HudInjectionConfig = typeof hudCfg === 'object' ? hudCfg : {}
             hudOptionsJson = JSON.stringify({
               ...(forwarded.hidden ? { hidden: true } : {}),
@@ -1276,7 +1298,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     transformIndexHtml: {
       order: 'pre',
       handler() {
-        if (!devMode || !hudInjectEnabled) return
+        if (!devMode || !hudInjectEnabled || !hudHtmlInject) return
         return [
           {
             tag: 'script',
