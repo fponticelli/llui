@@ -807,7 +807,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let mcpMode: 'disabled' | 'wire' | 'spawn' = 'disabled'
   let mcpCliPath: string | null = null
   let mcpChild: ChildProcess | null = null
-  const verbose = options.verbose === true
   const agent = options.agent ?? false
   const transitions = options.transitions ?? false
   // Set in `configResolved` to the Vite project root. Stays null when
