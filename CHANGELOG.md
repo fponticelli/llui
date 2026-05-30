@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — @llui/compiler@0.6.1
+
+**Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.1`
+
+A follow-up to the signal release, surfaced migrating a real app to the signal API.
+
+### `@llui/compiler@0.6.1`
+
+- **Fixed** `whole-state-to-call` no longer false-positives on composition or non-view code. It flagged whole `state` passed to ANY call — breaking the canonical top-level `view: ({ state }) => [shell(state)]` (handing whole state to a view-helper that narrows internally via its own per-binding masks is fine, not a coarse dep), and flagging a plain `state` reducer param that happens to shadow the view root. It now fires only when the whole-state argument lands in a reactive VALUE slot: a `text`/`react` argument, a reactive element prop, or an operator/template/ternary operand.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.1`
+
+- **Improved** cascade republish so each re-pins the fixed `@llui/compiler` (workspace deps resolve to exact versions at pack time).
+
 ## 2026-05-30 — 0.5.0 (the signal runtime) · @llui/compiler@0.6.0
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.5.0`; `llui-agent@0.5.0`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin}@0.6.0`; `@llui/mcp@0.6.0`
