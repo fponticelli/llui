@@ -60,7 +60,7 @@ const llmsTxt = `# LLui
 ## Example
 
 \`\`\`typescript
-import { component, mountApp, div, button } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -74,10 +74,10 @@ const Counter = component<State, Msg, never>({
       case 'dec': return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: ({ send, text }) => [
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.map((s) => String(s.count))),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],

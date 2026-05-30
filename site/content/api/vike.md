@@ -134,8 +134,8 @@ Render every layer of the chain into one composed DOM tree, then
 serialize. At each non-innermost layer, consume the pending
 `pageSlot()` registration and insert the next layer's nodes as
 siblings after the anchor comment, bracketed by an end sentinel.
-Scopes are threaded so inner layers inherit the outer layer's scope
-tree for context lookups.
+Contexts provided above a slot are replayed into the nested layer's
+build so they reach the nested page.
 @internal — exported for unit testing only (`_renderChain`).
 
 ```typescript
@@ -148,10 +148,8 @@ function _renderChain(
 
 ### `fromTransition()`
 
-Adapt a `TransitionOptions` object (e.g. the output of
-`routeTransition()` from `@llui/transitions`, or a preset like `fade`
-/ `slide`) into the `onLeave` / `onEnter` pair expected by
-`createOnRenderClient`.
+Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
+expected by `createOnRenderClient`.
 
 ```ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
@@ -163,9 +161,8 @@ export const onRenderClient = createOnRenderClient({
 ```
 
 The transition operates on the slot element — in a no-layout setup,
-the root container; in a layout setup, the innermost surviving
-layer's `pageSlot()` element. Opacity / transform fades apply to the
-outgoing page content, then the new page fades in.
+the root container; in a layout setup, the innermost surviving layer's
+`pageSlot()` element.
 
 ```typescript
 function fromTransition(t: TransitionOptions): Pick<RenderClientOptions, 'onLeave' | 'onEnter'>
@@ -173,9 +170,8 @@ function fromTransition(t: TransitionOptions): Pick<RenderClientOptions, 'onLeav
 
 ### `_resetChainForTest()`
 
-@internal — test helper. Disposes every layer in the current chain
-and clears the module state so subsequent calls behave as a first
-mount. Not part of the public API; subject to change without notice.
+@internal — test helper. Disposes every layer in the current chain and
+clears the module state so subsequent calls behave as a first mount.
 
 ```typescript
 function _resetChainForTest(): void
@@ -194,8 +190,7 @@ function _resetCurrentHandleForTest(): void
 ### `onRenderClient()`
 
 Default onRenderClient hook — no layout, no animation hooks. Hydrates
-on first load, mounts fresh on subsequent navs. Use `createOnRenderClient`
-for the customizable factory form.
+on first load, mounts fresh on subsequent navs.
 
 ```typescript
 function onRenderClient(pageContext: ClientPageContext): Promise<void>
@@ -203,29 +198,12 @@ function onRenderClient(pageContext: ClientPageContext): Promise<void>
 
 ### `createOnRenderClient()`
 
-Factory to create a customized onRenderClient hook. See `RenderClientOptions`
-for the full option surface — this is the entry point for persistent
-layouts, route transitions, and lifecycle hooks.
+Factory to create a customized onRenderClient hook. See
+`RenderClientOptions` for the full option surface.
 **Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
-prefix for its own framework config conventions, and `+Layout.ts` is
-interpreted by `vike-react` / `vike-vue` / `vike-solid` framework
-adapters as a native layout config. `@llui/vike` isn't a framework
-adapter in that sense — it's a render adapter, and `createOnRenderClient`
-consumes the layout component directly via the `Layout` option. Name
-the file `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages`
-that Vike won't scan, and import it here by path.
-
-```ts
-// pages/+onRenderClient.ts
-import { createOnRenderClient, fromTransition } from '@llui/vike/client'
-import { routeTransition } from '@llui/transitions'
-import { AppLayout } from './Layout.js' // ← NOT './+Layout'
-export const onRenderClient = createOnRenderClient({
-  Layout: AppLayout,
-  ...fromTransition(routeTransition({ duration: 200 })),
-  onMount: () => console.log('page rendered'),
-})
-```
+prefix for its own framework config conventions. Name the file
+`Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` that Vike
+won't scan, and import it here by path.
 
 ```typescript
 function createOnRenderClient(
@@ -235,34 +213,25 @@ function createOnRenderClient(
 
 ### `getLayoutChain()`
 
-Public read of the current layout chain. Returns the live
-`AppHandle`s for `[...layouts, page]`, outermost first. Empty array
-before the first mount; updates after every navigation.
-Returns a fresh array each call, but the AppHandle references are
-shared with the live chain — calling `.send()` / `.dispose()` /
-`.subscribe()` operates on the same instance the framework manages.
-Prefer the `onMount(chain)` callback for lifecycle-coupled wiring
-(the framework guarantees the chain is fully populated when it
-fires); use this getter for ad-hoc reads where the caller can't
-thread state through `onMount`.
+Public read of the current layout chain — live `LayerHandle`s for
+`[...layouts, page]`, outermost first. Empty before the first mount.
 
 ```typescript
-function getLayoutChain(): readonly AppHandle[]
+function getLayoutChain(): readonly LayerHandle[]
 ```
 
 ### `_mountChainSuffix()`
 
-Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
-the initial layer's rootLifetime parented at `initialParentLifetime`.
-Threads slot → next-target → next-parentLifetime through the chain.
-`initialTarget` is `HTMLElement` for the outermost layer (container-
-based mount/hydrate) and `Comment` for inner layers that mount relative
-to a `pageSlot()` anchor.
-Fails loudly if a non-innermost layer forgot to call `pageSlot()`,
-or if the innermost layer called `pageSlot()` unnecessarily.
-@internal — test helper. Exported so `client-page-slot.test.ts` can
-test anchor-mount/dispose contracts directly with hand-built DOM.
-Not part of the public API.
+Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, replaying
+`initialContexts` into the first layer's build. Threads each layer's slot
+(anchor + captured contexts) into the next layer's target + contexts.
+`initialTarget` is an `HTMLElement` for the outermost layer (container mount/
+hydrate) and a `Comment` for inner layers mounting relative to a `pageSlot()`
+anchor.
+Fails loudly if a non-innermost layer forgot to call `pageSlot()`, or if the
+innermost layer called `pageSlot()` unnecessarily.
+@internal — test helper. Exported so `client-page-slot.test.ts` can exercise
+anchor-mount/dispose contracts directly with hand-built DOM.
 
 ```typescript
 function _mountChainSuffix(
@@ -270,12 +239,43 @@ function _mountChainSuffix(
   chainData: readonly unknown[],
   startAt: number,
   initialTarget: HTMLElement | Comment,
-  initialParentLifetime: Lifetime | undefined,
+  initialContexts: ReadonlyMap<symbol, unknown> | undefined,
   opts: MountOpts,
 ): void
 ```
 
+## Types
+
+### `LayerHandle`
+
+The live handle a mounted/hydrated layer exposes (send/getState/subscribe).
+
+```typescript
+export type LayerHandle = SignalComponentHandle<unknown, unknown>
+```
+
 ## Interfaces
+
+### `AnyLayer`
+
+Type-erased layer def at the adapter boundary. Declared with METHOD syntax and
+a single `unknown` view-bag param so a concrete `SignalComponentDef<S,M,E>`
+assigns in for ANY S/M/E — `SignalComponentDef<unknown,unknown,unknown>` can't
+be that erasure, because `view(bag: ComponentBag<S,M>)` couples covariant
+`state` with contravariant `send` and neither variance direction admits a
+heterogeneous chain. This interface is itself assignable to
+`SignalComponentDef<unknown,unknown,unknown>`, so `renderNodes(layer)` type-
+checks. Mirrors the legacy `AnyComponentDef`.
+
+```typescript
+export interface AnyLayer {
+  readonly name?: string
+  init(): unknown
+  update(state: unknown, msg: unknown): unknown
+  view(bag: unknown): readonly Node[]
+  onEffect?(effect: unknown, api: unknown): void | (() => void)
+}
+```
 
 ### `PageContext`
 
@@ -287,10 +287,13 @@ layout data matching the chain configured on `createOnRenderHtml`.
 consumer-side augmentations (the Vike convention for typing data) flow
 into this hook's callbacks without any cast. When the consumer hasn't
 augmented the namespace, `data` falls back to `unknown`.
+In the signal runtime a component's `init()` takes no data argument, so
+each layer's `data` slice is used directly as that layer's seed STATE
+when present; when absent, the layer's own `init()` provides the seed.
 
 ```typescript
 export interface PageContext {
-  Page: AnyComponentDef
+  Page: AnyLayer
   data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   head?: string
@@ -335,8 +338,8 @@ export interface RenderHtmlOptions {
   /**
    * Persistent layout chain. One of:
    *
-   * - A single `ComponentDef` — becomes a one-layout chain.
-   * - An array of `ComponentDef`s — outermost first, innermost last.
+   * - A single `SignalComponentDef` — becomes a one-layout chain.
+   * - An array of `SignalComponentDef`s — outermost first, innermost last.
    *   Every layer except the innermost must call `pageSlot()` in its view.
    * - A function that returns a chain from the current `pageContext` —
    *   enables per-route chains (e.g. reading Vike's `urlPathname`).
@@ -345,7 +348,7 @@ export interface RenderHtmlOptions {
    * hydration reads the matching envelope and reconstructs the chain
    * layer-by-layer.
    */
-  Layout?: AnyComponentDef | LayoutChain | ((pageContext: PageContext) => LayoutChain)
+  Layout?: AnyLayer | LayoutChain | ((pageContext: PageContext) => LayoutChain)
 
   /**
    * Factory that returns the `DomEnv` backing SSR render. Call with
@@ -373,20 +376,19 @@ Page context shape as seen by `@llui/vike`'s client-side hooks. The
 `Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
 Vike resolved for the current route.
 `data` is derived from the global `Vike.PageContext` namespace — the
-convention users already know from Vike. Consumer augmentations of
-`Vike.PageContext { interface PageContext { data?: MyData } }` flow
-through to every callback here without a cast. Unaugmented projects
+convention users already know from Vike. Consumer augmentations flow
+through to every callback here without a cast; unaugmented projects
 fall back to `unknown`.
+In the signal runtime a component's `init()` takes no data argument, so
+each layer's `data` slice is used directly as that layer's seed STATE
+when present; when absent, the layer's own `init()` provides the seed.
 `lluiLayoutData` is optional and carries per-layer data for the layout
 chain configured via `createOnRenderClient({ Layout })`. It's indexed
-outermost-to-innermost, one entry per layout layer. Absent entries
-mean the corresponding layout's `init()` receives `undefined`. Users
-wire this from their Vike `+data.ts` files by merging layout-owned
-data under the `lluiLayoutData` key.
+outermost-to-innermost, one entry per layout layer.
 
 ```typescript
 export interface ClientPageContext {
-  Page: AnyComponentDef
+  Page: AnyLayer
   data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
@@ -399,40 +401,12 @@ Page-lifecycle hooks that fire around the dispose → mount cycle on
 client navigation. With persistent layouts in play the cycle only
 tears down the _divergent_ suffix of the layout chain — any layers
 shared between the old and new routes stay mounted.
-Navigation sequence for an already-mounted app:
-
-```
-  client nav triggered
-    │
-    ▼
-  compare old chain to new chain → find first mismatch index K
-    │
-    ▼
-  onLeave(leaveTarget)   ← awaited; leaveTarget is the slot element
-    │                      at depth K-1 (or the root container if K=0)
-    │                      whose contents are about to be replaced
-    ▼
-  dispose chainHandles[K..end] innermost first
-    │
-    ▼
-  leaveTarget.textContent = ''
-    │
-    ▼
-  mount newChain[K..end] into leaveTarget, outermost first
-    │
-    ▼
-  onEnter(leaveTarget)   ← fire-and-forget; fresh DOM in place
-    │
-    ▼
-  onMount()
-```
-
 On the initial hydration render, `onLeave` and `onEnter` are NOT
 called — there's no outgoing page to leave and no animation to enter.
 Use `onMount` for code that should run on every render including the
 initial one.
 
-````typescript
+```typescript
 export interface RenderClientOptions {
   /** CSS selector for the mount container. Default: `'#app'`. */
   container?: string
@@ -440,27 +414,22 @@ export interface RenderClientOptions {
   /**
    * Persistent layout chain. One of:
    *
-   * - A single `ComponentDef` — becomes a one-layout chain.
-   * - An array of `ComponentDef`s — outermost layout first, innermost
-   *   layout last. Every layer except the innermost must call
+   * - A single `SignalComponentDef` — becomes a one-layout chain.
+   * - An array of `SignalComponentDef`s — outermost layout first,
+   *   innermost layout last. Every layer except the innermost must call
    *   `pageSlot()` in its view to declare where nested content renders.
-   * - A function that returns a chain from the current `pageContext` —
-   *   lets different routes use different chains, e.g. by reading
-   *   Vike's `pageContext.urlPathname` or `pageContext.config.Layout`.
+   * - A function that returns a chain from the current `pageContext`.
    *
-   * Layers that are shared between the previous and next navigation
-   * stay mounted. Only the divergent suffix is disposed and re-mounted.
-   * Dialogs, focus traps, and effect subscriptions rooted in a surviving
-   * layer are unaffected by the nav.
+   * Layers shared between the previous and next navigation stay mounted.
+   * Only the divergent suffix is disposed and re-mounted.
    */
-  Layout?: AnyComponentDef | LayoutChain | ((pageContext: ClientPageContext) => LayoutChain)
+  Layout?: AnyLayer | LayoutChain | ((pageContext: ClientPageContext) => LayoutChain)
 
   /**
    * Called on the slot element whose contents are about to be replaced,
    * BEFORE the divergent suffix is disposed and re-mounted. The slot's
-   * current DOM is still attached when this runs — the only moment a
-   * leave animation can read/write it. Return a promise to defer the
-   * swap until the animation completes.
+   * current DOM is still attached when this runs. Return a promise to
+   * defer the swap until the animation completes.
    *
    * For a plain no-layout setup, the slot element is the root container.
    * Not called on the initial hydration render.
@@ -469,103 +438,47 @@ export interface RenderClientOptions {
 
   /**
    * Called after the new divergent suffix is mounted, on the same slot
-   * element that was passed to `onLeave`. Use this to kick off an enter
-   * animation. Fire-and-forget — promise returns are ignored.
-   *
-   * Not called on the initial hydration render.
+   * element that was passed to `onLeave`. Fire-and-forget. Not called on
+   * the initial hydration render.
    */
   onEnter?: (el: HTMLElement) => void
 
   /**
    * Called after mount or hydration completes. Fires on every render
-   * including the initial hydration. Use for per-render side effects
-   * that don't fit the animation hooks.
-   *
-   * Receives the live layout chain — `[...layouts, page]`, outermost
-   * first — as `AppHandle`s. Consumers wiring observability bridges,
-   * the LAP agent client, custom devtools, or any tool that needs
-   * `getState` / `send` / `subscribe` for the *outermost layout*
-   * (which `window.__lluiComponents` did not reliably expose for
-   * hydrated apps until @llui/dom@0.0.31) can read it from here:
-   *
-   * ```ts
-   * createOnRenderClient({
-   *   Layout: AppLayout,
-   *   onMount: (chain) => {
-   *     const layout = chain[0]    // outermost layout
-   *     const page = chain.at(-1)  // current page
-   *   },
-   * })
-   * ```
-   *
-   * The array is a snapshot at call time; consumers should not retain
-   * references to handles past the next navigation, since surviving
-   * layers stay live but disposed layers do not.
+   * including the initial hydration. Receives the live layout chain —
+   * `[...layouts, page]`, outermost first — as `LayerHandle`s.
    */
-  onMount?: (chain: readonly AppHandle[]) => void
+  onMount?: (chain: readonly LayerHandle[]) => void
 
   /**
    * Called for each surviving layout layer whose `lluiLayoutData[i]`
-   * slice changed across a client navigation. Surviving layers are
-   * layers shared between the previous and current chain — they stay
-   * mounted, but their state needs a fresh injection of nav-driven
-   * data (pathname, breadcrumbs, session, …).
+   * slice changed across a client navigation. Surviving layers stay
+   * mounted but need a fresh injection of nav-driven data. You decide how
+   * to translate the new data into a message and dispatch it through
+   * `handle.send(msg)`.
    *
-   * The framework gives you the layer's `AppHandle` and the changed
-   * data; you decide how to translate it into a state-update message
-   * and dispatch it through `handle.send(msg)`. Typically:
-   *
-   * ```ts
-   * createOnRenderClient({
-   *   Layout: NavAwareLayout,
-   *   onLayerDataChange: ({ def, handle, newData }) => {
-   *     if (def === NavAwareLayout) {
-   *       handle.send({ type: 'navChanged', data: newData as NavData })
-   *     }
-   *   },
-   * })
-   * ```
-   *
-   * Not called for layers whose data slice is unchanged (shallow-key
-   * `Object.is` diff on records, whole-value `Object.is` for
-   * primitives). Not called on the initial hydration render — `init`
-   * handles the initial data injection there. Not called for the
-   * page layer (the innermost entry); the page always disposes and
-   * remounts, so its `init(data)` receives the fresh data directly.
-   *
-   * If omitted, surviving layers retain their existing state across
-   * navigations. Opt in only when the layout needs to react to
-   * nav-scoped data changes.
+   * Not called for unchanged slices, not on the initial hydration render,
+   * and not for the page layer (it always disposes and remounts, so its
+   * `init`/seed receives the fresh data directly).
    */
   onLayerDataChange?: (ctx: {
-    def: AnyComponentDef
-    handle: AppHandle
+    def: AnyLayer
+    handle: LayerHandle
     newData: unknown
     prevData: unknown
   }) => void
 
   /**
-   * Forwarded to `@llui/dom`'s `hydrateApp` / `hydrateAtAnchor` for
-   * every layer in the layout chain on initial hydration. When `true`,
-   * effects returned by each component's `init()` are dispatched
-   * post-swap on the client. When `false` (default), they are skipped
-   * — the SSR pass already ran them on the server, and re-running on
-   * the client typically produces duplicate fetches / subscriptions.
+   * Forwarded to the signal hydrate path for every layer on initial
+   * hydration. When `true`, effects returned by each component's `init()`
+   * are dispatched post-swap on the client. When `false` (default), they
+   * are skipped — the SSR pass already ran them.
    *
-   * Opt in only when:
-   *   - `init()` returns no effects, OR
-   *   - all returned effects are idempotent / client-only (e.g. attaching
-   *     a `window` listener), AND
-   *   - the SSR path didn't run them (typically because `init()` checks
-   *     a `loaded` flag in state and returns `[]` when serverState
-   *     already has the data loaded).
-   *
-   * Subsequent client-side navigation always uses `mountApp` /
-   * `mountAtAnchor` (fresh mount), which always fires init effects
-   * regardless of this flag.
+   * Subsequent client-side navigation always uses a fresh mount, which
+   * always fires init effects regardless of this flag.
    */
   runInitEffectsOnHydrate?: boolean
 }
-````
+```
 
 <!-- auto-api:end -->

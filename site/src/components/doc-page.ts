@@ -1,29 +1,33 @@
-import { component, h1, div, article } from '@llui/dom'
+import { component, h1, article, text } from '@llui/dom/signals'
 import type { DocData } from '../markdown'
-import { siteLayout } from './site-layout'
+import { siteLayout, type LayoutMsg } from './site-layout'
+import { rawHtml } from './raw-html'
 
 type State = DocData & { menuOpen: boolean }
-type Msg = { type: 'toggleMenu' }
+type Msg = LayoutMsg
 
-export const DocPage = component<State, Msg, never, DocData>({
+export const DocPage = component<State, Msg, never>({
   name: 'DocPage',
-  init: (data) => [{ ...data, menuOpen: false }, []],
+  // Seeded from Vike's +data (DocData) plus menuOpen; see pages/*/+data.ts.
+  init: () => [{ title: '', description: '', html: '', slug: '', menuOpen: false }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'toggleMenu':
         return [{ ...state, menuOpen: !state.menuOpen }, []]
     }
   },
-  view: ({ send, text }) => [
-    siteLayout<State, Msg>({
-      slug: '',
-      menuOpen: false,
-      text,
+  view: ({ state, send }) => [
+    siteLayout({
+      slug: state.at('slug'),
+      menuOpen: state.at('menuOpen'),
       send,
       content: [
         article({ class: 'site-content' }, [
-          h1({ class: 'page-title' }, [text((s: State) => s.title)]),
-          div({ class: 'prose', innerHTML: (s: State) => s.html }, []),
+          h1({ class: 'page-title' }, [text(state.map((s) => s.title))]),
+          rawHtml(
+            state.map((s) => s.html),
+            'prose',
+          ),
         ]),
       ],
     }),

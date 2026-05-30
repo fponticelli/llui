@@ -21,8 +21,10 @@ import {
   signalBranch,
   signalLazy,
   signalVirtualEach,
+  signalForeign,
   type PropValue,
   type SignalLazyOptions,
+  type SignalSpec,
 } from './dom.js'
 import {
   mountSignalComponent,
@@ -268,8 +270,11 @@ export function virtualEach<T>(opts: {
 
 // ── Foreign (imperative-library boundary) ──────────────────────────
 /** Embed an imperative library. Declared `state` signals are materialized to
- * LiveSignals for `mount`. Rewritten by the compiler to `signalForeign`. */
-export function foreign<Inst, State extends Record<string, Signal<unknown>>>(_spec: {
+ * LiveSignals for `mount`. A REAL runtime helper (like text/each/show/branch):
+ * the compiler lowers a direct-view `foreign()` to `signalForeign`, but in
+ * view-helper functions / uncompiled code it runs here — converting each declared
+ * state HANDLE to its `{produce, deps}` spec and delegating to `signalForeign`. */
+export function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
   tag?: string
   state?: State
   mount: (args: {
@@ -278,7 +283,22 @@ export function foreign<Inst, State extends Record<string, Signal<unknown>>>(_sp
   }) => Inst
   unmount?: (instance: Inst) => void
 }): Node {
-  return compiledAway('foreign')
+  const stateSpecs: Record<string, SignalSpec<unknown>> = {}
+  for (const [k, v] of Object.entries(spec.state ?? {})) {
+    // a signal handle carries produce+deps; a plain value becomes a static spec
+    stateSpecs[k] = isSignalHandle(v)
+      ? { produce: v.produce, deps: v.deps }
+      : { produce: () => v, deps: [] }
+  }
+  return signalForeign<Inst, Record<string, SignalSpec<unknown>>>({
+    tag: spec.tag,
+    state: stateSpecs,
+    mount: spec.mount as (args: {
+      el: Element
+      state: Record<string, LiveSignal<unknown>>
+    }) => Inst,
+    unmount: spec.unmount,
+  })
 }
 
 // ── Component + mount (kept by the transform; real runtime behavior) ──

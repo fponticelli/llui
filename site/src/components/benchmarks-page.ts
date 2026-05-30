@@ -1,12 +1,13 @@
-import { component, div, h1, h2, article, onMount } from '@llui/dom'
+import { component, div, h1, h2, article, text, onMount } from '@llui/dom/signals'
 import type { BenchmarksPageData } from '../../pages/benchmarks/+data'
-import { siteLayout } from './site-layout'
+import { siteLayout, type LayoutMsg } from './site-layout'
+import { rawHtml } from './raw-html'
 
 type State = BenchmarksPageData & {
   menuOpen: boolean
 }
 
-type Msg = { type: 'toggleMenu' }
+type Msg = LayoutMsg
 
 const TIMING_BENCHMARKS = [
   { id: '01_run1k', label: 'Create 1k' },
@@ -121,16 +122,27 @@ function allChartsHtml(data: Record<string, Record<string, number>>): string {
   return html
 }
 
-export const BenchmarksPage = component<State, Msg, never, BenchmarksPageData>({
+export const BenchmarksPage = component<State, Msg, never>({
   name: 'BenchmarksPage',
-  init: (data) => [{ ...data, menuOpen: false }, []],
+  // Seeded from Vike's +data (BenchmarksPageData) plus menuOpen; see +data.ts.
+  init: () => [
+    {
+      title: '',
+      description: '',
+      html: '',
+      slug: 'benchmarks',
+      benchmarks: {},
+      menuOpen: false,
+    },
+    [],
+  ],
   update: (state, msg) => {
     switch (msg.type) {
       case 'toggleMenu':
         return [{ ...state, menuOpen: !state.menuOpen }, []]
     }
   },
-  view: ({ send, text }) => {
+  view: ({ state, send }) => {
     // IntersectionObserver sets data-visible directly on chart wrappers.
     // Use requestAnimationFrame to ensure innerHTML bindings have been applied.
     onMount((container) => {
@@ -162,28 +174,29 @@ export const BenchmarksPage = component<State, Msg, never, BenchmarksPageData>({
     })
 
     return [
-      siteLayout<State, Msg>({
-        slug: 'benchmarks',
-        menuOpen: false,
-        text,
+      siteLayout({
+        slug: state.at('slug'),
+        menuOpen: state.at('menuOpen'),
         send,
         content: [
           article({ class: 'site-content' }, [
-            h1({ class: 'page-title' }, [text((s: State) => s.title)]),
+            h1({ class: 'page-title' }, [text(state.map((s) => s.title))]),
             div({ class: 'prose' }, [
-              div({
-                innerHTML:
-                  '<p>Results from <a href="https://github.com/krausest/js-framework-benchmark">js-framework-benchmark</a> (krausest). All frameworks measured under identical conditions.</p>',
-              }),
+              rawHtml(
+                state.map(
+                  () =>
+                    '<p>Results from <a href="https://github.com/krausest/js-framework-benchmark">js-framework-benchmark</a> (krausest). All frameworks measured under identical conditions.</p>',
+                ),
+              ),
               // Charts rendered from benchmark data
-              div({
-                class: 'bench-charts-section',
-                innerHTML: (s: State) => allChartsHtml(s.benchmarks),
-              }),
+              rawHtml(
+                state.map((s) => allChartsHtml(s.benchmarks)),
+                'bench-charts-section',
+              ),
               // Raw data tables and methodology from markdown prose
               div({ class: 'bench-raw-data' }, [
                 h2([text('Raw Data & Methodology')]),
-                div({ innerHTML: (s: State) => s.html }, []),
+                rawHtml(state.map((s) => s.html)),
               ]),
             ]),
           ]),

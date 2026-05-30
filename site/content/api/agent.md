@@ -999,7 +999,7 @@ export type MsgSchemaShape = {
 
 ```typescript
 export type CreateAgentClientOpts<State, Msg> = {
-  handle: AppHandle
+  handle: SignalComponentHandle<State, unknown>
   def: ComponentMetadata
   appVersion?: string
   rootElement: Element | null

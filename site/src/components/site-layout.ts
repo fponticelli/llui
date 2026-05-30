@@ -1,24 +1,24 @@
-import { div, nav, a, span, button, onMount } from '@llui/dom'
-import type { Send } from '@llui/dom'
+import { div, nav, a, span, button, text, onMount } from '@llui/dom/signals'
+import type { Signal, Send } from '@llui/dom/signals'
 
-interface LayoutState {
-  slug: string
-  menuOpen: boolean
-}
+export type LayoutMsg = { type: 'toggleMenu' }
 
-type LayoutMsg = { type: 'toggleMenu' }
-
-export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
-  slug: _slug,
-  menuOpen: _menuOpen,
-  text,
+/**
+ * Site chrome wrapper — header, sidebar nav, content slot, footer.
+ *
+ * `slug` is static per page (drives the active nav link), so it stays a plain
+ * string. `menuOpen` is reactive (the burger toggles it), so it arrives as a
+ * `Signal<boolean>`. `content` is the already-built page node array.
+ */
+export function siteLayout({
+  slug,
+  menuOpen,
   send,
   content,
 }: {
-  slug: string
-  menuOpen: boolean
-  text: (v: string | ((s: S) => string)) => Text
-  send: Send<M>
+  slug: Signal<string>
+  menuOpen: Signal<boolean>
+  send: Send<LayoutMsg>
   content: Node[]
 }): Node {
   // Wire theme toggle button after mount (self-contained — no component state)
@@ -39,16 +39,16 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
             'aria-label': 'Toggle theme',
             title: 'Toggle theme',
           },
-          [span({ class: 'theme-icon' }, [text('\u263D')])],
+          [span({ class: 'theme-icon' }, [text('☽')])],
         ),
         button(
           {
             type: 'button',
             class: 'menu-toggle',
             'aria-label': 'Toggle navigation menu',
-            onClick: () => send({ type: 'toggleMenu' } as M),
+            onClick: () => send({ type: 'toggleMenu' }),
           },
-          [text('\u2630')],
+          [text('☰')],
         ),
       ]),
     ]),
@@ -57,41 +57,41 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
       // Sidebar nav
       nav(
         {
-          class: (s: S) => `site-nav${s.menuOpen ? ' open' : ''}`,
+          class: menuOpen.map((open) => `site-nav${open ? ' open' : ''}`),
           'aria-label': 'Main navigation',
         },
         [
           span({ class: 'nav-section' }, [text('Guide')]),
-          navLink<S>('/', 'index', 'Home', text),
-          navLink<S>('/getting-started', 'getting-started', 'Getting Started', text),
-          navLink<S>('/cookbook', 'cookbook', 'Cookbook', text),
-          navLink<S>('/composition-patterns', 'composition-patterns', 'Composition Patterns', text),
-          navLink<S>('/architecture', 'architecture', 'Architecture', text),
-          navLink<S>('/benchmarks', 'benchmarks', 'Benchmarks', text),
-          navLink<S>('/changelog', 'changelog', 'Changelog', text),
+          navLink('/', 'index', 'Home', slug),
+          navLink('/getting-started', 'getting-started', 'Getting Started', slug),
+          navLink('/cookbook', 'cookbook', 'Cookbook', slug),
+          navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
+          navLink('/architecture', 'architecture', 'Architecture', slug),
+          navLink('/benchmarks', 'benchmarks', 'Benchmarks', slug),
+          navLink('/changelog', 'changelog', 'Changelog', slug),
           span({ class: 'nav-section' }, [text('AI Integration')]),
-          navLink<S>('/debugging', 'debugging', 'Debugging', text),
-          navLink<S>('/agents', 'agents', 'Agents', text),
+          navLink('/debugging', 'debugging', 'Debugging', slug),
+          navLink('/agents', 'agents', 'Agents', slug),
           span({ class: 'nav-section' }, [text('Packages')]),
-          navLink<S>('/api/dom', 'api/dom', 'dom', text),
-          navLink<S>('/api/compiler', 'api/compiler', 'compiler', text),
-          navLink<S>('/api/vite-plugin', 'api/vite-plugin', 'vite-plugin', text),
-          navLink<S>(
+          navLink('/api/dom', 'api/dom', 'dom', slug),
+          navLink('/api/compiler', 'api/compiler', 'compiler', slug),
+          navLink('/api/vite-plugin', 'api/vite-plugin', 'vite-plugin', slug),
+          navLink(
             '/api/compiler-introspection',
             'api/compiler-introspection',
             'compiler-introspection',
-            text,
+            slug,
           ),
-          navLink<S>('/api/compiler-devtools', 'api/compiler-devtools', 'compiler-devtools', text),
-          navLink<S>('/api/compiler-ssr', 'api/compiler-ssr', 'compiler-ssr', text),
-          navLink<S>('/api/effects', 'api/effects', 'effects', text),
-          navLink<S>('/api/components', 'api/components', 'components', text),
-          navLink<S>('/api/router', 'api/router', 'router', text),
-          navLink<S>('/api/transitions', 'api/transitions', 'transitions', text),
-          navLink<S>('/api/test', 'api/test', 'test', text),
-          navLink<S>('/api/vike', 'api/vike', 'vike', text),
-          navLink<S>('/api/mcp', 'api/mcp', 'mcp', text),
-          navLink<S>('/api/devmode-annotate', 'api/devmode-annotate', 'devmode-annotate', text),
+          navLink('/api/compiler-devtools', 'api/compiler-devtools', 'compiler-devtools', slug),
+          navLink('/api/compiler-ssr', 'api/compiler-ssr', 'compiler-ssr', slug),
+          navLink('/api/effects', 'api/effects', 'effects', slug),
+          navLink('/api/components', 'api/components', 'components', slug),
+          navLink('/api/router', 'api/router', 'router', slug),
+          navLink('/api/transitions', 'api/transitions', 'transitions', slug),
+          navLink('/api/test', 'api/test', 'test', slug),
+          navLink('/api/vike', 'api/vike', 'vike', slug),
+          navLink('/api/mcp', 'api/mcp', 'mcp', slug),
+          navLink('/api/devmode-annotate', 'api/devmode-annotate', 'devmode-annotate', slug),
         ],
       ),
 
@@ -101,11 +101,11 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
 
     // Footer
     div({ class: 'site-footer' }, [
-      text('LLui \u2014 MIT License \u00b7 '),
+      text('LLui — MIT License · '),
       a({ href: 'https://github.com/fponticelli/llui', class: 'footer-link' }, [text('GitHub')]),
-      text(' \u00b7 '),
+      text(' · '),
       a({ href: '/llms.txt', class: 'footer-link' }, [text('llms.txt')]),
-      text(' \u00b7 '),
+      text(' · '),
       a({ href: '/llms-full.txt', class: 'footer-link' }, [text('llms-full.txt')]),
     ]),
   ])
@@ -168,22 +168,17 @@ function updateIcon(btn: HTMLElement, pref: ThemePref): void {
   if (!icon) return
   // ☽ = dark, ☀ = light, ◐ = system
   const resolved = resolvedTheme(pref)
-  icon.textContent = pref === 'system' ? '\u25D0' : resolved === 'dark' ? '\u263D' : '\u2600'
+  icon.textContent = pref === 'system' ? '◐' : resolved === 'dark' ? '☽' : '☀'
   btn.title = `Theme: ${pref}`
   btn.setAttribute('aria-label', `Theme: ${pref}. Click to switch.`)
 }
 
-function navLink<S extends LayoutState>(
-  href: string,
-  slug: string,
-  label: string,
-  text: (v: string | ((s: S) => string)) => Text,
-): Node {
+function navLink(href: string, slug: string, label: string, currentSlug: Signal<string>): Node {
   return a(
     {
       href,
-      class: (s: S) => (s.slug === slug ? 'nav-link active' : 'nav-link'),
-      'aria-current': (s: S) => (s.slug === slug ? 'page' : undefined),
+      class: currentSlug.map((current) => (current === slug ? 'nav-link active' : 'nav-link')),
+      'aria-current': currentSlug.map((current) => (current === slug ? 'page' : undefined)),
     },
     [text(label)],
   )
