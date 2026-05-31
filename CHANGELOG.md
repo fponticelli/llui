@@ -11,6 +11,31 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — @llui/dom@0.5.3, @llui/compiler@0.6.2
+
+**Released:** `@llui/dom@0.5.3`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.2`; `@llui/{agent,components,router,test,transitions,vike}@0.5.1`
+
+Fixes a class of bugs where a **structural condition** (`show`/`branch`) that reads the row item — or mixes component state and the row item via `derived([state, item], …)` — was broken inside an `each` row, in both the compiled and authoring paths. Surfaced migrating a real desktop app (a file-tree sidebar: `each` → folder/file `show` → nested inline-rename `show`), where it would have crashed at runtime.
+
+### `@llui/dom@0.5.3`
+
+- **Fixed** a `show`/`branch` whose condition reads the **row item** (or a mixed state+item `derived`) inside an `each` row evaluated the condition against `ctx.state` (the component state) rather than the row's combined ctx — so an item-rooted or compiler-emitted (ctx-rooted) condition read the wrong root and threw. The condition is now rooted per its deps (mirroring value-spec rebasing): all-row-local deps read the full combined ctx; an enclosing-view component-state handle reads `ctx.state`.
+- **Fixed** a row containing a structural child (`show`/`branch`/`each`) is now treated as reading component state — its arms are built lazily and may read state from inside (e.g. a folder/file `show` whose file arm nests a `state`-driven rename `show`). Such rows now re-evaluate on the relevant state change and propagate the update down to their arm scopes; previously they were skipped and never reacted.
+- **Fixed** a bare `show`/`branch`/`each` as a keyed `each` row's top-level node returns a `DocumentFragment` that empties on insertion, corrupting reorder/removal (`NotFoundError`). `each` now throws a clear authoring error directing you to wrap the conditional body in an element (the row's stable boundary).
+- Dom-family consumers need no republish for the range bump — `^0.5.0` already accepts `0.5.3`.
+
+### `@llui/compiler@0.6.2`
+
+- **Fixed** the view transform did not collect a nested structural primitive's condition/discriminant (and arm) **component-state deps** into the enclosing `each`'s reconcile deps — so a parent `each` never learned which `state.*` paths its rows read through a nested `show`/`branch`/`each`, and rows never re-evaluated when that state changed. `show`/`branch`/`each` lowering now feed those deps into the row's dependency collector.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.6.2`, `@llui/vite-plugin@0.6.2`, `@llui/mcp@0.6.2`
+
+- **Improved** republished to pick up the `@llui/compiler@0.6.2` transform fix (`@llui/mcp` also picks up `@llui/dom@0.5.3`).
+
+### `@llui/{agent,components,router,test,transitions,vike}@0.5.1`
+
+- **Improved** republished against `@llui/dom@0.5.3` (peer range `^0.5.0` unchanged).
+
 ## 2026-05-30 — @llui/dom@0.5.2
 
 **Released:** `@llui/dom@0.5.2`
