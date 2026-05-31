@@ -600,12 +600,32 @@ export function signalEach<T>(
         // Structural specs make themselves row-aware, so they're excluded here.
         if (!templateProbed) {
           templateProbed = true
+          // A keyed row must be one or more STABLE nodes. A structural primitive
+          // (show/branch/each) returns a DocumentFragment that empties on insertion
+          // — as a bare row root it leaves the row with no stable handle to move or
+          // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it
+          // to be wrapped in an element, which becomes the row's stable boundary.
+          if (built.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
+            throw new Error(
+              'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
+                'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
+                'row has a stable node to key, move, and remove.',
+            )
+          }
           needsRebase = built.specs.some(
             (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
           )
+          // A row reads component state if any binding has a `state.*`/`state` dep,
+          // OR if it has a STRUCTURAL child (show/branch/each): that child's arms are
+          // built lazily and may read state from inside (e.g. a folder/file show
+          // whose file arm nests a `state.editingId` rename show). We can't see those
+          // arm specs here, so any structural child forces per-state-change row
+          // re-evaluation — which propagates the update down to the arm scopes.
           templateReadsState =
             needsRebase ||
-            built.specs.some((s) => s.deps.some((d) => d === 'state' || d.startsWith('state.')))
+            built.specs.some(
+              (s) => s.structural || s.deps.some((d) => d === 'state' || d.startsWith('state.')),
+            )
         }
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
@@ -757,10 +777,19 @@ export function signalShow(
   const ownerHost = c.host
   // Inside an each row the scope state is the combined ctx `{ item, state }`. The
   // arm is child-propagated that full ctx, so it must MOUNT on it (not on the
-  // component state); the condition is evaluated against `ctx.state` and the arm's
-  // value specs are rebased to read `ctx.state`.
+  // component state); the arm's value specs are rebased to read `ctx.state`.
+  //
+  // The CONDITION is rooted per its deps (mirroring `rebaseRowSpec`): a cond whose
+  // deps are all row-local — a compiled row pre-namespaces reads as `ctx.item` /
+  // `ctx.state`, and an `item`/`index` handle resolves its path against the given
+  // object — is evaluated against the FULL combined ctx. A cond with a non-row-local
+  // dep is an enclosing-view handle rooted at the bare component state, so it is fed
+  // `ctx.state`. (A mixed `derived([state, item], …)` cond is rebased per-input in
+  // the authoring layer so its deps are all row-local by the time it reaches here.)
   const inRow = c.inRow
-  const stateOf = (s: unknown): unknown => (inRow ? (s as { state: unknown }).state : s)
+  const condReadsCtx = !inRow || cond.deps.every(isRowLocalDep)
+  const evalCond = (s: unknown): unknown =>
+    cond.produce(condReadsCtx ? s : (s as { state: unknown }).state)
   const start = doc.createComment('show')
   const end = doc.createComment('/show')
   const frag = doc.createDocumentFragment()
@@ -777,7 +806,7 @@ export function signalShow(
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const on = Boolean(cond.produce(stateOf(state)))
+    const on = Boolean(evalCond(state))
     if (mounted && mounted.on === on) return // same arm — inner scope handles updates
 
     if (mounted) {
@@ -842,11 +871,14 @@ export function signalBranch(
   const c = requireCtx()
   const doc = c.doc
   const ownerHost = c.host
-  // See signalShow: in an each row the arm is child-propagated the combined ctx,
-  // so the discriminant is evaluated against `ctx.state`, the arm mounts on the
-  // full ctx, and the arm's value specs are rebased to read `ctx.state`.
+  // See signalShow: in an each row the arm mounts on the full combined ctx and its
+  // value specs are rebased to read `ctx.state`. The discriminant is rooted per its
+  // deps — all-row-local (compiled `ctx.*`, or an item/index handle) reads the full
+  // ctx; a non-row-local enclosing-view handle reads `ctx.state`.
   const inRow = c.inRow
-  const stateOf = (s: unknown): unknown => (inRow ? (s as { state: unknown }).state : s)
+  const discReadsCtx = !inRow || disc.deps.every(isRowLocalDep)
+  const evalDisc = (s: unknown): unknown =>
+    disc.produce(discReadsCtx ? s : (s as { state: unknown }).state)
   const start = doc.createComment('branch')
   const end = doc.createComment('/branch')
   const frag = doc.createDocumentFragment()
@@ -863,7 +895,7 @@ export function signalBranch(
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const key = String(disc.produce(stateOf(state)))
+    const key = String(evalDisc(state))
     if (mounted && mounted.key === key) return // same arm — inner scope handles updates
 
     if (mounted) {

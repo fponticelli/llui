@@ -254,6 +254,13 @@ export function transformNodeExpr(
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
           const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
+          // Nested in an enclosing row: propagate this each's component-state deps
+          // (its list accessor + the state.* paths its rows read) to the outer
+          // collector so the PARENT each reconciles when any of them change.
+          if (collect) {
+            for (const d of itemsLowered.deps) collect.add(d)
+            for (const d of renderDeps) if (d === 'state' || d.startsWith('state.')) collect.add(d)
+          }
           return `signalEach(${source}, ${keySrc}, () => ${body})`
         }
         // unlowerable render -> fall through to verbatim (runtime authoring each)
@@ -283,9 +290,15 @@ export function transformNodeExpr(
         // the cond isn't a simple path, so it isn't rebased at all), or either arm
         // is a non-array body, the lowered `() => [...]` arm can't bind it. Fall
         // back to the runtime authoring `show`, which binds a real narrowed handle.
-        const thenBody = lowerArmArray(render, sf, thenRoots, [narrowed])
-        const elseBody = orElse ? lowerArmArray(orElse, sf, roots, [firstParam(orElse)]) : null
+        const thenBody = lowerArmArray(render, sf, thenRoots, [narrowed], collect)
+        const elseBody = orElse
+          ? lowerArmArray(orElse, sf, roots, [firstParam(orElse)], collect)
+          : null
         if (thenBody != null && (!orElse || elseBody != null)) {
+          // Propagate the condition's deps to the enclosing collector so a parent
+          // `each` reconciles its rows when this nested show's condition changes
+          // (its arms' value deps are collected by the lowerArmArray calls above).
+          if (collect) for (const d of condLowered.deps) collect.add(d)
           const elseSrc = orElse ? `, () => ${elseBody}` : ''
           return `signalShow(${specSrc(cond, sf, roots)}, () => ${thenBody}${elseSrc})`
         }
@@ -343,14 +356,20 @@ export function transformNodeExpr(
                   [vParam, { value: valueLowered.produce, dep: valuePath }],
                 ]) as Roots)
               : roots
-          const armBody = lowerArmArray(fn, sf, armRoots, [vParam])
+          const armBody = lowerArmArray(fn, sf, armRoots, [vParam], collect)
           if (armBody == null) {
             armsOk = false
             break
           }
           armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
         }
-        if (armsOk) return `signalBranch(${discSpec}, { ${armsSrc.join(', ')} })`
+        if (armsOk) {
+          // Propagate the discriminant's deps so a parent `each` reconciles when it
+          // changes (arm value deps are collected by the lowerArmArray calls above).
+          if (collect)
+            for (const d of discDep !== null ? [discDep] : valueLowered.deps) collect.add(d)
+          return `signalBranch(${discSpec}, { ${armsSrc.join(', ')} })`
+        }
         // unlowerable arm -> fall through to verbatim (runtime authoring branch)
       }
       // 2-arg plain form: branch(stringSignal, { arm: () => [...] }) — the value
@@ -363,14 +382,23 @@ export function transformNodeExpr(
             armsOk = false
             break
           }
-          const armBody = lowerArmArray(p.initializer, sf, roots, [firstParam(p.initializer)])
+          const armBody = lowerArmArray(
+            p.initializer,
+            sf,
+            roots,
+            [firstParam(p.initializer)],
+            collect,
+          )
           if (armBody == null) {
             armsOk = false
             break
           }
           armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
         }
-        if (armsOk) return `signalBranch(${specSrc(value, sf, roots)}, { ${armsSrc.join(', ')} })`
+        if (armsOk) {
+          if (collect) for (const d of signalToProduce(value, sf, roots).deps) collect.add(d)
+          return `signalBranch(${specSrc(value, sf, roots)}, { ${armsSrc.join(', ')} })`
+        }
         // unlowerable arm -> fall through to verbatim (runtime authoring branch)
       }
     }
