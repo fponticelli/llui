@@ -12,7 +12,7 @@ import {
   signalBranch,
 } from '../../src/signals/dom'
 import { derived } from '../../src/signals/handle'
-import { div, li, span, input, text, each, show } from '../../src/signals/authoring'
+import { div, ul, li, span, input, text, each, show } from '../../src/signals/authoring'
 import type { Signal } from '../../src/signals/types'
 
 // Regression suite for STRUCTURAL conditions (show/branch) whose discriminant
@@ -197,6 +197,84 @@ describe('authoring: structural condition reading the row item inside an each ro
     ])
     expect(c.querySelector('.folder')?.textContent).toBe('docs')
     expect(c.querySelector('.file')?.textContent).toBe('a.md')
+  })
+})
+
+// A per-row condition that mixes COMPONENT STATE with the ROW ITEM —
+// `derived([state, item], (s, i) => s.activeId === i.id)` — both as a `show`
+// condition AND as a plain prop binding (class). The authoring path must rebase
+// each derived input independently (component-state inputs → ctx.state, item
+// inputs → ctx.item) so the row reacts to component-state changes. (This is the
+// landscape plan-list rename/actions-toggle shape.)
+describe('authoring: mixed state+item derived reacts inside an each row', () => {
+  interface Row {
+    id: number
+    label: string
+  }
+  interface S {
+    rows: Row[]
+    activeId: number
+  }
+  type M = { type: 'activate'; id: number }
+
+  const make = () => {
+    const c = document.createElement('div')
+    const h = mountSignalComponent<S, M>(c, {
+      init: () => ({
+        rows: [
+          { id: 1, label: 'a' },
+          { id: 2, label: 'b' },
+        ],
+        activeId: 1,
+      }),
+      update: (s, m) => (m.type === 'activate' ? { ...s, activeId: m.id } : s),
+      view: ({ state }) => [
+        ul({}, [
+          each(
+            state.map((s) => s.rows),
+            {
+              key: (r) => r.id,
+              render: (item) => [
+                li(
+                  {
+                    class: derived([state, item], (s, i) =>
+                      s.activeId === i.id ? 'active' : 'idle',
+                    ),
+                  },
+                  [
+                    show(
+                      derived([state, item], (s, i) => s.activeId === i.id),
+                      () => [span({ class: 'on' }, [text('ON')])],
+                      () => [span({ class: 'off' }, [text(item.at('label'))])],
+                    ),
+                  ],
+                ),
+              ],
+            },
+          ),
+        ]),
+      ],
+    })
+    return { c, h }
+  }
+
+  const classes = (c: Element) => Array.from(c.querySelectorAll('li')).map((li) => li.className)
+  const arms = (c: Element) =>
+    Array.from(c.querySelectorAll('li')).map((li) => (li.querySelector('.on') ? 'on' : 'off'))
+
+  it('mounts with the matching row active (prop binding + show cond)', () => {
+    const { c } = make()
+    expect(classes(c)).toEqual(['active', 'idle'])
+    expect(arms(c)).toEqual(['on', 'off'])
+    expect(c.querySelector('.off')?.textContent).toBe('b')
+  })
+
+  it('reacts to a component-state change (activeId) across rows', () => {
+    const { c, h } = make()
+    h.send({ type: 'activate', id: 2 })
+    expect(classes(c)).toEqual(['idle', 'active'])
+    expect(arms(c)).toEqual(['off', 'on'])
+    expect(c.querySelector('.off')?.textContent).toBe('a')
   })
 })
 

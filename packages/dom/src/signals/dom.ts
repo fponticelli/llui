@@ -140,6 +140,11 @@ export function staticText(value: string): Text {
 export type EventHandler = (ev: Event) => void
 export type PropValue = string | number | boolean | null | Reactive | EventHandler
 
+/** A child slot: a built node, or a bare string/number that is coerced to a
+ * static text node at append time (so `div(['hi', 42])` works without an
+ * explicit `text(...)` — the same coercion every mainstream framework does). */
+export type ChildNode = Node | string | number
+
 const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
 
 // Curated set of names the DOM only honours as live IDL properties, NOT as
@@ -194,7 +199,7 @@ function eventName(prop: string): string {
 function populate(
   node: Element,
   props: Readonly<Record<string, PropValue>>,
-  children: readonly Node[],
+  children: readonly ChildNode[],
 ): void {
   const c = requireCtx()
   for (const [name, value] of Object.entries(props)) {
@@ -213,7 +218,13 @@ function populate(
       applyAttr(node, name, value)
     }
   }
-  for (const child of children) node.appendChild(child)
+  for (const child of children) {
+    node.appendChild(
+      typeof child === 'string' || typeof child === 'number'
+        ? c.doc.createTextNode(String(child))
+        : child,
+    )
+  }
 }
 
 /** Build an element. `on*` function props become event listeners; `react(...)`
@@ -221,7 +232,7 @@ function populate(
 export function el(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
-  children: readonly Node[] = [],
+  children: readonly ChildNode[] = [],
 ): Element {
   const node = requireCtx().doc.createElement(tag)
   populate(node, props, children)
@@ -235,7 +246,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 export function elNS(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
-  children: readonly Node[] = [],
+  children: readonly ChildNode[] = [],
 ): Element {
   const node = requireCtx().doc.createElementNS(SVG_NS, tag)
   populate(node, props, children)
@@ -420,7 +431,7 @@ function buildAndPublishScope(built: {
  * `connect()` part rooted at the bare component state) that was placed inside a
  * row by an UNCOMPILED `each`; its produce expects the component state, not the
  * combined row ctx. */
-function isRowLocalDep(d: string): boolean {
+export function isRowLocalDep(d: string): boolean {
   return (
     d === 'item' ||
     d.startsWith('item.') ||
@@ -430,10 +441,18 @@ function isRowLocalDep(d: string): boolean {
   )
 }
 
+/** True while the build in progress is an `each` row body (or a nested arm/row
+ * inheriting that). `derived` reads this to rebase its component-state inputs to
+ * `ctx.state` so a mixed `derived([state, item], …)` resolves each input against
+ * the right part of the combined row ctx. */
+export function __inRowBuild(): boolean {
+  return ctx?.inRow ?? false
+}
+
 /** Re-root a single dependency path from the component state onto the combined
  * row ctx: a non-row-local component path `p` becomes `state.p` (and the whole
  * state `''` becomes `state`); row-local paths (`item`/`index`/`state.*`) keep. */
-const rebaseRowDep = (d: string): string =>
+export const rebaseRowDep = (d: string): string =>
   isRowLocalDep(d) ? d : d === '' ? 'state' : `state.${d}`
 
 /** Re-root a component-state-rooted VALUE row spec so it reads `ctx.state` (the

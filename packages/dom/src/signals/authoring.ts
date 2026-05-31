@@ -23,6 +23,7 @@ import {
   signalVirtualEach,
   signalForeign,
   type PropValue,
+  type ChildNode,
   type SignalLazyOptions,
   type SignalSpec,
 } from './dom.js'
@@ -59,10 +60,11 @@ export type AttrValue = Reactive<string | number | boolean | null | undefined>
 export type ElProps = Record<string, AttrValue | ((ev: any) => void)>
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
- * or `tag()` — a leading array literal is children. */
+ * or `tag()` — a leading array literal is children. Children may be built nodes
+ * or bare strings/numbers (coerced to text nodes at append time). */
 export interface ElementHelper {
-  (children: readonly Node[]): Node
-  (props?: ElProps, children?: readonly Node[]): Node
+  (children: readonly ChildNode[]): Node
+  (props?: ElProps, children?: readonly ChildNode[]): Node
 }
 
 function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
@@ -78,7 +80,7 @@ function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
 }
 
 function elementHelper(tag: string): ElementHelper {
-  return ((a0?: ElProps | readonly Node[], a1?: readonly Node[]): Node => {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Node => {
     const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
     const children = (Array.isArray(a0) ? a0 : a1) ?? []
     return el(tag, lowerProps(props), children)
@@ -87,7 +89,7 @@ function elementHelper(tag: string): ElementHelper {
 
 /** SVG element helper (namespaced) — same call forms as HTML helpers. */
 function svgHelper(tag: string): ElementHelper {
-  return ((a0?: ElProps | readonly Node[], a1?: readonly Node[]): Node => {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Node => {
     const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
     const children = (Array.isArray(a0) ? a0 : a1) ?? []
     return elNS(tag, lowerProps(props), children)

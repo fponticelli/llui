@@ -69,7 +69,7 @@ describe('no-node-construction-in-body', () => {
     ).toContain('no-node-construction-in-body')
   })
   it('does NOT flag plain computation', () => {
-    expect(rules("state.at('items').map((a) => a.length)")).not.toContain(
+    expect(rules("state.at('items').map((a) => a.length > 0)")).not.toContain(
       'no-node-construction-in-body',
     )
   })
@@ -84,6 +84,39 @@ describe('no-node-construction-in-body', () => {
     expect(rules("state.at('items').map((i) => option({ value: i }, [text(i)]))")).toContain(
       'no-node-construction-in-body',
     )
+  })
+})
+
+describe('prefer-at-over-map', () => {
+  it('flags a plain single-field projection on a signal .map (use .at)', () => {
+    expect(rules('text(state.map((s) => s.name))')).toContain('prefer-at-over-map')
+    expect(rules("state.at('user').map((u) => u.name)")).toContain('prefer-at-over-map')
+    expect(rules("state.map((s) => s['name'])")).toContain('prefer-at-over-map')
+  })
+  it('flags it on an each row item signal', () => {
+    expect(
+      rules(
+        "each(state.at('rows'), { key: (r) => r.id, render: (item) => [text(item.map((r) => r.commonName))] })",
+      ),
+    ).toContain('prefer-at-over-map')
+  })
+  it('does NOT flag a computed body (transform / multi-field / method / nested / predicate)', () => {
+    expect(rules('text(state.map((s) => String(s.n)))')).not.toContain('prefer-at-over-map')
+    expect(rules('text(state.map((s) => s.a + s.b))')).not.toContain('prefer-at-over-map')
+    expect(rules("text(state.map((s) => (s.flag ? 'x' : 'y')))")).not.toContain(
+      'prefer-at-over-map',
+    )
+    expect(rules('text(state.map((s) => s.user.name))')).not.toContain('prefer-at-over-map')
+    expect(rules('text(state.map((s) => s.name.toUpperCase()))')).not.toContain(
+      'prefer-at-over-map',
+    )
+    expect(rules('text(state.map((s) => s.items.length > 0))')).not.toContain('prefer-at-over-map')
+  })
+  it('does NOT flag a plain Array.map (receiver is not a signal)', () => {
+    expect(rules('OPTS.map((o) => o.label)')).not.toContain('prefer-at-over-map')
+  })
+  it('does NOT flag an opaque accessor passed to .map (no inline arrow to narrow)', () => {
+    expect(rules('text(state.map(b.planName))')).not.toContain('prefer-at-over-map')
   })
 })
 

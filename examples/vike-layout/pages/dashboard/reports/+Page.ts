@@ -35,19 +35,16 @@ export const Page = component<ReportsState, never, never>({
       table({ class: 'reports-table' }, [
         thead([tr([th([text('Month')]), th([text('Revenue')]), th([text('Growth')])])]),
         tbody([
-          each(
-            state.map((s) => s.rows),
-            {
-              key: (r) => r.month,
-              render: (item) => [
-                tr([
-                  td([text(item.map((r) => r.month))]),
-                  td([text(item.map((r) => `$${r.revenue.toLocaleString()}`))]),
-                  td([text(item.map((r) => r.growth))]),
-                ]),
-              ],
-            },
-          ),
+          each(state.at('rows'), {
+            key: (r) => r.month,
+            render: (item) => [
+              tr([
+                td([text(item.at('month'))]),
+                td([text(item.map((r) => `$${r.revenue.toLocaleString()}`))]),
+                td([text(item.at('growth'))]),
+              ]),
+            ],
+          }),
         ]),
       ]),
     ]),

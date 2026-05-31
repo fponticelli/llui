@@ -54,7 +54,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
           label([
             input({
               type: 'checkbox',
-              checked: state.map((s) => s.notifications),
+              checked: state.at('notifications'),
               onChange: () => send({ type: 'toggleNotifications' }),
             }),
             text(' Enable notifications'),
@@ -64,7 +64,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
           label([
             input({
               type: 'checkbox',
-              checked: state.map((s) => s.autoSave),
+              checked: state.at('autoSave'),
               onChange: () => send({ type: 'toggleAutoSave' }),
             }),
             text(' Auto-save'),
@@ -75,7 +75,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
             text('Display name: '),
             input({
               type: 'text',
-              value: state.map((s) => s.displayName),
+              value: state.at('displayName'),
               onInput: (e) =>
                 send({
                   type: 'setDisplayName',

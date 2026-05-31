@@ -180,7 +180,7 @@ export const BenchmarksPage = component<State, Msg, never>({
         send,
         content: [
           article({ class: 'site-content' }, [
-            h1({ class: 'page-title' }, [text(state.map((s) => s.title))]),
+            h1({ class: 'page-title' }, [text(state.at('title'))]),
             div({ class: 'prose' }, [
               rawHtml(
                 state.map(
@@ -196,7 +196,7 @@ export const BenchmarksPage = component<State, Msg, never>({
               // Raw data tables and methodology from markdown prose
               div({ class: 'bench-raw-data' }, [
                 h2([text('Raw Data & Methodology')]),
-                rawHtml(state.map((s) => s.html)),
+                rawHtml(state.at('html')),
               ]),
             ]),
           ]),

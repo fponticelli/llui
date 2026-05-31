@@ -11,6 +11,9 @@
 //                              reactive primitives (.peek/.at/.map) inside a
 //                              .map/derived body — CORRECTNESS-CRITICAL (analyzer
 //                              soundness depends on these bans)
+//   prefer-at-over-map       — a plain single-field projection `sig.map(p => p.x)`
+//                              should be `sig.at('x')` — a path signal that depends
+//                              only on `x`, not the whole source
 //
 // (There is deliberately no whole-`state`-coarseness rule: rendering a whole-state
 // object is already a TYPE error via `text`/`AttrValue` = `Reactive<string|number>`,
@@ -79,6 +82,46 @@ function fnParamNames(fn: ts.Node): string[] {
 
 function fnBody(fn: ts.Node): ts.Node | undefined {
   return ts.isArrowFunction(fn) || ts.isFunctionExpression(fn) ? fn.body : undefined
+}
+
+/** A pure SINGLE-LEVEL field projection `(p) => p.field` / `(p) => p['field']` —
+ * the shape that should be `.at('field')` (a path-narrowed signal depending only
+ * on that field) instead of `.map` (which re-reads the whole source). Returns the
+ * `{ param, field }` or null. Deliberately matches ONLY a direct property access
+ * whose object is the param itself: nested (`p.a.b`), computed (`String(p.x)`,
+ * `p.a + p.b`, ternaries, method calls), and `.length`-style derivations fall
+ * through to null — those genuinely need `.map`. */
+function singleFieldProjection(
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): { param: string; field: string } | null {
+  if (fn.parameters.length !== 1) return null
+  const p = fn.parameters[0]!.name
+  if (!ts.isIdentifier(p)) return null
+  const param = p.text
+  let body: ts.Node = fn.body
+  if (ts.isBlock(body)) {
+    if (body.statements.length !== 1) return null
+    const st = body.statements[0]!
+    if (!ts.isReturnStatement(st) || !st.expression) return null
+    body = st.expression
+  }
+  while (ts.isParenthesizedExpression(body)) body = body.expression
+  if (
+    ts.isPropertyAccessExpression(body) &&
+    ts.isIdentifier(body.expression) &&
+    body.expression.text === param
+  ) {
+    return { param, field: body.name.text }
+  }
+  if (
+    ts.isElementAccessExpression(body) &&
+    ts.isIdentifier(body.expression) &&
+    body.expression.text === param &&
+    ts.isStringLiteral(body.argumentExpression)
+  ) {
+    return { param, field: body.argumentExpression.text }
+  }
+  return null
 }
 
 /** The local alias a view binds its bag's `state` field to (`({ state })` -> 'state',
@@ -340,7 +383,18 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         isSignalRootedAccess(node.expression.expression, roots)
       ) {
         const fn = node.arguments[0]
-        if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) lintDeriveBody(fn, roots)
+        if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
+          lintDeriveBody(fn, roots)
+          // A plain single-field projection should narrow with `.at`, not `.map`.
+          const proj = singleFieldProjection(fn)
+          if (proj) {
+            push(
+              'prefer-at-over-map',
+              `Use .at('${proj.field}') instead of .map((${proj.param}) => ${proj.param}.${proj.field}) — .at narrows to a signal that depends only on '${proj.field}', while .map re-reads the whole source on any change.`,
+              node,
+            )
+          }
+        }
       }
       if (ts.isIdentifier(node.expression) && node.expression.text === 'derived') {
         const fn = node.arguments[1]

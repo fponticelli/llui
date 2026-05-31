@@ -246,24 +246,21 @@ function issuesList(routeSig: Signal<Route>): Node[] {
               text(item.map((i) => (i.comments > 0 ? ` · ${i.comments} comments` : ''))),
             ]),
             div({ class: 'labels' }, [
-              each(
-                item.map((i) => i.labels),
-                {
-                  key: (label) => label.name,
-                  render: (label) => [
-                    span(
-                      {
-                        class: 'label',
-                        style: label.map((l) => {
-                          const inverted = isLightColor(l.color) ? '#24292f' : '#fff'
-                          return `background-color: #${l.color}; color: ${inverted}`
-                        }),
-                      },
-                      [text(label.at('name'))],
-                    ),
-                  ],
-                },
-              ),
+              each(item.at('labels'), {
+                key: (label) => label.name,
+                render: (label) => [
+                  span(
+                    {
+                      class: 'label',
+                      style: label.map((l) => {
+                        const inverted = isLightColor(l.color) ? '#24292f' : '#fff'
+                        return `background-color: #${l.color}; color: ${inverted}`
+                      }),
+                    },
+                    [text(label.at('name'))],
+                  ),
+                ],
+              }),
             ]),
           ]),
         ],

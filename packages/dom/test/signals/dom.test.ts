@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mountSignal, signalText, staticText, el, react } from '../../src/signals/dom'
+import { mountSignal, signalText, staticText, el, elNS, react } from '../../src/signals/dom'
 
 interface State {
   count: number
@@ -166,5 +166,25 @@ describe('signal DOM — form-control value/checked apply as DOM properties', ()
     mountSignal(container, { ...seed } as FS, () => [el('div', { value: 'data-ish' }, [])])
     const div = container.firstChild as HTMLElement
     expect(div.getAttribute('value')).toBe('data-ish')
+  })
+})
+
+// Bare string/number children coerce to text nodes — so `div(['hello'])` and
+// `span([count])` work without an explicit `text(...)` wrapper, matching every
+// mainstream framework. Both the authoring helpers and the compiler's emitted
+// `el(tag, props, [children])` flow through this single chokepoint.
+describe('signal DOM — string/number children coerce to text nodes', () => {
+  it('coerces bare string and number children (mixed with real nodes)', () => {
+    const container = document.createElement('div')
+    mountSignal(container, {} as Record<string, never>, () => [
+      el('div', {}, ['hello', 42, el('span', {}, ['x'])]),
+    ])
+    expect(container.textContent).toBe('hello42x')
+  })
+
+  it('coerces children inside an SVG (elNS) element too', () => {
+    const container = document.createElement('div')
+    mountSignal(container, {} as Record<string, never>, () => [elNS('text', {}, ['label'])])
+    expect(container.textContent).toBe('label')
   })
 })

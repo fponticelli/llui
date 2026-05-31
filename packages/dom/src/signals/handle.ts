@@ -11,6 +11,12 @@
 // gates everything.
 
 import { resolvePath } from './mask.js'
+// Row-context hooks (build-layer concern): when `derived` is built inside an
+// `each` row, each component-state input must resolve against `ctx.state` while
+// item/index inputs read the combined ctx. These are runtime-only calls (inside
+// `derived`), so the handle→dom import is a benign one-way edge (dom does not
+// import handle).
+import { __inRowBuild, isRowLocalDep, rebaseRowDep } from './dom.js'
 import type { Signal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
@@ -104,9 +110,27 @@ export function derived<T extends readonly unknown[], U>(
   // erased at runtime, so call through an unknown-arity view of `fn` — the single
   // unavoidable cast at this type-erasure boundary.
   const apply = fn as (...values: readonly unknown[]) => U
+
+  // Built inside an `each` row, the inputs see the combined row ctx
+  // `{ item, state, index }`. Item/index inputs already read it correctly, but a
+  // COMPONENT-STATE input (deps not all row-local — the bag `state` handle or a
+  // `state.at(x)`) must read `ctx.state`. Rebase each such input's produce + deps
+  // independently so a mixed `derived([state, item], …)` resolves every input
+  // against the right root. The resulting deps are all row-local, so the enclosing
+  // `rebaseRowSpec` / `show` cond pass the FULL combined ctx through to this produce.
+  const rowAware = __inRowBuild()
+  const inputs = handles.map((h) => {
+    if (rowAware && !h.deps.every(isRowLocalDep)) {
+      return {
+        produce: (ctx: unknown) => h.produce((ctx as { state: unknown }).state),
+        deps: h.deps.map(rebaseRowDep),
+      }
+    }
+    return { produce: (ctx: unknown) => h.produce(ctx), deps: h.deps }
+  })
   return derivedHandle<U>(
     () => apply(...handles.map((h) => h.peek())),
-    (state) => apply(...handles.map((h) => h.produce(state))),
-    [...new Set(handles.flatMap((h) => h.deps))],
+    (state) => apply(...inputs.map((i) => i.produce(state))),
+    [...new Set(inputs.flatMap((i) => i.deps))],
   )
 }

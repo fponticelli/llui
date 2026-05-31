@@ -23,11 +23,8 @@ export const DocPage = component<State, Msg, never>({
       send,
       content: [
         article({ class: 'site-content' }, [
-          h1({ class: 'page-title' }, [text(state.map((s) => s.title))]),
-          rawHtml(
-            state.map((s) => s.html),
-            'prose',
-          ),
+          h1({ class: 'page-title' }, [text(state.at('title'))]),
+          rawHtml(state.at('html'), 'prose'),
         ]),
       ],
     }),

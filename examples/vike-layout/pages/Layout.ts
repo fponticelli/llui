@@ -91,25 +91,22 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg, never>({
       // stack via ToastContext.show() below — the notifications appear
       // in persistent chrome and survive client navigation.
       div({ class: 'toast-stack' }, [
-        each(
-          state.map((s) => s.toasts),
-          {
-            key: (toast) => toast.id,
-            render: (item) => [
-              div({ class: 'toast' }, [
-                span({ class: 'toast-msg' }, [text(item.map((t) => t.msg))]),
-                button(
-                  {
-                    class: 'toast-dismiss',
-                    'aria-label': 'Dismiss notification',
-                    onClick: () => send({ type: 'toast/dismiss', id: item.peek().id }),
-                  },
-                  [text('×')],
-                ),
-              ]),
-            ],
-          },
-        ),
+        each(state.at('toasts'), {
+          key: (toast) => toast.id,
+          render: (item) => [
+            div({ class: 'toast' }, [
+              span({ class: 'toast-msg' }, [text(item.at('msg'))]),
+              button(
+                {
+                  class: 'toast-dismiss',
+                  'aria-label': 'Dismiss notification',
+                  onClick: () => send({ type: 'toast/dismiss', id: item.peek().id }),
+                },
+                [text('×')],
+              ),
+            ]),
+          ],
+        }),
       ]),
 
       // Two stable dispatcher bags wrap the main content region. Each

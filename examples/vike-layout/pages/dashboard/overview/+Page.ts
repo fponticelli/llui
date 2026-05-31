@@ -39,24 +39,21 @@ export const Page = component<OverviewState, OverviewMsg, never>({
         ),
       ]),
       ul({ class: 'widget-list' }, [
-        each(
-          state.map((s) => s.widgets),
-          {
-            key: (w) => w,
-            render: (item, index) => [
-              li([
-                text(item),
-                button(
-                  {
-                    class: 'remove',
-                    onClick: () => send({ type: 'remove', idx: index.peek() }),
-                  },
-                  [text('remove')],
-                ),
-              ]),
-            ],
-          },
-        ),
+        each(state.at('widgets'), {
+          key: (w) => w,
+          render: (item, index) => [
+            li([
+              text(item),
+              button(
+                {
+                  class: 'remove',
+                  onClick: () => send({ type: 'remove', idx: index.peek() }),
+                },
+                [text('remove')],
+              ),
+            ]),
+          ],
+        }),
       ]),
       button({ class: 'primary', onClick: () => send({ type: 'add' }) }, [text('Add widget')]),
     ]),
