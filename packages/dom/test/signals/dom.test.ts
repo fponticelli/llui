@@ -93,3 +93,78 @@ describe('signal DOM — end-to-end reactive rendering (no VDOM, in-place update
     expect(() => signalText((s) => s, [])).toThrow(/outside a signal build/)
   })
 })
+
+// Form-control value/checked are IDL properties, not content attributes:
+// <textarea>/<select> have NO `value` content attribute, and a control's
+// `checked`/`selected` content attribute is its *default* — not its live
+// state. Setting them via setAttribute silently fails to move `.value` /
+// `.checked`, so the runtime must assign the DOM property directly.
+describe('signal DOM — form-control value/checked apply as DOM properties', () => {
+  interface FS {
+    text: string
+    choice: string
+    on: boolean
+  }
+  const seed: FS = { text: 'alpha', choice: 'b', on: true }
+
+  it('sets a <textarea> reactive value as a live property (.value), and updates it', () => {
+    const container = document.createElement('div')
+    const m = mountSignal(container, { ...seed } as FS, () => [
+      el('textarea', { value: react((s) => (s as FS).text, ['text']) }, []),
+    ])
+    const ta = container.firstChild as HTMLTextAreaElement
+    expect(ta.value).toBe('alpha')
+    m.update({ ...seed, text: 'beta' } as FS)
+    expect(ta.value).toBe('beta')
+  })
+
+  it('sets a static <textarea> value as a live property', () => {
+    const container = document.createElement('div')
+    mountSignal(container, { ...seed } as FS, () => [el('textarea', { value: 'hello' }, [])])
+    expect((container.firstChild as HTMLTextAreaElement).value).toBe('hello')
+  })
+
+  it('sets a <select> reactive value, selecting the matching option', () => {
+    const container = document.createElement('div')
+    const m = mountSignal(container, { ...seed } as FS, () => [
+      el('select', { value: react((s) => (s as FS).choice, ['choice']) }, [
+        el('option', { value: 'a' }, [staticText('A')]),
+        el('option', { value: 'b' }, [staticText('B')]),
+        el('option', { value: 'c' }, [staticText('C')]),
+      ]),
+    ])
+    const sel = container.firstChild as HTMLSelectElement
+    expect(sel.value).toBe('b')
+    m.update({ ...seed, choice: 'c' } as FS)
+    expect(sel.value).toBe('c')
+  })
+
+  it('sets a checkbox reactive `checked` as a live property, and updates it', () => {
+    const container = document.createElement('div')
+    const m = mountSignal(container, { ...seed } as FS, () => [
+      el('input', { type: 'checkbox', checked: react((s) => (s as FS).on, ['on']) }, []),
+    ])
+    const box = container.firstChild as HTMLInputElement
+    expect(box.checked).toBe(true)
+    m.update({ ...seed, on: false } as FS)
+    expect(box.checked).toBe(false)
+  })
+
+  it('keeps <input> value working (regression) and clears on null', () => {
+    const container = document.createElement('div')
+    const m = mountSignal(container, { ...seed } as FS, () => [
+      el('input', { value: react((s) => (s as FS).text, ['text']) }, []),
+    ])
+    const inp = container.firstChild as HTMLInputElement
+    expect(inp.value).toBe('alpha')
+    m.update({ ...seed, text: '' } as FS)
+    expect(inp.value).toBe('')
+  })
+
+  it('leaves a `value` attribute on a non-form element as an attribute', () => {
+    const container = document.createElement('div')
+    mountSignal(container, { ...seed } as FS, () => [el('div', { value: 'data-ish' }, [])])
+    const div = container.firstChild as HTMLElement
+    expect(div.getAttribute('value')).toBe('data-ish')
+  })
+})

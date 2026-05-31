@@ -73,6 +73,18 @@ describe('no-node-construction-in-body', () => {
       'no-node-construction-in-body',
     )
   })
+  it('does NOT flag a static (non-signal) Array.map building DOM (static child list)', () => {
+    // A plain array `.map` that builds nodes runs once at build time — it is a
+    // legitimate way to spread a static list of children (e.g. <option>s).
+    expect(rules('select({}, OPTS.map((k) => option({ value: k }, [text(k)])))')).not.toContain(
+      'no-node-construction-in-body',
+    )
+  })
+  it('still flags DOM built directly in a signal .map body', () => {
+    expect(rules("state.at('items').map((i) => option({ value: i }, [text(i)]))")).toContain(
+      'no-node-construction-in-body',
+    )
+  })
 })
 
 // The whole-`state`-coarseness rule was removed: rendering a whole-state object is

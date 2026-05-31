@@ -142,6 +142,20 @@ export type PropValue = string | number | boolean | null | Reactive | EventHandl
 
 const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
 
+// Curated set of names the DOM only honours as live IDL properties, NOT as
+// content attributes: <textarea>/<select> have no `value` content attribute,
+// and a control's `checked`/`selected` content attribute is its *default*,
+// not its current state, so `setAttribute` silently leaves `.value`/`.checked`
+// untouched. `indeterminate` has no attribute at all. This mirrors how Preact /
+// Vue / lit route the same form-control props — the runtime owns DOM
+// application, so this DOM quirk belongs here rather than in the compiler.
+// Everything else (`disabled`, `hidden`, aria-*, data-*, SVG attrs, …) reflects
+// correctly as an attribute and stays on the attribute path below.
+// NOTE: scoped to the live-DOM client runtime. Server rendering serializes via
+// the separate SSR renderer (a textarea's value → child text, a select's value
+// → the matching option's `selected`); this set does not affect that path.
+const DOM_PROPERTIES = new Set(['value', 'checked', 'selected', 'indeterminate'])
+
 function applyAttr(node: Element, name: string, value: unknown): void {
   // `style.transform` / `style.zIndex` -> individual style properties
   if (name.startsWith('style.')) {
@@ -149,6 +163,21 @@ function applyAttr(node: Element, name: string, value: unknown): void {
     const prop = toKebab(name.slice(6))
     if (value == null || value === false) style.removeProperty(prop)
     else style.setProperty(prop, String(value))
+    return
+  }
+  // Form-control live properties — assign the IDL property directly when the
+  // element actually exposes it (`name in node` keeps an arbitrary `value`
+  // attribute on a non-form element, e.g. <div value="…">, on the attr path).
+  if (DOM_PROPERTIES.has(name) && name in node) {
+    if (name === 'value') {
+      ;(node as HTMLInputElement).value = value == null || value === false ? '' : String(value)
+    } else if (name === 'selected') {
+      ;(node as HTMLOptionElement).selected = value === '' ? true : Boolean(value)
+    } else {
+      // checked / indeterminate — boolean IDL properties on a form control.
+      ;(node as HTMLInputElement)[name as 'checked' | 'indeterminate'] =
+        value === '' ? true : Boolean(value)
+    }
     return
   }
   if (value == null || value === false) node.removeAttribute(name)

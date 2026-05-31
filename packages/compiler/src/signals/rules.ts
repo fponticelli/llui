@@ -328,9 +328,17 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     }
     if (ts.isPrefixUnaryExpression(node)) checkOperand(node.operand, 'a unary expression', roots)
 
-    // .map / derived bodies
+    // .map / derived bodies — only a `.map` on a SIGNAL is a reactive derive.
+    // A plain Array.map (e.g. `OPTS.map(k => option(...))`) runs once at build
+    // time and is a legitimate way to spread a static child list, so it must
+    // not trip the derive-body rules. (DOM built by an Array.map *inside* a
+    // signal `.map` body is still caught: lintDeriveBody walks the whole body.)
     if (ts.isCallExpression(node)) {
-      if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'map') {
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'map' &&
+        isSignalRootedAccess(node.expression.expression, roots)
+      ) {
         const fn = node.arguments[0]
         if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) lintDeriveBody(fn, roots)
       }
