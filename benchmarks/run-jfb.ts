@@ -148,7 +148,7 @@ if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/dist/benchmarkRunner.js'))) {
 let caffeinate: ChildProcess | undefined
 if (process.platform === 'darwin') {
   try {
-    caffeinate = spawn('caffeinate', ['-dimsu', '-w', String(process.pid)], {
+    caffeinate = spawn('caffeinate', ['-disu', '-w', String(process.pid)], {
       stdio: 'ignore',
       detached: false,
     })
