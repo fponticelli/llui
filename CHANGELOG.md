@@ -11,6 +11,25 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-31 — @llui/dom@0.5.5, @llui/compiler@0.6.4
+
+**Released:** `@llui/dom@0.5.5`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.4`
+
+Surfaced migrating a real app (a canvas/SVG landscape planner, full of per-row `state.someId === row.id` conditions and bare-string children) to the signal runtime. The dom-family peers (`router`/`transitions`/`components`/`vike`/`test`/`agent`) were not republished — their `^0.5.0` peer range already accepts `@llui/dom@0.5.5`.
+
+### `@llui/dom@0.5.5`
+
+- **Fixed** a `derived([state, item], …)` — or any signal value mixing **component state** and a **row item/index** — now resolves each input against the correct root inside an `each` row in the **authoring** path: component-state inputs read `ctx.state`, item/index inputs read the combined row ctx. Previously the item input was handed the wrong root, so a per-row condition like `state.someId === item.id` (used as a prop binding or a `show`/`branch` condition) threw `Cannot read properties of undefined` or silently failed to react in uncompiled/tested views. (The compiled path already handled this.)
+- **Fixed** element children may now be bare strings or numbers — `el`/`elNS` coerce them to text nodes — so `div(['hi', 42])` works without an explicit `text(...)`, matching every mainstream framework. Reactive text still uses `text(state.map(…))` / `text(item.at(…))`. Scoped to the client runtime; SSR serialization is unchanged.
+
+### `@llui/compiler@0.6.4`
+
+- **Added** `prefer-at-over-map` lint (compile-time error): a single-field projection `signal.map((p) => p.field)` must be written `signal.at('field')` — a path-narrowed signal that depends only on that field, not the whole source (finer-grained reactivity). Computed bodies (`String(s.n)`, templates, ternaries, method calls), nested access (`s.a.b`), opaque accessors (`state.map(b.foo)`), and plain `Array.map` are not flagged. **Migration:** rewrite flagged `sig.map(p => p.x)` reads as `sig.at('x')`.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.6.4`, `@llui/vite-plugin@0.6.4`, `@llui/mcp@0.6.4`
+
+- **Improved** republished to pick up the `@llui/compiler@0.6.4` lint (`@llui/mcp` also picks up `@llui/dom@0.5.5`).
+
 ## 2026-05-30 — @llui/dom@0.5.4, @llui/compiler@0.6.3
 
 **Released:** `@llui/dom@0.5.4`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.3`
