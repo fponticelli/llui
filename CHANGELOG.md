@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-30 — @llui/dom@0.5.4, @llui/compiler@0.6.3
+
+**Released:** `@llui/dom@0.5.4`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.3`
+
+Two gaps surfaced migrating a real app (a personal-health SPA, full of `<form>` controls and static `<option>` lists) to the signal runtime. The dom-family peers (`router`/`transitions`/`components`/`vike`/`test`/`agent`) were not republished — their `^0.5.0` peer range already accepts `@llui/dom@0.5.4`.
+
+### `@llui/dom@0.5.4`
+
+- **Fixed** form-control "live value" props (`value`, `checked`, `selected`, `indeterminate`) are now applied as DOM **IDL properties**, not content attributes. `<textarea>`/`<select>` have no `value` content attribute, and a control's `checked`/`selected` attribute is its _default_ (not current state), so the old attribute-only path silently failed to update them — a reactive `<textarea value={…}>` or `<select value={…}>` never moved, and a bound checkbox never toggled. Routed via a curated allowlist gated by `name in node`; SVG and every reflected attribute (`disabled`, `aria-*`, `data-*`, …) stay on the attribute path. (Scoped to the client runtime; SSR serialization is handled by the separate SSR renderer.)
+
+### `@llui/compiler@0.6.3`
+
+- **Fixed** the `no-node-construction-in-body` lint no longer fires for a plain `Array.map` that builds nodes (e.g. a static `<option>` list spread into a `<select>`) — that runs once at build time and is legitimate. Only a **signal-rooted** `.map` is treated as a reactive derive body. DOM built inside a _signal_ `.map` body is still caught (via the full derive-body walk), so the correctness guarantee is unchanged.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.6.3`, `@llui/vite-plugin@0.6.3`, `@llui/mcp@0.6.3`
+
+- **Improved** republished to pick up the `@llui/compiler@0.6.3` lint fix (`@llui/mcp` also picks up `@llui/dom@0.5.4`).
+
 ## 2026-05-30 — @llui/dom@0.5.3, @llui/compiler@0.6.2
 
 **Released:** `@llui/dom@0.5.3`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.2`; `@llui/{agent,components,router,test,transitions,vike}@0.5.1`
