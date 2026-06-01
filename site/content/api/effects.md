@@ -356,6 +356,25 @@ function race(effects: BuiltinEffect[]): RaceEffect
 function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M>
 ```
 
+### `asOnEffect()`
+
+Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
+the signal-runtime `onEffect` shape: `(effect, { send }) => cleanup`.
+The signal component's `onEffect` takes the effect + a `{ send }` api and may
+return a cleanup (run on unmount) — there is no ambient `AbortSignal` like the
+legacy runtime passed. This adapter owns one component-lifetime
+`AbortController`: every effect is dispatched through the chain with its
+`signal`, and the returned cleanup aborts it, so in-flight http / debounce /
+interval / websocket effects tear down when the component unmounts (the chain's
+own abort listener clears its pending registries).
+Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
+
+```typescript
+function asOnEffect<E extends { type: string }, M>(
+  chain: (ctx: EffectCtx<E, M>) => void,
+): (effect: E, api: { send: (msg: M) => void }) => () => void
+```
+
 ## Types
 
 ### `Async`

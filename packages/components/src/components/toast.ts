@@ -165,7 +165,16 @@ export interface ToasterParts {
     'data-part': 'region'
     'data-placement': Signal<ToastPlacement>
   }
-  toast: (toast: Toast) => ToastItemParts
+  /**
+   * Build the per-row part descriptors for one toast. Takes the row's
+   * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
+   * consumers don't `.peek()` in a reactive slot (which the signal compiler
+   * rejects). A toast is immutable for its `id`'s lifetime — created then
+   * dismissed, never mutated in place — so this reads the value once internally
+   * to build the id-derived wiring; the keyed `each` rebuilds the row if `id`
+   * changes.
+   */
+  toast: (toast: Signal<Toast>) => ToastItemParts
 }
 
 export interface ConnectOptions {
@@ -191,7 +200,12 @@ export function connect(
       'data-part': 'region',
       'data-placement': state.map((s) => s.placement),
     },
-    toast: (toast: Toast): ToastItemParts => ({
+    toast: (toastSig: Signal<Toast>): ToastItemParts => {
+      // A toast is immutable for its id's lifetime (created → dismissed, never
+      // mutated), so read it once to build the id-derived descriptors. The keyed
+      // `each` rebuilds this row if `id` changes.
+      const toast = toastSig.peek()
+      return {
       root: {
         role: 'status',
         'aria-atomic': 'true',
@@ -223,7 +237,8 @@ export function connect(
         'data-part': 'close-trigger',
         onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
       },
-    }),
+      }
+    },
   }
 }
 
