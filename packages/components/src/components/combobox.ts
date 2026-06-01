@@ -2,6 +2,7 @@ import type { Send, Signal, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
@@ -488,8 +489,7 @@ export function overlay(opts: OverlayOptions): Node {
   const parts = opts.parts
   const contentId = parts.content.id
   const inputId = parts.input.id
-  const host =
-    typeof targetOpt === 'string' ? (document.querySelector(targetOpt) ?? document.body) : targetOpt
+  const host = resolvePortalTarget(targetOpt)
 
   return show(
     opts.state.map((s) => s.open),

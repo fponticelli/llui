@@ -2,6 +2,7 @@ import type { Send, Signal, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
 import { lockBodyScroll } from '../utils/remove-scroll.js'
@@ -203,8 +204,7 @@ export function overlay(opts: OverlayOptions): Node {
   const parts = opts.parts
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
-  const host =
-    typeof targetOpt === 'string' ? (document.querySelector(targetOpt) ?? document.body) : targetOpt
+  const host = resolvePortalTarget(targetOpt)
 
   return show(
     opts.state.map((s) => s.open),
