@@ -11,6 +11,27 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-01 — @llui/dom@0.5.6, @llui/components@0.5.3, @llui/effects@0.0.11
+
+**Released:** `@llui/dom@0.5.6`, `@llui/components@0.5.3`, `@llui/effects@0.0.11`
+
+Surfaced migrating a real app (dicerun — a dice-notation studio with Monaco, SSR, a persistent layout, and an agent panel) from the pre-signals 0.4.x runtime to signals. Four gaps in the signal surface, all caught only at runtime (SSR / e2e) after the static gates were green — a reminder that the build is not the last gate.
+
+### `@llui/dom@0.5.6`
+
+- **Added** `unsafeHtml(value: Reactive<string>)` — renders a raw HTML string as live DOM nodes inline (between anchor comments, no wrapper element), reactive on a `Signal<string>`; a plain string renders once. Parses via the env `parseHtmlFragment` (SSR) or a `<template>` fallback (raw client `Document`). The escape hatch for pre-rendered markup (markdown, syntax highlighting); the caller owns trust/sanitization. The legacy runtime had this; the signal runtime had dropped it.
+- **Added** `subApp({ reason, def, initialState?, contexts?, onHandle? })` at the `@llui/dom/escape-hatch` subpath — mounts an ISOLATED component instance (own update loop + mask scope + DOM region) at an anchor; not registered as a child scope, disposed with the host. For genuine isolation only (third-party UI, a long-lived loop with no reactive props, a 60fps layer) — everyday decomposition uses view-helper functions over `Signal<T>` slices. The `reason` field documents why isolation is warranted. Per the signals design doc, which always specified `subApp` as the one isolation valve.
+- **Internal** `SignalDoc` gains an optional `parseHtmlFragment` (present on the server `DomEnv` + `browserEnv`; absent on a raw client `Document`, where `unsafeHtml` falls back to a `<template>` parse).
+
+### `@llui/components@0.5.3`
+
+- **Fixed** **SSR crash** in `dialog`/`combobox`/`drawer` `overlay()`: the portal host was resolved eagerly at `overlay()` build time via `document.querySelector(target) ?? document.body`, but the view build runs on the server too — so this threw `ReferenceError: document is not defined` and 500'd every SSR render that mounts one of these overlays (e.g. a persistent layout that always renders an auth dialog). New `resolvePortalTarget()` (in `utils/`) guards `document`: on the server it returns `undefined` and `portal()` falls back to the env `doc.body` (overlays are `show(state.open)`-gated, so a closed overlay never mounts its portal server-side anyway). The `menu`/`popover`/`select`/`context-menu`/`hover-card`/`tooltip` group already resolved the host inside the `show` arm and were unaffected.
+- **Changed** `toast` `parts.toast` now takes the row's `Signal<Toast>` instead of a `Toast` value. The value API forced consumers to `.peek()` the `each`-row item signal in a reactive slot, which the signal compiler rejects (`peek-in-slot`). It reads the value once internally — a toast is immutable for its `id`'s lifetime (created → dismissed, never mutated), so the keyed `each` rebuilds the row if `id` changes. **Migration:** `parts.toast(item.peek())` → `parts.toast(item)`.
+
+### `@llui/effects@0.0.11`
+
+- **Added** `asOnEffect(chain)` — adapts a `handleEffects().…​.else(…)` chain (a `(ctx: {effect, send, signal}) => void`) to the signal-runtime `onEffect` shape (`(effect, { send }) => cleanup`). The signal component's `onEffect` no longer receives an ambient `AbortSignal`, so the adapter owns one component-lifetime `AbortController`: every effect dispatches through the chain with its `signal`, and the returned cleanup aborts it — in-flight http / debounce / interval / websocket effects tear down on unmount. **Usage:** `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
+
 ## 2026-05-31 — @llui/dom@0.5.5, @llui/compiler@0.6.4
 
 **Released:** `@llui/dom@0.5.5`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,vite-plugin,mcp}@0.6.4`
