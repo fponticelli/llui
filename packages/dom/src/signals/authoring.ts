@@ -18,6 +18,7 @@ import {
   react,
   signalEach,
   signalShow,
+  signalUnsafeHtml,
   signalBranch,
   signalLazy,
   signalVirtualEach,
@@ -48,6 +49,15 @@ const compiledAway = (name: string): never => {
 export function text(value: Reactive<string | number>): Node {
   if (isSignalHandle(value)) return signalText(value.produce, value.deps)
   return staticText(value == null ? '' : String(value))
+}
+
+/** Render a raw HTML string as live DOM nodes (escape hatch for pre-rendered
+ * markup — markdown, syntax highlighting). Reactive on a `Signal<string>`; a
+ * plain string renders once. The HTML is inserted as-is — the caller owns
+ * trust/sanitization. */
+export function unsafeHtml(value: Reactive<string>): Node {
+  if (isSignalHandle(value)) return signalUnsafeHtml(value.produce, value.deps)
+  return signalUnsafeHtml(() => value, [])
 }
 
 // ── Elements ────────────────────────────────────────────────────────

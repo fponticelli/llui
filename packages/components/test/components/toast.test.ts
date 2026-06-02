@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, nextToastId } from '../../src/components/toast'
 import type { Toast } from '../../src/components/toast'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, read, signalOf } from '../_signal'
 
 function makeToast(overrides: Partial<Toast> = {}): Toast {
   return {
@@ -91,15 +91,15 @@ describe('toast.connect', () => {
   it('toast root uses assertive for error type', () => {
     const error = makeToast({ id: 'e', type: 'error' })
     const info = makeToast({ id: 'i', type: 'info' })
-    expect(parts.toast(error).root['aria-live']).toBe('assertive')
-    expect(parts.toast(info).root['aria-live']).toBe('polite')
+    expect(parts.toast(signalOf(error)).root['aria-live']).toBe('assertive')
+    expect(parts.toast(signalOf(info)).root['aria-live']).toBe('polite')
   })
 
   it('closeTrigger dismisses', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send)
     const t = makeToast({ id: 'x' })
-    p.toast(t).closeTrigger.onClick(new MouseEvent('click'))
+    p.toast(signalOf(t)).closeTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'dismiss', id: 'x' })
   })
 
@@ -107,8 +107,8 @@ describe('toast.connect', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send)
     const t = makeToast({ id: 'x' })
-    p.toast(t).root.onPointerEnter(new PointerEvent('pointerenter'))
-    p.toast(t).root.onPointerLeave(new PointerEvent('pointerleave'))
+    p.toast(signalOf(t)).root.onPointerEnter(new PointerEvent('pointerenter'))
+    p.toast(signalOf(t)).root.onPointerLeave(new PointerEvent('pointerleave'))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'pause', id: 'x' })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'resume', id: 'x' })
   })

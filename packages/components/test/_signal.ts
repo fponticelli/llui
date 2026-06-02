@@ -11,6 +11,10 @@ import { pathHandle, isSignalHandle, type Signal } from '@llui/dom'
  * connect() built over it yields props readable against any state via `read`. */
 export const rootSignal = <S>(): Signal<S> => pathHandle<S>(() => undefined, '')
 
+/** A signal backed by a concrete value: `signalOf(v).peek() === v`. For APIs that
+ * read the value directly (e.g. toast `parts.toast(item)`). */
+export const signalOf = <S>(value: S): Signal<S> => pathHandle<S>(() => value, '')
+
 /** Evaluate a connect() prop (a Signal handle) against a concrete state value. */
 export function read<T>(prop: Signal<T> | T, state: unknown): T {
   return isSignalHandle(prop) ? (prop.produce(state) as T) : (prop as T)

@@ -5,6 +5,7 @@ import { pushFocusTrap } from '../utils/focus-trap.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
 import { lockBodyScroll } from '../utils/remove-scroll.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
 
 /**
  * Dialog — modal / non-modal overlay. Ties together focus-trap, dismissable,
@@ -248,8 +249,7 @@ export function overlay(opts: OverlayOptions): Node {
   const parts = opts.parts
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
-  const host =
-    typeof targetOpt === 'string' ? (document.querySelector(targetOpt) ?? document.body) : targetOpt
+  const host = resolvePortalTarget(targetOpt)
 
   return show(
     opts.state.map((s) => s.open),

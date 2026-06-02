@@ -187,6 +187,31 @@ describe('component-state reads inside structural primitives nested in an each r
     h.dispose()
   })
 
+  // A nested each whose ITEMS derive from the ROW ITEM (not component state):
+  // `each(item.map(i => …), …)`. The nested each is `inRow`, so its structural
+  // binding reconciles against the combined ctx — the items source must read the
+  // row item (`ctx.item`), not be forced onto `ctx.state` (where `item` is
+  // undefined → zero rows). This is the dicerun inline-roll shape: an outer
+  // per-epoch each whose row renders an inner each over nodes derived from the
+  // epoch row. Regressed silently — the row rendered empty with no error.
+  it('each over a row-item-derived list (item.map) inside an each row renders + reacts', () => {
+    const { h, txt } = mount(
+      rows((_state, item) => [
+        each(
+          // derive a per-row list from the ITEM itself (label → one span per char)
+          item.map((i) => i.label.split('')),
+          { key: (ch) => ch, render: (ch) => [span([text(ch)])] },
+        ),
+      ]),
+    )
+    // 'one' → o,n,e  ;  'two' → t,w,o
+    expect(txt()).toBe('onetwo')
+    // relabeling a row re-derives that row's inner each
+    h.send({ type: 'relabel', id: 1, label: 'ab' })
+    expect(txt()).toBe('abtwo')
+    h.dispose()
+  })
+
   // When an outer arm whose content includes a NESTED structural primitive is
   // swapped/torn down, the inner primitive's dynamically-mounted content (a
   // sibling between its own anchors, not in the outer arm's built.nodes) must be

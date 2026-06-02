@@ -38,6 +38,15 @@ import {
 
 export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
 
+/** True when running inside an automation-controlled browser (Playwright,
+ *  WebDriver, Selenium, …). `navigator.webdriver` is the standardised
+ *  signal every such driver sets. Used to suppress the persistent SSE
+ *  subscription by default so e2e suites that gate on `networkidle` don't
+ *  hang forever. */
+function isAutomatedBrowser(): boolean {
+  return typeof navigator !== 'undefined' && navigator.webdriver === true
+}
+
 export interface MountAnnotateOptions {
   /** Base origin for the dev-server API. Defaults to current location. */
   origin?: string
@@ -2079,8 +2088,17 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     void rehydrateFromServer()
   }
 
+  // The SSE subscription defaults ON, but never under an automated
+  // browser: the stream never closes, so it permanently blocks
+  // `waitForLoadState('networkidle')` in any consumer's Playwright /
+  // WebDriver e2e suite that mounts the HUD in dev. There's no human to
+  // drive the HUD and no LLM capture session under automation, so the
+  // default flips OFF when `navigator.webdriver` is true. An explicit
+  // `subscribeEvents` (true or false) always wins — a suite that
+  // specifically exercises the SSE path can force it on.
+  const subscribeEvents = opts.subscribeEvents ?? !isAutomatedBrowser()
   let eventSource: EventSource | null = null
-  if (opts.subscribeEvents !== false && typeof EventSource !== 'undefined') {
+  if (subscribeEvents && typeof EventSource !== 'undefined') {
     try {
       eventSource = new EventSource(`${origin}/_llui/events?role=hud`)
       eventSource.addEventListener('message', (e: MessageEvent) => {

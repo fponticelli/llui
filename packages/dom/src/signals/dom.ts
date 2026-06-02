@@ -20,6 +20,7 @@ import type { LiveSignal } from './types.js'
 // boundary for lazy.
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
+import { isSignalHandle } from './handle.js'
 
 /** The minimal node-factory surface the signal build needs from its document.
  * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
@@ -33,6 +34,10 @@ export interface SignalDoc {
   /** Present on a real client `Document`; absent on a server `DomEnv` (portals
    * default to it, so a portal with no explicit target is client-only). */
   readonly body?: HTMLElement | null
+  /** Present on a server `DomEnv` (and `browserEnv`): parse an HTML string into a
+   * fragment. Absent on a raw client `Document` (the runtime falls back to a
+   * `<template>` parse there — see `parseFragment`). Used by `unsafeHtml`. */
+  parseHtmlFragment?(html: string): DocumentFragment
 }
 
 type Producer = (state: unknown) => unknown
@@ -209,6 +214,18 @@ function populate(
         produce: value.produce,
         commit: (out) => applyAttr(node, name, out),
       })
+    } else if (isSignalHandle(value)) {
+      // A raw signal handle reached a prop slot: the compiler lowers INLINE
+      // `state.map(...)` props to `react(...)`, but a signal stored in a variable
+      // (a local const, a spread, a helper return) is opaque to it and passes
+      // through verbatim. Bind it reactively here — same as the authoring element
+      // helpers do — rather than stringifying the handle into the attribute
+      // ("[object Object]", a silently-stuck value).
+      c.specs.push({
+        deps: value.deps,
+        produce: value.produce as (s: unknown) => unknown,
+        commit: (out) => applyAttr(node, name, out),
+      })
     } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
       node.addEventListener(eventName(name), value as EventListener)
       // tagSend-tagged handler → register the agent-dispatchable variants live.
@@ -356,9 +373,13 @@ export function portal(content: () => readonly Node[], target?: Element): Node {
   const c = requireCtx()
   const host = target ?? c.doc.body
   if (!host) {
-    throw new Error(
-      'portal() needs an explicit target during SSR — the server DomEnv has no document.body',
-    )
+    // SSR / no document.body: portals are client-only. Render nothing here rather
+    // than throw — overlays (dialogs/popovers/toasts) are gated behind
+    // `show(state.open)`, and even an open one is reconstructed by the client
+    // hydrate pass (atomic-swap rebuild), which collects this content's bindings +
+    // onMounts and appends them to the real `document.body`. SSR-rendering an
+    // overlay into the page flow would be wrong anyway (it lives at body level).
+    return c.doc.createComment('portal-ssr-skip')
   }
   const nodes = content() // specs collected into the current build → reactive
   for (const n of nodes) host.appendChild(n)
@@ -474,12 +495,17 @@ function rebaseRowSpec(spec: BindingSpec): BindingSpec {
  * not captured in the arm's `built.nodes`), so swapping/disposing an arm never
  * leaks inner content. The anchors themselves are left in place. */
 function removeBetween(start: Node, end: Node): void {
-  let n = start.nextSibling
-  while (n && n !== end) {
-    const next = n.nextSibling
-    n.parentNode?.removeChild(n)
-    n = next
-  }
+  // Snapshot the doomed nodes BEFORE removing any. Removing a node that holds
+  // focus (e.g. an input in a swapped-out branch arm) dispatches `blur`
+  // SYNCHRONOUSLY, which can re-enter the update/reconcile cycle and mutate the
+  // sibling chain mid-walk — a live `nextSibling` walk then steps onto a node
+  // whose parent has already changed and `removeChild` throws NotFoundError.
+  // Collecting first makes the iteration immune to that reentrancy; each removal
+  // is still guarded by the node's own current parent (a reentrant teardown may
+  // have already detached it).
+  const doomed: Node[] = []
+  for (let n = start.nextSibling; n && n !== end; n = n.nextSibling) doomed.push(n)
+  for (const n of doomed) n.parentNode?.removeChild(n)
 }
 
 /** Rebase every VALUE spec in a row/arm build to read `ctx.state`, leaving
@@ -615,10 +641,20 @@ export function signalEach<T>(
   let needsRebase = true
   let templateProbed = false
 
-  const reconcile = (state: unknown): void => {
+  // When this each is nested in an enclosing row, the scope hands `reconcile`
+  // the COMBINED row ctx (`{ item, state, index }`). Rows must always mount with
+  // the COMPONENT state, but the items source reads whatever its deps name: a
+  // row-local source (`item.map(…)` / `item.at(…)`, deps all row-local) reads
+  // the combined ctx so `item`/`index` resolve; a component-state source
+  // (`state.map(…)`) reads `ctx.state`. For a top-level each the input IS the
+  // component state and both coincide.
+  const itemsRowLocal = source.deps.length > 0 && source.deps.every(isRowLocalDep)
+  const reconcile = (input: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const items = source.items(state)
+    const rowState = inRow ? (input as { state: unknown }).state : input
+    const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
+    const items = source.items(itemsState)
     const n = items.length
     const newKeys = new Array<string>(n)
     const newRows = new Array<Row>(n)
@@ -638,7 +674,7 @@ export function signalEach<T>(
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
-        const ctx: RowCtx<T> = { item, state, index }
+        const ctx: RowCtx<T> = { item, state: rowState, index }
         const holder = { ctx }
         // forceInRow: the row build (and every nested arm/row build) operates on
         // the combined ctx, so structural primitives inside it become row-aware.
@@ -657,7 +693,8 @@ export function signalEach<T>(
             throw new Error(
               'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
                 'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
-                'row has a stable node to key, move, and remove.',
+                'row has a stable node to key, move, and remove. ' +
+                `(each items deps: ${JSON.stringify(source.deps)})`,
             )
           }
           needsRebase = built.specs.some(
@@ -684,7 +721,7 @@ export function signalEach<T>(
           scope,
           nodes: built.nodes,
           ctx,
-          spare: { item, state, index },
+          spare: { item, state: rowState, index },
           teardowns: built.teardowns,
           holder,
           mounts: built.mounts,
@@ -698,7 +735,7 @@ export function signalEach<T>(
         // so the diff sees item/state changes correctly.
         const next = row.spare
         next.item = item
-        next.state = state
+        next.state = rowState
         next.index = index
         row.scope.update(row.ctx, next)
         row.spare = row.ctx
@@ -784,7 +821,10 @@ export function signalEach<T>(
   // enclosing row, it reads `ctx.state` and its deps rebase onto that combined ctx.
   c.specs.push({
     deps: inRow ? source.deps.map(rebaseRowDep) : source.deps,
-    produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
+    // Pass the scope state straight through: the combined row ctx when nested in
+    // a row, the component state at top level. `reconcile` derives the items
+    // source's state (row-local vs component) and the rows' mount state from it.
+    produce: (s) => s,
     commit: (s) => reconcile(s),
     structural: true,
   })
@@ -904,6 +944,100 @@ export function signalShow(
   })
 
   return frag
+}
+
+/** Parse an HTML string to a fragment, cross-env: a server `DomEnv` (and
+ * `browserEnv`) exposes `parseHtmlFragment`; a raw client `Document` does not, so
+ * fall back to the standard `<template>.innerHTML` parse there. */
+function parseFragment(doc: SignalDoc, html: string): DocumentFragment {
+  if (typeof doc.parseHtmlFragment === 'function') return doc.parseHtmlFragment(html)
+  const template = doc.createElement('template') as HTMLTemplateElement
+  template.innerHTML = html
+  return template.content
+}
+
+/**
+ * Render a raw HTML string as live DOM nodes, inline between anchor comments (no
+ * wrapper element). Reactive: when the bound string changes, the previously
+ * inserted fragment is removed and the new HTML parsed in. The parsed nodes carry
+ * NO reactive bindings — `unsafeHtml` is an escape hatch for pre-rendered markup
+ * (markdown, syntax highlighting). The caller is responsible for trust/sanitization.
+ */
+export function signalUnsafeHtml(produce: Producer, deps: readonly string[]): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const start = doc.createComment('unsafe-html')
+  const end = doc.createComment('/unsafe-html')
+  const frag = doc.createDocumentFragment()
+  frag.appendChild(start)
+  frag.appendChild(end)
+
+  c.specs.push({
+    deps,
+    produce,
+    commit: (value) => {
+      const parent = end.parentNode
+      if (!parent) return
+      removeBetween(start, end)
+      const html = value == null ? '' : String(value)
+      if (html === '') return
+      const parsed = parseFragment(doc, html)
+      // Snapshot childNodes before insertion (insertBefore drains the fragment).
+      for (const n of Array.from(parsed.childNodes)) parent.insertBefore(n, end)
+    },
+  })
+
+  // On host dispose, clear the inserted region (mirrors signalShow) so an enclosing
+  // arm's teardown doesn't orphan these nodes between now-removed anchors.
+  c.teardowns.push(() => removeBetween(start, end))
+
+  return frag
+}
+
+/** Spec for {@link signalSubApp} — an isolated child component boundary. */
+export interface SubAppSpec<S, M, E = never> {
+  /** Why a separate update loop / mask scope is warranted (third-party UI, a
+   * long-lived loop with no reactive props, a 60fps layer). Documents intent at
+   * the call site; not consulted at runtime. */
+  reason: string
+  /** The component to mount in isolation. */
+  def: SignalComponentDef<S, M, E>
+  /** Seed state, overriding `def.init()`'s state (init still runs for effects).
+   * The bridge for "props in": the host pushes fresh data via the handle's `send`. */
+  initialState?: S
+  /** Context values to replay into the isolated build (provide/useContext). */
+  contexts?: ReadonlyMap<symbol, unknown>
+  /** Receive the mounted handle (send/subscribe/dispose) — the channel for pushing
+   * props in and bubbling messages out, since the sub-app shares no state with the host. */
+  onHandle?: (handle: SignalComponentHandle<S, M>) => void
+}
+
+/**
+ * Mount an ISOLATED component instance inside the current view at an anchor: its
+ * own update loop, mask scope, and DOM region. The parent's reconciler never
+ * touches it (it is NOT registered as a child scope), so parent state changes
+ * don't invalidate it and vice-versa. The sub-app is mounted after the anchor
+ * attaches and disposed when the host unmounts. Drive it via `onHandle`'s handle.
+ *
+ * This is the escape hatch for genuine isolation — everyday decomposition uses
+ * plain view-helper functions over `Signal<T>` slices, which chunked masks make
+ * cheap (no `child()`/boundary needed). Reach for `subApp` only when a subtree
+ * truly needs its own lifecycle.
+ */
+export function signalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
+  const c = requireCtx()
+  const anchor = c.doc.createComment('subApp')
+  c.mounts.push(() => {
+    // Anchor is attached now; mount the isolated instance as siblings after it.
+    const handle = mountSignalComponent<S, M, E>(
+      { anchor: anchor as Comment, mode: 'append' },
+      spec.def,
+      { initialState: spec.initialState, contexts: spec.contexts },
+    )
+    spec.onHandle?.(handle)
+    return () => handle.dispose()
+  })
+  return anchor
 }
 
 /**

@@ -172,26 +172,47 @@ export function mountSignalComponent<S, M, E = never>(
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
 
+  // `send` is reentrancy-safe: a message dispatched WHILE another is being
+  // processed (the classic case: removing a focused node during `mount.update`
+  // fires `blur` synchronously, whose handler calls `send`) is queued and drained
+  // by the active call rather than running a NESTED reducer + reconcile. Nesting
+  // would mutate the scope tree / DOM mid-reconcile — e.g. corrupting an
+  // in-flight `removeBetween` walk into a NotFoundError, and silently skipping the
+  // outer message's effects. From a top-level caller `send` stays synchronous:
+  // the queue is fully drained before it returns (so `handle.flush()` parity and
+  // the "send applies immediately" contract hold).
+  const queue: M[] = []
+  let draining = false
   function send(msg: M): void {
-    const before = state
-    const [next, effects] = normalize<S, E>(updateFn(state, msg))
-    if (!Object.is(next, state)) {
-      state = next
-      withBindingErrors(onBindingError, () => mount?.update(next))
-      for (const listener of subscribers) listener(state)
+    queue.push(msg)
+    if (draining) return
+    draining = true
+    try {
+      while (queue.length > 0) {
+        const m = queue.shift() as M
+        const before = state
+        const [next, effects] = normalize<S, E>(updateFn(state, m))
+        if (!Object.is(next, state)) {
+          state = next
+          withBindingErrors(onBindingError, () => mount?.update(next))
+          for (const listener of subscribers) listener(state)
+        }
+        if (dev) {
+          history.push({
+            index: msgIndex++,
+            timestamp: Date.now(),
+            msg: m,
+            stateBefore: before,
+            stateAfter: state,
+            effects,
+          })
+          if (history.length > 1000) history.shift()
+        }
+        for (const e of effects) runEffect(e)
+      }
+    } finally {
+      draining = false
     }
-    if (dev) {
-      history.push({
-        index: msgIndex++,
-        timestamp: Date.now(),
-        msg,
-        stateBefore: before,
-        stateAfter: state,
-        effects,
-      })
-      if (history.length > 1000) history.shift()
-    }
-    for (const e of effects) runEffect(e)
   }
 
   withBindingErrors(onBindingError, () => {
