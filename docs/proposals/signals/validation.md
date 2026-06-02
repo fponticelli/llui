@@ -1,5 +1,7 @@
 # Signals: Real-World Validation
 
+> **Status (2026-06-02): HISTORICAL STUDY.** A point-in-time empirical validation (2026-05) over old-model code; its figures are a floor, not a spec to maintain. Its "Verified correction" box is accurate — cross-file/local-helper narrowing ships on `main`. Kept as-is for the rationale.
+
 Empirical validation of the signals design against six consumer apps, run with a
 throwaway aggressive-analyzer prototype (`/tmp/llui-sigval/`, syntax-only, TS 6
 compiler API) over the _current_ arrow-accessor code — which is exactly the body

@@ -1,5 +1,7 @@
 # Shared Architecture & Principles
 
+> **Status (2026-06-02): HISTORICAL.** Background written before the signal runtime; references to the legacy runtime (`update-loop.ts`), the deleted `@llui/eslint-plugin`, and the two-word bitmask are obsolete. The single-engine / adapters-consume direction it argues for was realized. Kept for rationale and the `§`-citations referenced from compiler source.
+
 Material common to all three sub-proposals (v2a, v2b, v2c). Read this before reading any sub-proposal file.
 
 ---

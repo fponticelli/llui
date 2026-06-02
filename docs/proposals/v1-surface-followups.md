@@ -1,5 +1,7 @@
 # Follow-up Topics — Next Session
 
+> **Status (2026-06-02): PARTIAL.** RESOLVED: the headline multi-root/combined-ctx `each` blocker (rows reading component state — `dom.ts` `inRow` ctx), the composition model, D1 SSR/hydration (`@llui/vike`), and D2 devtools/introspection (`@llui/compiler-introspection`, MCP per-binding deps). STILL OPEN: B1 effect-lifecycle types, B2 branded `Query`/`Action`/`Internal` (shipped instead as JSDoc `intent` annotations), B3 `area()`, C1 `embed()` (only `foreign()` exists), C3 example mini-apps, and the E doc updates. Note: the `unified-composition-model` and `dirty-mask-precision` proposals referenced below have been removed (superseded by the signal runtime).
+
 Topics discussed and explicitly deferred, or noticed and not yet dug into, while
 designing signals. All are part of the v1 picture.
 

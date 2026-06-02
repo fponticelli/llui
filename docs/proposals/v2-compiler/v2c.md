@@ -1,5 +1,7 @@
 # v2c — Module System, Diagnostic Schema, MCP-as-Adapter
 
+> **Status (2026-06-02): REALIZED (public ABI deferred).** The internal `CompilerModule`/`ModuleRegistry` (`module.ts`) and the decomposed opt-in packages (`compiler-introspection`/`-devtools`/`-ssr`) shipped and are wired through `@llui/vite-plugin` and `@llui/mcp`. Only the _public third-party library ABI_ / cross-package `__llui_deps.json` layer remains unbuilt. Retained as design rationale.
+
 **Status:** Proposal. Open for revision until adopted.
 **Depends on:** v2a. (Loosely on v2b — see §1.)
 **Blocks:** the public ABI proposal (a separate future doc).

@@ -1,5 +1,7 @@
 # Dev-Mode Annotate
 
+> **Status (2026-06-02): SHIPPED.** `@llui/devmode-annotate` implements the phases described here. The authoritative living contract is [current-state.md](./current-state.md); this file is kept as motivation/rationale.
+
 **Status:** Proposal. Open for revision until adopted.
 **Last revised:** 2026-05-23
 

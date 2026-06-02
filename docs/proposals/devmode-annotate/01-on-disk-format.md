@@ -1,5 +1,7 @@
 # 01 — On-disk Format
 
+> **Status (2026-06-02): SUPERSEDED by [current-state.md](./current-state.md).** The shipped annotation set is **rect + element** only — the `lasso` / `pin` / `arrow` / `highlight` kinds and `Point`-based variants below were dropped (`packages/devmode-annotate/src/note-types.ts`). Read current-state.md for the canonical format.
+
 **Status:** Proposal.
 **Parent:** [`README.md`](./README.md)
 **Touches:** project filesystem (`.llui/notes/`), shared types consumed by 02 and 03.

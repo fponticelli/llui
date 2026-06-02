@@ -1,5 +1,7 @@
 # 05 — Task Mode
 
+> **Status (2026-06-02): REALIZED.** intent / replyTo / proposedDiff, the status machine, the queue, Accept/Reject, and chain resume all shipped (`note-types.ts`, `index.ts`). One staleness: the `NoteKind` line still lists `lasso`/`pin`/`arrow`; the shipped set is rect + element + text + capture + reply.
+
 **Status:** Proposal.
 **Parent:** [`README.md`](./README.md)
 **Touches:** `packages/devmode-annotate/` (HUD), `packages/vite-plugin/` (middleware), `packages/mcp/`. Optional new package: `@llui/task-worker`.

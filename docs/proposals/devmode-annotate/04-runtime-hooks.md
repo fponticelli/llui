@@ -1,5 +1,7 @@
 # 04 — Runtime Hooks
 
+> **Status (2026-06-02): PARTIAL / BUILT DIFFERENTLY.** The `NoteBody` telemetry (state snapshot, message log, effects) is collected — but via the existing `__lluiDebug` / `__lluiComponents` globals (`debug-collector.ts`), NOT the proposed new `window.__llui` `LluiDevSurface`, which was not built. `dirtyTrace` / `structuralAt` types exist but are not populated.
+
 **Status:** Proposal.
 **Parent:** [`README.md`](./README.md)
 **Touches:** `packages/dom/`, `packages/compiler-devtools/`. All additions dev-mode-only, tree-shaken in prod.

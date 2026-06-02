@@ -1,5 +1,7 @@
 # v2a — Compiler Extraction
 
+> **Status (2026-06-02): REALIZED.** `@llui/compiler` is a standalone package; the lint engine moved to compile-time errors and `@llui/eslint-plugin` was deleted. Retained as design rationale.
+
 **Status:** Proposal. Open for revision until adopted.
 **Depends on:** nothing.
 **Blocks:** v2b, v2c.

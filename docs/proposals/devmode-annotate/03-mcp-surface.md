@@ -1,5 +1,7 @@
 # 03 — MCP Surface
 
+> **Status (2026-06-02): REALIZED.** The capture-request flow shipped (`fulfillsRequestId`, `handleCaptureRequest`). One staleness: the Playwright-subset prose still mentions `lasso`/`arrow`/`highlight`, which no longer exist — the shipped annotation set is rect + element only (see [current-state.md](./current-state.md)).
+
 **Status:** Proposal.
 **Parent:** [`README.md`](./README.md)
 **Touches:** `packages/mcp/`. Optional peer dep: `playwright`.

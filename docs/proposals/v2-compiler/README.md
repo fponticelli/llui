@@ -1,5 +1,7 @@
 # LLui v2 Compiler Architecture
 
+> **Status (2026-06-02): LARGELY REALIZED.** v2a (extraction → standalone `@llui/compiler`, `@llui/eslint-plugin` removed) and v2b (cross-file analysis `cross-file-walker.ts`, `manifest.ts`, `__compilerVersion`, the `track({ deps })` escape hatch) shipped. v2c's _internal_ `CompilerModule`/`ModuleRegistry` (`module.ts`) and package decomposition (`compiler-introspection`/`-devtools`/`-ssr`) shipped; only the _public cross-package library ABI_ (`__llui_deps.json` emit/consume) remains deferred. These sub-docs are retained as design rationale, not open work.
+
 **Status:** Proposal. Open for revision until adopted.
 **Last revised:** 2026-05-17
 

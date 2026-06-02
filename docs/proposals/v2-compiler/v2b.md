@@ -1,5 +1,7 @@
 # v2b — Cross-File Analysis, Runtime Contract, Test Migration
 
+> **Status (2026-06-02): REALIZED.** Cross-file analysis (`cross-file-walker.ts`), the dep manifest + `__compilerVersion` (`manifest.ts`, `emit-names.ts`), and the `track({ deps })` compiler escape hatch (`collect-deps.ts`, `track-utils.ts`) all shipped. Note there is no runtime `track()` _primitive_ in `@llui/dom` — only the compiler-recognized annotation. Retained as design rationale.
+
 **Status:** Proposal. Open for revision until adopted.
 **Depends on:** v2a.
 **Blocks:** v2c (loosely — v2c can ship before v2b if needed, but the diagnostic-schema work in v2c is easier after v2b lands).
