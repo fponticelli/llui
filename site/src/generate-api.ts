@@ -525,7 +525,9 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'effects', sourceFiles: ['index.ts'] },
   { name: 'router', sourceFiles: ['index.ts', 'connect.ts'] },
   { name: 'transitions', sourceFiles: ['index.ts'] },
-  { name: 'test', sourceFiles: ['index.ts'] },
+  // `index.ts` re-exports `blur-on-removal.ts`; the extractor doesn't follow
+  // re-exporters, so scan that source file directly to document its functions.
+  { name: 'test', sourceFiles: ['index.ts', 'blur-on-removal.ts'] },
   { name: 'vike', sourceFiles: ['on-render-html.ts', 'on-render-client.ts'] },
   { name: 'mcp', sourceFiles: ['index.ts'] },
   {

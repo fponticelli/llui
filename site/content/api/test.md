@@ -81,52 +81,52 @@ replayTrace(def, trace) => void
 
 Replay a recorded message trace against a component definition. Asserts state at each step.
 
+### emulateBlurOnRemoval / withBlurOnRemoval
+
+```ts
+emulateBlurOnRemoval(doc?) => () => void
+withBlurOnRemoval(fn, doc?) => ReturnType<fn>
+```
+
+Browser-faithful blur emulation for jsdom. When a focused element (or an ancestor) is removed from the document, real browsers run the HTML "removing steps" focus fixup and synchronously fire `blur` then `focusout`; jsdom resets `document.activeElement` but fires no events. That gap makes the inline-edit-commit pattern — an `<input>` whose `onBlur` commits, inside a `branch` arm the commit itself swaps out — impossible to exercise on its real path. `emulateBlurOnRemoval()` patches `removeChild` / `remove` / `replaceChild` to dispatch the missing events synchronously, returning an uninstall function; `withBlurOnRemoval(fn)` scopes the patch around `fn`.
+
 <!-- auto-api:start -->
 
 ## Functions
 
-### `testComponent()`
+### `emulateBlurOnRemoval()`
+
+Browser-faithful blur emulation for jsdom.
+The HTML standard's node-removing steps run a "focus fixup": when the
+currently-focused element (or an ancestor of it) is removed from the
+document, the user agent resets focus to the viewport and fires `blur` then
+`focusout` on the old focus target — SYNCHRONOUSLY, as part of the mutation.
+Real apps depend on this: an inline-edit `<input>` whose `onBlur` commits,
+sitting in a structural arm that the commit itself swaps out, fires that blur
+mid-reconcile and re-enters the reducer.
+jsdom resets `document.activeElement` to `<body>` on removal but fires NO
+events, so that reentrancy is invisible in tests — the single most important
+inline-edit interaction can't be exercised. `emulateBlurOnRemoval` closes the
+gap by patching the removal-causing mutation methods to dispatch the missing
+events synchronously, in browser order (`blur`, then the bubbling `focusout`).
+Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
+or use {@link withBlurOnRemoval} for automatic scoping.
+@param doc - document whose `activeElement` is consulted (defaults to the
+ambient `document`). The patch is applied to the shared `Node`/`Element`
+prototypes, matching the single jsdom document under test.
+@returns an idempotent uninstall function restoring the native methods.
 
 ```typescript
-function testComponent<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  initialData?: unknown,
-): TestHarness<S, M, E>
+function emulateBlurOnRemoval(doc: Document = document): () => void
 ```
 
-### `testView()`
+### `withBlurOnRemoval()`
 
-Mount a component against a fresh container and return an interactive harness.
-Simulates events + auto-flushes so tests can chain assertions naturally.
-
-```typescript
-function testView<S, M, E>(def: ComponentDef<S, M, E>, state: S): ViewHarness<M>
-```
-
-### `assertEffects()`
+Run `fn` with {@link emulateBlurOnRemoval} installed, uninstalling afterwards
+even if `fn` throws. Returns whatever `fn` returns.
 
 ```typescript
-function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
-```
-
-### `propertyTest()`
-
-```typescript
-function propertyTest<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  config: {
-    invariants: Array<(state: S, effects: E[]) => boolean>
-    messageGenerators: Record<string, ((state: S) => M) | (() => M)>
-    runs?: number
-    maxSequenceLength?: number
-  },
-): void
-```
-
-### `replayTrace()`
-
-```typescript
-function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
 ```
 
 <!-- auto-api:end -->

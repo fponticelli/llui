@@ -11,6 +11,17 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-02 — @llui/test@0.6.0
+
+**Released:** `@llui/test@0.6.0`
+
+Follow-up to `@llui/dom@0.5.10`: the reentrancy + `removeBetween` fixes were real, but the most reentrancy-prone view pattern (inline-edit-commit) could not be tested on its genuine path. jsdom omits the HTML "removing steps" focus fixup — removing a focused node fires no `blur`/`focusout` — so the literal focus→commit→blur sequence was unreachable, and the `removeBetween` snapshot defense had no direct coverage at all.
+
+### `@llui/test@0.6.0`
+
+- **Feature:** new `emulateBlurOnRemoval()` / `withBlurOnRemoval(fn)` helpers. They patch `removeChild` / `remove` / `replaceChild` so that removing the focused element (or an ancestor) dispatches `blur` then `focusout` synchronously, in browser order — matching the focus fixup jsdom skips. `emulateBlurOnRemoval()` returns an uninstall function (use in `afterEach`); `withBlurOnRemoval(fn)` scopes the patch around `fn`. This unblocks faithful inline-edit-commit testing for any LLui app. (`packages/test/src/blur-on-removal.ts`; tests `test/blur-on-removal.test.ts`, `test/inline-edit-commit.test.ts`.)
+- **Tests:** added the genuine focus→commit→blur regression for the `@llui/dom@0.5.10` send-queue fix (asserts effect ORDER as the queue-vs-nest discriminator) and the first direct test of `removeBetween` surviving a reentrant sibling detach mid-walk. Both are mutation-verified — reverting the runtime fix turns them red.
+
 ## 2026-06-02 — @llui/dom@0.5.10
 
 **Released:** `@llui/dom@0.5.10`

@@ -124,3 +124,33 @@ replayTrace(def, trace) => void
 ```
 
 Replay a recorded message trace against a component definition. Asserts state at each step.
+
+### emulateBlurOnRemoval / withBlurOnRemoval
+
+```ts
+// @doc-skip — API signature illustration
+emulateBlurOnRemoval(doc?) => () => void   // returns an uninstall fn
+withBlurOnRemoval(fn, doc?) => ReturnType<fn>
+```
+
+Browser-faithful blur emulation for jsdom. The HTML "removing steps" run a focus
+fixup: when the focused element (or an ancestor) is removed from the document,
+real browsers synchronously fire `blur` then `focusout` on it. jsdom resets
+`document.activeElement` but fires **no events**, so the most reentrancy-prone
+view pattern — an inline-edit `<input>` whose `onBlur` commits, inside a `branch`
+arm the commit itself swaps out — can't be exercised on its real path.
+
+`emulateBlurOnRemoval()` patches `removeChild` / `remove` / `replaceChild` to
+dispatch the missing events synchronously, in browser order. It returns an
+uninstall function (call it in `afterEach`); `withBlurOnRemoval(fn)` scopes the
+patch around `fn` and always uninstalls.
+
+```ts
+import { emulateBlurOnRemoval } from '@llui/test'
+
+it('commits an inline edit when the focused input is swapped out', () => {
+  const uninstall = emulateBlurOnRemoval()
+  // …focus the input, trigger the arm swap; blur now fires synchronously…
+  uninstall()
+})
+```
