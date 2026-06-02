@@ -492,10 +492,17 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
 export function asOnEffect<E extends { type: string }, M>(
   chain: (ctx: EffectCtx<E, M>) => void,
 ): (effect: E, api: { send: (msg: M) => void }) => () => void {
-  const controller = new AbortController()
+  // Lazily create the AbortController on first dispatch, NOT at factory-call time.
+  // `asOnEffect(chain)` is typically called at component-literal (module top-level)
+  // scope; constructing an AbortController there throws on Cloudflare Workers
+  // ("Disallowed operation called within global scope"). Deferring it to the first
+  // effect — which only runs inside the update cycle / a handler — keeps this a
+  // pure factory that's safe to call during module evaluation.
+  let controller: AbortController | null = null
   return (effect, { send }) => {
+    if (controller === null) controller = new AbortController()
     chain({ effect, send, signal: controller.signal })
-    return () => controller.abort()
+    return () => controller?.abort()
   }
 }
 
