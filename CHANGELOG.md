@@ -11,6 +11,26 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-02 — @llui/dom@0.5.8
+
+**Released:** `@llui/dom@0.5.8`
+
+Surfaced finishing the dicerun signals migration — the inline-roll / dice-result and stats widgets rendered nothing after a roll, with no error and correct state. The cluster (homepage `/d/<expr>`, `/explore` inline rolls, `/docs` re-rolls, studio stats, export-stats, compare-overlay) all share one shape: an outer keyed `each` (per epoch / per row) whose row renders an **inner `each` whose items derive from the ROW ITEM** — `each(item.map(i => …), …)`.
+
+### `@llui/dom@0.5.8`
+
+- **Fix:** a nested `each` whose items source reads the enclosing row's `item` (e.g. `each(item.map(i => …))`) rendered zero rows. An `inRow` `each`'s structural binding reconciled against `ctx.state` (the component state), so the items source's `item` path resolved to `undefined` → empty list, silently. The reconcile now derives the items-source state from the source's deps — a row-local source (`item.map` / `item.at`, all-row-local deps) reads the combined row ctx so `item`/`index` resolve, while a component-state source (`state.map`) still reads `ctx.state`; rows always mount with the component state regardless. Previously only inner eaches over **component state** (`each(state.map(s => s.list))`) worked; inner eaches over the **row item** silently produced nothing. (`signalEach`, `packages/dom/src/signals/dom.ts`; regression test in `test/signals/each-nested-structural.test.ts`.)
+
+## 2026-06-02 — @llui/devmode-annotate@0.0.4
+
+**Released:** `@llui/devmode-annotate@0.0.4`
+
+Surfaced finishing the dicerun signals migration: the whole Playwright e2e suite hung on `page.waitForLoadState('networkidle')` and the failures looked like render bugs (30s timeouts across `/explore`, `/my-rolls`, `/docs`, `/packs`, …). The app actually rendered fine — the network simply never went idle.
+
+### `@llui/devmode-annotate@0.0.4`
+
+- **Fix:** the in-app HUD's persistent SSE subscription to `/_llui/events?role=hud` now defaults **off** under an automation-controlled browser (`navigator.webdriver === true`). The stream never closes, so in any consumer app that mounts the HUD in dev it permanently blocked `waitForLoadState('networkidle')` — hanging every Playwright / WebDriver e2e suite. There is no human to drive the HUD and no LLM capture session is expected under automation, so suppressing it is always correct. An explicit `subscribeEvents` (`true` or `false`) still wins, so a suite that specifically exercises the SSE path can force it on. (`mountAnnotateHud`, `packages/devmode-annotate/src/index.ts`.)
+
 ## 2026-06-01 — @llui/dom@0.5.6, @llui/components@0.5.3, @llui/effects@0.0.11
 
 **Released:** `@llui/dom@0.5.6`, `@llui/components@0.5.3`, `@llui/effects@0.0.11`

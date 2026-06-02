@@ -623,10 +623,20 @@ export function signalEach<T>(
   let needsRebase = true
   let templateProbed = false
 
-  const reconcile = (state: unknown): void => {
+  // When this each is nested in an enclosing row, the scope hands `reconcile`
+  // the COMBINED row ctx (`{ item, state, index }`). Rows must always mount with
+  // the COMPONENT state, but the items source reads whatever its deps name: a
+  // row-local source (`item.map(…)` / `item.at(…)`, deps all row-local) reads
+  // the combined ctx so `item`/`index` resolve; a component-state source
+  // (`state.map(…)`) reads `ctx.state`. For a top-level each the input IS the
+  // component state and both coincide.
+  const itemsRowLocal = source.deps.length > 0 && source.deps.every(isRowLocalDep)
+  const reconcile = (input: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
-    const items = source.items(state)
+    const rowState = inRow ? (input as { state: unknown }).state : input
+    const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
+    const items = source.items(itemsState)
     const n = items.length
     const newKeys = new Array<string>(n)
     const newRows = new Array<Row>(n)
@@ -646,7 +656,7 @@ export function signalEach<T>(
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
-        const ctx: RowCtx<T> = { item, state, index }
+        const ctx: RowCtx<T> = { item, state: rowState, index }
         const holder = { ctx }
         // forceInRow: the row build (and every nested arm/row build) operates on
         // the combined ctx, so structural primitives inside it become row-aware.
@@ -692,7 +702,7 @@ export function signalEach<T>(
           scope,
           nodes: built.nodes,
           ctx,
-          spare: { item, state, index },
+          spare: { item, state: rowState, index },
           teardowns: built.teardowns,
           holder,
           mounts: built.mounts,
@@ -706,7 +716,7 @@ export function signalEach<T>(
         // so the diff sees item/state changes correctly.
         const next = row.spare
         next.item = item
-        next.state = state
+        next.state = rowState
         next.index = index
         row.scope.update(row.ctx, next)
         row.spare = row.ctx
@@ -792,7 +802,10 @@ export function signalEach<T>(
   // enclosing row, it reads `ctx.state` and its deps rebase onto that combined ctx.
   c.specs.push({
     deps: inRow ? source.deps.map(rebaseRowDep) : source.deps,
-    produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
+    // Pass the scope state straight through: the combined row ctx when nested in
+    // a row, the component state at top level. `reconcile` derives the items
+    // source's state (row-local vs component) and the rows' mount state from it.
+    produce: (s) => s,
     commit: (s) => reconcile(s),
     structural: true,
   })
