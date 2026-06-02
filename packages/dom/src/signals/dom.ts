@@ -688,7 +688,8 @@ export function signalEach<T>(
             throw new Error(
               'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
                 'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
-                'row has a stable node to key, move, and remove.',
+                'row has a stable node to key, move, and remove. ' +
+                `(each items deps: ${JSON.stringify(source.deps)})`,
             )
           }
           needsRebase = built.specs.some(
