@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { component, mountApp, text, div, li, ul, each, show } from '../../src/signals/authoring'
+import type { Signal } from '../../src/signals/index'
 import { renderToString } from '../../src/signals/ssr'
 import { hydrateSignalApp } from '../../src/signals/component'
 
@@ -99,21 +100,21 @@ describe('helper-built structural primitives over root .map survive hydration', 
   type M = { type: 'reveal' }
 
   // Structural blocks live in a HELPER — the case the compiler cannot lower, so
-  // they run via the runtime authoring helpers during the (hydrate) build.
-  const widget = (state: { map: <U>(f: (s: S) => U) => unknown; at: unknown }): Node =>
+  // they run via the runtime authoring helpers during the (hydrate) build. The
+  // helper takes a `Signal<S>` handle (the idiomatic sub-view composition shape)
+  // and uses the real `.map()` / `.at()` API.
+  const widget = (state: Signal<S>): Node =>
     div({ id: 'widget' }, [
       show(
-        (state as { map: (f: (s: S) => boolean) => never }).map((s) => s.open),
+        state.map((s) => s.open),
         () => [div({ id: 'panel' }, [text('open')])],
       ),
       ul({ id: 'list' }, [
         each(
-          (state as { map: (f: (s: S) => { id: number; t: string }[]) => never }).map(
-            (s) => s.items,
-          ),
+          state.map((s) => s.items),
           {
-            key: (i: { id: number }) => i.id,
-            render: (item: { at: (k: string) => never }) => [li([text(item.at('t'))])],
+            key: (i) => i.id,
+            render: (item) => [li([text(item.at('t'))])],
           },
         ),
       ]),
@@ -122,7 +123,7 @@ describe('helper-built structural primitives over root .map survive hydration', 
   const def = component<S, M>({
     init: () => ({ open: false, items: [] }),
     update: (s, _m) => ({ ...s, open: true, items: [{ id: 1, t: 'a' }] }),
-    view: ({ state }) => [widget(state as never)],
+    view: ({ state }) => [widget(state)],
   })
 
   it('hydrates an empty each/show then reacts to a populating message', () => {
