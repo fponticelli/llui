@@ -360,9 +360,13 @@ export function portal(content: () => readonly Node[], target?: Element): Node {
   const c = requireCtx()
   const host = target ?? c.doc.body
   if (!host) {
-    throw new Error(
-      'portal() needs an explicit target during SSR — the server DomEnv has no document.body',
-    )
+    // SSR / no document.body: portals are client-only. Render nothing here rather
+    // than throw — overlays (dialogs/popovers/toasts) are gated behind
+    // `show(state.open)`, and even an open one is reconstructed by the client
+    // hydrate pass (atomic-swap rebuild), which collects this content's bindings +
+    // onMounts and appends them to the real `document.body`. SSR-rendering an
+    // overlay into the page flow would be wrong anyway (it lives at body level).
+    return c.doc.createComment('portal-ssr-skip')
   }
   const nodes = content() // specs collected into the current build → reactive
   for (const n of nodes) host.appendChild(n)
