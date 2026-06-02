@@ -11,6 +11,17 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-02 — @llui/dom@0.5.10
+
+**Released:** `@llui/dom@0.5.10`
+
+Surfaced finishing the dicerun signals migration (Studio's inline rename): committing a rename removed the focused `<input>` as a structural `branch` arm swapped — which fires `blur` synchronously, re-entering the update cycle mid-reconcile and crashing with a `NotFoundError`, which in turn aborted the message's effects (the PATCH never fired).
+
+### `@llui/dom@0.5.10`
+
+- **Fix (reentrancy):** `send` is now reentrancy-safe. A message dispatched WHILE another is being processed (the canonical trigger: removing a focused node during a structural arm swap fires `blur` → its handler calls `send`) is **queued and drained by the active call**, never run as a nested reducer + reconcile. Nesting mutated the scope tree / DOM mid-reconcile and silently skipped the outer message's effects. From a top-level caller `send` stays synchronous (the queue fully drains before it returns). (`component.ts`; regression test `test/signals/send-reentrancy.test.ts`.)
+- **Fix (defense-in-depth):** `removeBetween` (structural arm / sub-app teardown) now snapshots the doomed node list BEFORE removing any, so a `blur`-driven reentrant mutation during removal can't corrupt the live `nextSibling` walk. (`dom.ts`.)
+
 ## 2026-06-02 — @llui/dom@0.5.9
 
 **Released:** `@llui/dom@0.5.9`

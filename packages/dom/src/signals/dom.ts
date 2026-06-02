@@ -495,12 +495,17 @@ function rebaseRowSpec(spec: BindingSpec): BindingSpec {
  * not captured in the arm's `built.nodes`), so swapping/disposing an arm never
  * leaks inner content. The anchors themselves are left in place. */
 function removeBetween(start: Node, end: Node): void {
-  let n = start.nextSibling
-  while (n && n !== end) {
-    const next = n.nextSibling
-    n.parentNode?.removeChild(n)
-    n = next
-  }
+  // Snapshot the doomed nodes BEFORE removing any. Removing a node that holds
+  // focus (e.g. an input in a swapped-out branch arm) dispatches `blur`
+  // SYNCHRONOUSLY, which can re-enter the update/reconcile cycle and mutate the
+  // sibling chain mid-walk — a live `nextSibling` walk then steps onto a node
+  // whose parent has already changed and `removeChild` throws NotFoundError.
+  // Collecting first makes the iteration immune to that reentrancy; each removal
+  // is still guarded by the node's own current parent (a reentrant teardown may
+  // have already detached it).
+  const doomed: Node[] = []
+  for (let n = start.nextSibling; n && n !== end; n = n.nextSibling) doomed.push(n)
+  for (const n of doomed) n.parentNode?.removeChild(n)
 }
 
 /** Rebase every VALUE spec in a row/arm build to read `ctx.state`, leaving
