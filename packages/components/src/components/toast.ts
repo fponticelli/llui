@@ -206,37 +206,37 @@ export function connect(
       // `each` rebuilds this row if `id` changes.
       const toast = toastSig.peek()
       return {
-      root: {
-        role: 'status',
-        'aria-atomic': 'true',
-        'aria-live': toast.type === 'error' ? 'assertive' : 'polite',
-        id: `${toast.id}:root`,
-        'data-scope': 'toast',
-        'data-part': 'root',
-        'data-type': toast.type,
-        'data-id': toast.id,
-        onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-        onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-        onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-        onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-      },
-      title: {
-        id: `${toast.id}:title`,
-        'data-scope': 'toast',
-        'data-part': 'title',
-      },
-      description: {
-        id: `${toast.id}:description`,
-        'data-scope': 'toast',
-        'data-part': 'description',
-      },
-      closeTrigger: {
-        type: 'button',
-        'aria-label': closeLabel,
-        'data-scope': 'toast',
-        'data-part': 'close-trigger',
-        onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
-      },
+        root: {
+          role: 'status',
+          'aria-atomic': 'true',
+          'aria-live': toast.type === 'error' ? 'assertive' : 'polite',
+          id: `${toast.id}:root`,
+          'data-scope': 'toast',
+          'data-part': 'root',
+          'data-type': toast.type,
+          'data-id': toast.id,
+          onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
+          onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
+          onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
+          onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
+        },
+        title: {
+          id: `${toast.id}:title`,
+          'data-scope': 'toast',
+          'data-part': 'title',
+        },
+        description: {
+          id: `${toast.id}:description`,
+          'data-scope': 'toast',
+          'data-part': 'description',
+        },
+        closeTrigger: {
+          type: 'button',
+          'aria-label': closeLabel,
+          'data-scope': 'toast',
+          'data-part': 'close-trigger',
+          onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
+        },
       }
     },
   }
