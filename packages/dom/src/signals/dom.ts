@@ -20,6 +20,7 @@ import type { LiveSignal } from './types.js'
 // boundary for lazy.
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
+import { isSignalHandle } from './handle.js'
 
 /** The minimal node-factory surface the signal build needs from its document.
  * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
@@ -211,6 +212,18 @@ function populate(
       c.specs.push({
         deps: value.deps,
         produce: value.produce,
+        commit: (out) => applyAttr(node, name, out),
+      })
+    } else if (isSignalHandle(value)) {
+      // A raw signal handle reached a prop slot: the compiler lowers INLINE
+      // `state.map(...)` props to `react(...)`, but a signal stored in a variable
+      // (a local const, a spread, a helper return) is opaque to it and passes
+      // through verbatim. Bind it reactively here — same as the authoring element
+      // helpers do — rather than stringifying the handle into the attribute
+      // ("[object Object]", a silently-stuck value).
+      c.specs.push({
+        deps: value.deps,
+        produce: value.produce as (s: unknown) => unknown,
         commit: (out) => applyAttr(node, name, out),
       })
     } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {

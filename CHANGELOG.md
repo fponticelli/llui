@@ -11,6 +11,16 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-02 — @llui/dom@0.5.9
+
+**Released:** `@llui/dom@0.5.9`
+
+Another dicerun-migration find: buttons in the packs / my-rolls sidebar were permanently disabled (`disabled="[object Object]"`), so every interaction that went through them timed out.
+
+### `@llui/dom@0.5.9`
+
+- **Fix:** `el(...)` now binds a **raw signal-handle prop value** reactively instead of stringifying it into the attribute. The compiler lowers INLINE `state.map(...)` props to `react(...)`, but a signal kept in a variable (`const off = state.map(...); button({ disabled: off })`, a spread, or a helper's return) is opaque to it and reaches `el` verbatim. `el` previously treated any non-`react`, non-handler value as a static attribute — so the handle serialized to `"[object Object]"` (a truthy, permanently-stuck `disabled`). It now detects a signal handle and binds it, matching the authoring element helpers. (`populate` in `packages/dom/src/signals/dom.ts`; test `test/signals/el-signal-prop.test.ts`.)
+
 ## 2026-06-02 — @llui/dom@0.5.8
 
 **Released:** `@llui/dom@0.5.8`
