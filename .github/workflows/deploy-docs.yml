@@ -17,6 +17,11 @@ permissions:
   pages: write
   id-token: write
 
+# Opt JS actions into Node 24 now — their v4 majors run on Node 20 (deprecated).
+# GitHub makes Node 24 the default 2026-06-16, after which this is a no-op.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: pages
   cancel-in-progress: true
