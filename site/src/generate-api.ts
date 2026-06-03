@@ -562,7 +562,19 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   },
   { name: 'agent-bridge', sourceFiles: ['index.ts', 'tools.ts', 'bridge.ts'] },
   { name: 'vite-plugin', sourceFiles: ['index.ts'] },
-  { name: 'compiler', sourceFiles: ['index.ts'] },
+  // `index.ts` is all `export *` re-exporters, which the extractor doesn't
+  // follow — scan the public ABI source files directly so the manifest /
+  // cross-package-narrowing surface is documented.
+  {
+    name: 'compiler',
+    sourceFiles: [
+      'index.ts',
+      'manifest.ts',
+      'manifest-io.ts',
+      'manifest-resolve.ts',
+      'build-manifest.ts',
+    ],
+  },
   { name: 'compiler-introspection', sourceFiles: ['index.ts'] },
   { name: 'compiler-devtools', sourceFiles: ['index.ts'] },
   { name: 'compiler-ssr', sourceFiles: ['index.ts'] },

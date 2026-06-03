@@ -1,3 +1,8 @@
+---
+title: Publishing a precompiled LLui library
+description: "Ship a `__llui_deps.json` dependency manifest so consumer apps narrow reactive bindings through your package's helpers across the npm boundary."
+---
+
 # Publishing a precompiled LLui library
 
 When an app derives a reactive value through one of your package's helpers —

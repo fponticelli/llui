@@ -1,0 +1,1 @@
+../../docs/publishing-a-precompiled-library.md

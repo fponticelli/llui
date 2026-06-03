@@ -66,6 +66,12 @@ export function siteLayout({
           navLink('/getting-started', 'getting-started', 'Getting Started', slug),
           navLink('/cookbook', 'cookbook', 'Cookbook', slug),
           navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
+          navLink(
+            '/publishing-a-precompiled-library',
+            'publishing-a-precompiled-library',
+            'Publishing a Library',
+            slug,
+          ),
           navLink('/architecture', 'architecture', 'Architecture', slug),
           navLink('/benchmarks', 'benchmarks', 'Benchmarks', slug),
           navLink('/changelog', 'changelog', 'Changelog', slug),
