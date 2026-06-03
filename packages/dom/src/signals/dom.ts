@@ -109,6 +109,47 @@ function requireCtx(): BuildCtx {
   return ctx
 }
 
+// ── Mountable: a lazy structural description ────────────────────────
+//
+// A scope-owning structural primitive (each/show/branch/unsafeHtml/lazy/virtualEach/
+// foreign/portal/provide) does NOT build eagerly. Instead it returns a `Mountable` —
+// a recipe that builds its live nodes (and registers its reactive spec / child scope /
+// teardowns) only when `mount()` is called, AT PLACEMENT, under whatever build context
+// is then active. The runtime calls `mount()` at the two seams where authoring values
+// become inserted nodes — `populate` (element children) and `runBuild` (a build's
+// returned array) — both of which always run with a live `ctx`.
+//
+// This makes capture-and-reuse correct by construction: a `Mountable` captured in a
+// variable and placed inside a `show`/`branch` arm materializes FRESH on every remount,
+// registering its spec into the CURRENT arm scope. There is no drained-fragment reuse
+// and no spec stranded in the construction-time scope. Placing one Mountable twice in a
+// single build yields two independent live instances.
+const MOUNTABLE = Symbol('llui.mountable')
+
+/** A lazy structural node: `mount()` builds the live node (and registers its bindings
+ * into the active build) at placement time. Returned by `each`/`show`/`branch`/etc. */
+export interface Mountable {
+  readonly [MOUNTABLE]: true
+  mount(): Node
+}
+
+/** Wrap a build closure as a `Mountable`. `build` runs (with a live `ctx`) when the
+ * Mountable is placed — see `populate`/`runBuild`. */
+function mountable(build: () => Node): Mountable {
+  return { [MOUNTABLE]: true, mount: build }
+}
+
+export function isMountable(v: unknown): v is Mountable {
+  return typeof v === 'object' && v !== null && (v as Record<symbol, unknown>)[MOUNTABLE] === true
+}
+
+/** Materialize a child slot to a real node: a Mountable builds its node now (live
+ * `ctx`); a bare node passes through. (String/number coercion is handled separately
+ * at the few sites that allow it.) */
+function materialize(node: Node | Mountable): Node {
+  return isMountable(node) ? node.mount() : node
+}
+
 /** Adapter hook (`@llui/vike`): the build currently in progress, or null when
  * called outside a signal build. Exposes the build's `doc` (to create anchor
  * nodes that belong to the same document as the surrounding tree) and a SNAPSHOT
@@ -145,10 +186,15 @@ export function staticText(value: string): Text {
 export type EventHandler = (ev: Event) => void
 export type PropValue = string | number | boolean | null | Reactive | EventHandler
 
-/** A child slot: a built node, or a bare string/number that is coerced to a
- * static text node at append time (so `div(['hi', 42])` works without an
- * explicit `text(...)` — the same coercion every mainstream framework does). */
-export type ChildNode = Node | string | number
+/** A child slot: a built node, a lazy `Mountable` (structural primitive — materialized
+ * at append time), or a bare string/number coerced to a static text node at append time
+ * (so `div(['hi', 42])` works without an explicit `text(...)` — the same coercion every
+ * mainstream framework does). */
+export type ChildNode = Node | Mountable | string | number
+
+/** The result of a render callback / view: built nodes and/or lazy `Mountable`s
+ * (structural primitives). Materialized at placement by `populate`/`runBuild`. */
+export type Renderable = readonly (Node | Mountable)[]
 
 const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
 
@@ -236,11 +282,13 @@ function populate(
     }
   }
   for (const child of children) {
-    node.appendChild(
-      typeof child === 'string' || typeof child === 'number'
-        ? c.doc.createTextNode(String(child))
-        : child,
-    )
+    if (typeof child === 'string' || typeof child === 'number') {
+      node.appendChild(c.doc.createTextNode(String(child)))
+    } else {
+      // A Mountable (structural primitive) builds its live node here, under the
+      // current build — so its spec lands in THIS scope and re-placement rebuilds fresh.
+      node.appendChild(materialize(child))
+    }
   }
 }
 
@@ -275,7 +323,7 @@ export function elNS(
  * context), so structural primitives can build rows mid-reconcile. */
 function runBuild(
   doc: SignalDoc,
-  build: () => readonly Node[],
+  build: () => readonly (Node | Mountable)[],
   // The structural primitives build rows/arms REACTIVELY (after mount, when the
   // module `ctx` is null), so they pass their captured build-time ctx here to
   // keep context values and the descriptor registry flowing into nested builds.
@@ -316,7 +364,10 @@ function runBuild(
   ctx = { specs, doc, host, teardowns, mounts, contexts, ownContexts: false, inRow, descriptors }
   let nodes: readonly Node[]
   try {
-    nodes = build()
+    // Materialize any Mountable returned DIRECTLY (a structural primitive not wrapped
+    // in an element, e.g. an arm/row/view returning `[show(...)]`) while `ctx` is still
+    // this build — element children are already materialized by `populate` during build().
+    nodes = build().map(materialize)
   } finally {
     ctx = prev
   }
@@ -369,7 +420,11 @@ export function onMount(cb: (root: Element) => void | (() => void)): Node {
  * for overlays (dialog/popover/toast). The content's bindings join the current
  * scope (so it stays reactive); a teardown removes the nodes on unmount/dispose.
  * Returns an inline placeholder comment. */
-export function portal(content: () => readonly Node[], target?: Element): Node {
+export function portal(content: () => Renderable, target?: Element): Mountable {
+  return mountable(() => buildPortal(content, target))
+}
+
+function buildPortal(content: () => Renderable, target?: Element): Node {
   const c = requireCtx()
   const host = target ?? c.doc.body
   if (!host) {
@@ -381,7 +436,7 @@ export function portal(content: () => readonly Node[], target?: Element): Node {
     // overlay into the page flow would be wrong anyway (it lives at body level).
     return c.doc.createComment('portal-ssr-skip')
   }
-  const nodes = content() // specs collected into the current build → reactive
+  const nodes = content().map(materialize) // specs collected into the current build → reactive
   for (const n of nodes) host.appendChild(n)
   c.teardowns.push(() => {
     for (const n of nodes) if (n.parentNode === host) host.removeChild(n)
@@ -404,7 +459,11 @@ export function createContext<T>(defaultValue: T, name = 'context'): Context<T> 
 }
 
 /** Provide `value` for `context` to everything `render` builds, then restore. */
-export function provide<T>(context: Context<T>, value: T, render: () => readonly Node[]): Node {
+export function provide<T>(context: Context<T>, value: T, render: () => Renderable): Mountable {
+  return mountable(() => buildProvide(context, value, render))
+}
+
+function buildProvide<T>(context: Context<T>, value: T, render: () => Renderable): Node {
   const c = requireCtx()
   // Copy-on-write: the build shares its parent's contexts map by reference until
   // the first provide, which clones a private copy so the mutation doesn't leak to
@@ -419,7 +478,7 @@ export function provide<T>(context: Context<T>, value: T, render: () => readonly
   m.set(context.id, value)
   const frag = c.doc.createDocumentFragment()
   try {
-    for (const n of render()) frag.appendChild(n)
+    for (const n of render()) frag.appendChild(materialize(n))
   } finally {
     if (had) m.set(context.id, prev)
     else m.delete(context.id)
@@ -594,10 +653,18 @@ function lisIndices(a: readonly number[]): Set<number> {
 export function signalEach<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
+  renderRow: (getCtx: () => RowCtx<T>) => Renderable,
+): Mountable {
+  return mountable(() => buildSignalEach(source, key, renderRow))
+}
+
+function buildSignalEach<T>(
+  source: EachSource<T>,
+  key: (item: T) => string | number,
   // `getCtx` exposes the row's LIVE combined ctx so authoring `each` can build
   // item handles whose `.peek()` reads the current row. The transform emits
   // `() => [...]` which simply ignores the argument.
-  renderRow: (getCtx: () => RowCtx<T>) => readonly Node[],
+  renderRow: (getCtx: () => RowCtx<T>) => Renderable,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -857,8 +924,16 @@ export interface ShowCond {
  */
 export function signalShow(
   cond: ShowCond,
-  render: () => readonly Node[],
-  orElse?: () => readonly Node[],
+  render: () => Renderable,
+  orElse?: () => Renderable,
+): Mountable {
+  return mountable(() => buildSignalShow(cond, render, orElse))
+}
+
+function buildSignalShow(
+  cond: ShowCond,
+  render: () => Renderable,
+  orElse?: () => Renderable,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -963,7 +1038,11 @@ function parseFragment(doc: SignalDoc, html: string): DocumentFragment {
  * NO reactive bindings — `unsafeHtml` is an escape hatch for pre-rendered markup
  * (markdown, syntax highlighting). The caller is responsible for trust/sanitization.
  */
-export function signalUnsafeHtml(produce: Producer, deps: readonly string[]): Node {
+export function signalUnsafeHtml(produce: Producer, deps: readonly string[]): Mountable {
+  return mountable(() => buildSignalUnsafeHtml(produce, deps))
+}
+
+function buildSignalUnsafeHtml(produce: Producer, deps: readonly string[]): Node {
   const c = requireCtx()
   const doc = c.doc
   const start = doc.createComment('unsafe-html')
@@ -1024,7 +1103,11 @@ export interface SubAppSpec<S, M, E = never> {
  * cheap (no `child()`/boundary needed). Reach for `subApp` only when a subtree
  * truly needs its own lifecycle.
  */
-export function signalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
+export function signalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Mountable {
+  return mountable(() => buildSignalSubApp(spec))
+}
+
+function buildSignalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
   const c = requireCtx()
   const anchor = c.doc.createComment('subApp')
   c.mounts.push(() => {
@@ -1048,8 +1131,12 @@ export function signalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
  */
 export function signalBranch(
   disc: ShowCond,
-  arms: Readonly<Record<string, () => readonly Node[]>>,
-): Node {
+  arms: Readonly<Record<string, () => Renderable>>,
+): Mountable {
+  return mountable(() => buildSignalBranch(disc, arms))
+}
+
+function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => Renderable>>): Node {
   const c = requireCtx()
   const doc = c.doc
   const ownerHost = c.host
@@ -1177,6 +1264,12 @@ export interface ForeignSpec<Inst, State extends Record<string, SignalSpec<unkno
  */
 export function signalForeign<Inst, State extends Record<string, SignalSpec<unknown>>>(
   spec: ForeignSpec<Inst, State>,
+): Mountable {
+  return mountable(() => buildSignalForeign(spec))
+}
+
+function buildSignalForeign<Inst, State extends Record<string, SignalSpec<unknown>>>(
+  spec: ForeignSpec<Inst, State>,
 ): Node {
   const c = requireCtx()
   const host = c.doc.createElement(spec.tag ?? 'div')
@@ -1254,7 +1347,7 @@ export type MountTarget =
 export function mountSignal(
   target: Element | MountTarget,
   initial: unknown,
-  build: () => readonly Node[],
+  build: () => Renderable,
   modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
   seedContexts?: ReadonlyMap<symbol, unknown>,
 ): SignalMount {
@@ -1344,7 +1437,7 @@ export function mountSignal(
  * detached tree purely to bake initial values into the serialized HTML. */
 export function renderSignalTree(
   doc: SignalDoc,
-  build: () => readonly Node[],
+  build: () => Renderable,
   // Adapter seed (see `runBuild`): context values to expose at the root of this
   // build when no surrounding build provides them (`@llui/vike` slot replay).
   seedContexts?: ReadonlyMap<symbol, unknown>,
@@ -1379,9 +1472,9 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
    * is needed at the call site. */
   loader: () => Promise<SignalComponentDef<LS, LM, LE>>
   /** nodes rendered (reactively, in the current build) while loading */
-  fallback: () => readonly Node[]
+  fallback: () => Renderable
   /** nodes rendered if the loader rejects (nothing if omitted) */
-  error?: (err: Error) => readonly Node[]
+  error?: (err: Error) => Renderable
   /** seed state for the loaded component, overriding its `init()` result */
   initialState?: LS
 }
@@ -1400,6 +1493,12 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
  */
 export function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
   opts: SignalLazyOptions<LS, LM, LE>,
+): Mountable {
+  return mountable(() => buildSignalLazy(opts))
+}
+
+function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
+  opts: SignalLazyOptions<LS, LM, LE>,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -1409,7 +1508,7 @@ export function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
   // scope and stay reactive. Bracket it with an end sentinel so the region can be
   // removed wholesale on swap.
   const fallbackEnd = doc.createComment('/lazy-fallback')
-  const fallbackNodes = opts.fallback()
+  const fallbackNodes = opts.fallback().map(materialize)
 
   let cancelled = false
   let mounted: SignalComponentHandle<LS, LM> | null = null
@@ -1490,7 +1589,7 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
   class?: string
   /** build a row; `getCtx` exposes the row's live `{ item, state, index }` ctx
    * (same shape as `signalEach`) for runtime item/index handles. */
-  renderRow: (getCtx: () => RowCtx<T>) => readonly Node[]
+  renderRow: (getCtx: () => RowCtx<T>) => Renderable
 }
 
 /**
@@ -1507,7 +1606,11 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
  *
  * Limitation: FIXED row height only — `itemHeight` must be uniform.
  */
-export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
+export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Mountable {
+  return mountable(() => buildSignalVirtualEach(spec))
+}
+
+function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   const c = requireCtx()
   const doc = c.doc
   // Nested in an enclosing row, reconcile reads the component state from the

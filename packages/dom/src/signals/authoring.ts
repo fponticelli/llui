@@ -25,6 +25,8 @@ import {
   signalForeign,
   type PropValue,
   type ChildNode,
+  type Mountable,
+  type Renderable,
   type SignalLazyOptions,
   type SignalSpec,
 } from './dom.js'
@@ -55,7 +57,7 @@ export function text(value: Reactive<string | number>): Node {
  * markup — markdown, syntax highlighting). Reactive on a `Signal<string>`; a
  * plain string renders once. The HTML is inserted as-is — the caller owns
  * trust/sanitization. */
-export function unsafeHtml(value: Reactive<string>): Node {
+export function unsafeHtml(value: Reactive<string>): Mountable {
   if (isSignalHandle(value)) return signalUnsafeHtml(value.produce, value.deps)
   return signalUnsafeHtml(() => value, [])
 }
@@ -180,9 +182,9 @@ export function each<T>(
   items: Signal<readonly T[]>,
   opts: {
     key: (item: T) => string | number
-    render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+    render: (item: Signal<T>, index: Signal<number>) => Renderable
   },
-): Node {
+): Mountable {
   if (!isSignalHandle(items)) return compiledAway('each')
   const produce = items.produce as (s: unknown) => readonly T[]
   return signalEach({ items: produce, deps: items.deps }, opts.key, (getCtx) => {
@@ -195,9 +197,9 @@ export function each<T>(
 
 export function show<T>(
   cond: Signal<T>,
-  render: (narrowed: Signal<NonNullable<T>>) => readonly Node[],
-  orElse?: () => readonly Node[],
-): Node {
+  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
+  orElse?: () => Renderable,
+): Mountable {
   if (!isSignalHandle(cond)) return compiledAway('show')
   // the arm reads component state; the cond handle (path-rooted) IS the narrowed
   // signal — its `.at()` resolves against the same state the arm scope receives.
@@ -213,27 +215,27 @@ export function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],
   arms: {
-    [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[]
+    [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => Renderable
   },
-): Node
+): Mountable
 /** Render keyed by a plain string/number signal's value (no narrowing). */
 export function branch<K extends string | number>(
   value: Signal<K>,
-  arms: Partial<Record<K, () => readonly Node[]>>,
-): Node
-export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): Node {
+  arms: Partial<Record<K, () => Renderable>>,
+): Mountable
+export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): Mountable {
   if (!isSignalHandle(value)) return compiledAway('branch')
   if (typeof arg1 === 'function') {
     // 3-arg: discriminant fn + narrowed arms
     const discFn = arg1 as (u: unknown) => string | number
-    const armMap = arms as Record<string, (v: Signal<unknown>) => readonly Node[]>
-    const lowered: Record<string, () => readonly Node[]> = {}
+    const armMap = arms as Record<string, (v: Signal<unknown>) => Renderable>
+    const lowered: Record<string, () => Renderable> = {}
     for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
     return signalBranch({ produce: (s) => discFn(value.produce(s)), deps: value.deps }, lowered)
   }
   // 2-arg: the value IS the discriminant (string/number)
-  const armMap = arg1 as Record<string, () => readonly Node[]>
-  const lowered: Record<string, () => readonly Node[]> = {}
+  const armMap = arg1 as Record<string, () => Renderable>
+  const lowered: Record<string, () => Renderable> = {}
   for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!()
   return signalBranch({ produce: value.produce, deps: value.deps }, lowered)
 }
@@ -245,7 +247,7 @@ export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): N
  * view-helper composition and uncompiled tests can call it directly. */
 export function lazy<LS = unknown, LM = unknown, LE = unknown>(
   opts: SignalLazyOptions<LS, LM, LE>,
-): Node {
+): Mountable {
   return signalLazy(opts)
 }
 
@@ -260,8 +262,8 @@ export function virtualEach<T>(opts: {
   containerHeight: number
   overscan?: number
   class?: string
-  render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
-}): Node {
+  render: (item: Signal<T>, index: Signal<number>) => Renderable
+}): Mountable {
   if (!isSignalHandle(opts.items)) return compiledAway('virtualEach')
   const produce = opts.items.produce as (s: unknown) => readonly T[]
   return signalVirtualEach<T>({
@@ -294,7 +296,7 @@ export function foreign<Inst, State extends Record<string, Signal<unknown>>>(spe
     state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
   }) => Inst
   unmount?: (instance: Inst) => void
-}): Node {
+}): Mountable {
   const stateSpecs: Record<string, SignalSpec<unknown>> = {}
   for (const [k, v] of Object.entries(spec.state ?? {})) {
     // a signal handle carries produce+deps; a plain value becomes a static spec
@@ -324,7 +326,7 @@ export interface SignalComponentSpec<S, M, E = never> {
   name?: string
   init: () => S | [S, E[]]
   update: (state: S, msg: M) => [S, E[]] | S
-  view: (bag: SignalViewBag<S, M>) => readonly Node[]
+  view: (bag: SignalViewBag<S, M>) => Renderable
   onEffect?: (effect: E, api: { send: Send<M>; state: Signal<S> }) => void | (() => void)
 }
 

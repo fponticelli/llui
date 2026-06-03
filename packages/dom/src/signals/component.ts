@@ -10,7 +10,7 @@
 // handle; only event handlers / effects use it (the `state.at('x').peek()` form
 // is left verbatim by the transform and satisfied here at runtime).
 
-import { mountSignal, type SignalMount, type MountTarget } from './dom.js'
+import { mountSignal, type SignalMount, type MountTarget, type Renderable } from './dom.js'
 import { withBindingErrors, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
@@ -58,7 +58,7 @@ export interface SignalComponentDef<S, M, E = never> {
   update: (state: S, msg: M) => [S, E[]] | S
   /** build the view once; reactive reads are signal bindings (they don't close
    * over `state`). The bag's `state` handle is for handlers/effects. */
-  view: (bag: ComponentBag<S, M>) => readonly Node[]
+  view: (bag: ComponentBag<S, M>) => Renderable
   /** handle an effect; may return a cleanup function */
   onEffect?: (effect: E, api: EffectApi<S, M>) => void | (() => void)
 

@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
@@ -213,7 +213,7 @@ export interface OverlayOptions {
   /** Parts from `connect()` — used to locate the content element by id. */
   parts: DialogParts
   /** Content rendering. */
-  content: () => readonly Node[]
+  content: () => Renderable
   /** Optional transition to apply on open/close (from `@llui/transitions`). */
   transition?: TransitionOptions
   /** Close on Escape key (default: true). */
@@ -238,7 +238,7 @@ export interface OverlayOptions {
  * Build the dialog's DOM tree and wire up all accessibility utilities.
  * Returns a `show()` structural block that tracks `state.open`.
  */
-export function overlay(opts: OverlayOptions): Node {
+export function overlay(opts: OverlayOptions): Mountable {
   const targetOpt = opts.target ?? 'body'
   const closeOnEscape = opts.closeOnEscape !== false
   const closeOnOutsideClick = opts.closeOnOutsideClick !== false

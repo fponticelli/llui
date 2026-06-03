@@ -1,4 +1,5 @@
 import { foreign } from '@llui/dom'
+import type { Renderable } from '@llui/dom'
 import type { Signal } from '@llui/dom'
 import type { Route } from '../types'
 
@@ -66,7 +67,7 @@ function renderCode(el: Element, { content, filename }: FileProps): void {
  * be awkward with declarative bindings (building a table of numbered
  * lines from a string that changes when navigating between files).
  */
-export function codeView(routeSig: Signal<Route>): Node[] {
+export function codeView(routeSig: Signal<Route>): Renderable {
   return [
     foreign<Element, { props: Signal<FileProps> }>({
       tag: 'div',

@@ -1,4 +1,5 @@
 import { foreign } from '@llui/dom'
+import type { Renderable } from '@llui/dom'
 import type { Signal } from '@llui/dom'
 import type { Route } from '../types'
 
@@ -14,7 +15,7 @@ interface ReadmeInstance {
  * This demonstrates the foreign() pattern for rendering raw HTML safely
  * inside a managed container with style isolation.
  */
-export function readmeView(routeSig: Signal<Route>): Node[] {
+export function readmeView(routeSig: Signal<Route>): Renderable {
   return [
     foreign<ReadmeInstance, { html: Signal<string> }>({
       tag: 'div',

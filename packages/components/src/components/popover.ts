@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
@@ -169,7 +169,7 @@ export interface OverlayOptions {
   state: Signal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
-  content: () => Node[]
+  content: () => Renderable
   /** Placement preference — bottom | top | right | left with -start/-end variants. */
   placement?: Placement
   /** Offset between trigger and content, px (default: 8). */
@@ -194,7 +194,7 @@ export interface OverlayOptions {
   arrowSelector?: string
 }
 
-export function overlay(opts: OverlayOptions): Node[] {
+export function overlay(opts: OverlayOptions): Renderable {
   const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom'
   const offset = opts.offset ?? 8

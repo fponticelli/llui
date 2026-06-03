@@ -7,7 +7,7 @@
 // loop with no reactive props, a 60fps layer, a deferred chunk with its own
 // lifecycle. Each call documents WHY via the required `reason` field.
 
-import { signalSubApp, type SubAppSpec } from './dom.js'
+import { signalSubApp, type Renderable, type SubAppSpec } from './dom.js'
 
 /**
  * Mount an isolated sub-application at this point in the view. Returns the anchor
@@ -16,7 +16,7 @@ import { signalSubApp, type SubAppSpec } from './dom.js'
  * the sub-app shares no state with the host. Disposed automatically when the host
  * unmounts.
  */
-export function subApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): readonly Node[] {
+export function subApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Renderable {
   return [signalSubApp(spec)]
 }
 

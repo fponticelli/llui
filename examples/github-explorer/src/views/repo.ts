@@ -1,6 +1,6 @@
 import { div, h1, h3, a, p, span, text, show, branch, each } from '@llui/dom'
 import type { State, Msg, Route, Repo, TreeEntry, Issue } from '../types'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'
 import { codeView } from './foreign-code'
@@ -21,7 +21,7 @@ function routeOwnerName(r: Route): { owner: string; name: string } | null {
 // routing.link needs literal owner/name for href. The Route is read from
 // location.pathname at branch-render time — the URL is current because
 // routing.handleEffect pushes state before the navigate message resolves.
-export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>): Node[] {
+export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>): Renderable {
   // owner/name from the current route (literal values for routing.link hrefs)
   const owner = 'owner' in route ? route.owner : ''
   const name = 'name' in route ? route.name : ''
@@ -134,7 +134,7 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
   ]
 }
 
-function breadcrumb(currentRoute: Route, send: Send<Msg>): Node[] {
+function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
   const route = currentRoute
   if (route.page !== 'tree') return []
   const { owner, name, path } = route
@@ -168,7 +168,7 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Node[] {
   return [div({ class: 'breadcrumb' }, crumbs)]
 }
 
-function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Node[] {
+function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'file-tree' }, [
       each(
@@ -213,7 +213,7 @@ function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Node[] {
   ]
 }
 
-function issuesList(routeSig: Signal<Route>): Node[] {
+function issuesList(routeSig: Signal<Route>): Renderable {
   return [
     show(
       routeSig.map(

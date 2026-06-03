@@ -194,6 +194,20 @@ If the chrome itself has local UI state (`isOpen`, `expanded`), model it as a sl
 host owns and pass the sliced signal in (Pattern 1), or — for genuine isolation — use a
 full `child()` boundary.
 
+> **Structural primitives are lazy descriptions — capture and reuse freely.** `each`/`show`/
+> `branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal` return a `Mountable`: a recipe
+> that builds its live nodes (and registers its reactive bindings) at the point it is _placed_,
+> always under the build then in scope. So a `Mountable` stored in a variable and dropped into
+> a slot inside a `show`/`branch` arm rebuilds **fresh on every remount** — no drained nodes, no
+> disposed-scope reuse. Placing the same `Mountable` in two slots yields two independent live
+> instances. This just works:
+>
+> ```ts
+> // built once, captured, reused across every hide/show — renders correctly each time:
+> const slot = [each(rows, { key, render })]
+> show(open, () => [div({ class: 'contents' }, slot)])
+> ```
+
 ---
 
 ## Pattern 5 — `connect()` + delegated update (library components)

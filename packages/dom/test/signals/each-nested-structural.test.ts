@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { div, span, text, each, show, branch } from '../../src/signals/authoring'
+import type { Renderable } from '../../src/signals/dom'
 import type { Signal } from '../../src/signals/types'
 
 // Regression matrix for component-state reads inside STRUCTURAL primitives
@@ -48,7 +49,7 @@ const update = (s: S, m: M): S => {
   }
 }
 
-function mount(view: (state: Signal<S>) => Node[]) {
+function mount(view: (state: Signal<S>) => Renderable) {
   const container = document.createElement('div')
   const h = mountSignalComponent<S, M>(container, {
     init: () => init(),
@@ -60,8 +61,8 @@ function mount(view: (state: Signal<S>) => Node[]) {
 
 // each row over items; `body` builds each row's content from the COMPONENT state
 const rows =
-  (body: (state: Signal<S>, item: Signal<Item>) => readonly Node[]) =>
-  (state: Signal<S>): Node[] => [
+  (body: (state: Signal<S>, item: Signal<Item>) => Renderable) =>
+  (state: Signal<S>): Renderable => [
     each(
       state.map((s) => s.items),
       { key: (i) => i.id, render: (item) => [div([...body(state, item)])] },

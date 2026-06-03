@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable } from '@llui/dom'
 import { button, text, div, h2, p } from '@llui/dom'
 import {
   init as dialogInit,
@@ -121,7 +121,7 @@ export interface ConfirmDialogViewOptions {
   destructiveClass?: string
 }
 
-export function view(opts: ConfirmDialogViewOptions): Node {
+export function view(opts: ConfirmDialogViewOptions): Mountable {
   // Build dialog parts — role='alertdialog' for proper modal semantics.
   // Trigger + closeTrigger parts are unused (we provide our own buttons);
   // their send is a no-op.

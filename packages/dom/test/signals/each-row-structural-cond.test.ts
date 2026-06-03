@@ -13,6 +13,7 @@ import {
 } from '../../src/signals/dom'
 import { derived } from '../../src/signals/handle'
 import { div, ul, li, span, input, text, each, show } from '../../src/signals/authoring'
+import type { Renderable } from '../../src/signals/dom'
 import type { Signal } from '../../src/signals/types'
 
 // Regression suite for STRUCTURAL conditions (show/branch) whose discriminant
@@ -162,7 +163,7 @@ describe('authoring: structural condition reading the row item inside an each ro
   interface S {
     items: Item[]
   }
-  const mount = (view: (s: Signal<S>) => Node[]) => {
+  const mount = (view: (s: Signal<S>) => Renderable) => {
     const c = document.createElement('div')
     const h = mountSignalComponent<S, never>(c, {
       init: () => ({

@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
@@ -191,7 +191,7 @@ export interface OverlayOptions {
   state: Signal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
-  content: () => Node[]
+  content: () => Renderable
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -201,7 +201,7 @@ export interface OverlayOptions {
   arrowSelector?: string
 }
 
-export function overlay(opts: OverlayOptions): Node {
+export function overlay(opts: OverlayOptions): Mountable {
   const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'top'
   const offset = opts.offset ?? 6

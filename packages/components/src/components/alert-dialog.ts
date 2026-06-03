@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import {
   init,
   update,
@@ -45,7 +45,7 @@ export interface AlertDialogOverlayOptions {
   state: Signal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts
-  content: () => readonly Node[]
+  content: () => Renderable
   transition?: TransitionOptions
   closeOnEscape?: boolean
   /** Whether outside-click should dismiss (default: false for alert dialogs). */
@@ -58,7 +58,7 @@ export interface AlertDialogOverlayOptions {
   restoreFocus?: boolean
 }
 
-export function overlay(opts: AlertDialogOverlayOptions): Node {
+export function overlay(opts: AlertDialogOverlayOptions): Mountable {
   return dialogOverlay({
     ...opts,
     closeOnOutsideClick: opts.closeOnOutsideClick ?? false,

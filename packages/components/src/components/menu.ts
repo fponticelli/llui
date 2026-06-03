@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
@@ -350,7 +350,7 @@ export interface OverlayOptions {
   state: Signal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
-  content: () => Node[]
+  content: () => Renderable
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -359,7 +359,7 @@ export interface OverlayOptions {
   target?: string | HTMLElement
 }
 
-export function overlay(opts: OverlayOptions): Node {
+export function overlay(opts: OverlayOptions): Mountable {
   const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4

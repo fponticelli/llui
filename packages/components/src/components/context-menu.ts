@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions } from '@llui/dom'
+import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 
@@ -248,12 +248,12 @@ export interface OverlayOptions {
   state: Signal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
-  content: () => Node[]
+  content: () => Renderable
   transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
-export function overlay(opts: OverlayOptions): Node {
+export function overlay(opts: OverlayOptions): Mountable {
   const rawTarget = opts.target ?? 'body'
   const parts = opts.parts
   const contentId = parts.content.id
