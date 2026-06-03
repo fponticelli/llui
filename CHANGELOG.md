@@ -11,6 +11,12 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-03 — @llui/components@0.6.0
+
+**Released:** `@llui/components@0.6.0`
+
+Now ships a `dist/__llui_deps.json` dependency manifest (the `@llui/compiler@0.7.0` library ABI). No source/API change — the win is for consumers: an app calling a components derive helper in a reactive position (`text((s) => itemFill(s, i))`, `showScrollbars`/`thumbPosition`/`thumbSize`) now narrows the binding to the exact state paths the helper reads instead of coarsening to the whole slice at the npm boundary. Generated at publish time by `scripts/emit-deps.mjs` (wired into `scripts/publish.sh`); requires consumers on `@llui/vite-plugin@0.7.0`+. `connect`/`overlay` parts-helpers compose via runtime Signal handles and are unaffected (correctly `opaque`). See `docs/publishing-a-precompiled-library.md`.
+
 ## 2026-06-03 — @llui/compiler@0.7.0, @llui/vite-plugin@0.7.0
 
 **Released:** `@llui/compiler@0.7.0`, `@llui/vite-plugin@0.7.0`
