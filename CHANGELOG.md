@@ -11,6 +11,62 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-03 — 0.6.0
+
+**Released:** `@llui/dom@0.6.0`; `@llui/{router,transitions,vike,agent}@0.6.0`; `@llui/{components,test}@0.7.0`; `@llui/mcp@0.8.0`; `llui-agent@0.6.0`
+
+Structural primitives become lazy descriptions, fixing a silent blank-render bug when a captured `each`/`show`/`branch` was reused across a remount.
+
+### Breaking
+
+- **`@llui/dom@0.6.0`** — `each`, `show`, `branch`, `unsafeHtml`, `lazy`, `virtualEach`, `foreign`, `portal`, and `provide` now return a `Mountable` (a lazy recipe materialized at placement) instead of a `Node`. Inline usage as element children (`div([show(...)])`) is unchanged. Code that returned one of these at the **top level** of a view-helper array, or treated the return value as a real DOM node, must adapt: annotate the helper's return type `Renderable` (newly exported) instead of `Node[]`, and don't call `Node` methods on the return value before it is placed.
+- **`@llui/components@0.7.0`** — every `overlay()` (dialog, popover, select, menu, tooltip, hover-card, drawer, context-menu, combobox, alert-dialog) and `confirmDialog.view()` now return `Mountable`/`Renderable` instead of `Node`/`Node[]`, since they wrap `show()`. Consumers that place them as children are unaffected.
+
+### Migration
+
+- If you worked around the blank-render bug by passing a builder thunk (`() => [each(...)]`) and calling it inside a `show`/`branch` callback, you can revert to capturing the primitive once (`const slot = [each(...)]`) — reuse across remounts is now correct.
+- For view-helper functions that return a structural primitive at the top of their array, change the return annotation from `Node[]`/`readonly Node[]` to the exported `Renderable`.
+- Bump `@llui/dom` to `^0.6.0` wherever you pin it; the cascade packages now require it.
+
+### `@llui/dom@0.6.0`
+
+- **Fixed** a structural primitive built once and captured, then reused inside a `show`/`branch` arm that toggled, rendered nothing on the second mount — the returned fragment was drained on first insertion and its scope disposed on hide, so re-inserting the same nodes was a silent no-op.
+- **Improved** structural primitives are now lazy `Mountable`s materialized at the point they are placed (by `populate` for element children and `runBuild` for a build's returned array), always under a live build context. The reconcile spec lands in the placing scope, so a captured Mountable rebuilds fresh on every remount, and placing one twice yields two independent live instances.
+- **Added** exported `Mountable`, `Renderable`, `ChildNode` types and the `isMountable` guard.
+
+### `@llui/components@0.7.0`
+
+- **Breaking** overlay/view helpers return `Mountable`/`Renderable`. See top of release block.
+- **Improved** recompiled against the new `@llui/dom` structural-primitive API; requires `@llui/dom@^0.6.0`.
+
+### `@llui/test@0.7.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (no source change; recompiled against the new structural-primitive API).
+
+### `@llui/router@0.6.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (no source change).
+
+### `@llui/transitions@0.6.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (no source change; `transition()` still receives mounted arm nodes, unaffected by the lazy-Mountable change).
+
+### `@llui/vike@0.6.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (no source change; SSR materializes Mountables through the same build seams).
+
+### `@llui/mcp@0.8.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (no source change).
+
+### `@llui/agent@0.6.0`
+
+- **Changed** requires `@llui/dom@^0.6.0` (type-only consumer; peer range bumped).
+
+### `llui-agent@0.6.0`
+
+- **Changed** re-pins `@llui/agent@0.6.0` (internal `workspace:*`, substituted at pack time).
+
 ## 2026-06-03 — @llui/compiler-introspection@0.7.0, @llui/compiler-devtools@0.7.0, @llui/compiler-ssr@0.7.0, @llui/mcp@0.7.0
 
 **Released:** `@llui/compiler-introspection@0.7.0`, `@llui/compiler-devtools@0.7.0`, `@llui/compiler-ssr@0.7.0`, `@llui/mcp@0.7.0`
