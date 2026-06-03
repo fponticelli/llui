@@ -11,6 +11,72 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-03 — 0.7.0
+
+**Released:** `@llui/dom@0.7.0`; `@llui/{router,transitions,vike,agent}@0.7.0`; `llui-agent@0.7.0`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,components,test,vite-plugin}@0.8.0`; `@llui/mcp@0.9.0`
+
+Completes the lazy-`Mountable` model: **every** authoring helper (elements, text, structural primitives) is now a lazy description materialized at placement — capture-and-reuse is correct by construction and the silent double-placement footgun is gone. Plus an accurate API-doc rewrite and removal of the abandoned two-word-bitmask compiler code.
+
+### Breaking
+
+- **`@llui/dom@0.7.0`** — `el`/`elNS`/`text`/`staticText`/`onMount` and the element helpers (`div`/`span`/…) now return a lazy `Mountable` (joining `each`/`show`/`branch`/…), so they are only realized when **placed** (as an element child or in a view/arm/row return). The child type `ChildNode` collapses to `Mountable | string | number` — a bare `Node` is no longer accepted; wrap a raw DOM node with the newly-exported `mountable(() => node)`. A helper called for its side effect (notably `onMount`) is **inert unless its returned marker is placed** in the view array.
+- **`@llui/compiler@0.8.0`** — `collectDeps(source)` returns `{ paths: string[], opaque, … }` instead of the two-word `{ lo, hi }` bitmask maps. The legacy `collectAccessorPathSets` export is removed.
+
+### Migration
+
+- Annotate view-helper functions `Renderable` (a list, `readonly Mountable[]`) or `Mountable` (a single element) — not `Node`/`Node[]`. The compiler's cross-file walker recognizes both.
+- Anywhere you called `onMount(...)` for its side effect and discarded the result, **place** the returned marker instead (`return [onMount(...), …]`). Same for any helper whose return you dropped — discarded helpers now do nothing.
+- Pass raw DOM nodes as children via `mountable(() => node)` rather than the node directly.
+- Consumers of `@llui/compiler`'s `collectDeps` read `.paths` instead of `.lo`/`.hi`.
+
+### `@llui/dom@0.7.0`
+
+- **Breaking** all authoring helpers return `Mountable`; `ChildNode` drops `Node`. See top of release block.
+- **Improved** placing the same captured `Mountable` twice now builds two independent live instances; discarded helpers are fully inert (no orphaned bindings).
+- **Added** `mountable(build)` (build a placeable from a closure / raw node) and `isMountable`, exported alongside the `Mountable`/`Renderable`/`ChildNode` types.
+
+### `@llui/compiler@0.8.0`
+
+- **Breaking** `collectDeps` returns `{ paths }`; `collectAccessorPathSets` removed. See top of release block.
+- **Fixed** the cross-file view-helper walker now recognizes `Mountable`/`Renderable` return types (previously every helper on the new convention was misclassified as opaque, degrading dependency analysis); diagnostics point at the new types.
+- **Improved** retired the abandoned two-word-bitmask machinery (the chunked-mask runtime never used it) and cleaned the stale `__dirty`/`__mask`/`bitmask-overflow` JSDoc that surfaced in the API reference.
+
+### `@llui/vite-plugin@0.8.0`
+
+- **Improved** re-pins `@llui/compiler@0.8.0`; `verbose` log wording updated to the signal model.
+
+### `@llui/components@0.8.0`
+
+- **Fixed** every `overlay()` placed its focus-trap/dismissable/scroll-lock `onMount` marker — under the lazy model a discarded `onMount` was inert, so outside-click / Esc dismissal silently stopped working. Requires `@llui/dom@^0.7.0`.
+
+### `@llui/router@0.7.0`
+
+- **Fixed** `listener()` places its `onMount` marker (was discarded → URL listener never registered); `link()` returns a `Mountable`. Requires `@llui/dom@^0.7.0`.
+
+### `@llui/vike@0.7.0`
+
+- **Changed** `pageSlot()` returns a `Mountable`; `AnyLayer.view` returns `Renderable`. Requires `@llui/dom@^0.7.0`.
+
+### `@llui/test@0.8.0`
+
+- **Changed** `defineTestComponent`'s `view` returns `Renderable`. Requires `@llui/dom@^0.7.0`.
+
+### `@llui/mcp@0.9.0`
+
+- **Changed** `llui_static_collect_paths` reports dependency **paths** + an `opaque` flag (dropped the legacy per-bit / 62-path-budget output). Requires `@llui/dom@^0.7.0` and re-pins `@llui/compiler@0.8.0`.
+
+### `@llui/transitions@0.7.0`, `@llui/agent@0.7.0`, `llui-agent@0.7.0`
+
+- **Changed** require `@llui/dom@^0.7.0` (transitions/agent) / re-pin `@llui/agent@0.7.0` (llui-agent); no source change.
+
+### `@llui/compiler-{devtools,introspection,ssr}@0.8.0`
+
+- **Changed** lockstep re-pin of `@llui/compiler@0.8.0` (internal `workspace:*`); no source change.
+
+### Docs
+
+- Rewrote the `@llui/dom`, `@llui/compiler`, `@llui/vite-plugin`, and `@llui/components` API references off the legacy pre-signals API onto the signal + `Mountable` model, and fixed the auto-API generator (it silently emitted nothing for `dom`/`transitions`, so those references had frozen).
+
 ## 2026-06-03 — 0.6.0
 
 **Released:** `@llui/dom@0.6.0`; `@llui/{router,transitions,vike,agent}@0.6.0`; `@llui/{components,test}@0.7.0`; `@llui/mcp@0.8.0`; `llui-agent@0.6.0`
