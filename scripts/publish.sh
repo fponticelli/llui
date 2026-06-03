@@ -117,6 +117,15 @@ for pkg in "${PKGS[@]}"; do
   ")
   echo "Publishing $name@$version..."
 
+  # Emit the package's __llui_deps.json library-boundary manifest so consumers
+  # can narrow reactive bindings through its helpers (see scripts/emit-deps.mjs).
+  # Requires @llui/compiler to be built (TIER1, already published above). Only
+  # packages with a src/ that ships dist/ benefit; emit-deps no-ops cleanly
+  # elsewhere. Non-fatal — a manifest failure must never block a release.
+  if [ -d "$dir/src" ] && [ -d "$dir/dist" ]; then
+    node scripts/emit-deps.mjs "$dir" || echo "  ⚠ emit-deps skipped for $name"
+  fi
+
   # pnpm publish substitutes workspace:* with the concrete dependency
   # version at pack time, so the published tarball has real semver ranges
   # while the source stays on workspace:* for local resolution.

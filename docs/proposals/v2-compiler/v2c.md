@@ -1,6 +1,6 @@
 # v2c — Module System, Diagnostic Schema, MCP-as-Adapter
 
-> **Status (2026-06-02): REALIZED (public ABI deferred).** The internal `CompilerModule`/`ModuleRegistry` (`module.ts`) and the decomposed opt-in packages (`compiler-introspection`/`-devtools`/`-ssr`) shipped and are wired through `@llui/vite-plugin` and `@llui/mcp`. Only the _public third-party library ABI_ / cross-package `__llui_deps.json` layer remains unbuilt. Retained as design rationale.
+> **Status (2026-06-03): REALIZED.** The internal `CompilerModule`/`ModuleRegistry` (`module.ts`) and the decomposed opt-in packages (`compiler-introspection`/`-devtools`/`-ssr`) shipped and are wired through `@llui/vite-plugin` and `@llui/mcp`. The cross-package `__llui_deps.json` library ABI also shipped (schema v2): producer `build-manifest.ts` + `scripts/emit-deps.mjs`, IO/validation `manifest-io.ts`, resolution `manifest-resolve.ts`, and the consume fallback in `cross-file-walker.ts` (with a `state-value` param shape for `state.map(s => helper(s))`). Retained as design rationale; see `docs/publishing-a-precompiled-library.md`.
 
 **Status:** Proposal. Open for revision until adopted.
 **Depends on:** v2a. (Loosely on v2b — see §1.)

@@ -246,6 +246,68 @@ describe('§4.3.4 withSlice — two-param HOF with readsThroughResultOf', () => 
   })
 })
 
+describe('§4.3.5 itemFill — state-value param (helper(s), schema v2)', () => {
+  // The real @llui/components shape: `state.map(s => itemFill(s, index))`.
+  // `s` is the state VALUE passed directly; itemFill reads value/hoveredValue/
+  // allowHalf from it. `index` is a non-state arg → opaque.
+  const entry: HelperEntry = {
+    kind: 'view-helper',
+    helperLocalPaths: [],
+    viaParams: [
+      { index: 0, shape: 'state-value', reads: ['value', 'hoveredValue', 'allowHalf'] },
+      { index: 1, shape: 'opaque' },
+    ],
+  }
+
+  // Resolve a value expression's path relative to the root param: `s` → '',
+  // `s.foo.bar` → 'foo.bar'; null when not rooted at the param.
+  function extractValuePath(expr: ts.Expression, rootParamName: string): string | null {
+    if (ts.isIdentifier(expr)) return expr.text === rootParamName ? '' : null
+    if (ts.isPropertyAccessExpression(expr)) {
+      const chain = resolveChain(expr, rootParamName)
+      return chain === null ? null : chain
+    }
+    return null
+  }
+
+  it('composes itemFill reads onto the bare state arg (prefix "")', () => {
+    const call = parseExpr(`itemFill(s, index)`)
+    const ctx: SubstitutionContext = {
+      providers: new Map(),
+      extractPaths: makeExtractPaths('s'),
+      rootParamName: 's',
+      extractValuePath,
+    }
+    const result = substituteHelperCall(entry, call.arguments, ctx, 'rating-group#itemFill')
+    expect(result.fullMask).toBe(false)
+    expect(result.paths.sort()).toEqual(['allowHalf', 'hoveredValue', 'value'])
+  })
+
+  it('composes onto a sub-path arg (`s.rating` → rating.value …)', () => {
+    const call = parseExpr(`itemFill(s.rating, index)`)
+    const ctx: SubstitutionContext = {
+      providers: new Map(),
+      extractPaths: makeExtractPaths('s'),
+      rootParamName: 's',
+      extractValuePath,
+    }
+    const result = substituteHelperCall(entry, call.arguments, ctx, 'rating-group#itemFill')
+    expect(result.paths.sort()).toEqual(['rating.allowHalf', 'rating.hoveredValue', 'rating.value'])
+  })
+
+  it('coarsens (FULL_MASK) when the state arg is unrelated / hooks absent', () => {
+    const call = parseExpr(`itemFill(somethingElse, index)`)
+    const ctx: SubstitutionContext = {
+      providers: new Map(),
+      extractPaths: makeExtractPaths('s'),
+      rootParamName: 's',
+      extractValuePath,
+    }
+    const result = substituteHelperCall(entry, call.arguments, ctx, 'rating-group#itemFill')
+    expect(result.fullMask).toBe(true)
+  })
+})
+
 describe('substitution depth + cycle guards', () => {
   it('contributes FULL_MASK + diagnostic when depth exceeds 8', () => {
     const entry: HelperEntry = {

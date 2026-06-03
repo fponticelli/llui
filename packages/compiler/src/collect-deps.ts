@@ -217,7 +217,7 @@ export function shadowsStateParam(
   return false
 }
 
-function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void {
+export function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void {
   function visit(node: ts.Node): void {
     if (out.value) return
     // Nested function/arrow whose parameter shadows `stateParam` —
@@ -868,7 +868,12 @@ const REACTIVE_API_NAMES = new Set([
  * - Direct property access: param.field, param.field.subfield
  * - Bracket notation with string literal: param['field']
  */
-function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void {
+export function extractPaths(
+  node: ts.Node,
+  paramName: string,
+  _prefix: string,
+  paths: Set<string>,
+): void {
   // Stop descending into nested functions whose parameter shadows
   // `paramName`. Any `s.X` read inside refers to the INNER binding,
   // not the outer state. Same reasoning as `detectOpaqueStateFlow`:

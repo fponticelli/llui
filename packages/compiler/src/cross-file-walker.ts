@@ -33,6 +33,8 @@ import {
 } from './diagnostic.js'
 import { isReactiveAccessor } from './collect-deps.js'
 import { isInsideTrackDeps } from './track-utils.js'
+import { lookupHelperFromSymbol } from './manifest-resolve.js'
+import { substituteHelperCall, type SubstitutionContext } from './manifest.js'
 
 export type ViewHelperKind = 'walked' | 'opaque' | 'async' | 'not-a-helper'
 
@@ -693,9 +695,14 @@ function walkAccessorBody(
               )
             } else {
               // Declaration without a body — ambient `declare function`,
-              // overload signature, or compiled .d.ts. State flows in
-              // but we can't see what it reads. Conservative: opaque.
-              opaqueOut.value = true
+              // overload signature, or compiled `.d.ts` in a published
+              // package. State flows in but we can't see the body. Before
+              // coarsening, consult the package's `__llui_deps.json` manifest:
+              // if it describes this helper, substitute its reads through the
+              // call site. Only opaque on a miss or an explicit FULL_MASK.
+              if (!tryManifestFallback(node, sym, paramName, paths, checker)) {
+                opaqueOut.value = true
+              }
             }
           }
         } else if (!decl && ts.isIdentifier(callee) && !NON_DELEGATION_CALLEES.has(callee.text)) {
@@ -725,6 +732,58 @@ function callPassesParamIdent(call: ts.CallExpression, paramName: string): boole
     if (ts.isIdentifier(arg) && arg.text === paramName) return true
   }
   return false
+}
+
+/**
+ * Cross-package narrowing: when a call's callee is a body-less declaration in a
+ * package that ships a `__llui_deps.json`, substitute the helper's manifest
+ * entry through the call site instead of coarsening. Returns true if it
+ * contributed precise paths (caller must NOT coarsen); false on miss / no entry
+ * / FULL_MASK (caller coarsens, preserving soundness).
+ */
+function tryManifestFallback(
+  call: ts.CallExpression,
+  sym: ts.Symbol,
+  paramName: string,
+  paths: Set<string>,
+  checker: ts.TypeChecker,
+): boolean {
+  const lk = lookupHelperFromSymbol(sym, checker)
+  if (lk.kind !== 'found' || !lk.lookup.entry) return false
+  const ctx: SubstitutionContext = {
+    providers: new Map(),
+    extractPaths: (accessor, root) => accessorPathsRootedAt(accessor, root),
+    rootParamName: paramName,
+    extractValuePath: (expr, root) => valuePathRootedAt(expr, root),
+  }
+  const result = substituteHelperCall(lk.lookup.entry, call.arguments, ctx, lk.lookup.helperKey)
+  if (result.fullMask) return false
+  for (const p of result.paths) paths.add(p)
+  return true
+}
+
+/** Dotted path a VALUE expression denotes relative to `root`: `s` → '', `s.a.b` → 'a.b'; null otherwise. */
+function valuePathRootedAt(expr: ts.Expression, root: string): string | null {
+  if (ts.isIdentifier(expr)) return expr.text === root ? '' : null
+  if (ts.isPropertyAccessExpression(expr)) return resolveDepth2(expr, root)
+  return null
+}
+
+/** Depth-2 paths read by an accessor function's body, rooted at its first param. */
+function accessorPathsRootedAt(
+  accessor: ts.ArrowFunction | ts.FunctionExpression,
+  rootParamName: string,
+): string[] {
+  const out = new Set<string>()
+  const visit = (n: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(n)) {
+      const chain = resolveDepth2(n, rootParamName)
+      if (chain) out.add(chain)
+    }
+    ts.forEachChild(n, visit)
+  }
+  if (accessor.body) visit(accessor.body)
+  return [...out]
 }
 
 function descendIntoHelper(

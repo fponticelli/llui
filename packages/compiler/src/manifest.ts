@@ -17,9 +17,15 @@ import ts from 'typescript'
 
 // ── Schema ──────────────────────────────────────────────────────────
 
+/** Current manifest schema version. Bumped 1→2 to add the `state-value`
+ *  param/field shape (helpers called as `helper(s)` with the state value passed
+ *  directly, e.g. `state.map(s => itemFill(s, i))`), which v1's accessor-function
+ *  shapes could not express. Consumers reject other majors via `compilerVersion`. */
+export const MANIFEST_SCHEMA_VERSION = 2
+
 export interface Manifest {
-  /** Schema version. Frozen at 1 in v2b. */
-  version: 1
+  /** Schema version. Currently 2 (see `MANIFEST_SCHEMA_VERSION`). */
+  version: 2
   /** Compiler version that emitted this manifest. */
   compilerVersion: string
   /** Exported helpers keyed by name. */
@@ -59,6 +65,14 @@ export type ParamSpec =
       readsThroughResultOf: number
       innerReads: InnerRead[]
     }
+  /**
+   * The parameter is the STATE VALUE itself, passed directly (not via an
+   * accessor function): `helper(s)` inside `state.map(s => helper(s))`. `reads`
+   * are the dotted sub-paths the helper reads from that value; substitution
+   * composes them onto the call-site argument's path prefix
+   * (`s` → '', `s.foo` → 'foo'). Added in schema v2.
+   */
+  | { index: number; shape: 'state-value'; reads: string[] }
   | { index: number; shape: 'options-bag'; fields: Record<string, FieldSpec> }
   | { index: number; shape: 'send' }
   | { index: number; shape: 'thunk-returning-nodes' }
@@ -71,6 +85,7 @@ export type FieldSpec =
       readsThroughResultOf: number
       innerReads: InnerRead[]
     }
+  | { shape: 'state-value'; reads: string[] }
   | { shape: 'send' }
   | { shape: 'thunk-returning-nodes' }
   | { shape: 'opaque' }
@@ -110,6 +125,20 @@ export interface SubstitutionContext {
     accessor: ts.ArrowFunction | ts.FunctionExpression,
     rootParamName: string,
   ) => string[]
+  /**
+   * The enclosing reactive accessor's root parameter name — the `s` in
+   * `state.map(s => helper(s))` — used to resolve bare `state-value` args.
+   * Absent for accessor-function-only call contexts; then `state-value` params
+   * coarsen to FULL_MASK.
+   */
+  rootParamName?: string
+  /**
+   * Extract the dotted path a VALUE expression denotes relative to
+   * `rootParamName` (`s` → '', `s.foo.bar` → 'foo.bar'); returns null when the
+   * expression is not rooted at the param (so the call coarsens). Injected by
+   * the cross-file walker; tests may stub it.
+   */
+  extractValuePath?: (expr: ts.Expression, rootParamName: string) => string | null
 }
 
 export interface SubstitutionResult {
@@ -185,6 +214,19 @@ export function substituteHelperCall(
 
     if (param.shape === 'send' || param.shape === 'opaque') {
       // No path contribution — send is a Send<M> ref, opaque is intentional.
+      continue
+    }
+
+    if (param.shape === 'state-value') {
+      // The state value itself is passed at `arg`. Compose the helper's
+      // direct reads onto the arg's path prefix.
+      const prefix = resolveValuePrefix(arg, ctx)
+      if (prefix === null) {
+        // Can't tie the arg to the enclosing state root → conservative coarsen.
+        out.fullMask = true
+        continue
+      }
+      for (const r of param.reads) out.paths.push(prefix ? `${prefix}.${r}` : r)
       continue
     }
 
@@ -287,6 +329,16 @@ function substituteField(
   if (fieldSpec.shape === 'send' || fieldSpec.shape === 'opaque') return
   if (fieldSpec.shape === 'thunk-returning-nodes') return // consumer's view walker handles this
 
+  if (fieldSpec.shape === 'state-value') {
+    const prefix = resolveValuePrefix(fieldExpr, ctx)
+    if (prefix === null) {
+      out.fullMask = true
+      return
+    }
+    for (const r of fieldSpec.reads) out.paths.push(prefix ? `${prefix}.${r}` : r)
+    return
+  }
+
   // shape: 'accessor' — field's innerReads compose against the field
   // expression's accessor (depth-1 within the options bag).
   const liftPaths = liftPathsForArg(fieldExpr, ctx)
@@ -315,6 +367,20 @@ function substituteField(
  * return its dotted path reads. Returns [] when the arg is not an arrow/
  * function expression — substitution falls through to no contribution.
  */
+/**
+ * Resolve a `state-value` argument's path prefix relative to the enclosing
+ * accessor root: `s` → '' (identity), `s.foo.bar` → 'foo.bar'. Returns null when
+ * the value can't be tied to the state root (no `extractValuePath` hook, no
+ * `rootParamName`, or an unrelated expression) so the caller coarsens.
+ */
+function resolveValuePrefix(
+  arg: ts.Expression | undefined,
+  ctx: SubstitutionContext,
+): string | null {
+  if (!arg || !ctx.extractValuePath || ctx.rootParamName === undefined) return null
+  return ctx.extractValuePath(arg, ctx.rootParamName)
+}
+
 function liftPathsForArg(arg: ts.Expression | undefined, ctx: SubstitutionContext): string[] {
   if (!arg) return []
   const accessor = unwrapAccessorArg(arg)
