@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-03 — @llui/compiler@0.7.0, @llui/vite-plugin@0.7.0
+
+**Released:** `@llui/compiler@0.7.0`, `@llui/vite-plugin@0.7.0`
+
+Ships the cross-package library ABI — the last deferred piece of the v2-compiler vision. A consumer app can now narrow reactive bindings _through a precompiled package's helpers_ (`text((s) => itemFill(s, i))` from `@llui/components`) instead of coarsening to the whole slice at the npm boundary.
+
+### `@llui/compiler@0.7.0`
+
+- **Feature (manifest schema v2):** added the `state-value` `ParamSpec`/`FieldSpec` shape for helpers called as `helper(s)` — the state value passed directly, the `state.map(s => helper(s))` pattern — which v1's accessor-function shapes could not express. `substituteHelperCall` composes the value-argument's path prefix onto the declared reads. (`manifest.ts`.)
+- **Feature (producer):** `buildManifest(program, { srcRoot })` walks a package's source and emits a `HelperEntry` per narrowable helper, reusing the canonical `extractPaths` / `detectOpaqueStateFlow` (now exported from `collect-deps.ts`) so producer and consumer agree exactly. Any parameter that leaks (passed whole, element access, delegated to an opaque call) is emitted `opaque` → the consumer coarsens, never mis-narrows. (`build-manifest.ts`.)
+- **Feature (IO + resolution):** `serializeManifest` (stable sorted keys) / `parseManifest` (version + structural validation; reasoned failure, never throws) (`manifest-io.ts`); symbol → owning package → `dist/__llui_deps.json` lookup, memoized per package (`manifest-resolve.ts`).
+- **Feature (consume):** the cross-file walker, at a body-less `.d.ts` call it cannot follow, consults the package's manifest and substitutes the helper's reads before coarsening. **Soundness floor:** a missing / version-incompatible / malformed / helper-absent manifest all coarsen to opaque. (`cross-file-walker.ts`; tests `cross-package-narrowing.test.ts`, `build-manifest.test.ts`, `manifest-io.test.ts`, and a `state-value` worked example in `manifest-roundtrip.test.ts`.)
+- **Tooling:** `scripts/emit-deps.mjs` generates a package's `dist/__llui_deps.json`; wired into `scripts/publish.sh` so a normal publish emits a fresh manifest. See `docs/publishing-a-precompiled-library.md`.
+
+### `@llui/vite-plugin@0.7.0`
+
+- **Dependency:** re-pins `@llui/compiler@0.7.0` so apps consuming the plugin pick up cross-package narrowing. No API change.
+
 ## 2026-06-02 — @llui/test@0.6.0
 
 **Released:** `@llui/test@0.6.0`
