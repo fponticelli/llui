@@ -80,8 +80,14 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
       ) {
         let target = node.moduleSpecifier.text
         if (target.startsWith('.')) {
-          target = resolve(srcDir, target)
-          if (!target.endsWith('.ts')) target += '.ts'
+          // Resolve relative to the importing FILE's dir (not srcDir) so nested
+          // entries (e.g. dom's `signals/index.ts`) resolve their `./dom.js`
+          // siblings correctly. ESM specifiers carry a `.js` extension — map it
+          // to the real `.ts` source (a bare `foo.js` → `foo.js.ts` miss is why
+          // dom/transitions previously extracted nothing).
+          target = resolve(dirname(filePath), target)
+          if (target.endsWith('.js')) target = target.slice(0, -3) + '.ts'
+          else if (!target.endsWith('.ts')) target += '.ts'
           filesToParse.add(target)
           if (node.exportClause && ts.isNamedExports(node.exportClause)) {
             const names = reExportedNames.get(target) ?? new Set()
@@ -521,7 +527,11 @@ function injectSection(filePath: string, marker: string, content: string): void 
 
 // Packages to generate API docs for
 const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
-  { name: 'dom', sourceFiles: ['index.ts'] },
+  // dom's public surface is re-exported from `signals/index.ts` (named re-exports
+  // the extractor follows one level into the leaf declaration files); the package
+  // root `index.ts` is an `export *` barrel the extractor can't follow. `dom-env.ts`
+  // adds the SSR env contract (browserEnv / DomEnv).
+  { name: 'dom', sourceFiles: ['signals/index.ts', 'dom-env.ts'] },
   { name: 'effects', sourceFiles: ['index.ts'] },
   { name: 'router', sourceFiles: ['index.ts', 'connect.ts'] },
   { name: 'transitions', sourceFiles: ['index.ts'] },

@@ -146,6 +146,52 @@ function _renderChain(
 ): { html: string; envelope: HydrationEnvelope }
 ```
 
+### `pageSlot()`
+
+Declare where a persistent layout renders its nested content — either
+a nested layout or the route's page component. The vike adapter's
+client and server render paths walk the layout chain, and each layer's
+`pageSlot()` call records the position where the next layer mounts.
+Emits a single `<!-- llui-page-slot -->` comment as an insertion
+anchor. The nested layer's DOM lives as siblings of this comment
+within the layout's own parent element; a synthesized end sentinel
+(`<!-- llui-mount-end -->`) brackets the owned region.
+Contexts provided by the layout (via `provide()`) ABOVE the slot are
+reachable from inside the nested page: `pageSlot()` snapshots the
+in-scope context values and the adapter replays them into the nested
+layer's build. That's how patterns like a layout-owned toast
+dispatcher work — the page does `useContext(ToastContext)` and reads
+the value the layout provided above the slot.
+Do NOT name the file `+Layout.ts` — Vike reserves the `+` prefix for
+its own framework config conventions. Use `Layout.ts`, `app-layout.ts`,
+or anywhere outside `/pages` that Vike won't scan.
+
+```ts
+// pages/Layout.ts    ← not +Layout.ts
+import { component, div, main, header } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => ({  ...  }),
+  update: layoutUpdate,
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      header([...]),
+      main([pageSlot()]),    // ← here the page goes (no wrapper div)
+    ]),
+  ],
+})
+```
+
+Returns a `Mountable` (the slot's anchor comment) — drop it straight into
+a children array (`main([pageSlot()])`); no spread needed.
+Call exactly once per layout. Calling more than once in a single
+view throws (when both are placed).
+
+```typescript
+function pageSlot(): Mountable
+```
+
 ### `fromTransition()`
 
 Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
@@ -272,7 +318,7 @@ export interface AnyLayer {
   readonly name?: string
   init(): unknown
   update(state: unknown, msg: unknown): unknown
-  view(bag: unknown): readonly Node[]
+  view(bag: unknown): Renderable
   onEffect?(effect: unknown, api: unknown): void | (() => void)
 }
 ```

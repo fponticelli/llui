@@ -187,7 +187,7 @@ export function overlay(opts: OverlayOptions): Mountable {
           : rawTarget
       return [
         portal(() => {
-          onMount(() => {
+          const dismissable = onMount(() => {
             const contentEl = document.getElementById(contentId)
             const triggerEl = document.getElementById(triggerId)
             if (!contentEl || !triggerEl) return
@@ -206,7 +206,7 @@ export function overlay(opts: OverlayOptions): Mountable {
               arrow: arrow ?? undefined,
             })
           })
-          return [div(parts.positioner, opts.content())]
+          return [dismissable, div(parts.positioner, opts.content())]
         }, targetEl),
       ]
     },

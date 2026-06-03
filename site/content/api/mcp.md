@@ -54,12 +54,12 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 | `why_did_update` | Explain which state change triggered a binding |
 | `trace_element`  | Trace a DOM element back to its binding        |
 
-### Bitmask Debugging
+### Mask Debugging
 
-| Tool          | Description                            |
-| ------------- | -------------------------------------- |
-| `decode_mask` | Decode a bitmask into state path names |
-| `mask_legend` | Show the full bit-to-path mapping      |
+| Tool          | Description                                              |
+| ------------- | -------------------------------------------------------- |
+| `decode_mask` | Decode a binding's dependency mask into state path names |
+| `mask_legend` | Show the full mask-to-path mapping                       |
 
 ### Snapshots
 

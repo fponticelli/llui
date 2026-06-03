@@ -48,7 +48,7 @@ const compiledAway = (name: string): never => {
 }
 
 // ── Text ────────────────────────────────────────────────────────────
-export function text(value: Reactive<string | number>): Node {
+export function text(value: Reactive<string | number>): Mountable {
   if (isSignalHandle(value)) return signalText(value.produce, value.deps)
   return staticText(value == null ? '' : String(value))
 }
@@ -72,11 +72,12 @@ export type AttrValue = Reactive<string | number | boolean | null | undefined>
 export type ElProps = Record<string, AttrValue | ((ev: any) => void)>
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
- * or `tag()` — a leading array literal is children. Children may be built nodes
- * or bare strings/numbers (coerced to text nodes at append time). */
+ * or `tag()` — a leading array literal is children. Children are `Mountable`s (from
+ * other helpers) or bare strings/numbers (coerced to text nodes at append time).
+ * Returns a `Mountable`, materialized when placed. */
 export interface ElementHelper {
-  (children: readonly ChildNode[]): Node
-  (props?: ElProps, children?: readonly ChildNode[]): Node
+  (children: readonly ChildNode[]): Mountable
+  (props?: ElProps, children?: readonly ChildNode[]): Mountable
 }
 
 function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
@@ -92,7 +93,7 @@ function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
 }
 
 function elementHelper(tag: string): ElementHelper {
-  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Node => {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
     const children = (Array.isArray(a0) ? a0 : a1) ?? []
     return el(tag, lowerProps(props), children)
@@ -101,7 +102,7 @@ function elementHelper(tag: string): ElementHelper {
 
 /** SVG element helper (namespaced) — same call forms as HTML helpers. */
 function svgHelper(tag: string): ElementHelper {
-  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Node => {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
     const children = (Array.isArray(a0) ? a0 : a1) ?? []
     return elNS(tag, lowerProps(props), children)

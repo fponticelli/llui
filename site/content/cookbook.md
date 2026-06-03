@@ -373,10 +373,10 @@ a **signal handle** for its slice plus the parent's `send`.
 
 ```typescript
 import { nav, button, text } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 // views/header.ts
-export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Node[] {
+export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Renderable {
   return [
     nav([
       text(user.map((u) => u?.name ?? 'Guest')),
@@ -402,11 +402,11 @@ decoupled from the parent's full state shape.
 
 ```typescript
 import { div, text, span } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Signal, Renderable } from '@llui/dom'
 
 type UserSlice = { name: string; email: string; active: boolean }
 
-function userCard(user: Signal<UserSlice>): Node[] {
+function userCard(user: Signal<UserSlice>): Renderable {
   return [
     div({ class: user.at('active').map((a) => (a ? 'card active' : 'card')) }, [
       span([text(user.at('name'))]),
@@ -585,7 +585,7 @@ through every view function:
 
 ```typescript
 import { createContext, provide, useContext, div, text } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Signal, Renderable } from '@llui/dom'
 
 // Declare a typed context with a default value:
 const ThemeContext = createContext<Signal<'light' | 'dark'>>(/* default */ undefined!)
@@ -595,7 +595,7 @@ view: ({ state, send }) =>
   provide(ThemeContext, state.at('theme'), () => [header(state.at('user'), send), main([])])
 
 // Consume anywhere in the subtree:
-export function card(): Node[] {
+export function card(): Renderable {
   const theme = useContext(ThemeContext)
   return [div({ class: theme.map((t) => `card theme-${t}`) }, [...])]
 }
@@ -1115,7 +1115,7 @@ propertyTest(MyComponent, {
 ## DevTools / MCP Debugging
 
 LLui ships a debug API that an LLM (or any tool) can use to inspect state,
-send messages, replay traces, and decode bitmasks — all while the app is
+send messages, replay traces, and decode dependency masks — all while the app is
 running in the browser.
 
 ### How it works

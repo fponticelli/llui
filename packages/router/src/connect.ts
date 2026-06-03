@@ -1,5 +1,6 @@
 import type { Router } from './index.js'
 import { a, onMount } from '@llui/dom'
+import type { Mountable, Renderable, ChildNode } from '@llui/dom'
 
 // ── Router Effects ───────────────────────────────────────────────
 
@@ -78,9 +79,9 @@ export interface ConnectedRouter<R> {
 
   /**
    * View helper: attach URL change listener via onMount.
-   * Returns an empty comment node. Sends { type: 'navigate', route } on URL change.
+   * Returns the onMount marker to place in the view. Sends { type: 'navigate', route } on URL change.
    */
-  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[]
+  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable
 
   /**
    * View helper: render a navigation link.
@@ -90,12 +91,13 @@ export interface ConnectedRouter<R> {
     send: (msg: M) => void,
     route: R,
     attrs: Record<string, unknown>,
-    children: Node[],
+    children: readonly ChildNode[],
     msgFactory?: (route: R) => M,
-  ): Node
+  ): Mountable
 
   /**
-   * Create an update handler for mergeHandlers.
+   * Create an update handler for navigate messages — call it from your
+   * component's `update` (returns early when it handles the message).
    * Returns [newState, Effect[]] for navigate messages, null for others.
    */
   createHandler<S, M, E>(config: {
@@ -234,51 +236,56 @@ export function connectRouter<R>(
       return true
     },
 
-    listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[] {
+    listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable {
       const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
-      onMount(() => {
-        // Capture send/factory so the navigate() effect can dispatch
-        // route-changed messages from any reducer, not just from
-        // popstate or click handlers. Stored as the generic `unknown`
-        // shape so applyEffect doesn't need to know R or M; the only
-        // consumer is the navigate case above, which round-trips R
-        // through factory back to the user's M.
-        listenerSend = send as (msg: unknown) => void
-        listenerFactory = factory as (route: R) => unknown
+      // Place the onMount marker in the view; its callback registers the URL listener
+      // on mount. (onMount is a lazy Mountable — calling it for side effect and
+      // discarding the return would never register.)
+      return [
+        onMount(() => {
+          // Capture send/factory so the navigate() effect can dispatch
+          // route-changed messages from any reducer, not just from
+          // popstate or click handlers. Stored as the generic `unknown`
+          // shape so applyEffect doesn't need to know R or M; the only
+          // consumer is the navigate case above, which round-trips R
+          // through factory back to the user's M.
+          listenerSend = send as (msg: unknown) => void
+          listenerFactory = factory as (route: R) => unknown
 
-        const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
-        const handler = () => {
-          const input = router.mode === 'hash' ? location.hash : location.pathname + location.search
-          const route = router.match(input)
-          const finalRoute = runGuards(route)
-          if (finalRoute === null) {
-            // Guard blocked — restore previous URL
-            if (currentRoute !== null) {
-              const restorePath = router.href(currentRoute)
-              history.pushState(null, '', restorePath)
+          const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
+          const handler = () => {
+            const input =
+              router.mode === 'hash' ? location.hash : location.pathname + location.search
+            const route = router.match(input)
+            const finalRoute = runGuards(route)
+            if (finalRoute === null) {
+              // Guard blocked — restore previous URL
+              if (currentRoute !== null) {
+                const restorePath = router.href(currentRoute)
+                history.pushState(null, '', restorePath)
+              }
+              return
             }
-            return
+            currentRoute = finalRoute
+            send(factory(finalRoute))
           }
-          currentRoute = finalRoute
-          send(factory(finalRoute))
-        }
-        window.addEventListener(event, handler)
-        return () => {
-          window.removeEventListener(event, handler)
-          listenerSend = null
-          listenerFactory = null
-        }
-      })
-      return [document.createComment('router')]
+          window.addEventListener(event, handler)
+          return () => {
+            window.removeEventListener(event, handler)
+            listenerSend = null
+            listenerFactory = null
+          }
+        }),
+      ]
     },
 
     link<M>(
       send: (msg: M) => void,
       route: R,
       attrs: Record<string, unknown>,
-      children: Node[],
+      children: readonly ChildNode[],
       msgFactory?: (route: R) => M,
-    ): Node {
+    ): Mountable {
       const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
       return a(
         {

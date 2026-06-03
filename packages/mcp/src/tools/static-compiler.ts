@@ -84,7 +84,7 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
     {
       name: 'llui_static_collect_paths',
       description:
-        'Return the reactive state-access paths the @llui/compiler would extract from a file, plus the per-bit assignments and a budget summary. Companion to `llui_explain_mask` (live) — works without a running app, useful for understanding why a binding does/does not pick up a state change.',
+        'Return the reactive state-access dependency paths the @llui/compiler would extract from a file (the paths the runtime gates each binding on), with a per-top-level-field breakdown. Companion to `llui_explain_mask` (live) — works without a running app, useful for understanding why a binding does/does not pick up a state change. `opaque` is true when an unresolvable accessor forced whole-state coarsening.',
       schema: z.object({
         file: z.string().describe('Absolute or workspace-relative path to a .ts/.tsx file.'),
       }),
@@ -101,41 +101,24 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
           error: `Could not read file: ${(err as Error).message}`,
         }
       }
-      const { lo, hi } = collectDeps(source)
-      const lowEntries = [...lo.entries()].map(([path, bit]) => ({
-        path,
-        bit,
-        word: 'lo' as const,
-      }))
-      const highEntries = [...hi.entries()].map(([path, bit]) => ({
-        path,
-        bit,
-        word: 'hi' as const,
-      }))
-      const all = [...lowEntries, ...highEntries]
-      const total = all.length
+      const { paths, opaque } = collectDeps(source)
+      const sorted = [...paths].sort()
 
       // Top-level field rollup so callers can see which slices dominate.
       const byTopLevel = new Map<string, number>()
-      for (const e of all) {
-        const top = e.path.split('.', 1)[0]!
+      for (const p of sorted) {
+        const top = p.split('.', 1)[0]!
         byTopLevel.set(top, (byTopLevel.get(top) ?? 0) + 1)
       }
       const breakdown = [...byTopLevel.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([field, count]) => ({ field, count }))
 
-      // Budget warning. 62 is the two-word ceiling; past it the
-      // bitmask-overflow rule fires and bindings fall back to FULL_MASK.
-      const overflow = total > 62
-      const fullMaskBits = all.filter((e) => e.bit === -1).length
-
       return {
-        total,
-        overflow,
-        fullMaskBits,
+        total: sorted.length,
+        opaque,
         breakdown,
-        paths: all,
+        paths: sorted,
       }
     },
   )

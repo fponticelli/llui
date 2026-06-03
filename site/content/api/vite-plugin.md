@@ -1,11 +1,11 @@
 ---
 title: '@llui/vite-plugin'
-description: 'Compiler: 3-pass TypeScript transform, bitmask injection, diagnostics'
+description: 'Wires the @llui/compiler signal transform into Vite — view lowering, introspection, lint-as-error diagnostics'
 ---
 
 # @llui/vite-plugin
 
-Vite plugin compiler for [LLui](https://github.com/fponticelli/llui). 3-pass TypeScript transform that eliminates the virtual DOM at compile time.
+Vite adapter for [LLui](https://github.com/fponticelli/llui). Wires the `@llui/compiler` signal transform into Vite — lowering signal expressions in component views to runtime helpers, emitting introspection metadata, and surfacing the signal lint rules as non-bypassable build errors. There is no virtual DOM.
 
 ```bash
 pnpm add -D @llui/vite-plugin
@@ -33,13 +33,14 @@ llui({
 
 ## What It Does
 
-The compiler runs 3 passes over every `.ts`/`.tsx` file using the TypeScript Compiler API:
+The plugin runs a single **signal transform** (`@llui/compiler`) over every `.ts`/`.tsx`
+file using the TypeScript Compiler API:
 
-| Pass | Name           | Description                                                                                                                                                                      |
-| ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Prop split     | Rewrites element helpers to `elSplit()`/`elTemplate()` for template cloning. Separates static props (set once at mount) from dynamic props (updated on state change).            |
-| 2    | Mask injection | Analyzes state dependencies, assigns bitmask bits to state paths, injects `__dirty(oldState, newState)` per component. Rewrites `text()` and binding callbacks with mask guards. |
-| 3    | Import cleanup | Removes unused imports introduced or made redundant by earlier passes.                                                                                                           |
+| Step                   | What it does                                                                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| View lowering          | Lowers signal expressions in a component's DIRECT view to runtime helpers (`signalText` / `el` / `react` / `signalEach` / `signalShow` / `signalBranch` / …). An optimization — anything it can't lower runs via the runtime authoring helpers, so both forms coexist. |
+| Introspection metadata | Emits component / msg / state metadata (and, via opt-in compiler modules, agent schemas and devtools `__componentMeta`).                                                                                                                                               |
+| Lint rules             | Runs the signal lint set as **non-bypassable build errors** (surfaced via `this.error()`): `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, plus shared cross-file / agent / convention checks.                               |
 
 ## Diagnostics
 
@@ -101,10 +102,10 @@ export interface LluiPluginOptions {
 
   /**
    * Emit `[llui]`-prefixed `console.info` logs for every transformed
-   * component file — state-path bit assignments, mask injections, and
-   * helper compile/bail counts. Useful when diagnosing why a binding
-   * isn't gated the way you expect, or why a call fell back from
-   * template-clone to `elSplit`. Off by default.
+   * component file — the dependency paths discovered per binding and the
+   * view-lowering compile/bail counts. Useful when diagnosing why a binding
+   * isn't gated the way you expect, or why a view expression fell back to the
+   * runtime authoring helpers instead of being lowered. Off by default.
    */
   verbose?: boolean
 

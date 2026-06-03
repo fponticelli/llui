@@ -218,7 +218,7 @@ export function overlay(opts: OverlayOptions): Renderable {
             : rawTarget
         return [
           portal(() => {
-            onMount(() => {
+            const dismissable = onMount(() => {
               const contentEl = document.getElementById(contentId)
               const triggerEl = document.getElementById(triggerId)
               if (!contentEl || !triggerEl) return
@@ -271,7 +271,7 @@ export function overlay(opts: OverlayOptions): Renderable {
                 for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
               }
             })
-            return [div(parts.positioner, opts.content())]
+            return [dismissable, div(parts.positioner, opts.content())]
           }, targetEl),
         ]
       },

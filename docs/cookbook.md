@@ -177,10 +177,10 @@ takes a **signal handle** for its slice plus the parent's `send`.
 
 ```typescript
 import { nav, button, text } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 // views/header.ts
-export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Node[] {
+export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Renderable {
   return [
     nav([
       text(user.map((u) => u?.name ?? 'Guest')),
@@ -201,7 +201,7 @@ tax: `state.at('dashboard').at('toolbar').at('menuOpen')` gets its own dependenc
 
 ```typescript
 import { div, text, each } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 type Tool = { id: string; label: string }
 
@@ -209,7 +209,7 @@ export function toolbar(
   tools: Signal<Tool[]>,
   activeId: Signal<string | null>,
   send: Send<ToolbarMsg>,
-): Node[] {
+): Renderable {
   return [
     div({ class: 'toolbar' }, [
       each(tools, {
@@ -314,6 +314,7 @@ stable record (a dispatcher, a locale, a design-token set), not a per-keystroke 
 
 ```typescript
 import { createContext, provide, useContext, div, button, text } from '@llui/dom'
+import type { Renderable } from '@llui/dom'
 
 interface ToastDispatcher {
   show: (msg: string) => void
@@ -331,7 +332,7 @@ view: ({ send }) => [
 ]
 
 // Consume anywhere in the subtree — returns the provided value:
-export function saveButton(): Node[] {
+export function saveButton(): Renderable {
   const toast = useContext(ToastContext)
   return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
 }

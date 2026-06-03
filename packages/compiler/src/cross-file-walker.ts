@@ -13,10 +13,12 @@
 //              one of the documented structural subsets (send-only,
 //              text-only, send+text, send+show+each+branch).
 //     case 2 — the callee's *declared* return type is assignable to
-//              Node, Node[], Node|undefined, or ReadonlyArray<Node>.
+//              Mountable / Renderable (the authoring view-content types), or
+//              the legacy Node / Node[] / Node|undefined / ReadonlyArray<Node>
+//              shapes (kept for raw-node interop).
 //     case 3 — the callee has a `/** @llui-helper */` JSDoc tag.
 //
-// Async helpers (declared return Promise<Node[]>) are NOT view-helpers
+// Async helpers (declared return Promise<…>) are NOT view-helpers
 // and produce `llui/async-view-helper` (hard error).
 //
 // Everything else: opaque. Emits `llui/opaque-view-call` if the call site
@@ -257,7 +259,15 @@ function isNodeLike(t: ts.Type, _checker: ts.TypeChecker): boolean {
   const sym = t.getSymbol()
   if (!sym) return false
   const name = sym.getName()
-  // Built-in DOM Node base types — return true on the abstract names.
+  // `Mountable` is the lazy view-content type every authoring helper returns
+  // (`el`/`text`/`each`/`show`/…). A helper annotated `: Mountable` returns it
+  // singularly; `: Renderable` (= `readonly Mountable[]`) hits the Array branch
+  // above with `Mountable` as its element. Recognizing it keeps view helpers on
+  // the new convention from being misclassified as opaque.
+  if (name === 'Mountable') return true
+  // Built-in DOM Node base types — return true on the abstract names. (Still
+  // accepted for raw-node interop and pre-Mountable helpers; LLui's own helpers
+  // no longer return these.)
   if (
     name === 'Node' ||
     name === 'Element' ||
@@ -380,7 +390,7 @@ export function walkProgram(
               pos: node.getStart(sf),
               end: node.getEnd(),
               helperName: getCalleeName(callee),
-              message: `Call to "${getCalleeName(callee) ?? '<unknown>'}" in a view position is opaque to the cross-file walker (${cls.reason}). Either add an explicit return-type annotation (Node[] / Node / ReadonlyArray<Node>), accept a View bag parameter (or a documented subset), or mark with /** @llui-helper */ if the helper genuinely cannot be annotated. As a last resort, use track({ deps: ... }) at the call site.`,
+              message: `Call to "${getCalleeName(callee) ?? '<unknown>'}" in a view position is opaque to the cross-file walker (${cls.reason}). Either add an explicit return-type annotation (Renderable / Mountable), accept a View bag parameter (or a documented subset), or mark with /** @llui-helper */ if the helper genuinely cannot be annotated. As a last resort, use track({ deps: ... }) at the call site.`,
             })
           } else if (cls.kind === 'async' && isViewPositionCall(node, checker)) {
             diagnostics.push({
@@ -389,7 +399,7 @@ export function walkProgram(
               pos: node.getStart(sf),
               end: node.getEnd(),
               helperName: getCalleeName(callee),
-              message: `Call to "${getCalleeName(callee) ?? '<unknown>'}" in a view position returns Promise<Node[] | Node>. LLui's view layer is synchronous — wrap async work in onMount() or use clientOnly() instead.`,
+              message: `Call to "${getCalleeName(callee) ?? '<unknown>'}" in a view position returns a Promise. LLui's view layer is synchronous — wrap async work in onMount() or use clientOnly() instead.`,
             })
           }
         }

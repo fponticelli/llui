@@ -677,6 +677,36 @@ function connect(
 ): ConnectBag
 ```
 
+### `makeDefaultCodecs()`
+
+```typescript
+function makeDefaultCodecs(): CodecRegistry
+```
+
+### `encodeForWire()`
+
+Recursively walk `value`. For any node a codec claims via
+`matchesRuntime`, replace it with `{ __codec, wire }`. Returns a
+fresh structure — never mutates the input.
+The codec match takes precedence over object/array recursion: a
+`Date` is technically `typeof === 'object'`, but the iso-date codec
+should claim it before the generic walker tries to enumerate keys.
+
+```typescript
+function encodeForWire(value: unknown, registry: CodecRegistry): unknown
+```
+
+### `decodeFromWire()`
+
+Recursively walk `value`. For any tagged shape `{ __codec, wire }`,
+look up the codec by name and replace with the decoded runtime
+value. Tagged shapes whose codec name is unknown pass through
+untouched so the consumer can inspect them directly.
+
+```typescript
+function decodeFromWire(value: unknown, registry: CodecRegistry): unknown
+```
+
 ## Types
 
 ### `CoreOptions`
@@ -2459,6 +2489,25 @@ export interface MinimalDurableObjectStub {
 }
 ```
 
+### `AgentCodec`
+
+```typescript
+export interface AgentCodec<TWire = unknown, TRuntime = unknown> {
+  /** Stable identifier used as the value of the `__codec` tag. */
+  readonly name: string
+  /** Convert a runtime value to its wire representation. */
+  encode(value: TRuntime): TWire
+  /** Convert a wire representation back to the runtime value. */
+  decode(wire: TWire): TRuntime
+  /**
+   * Predicate identifying runtime values this codec should handle. The
+   * universal encoder calls this on every value it walks; the first
+   * codec to return `true` claims the value.
+   */
+  matchesRuntime(value: unknown): boolean
+}
+```
+
 ## Classes
 
 ### `InMemoryTokenStore`
@@ -2537,6 +2586,19 @@ class AgentPairingDurableObject {
 }
 ```
 
+### `CodecRegistry`
+
+```typescript
+class CodecRegistry {
+  byName
+  inOrder: AgentCodec[]
+  register(codec: AgentCodec): void
+  get(name: string): AgentCodec | undefined
+  matchRuntime(value: unknown): AgentCodec | undefined
+  clone(): CodecRegistry
+}
+```
+
 ## Constants
 
 ### `WsPairingRegistry`
@@ -2547,6 +2609,64 @@ Back-compat alias for the prior class name. New code should use
 
 ```typescript
 const WsPairingRegistry
+```
+
+### `WIRE_TAG`
+
+Wire-format codecs for non-JSON-safe values flowing across the LAP
+boundary.
+JSON natively supports `string | number | boolean | null | array |
+object`. Component messages and state often carry values that don't
+round-trip through JSON: `Date`, `Blob`, `File`, `Map`, `Set`,
+`BigInt`, `ArrayBuffer`. A codec is the convention that lets these
+cross the wire without forcing every component author to invent
+their own envelope.
+**Wire convention.** A non-JSON-safe runtime value travels as a
+tagged object:
+{ \_\_codec: '<name>', wire: <encoded form> }
+The runtime walks every value crossing the LAP boundary and applies
+the codec registry symmetrically:
+
+- **Outgoing** (component → agent, e.g. `stateAfter`): the encoder
+  looks up a codec whose `matchesRuntime` returns true and replaces
+  the value with its tagged shape.
+- **Incoming** (agent → component, e.g. dispatched `msg`): the
+  decoder detects the tagged shape, calls the codec's `decode`,
+  and substitutes the runtime value before `update()` runs.
+  Component code never observes the tagged form. By the time a
+  reducer sees `msg.value`, a real `Date` (or whatever) is in place;
+  by the time the agent reads `stateAfter`, every `Date` has been
+  encoded.
+  **Authoring.** When a Msg variant carries a non-JSON-safe field,
+  tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
+  For example, a date-input message:
+  @intent("Set the parsed date")
+  @codec("iso-date")
+  | { type: 'setValue'; value: Date | null }
+  The `@codec` tag is documentation for human readers and the
+  eventual schema generator that publishes the message catalogue to
+  the agent client. The runtime encode/decode is registry-driven and
+  doesn't need per-field metadata.
+  **Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
+  ISO 8601 string) and `epoch-millis` (Date ↔ number). The
+  `epoch-millis` codec is registered but its `matchesRuntime` returns
+  `false` by default — it's available for explicit decode but doesn't
+  shadow `iso-date` on the encode side. Consumers who prefer epoch
+  millis can construct a registry that lists `epoch-millis` first.
+  **File / Blob.** Not in the default registry. File/Blob handling is
+  environment-specific (browser File API vs. Node Buffer vs. workers)
+  and the encoded form is large enough that consumers should opt in
+  deliberately. Provide your own codec via `registry.register({...})`
+  when a component needs it.
+
+```typescript
+const WIRE_TAG
+```
+
+### `WIRE_VALUE`
+
+```typescript
+const WIRE_VALUE
 ```
 
 <!-- auto-api:end -->

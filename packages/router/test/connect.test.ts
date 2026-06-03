@@ -129,12 +129,9 @@ describe('connectRouter', () => {
 
     it('renders an anchor with the correct href', () => {
       withView(() => {
-        const el = routing.link(
-          vi.fn(),
-          { page: 'article', slug: 'hello' },
-          { class: 'my-link' },
-          [],
-        ) as HTMLAnchorElement
+        const el = routing
+          .link(vi.fn(), { page: 'article', slug: 'hello' }, { class: 'my-link' }, [])
+          .mount() as HTMLAnchorElement
         expect(el.tagName).toBe('A')
         expect(el.getAttribute('href')).toBe('#/article/hello')
         expect(el.className).toBe('my-link')
@@ -144,7 +141,7 @@ describe('connectRouter', () => {
     it('prevents default on click', () => {
       withView(() => {
         const send = vi.fn()
-        const el = routing.link(send, { page: 'article', slug: 'test' }, {}, [])
+        const el = routing.link(send, { page: 'article', slug: 'test' }, {}, []).mount()
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(true)
@@ -164,7 +161,7 @@ describe('connectRouter', () => {
         )
         const historyRouting = connectRouter(historyRouter)
         const send = vi.fn()
-        const el = historyRouting.link(send, { page: 'article', slug: 'test' }, {}, [])
+        const el = historyRouting.link(send, { page: 'article', slug: 'test' }, {}, []).mount()
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(true)
@@ -178,7 +175,7 @@ describe('connectRouter', () => {
     it('does not intercept ctrl+click', () => {
       withView(() => {
         const send = vi.fn()
-        const el = routing.link(send, { page: 'home' }, {}, [])
+        const el = routing.link(send, { page: 'home' }, {}, []).mount()
         const event = new MouseEvent('click', {
           bubbles: true,
           cancelable: true,
@@ -194,7 +191,7 @@ describe('connectRouter', () => {
     it('does not intercept meta+click', () => {
       withView(() => {
         const send = vi.fn()
-        const el = routing.link(send, { page: 'home' }, {}, [])
+        const el = routing.link(send, { page: 'home' }, {}, []).mount()
         const event = new MouseEvent('click', {
           bubbles: true,
           cancelable: true,
@@ -218,10 +215,12 @@ describe('connectRouter', () => {
         )
         const historyRouting = connectRouter(historyRouter)
         const send = vi.fn()
-        const el = historyRouting.link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({
-          type: 'goto',
-          route: r,
-        }))
+        const el = historyRouting
+          .link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({
+            type: 'goto',
+            route: r,
+          }))
+          .mount()
         el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
         expect(send).toHaveBeenCalledWith({ type: 'goto', route: { page: 'article', slug: 'x' } })
       })
@@ -254,18 +253,14 @@ describe('connectRouter', () => {
       const historyRouting = connectRouter(historyRouter)
 
       const container = document.createElement('div')
-      let href = ''
       const App = component({
         name: 'T',
         init: () => [null, []],
         update: (s) => [s, []],
-        view: () => {
-          const el = historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])
-          href = (el as HTMLAnchorElement).getAttribute('href') ?? ''
-          return [el]
-        },
+        view: () => [historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])],
       })
       const handle = mountApp(container, App)
+      const href = container.querySelector('a')!.getAttribute('href') ?? ''
       expect(href).toBe('/search?q=test')
       handle.dispose()
     })

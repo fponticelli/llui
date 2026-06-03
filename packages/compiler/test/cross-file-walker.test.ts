@@ -116,6 +116,33 @@ describe('cross-file-walker §2.1 termination rule', () => {
       expect(cls.cases).toContain(2)
     })
 
+    // New convention: authoring helpers return `Mountable` (singular) /
+    // `Renderable` (= readonly Mountable[]), not raw Node shapes.
+    it('walks a helper returning Mountable', () => {
+      const fx = makeProgram({
+        '/dom.ts': `export interface Mountable { readonly __m: true; mount(): Node }`,
+        '/h.ts': `import type { Mountable } from './dom'
+export function helper(): Mountable { return {} as Mountable }`,
+      })
+      const sym = findExportedSymbol(fx.sourceFiles.get('/h.ts')!, 'helper', fx.checker)
+      const cls = classifyViewHelper(sym, fx.checker)
+      expect(cls.kind).toBe('walked')
+      expect(cls.cases).toContain(2)
+    })
+
+    it('walks a helper returning Renderable (readonly Mountable[])', () => {
+      const fx = makeProgram({
+        '/dom.ts': `export interface Mountable { readonly __m: true; mount(): Node }
+export type Renderable = readonly Mountable[]`,
+        '/h.ts': `import type { Renderable } from './dom'
+export function helper(): Renderable { return [] }`,
+      })
+      const sym = findExportedSymbol(fx.sourceFiles.get('/h.ts')!, 'helper', fx.checker)
+      const cls = classifyViewHelper(sym, fx.checker)
+      expect(cls.kind).toBe('walked')
+      expect(cls.cases).toContain(2)
+    })
+
     it('walks a helper returning a concrete HTMLDivElement (element helper shape)', () => {
       const fx = makeProgram({
         '/h.ts': `export function div(): HTMLDivElement { return {} as HTMLDivElement }`,

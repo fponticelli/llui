@@ -134,8 +134,12 @@ export interface Mountable {
 }
 
 /** Wrap a build closure as a `Mountable`. `build` runs (with a live `ctx`) when the
- * Mountable is placed — see `populate`/`runBuild`. */
-function mountable(build: () => Node): Mountable {
+ * Mountable is placed — see `populate`/`runBuild`. Public so adapter packages
+ * (`@llui/vike`'s `pageSlot`) and raw-DOM interop can produce placeable view content:
+ * `mountable(() => someRawNode)`. Note the build runs once per placement, so a build
+ * that returns a captured node (rather than creating a fresh one) reintroduces the
+ * single-parent footgun — create the node inside the closure. */
+export function mountable(build: () => Node): Mountable {
   return { [MOUNTABLE]: true, mount: build }
 }
 
@@ -164,37 +168,42 @@ export function __currentBuildInfo(): {
   return { doc: ctx.doc, contexts: new Map(ctx.contexts) }
 }
 
-/** A reactive text node bound to a signal accessor. */
-export function signalText(produce: Producer, deps: readonly string[]): Text {
-  const c = requireCtx()
-  const node = c.doc.createTextNode('')
-  c.specs.push({
-    deps,
-    produce,
-    commit: (v) => {
-      node.data = v == null ? '' : String(v)
-    },
+/** A reactive text node bound to a signal accessor. Returns a `Mountable` that
+ * builds the text node and registers its binding when placed. */
+export function signalText(produce: Producer, deps: readonly string[]): Mountable {
+  return mountable(() => {
+    const c = requireCtx()
+    const node = c.doc.createTextNode('')
+    c.specs.push({
+      deps,
+      produce,
+      commit: (v) => {
+        node.data = v == null ? '' : String(v)
+      },
+    })
+    return node
   })
-  return node
 }
 
 /** A static text node. */
-export function staticText(value: string): Text {
-  return requireCtx().doc.createTextNode(value)
+export function staticText(value: string): Mountable {
+  return mountable(() => requireCtx().doc.createTextNode(value))
 }
 
 export type EventHandler = (ev: Event) => void
 export type PropValue = string | number | boolean | null | Reactive | EventHandler
 
-/** A child slot: a built node, a lazy `Mountable` (structural primitive — materialized
- * at append time), or a bare string/number coerced to a static text node at append time
- * (so `div(['hi', 42])` works without an explicit `text(...)` — the same coercion every
- * mainstream framework does). */
-export type ChildNode = Node | Mountable | string | number
+/** A child slot: a lazy `Mountable` (everything LLui builds — elements, text, and
+ * structural primitives — is a Mountable, materialized at placement), or a bare
+ * string/number coerced to a static text node at append time (so `div(['hi', 42])`
+ * works without an explicit `text(...)` — the same coercion every mainstream framework
+ * does). There is no bare `Node` here: a node lives in one place, so exposing one would
+ * reintroduce the silent double-placement footgun. Wrap raw DOM via `foreign`. */
+export type ChildNode = Mountable | string | number
 
-/** The result of a render callback / view: built nodes and/or lazy `Mountable`s
- * (structural primitives). Materialized at placement by `populate`/`runBuild`. */
-export type Renderable = readonly (Node | Mountable)[]
+/** The result of a render callback / view: lazy `Mountable`s, materialized at
+ * placement by `populate`/`runBuild`. */
+export type Renderable = readonly Mountable[]
 
 const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
 
@@ -293,15 +302,18 @@ function populate(
 }
 
 /** Build an element. `on*` function props become event listeners; `react(...)`
- * props become reactive bindings; everything else is a static attribute. */
+ * props become reactive bindings; everything else is a static attribute. Returns a
+ * `Mountable` that creates the element and materializes its children when placed. */
 export function el(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
   children: readonly ChildNode[] = [],
-): Element {
-  const node = requireCtx().doc.createElement(tag)
-  populate(node, props, children)
-  return node
+): Mountable {
+  return mountable(() => {
+    const node = requireCtx().doc.createElement(tag)
+    populate(node, props, children)
+    return node
+  })
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -312,10 +324,12 @@ export function elNS(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
   children: readonly ChildNode[] = [],
-): Element {
-  const node = requireCtx().doc.createElementNS(SVG_NS, tag)
-  populate(node, props, children)
-  return node
+): Mountable {
+  return mountable(() => {
+    const node = requireCtx().doc.createElementNS(SVG_NS, tag)
+    populate(node, props, children)
+    return node
+  })
 }
 
 /** Run a build function with a fresh collecting context, returning the produced
@@ -410,10 +424,12 @@ function runMounts(
 /** Register a callback to run after the surrounding view's nodes are mounted,
  * receiving the mounted parent element. Returning a function registers a
  * teardown (run on unmount / dispose). Returns a marker node for the view array. */
-export function onMount(cb: (root: Element) => void | (() => void)): Node {
-  const c = requireCtx()
-  c.mounts.push(cb)
-  return c.doc.createComment('onMount')
+export function onMount(cb: (root: Element) => void | (() => void)): Mountable {
+  return mountable(() => {
+    const c = requireCtx()
+    c.mounts.push(cb)
+    return c.doc.createComment('onMount')
+  })
 }
 
 /** Render `content` into `target` (default `document.body`) instead of inline —

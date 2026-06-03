@@ -314,13 +314,14 @@ function describeCallee(node: ts.Expression): string {
  *     a hoisted function declaration, or `const x = memo(arrow)`.
  *
  * The second case lets authors refactor a literal arrow into a named
- * helper without losing the reactive-mask optimization (a precise mask
- * for `__dirty` and structural-primitive `__mask`). Without it, the
- * runtime falls back to FULL_MASK — correct, but every binding fires
- * on every state change.
+ * helper without the analyzer losing its dependency paths. When a reactive
+ * accessor can't be resolved, the file is marked opaque and the runtime
+ * coarsens those bindings to the whole-state sentinel (correct, but every
+ * such binding fires on every state change).
  *
- * Shared by the bit-assignment path (`collectDeps`, below) and the
- * `diagnostics.ts` bitmask-overflow warning.
+ * The emitted dependency paths feed the runtime's chunked-mask reconciler
+ * (each binding's `deps` array). `collectDeps` (below) is the string-input
+ * convenience wrapper.
  */
 export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
   paths: Set<string>
@@ -360,58 +361,21 @@ export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
 }
 
 /**
- * Per-accessor path sets — one entry per reactive arrow/function. Used
- * by the bitmask-overflow diagnostic to find clusters of paths that
- * always fire together (co-occurrence analysis).
- */
-export function collectAccessorPathSets(sourceFile: ts.SourceFile): Set<string>[] {
-  const sets: Set<string>[] = []
-
-  function visit(node: ts.Node): void {
-    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-      if (isReactiveAccessor(node)) {
-        const set = new Set<string>()
-        if (extractAccessorPaths(node, set)) sets.push(set)
-      }
-    }
-
-    if (ts.isIdentifier(node) && isReactiveAccessor(node)) {
-      const resolved = resolveAccessorBody(node)
-      if (resolved) {
-        const set = new Set<string>()
-        if (extractAccessorPaths(resolved, set)) sets.push(set)
-      }
-    }
-
-    ts.forEachChild(node, visit)
-  }
-
-  visit(sourceFile)
-  return sets
-}
-
-/**
- * Pre-scan a source file to collect all unique state access paths
- * referenced by reactive accessors (arrow functions in props and text() calls).
+ * String-input convenience over {@link collectStatePathsFromSource}: parse a
+ * source file and return the sorted set of unique state dependency paths read
+ * by its reactive accessors, plus the opaque-flow flag. These are the paths
+ * the runtime's chunked-mask reconciler gates each binding on.
  *
- * Returns a pair of maps:
- *   - `lo`: paths at bit positions 0..30, with value `1 << position`
- *   - `hi`: paths at bit positions 31..61, with value `1 << (position - 31)`
- *
- * Bit positions past 61 collapse to `-1` (FULL_MASK) in the `lo` map and
- * cause every binding reading them to re-evaluate on every cycle. The
- * `bitmask-overflow` lint rule warns the user to restructure state.
- *
- * Components with ≤31 paths see an empty `hi` map; the compiler skips
- * all high-word emit so the generated code is byte-identical to the
- * pre-multi-word baseline.
+ * Files that don't import from `@llui/dom` return an empty set. `extraPaths`
+ * (paths discovered through in-repo view-helpers in *other* files, via the
+ * cross-file walker) are unioned in so cross-file helpers contribute to the
+ * consumer's dependency set.
  */
 export function collectDeps(
   source: string,
   extraPaths?: ReadonlySet<string>,
 ): {
-  lo: Map<string, number>
-  hi: Map<string, number>
+  paths: string[]
   opaque: boolean
   /** AST node that first triggered the opaque-flow flag (if any). */
   opaqueNode?: ts.Node
@@ -422,39 +386,15 @@ export function collectDeps(
 
   // Check if file imports from @llui/dom
   if (!hasLluiImport(sourceFile)) {
-    return { lo: new Map(), hi: new Map(), opaque: false }
+    return { paths: [], opaque: false }
   }
 
   const { paths, opaque, opaqueNode, opaqueShape } = collectStatePathsFromSource(sourceFile)
-  // Cross-file extension (v2c pipeline integration): the host adapter may
-  // pass paths discovered by `crossFileAccessorPaths()` — paths read
-  // through in-repo view-helpers in *other* files. Union them with the
-  // file-local set before bit assignment. Without this merge the
-  // sentinel-`show()` workaround from v2b §1 remains necessary; with
-  // it, helpers in other files contribute to the consumer's __prefixes
-  // table automatically.
   if (extraPaths) {
     for (const p of extraPaths) paths.add(p)
   }
 
-  const lo = new Map<string, number>()
-  const hi = new Map<string, number>()
-  let index = 0
-  for (const path of paths) {
-    if (index < 31) {
-      lo.set(path, 1 << index)
-    } else if (index < 62) {
-      hi.set(path, 1 << (index - 31))
-    } else {
-      // Past 61 paths — graceful FULL_MASK fallback in the low word.
-      // Realistic LLui components shouldn't hit this; the lint rule
-      // fires well before.
-      lo.set(path, -1)
-    }
-    index++
-  }
-
-  return { lo, hi, opaque, opaqueNode, opaqueShape }
+  return { paths: [...paths], opaque, opaqueNode, opaqueShape }
 }
 
 function hasLluiImport(sourceFile: ts.SourceFile): boolean {

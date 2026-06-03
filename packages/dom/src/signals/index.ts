@@ -40,6 +40,7 @@ export {
   provide,
   useContext,
   isMountable,
+  mountable,
   type Context,
   type Mountable,
   type Renderable,

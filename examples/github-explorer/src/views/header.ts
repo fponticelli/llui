@@ -1,9 +1,9 @@
 import { div, input, form, text } from '@llui/dom'
 import type { Msg } from '../types'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 import { routing } from '../router'
 
-export function header(query: Signal<string>, send: Send<Msg>): Node {
+export function header(query: Signal<string>, send: Send<Msg>): Mountable {
   return div({ class: 'header' }, [
     routing.link(send, { page: 'search', q: '', p: 1, data: { type: 'idle' } }, {}, [
       text('GitHub Explorer'),

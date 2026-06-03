@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { Mountable } from '../../src/signals/dom'
 import {
   component,
   mountApp,
@@ -32,7 +33,7 @@ describe('view-helper composition (runtime signals)', () => {
 
   // a view HELPER function receiving a Signal — the case the compile-time
   // transform can't lower, now works at runtime.
-  const chip = (label: Signal<string>): Node => span([text(label)])
+  const chip = (label: Signal<string>): Mountable => span([text(label)])
 
   function setup() {
     const container = document.createElement('div')

@@ -1,4 +1,5 @@
 import { renderNodes, serializeNodes } from '@llui/dom'
+import type { Renderable } from '@llui/dom'
 import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
@@ -24,7 +25,7 @@ export interface AnyLayer {
   readonly name?: string
   init(): unknown
   update(state: unknown, msg: unknown): unknown
-  view(bag: unknown): readonly Node[]
+  view(bag: unknown): Renderable
   onEffect?(effect: unknown, api: unknown): void | (() => void)
 }
 

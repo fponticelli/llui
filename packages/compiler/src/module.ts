@@ -193,12 +193,11 @@ export interface CompilerModule {
    *     transformCall hooks see the new node (composes in declaration
    *     order, just like preTransform).
    *
-   * Use for rewrites that depend on the rewritten children — e.g.
-   * row-factory emission inspects the render body for an already-emitted
-   * `elTemplate(...)` call, so element rewrites that produce
-   * `elTemplate` MUST have fired first. Module authors should treat
-   * transformCall as a pure function of its inputs (the node + analysis
-   * findings).
+   * Use for rewrites that depend on the already-rewritten children — when
+   * a parent-call rewrite must observe the output a child-call rewrite
+   * produced (the bottom-up order guarantees the child fired first). Module
+   * authors should treat transformCall as a pure function of its inputs (the
+   * node + analysis findings).
    */
   transformCall?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
   /**

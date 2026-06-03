@@ -1,6 +1,6 @@
 import { div, h1, h3, a, p, span, text, show, branch, each } from '@llui/dom'
 import type { State, Msg, Route, Repo, TreeEntry, Issue } from '../types'
-import type { Send, Signal, Renderable } from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'
 import { codeView } from './foreign-code'
@@ -141,7 +141,7 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
   if (!path) return []
 
   const parts = path.split('/')
-  const crumbs: Node[] = [
+  const crumbs: Mountable[] = [
     routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {}, [
       text(name),
     ]),

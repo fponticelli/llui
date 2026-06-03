@@ -21,7 +21,7 @@ paths its signal reads.
 | Renders a slice of state                      | **1 — sliced signal**             | Helper takes `Signal<Slice>`; caller passes `state.at('slice')`                     |
 | Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `Signal<Row[]>`; per-row `item` signal feeds the cell bindings         |
 | Renders a single derived value                | **3 — derived signal**            | Helper takes `Signal<T>`; caller passes `state.map(fn)` or a `.at()` slice          |
-| Layout chrome (header, sidebar, dialog frame) | **4 — `Node[]` slots**            | Helper takes `children: Node[]`; caller fills slots with its own bindings           |
+| Layout chrome (header, sidebar, dialog frame) | **4 — child slots**               | Helper takes `children: ChildNode[]`; caller fills slots with its own bindings      |
 | Library component with its own state machine  | **5 — `connect()` + delegation**  | Component exports `init`/`update`/`connect`; parent owns the slice, routes messages |
 
 ---
@@ -37,12 +37,13 @@ state shape.
 
 ```ts
 import { div, text, span } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 type UserSlice = { name: string; email: string; active: boolean }
 
 // The helper only knows about its slice — not the host state type.
-function userCard(user: Signal<UserSlice>, send: Send<Msg>): Node[] {
+// `Renderable` is `readonly Mountable[]` — what every view helper returns.
+function userCard(user: Signal<UserSlice>, send: Send<Msg>): Renderable {
   return [
     div({ class: user.at('active').map((a) => (a ? 'card active' : 'card')) }, [
       span([text(user.at('name'))]),
@@ -74,7 +75,7 @@ so they update surgically when that row's data changes.
 
 ```ts
 import { each, tr, td, text, show, span } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Signal, Renderable } from '@llui/dom'
 
 interface Row {
   id: string
@@ -82,7 +83,7 @@ interface Row {
   banned: boolean
 }
 
-function table(rows: Signal<Row[]>): Node[] {
+function table(rows: Signal<Row[]>): Renderable {
   return [
     each(rows, {
       key: (r) => r.id, // ← plain id; do NOT include mutable fields
@@ -133,10 +134,11 @@ The caller does the derivation at the call site with `.map` or a `.at()` slice.
 
 ```ts
 import { span, text } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Signal, Mountable } from '@llui/dom'
 
 // Helper takes the already-derived signal — no callback, no host state type.
-function statusBadge(className: Signal<string>): Node {
+// A single element helper returns a `Mountable` (materialized when placed).
+function statusBadge(className: Signal<string>): Mountable {
   return span({ class: className })
 }
 
@@ -155,18 +157,19 @@ call site.
 
 ---
 
-## Pattern 4 — `Node[]` slots (layout chrome)
+## Pattern 4 — child slots (layout chrome)
 
 **When**: a generic helper provides outer-layout structure (header, sidebar, dialog frame,
 panel) with content rendered by the page.
 
-**Composition**: the helper takes `Node[]` slot(s). The caller fills them with whatever
-bindings the page needs, tied to its own state.
+**Composition**: the helper takes `ChildNode[]` slot(s) (`ChildNode = Mountable | string |
+number`). The caller fills them with whatever bindings the page needs, tied to its own state.
 
 ```ts
 import { header, nav } from '@llui/dom'
+import type { ChildNode, Mountable } from '@llui/dom'
 
-function headerView(opts: { navItems: Node[]; userBadge: Node }): Node {
+function headerView(opts: { navItems: readonly ChildNode[]; userBadge: ChildNode }): Mountable {
   return header({}, [nav({}, opts.navItems), opts.userBadge])
 }
 

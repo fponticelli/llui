@@ -37,28 +37,26 @@ describe('mountSignalComponent — TEA loop over signals', () => {
     type M = { type: 'inc' } | { type: 'rename'; v: string }
 
     const container = document.createElement('div')
-    let nameNode!: Text
     const h = mountSignalComponent<S, M>(container, {
       init: () => ({ count: 0, name: 'ada' }),
       update: (s, m) => (m.type === 'inc' ? { ...s, count: s.count + 1 } : { ...s, name: m.v }),
-      view: () => {
-        nameNode = signalText((s) => (s as S).name, ['name'])
-        return [
-          el('span', {}, [signalText((s) => (s as S).count, ['count'])]),
-          el('p', {}, [nameNode]),
-        ]
-      },
+      view: () => [
+        el('span', {}, [signalText((s) => (s as S).count, ['count'])]),
+        el('p', {}, [signalText((s) => (s as S).name, ['name'])]),
+      ],
     })
 
+    // grab the materialized text node from the DOM (helpers return a lazy Mountable)
+    const nameNode = container.querySelector('p')!.firstChild as Text
     const nameBefore = nameNode
     h.send({ type: 'inc' }) // changes count, not name
     expect(container.querySelector('span')!.textContent).toBe('1')
-    expect(nameNode).toBe(nameBefore) // same node, untouched
+    expect(container.querySelector('p')!.firstChild).toBe(nameBefore) // same node, untouched
     expect(nameNode.data).toBe('ada')
 
     h.send({ type: 'rename', v: 'lin' })
     expect(nameNode.data).toBe('lin')
-    expect(nameNode).toBe(nameBefore) // still in place
+    expect(container.querySelector('p')!.firstChild).toBe(nameBefore) // still in place
   })
 
   it('a reactive attribute driven by the loop', () => {

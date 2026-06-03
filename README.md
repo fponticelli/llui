@@ -35,10 +35,10 @@ mountApp(document.getElementById('app')!, Counter)
 
 ## Key Ideas
 
-- **`view()` runs once.** No re-rendering. DOM nodes are created at mount time with reactive bindings that update surgically when state changes.
-- **Two-phase update.** Phase 1 reconciles structural changes (`branch`, `each`, `show`). Phase 2 iterates a flat binding array with bitmask gating — `(mask & dirty) === 0` skips irrelevant updates in constant time.
+- **`view()` runs once.** No re-rendering. DOM nodes are created at mount time with reactive bindings that update surgically when state changes. Everything you build (`el`/`text`/`each`/`show`/`branch`/…) is a lazy `Mountable`, materialized where it's placed.
+- **Chunked-mask reactivity.** Each binding carries a sparse mask of the dependency-path chunks it reads; on update the runtime computes the dirty chunk-set from old→new state and commits only the bindings whose mask intersects it. No path ceiling. Structural primitives (`branch`, `each`, `show`) reconcile arms/keyed rows and own child scopes.
 - **Effects as data.** `update()` is pure — side effects are plain objects returned alongside state, dispatched by the runtime. Testable with `deepEqual`.
-- **Compiler optimization.** The Vite plugin extracts state access paths, assigns bitmask bits, and synthesizes `__dirty()` per component. Zero runtime dependency tracking overhead.
+- **Compiler optimization.** The Vite plugin runs the signal transform — lowering signal expressions in a component's view to runtime helpers and surfacing the framework lint rules as non-bypassable build errors. Dependency paths are derived statically from the signal reads.
 
 ## Packages
 

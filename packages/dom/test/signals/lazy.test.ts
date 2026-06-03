@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent, type SignalComponentDef } from '../../src/signals/component'
-import { signalText, el, signalLazy } from '../../src/signals/dom'
+import { signalText, el, signalLazy, type Renderable } from '../../src/signals/dom'
 
 // A microtask tick — lets a resolved/rejected loader promise settle.
 const tick = (): Promise<void> => Promise.resolve().then(() => {})
@@ -27,7 +27,7 @@ describe('signalLazy — async component loading', () => {
   function host(
     loader: () => Promise<SignalComponentDef<unknown, unknown, unknown>>,
     opts: {
-      error?: (err: Error) => readonly Node[]
+      error?: (err: Error) => Renderable
     } = {},
   ) {
     const container = document.createElement('div')

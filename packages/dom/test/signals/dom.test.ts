@@ -19,27 +19,29 @@ describe('signal DOM — end-to-end reactive rendering (no VDOM, in-place update
 
   it('updates only changed bindings, in place (same node identity)', () => {
     const container = document.createElement('div')
-    let countNode!: Text
-    let nameNode!: Text
     const m = mountSignal(
       container,
       { count: 1, user: { name: 'ab' }, busy: false } as State,
-      () => {
-        countNode = signalText((s) => (s as State).count, ['count'])
-        nameNode = signalText((s) => (s as State).user.name, ['user.name'])
-        return [el('div', {}, [countNode, nameNode])]
-      },
+      () => [
+        el('div', {}, [
+          signalText((s) => (s as State).count, ['count']),
+          signalText((s) => (s as State).user.name, ['user.name']),
+        ]),
+      ],
     )
     expect(container.textContent).toBe('1ab')
 
-    const beforeCount = countNode
-    const beforeName = nameNode
+    // Text nodes are materialized into the DOM — grab them there (helpers return a
+    // lazy Mountable, not the node).
+    const div = container.firstChild as Element
+    const beforeCount = div.childNodes[0] as Text
+    const beforeName = div.childNodes[1] as Text
     m.update({ count: 2, user: { name: 'ab' }, busy: false } as State)
 
-    expect(countNode.data).toBe('2') // updated
-    expect(nameNode.data).toBe('ab') // unchanged
-    expect(countNode).toBe(beforeCount) // same Text node — mutated, not recreated
-    expect(nameNode).toBe(beforeName)
+    expect(beforeCount.data).toBe('2') // updated
+    expect(beforeName.data).toBe('ab') // unchanged
+    expect(div.childNodes[0]).toBe(beforeCount) // same Text node — mutated, not recreated
+    expect(div.childNodes[1]).toBe(beforeName)
     expect(container.textContent).toBe('2ab')
   })
 
@@ -70,16 +72,13 @@ describe('signal DOM — end-to-end reactive rendering (no VDOM, in-place update
 
   it('a derived binding (map-style produce) updates from its source path', () => {
     const container = document.createElement('div')
-    let greetNode!: Text
     const m = mountSignal(
       container,
       { count: 0, user: { name: 'ab' }, busy: false } as State,
-      () => {
-        // emulates state.at('user.name').map(n => `Hi, ${n}`) -> dep ['user.name']
-        greetNode = signalText((s) => `Hi, ${(s as State).user.name}`, ['user.name'])
-        return [el('p', {}, [greetNode])]
-      },
+      // emulates state.at('user.name').map(n => `Hi, ${n}`) -> dep ['user.name']
+      () => [el('p', {}, [signalText((s) => `Hi, ${(s as State).user.name}`, ['user.name'])])],
     )
+    const greetNode = container.querySelector('p')!.firstChild as Text
     expect(greetNode.data).toBe('Hi, ab')
     m.update({ count: 0, user: { name: 'cd' }, busy: false } as State)
     expect(greetNode.data).toBe('Hi, cd')
@@ -89,8 +88,9 @@ describe('signal DOM — end-to-end reactive rendering (no VDOM, in-place update
     expect(greetNode.data).toBe(before)
   })
 
-  it('throws if a helper is used outside a build', () => {
-    expect(() => signalText((s) => s, [])).toThrow(/outside a signal build/)
+  it('throws if a helper is materialized outside a build', () => {
+    // Constructing a Mountable outside a build is fine (lazy); mounting it needs ctx.
+    expect(() => signalText((s) => s, []).mount()).toThrow(/outside a signal build/)
   })
 })
 

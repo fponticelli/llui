@@ -255,7 +255,7 @@ export function overlay(opts: OverlayOptions): Mountable {
     opts.state.map((s) => s.open),
     () => [
       portal(() => {
-        onMount(() => {
+        const dismissable = onMount(() => {
           const contentEl = document.getElementById(contentId)
           if (!contentEl) return
           const triggerEl = document.getElementById(triggerId)
@@ -289,7 +289,7 @@ export function overlay(opts: OverlayOptions): Mountable {
             for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
           }
         })
-        return [div(parts.positioner, opts.content())]
+        return [dismissable, div(parts.positioner, opts.content())]
       }, host),
     ],
   )

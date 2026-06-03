@@ -115,22 +115,21 @@ describe('llui_static_collect_paths', () => {
     )
     const result = (await runTool('llui_static_collect_paths', { file })) as {
       total: number
-      overflow: boolean
-      fullMaskBits: number
+      opaque: boolean
       breakdown: Array<{ field: string; count: number }>
-      paths: Array<{ path: string; bit: number; word: 'lo' | 'hi' }>
+      paths: string[]
     }
     expect(result.total).toBe(3) // user.name + user.email + theme
-    expect(result.overflow).toBe(false)
-    expect(result.fullMaskBits).toBe(0)
+    expect(result.opaque).toBe(false)
     expect(result.breakdown.map((b) => b.field).sort()).toEqual(['theme', 'user'])
     const userEntry = result.breakdown.find((b) => b.field === 'user')
     expect(userEntry?.count).toBe(2)
-    expect(result.paths.map((p) => p.path).sort()).toEqual(['theme', 'user.email', 'user.name'])
+    expect(result.paths.slice().sort()).toEqual(['theme', 'user.email', 'user.name'])
   })
 
-  it('reports overflow=true when a file reads more than 62 paths', async () => {
-    // Synthesize 65 top-level state reads
+  it('reports a large path set without a fixed ceiling (chunked mask has no budget)', async () => {
+    // 65 top-level state reads — the old two-word bitmask capped at 62; the
+    // chunked-mask runtime has no ceiling, so all 65 paths are reported.
     const reads = Array.from({ length: 65 }, (_, i) => `text((s) => s.f${i})`).join(', ')
     const file = join(tmp, 'big.ts')
     writeFileSync(
@@ -149,13 +148,10 @@ describe('llui_static_collect_paths', () => {
     )
     const result = (await runTool('llui_static_collect_paths', { file })) as {
       total: number
-      overflow: boolean
-      fullMaskBits: number
+      paths: string[]
     }
     expect(result.total).toBe(65)
-    expect(result.overflow).toBe(true)
-    // Paths past 61 become FULL_MASK (-1).
-    expect(result.fullMaskBits).toBeGreaterThan(0)
+    expect(result.paths).toHaveLength(65)
   })
 })
 

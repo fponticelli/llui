@@ -290,9 +290,9 @@ export interface ConnectedRouter<R> {
 
   /**
    * View helper: attach URL change listener via onMount.
-   * Returns an empty comment node. Sends { type: 'navigate', route } on URL change.
+   * Returns the onMount marker to place in the view. Sends { type: 'navigate', route } on URL change.
    */
-  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[]
+  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable
 
   /**
    * View helper: render a navigation link.
@@ -302,12 +302,13 @@ export interface ConnectedRouter<R> {
     send: (msg: M) => void,
     route: R,
     attrs: Record<string, unknown>,
-    children: Node[],
+    children: readonly ChildNode[],
     msgFactory?: (route: R) => M,
-  ): Node
+  ): Mountable
 
   /**
-   * Create an update handler for mergeHandlers.
+   * Create an update handler for navigate messages — call it from your
+   * component's `update` (returns early when it handles the message).
    * Returns [newState, Effect[]] for navigate messages, null for others.
    */
   createHandler<S, M, E>(config: {

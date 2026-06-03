@@ -1,6 +1,6 @@
 import { mountSignalComponent, hydrateSignalApp } from '@llui/dom'
 import type { SignalComponentHandle, MountTarget } from '@llui/dom'
-import type { TransitionOptions } from '@llui/dom'
+import type { TransitionOptions, Renderable } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 
@@ -16,7 +16,7 @@ export interface AnyLayer {
   readonly name?: string
   init(): unknown
   update(state: unknown, msg: unknown): unknown
-  view(bag: unknown): readonly Node[]
+  view(bag: unknown): Renderable
   onEffect?(effect: unknown, api: unknown): void | (() => void)
 }
 /** The live handle a mounted/hydrated layer exposes (send/getState/subscribe). */

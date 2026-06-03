@@ -220,7 +220,7 @@ import { div, text, button } from '@llui/dom'
 import type { Signal, Send } from '@llui/dom'
 
 // A reusable row — takes a per-row signal, not an accessor callback.
-function todoItem(item: Signal<Todo>, send: Send<Msg>): Node[] {
+function todoItem(item: Signal<Todo>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'todo' }, [
       text(item.at('label')),

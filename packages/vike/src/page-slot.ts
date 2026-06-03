@@ -1,4 +1,5 @@
-import { __currentBuildInfo } from '@llui/dom'
+import { __currentBuildInfo, mountable } from '@llui/dom'
+import type { Mountable } from '@llui/dom'
 
 // `@llui/dom`'s `__currentBuildInfo()` is the adapter-layer hook a
 // framework adapter like `@llui/vike` uses to participate in the signal build:
@@ -69,31 +70,37 @@ let pendingSlot: PendingSlot | null = null
  * })
  * ```
  *
- * Returns the anchor comment as a single `Node` — drop it straight into
+ * Returns a `Mountable` (the slot's anchor comment) — drop it straight into
  * a children array (`main([pageSlot()])`); no spread needed.
  *
  * Call exactly once per layout. Calling more than once in a single
- * view throws.
+ * view throws (when both are placed).
  */
-export function pageSlot(): Node {
-  if (pendingSlot !== null) {
-    throw new Error(
-      '[llui/vike] pageSlot() was called more than once in the same layout. ' +
-        'A layout has exactly one nested-content slot — if you need two independent ' +
-        'regions that swap on navigation, build them as sibling nested layouts in ' +
-        'the Vike routing tree and use context to share state between them.',
-    )
-  }
-  const info = __currentBuildInfo()
-  if (!info) {
-    throw new Error(
-      '[llui/vike] pageSlot() was called outside a signal build. It must run inside ' +
-        'a layout component view rendered by the @llui/vike adapter.',
-    )
-  }
-  const anchor = info.doc.createComment('llui-page-slot') as Comment
-  pendingSlot = { anchor, contexts: info.contexts }
-  return anchor
+export function pageSlot(): Mountable {
+  // Deferred to placement (like every authoring helper): the anchor is created
+  // and the pending-slot handoff registered when the Mountable is materialized,
+  // which still happens during the layout's view build — before the adapter reads
+  // `_consumePendingSlot()`.
+  return mountable(() => {
+    if (pendingSlot !== null) {
+      throw new Error(
+        '[llui/vike] pageSlot() was called more than once in the same layout. ' +
+          'A layout has exactly one nested-content slot — if you need two independent ' +
+          'regions that swap on navigation, build them as sibling nested layouts in ' +
+          'the Vike routing tree and use context to share state between them.',
+      )
+    }
+    const info = __currentBuildInfo()
+    if (!info) {
+      throw new Error(
+        '[llui/vike] pageSlot() was called outside a signal build. It must run inside ' +
+          'a layout component view rendered by the @llui/vike adapter.',
+      )
+    }
+    const anchor = info.doc.createComment('llui-page-slot') as Comment
+    pendingSlot = { anchor, contexts: info.contexts }
+    return anchor
+  })
 }
 
 /**

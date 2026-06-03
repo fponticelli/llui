@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { div, span, text, show, branch } from '../../src/signals/authoring'
 import type { Signal } from '../../src/signals/types'
+import type { Mountable } from '../../src/signals/dom'
 
 // Regression: `show`/`branch` arms that pass their NARROWED param to a HELPER
 // function — the shape the compiler must leave verbatim (lowering it would emit a
@@ -26,9 +27,9 @@ interface S {
 type M = { type: 'login' } | { type: 'load'; title: string } | { type: 'fail'; message: string }
 
 // helper arms that consume the narrowed signal handle (not a value)
-const profileCard = (u: Signal<User>): Node =>
+const profileCard = (u: Signal<User>): Mountable =>
   div({ class: 'profile' }, [text(u.map((x) => `${x.name} (${x.age})`))])
-const loadedView = (v: Signal<{ kind: 'loaded'; title: string }>): Node =>
+const loadedView = (v: Signal<{ kind: 'loaded'; title: string }>): Mountable =>
   span({ class: 'title' }, [text(v.at('title'))])
 
 describe('show/branch arms passing the narrowed param to a helper', () => {

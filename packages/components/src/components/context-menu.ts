@@ -267,7 +267,7 @@ export function overlay(opts: OverlayOptions): Mountable {
           : rawTarget
       return [
         portal(() => {
-          onMount(() => {
+          const dismissable = onMount(() => {
             const contentEl = document.getElementById(contentId)
             if (!contentEl) return
             contentEl.focus({ preventScroll: true })
@@ -277,7 +277,7 @@ export function overlay(opts: OverlayOptions): Mountable {
             })
             return cleanup
           })
-          return [div(parts.positioner, opts.content())]
+          return [dismissable, div(parts.positioner, opts.content())]
         }, targetEl),
       ]
     },

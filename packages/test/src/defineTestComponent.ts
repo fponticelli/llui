@@ -7,13 +7,13 @@
 // reducer-driving harnesses.
 
 import { component, type SignalComponentDef } from '@llui/dom'
-import type { SignalViewBag } from '@llui/dom'
+import type { SignalViewBag, Renderable } from '@llui/dom'
 
 export interface DefineTestComponentInput<S, M, E = never> {
   name: string
   init: () => [S, E[]] | S
   update: (state: S, msg: M) => [S, E[]] | S
-  view: (bag: SignalViewBag<S, M>) => readonly Node[]
+  view: (bag: SignalViewBag<S, M>) => Renderable
   onEffect?: SignalComponentDef<S, M, E>['onEffect']
 }
 

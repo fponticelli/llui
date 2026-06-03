@@ -51,13 +51,10 @@ describe('dungeonlogs spike #1 — route-keyed subtree remount (replaces h.scope
                   span({ class: 'eid' }, [text(item)]),
                   // onMount fires once per mounted row — the remount probe.
                   div({}, [
-                    (() => {
-                      onMount(() => {
-                        mounts.push(item.peek())
-                        return () => {}
-                      })
-                      return text('')
-                    })(),
+                    onMount(() => {
+                      mounts.push(item.peek())
+                      return () => {}
+                    }),
                   ]),
                 ]),
               ],
@@ -136,15 +133,15 @@ describe('dungeonlogs spike #2 — inline-edit commit: send during structural ar
               }),
               button({ id: 'commit', onClick: () => send({ type: 'commit' }) }, [text('Save')]),
             ],
-            view: () => {
+            view: () => [
               // Reentrant send: this fires while the commit message is still
               // being processed (the arm is mounting inside commit's reconcile).
               onMount(() => {
                 send({ type: 'after-swap' })
                 return () => {}
-              })
-              return [span({ id: 'committed' }, [text(state.at('committed'))])]
-            },
+              }),
+              span({ id: 'committed' }, [text(state.at('committed'))]),
+            ],
           },
         ),
       ],

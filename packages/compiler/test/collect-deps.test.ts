@@ -2,18 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { collectDeps } from '../src/collect-deps'
 
 function paths(source: string): string[] {
-  const { lo, hi } = collectDeps(source)
-  return [...Array.from(lo.keys()), ...Array.from(hi.keys())].sort()
-}
-
-function bits(source: string): Map<string, number> {
-  // Test helper: legacy callers only inspected low-word bits. Merge the
-  // hi map (which is empty for ≤31-path components anyway) into the
-  // low map so existing assertions stay meaningful for the common case.
-  const { lo, hi } = collectDeps(source)
-  const merged = new Map(lo)
-  for (const [k, v] of hi) merged.set(k, v)
-  return merged
+  return [...collectDeps(source).paths].sort()
 }
 
 describe('collectDeps', () => {
@@ -46,7 +35,7 @@ describe('collectDeps', () => {
     expect(paths(src)).toEqual(['user.email', 'user.name'])
   })
 
-  it('assigns unique bit positions to each path', () => {
+  it('collects each distinct reactive path once', () => {
     const src = `
       import { component, text } from '@llui/dom'
       export const C = component({
@@ -60,10 +49,7 @@ describe('collectDeps', () => {
         ],
       })
     `
-    const b = bits(src)
-    expect(b.get('a')).toBe(1)
-    expect(b.get('b')).toBe(2)
-    expect(b.get('c')).toBe(4)
+    expect(paths(src)).toEqual(['a', 'b', 'c'])
   })
 
   it('handles reactive prop values in element helpers', () => {
@@ -111,7 +97,7 @@ describe('collectDeps', () => {
     expect(paths(src)).toEqual([])
   })
 
-  it('handles parent path as union of child bits', () => {
+  it('collects both child paths and a whole-object parent read', () => {
     const src = `
       import { component, text, div } from '@llui/dom'
       export const C = component({
@@ -125,16 +111,12 @@ describe('collectDeps', () => {
         ],
       })
     `
-    const b = bits(src)
-    // user.name and user.email get their own bits
-    // s.user (whole object) gets the union
-    expect(b.has('user.name')).toBe(true)
-    expect(b.has('user.email')).toBe(true)
-    // A parent-path reference should have both child bits
-    // (the accessor s => JSON.stringify(s.user) reads 'user' as a whole)
+    const p = paths(src)
+    expect(p).toContain('user.name')
+    expect(p).toContain('user.email')
   })
 
-  it('returns empty map for files without @llui/dom imports', () => {
+  it('returns empty for files without @llui/dom imports', () => {
     const src = `export const x = 42`
     expect(paths(src)).toEqual([])
   })

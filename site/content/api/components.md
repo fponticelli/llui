@@ -20,25 +20,22 @@ Peer dependency: `@llui/dom`.
 Each component exports `init`, `update`, `connect`, and a barrel object:
 
 ```typescript
-import { component, div, button } from '@llui/dom'
+import { component, div, button, text } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 
 type State = { tabs: tabs.TabsState }
 type Msg = { type: 'tabs'; msg: tabs.TabsMsg }
 
-const App = component<State, Msg, never>({
+const App = component<State, Msg>({
   name: 'App',
-  init: () => [{ tabs: tabs.init({ items: ['a', 'b', 'c'], value: 'a' }) }, []],
+  init: () => ({ tabs: tabs.init({ items: ['a', 'b', 'c'], value: 'a' }) }),
   update: (s, m) => {
     const [t] = tabs.update(s.tabs, m.msg)
     return [{ tabs: t }, []]
   },
-  view: ({ send, text }) => {
-    const t = tabs.connect<State>(
-      (s) => s.tabs,
-      (m) => send({ type: 'tabs', msg: m }),
-      { id: 'demo' },
-    )
+  // `connect` takes the sliced SIGNAL handle (`state.at('tabs')`), not an accessor.
+  view: ({ state, send }) => {
+    const t = tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }), { id: 'demo' })
     return [
       div({ ...t.root }, [
         div({ ...t.list }, [
@@ -59,23 +56,39 @@ const App = component<State, Msg, never>({
 
 1. **`init(opts?)`** -- creates the initial state
 2. **`update(state, msg)`** -- pure reducer, returns `[newState, effects[]]`
-3. **`connect(get, send, opts?)`** -- returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
+3. **`connect(state, send, opts?)`** -- takes the sliced `Signal` handle; returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
 4. **Overlay helpers** (dialog, popover, menu, etc.) -- `overlay()` wires up portals, focus traps, dismiss layers, and positioning
 
-### Composition with `sliceHandler`
+### Composition: delegated `update`
+
+The parent owns the component's state as a slice and routes its messages through the
+parent's `Msg` union — a flat switch, no special combinator. `connect(state, send, opts?)`
+takes the sliced **signal handle** and returns spreadable, signal-based parts.
 
 ```typescript
-import { mergeHandlers, sliceHandler } from '@llui/dom'
+import { tabs } from '@llui/components/tabs'
+import { div } from '@llui/dom'
 
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.tabs,
-    set: (s, v) => ({ ...s, tabs: v }),
-    narrow: (m) => (m.type === 'tabs' ? m.msg : null),
-    sub: tabs.update,
-  }),
-  // ... more slices
-)
+type State = { tabs: tabs.TabsState /* … */ }
+type Msg = { type: 'tabs'; msg: tabs.TabsMsg } /* | … */
+
+update: (state, msg) => {
+  switch (msg.type) {
+    case 'tabs':
+      return [{ ...state, tabs: tabs.update(state.tabs, msg.msg)[0] }, []]
+    // … other slices
+  }
+}
+
+// view — connect() takes the sliced signal and a routed `send`:
+view: ({ state, send }) => {
+  const parts = tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }))
+  return [
+    div({ ...parts.root }, [
+      /* … */
+    ]),
+  ]
+}
 ```
 
 ## Components (54)

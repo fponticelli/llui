@@ -1,6 +1,6 @@
 /**
  * Minimal DOM surface that `@llui/dom`'s internals depend on. Passed to
- * `mountApp` / `hydrateApp` / `renderToString` as a context object so
+ * `mountApp` / `hydrateSignalApp` / `renderToString` as a context object so
  * the runtime never reaches for `globalThis.document` directly.
  *
  * Why an injected shape instead of a global shim:
@@ -85,7 +85,7 @@ export interface DomEnv {
 
 /**
  * Wrap the browser globals as a `DomEnv`. Used as the default env for
- * `mountApp` / `hydrateApp` on the client.
+ * `mountApp` / `hydrateSignalApp` on the client.
  *
  * The returned object delegates to `globalThis.document` / `globalThis.X`
  * lazily — evaluating `browserEnv()` on a server process before a DOM

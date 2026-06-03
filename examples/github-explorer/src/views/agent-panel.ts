@@ -1,6 +1,6 @@
 import { div, button, span, p, text, branch, each } from '@llui/dom'
 import type { State, Msg } from '../types'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 
 type AgentState = State['agent']
 import { agentConfirm, summarizeDiff } from '@llui/agent/client'
@@ -200,7 +200,7 @@ function statusLabel(status: string): string {
 
 // ── View ───────────────────────────────────────────────────────────────────────
 
-export function agentPanel(agent: Signal<AgentState>, send: Send<Msg>): Node {
+export function agentPanel(agent: Signal<AgentState>, send: Send<Msg>): Mountable {
   return div({ style: CARD_STYLE }, [
     // ── Header ──────────────────────────────────────────────────────────────
     div({ style: HEADER_STYLE }, [
@@ -390,7 +390,7 @@ export function agentPanel(agent: Signal<AgentState>, send: Send<Msg>): Node {
   ])
 }
 
-function activityRow(item: Signal<LogEntry>): Node {
+function activityRow(item: Signal<LogEntry>): Mountable {
   const entry = item.peek()
   const kind = entry.kind
   const at = entry.at
@@ -410,7 +410,7 @@ function activityRow(item: Signal<LogEntry>): Node {
   ])
 }
 
-function confirmCard(item: Signal<ConfirmEntry>, send: Send<Msg>): Node {
+function confirmCard(item: Signal<ConfirmEntry>, send: Send<Msg>): Mountable {
   const id = item.peek().id
   return div({ style: CONFIRM_CARD }, [
     p({ style: 'margin: 0 0 4px; font-size: 13px; font-weight: 500; color: #92400e' }, [

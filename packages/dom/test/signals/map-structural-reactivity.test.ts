@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { component, mountApp, text, div, li, ul, each, show } from '../../src/signals/authoring'
-import type { Signal } from '../../src/signals/index'
+import type { Signal, Mountable } from '../../src/signals/index'
 import { renderToString } from '../../src/signals/ssr'
 import { hydrateSignalApp } from '../../src/signals/component'
 
@@ -103,7 +103,7 @@ describe('helper-built structural primitives over root .map survive hydration', 
   // they run via the runtime authoring helpers during the (hydrate) build. The
   // helper takes a `Signal<S>` handle (the idiomatic sub-view composition shape)
   // and uses the real `.map()` / `.at()` API.
-  const widget = (state: Signal<S>): Node =>
+  const widget = (state: Signal<S>): Mountable =>
     div({ id: 'widget' }, [
       show(
         state.map((s) => s.open),

@@ -27,7 +27,7 @@ export type DiagnosticCategory =
   | 'agent'
   /** Style / authoring conventions — naming, redundancy, lint-only signals. */
   | 'style'
-  /** Performance — bitmask overflow, FULL_MASK fallbacks, expensive accessors. */
+  /** Performance — whole-state (FULL_MASK) coarsening, expensive accessors. */
   | 'perf'
   /** Module / build configuration — manifest skew, version mismatch, integrity. */
   | 'config'

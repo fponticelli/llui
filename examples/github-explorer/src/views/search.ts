@@ -1,6 +1,6 @@
 import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom'
 import type { Msg, Repo, Route } from '../types'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { routing } from '../router'
 
 const LANG_COLORS: Record<string, string> = {
@@ -43,7 +43,7 @@ function currentPage(r: Route): number {
   return r.page === 'search' ? r.p : 1
 }
 
-export function searchView(route: Signal<Route>, send: Send<Msg>): Node[] {
+export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'container' }, [
       // Error
@@ -125,7 +125,7 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Node[] {
   ]
 }
 
-function repoItem(item: Signal<Repo>, send: Send<Msg>): Node {
+function repoItem(item: Signal<Repo>, send: Send<Msg>): Mountable {
   const owner = item.peek().owner.login
   const name = item.peek().name
   return li({ class: 'repo-item' }, [
