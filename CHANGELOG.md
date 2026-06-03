@@ -11,6 +11,12 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-03 — @llui/compiler-introspection@0.7.0, @llui/compiler-devtools@0.7.0, @llui/compiler-ssr@0.7.0, @llui/mcp@0.7.0
+
+**Released:** `@llui/compiler-introspection@0.7.0`, `@llui/compiler-devtools@0.7.0`, `@llui/compiler-ssr@0.7.0`, `@llui/mcp@0.7.0`
+
+Lockstep bump of the rest of the compiler family to `0.7.0` so their published tarballs re-pin `@llui/compiler@0.7.0` (internal deps are `workspace:*`, substituted at pack time). No source/API change in any of these packages — they don't use the new cross-package ABI, but this keeps the family on one compiler version and avoids a consumer installing two `@llui/compiler` majors side by side.
+
 ## 2026-06-03 — @llui/components@0.6.0
 
 **Released:** `@llui/components@0.6.0`
