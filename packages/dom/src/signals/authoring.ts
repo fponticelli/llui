@@ -17,6 +17,7 @@ import {
   elNS,
   react,
   signalEach,
+  signalEachDirect,
   signalShow,
   signalUnsafeHtml,
   signalBranch,
@@ -29,6 +30,7 @@ import {
   type Renderable,
   type SignalLazyOptions,
   type SignalSpec,
+  type RowFactory,
 } from './dom.js'
 import {
   mountSignalComponent,
@@ -194,6 +196,20 @@ export function each<T>(
     const indexH = pathHandle<number>(getCtx, 'index')
     return opts.render(itemH, indexH)
   })
+}
+
+/** Direct-construction keyed list. Same keyed reconcile as {@link each}, but each
+ * row is built by `row` (a {@link RowFactory}: direct DOM + binding specs wired by
+ * node reference) instead of authoring helpers — the compiled fast path. The
+ * factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`. */
+export function eachDirect<T>(
+  items: Signal<readonly T[]>,
+  key: (item: T) => string | number,
+  row: RowFactory,
+): Mountable {
+  if (!isSignalHandle(items)) return compiledAway('eachDirect')
+  const produce = items.produce as (s: unknown) => readonly T[]
+  return signalEachDirect({ items: produce, deps: items.deps }, key, row)
 }
 
 export function show<T>(

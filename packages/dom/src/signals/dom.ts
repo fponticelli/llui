@@ -11,7 +11,7 @@
 // legacy element helpers (per-file-flip migration).
 
 import { createSignalScope, type SignalBinding, type SignalScope } from './runtime.js'
-import { buildPathTable, bindingMask } from './mask.js'
+import { buildPathTable, bindingMask, type PathTable, type SparseMask } from './mask.js'
 import type { LiveSignal } from './types.js'
 // `component.ts` imports `mountSignal` from THIS module — a benign cycle: ESM
 // resolves it because `mountSignalComponent` is only ever CALLED (inside
@@ -42,7 +42,10 @@ export interface SignalDoc {
 
 type Producer = (state: unknown) => unknown
 
-interface BindingSpec {
+/** A reactive binding: the dependency paths it reads + an accessor (`produce`)
+ * and a `commit` that applies the value. This is the compiler transform's output
+ * target, and the contract a {@link DirectRow} (compiled `each` row) supplies. */
+export interface BindingSpec {
   deps: readonly string[]
   produce: Producer
   commit: (value: unknown) => void
@@ -653,15 +656,36 @@ function rebaseRowSpecs(specs: readonly BindingSpec[]): BindingSpec[] {
   return specs.map((s) => (s.structural ? s : rebaseRowSpec(s)))
 }
 
-/** Build a chunked-mask reconciler scope over a set of collected bindings. */
-function buildScope(specs: readonly BindingSpec[]): SignalScope {
-  const table = buildPathTable(specs.flatMap((s) => [...s.deps]))
-  const bindings: SignalBinding[] = specs.map((s) => ({
-    mask: bindingMask(s.deps, table),
+/** A reusable scope shape: the `PathTable` + per-binding masks for one binding
+ * structure. `each` rows from a {@link RowFactory} share the template, so their
+ * specs carry identical `deps` (hence identical, immutable table + masks) — built
+ * ONCE from the first row and reused, skipping per-row `buildPathTable`/`bindingMask`. */
+interface ScopeShape {
+  table: PathTable
+  masks: readonly SparseMask[]
+}
+
+/** Build a scope from specs. With `pre` (a cached {@link ScopeShape} from an
+ * earlier row of the same template), the per-row `buildPathTable` + `bindingMask`
+ * work is skipped — only the row's own produce/commit closures bind to the shared
+ * masks. Returns the scope plus its shape (to seed the cache). */
+function scopeFromSpecs(
+  specs: readonly BindingSpec[],
+  pre?: ScopeShape,
+): { scope: SignalScope; shape: ScopeShape } {
+  const table = pre ? pre.table : buildPathTable(specs.flatMap((s) => [...s.deps]))
+  const masks = pre ? pre.masks : specs.map((s) => bindingMask(s.deps, table))
+  const bindings: SignalBinding[] = specs.map((s, i) => ({
+    mask: masks[i]!,
     produce: s.produce,
     commit: s.commit,
   }))
-  return createSignalScope(table, bindings)
+  return { scope: createSignalScope(table, bindings), shape: pre ?? { table, masks } }
+}
+
+/** Build a chunked-mask reconciler scope over a set of collected bindings. */
+function buildScope(specs: readonly BindingSpec[]): SignalScope {
+  return scopeFromSpecs(specs).scope
 }
 
 /** Items source for `signalEach`: an accessor reading the array out of the
@@ -682,6 +706,21 @@ export interface RowCtx<T> {
   /** the row's current position (dep `index`) — for runtime `each` index handles */
   index: number
 }
+
+/** A compiler-emitted (or hand-written) direct `each` row: real DOM nodes built
+ * with direct ops + binding specs wired by DIRECT node reference — bypassing the
+ * authoring-helper / `Mountable` / `populate` / `pathHandle` machinery the
+ * generic row path runs per row. The factory runs per row under the build ctx;
+ * each spec's `produce(ctx)` reads the row ctx (`{ item, state, index }`) and its
+ * `commit` writes straight to the located node. See
+ * `docs/proposals/v2-compiler/compiled-row-construction.md`. */
+export interface DirectRow {
+  nodes: Node[]
+  bindings: readonly BindingSpec[]
+}
+
+/** Builds a fresh {@link DirectRow} (new nodes + binding closures) per row. */
+export type RowFactory = (doc: SignalDoc) => DirectRow
 
 /**
  * Indices into `a` that form a longest strictly-increasing subsequence, skipping
@@ -736,13 +775,50 @@ export function signalEach<T>(
   return mountable(() => buildSignalEach(source, key, renderRow))
 }
 
+/** Direct-construction keyed list: same keyed reconcile as {@link signalEach},
+ * but each row is built by a {@link RowFactory} (direct DOM + direct binding
+ * wiring) instead of running authoring helpers per row. The compiler-emitted fast
+ * path for lowerable rows; also usable hand-written. */
+export function signalEachDirect<T>(
+  source: EachSource<T>,
+  key: (item: T) => string | number,
+  rowFactory: RowFactory,
+): Mountable {
+  return mountable(() => buildSignalEach(source, key, undefined, rowFactory))
+}
+
+/** Wrap a {@link DirectRow} into the `built` shape `buildSignalEach` expects.
+ * Direct rows carry no teardowns/mounts/descriptors and own no nested scope; the
+ * keyed reconcile, scope-build, and mount are shared with the render path. */
+function buildDirectRow(dr: DirectRow): {
+  nodes: readonly Node[]
+  specs: BindingSpec[]
+  host: { scope: SignalScope | null }
+  teardowns: Array<() => void>
+  mounts: Array<(root: Element) => void | (() => void)>
+  descriptors: Map<string, number>
+} {
+  return {
+    nodes: dr.nodes,
+    specs: dr.bindings.slice(),
+    host: { scope: null },
+    teardowns: [],
+    mounts: [],
+    descriptors: new Map(),
+  }
+}
+
 function buildSignalEach<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
   // `getCtx` exposes the row's LIVE combined ctx so authoring `each` can build
   // item handles whose `.peek()` reads the current row. The transform emits
-  // `() => [...]` which simply ignores the argument.
-  renderRow: (getCtx: () => RowCtx<T>) => Renderable,
+  // `() => [...]` which simply ignores the argument. Undefined when `rowFactory`
+  // is supplied (the direct-construction path).
+  renderRow: ((getCtx: () => RowCtx<T>) => Renderable) | undefined,
+  // Direct-construction row builder (compiled fast path); when set, rows are built
+  // by this instead of running `renderRow` through the authoring helpers.
+  rowFactory?: RowFactory,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -794,6 +870,11 @@ function buildSignalEach<T>(
   // (`state.map(…)`) reads `ctx.state`. For a top-level each the input IS the
   // component state and both coincide.
   const itemsRowLocal = source.deps.length > 0 && source.deps.every(isRowLocalDep)
+  // Direct-construction rows from a `rowFactory` share one template, so every
+  // row's specs carry identical deps → identical PathTable + masks. Build that
+  // shape once (from the first row) and reuse it for all rows, skipping per-row
+  // buildPathTable + bindingMask.
+  let directShape: ScopeShape | null = null
   const reconcile = (input: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
@@ -823,7 +904,9 @@ function buildSignalEach<T>(
         const holder = { ctx }
         // forceInRow: the row build (and every nested arm/row build) operates on
         // the combined ctx, so structural primitives inside it become row-aware.
-        const built = runBuild(doc, () => renderRow(() => holder.ctx), c, undefined, true)
+        const built = rowFactory
+          ? buildDirectRow(rowFactory(doc))
+          : runBuild(doc, () => renderRow!(() => holder.ctx), c, undefined, true)
         // Probe the template once (all rows share it): does any VALUE spec need
         // rebasing (non-row-local dep), and does any binding read component state?
         // Structural specs make themselves row-aware, so they're excluded here.
@@ -860,7 +943,16 @@ function buildSignalEach<T>(
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
         if (needsRebase) built.specs = rebaseRowSpecs(built.specs)
-        const scope = buildAndPublishScope(built)
+        let scope: SignalScope
+        if (rowFactory) {
+          // Direct path: reuse the shared per-each-site shape (built once).
+          const r = scopeFromSpecs(built.specs, directShape ?? undefined)
+          directShape ??= r.shape
+          built.host.scope = r.scope
+          scope = r.scope
+        } else {
+          scope = buildAndPublishScope(built)
+        }
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
           scope,
