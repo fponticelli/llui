@@ -1,15 +1,4 @@
-import {
-  component,
-  mountApp,
-  div,
-  h1,
-  table,
-  tbody,
-  text,
-  eachDirect,
-  type RowFactory,
-  type RowCtx,
-} from '@llui/dom'
+import { component, mountApp, div, h1, table, tbody, tr, td, a, span, text, each } from '@llui/dom'
 import { actionButton } from './action-button.js'
 
 // ── Data generation (matches krausest spec exactly) ──
@@ -76,62 +65,14 @@ type Row = { id: number; label: string }
 
 let nextId = 1
 
-// Direct-construction row factory — what the compiler will emit for the row
-// template `tr([td(text(id)), td(a(text(label))), td(a(span)), td()])`. Builds
-// the DOM with direct ops and wires the two dynamic text slots by node reference;
-// `produce(ctx)` reads the row ctx `{ item }`. The two `col-md-1` cells mirror the
-// authored template: cell 0 holds the id (read back by the delegated click
-// handler), cell 2 holds the remove link.
-const diceRow: RowFactory = (doc) => {
-  const tr = doc.createElement('tr')
-  const td1 = doc.createElement('td')
-  td1.setAttribute('class', 'col-md-1')
-  const tId = doc.createTextNode('')
-  td1.appendChild(tId)
-  tr.appendChild(td1)
-
-  const td2 = doc.createElement('td')
-  td2.setAttribute('class', 'col-md-4')
-  const a2 = doc.createElement('a')
-  const tLabel = doc.createTextNode('')
-  a2.appendChild(tLabel)
-  td2.appendChild(a2)
-  tr.appendChild(td2)
-
-  const td3 = doc.createElement('td')
-  td3.setAttribute('class', 'col-md-1')
-  const a3 = doc.createElement('a')
-  const sp = doc.createElement('span')
-  sp.setAttribute('class', 'glyphicon glyphicon-remove')
-  sp.setAttribute('aria-hidden', 'true')
-  a3.appendChild(sp)
-  td3.appendChild(a3)
-  tr.appendChild(td3)
-
-  const td4 = doc.createElement('td')
-  td4.setAttribute('class', 'col-md-6')
-  tr.appendChild(td4)
-
-  return {
-    nodes: [tr],
-    bindings: [
-      {
-        deps: ['item.id'],
-        produce: (ctx) => String((ctx as RowCtx<Row>).item.id),
-        commit: (v) => {
-          tId.data = v as string
-        },
-      },
-      {
-        deps: ['item.label'],
-        produce: (ctx) => (ctx as RowCtx<Row>).item.label,
-        commit: (v) => {
-          tLabel.data = v == null ? '' : String(v)
-        },
-      },
-    ],
-  }
-}
+// Selection highlight is applied imperatively (single delegated click + a tracked
+// `selectedEl`) rather than a per-row reactive class binding: krausest's "select
+// row" must toggle 'danger' on exactly two rows (old + new) in O(1), not
+// re-evaluate every row's class on every selection change. `selectedEl` lives at
+// module scope (one app instance) so the `view` can stay a concise arrow — which
+// keeps its `each` directly lowerable by the compiler to the direct-construction
+// fast path (`signalEachDirect`).
+let selectedEl: HTMLElement | null = null
 
 function buildData(count: number): Row[] {
   const data: Row[] = []
@@ -224,50 +165,49 @@ const App = component<State, Msg, never>({
         ]),
       ]),
       table({ class: 'table table-hover table-striped test-data' }, [
-        (() => {
-          // Selection highlight is applied imperatively (single delegated click +
-          // a tracked `selectedEl`) rather than a per-row reactive class binding:
-          // krausest's "select row" must toggle 'danger' on exactly two rows
-          // (old + new) in O(1), not re-evaluate every row's class on every
-          // selection change. The reducer still tracks `selected` for state /
-          // agent consistency. (The legacy `selector` primitive is gone with the
-          // legacy runtime; this is the idiomatic signal-runtime equivalent.)
-          let selectedEl: HTMLElement | null = null
-          // Single delegated click listener for all rows, attached to the live
-          // <tbody> via the `onClick` prop. Element helpers now return a lazy
-          // Mountable (materialized where placed), so we can no longer grab the
-          // built node and `addEventListener` on it — the prop is the seam for
-          // imperative DOM wiring.
-          return tbody(
-            {
-              id: 'tbody',
-              onClick: (e) => {
-                const target = e.target as Element
-                const trEl = target.closest('tr') as HTMLElement | null
-                if (!trEl) return
-                const idText = trEl.querySelector('td.col-md-1')?.textContent
-                const id = idText ? Number(idText) : NaN
-                if (Number.isNaN(id)) return
-                if (target.closest('td.col-md-4')) {
-                  if (selectedEl && selectedEl !== trEl) selectedEl.className = ''
-                  trEl.className = 'danger'
-                  selectedEl = trEl
-                  send({ type: 'select', id })
-                } else if (target.closest('td.col-md-1 a')) {
-                  if (selectedEl === trEl) selectedEl = null
-                  send({ type: 'remove', id })
-                }
-              },
+        // A single delegated click listener on the live <tbody> (the `onClick`
+        // prop) drives both select + remove in O(1) via `selectedEl`. With the
+        // tbody + each authored DIRECTLY here (no IIFE wrapper), the compiler
+        // lowers this static-skeleton row to the direct-construction fast path
+        // (`signalEachDirect`). The first cell IS the row id — the handler reads
+        // it back from there, so no per-row id capture is needed.
+        tbody(
+          {
+            id: 'tbody',
+            onClick: (e) => {
+              const target = e.target as Element
+              const trEl = target.closest('tr') as HTMLElement | null
+              if (!trEl) return
+              const idText = trEl.querySelector('td.col-md-1')?.textContent
+              const id = idText ? Number(idText) : NaN
+              if (Number.isNaN(id)) return
+              if (target.closest('td.col-md-4')) {
+                if (selectedEl && selectedEl !== trEl) selectedEl.className = ''
+                trEl.className = 'danger'
+                selectedEl = trEl
+                send({ type: 'select', id })
+              } else if (target.closest('td.col-md-1 a')) {
+                if (selectedEl === trEl) selectedEl = null
+                send({ type: 'remove', id })
+              }
             },
-            // Direct-construction rows (Phase 1 prototype: what the compiler will
-            // emit for this row template). `eachDirect` keeps the keyed reconcile
-            // but builds each row with direct DOM ops + binding specs wired by node
-            // reference — no per-row authoring-helper / Mountable / populate /
-            // pathHandle overhead. The first cell IS the row id (the delegated click
-            // handler reads it back from there).
-            [eachDirect(state.at('rows'), (r: Row) => r.id, diceRow)],
-          )
-        })(),
+          },
+          [
+            each(state.at('rows'), {
+              key: (r: Row) => r.id,
+              render: (item) => [
+                tr([
+                  td({ class: 'col-md-1' }, [text(item.map((r) => String(r.id)))]),
+                  td({ class: 'col-md-4' }, [a([text(item.at('label'))])]),
+                  td({ class: 'col-md-1' }, [
+                    a([span({ class: 'glyphicon glyphicon-remove', 'aria-hidden': 'true' })]),
+                  ]),
+                  td({ class: 'col-md-6' }),
+                ]),
+              ],
+            }),
+          ],
+        ),
       ]),
     ]),
   ],
