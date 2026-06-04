@@ -847,6 +847,11 @@ function buildSignalEach<T>(
   // Keys in current DOM order — the previous reconcile's desired order. Drives the
   // LIS move-minimization (old position of each surviving key).
   let order: string[] = []
+  // The previous reconcile's items array — for the same-structure fast path: when
+  // the new array has the same length and every CHANGED position keeps its key
+  // (the streaming in-place update case), only the changed rows need updating and
+  // we skip the O(n) keyed scan (String(key)+Set+Map + per-reconcile allocations).
+  let prevItems: readonly T[] | null = null
   // Whether the row template has ANY binding that reads component state (`state` /
   // `state.*` deps, after rebasing). Probed once from the first built row — every
   // row shares the template, so it's a property of the `each`, not the row. When
@@ -882,6 +887,44 @@ function buildSignalEach<T>(
     const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
     const items = source.items(itemsState)
     const n = items.length
+
+    // ── Same-structure fast path ──────────────────────────────────────────
+    // The streaming in-place update case (e.g. a ticker tick replacing a few
+    // rows' values): same length, and every position whose item REF changed
+    // keeps its key — so no create/remove/move. Update only the changed rows
+    // (or all rows when the template reads component state, which any state
+    // change may fan out to) and skip the O(n) keyed scan entirely — no
+    // `String(key)` per row, no `Set`/`Array(n)` allocations, no LIS. Falls
+    // through to the full keyed reconcile the moment a key moves or n changes.
+    const prev = prevItems
+    prevItems = items // set once here — covers every return path below
+    if (prev !== null && n === prev.length && rows.size === n) {
+      let structural = false
+      for (let i = 0; i < n; i++) {
+        if (items[i] !== prev[i] && String(key(items[i]!)) !== order[i]) {
+          structural = true // a key moved / row replaced → need the full reconcile
+          break
+        }
+      }
+      if (!structural) {
+        for (let i = 0; i < n; i++) {
+          const item = items[i]!
+          const row = rows.get(order[i]!)!
+          if (templateReadsState || item !== row.ctx.item || i !== row.ctx.index) {
+            const next = row.spare
+            next.item = item
+            next.state = rowState
+            next.index = i
+            row.scope.update(row.ctx, next)
+            row.spare = row.ctx
+            row.ctx = next
+            row.holder.ctx = next
+          }
+        }
+        return
+      }
+    }
+
     const newKeys = new Array<string>(n)
     const newRows = new Array<Row>(n)
     const seen = new Set<string>()
