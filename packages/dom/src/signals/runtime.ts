@@ -97,16 +97,27 @@ export function createSignalScope(
 
   return {
     mount(state: unknown): void {
+      // Fast path: no binding-error hook installed (the common case). Run the
+      // hottest loop in the runtime WITHOUT a per-iteration try/catch — that
+      // wrapper is a V8 optimization barrier, and a throw here propagates by
+      // default exactly as before. The safe path (below) is taken only while a
+      // hook is active (agent/debug sessions), where it reports + continues.
+      if (errorHandlers.length === 0) {
+        for (const b of bindings) {
+          const v = b.produce(state)
+          b.commit(v)
+          last.set(b, v)
+        }
+        return
+      }
       for (const b of bindings) {
         try {
           const v = b.produce(state)
           b.commit(v)
           last.set(b, v)
         } catch (err) {
-          // With a binding-error hook installed: report and continue siblings,
-          // leaving this binding's last value untouched (DOM keeps its prior
-          // value). With no hook: preserve the default — propagate the throw.
-          if (errorHandlers.length === 0) throw err
+          // Hook installed: report and continue siblings, leaving this binding's
+          // last value untouched (DOM keeps its prior value).
           reportBindingError(err)
         }
       }
@@ -116,17 +127,29 @@ export function createSignalScope(
       // Skip the whole binding sweep when nothing this scope tracks changed —
       // the common case for an unchanged `each` row whose item ref is identical.
       if (computeDirtyInto(table, oldState, newState, dirty)) {
-        for (const b of bindings) {
-          if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
-          try {
+        // Fast path mirrors mount(): try/catch-free hot loop unless a
+        // binding-error hook is active.
+        if (errorHandlers.length === 0) {
+          for (const b of bindings) {
+            if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
             const v = b.produce(newState)
             if (!Object.is(v, last.get(b))) {
               b.commit(v) // output-equality: only commit real changes
               last.set(b, v)
             }
-          } catch (err) {
-            if (errorHandlers.length === 0) throw err
-            reportBindingError(err)
+          }
+        } else {
+          for (const b of bindings) {
+            if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
+            try {
+              const v = b.produce(newState)
+              if (!Object.is(v, last.get(b))) {
+                b.commit(v) // output-equality: only commit real changes
+                last.set(b, v)
+              }
+            } catch (err) {
+              reportBindingError(err)
+            }
           }
         }
       }

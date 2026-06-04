@@ -10,7 +10,7 @@
 // just carry binding info; the component-level chunked-mask reconciler still
 // gates everything.
 
-import { resolvePath } from './mask.js'
+import { resolveSegments } from './mask.js'
 // Row-context hooks (build-layer concern): when `derived` is built inside an
 // `each` row, each component-state input must resolve against `ctx.state` while
 // item/index inputs read the combined ctx. These are runtime-only calls (inside
@@ -38,23 +38,31 @@ export function isSignalHandle(v: unknown): v is SignalHandle<unknown> {
 /** A path-rooted handle: `produce` resolves `base` from the binding state;
  * `peek` reads the live value via `get`. `at` extends the path; `map` derives. */
 export function pathHandle<T>(get: () => unknown, base: string): SignalHandle<T> {
-  const produce = (state: unknown): T => resolvePath(state, base) as T
+  // Pre-split the base path ONCE at handle creation; `produce`/`peek` run on
+  // every binding evaluation (and re-evaluation on update), so they must not
+  // re-`String.split` the path each time. This keeps `.at(x)` as cheap per-read
+  // as a direct `.map(s => s.x)` access — important because the
+  // `prefer-at-over-map` lint steers all authors toward `.at`.
+  const segs = base === '' ? EMPTY_SEGS : base.split('.')
+  const produce = (state: unknown): T => resolveSegments(state, segs) as T
   const h: SignalHandle<T> = {
     [SIGNAL]: true,
     produce,
     deps: [base],
-    peek: () => resolvePath(get(), base) as T,
+    peek: () => resolveSegments(get(), segs) as T,
     at: ((path: string) =>
       pathHandle(get, base === '' ? path : `${base}.${path}`)) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
       derivedHandle<U>(
-        () => fn(resolvePath(get(), base) as T),
+        () => fn(resolveSegments(get(), segs) as T),
         (s) => fn(produce(s)),
         [base],
       )) as Signal<T>['map'],
   }
   return h
 }
+
+const EMPTY_SEGS: readonly string[] = []
 
 /** A derived handle (from `.map`): wraps a source's peek/produce; deps carry
  * through unchanged (the mask gate stays correct — the value can only change

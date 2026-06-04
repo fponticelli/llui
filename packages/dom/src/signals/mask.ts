@@ -83,6 +83,13 @@ export function resolvePath(state: unknown, path: string): unknown {
   return resolveSegs(state, path === '' ? [] : path.split('.'))
 }
 
+/** Resolve a value from PRE-SPLIT path segments — no per-call `String.split`.
+ * Used by path-rooted signal handles, which split their base path once at
+ * creation and then read through this on every binding evaluation. */
+export function resolveSegments(value: unknown, segs: readonly string[]): unknown {
+  return resolveSegs(value, segs)
+}
+
 /**
  * Compute the dirty chunk-set: bit `i` is set iff the value at `paths[i]`
  * differs between `oldS` and `newS` by `Object.is`. Short-circuits when the
