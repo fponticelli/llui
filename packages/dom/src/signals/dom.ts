@@ -350,9 +350,6 @@ function populate(
   }
 }
 
-/** Build an element. `on*` function props become event listeners; `react(...)`
- * props become reactive bindings; everything else is a static attribute. Returns a
- * `Mountable` that creates the element and materializes its children when placed. */
 /** An element node. `ns === null` → `createElement`; otherwise `createElementNS`.
  * Holds its construction args as fields (no captured closure) and builds with a
  * monomorphic `mount()` — this is the per-node hot path for list rendering. */
@@ -374,6 +371,9 @@ class ElementMountable extends MountableNode {
   }
 }
 
+/** Build an element. `on*` function props become event listeners; `react(...)`
+ * props become reactive bindings; everything else is a static attribute. Returns a
+ * `Mountable` that creates the element and materializes its children when placed. */
 export function el(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
