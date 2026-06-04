@@ -97,7 +97,14 @@ Built the runtime contract (`signalEachDirect`/`eachDirect`, `DirectRow`/`RowFac
 
 **The construction-op regression is closed**: Create 1k −4.6 ms (back to the pre-signal baseline, matching Solid); Create 10k matches Solid; Replace −4.6 ms. Confirms the categorized-trace projection and justifies the general codegen.
 
-**Out of scope / separate follow-up:** Update (+40%) and Swap (+112%) stay elevated. These are NOT construction ops (Swap is a 2-row move, builds nothing), so direct construction doesn't and shouldn't touch them — they are a distinct **reconcile/move-path** regression from the signals migration, consistent across every run, to be investigated separately.
+**Out of scope — and NOT a code lever (measured):** Update (+45%) and Swap (+113%) stay elevated, but a CDP categorized trace shows their **framework JS is negligible** — Update **0.31 ms** (Layout 3.47, Style 0.03), Swap **0.18 ms** (Layout 0.80). Unlike create (3.64 ms of addressable JS), there is essentially no LLui JS to optimize here: they are layout/paint-bound (identical DOM → identical layout, shared with Solid), and the inflated percentages are artifacts of tiny baselines (10.7/7.8 ms) plus 2–3-run measurement noise. **Conclusion: do not pursue Update/Swap as a JS optimization** — direct construction was the right and sufficient lever for the addressable regression (create/replace/append).
+
+## Phase 1: complete
+
+- ✅ Runtime contract (`signalEachDirect`/`eachDirect`, shared per-each-site mask/table memo) + tests.
+- ✅ Compiler codegen: static-skeleton `each` rows auto-lower to `signalEachDirect` + generated `RowFactory`; correctness-safe fallback to `signalEach`; auto-import.
+- ✅ Benchmark dogfoods the compiler (authored `each`, no hand-written factory): Create 1k **21.8 ms** (Solid 20.8 / pre-signal 21.2), Create 10k 235, Replace 24.7 — PlausibilityCheck passes.
+- Remaining (optional, lower value): broaden lowering to reach `each` in IIFE/helper positions _without_ restructuring (a general transform-coverage expansion); reactive-attr / event-handler slot kinds in `lowerRowFactory` (today they fall back to `signalEach`).
 
 ## Remaining Phase 1 work (the actual codegen)
 
