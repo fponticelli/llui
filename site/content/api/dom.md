@@ -366,6 +366,21 @@ function signalEach<T>(
 ): Mountable
 ```
 
+### `signalEachDirect()`
+
+Direct-construction keyed list: same keyed reconcile as {@link signalEach},
+but each row is built by a {@link RowFactory} (direct DOM + direct binding
+wiring) instead of running authoring helpers per row. The compiler-emitted fast
+path for lowerable rows; also usable hand-written.
+
+```typescript
+function signalEachDirect<T>(
+  source: EachSource<T>,
+  key: (item: T) => string | number,
+  rowFactory: RowFactory,
+): Mountable
+```
+
 ### `signalShow()`
 
 Conditional render. Mounts `render`'s content when the condition is truthy; if
@@ -584,6 +599,21 @@ function each<T>(
 ): Mountable
 ```
 
+### `eachDirect()`
+
+Direct-construction keyed list. Same keyed reconcile as {@link each}, but each
+row is built by `row` (a {@link RowFactory}: direct DOM + binding specs wired by
+node reference) instead of authoring helpers — the compiled fast path. The
+factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`.
+
+```typescript
+function eachDirect<T>(
+  items: Signal<readonly T[]>,
+  key: (item: T) => string | number,
+  row: RowFactory,
+): Mountable
+```
+
 ### `show()`
 
 ```typescript
@@ -769,6 +799,14 @@ placement by `populate`/`runBuild`.
 export type Renderable = readonly Mountable[]
 ```
 
+### `RowFactory`
+
+Builds a fresh {@link DirectRow} (new nodes + binding closures) per row.
+
+```typescript
+export type RowFactory = (doc: SignalDoc) => DirectRow
+```
+
 ### `MountTarget`
 
 Where a `mountSignal` call attaches its built nodes. A `container` element
@@ -915,10 +953,31 @@ export interface TransitionOptions {
 }
 ```
 
+### `BindingSpec`
+
+A reactive binding: the dependency paths it reads + an accessor (`produce`)
+and a `commit` that applies the value. This is the compiler transform's output
+target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
+
+```typescript
+export interface BindingSpec {
+  deps: readonly string[]
+  produce: Producer
+  commit: (value: unknown) => void
+  // A structural primitive's spec (show/branch/each): its `produce` is identity
+  // and `commit` reconciles arms/rows owning child scopes. Structural specs make
+  // themselves row-aware at build time (see `c.inRow`), so the enclosing `each`'s
+  // value-spec rebasing must SKIP them rather than rewrite their identity produce.
+  structural?: boolean
+}
+```
+
 ### `Mountable`
 
-A lazy structural node: `mount()` builds the live node (and registers its bindings
-into the active build) at placement time. Returned by `each`/`show`/`branch`/etc.
+A lazy node description: `mount()` builds the live node (and registers its
+bindings into the active build) at placement time. Everything LLui builds —
+elements, text, and structural primitives — is a `Mountable`, materialized
+where it is placed (see `populate`/`runBuild`).
 
 ```typescript
 export interface Mountable {
@@ -962,6 +1021,23 @@ export interface RowCtx<T> {
   state: unknown
   /** the row's current position (dep `index`) — for runtime `each` index handles */
   index: number
+}
+```
+
+### `DirectRow`
+
+A compiler-emitted (or hand-written) direct `each` row: real DOM nodes built
+with direct ops + binding specs wired by DIRECT node reference — bypassing the
+authoring-helper / `Mountable` / `populate` / `pathHandle` machinery the
+generic row path runs per row. The factory runs per row under the build ctx;
+each spec's `produce(ctx)` reads the row ctx (`{ item, state, index }`) and its
+`commit` writes straight to the located node. See
+`docs/proposals/v2-compiler/compiled-row-construction.md`.
+
+```typescript
+export interface DirectRow {
+  nodes: Node[]
+  bindings: readonly BindingSpec[]
 }
 ```
 
