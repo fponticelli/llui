@@ -11,7 +11,13 @@
 // legacy element helpers (per-file-flip migration).
 
 import { createSignalScope, type SignalBinding, type SignalScope } from './runtime.js'
-import { buildPathTable, bindingMask, type PathTable, type SparseMask } from './mask.js'
+import {
+  buildPathTable,
+  bindingMask,
+  resolvePath,
+  type PathTable,
+  type SparseMask,
+} from './mask.js'
 import type { LiveSignal } from './types.js'
 // `component.ts` imports `mountSignal` from THIS module — a benign cycle: ESM
 // resolves it because `mountSignalComponent` is only ever CALLED (inside
@@ -852,6 +858,14 @@ function buildSignalEach<T>(
   // (the streaming in-place update case), only the changed rows need updating and
   // we skip the O(n) keyed scan (String(key)+Set+Map + per-reconcile allocations).
   let prevItems: readonly T[] | null = null
+  // State-fanout gating (B): when a row template reads component state ONLY via
+  // known value paths, capture them so a reconcile can skip the all-row update
+  // sweep when none of those paths changed (the ticker tick that bumps tickCount
+  // but not displayMode). `stateGatable` is false when the row has a structural
+  // child / a rebased connect-part / a whole-`state` read — then we sweep always.
+  let stateGatable = false
+  let rowStatePaths: string[] = []
+  let prevStateVals: unknown[] | null = null
   // Whether the row template has ANY binding that reads component state (`state` /
   // `state.*` deps, after rebasing). Probed once from the first built row — every
   // row shares the template, so it's a property of the `each`, not the row. When
@@ -888,6 +902,26 @@ function buildSignalEach<T>(
     const items = source.items(itemsState)
     const n = items.length
 
+    // State-fanout gating (B): does this reconcile have to re-evaluate EVERY row
+    // (a component-state path the rows read changed → fan out), or only the rows
+    // whose item changed? When the row's state reads are gatable, compare the
+    // captured paths against the previous reconcile; otherwise sweep (conservative
+    // / pre-probe). `sweepAll` replaces the coarse always-on `templateReadsState`
+    // at the per-row update sites below.
+    let sweepAll = templateReadsState
+    if (stateGatable) {
+      if (prevStateVals !== null) {
+        sweepAll = false
+        for (let j = 0; j < rowStatePaths.length; j++) {
+          if (!Object.is(resolvePath(rowState, rowStatePaths[j]!), prevStateVals[j])) {
+            sweepAll = true
+            break
+          }
+        }
+      }
+      prevStateVals = rowStatePaths.map((p) => resolvePath(rowState, p))
+    }
+
     // ── Same-structure fast path ──────────────────────────────────────────
     // The streaming in-place update case (e.g. a ticker tick replacing a few
     // rows' values): same length, and every position whose item REF changed
@@ -910,7 +944,7 @@ function buildSignalEach<T>(
         for (let i = 0; i < n; i++) {
           const item = items[i]!
           const row = rows.get(order[i]!)!
-          if (templateReadsState || item !== row.ctx.item || i !== row.ctx.index) {
+          if (sweepAll || item !== row.ctx.item || i !== row.ctx.index) {
             const next = row.spare
             next.item = item
             next.state = rowState
@@ -982,6 +1016,27 @@ function buildSignalEach<T>(
             built.specs.some(
               (s) => s.structural || s.deps.some((d) => d === 'state' || d.startsWith('state.')),
             )
+          // State-fanout gating (B): capture the component-state value paths the
+          // row reads, but only when templateReadsState is true SOLELY because of
+          // them — a structural child (lazy arm state reads we can't see), a
+          // rebased connect-part, or a whole-`state` read can't be gated cheaply.
+          stateGatable =
+            templateReadsState && !needsRebase && !built.specs.some((s) => s.structural)
+          if (stateGatable) {
+            const paths = new Set<string>()
+            for (const s of built.specs) {
+              for (const d of s.deps) {
+                if (d === 'state') {
+                  stateGatable = false // whole-state read → any change matters
+                  break
+                }
+                if (d.startsWith('state.')) paths.add(d.slice(6))
+              }
+              if (!stateGatable) break
+            }
+            rowStatePaths = [...paths]
+            if (stateGatable) prevStateVals = rowStatePaths.map((p) => resolvePath(rowState, p))
+          }
         }
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
@@ -1008,7 +1063,7 @@ function buildSignalEach<T>(
           mounted: false,
         }
         rows.set(k, row)
-      } else if (templateReadsState || item !== row.ctx.item || index !== row.ctx.index) {
+      } else if (sweepAll || item !== row.ctx.item || index !== row.ctx.index) {
         // existing row that may have changed: re-run only the bindings whose part
         // of the ctx changed. Reuse the spare ctx buffer (no allocation); swap it
         // in as the new current. old (row.ctx) and new (next) stay distinct refs,
