@@ -97,7 +97,16 @@ Built the runtime contract (`signalEachDirect`/`eachDirect`, `DirectRow`/`RowFac
 
 **The construction-op regression is closed**: Create 1k −4.6 ms (back to the pre-signal baseline, matching Solid); Create 10k matches Solid; Replace −4.6 ms. Confirms the categorized-trace projection and justifies the general codegen.
 
-**Out of scope — and NOT a code lever (measured):** Update (+45%) and Swap (+113%) stay elevated, but a CDP categorized trace shows their **framework JS is negligible** — Update **0.31 ms** (Layout 3.47, Style 0.03), Swap **0.18 ms** (Layout 0.80). Unlike create (3.64 ms of addressable JS), there is essentially no LLui JS to optimize here: they are layout/paint-bound (identical DOM → identical layout, shared with Solid), and the inflated percentages are artifacts of tiny baselines (10.7/7.8 ms) plus 2–3-run measurement noise. **Conclusion: do not pursue Update/Swap as a JS optimization** — direct construction was the right and sufficient lever for the addressable regression (create/replace/append).
+**Out of scope — and NOT a code lever (measured + audited):** Update (+45%) and Swap (+113%) stay elevated in the bench, but they are not addressable LLui code:
+
+- **Swap reconcile audit** (clean, paint-settled harness — proper row-content wait, not a timeout): a 1↔998 swap does exactly **2 DOM moves** (the LIS reorder is minimal), JS **0.24 ms**, Layout 1.00 ms, **real total ~4.8 ms** — i.e. _faster_ than the pre-signal baseline (7.8) and Solid (13.7). The bench's ~17 ms is a **cold-start / harness measurement artifact** (the jfb harness times a single swap on a settled cold-JIT page; warm back-to-back swaps run ~4.8 ms). The reconcile algorithm is optimal; there is no move-count or loop inefficiency to fix.
+- **Update**: CDP categorized trace JS **0.31 ms** (Layout 3.47) — layout/paint-bound, negligible JS.
+
+The inflated percentages are artifacts of tiny baselines (10.7/7.8 ms) where cold-start + harness dominate the absolute number. **Conclusion: do not pursue Update/Swap as a code optimization** — direct construction was the right and sufficient lever for the genuinely addressable regression (create/replace/append).
+
+### JS floor (Phase 2 probe)
+
+After the direct path, create-1k JS is **2.44 ms** (Layout 7.36 + Style 3.08 + Paint ~5 dominate). A lean per-row scope probe (`last` Map→array, lazy `children` Set) cut allocations but moved the bench **sub-noise** (Create 22.3, Create-10k 233.9) — reverted. Confirms create is layout/paint-bound and **the JS lever is exhausted**: further per-row micro-optimization is below measurement noise. The create regression is closed (21.8 ≈ pre-signal 21.2 ≈ Solid 20.8); remaining bench deltas are layout/paint + cold-start, not addressable LLui JS.
 
 ## Phase 1: complete
 
