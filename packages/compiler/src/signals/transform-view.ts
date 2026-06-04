@@ -476,10 +476,11 @@ export function transformNodeExpr(
 }
 
 /** Generate a direct-construction `RowFactory` source for a static-skeleton row
- * (elements with static attrs + static/signal `text` children only). Returns the
- * `(doc) => { … return { nodes, bindings } }` source, or null to fall back to
- * `signalEach` — for reactive attrs, `on*` handlers, spreads, dynamic args,
- * structural children, helper calls, or `index`/opaque reads it can't wire.
+ * (elements with static OR reactive attrs + static/signal `text` children).
+ * Returns the `(doc) => { … return { nodes, bindings } }` source, or null to fall
+ * back to `signalEach` — for `on*` handlers (may close over the row item), style./
+ * IDL props, spreads, dynamic args, structural children, helper calls, or
+ * `index`/opaque reads it can't wire.
  * See docs/proposals/v2-compiler/compiled-row-construction.md. */
 function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile): string | null {
   const arr = arrowReturnArray(fn)
@@ -554,9 +555,20 @@ function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile
       for (const p of propsExpr.properties) {
         if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
         const name = p.name.getText(sf)
-        if (/^on[A-Z]/.test(name)) return null // event handler (v1: bail)
+        if (/^on[A-Z]/.test(name)) return null // event handler (bail — may close over item)
         if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // IDL/style
-        if (isSignalExpr(p.initializer, roots)) return null // reactive attr (v1: bail)
+        if (isSignalExpr(p.initializer, roots)) {
+          // Reactive attribute -> a binding slot that applies the attr to the
+          // located node. Mirrors `applyAttr`'s attribute path (style./IDL are
+          // already excluded above): null/false removes, true sets empty, else
+          // stringifies.
+          const { produce, deps } = signalToProduce(p.initializer, sf, roots)
+          const q = JSON.stringify(name)
+          bindings.push(
+            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { if (v == null || v === false) ${v}.removeAttribute(${q}); else ${v}.setAttribute(${q}, v === true ? '' : String(v)) } }`,
+          )
+          continue
+        }
         const init = p.initializer
         if (ts.isStringLiteralLike(init) || ts.isNumericLiteral(init)) {
           stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)

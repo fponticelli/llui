@@ -122,12 +122,12 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(rowText()).toEqual(['1A!'])
   })
 
-  it('falls back to signalEach when a row has a reactive attribute', () => {
+  it('lowers a reactive attribute to a direct binding and updates it', () => {
     const REACTIVE_ATTR = `
       import { component, ul, li, text, each } from '@llui/dom'
       export const App = component({
         init: () => [{ rows: [{ id: 1, label: 'a', cls: 'x' }] }, []],
-        update: (s) => [s, []],
+        update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
         view: ({ state }) => [
           ul({}, [
             each(state.at('rows'), {
@@ -138,9 +138,20 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         ],
       })
     `
-    const out = transformSignalComponentSource(REACTIVE_ATTR)
-    expect(out).toContain('signalEach(')
-    expect(out).not.toContain('signalEachDirect(')
+    expect(transformSignalComponentSource(REACTIVE_ATTR)).toContain('signalEachDirect(')
+
+    const def = compileAndLoad(REACTIVE_ATTR, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const li = (): HTMLElement => container.querySelector('li')!
+    expect(li().getAttribute('class')).toBe('x')
+    expect(li().textContent).toBe('a')
+
+    // reactive class updates in place; null clears the attribute
+    h.send({ type: 'set', rows: [{ id: 1, label: 'a', cls: 'y' }] })
+    expect(li().getAttribute('class')).toBe('y')
+    h.send({ type: 'set', rows: [{ id: 1, label: 'a', cls: null }] })
+    expect(li().hasAttribute('class')).toBe(false)
   })
 
   it('falls back to signalEach when a row has a structural child', () => {

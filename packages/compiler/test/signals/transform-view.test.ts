@@ -96,11 +96,16 @@ describe('transformNodeExpr — structural primitives', () => {
     const out = tx(
       "each(state.at('rows'), { key: (r) => r.id, render: (r) => [tr({ class: state.at('mode') }, [td([text(r.at('name'))])])] })",
     )
+    // the element-wrapped static-skeleton row lowers to the direct fast path
+    expect(out).toContain('signalEachDirect(')
     // source deps merge: items 'rows' + the row's component-state read 'mode'
     expect(out).toContain("items: (s) => s.rows, deps: ['rows', 'mode']")
-    // item read -> ctx.item; component-state read -> ctx.state
-    expect(out).toContain("signalText((ctx) => ctx.item.name, ['item.name'])")
-    expect(out).toContain("react((ctx) => ctx.state.mode, ['state.mode'])")
+    // item read -> ctx.item (text binding); component-state read -> ctx.state
+    // (reactive-attr binding); both wired by direct node reference
+    expect(out).toContain('produce: (ctx) => ctx.item.name')
+    expect(out).toContain("deps: ['item.name']")
+    expect(out).toContain('produce: (ctx) => ctx.state.mode')
+    expect(out).toContain("deps: ['state.mode']")
   })
 
   it('leaves an each VERBATIM when the render passes the row param to a helper call', () => {
