@@ -1,4 +1,15 @@
-import { component, mountApp, div, h1, table, tbody, tr, td, a, span, text, each } from '@llui/dom'
+import {
+  component,
+  mountApp,
+  div,
+  h1,
+  table,
+  tbody,
+  text,
+  eachDirect,
+  type RowFactory,
+  type RowCtx,
+} from '@llui/dom'
 import { actionButton } from './action-button.js'
 
 // ── Data generation (matches krausest spec exactly) ──
@@ -64,6 +75,63 @@ const random = (max: number) => Math.round(Math.random() * 1000) % max
 type Row = { id: number; label: string }
 
 let nextId = 1
+
+// Direct-construction row factory — what the compiler will emit for the row
+// template `tr([td(text(id)), td(a(text(label))), td(a(span)), td()])`. Builds
+// the DOM with direct ops and wires the two dynamic text slots by node reference;
+// `produce(ctx)` reads the row ctx `{ item }`. The two `col-md-1` cells mirror the
+// authored template: cell 0 holds the id (read back by the delegated click
+// handler), cell 2 holds the remove link.
+const diceRow: RowFactory = (doc) => {
+  const tr = doc.createElement('tr')
+  const td1 = doc.createElement('td')
+  td1.setAttribute('class', 'col-md-1')
+  const tId = doc.createTextNode('')
+  td1.appendChild(tId)
+  tr.appendChild(td1)
+
+  const td2 = doc.createElement('td')
+  td2.setAttribute('class', 'col-md-4')
+  const a2 = doc.createElement('a')
+  const tLabel = doc.createTextNode('')
+  a2.appendChild(tLabel)
+  td2.appendChild(a2)
+  tr.appendChild(td2)
+
+  const td3 = doc.createElement('td')
+  td3.setAttribute('class', 'col-md-1')
+  const a3 = doc.createElement('a')
+  const sp = doc.createElement('span')
+  sp.setAttribute('class', 'glyphicon glyphicon-remove')
+  sp.setAttribute('aria-hidden', 'true')
+  a3.appendChild(sp)
+  td3.appendChild(a3)
+  tr.appendChild(td3)
+
+  const td4 = doc.createElement('td')
+  td4.setAttribute('class', 'col-md-6')
+  tr.appendChild(td4)
+
+  return {
+    nodes: [tr],
+    bindings: [
+      {
+        deps: ['item.id'],
+        produce: (ctx) => String((ctx as RowCtx<Row>).item.id),
+        commit: (v) => {
+          tId.data = v as string
+        },
+      },
+      {
+        deps: ['item.label'],
+        produce: (ctx) => (ctx as RowCtx<Row>).item.label,
+        commit: (v) => {
+          tLabel.data = v == null ? '' : String(v)
+        },
+      },
+    ],
+  }
+}
 
 function buildData(count: number): Row[] {
   const data: Row[] = []
@@ -191,29 +259,13 @@ const App = component<State, Msg, never>({
                 }
               },
             },
-            [
-              each(state.at('rows'), {
-                key: (r: Row) => r.id,
-                render: (item) => [
-                  tr([
-                    // The first cell IS the row id — the delegated click handler
-                    // reads it back from here, so no per-row id capture is needed
-                    // (avoids a build-time .peek() the reactive-slot lint forbids).
-                    td({ class: 'col-md-1' }, [text(item.map((r) => String(r.id)))]),
-                    td({ class: 'col-md-4' }, [a([text(item.at('label'))])]),
-                    td({ class: 'col-md-1' }, [
-                      a([
-                        span({
-                          class: 'glyphicon glyphicon-remove',
-                          'aria-hidden': 'true',
-                        }),
-                      ]),
-                    ]),
-                    td({ class: 'col-md-6' }),
-                  ]),
-                ],
-              }),
-            ],
+            // Direct-construction rows (Phase 1 prototype: what the compiler will
+            // emit for this row template). `eachDirect` keeps the keyed reconcile
+            // but builds each row with direct DOM ops + binding specs wired by node
+            // reference — no per-row authoring-helper / Mountable / populate /
+            // pathHandle overhead. The first cell IS the row id (the delegated click
+            // handler reads it back from there).
+            [eachDirect(state.at('rows'), (r: Row) => r.id, diceRow)],
           )
         })(),
       ]),

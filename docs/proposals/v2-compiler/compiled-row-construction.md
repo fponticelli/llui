@@ -83,3 +83,26 @@ Solid emits the same DOM (same Layout/Style/Paint) with near-zero create-time JS
 - The win requires eliminating the **bulk** of the 3.64 ms: `populate`'s per-element prop loop, `el`/`ElementMountable` allocation, `pathHandle`, `lowerProps`, and the `runBuild`/`materialize` indirection — i.e. the full **direct row construction** codegen (levers 2 + 3). Projected: recover ~2.5–3 ms → create ~22–23 ms, erasing most of the regression and competitive with Solid/Svelte.
 
 **Decision: proceed to Phase 1** (direct-construction codegen), skip Phase 0 as a standalone change. Success bar: Create/Replace/Append within noise of Solid/Svelte, no regression elsewhere.
+
+## Phase 1 prototype results (HAND-WRITTEN row factory, validates the codegen)
+
+Built the runtime contract (`signalEachDirect`/`eachDirect`, `DirectRow`/`RowFactory`, exported `BindingSpec`) + the shared per-each-site mask/table memo (`scopeFromSpecs` reused across rows), and wired the **benchmark** to a hand-written `diceRow` factory — exactly what the compiler will emit. 3-run, real Chrome, `PlausibilityCheck: successful` (correct):
+
+| Op         | stale 0.7.0 | **direct + memo**     | Solid | pre-signal |
+| ---------- | ----------- | --------------------- | ----- | ---------- |
+| Create 1k  | 26.4        | **21.8** (+3%, noise) | 20.8  | 21.2       |
+| Create 10k | 258         | **234.3**             | 232   | 218        |
+| Replace 1k | 29.0        | **24.4**              | 23.1  | 22.4       |
+| Append 1k  | 29.6        | **26.6**              | 23.5  | 23.8       |
+
+**The construction-op regression is closed**: Create 1k −4.6 ms (back to the pre-signal baseline, matching Solid); Create 10k matches Solid; Replace −4.6 ms. Confirms the categorized-trace projection and justifies the general codegen.
+
+**Out of scope / separate follow-up:** Update (+40%) and Swap (+112%) stay elevated. These are NOT construction ops (Swap is a 2-row move, builds nothing), so direct construction doesn't and shouldn't touch them — they are a distinct **reconcile/move-path** regression from the signals migration, consistent across every run, to be investigated separately.
+
+## Remaining Phase 1 work (the actual codegen)
+
+The prototype is hand-written. To ship the win for every app's lists:
+
+1. **Compiler emission** — lower a static-skeleton `each` row template to a `RowFactory` (direct `createElement`/`setAttribute`/`appendChild`/`createTextNode` + a flat `bindings` list with compile-time `deps`/produce/commit) and emit `signalEachDirect(source, key, factory)`.
+2. **Slot kinds** — dynamic text (`<!>`/located text node), reactive attrs (`applyAttr` on located node), event handlers (`addEventListener` per row in the factory), and structural children (anchor + nested runtime primitive). Fully-static cells fold into the factory's direct ops.
+3. **Broaden lowering coverage** so wrapped/helper-position `each` (incl. the benchmark's IIFE) reaches the fast path; today's lowering also still emits the slow `el(...)`/`signalEach(...)` form.
