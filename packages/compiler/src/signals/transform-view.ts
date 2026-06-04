@@ -261,6 +261,13 @@ export function transformNodeExpr(
             for (const d of itemsLowered.deps) collect.add(d)
             for (const d of renderDeps) if (d === 'state' || d.startsWith('state.')) collect.add(d)
           }
+          // FAST PATH: if the row is a static element skeleton with only static
+          // attrs + text bindings, emit a direct-construction `RowFactory` and
+          // `signalEachDirect` — skipping the per-row authoring/Mountable/populate/
+          // pathHandle overhead. Falls back to `signalEach` for anything richer
+          // (reactive attrs, event handlers, structural children, helper calls).
+          const factory = renderFn && lowerRowFactory(renderFn, itemParam, sf)
+          if (factory) return `signalEachDirect(${source}, ${keySrc}, ${factory})`
           return `signalEach(${source}, ${keySrc}, () => ${body})`
         }
         // unlowerable render -> fall through to verbatim (runtime authoring each)
@@ -467,6 +474,139 @@ export function transformNodeExpr(
   // Unrecognized node form (helper call, each/branch/show, ...) — verbatim.
   return node.getText(sf)
 }
+
+/** The concise-arrow returned array of a render callback (`(item) => [...]`), or
+ * null for a block body / non-array return. */
+function rowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  const b = fn.body
+  if (ts.isArrayLiteralExpression(b)) return b
+  if (ts.isParenthesizedExpression(b) && ts.isArrayLiteralExpression(b.expression))
+    return b.expression
+  return null
+}
+
+/** Generate a direct-construction `RowFactory` source for a static-skeleton row
+ * (elements with static attrs + static/signal `text` children only). Returns the
+ * `(doc) => { … return { nodes, bindings } }` source, or null to fall back to
+ * `signalEach` — for reactive attrs, `on*` handlers, spreads, dynamic args,
+ * structural children, helper calls, or `index`/opaque reads it can't wire.
+ * See docs/proposals/v2-compiler/compiled-row-construction.md. */
+function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile): string | null {
+  const arr = rowReturnArray(fn)
+  if (!arr || arr.elements.length === 0) return null
+  const roots = eachRoots(itemParam)
+  const stmts: string[] = []
+  const bindings: string[] = []
+  let counter = 0
+  const fresh = (): string => `_n${counter++}`
+
+  const calleeName = (c: ts.CallExpression): string | null =>
+    ts.isIdentifier(c.expression) ? c.expression.text : null
+
+  // Append a child to `parentVar`; returns false to bail the whole row.
+  const buildChild = (child: ts.Expression, parentVar: string): boolean => {
+    if (ts.isStringLiteralLike(child) || ts.isNumericLiteral(child)) {
+      stmts.push(`${parentVar}.appendChild(doc.createTextNode(${JSON.stringify(child.text)}))`)
+      return true
+    }
+    if (!ts.isCallExpression(child)) return false
+    const callee = calleeName(child)
+    if (callee === 'text') {
+      const arg = child.arguments[0]
+      if (!arg) return false
+      if (ts.isStringLiteralLike(arg)) {
+        stmts.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
+        return true
+      }
+      if (!isSignalExpr(arg, roots)) return false
+      const { produce, deps } = signalToProduce(arg, sf, roots)
+      const tv = fresh()
+      stmts.push(`const ${tv} = doc.createTextNode('')`)
+      stmts.push(`${parentVar}.appendChild(${tv})`)
+      bindings.push(
+        `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { ${tv}.data = v == null ? '' : String(v) } }`,
+      )
+      return true
+    }
+    if (callee && ELEMENT_HELPERS.has(callee)) {
+      const cv = buildElement(child)
+      if (cv === null) return false
+      stmts.push(`${parentVar}.appendChild(${cv})`)
+      return true
+    }
+    return false // structural / helper / unknown -> bail
+  }
+
+  // Emit construction for an element-helper call; returns its var, or null to bail.
+  function buildElement(call: ts.CallExpression): string | null {
+    const callee = calleeName(call)
+    if (!callee || !ELEMENT_HELPERS.has(callee)) return null
+    const a0 = call.arguments[0]
+    const a1 = call.arguments[1]
+    let propsExpr: ts.ObjectLiteralExpression | undefined
+    let childrenExpr: ts.ArrayLiteralExpression | undefined
+    if (!a0) {
+      // tag()
+    } else if (ts.isArrayLiteralExpression(a0)) {
+      childrenExpr = a0
+    } else if (ts.isObjectLiteralExpression(a0)) {
+      propsExpr = a0
+      if (a1) {
+        if (ts.isArrayLiteralExpression(a1)) childrenExpr = a1
+        else return null // dynamic children
+      }
+    } else {
+      return null // dynamic args
+    }
+    const v = fresh()
+    stmts.push(`const ${v} = doc.createElement(${JSON.stringify(callee)})`)
+    if (propsExpr) {
+      for (const p of propsExpr.properties) {
+        if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
+        const name = p.name.getText(sf)
+        if (/^on[A-Z]/.test(name)) return null // event handler (v1: bail)
+        if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // IDL/style
+        if (isSignalExpr(p.initializer, roots)) return null // reactive attr (v1: bail)
+        const init = p.initializer
+        if (ts.isStringLiteralLike(init) || ts.isNumericLiteral(init)) {
+          stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)
+        } else if (init.kind === ts.SyntaxKind.TrueKeyword) {
+          stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, "")`)
+        } else if (init.kind === ts.SyntaxKind.FalseKeyword) {
+          // falsy boolean attr -> absent; nothing to emit
+        } else {
+          return null // non-literal static value
+        }
+      }
+    }
+    if (childrenExpr) {
+      for (const child of childrenExpr.elements) {
+        if (!buildChild(child, v)) return null
+      }
+    }
+    return v
+  }
+
+  const topVars: string[] = []
+  for (const el of arr.elements) {
+    // A keyed row's top-level node must be a stable ELEMENT (buildSignalEach
+    // rejects a bare structural fragment as a row root).
+    if (!ts.isCallExpression(el)) return null
+    const callee = calleeName(el)
+    if (!callee || !ELEMENT_HELPERS.has(callee)) return null
+    const v = buildElement(el)
+    if (v === null) return null
+    topVars.push(v)
+  }
+
+  return `(doc) => { ${stmts.join('; ')}; return { nodes: [${topVars.join(', ')}], bindings: [${bindings.join(', ')}] } }`
+}
+
+/** Attribute names the runtime applies as live IDL properties (not `setAttribute`);
+ * the direct fast path bails on static occurrences so the slow path's `applyAttr`
+ * handles them. Mirrors the runtime's `DOM_PROPERTIES`. */
+const DIRECT_SKIP_ATTRS = new Set(['value', 'checked', 'selected', 'indeterminate'])
 
 function transformProps(
   obj: ts.ObjectLiteralExpression,

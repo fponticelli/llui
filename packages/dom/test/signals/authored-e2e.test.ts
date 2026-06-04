@@ -9,6 +9,7 @@ import {
   react,
   signalShow,
   signalEach,
+  signalEachDirect,
   signalBranch,
 } from '../../src/signals/dom'
 
@@ -30,7 +31,7 @@ function compileAndLoad(authored: string, names: string[]): Defs {
     .filter((l) => !l.trimStart().startsWith('import '))
     .join('\n')
     .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalBranch, derived, component){
+  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalEachDirect, signalBranch, derived, component){
     ${body}
     return { ${names.join(', ')} }
   })`
@@ -49,6 +50,7 @@ function compileAndLoad(authored: string, names: string[]): Defs {
     react,
     signalShow,
     signalEach,
+    signalEachDirect,
     signalBranch,
     derivedStub,
     identityComponent,

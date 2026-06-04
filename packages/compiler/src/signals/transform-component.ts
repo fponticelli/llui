@@ -48,6 +48,7 @@ const RUNTIME_HELPERS = [
   'el',
   'react',
   'signalEach',
+  'signalEachDirect',
   'signalShow',
   'signalBranch',
   'signalForeign',
