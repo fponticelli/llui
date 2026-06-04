@@ -5,7 +5,7 @@
 
 // A helper function (no `component()` call), so it's not compiled — the signal
 // authoring helpers (div/button/text) run as real runtime functions here.
-import { div, button, text } from '@llui/dom'
+import { div, button, text, type Mountable } from '@llui/dom'
 
 // Inline subset of main.ts's Msg union — just the variants the button
 // dispatches. Named `ButtonMsg` (not `Msg`) so the agent-rule matchers
@@ -19,7 +19,7 @@ type ButtonMsg =
   | { type: 'clear' }
   | { type: 'swaprows' }
 
-export function actionButton(id: string, label: string, send: (msg: ButtonMsg) => void): Node {
+export function actionButton(id: string, label: string, send: (msg: ButtonMsg) => void): Mountable {
   const msg: ButtonMsg =
     id === 'swaprows' ? { type: 'swaprows' } : { type: id as ButtonMsg['type'] }
   return div({ class: 'col-sm-6 smallpad' }, [

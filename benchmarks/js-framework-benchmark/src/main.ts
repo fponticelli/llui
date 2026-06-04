@@ -165,10 +165,34 @@ const App = component<State, Msg, never>({
           // agent consistency. (The legacy `selector` primitive is gone with the
           // legacy runtime; this is the idiomatic signal-runtime equivalent.)
           let selectedEl: HTMLElement | null = null
-          const tbodyEl = tbody({ id: 'tbody' }, [
-            each(
-              state.map((s) => s.rows),
-              {
+          // Single delegated click listener for all rows, attached to the live
+          // <tbody> via the `onClick` prop. Element helpers now return a lazy
+          // Mountable (materialized where placed), so we can no longer grab the
+          // built node and `addEventListener` on it — the prop is the seam for
+          // imperative DOM wiring.
+          return tbody(
+            {
+              id: 'tbody',
+              onClick: (e) => {
+                const target = e.target as Element
+                const trEl = target.closest('tr') as HTMLElement | null
+                if (!trEl) return
+                const idText = trEl.querySelector('td.col-md-1')?.textContent
+                const id = idText ? Number(idText) : NaN
+                if (Number.isNaN(id)) return
+                if (target.closest('td.col-md-4')) {
+                  if (selectedEl && selectedEl !== trEl) selectedEl.className = ''
+                  trEl.className = 'danger'
+                  selectedEl = trEl
+                  send({ type: 'select', id })
+                } else if (target.closest('td.col-md-1 a')) {
+                  if (selectedEl === trEl) selectedEl = null
+                  send({ type: 'remove', id })
+                }
+              },
+            },
+            [
+              each(state.at('rows'), {
                 key: (r: Row) => r.id,
                 render: (item) => [
                   tr([
@@ -176,7 +200,7 @@ const App = component<State, Msg, never>({
                     // reads it back from here, so no per-row id capture is needed
                     // (avoids a build-time .peek() the reactive-slot lint forbids).
                     td({ class: 'col-md-1' }, [text(item.map((r) => String(r.id)))]),
-                    td({ class: 'col-md-4' }, [a([text(item.map((r) => r.label))])]),
+                    td({ class: 'col-md-4' }, [a([text(item.at('label'))])]),
                     td({ class: 'col-md-1' }, [
                       a([
                         span({
@@ -188,28 +212,9 @@ const App = component<State, Msg, never>({
                     td({ class: 'col-md-6' }),
                   ]),
                 ],
-              },
-            ),
-          ]) as HTMLElement
-          // Single delegated click listener for all rows
-          tbodyEl.addEventListener('click', (e) => {
-            const target = e.target as Element
-            const trEl = target.closest('tr') as HTMLElement | null
-            if (!trEl) return
-            const idText = trEl.querySelector('td.col-md-1')?.textContent
-            const id = idText ? Number(idText) : NaN
-            if (Number.isNaN(id)) return
-            if (target.closest('td.col-md-4')) {
-              if (selectedEl && selectedEl !== trEl) selectedEl.className = ''
-              trEl.className = 'danger'
-              selectedEl = trEl
-              send({ type: 'select', id })
-            } else if (target.closest('td.col-md-1 a')) {
-              if (selectedEl === trEl) selectedEl = null
-              send({ type: 'remove', id })
-            }
-          })
-          return tbodyEl
+              }),
+            ],
+          )
         })(),
       ]),
     ]),

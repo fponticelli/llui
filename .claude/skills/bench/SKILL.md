@@ -15,6 +15,19 @@ LLui has **two** benchmark suites, both driven through jfb's `webdriver-ts` harn
 
 All three honor the same flags: `--runs N`, `--save`, `--headful`, `--framework <name>`, `--all`, and the `JFB_REPO=…` env override. Each suite reads/writes **its own** baseline — a `--save` to one never touches the other.
 
+## ⚠️ ALWAYS rebuild changed `@llui/*` packages before benching
+
+The benchmark app bundles each workspace package from its built **`dist/`** (`@llui/dom`'s `exports["."]` → `./dist/index.js`), **not** from source. The bench runner builds the _app_, never the libraries. So if you edited a package's source and only ran `check`/`test` (`tsc --noEmit` — these do **not** emit `dist/`), the bench will silently measure the **stale previously-built bundle**, and your change will look like it did nothing.
+
+**Before every bench run that is meant to measure a source change, rebuild the changed packages:**
+
+```bash
+pnpm turbo build && pnpm bench --runs 2     # robust: rebuilds @llui/dom + any other changed package (turbo-cached, cheap)
+pnpm --filter @llui/dom build && pnpm bench  # when only @llui/dom changed
+```
+
+Verify the change actually landed in `dist/` before trusting the numbers, e.g. `grep -c '<a string from your edit>' packages/dom/dist/signals/<file>.js`. When iterating A/B on a runtime change, treat "rebuild → verify dist → bench" as one inseparable step — a missed rebuild produces a byte-identical bundle and a false "no effect" result.
+
 Each runner:
 
 1. Builds the LLui benchmark app
@@ -93,5 +106,6 @@ The runners auto-detect a running jfb server on port 8080 but validate it before
 - Do NOT hardcode paths like `/private/tmp/js-framework-benchmark/`
 - Do NOT run competitor frameworks unless explicitly asked
 - Do NOT report small changes (<5%) as real improvements/regressions — they're noise
+- Do NOT bench a source change without first rebuilding the changed `@llui/*` package(s) — the app bundles from `dist/`, so an un-rebuilt edit is measured stale (see the ⚠️ section above)
 
 All of that is done by the `pnpm bench` / `pnpm bench:ticker` / `pnpm bench:all` scripts.
