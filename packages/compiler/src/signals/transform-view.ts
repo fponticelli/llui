@@ -475,17 +475,6 @@ export function transformNodeExpr(
   return node.getText(sf)
 }
 
-/** The concise-arrow returned array of a render callback (`(item) => [...]`), or
- * null for a block body / non-array return. */
-function rowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
-  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
-  const b = fn.body
-  if (ts.isArrayLiteralExpression(b)) return b
-  if (ts.isParenthesizedExpression(b) && ts.isArrayLiteralExpression(b.expression))
-    return b.expression
-  return null
-}
-
 /** Generate a direct-construction `RowFactory` source for a static-skeleton row
  * (elements with static attrs + static/signal `text` children only). Returns the
  * `(doc) => { … return { nodes, bindings } }` source, or null to fall back to
@@ -493,7 +482,7 @@ function rowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
  * structural children, helper calls, or `index`/opaque reads it can't wire.
  * See docs/proposals/v2-compiler/compiled-row-construction.md. */
 function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile): string | null {
-  const arr = rowReturnArray(fn)
+  const arr = arrowReturnArray(fn)
   if (!arr || arr.elements.length === 0) return null
   const roots = eachRoots(itemParam)
   const stmts: string[] = []
