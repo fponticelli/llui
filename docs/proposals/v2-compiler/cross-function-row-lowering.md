@@ -1,6 +1,19 @@
 # Proposal: cross-function `each`-row lowering (helper / block-body rows)
 
-**Status:** scoped, **deferred** · **Owner:** perf/compiler · **Audience:** a future session deciding whether to build this.
+**Status:** **phases 1–2 + transform-coverage SHIPPED**; phase 3 (cross-file) deferred · **Owner:** perf/compiler
+
+## Shipped
+
+- **Phase 1 — block-body rows** (`(item) => { const x = item.peek()…; return [...] }`): leading `const`/`let` locals emit once per row (`.peek()` → live ctx); static values computed from a local lower too. Bails on a handle-valued local (`const n = item.at('x')`), a non-decl statement before the return, a data-conditional return, or a leaked handle.
+- **Transform coverage — `each` in view-helper functions** (`fileTree(routeSig): Renderable { … each(…) }`): the compiler walks view helpers (pass 2), keeps the items handle verbatim, and emits the handle-consuming `eachDirect(items, key, factory)` — only the ROW compiles. A guard bails a static slot reading a non-root handle reactively.
+- **Phase 2 — same-file helper rows** (`(item) => [rowHelper(item, …)]`): `rowHelper`'s body is inlined (params → call args, conservative hygiene) → a normal row the factory lowers. Bails on cross-file/unknown helpers, arg/param mismatch, spread props, or any hygiene risk.
+- **Two bugs fixed while validating:** peeked-value locals (`const v = item.peek()`) were wrongly bailed (now only handle aliases bail); `loweredLeaksIdent` false-positived on string literals containing the param name (`class: 'activity-item'`) — rewritten as an AST walk (this also fixed the already-shipped item-handler lowering).
+
+Validated on real examples: `examples/github-explorer` (file-row via transform coverage) and `examples/dashboard` (`activityItem` via phase-2 inlining; `priorityItem` stays authoring — spread props). **Phase 3 (cross-file/cross-package helpers) remains deferred** — see below.
+
+---
+
+**(original scoping below, retained for the phase-3 decision)**
 
 ## TL;DR
 
