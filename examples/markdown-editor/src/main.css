@@ -1,0 +1,343 @@
+:root {
+  --bg: #0f1117;
+  --surface: #181b24;
+  --surface-2: #1f2330;
+  --border: #2b3040;
+  --text: #e6e8ee;
+  --muted: #9aa3b2;
+  --primary: #5b8cff;
+  --primary-soft: #2a3656;
+  --radius: 10px;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.55;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.page-head h1 {
+  margin: 0 0 0.4rem;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.page-head p {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--muted);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+
+.demo {
+  margin-top: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.demo-head {
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+}
+
+.demo-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 75ch;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 22rem;
+  gap: 1px;
+  background: var(--border);
+}
+
+@media (max-width: 820px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.editor {
+  background: var(--surface);
+  min-width: 0;
+}
+
+.panel {
+  background: var(--surface-2);
+  padding: 1rem 1.1rem;
+  min-width: 0;
+}
+
+.panel h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ctl {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+
+.ctl:hover {
+  border-color: var(--primary);
+}
+
+.ctl-toggle[aria-pressed='true'] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.md-out {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.stats {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.source {
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  border-left: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 1rem;
+  resize: vertical;
+  min-height: 16rem;
+  outline: none;
+}
+
+/* ── The editor surface (Lexical's contentEditable host) ─────────────── */
+.editor [data-lexical-editor] {
+  outline: none;
+  padding: 1.1rem 1.25rem;
+  min-height: 14rem;
+}
+
+.editor [data-lexical-editor] > * {
+  margin: 0 0 0.7rem;
+}
+
+.editor h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+.editor h2 {
+  font-size: 1.3rem;
+}
+.editor h3 {
+  font-size: 1.1rem;
+}
+
+.editor blockquote {
+  border-left: 3px solid var(--primary);
+  margin-inline: 0;
+  padding-left: 0.9rem;
+  color: var(--muted);
+}
+
+.editor ul,
+.editor ol {
+  padding-left: 1.4rem;
+}
+
+.editor a {
+  color: var(--primary);
+}
+
+.editor code {
+  background: var(--surface-2);
+}
+
+.editor pre,
+.editor code[data-lexical-text] {
+  font-family: var(--mono);
+}
+
+.editor [data-lexical-editor] code {
+  display: block;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  overflow: auto;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+[data-scope='md-editor'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+}
+
+[data-scope='md-toolbar'][data-part='root'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+[data-scope='md-toolbar'][data-part='group'] {
+  display: flex;
+  gap: 0.15rem;
+  padding-right: 0.6rem;
+  border-right: 1px solid var(--border);
+}
+
+[data-scope='md-toolbar'][data-part='group']:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
+[data-scope='md-toolbar'] [data-part='item'] {
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.4rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+[data-scope='md-toolbar'] [data-part='item']:hover {
+  background: var(--surface);
+}
+
+[data-scope='md-toolbar'] [data-part='item'][data-active] {
+  background: var(--primary-soft);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+[data-scope='md-toolbar'] [data-part='item']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+[data-part='glyph'] {
+  font-weight: 600;
+}
+
+/* ── Callout decorator (an LLui sub-view inside the document) ─────────── */
+[data-scope='md-callout'][data-part='root'] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  background: var(--surface-2);
+  margin: 0.6rem 0;
+}
+
+[data-scope='md-callout'] [data-part='badge'] {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  flex: none;
+}
+
+[data-scope='md-callout'] [data-part='text'] {
+  padding-top: 0.1rem;
+}
+
+[data-scope='md-callout'][data-kind='note'] {
+  border-left-color: #5b8cff;
+}
+[data-scope='md-callout'][data-kind='note'] [data-part='badge'] {
+  background: #5b8cff;
+}
+[data-scope='md-callout'][data-kind='tip'] {
+  border-left-color: #34d399;
+}
+[data-scope='md-callout'][data-kind='tip'] [data-part='badge'] {
+  background: #34d399;
+}
+[data-scope='md-callout'][data-kind='warning'] {
+  border-left-color: #fbbf24;
+}
+[data-scope='md-callout'][data-kind='warning'] [data-part='badge'] {
+  background: #b8860b;
+}
+[data-scope='md-callout'][data-kind='danger'] {
+  border-left-color: #f87171;
+}
+[data-scope='md-callout'][data-kind='danger'] [data-part='badge'] {
+  background: #ef4444;
+}

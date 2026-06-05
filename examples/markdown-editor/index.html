@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLui Markdown Editor</title>
+    <link rel="stylesheet" href="/src/main.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-head">
+        <h1>LLui Markdown Editor</h1>
+        <p>
+          A WYSIWYG editor built on The Elm Architecture — Markdown in, Markdown out, the rich
+          editing hidden behind a pluggable widget. Powered by
+          <code>@llui/markdown-editor</code> over <code>@llui/lexical</code>.
+        </p>
+      </header>
+
+      <section class="demo">
+        <div class="demo-head">
+          <h2>Full editor</h2>
+          <p>
+            Toolbar, lists, code, links, and a custom <strong>callout</strong> decorator. The panel
+            mirrors the live Markdown; the buttons drive the editor through its public handle.
+          </p>
+        </div>
+        <div class="split">
+          <div id="full-editor" class="editor"></div>
+          <aside class="panel">
+            <div class="controls" id="controls" aria-label="External commands"></div>
+            <h3>Live Markdown</h3>
+            <pre id="markdown-output" class="md-out"></pre>
+            <div id="stats" class="stats"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="demo">
+        <div class="demo-head">
+          <h2>Minimal editor</h2>
+          <p>
+            No chrome at all — just keyboard Markdown shortcuts. The same component, configured
+            down.
+          </p>
+        </div>
+        <div id="minimal-editor" class="editor"></div>
+      </section>
+
+      <section class="demo">
+        <div class="demo-head">
+          <h2>Two-way Markdown source</h2>
+          <p>
+            The raw Markdown and the WYSIWYG view are bound through the handle — edit either side.
+          </p>
+        </div>
+        <div class="split">
+          <div id="source-editor" class="editor"></div>
+          <textarea
+            id="source-textarea"
+            class="source"
+            spellcheck="false"
+            aria-label="Raw Markdown"
+          ></textarea>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

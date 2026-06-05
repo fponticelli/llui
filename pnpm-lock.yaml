@@ -265,6 +265,55 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  examples/markdown-editor:
+    dependencies:
+      '@lexical/code-core':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/history':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/link':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/list':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/markdown':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/rich-text':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/selection':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/table':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/utils':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../../packages/dom
+      '@llui/lexical':
+        specifier: workspace:*
+        version: link:../../packages/lexical
+      '@llui/markdown-editor':
+        specifier: workspace:*
+        version: link:../../packages/markdown-editor
+      lexical:
+        specifier: ^0.45.0
+        version: 0.45.0
+    devDependencies:
+      '@llui/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^8.0.0
+        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
+
   examples/markdown-showcase:
     dependencies:
       '@llui/dom':
@@ -528,6 +577,36 @@ importers:
 
   packages/effects: {}
 
+  packages/lexical:
+    devDependencies:
+      '@lexical/headless':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/history':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/rich-text':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/selection':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/utils':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      lexical:
+        specifier: ^0.45.0
+        version: 0.45.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/markdown:
     dependencies:
       mdast-util-from-markdown:
@@ -564,6 +643,54 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@25.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/markdown-editor:
+    devDependencies:
+      '@lexical/code-core':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/headless':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/link':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/list':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/markdown':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/rich-text':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/selection':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/table':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/utils':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@llui/components':
+        specifier: workspace:*
+        version: link:../components
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@llui/lexical':
+        specifier: workspace:*
+        version: link:../lexical
+      lexical:
+        specifier: ^0.45.0
+        version: 0.45.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/mcp:
     dependencies:
@@ -1908,6 +2035,102 @@ packages:
         integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==,
       }
 
+  '@lexical/clipboard@0.45.0':
+    resolution:
+      {
+        integrity: sha512-9oDu2SNj/EZGjpXJTruz74Ls3VzF2Q41v1QB7JnTq5lh24byvIOdgEpOFHtr/7WVHssfXCbMtgFb5tW8rMaZ2g==,
+      }
+
+  '@lexical/code-core@0.45.0':
+    resolution:
+      {
+        integrity: sha512-zU3noYmfluSK38r0eBz3gHKzsgOksf9eHqoPIwXH6HovKCDo848HoW0i/hCRzRo9oPqydKikx0LIKUvWSaSNIw==,
+      }
+
+  '@lexical/dragon@0.45.0':
+    resolution:
+      {
+        integrity: sha512-34k2/QuM8A9WVqVCtNGx1ySBWXxMVKejKH3VBWnXEb1NdrDa/N8jLpu0gOCLcrrDjMdUzs9uVgW0D4FRf1Lixg==,
+      }
+
+  '@lexical/extension@0.45.0':
+    resolution:
+      {
+        integrity: sha512-oJs1Zvrsqh32zZmeCkTQi7R2WoVIvaQE265JFZ/VczWlsWRdkkWQbGZ6iOlBZ3AmtiNgHoBeB0gZSoRQtWEQyA==,
+      }
+
+  '@lexical/headless@0.45.0':
+    resolution:
+      {
+        integrity: sha512-nzVqV3ne3+6jZainCdYUtKNBRSOb1AOGXDDSypWEFuMGLINV/gYAvLRlsFjp7hauo1ZuAySpWYkQcw6ltKappQ==,
+      }
+
+  '@lexical/history@0.45.0':
+    resolution:
+      {
+        integrity: sha512-KihtI8485Wx7kyFCtKNKk/nO2jSibRa8iL0OiKPZsYWVAQF5vFG3J00epX8EkEpeCx8Zjmj+3eytY05HPNd2nA==,
+      }
+
+  '@lexical/html@0.45.0':
+    resolution:
+      {
+        integrity: sha512-eK215f25cnAcIzNB1iRltg8hbvkK5wyyXvKQUqhfG/9HaSSVBCPuCyXKZicjZllQNvbFINGHFhTIqSP56drFSw==,
+      }
+
+  '@lexical/internal@0.45.0':
+    resolution:
+      {
+        integrity: sha512-IhyzCdb1/xdpTtvK0xnqUXpaVRsD2KTZ6EMZpavm6dhKaglf1zorpdbH7r6Hjps6SRb4DCn/t7lac+GMdDFbXg==,
+      }
+
+  '@lexical/link@0.45.0':
+    resolution:
+      {
+        integrity: sha512-9xpsRQ06IA4eVnx4OtFV0+Tmp2Etvh0dh9FTFd/LJYaqo2A0ZIuNUggueDZ0i2dhi8wWW8J08O7U0HxLcDWHAg==,
+      }
+
+  '@lexical/list@0.45.0':
+    resolution:
+      {
+        integrity: sha512-Eyff9KVLu5mV4QSid2aw9uYmKDKgDYToAaagI9Sp3VgqTMmvRUQJ0w7sr4zq8/FRKSzrsf4V2FjvLAuQE7eBUQ==,
+      }
+
+  '@lexical/markdown@0.45.0':
+    resolution:
+      {
+        integrity: sha512-fl/UUwudBXGnz44kOS07ZRN0DMfOWNnVl7GSSNyz6zDo1cMD60URt7LjF51bAG2oL8i1eRDX4/GV+7vBcuoGzw==,
+      }
+
+  '@lexical/rich-text@0.45.0':
+    resolution:
+      {
+        integrity: sha512-jd+jIsDirqILuUQiNUJAzZWynVZHuN1ekqYcydgDFaUXMFBQgVr3mBUieQzMw2IDAEk98txntu/mZQav4BryQQ==,
+      }
+
+  '@lexical/selection@0.45.0':
+    resolution:
+      {
+        integrity: sha512-V2DYMhl84F1aZ24YpWMMqy9ikO7cVfD3G+GjMwrZnMt0JVnIghjPiYIEBb/OtqqA+mCbBwNhfpdK1RtF9HTbJA==,
+      }
+
+  '@lexical/table@0.45.0':
+    resolution:
+      {
+        integrity: sha512-OXbwEg0DqkTdvqnu7z+/u8bgnDz2sjHHXCG3zGRhEzDgHcWoVQ18IciwMdse7dTTNfBIJMuGJcRoWPrHf9UlhQ==,
+      }
+
+  '@lexical/text@0.45.0':
+    resolution:
+      {
+        integrity: sha512-ozI8fDsLTYAzEWXaBrGYZ0GnRbbIHi4IL99w5q06UfTQzBMYmF7WaccDP1krOOwwioPYQbiqZM7dh/41jsFELQ==,
+      }
+
+  '@lexical/utils@0.45.0':
+    resolution:
+      {
+        integrity: sha512-Fo5MMErqoPlUyTw1qVMZ9kE33ZjJF957KU683tsCrrlaVisVxpboL7BbAnxWTwCcIpAsfc6AUndJJ70M9NDMGg==,
+      }
+
   '@modelcontextprotocol/sdk@1.29.0':
     resolution:
       {
@@ -1948,6 +2171,12 @@ packages:
     resolution:
       {
         integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==,
+      }
+
+  '@preact/signals-core@1.14.2':
+    resolution:
+      {
+        integrity: sha512-RZHdBj9ZF4n40Rp4jS052EHHjBWf96P9oNdXPfhQTovCuWY9iQn3Gq+gOTJSgBO9A/JBuPfMOWsSX/lIU9Pc/A==,
       }
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
@@ -4288,6 +4517,12 @@ packages:
         integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==,
       }
     engines: { node: '>= 0.8.0' }
+
+  lexical@0.45.0:
+    resolution:
+      {
+        integrity: sha512-z2M9C2ILPW7SopQE1aKbOFdZJbe3HvsrgWnJKveMDrSEvVjU9Hce4UpKVsAdkwY7TgY9RDuCV3+sfrGu0WkL+w==,
+      }
 
   lightningcss-android-arm64@1.32.0:
     resolution:
@@ -6707,6 +6942,124 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@lexical/clipboard@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/list': 0.45.0
+      '@lexical/selection': 0.45.0
+      '@lexical/utils': 0.45.0
+      '@types/trusted-types': 2.0.7
+      lexical: 0.45.0
+
+  '@lexical/code-core@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/internal': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/dragon@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/extension@0.45.0':
+    dependencies:
+      '@lexical/internal': 0.45.0
+      '@lexical/utils': 0.45.0
+      '@preact/signals-core': 1.14.2
+      lexical: 0.45.0
+
+  '@lexical/headless@0.45.0':
+    dependencies:
+      '@lexical/internal': 0.45.0
+      happy-dom: 20.9.0
+      lexical: 0.45.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@lexical/history@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/html@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/selection': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/internal@0.45.0': {}
+
+  '@lexical/link@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/list@0.45.0':
+    dependencies:
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/markdown@0.45.0':
+    dependencies:
+      '@lexical/code-core': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/link': 0.45.0
+      '@lexical/list': 0.45.0
+      '@lexical/rich-text': 0.45.0
+      '@lexical/selection': 0.45.0
+      '@lexical/text': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/rich-text@0.45.0':
+    dependencies:
+      '@lexical/clipboard': 0.45.0
+      '@lexical/dragon': 0.45.0
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/selection': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/selection@0.45.0':
+    dependencies:
+      '@lexical/internal': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/table@0.45.0':
+    dependencies:
+      '@lexical/clipboard': 0.45.0
+      '@lexical/extension': 0.45.0
+      '@lexical/html': 0.45.0
+      '@lexical/internal': 0.45.0
+      '@lexical/utils': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/text@0.45.0':
+    dependencies:
+      '@lexical/internal': 0.45.0
+      lexical: 0.45.0
+
+  '@lexical/utils@0.45.0':
+    dependencies:
+      '@lexical/internal': 0.45.0
+      '@lexical/selection': 0.45.0
+      lexical: 0.45.0
+
   '@modelcontextprotocol/sdk@1.29.0(zod@4.3.6)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.14)
@@ -6743,6 +7096,8 @@ snapshots:
       playwright: 1.59.1
 
   '@polka/url@1.0.0-next.29': {}
+
+  '@preact/signals-core@1.14.2': {}
 
   '@rolldown/binding-android-arm64@1.0.0-rc.12':
     optional: true
@@ -8142,6 +8497,10 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
+
+  lexical@0.45.0:
+    dependencies:
+      '@lexical/internal': 0.45.0
 
   lightningcss-android-arm64@1.32.0:
     optional: true

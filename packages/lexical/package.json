@@ -1,0 +1,61 @@
+{
+  "name": "@llui/lexical",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/dom": "^0.8.0",
+    "lexical": "^0.45.0",
+    "@lexical/history": "^0.45.0",
+    "@lexical/rich-text": "^0.45.0",
+    "@lexical/selection": "^0.45.0",
+    "@lexical/utils": "^0.45.0"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "lexical": "^0.45.0",
+    "@lexical/headless": "^0.45.0",
+    "@lexical/history": "^0.45.0",
+    "@lexical/rich-text": "^0.45.0",
+    "@lexical/selection": "^0.45.0",
+    "@lexical/utils": "^0.45.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "sideEffects": false,
+  "description": "Low-level binding between Lexical and the LLui signal runtime — mount Lexical via foreign(), plugin contract, and the DecoratorNode ↔ LLui sub-view bridge",
+  "keywords": [
+    "llui",
+    "lexical",
+    "editor",
+    "signal",
+    "tea"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/lexical"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/lexical#readme",
+  "files": [
+    "dist"
+  ]
+}
