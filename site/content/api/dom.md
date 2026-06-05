@@ -264,6 +264,19 @@ A static text node.
 function staticText(value: string): Mountable
 ```
 
+### `applyAttr()`
+
+Apply a single non-reactive prop VALUE to `node`: `style.*` → individual style
+property, form-control IDL props (`value`/`checked`/`selected`/`indeterminate`)
+→ live property assignment, everything else → content attribute (null/false
+removes, true sets empty). Exported so a compiler-emitted {@link RowFactory}'s
+reactive-prop `commit` routes through the same DOM-application logic the
+authoring path uses (rather than re-inlining the IDL/style quirks).
+
+```typescript
+function applyAttr(node: Element, name: string, value: unknown): void
+```
+
 ### `el()`
 
 Build an element. `on*` function props become event listeners; `react(...)`
@@ -802,9 +815,14 @@ export type Renderable = readonly Mountable[]
 ### `RowFactory`
 
 Builds a fresh {@link DirectRow} (new nodes + binding closures) per row.
+`getCtx` exposes the row's LIVE `{ item, state, index }` ctx (the same box the
+binding `produce(ctx)` reads), so a row's event-handler closures can read the
+current row item at event time — `onClick: () => send({ type: 'toggle', id:
+getCtx().item.id })` — the direct-path analogue of the render path's
+`pathHandle(getCtx, 'item')`. Rows with no item-referencing handlers ignore it.
 
 ```typescript
-export type RowFactory = (doc: SignalDoc) => DirectRow
+export type RowFactory = (doc: SignalDoc, getCtx: () => RowCtx<unknown>) => DirectRow
 ```
 
 ### `MountTarget`
@@ -1136,6 +1154,11 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
 export interface ComponentBag<S, M> {
   state: Signal<S>
   send: (msg: M) => void
+  /** Coalesce a burst of `send`s into ONE reconcile (see the handle's `batch`).
+   * Reducers/effects still run per message; only the DOM commit is deferred to the
+   * outermost `batch` exit. Use it to drain a burst of dispatches (e.g. a stream
+   * frame) from a handler/subscription as a single re-render. */
+  batch: (fn: () => void) => void
 }
 ```
 
@@ -1145,6 +1168,8 @@ export interface ComponentBag<S, M> {
 export interface EffectApi<S, M> {
   send: (msg: M) => void
   state: Signal<S>
+  /** Coalesce a burst of `send`s into ONE reconcile (see {@link ComponentBag.batch}). */
+  batch: (fn: () => void) => void
 }
 ```
 
@@ -1188,6 +1213,15 @@ export interface SignalComponentDef<S, M, E = never> {
 ```typescript
 export interface SignalComponentHandle<S, M> {
   send(msg: M): void
+  /** Coalesce a burst of `send`s into ONE reconcile + commit. Every message's
+   * reducer still runs in order (state advances message-by-message, effects fire
+   * per message), but the DOM reconcile + subscriber notification are deferred to
+   * a single pass against the FINAL state when the outermost `batch` returns.
+   * For N synchronous sends this turns N reconciles into 1 — the streaming /
+   * bulk-dispatch fast path (e.g. draining a websocket frame of ticks). State is
+   * applied by the time `batch` returns, so the synchronous-`send` contract holds
+   * at the batch boundary. Nested `batch` calls flush only at the outermost exit. */
+  batch(fn: () => void): void
   getState(): S
   /** no-op: signal `send` applies updates synchronously (kept for harness/agent
    * parity with the legacy handle). */
@@ -1671,6 +1705,8 @@ export interface EffectMatch {
 export interface SignalViewBag<S, M> {
   state: Signal<S>
   send: Send<M>
+  /** Coalesce a burst of `send`s into ONE reconcile (see the handle's `batch`). */
+  batch: (fn: () => void) => void
 }
 ```
 
@@ -1683,7 +1719,10 @@ export interface SignalComponentSpec<S, M, E = never> {
   init: () => S | [S, E[]]
   update: (state: S, msg: M) => [S, E[]] | S
   view: (bag: SignalViewBag<S, M>) => Renderable
-  onEffect?: (effect: E, api: { send: Send<M>; state: Signal<S> }) => void | (() => void)
+  onEffect?: (
+    effect: E,
+    api: { send: Send<M>; state: Signal<S>; batch: (fn: () => void) => void },
+  ) => void | (() => void)
 }
 ```
 
