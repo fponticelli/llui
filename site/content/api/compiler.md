@@ -975,7 +975,7 @@ The "bare type" of a field. Covers five cases:
   follow (depth-limited; cross-file references stay `'unknown'`).
 - array of element type: `{kind: 'array', element: <bare type>}`.
 - discriminated union of objects: `{kind: 'discriminated-union',
-discriminant: 'kind', variants: {a: {...}, b: {...}}}`. Emitted
+  discriminant: 'kind', variants: {a: {...}, b: {...}}}`. Emitted
   when every member of a union is an object literal sharing one
   literal-string property name with distinct values. Symmetric with
   how the top-level Msg union itself is encoded — same shape,
