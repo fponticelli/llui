@@ -270,6 +270,26 @@
   margin: 1.2rem 0;
 }
 
+/* ── Tables ───────────────────────────────────────────────────────────── */
+[data-lexical-editor] table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  width: 100%;
+  font-size: 0.9rem;
+}
+[data-lexical-editor] th,
+[data-lexical-editor] td {
+  border: 1px solid var(--md-border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  min-width: 4rem;
+}
+[data-lexical-editor] th {
+  background: var(--md-surface-2);
+  font-weight: 600;
+}
+
 /* ── Math block ───────────────────────────────────────────────────────── */
 [data-scope='md-math'][data-part='root'] {
   display: flex;

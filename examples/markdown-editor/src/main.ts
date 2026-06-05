@@ -21,6 +21,7 @@ import {
   floatingToolbarPlugin,
   mathPlugin,
   mermaidPlugin,
+  tablePlugin,
   mentionPlugin,
   emojiPlugin,
   calloutPlugin,
@@ -66,6 +67,11 @@ const WELCOME_MD = [
   '  A[Plugin] --> B[state slice]',
   '  A --> C[view]',
   '```',
+  '',
+  '| Plugin | Kind |',
+  '| --- | --- |',
+  '| slash / mention | typeahead |',
+  '| callout / math / table | decorator |',
 ].join('\n')
 
 const SOURCE_MD = [
@@ -95,6 +101,7 @@ const fullApp = mountApp(
     toolbar: true,
     plugins: [
       mermaidPlugin(),
+      tablePlugin(),
       corePlugin(),
       linkPlugin(),
       imagePlugin(),
@@ -166,6 +173,7 @@ const sourceApp = mountApp(
     toolbar: true,
     plugins: [
       mermaidPlugin(),
+      tablePlugin(),
       corePlugin(),
       linkPlugin(),
       imagePlugin(),

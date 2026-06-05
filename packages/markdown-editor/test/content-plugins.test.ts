@@ -10,6 +10,8 @@ import { emojiPlugin } from '../src/plugins/emoji.js'
 import { imagePlugin } from '../src/plugins/image.js'
 import { mathPlugin } from '../src/plugins/math.js'
 import { mermaidPlugin } from '../src/plugins/mermaid.js'
+import { tablePlugin } from '../src/plugins/table.js'
+import { TableNode, TableRowNode, TableCellNode } from '@lexical/table'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { GFM_NODES } from '../src/transformers/gfm.js'
 import { markdownEditor } from '../src/editor.js'
@@ -81,6 +83,24 @@ describe('content plugins — markdown round-trip', () => {
       },
     })
     const md = '```mermaid\ngraph TD\n  A --> B\n```'
+    let out = ''
+    editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
+    editor.getEditorState().read(() => {
+      out = $convertToMarkdownString(t)
+    })
+    expect(out).toBe(md)
+  })
+
+  it('GFM table round-trips', () => {
+    const t = buildTransformers([tablePlugin(), corePlugin()])
+    const editor = createHeadlessEditor({
+      namespace: 'tbl',
+      nodes: [...GFM_NODES, TableNode, TableRowNode, TableCellNode],
+      onError: (e) => {
+        throw e
+      },
+    })
+    const md = ['| A | B |', '| --- | --- |', '| 1 | 2 |', '| 3 | 4 |'].join('\n')
     let out = ''
     editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
     editor.getEditorState().read(() => {

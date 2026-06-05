@@ -96,6 +96,7 @@ export const DEFAULT_GLYPHS: Readonly<Record<string, string>> = {
   link: LINK_ICON,
   image: IMAGE_ICON,
   hr: '—',
+  table: '▦',
   paragraph: '¶',
   h1: 'H1',
   h2: 'H2',

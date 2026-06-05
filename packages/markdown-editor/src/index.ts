@@ -50,6 +50,7 @@ export { type MermaidPluginOptions, mermaidPlugin } from './plugins/mermaid.js'
 export { type Mention, type MentionPluginOptions, mentionPlugin } from './plugins/mention.js'
 export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
+export { tablePlugin } from './plugins/table.js'
 
 export { GFM_NODES, GFM_TRANSFORMERS } from './transformers/gfm.js'
 export { buildTransformers, orderTransformers } from './transformers/registry.js'
