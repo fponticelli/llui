@@ -31,6 +31,34 @@ describe('derived (runtime handle)', () => {
     expect([...(sum as unknown as { deps: readonly string[] }).deps].sort()).toEqual(['a', 'b'])
   })
 
+  it('variadic form derived(a, b, fn) matches the array form', () => {
+    const state = { a: 2, b: 3 }
+    const a = pathHandle<number>(() => state, 'a')
+    const b = pathHandle<number>(() => state, 'b')
+    const sum = derived(a, b, (x, y) => x + y)
+
+    expect(isSignalHandle(sum)).toBe(true)
+    expect(sum.peek()).toBe(5)
+    expect((sum as unknown as { produce: (s: unknown) => number }).produce({ a: 10, b: 1 })).toBe(
+      11,
+    )
+    expect([...(sum as unknown as { deps: readonly string[] }).deps].sort()).toEqual(['a', 'b'])
+  })
+
+  it('variadic form derived(a, b, c, fn) combines three sources', () => {
+    const state = { a: 1, b: 2, c: 4 }
+    const a = pathHandle<number>(() => state, 'a')
+    const b = pathHandle<number>(() => state, 'b')
+    const c = pathHandle<number>(() => state, 'c')
+    const sum = derived(a, b, c, (x, y, z) => x + y + z)
+    expect(sum.peek()).toBe(7)
+    expect([...(sum as unknown as { deps: readonly string[] }).deps].sort()).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+  })
+
   it('dedups overlapping deps and chains with .map()', () => {
     const state = { a: 4 }
     const a = pathHandle<number>(() => state, 'a')
@@ -52,7 +80,11 @@ describe('derived (runtime handle)', () => {
     const a = pathHandle<{ x: number }>(() => ({ a: { x: 1 } }), 'a')
     const b = pathHandle<{ x: number }>(() => ({ b: { x: 2 } }), 'b')
     const combined = derived([a, b], (p: { x: number }, q: { x: number }) => ({ x: p.x + q.x }))
-    expect(() => combined.at('x' as never)).toThrow()
+    // `.at()` on a mapped/combined signal is a COMPILE error now (MappedSignal.at
+    // is `never`) — bypass the type to assert the runtime safety net still throws
+    // for any code that reaches here uncompiled.
+    const escaped = combined as unknown as { at: (path: string) => unknown }
+    expect(() => escaped.at('x')).toThrow()
   })
 
   it('renders + reacts in a component view (the form-validation field() shape)', () => {

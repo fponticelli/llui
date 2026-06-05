@@ -137,8 +137,44 @@ describe('Signal.map', () => {
   })
 })
 
+describe('Signal.map — .at() after .map() is a compile error', () => {
+  it('rejects .at() on a mapped signal (slice before mapping)', () => {
+    const _ = () => {
+      const mapped = s.at('user').map((u) => u.profile)
+      // @ts-expect-error — .at() on a mapped signal is unavailable (slice first)
+      mapped.at('name')
+    }
+    void _
+  })
+
+  it('still allows the idiomatic slice-then-map, and a mapped signal is a Signal', () => {
+    const _ = () => {
+      const name: Signal<string> = s
+        .at('user')
+        .at('profile')
+        .map((p) => p.name)
+      expectType<Signal<string>>(name)
+      // a MappedSignal flows into anything that accepts Signal<T>
+      const accept = (_v: Signal<string>): void => {}
+      accept(s.at('user.id').map((id) => id))
+    }
+    void _
+  })
+
+  it('allows chaining .map() after .map()', () => {
+    const _ = () => {
+      const out: Signal<string> = s
+        .at('count')
+        .map((n) => n + 1)
+        .map((n) => String(n))
+      expectType<Signal<string>>(out)
+    }
+    void _
+  })
+})
+
 describe('derived', () => {
-  it('combines independent signals, callback receives spread values', () => {
+  it('combines independent signals (array form), callback receives spread values', () => {
     const _ = () => {
       const label: Signal<string> = derived(
         [s.at('user.id'), s.at('count')],
@@ -149,13 +185,51 @@ describe('derived', () => {
     void _
   })
 
-  it('infers tuple element types in the callback', () => {
+  it('infers tuple element types in the callback (array form)', () => {
     const _ = () =>
       derived([s.at('count'), s.at('user.profile.email')], (n, email) => {
         expectType<number>(n)
         expectType<string | undefined>(email)
         return n
       })
+    void _
+  })
+
+  it('variadic form: 2 sources, positional value types inferred', () => {
+    const _ = () => {
+      const label: Signal<string> = derived(s.at('user.id'), s.at('count'), (id, n) => {
+        expectType<string>(id)
+        expectType<number>(n)
+        return `${id}:${n}`
+      })
+      expectType<Signal<string>>(label)
+    }
+    void _
+  })
+
+  it('variadic form: 3 sources', () => {
+    const _ = () => {
+      const out: Signal<string> = derived(
+        s.at('count'),
+        s.at('user.id'),
+        s.at('user.profile.email'),
+        (n, id, email) => {
+          expectType<number>(n)
+          expectType<string>(id)
+          expectType<string | undefined>(email)
+          return id
+        },
+      )
+      expectType<Signal<string>>(out)
+    }
+    void _
+  })
+
+  it('result is a mapped signal — .at() on it is a compile error', () => {
+    const _ = () => {
+      // @ts-expect-error — derived(...) yields a mapped signal; slice the sources instead
+      derived(s.at('count'), s.at('count'), (a, b) => ({ x: a + b })).at('x')
+    }
     void _
   })
 })

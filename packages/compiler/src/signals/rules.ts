@@ -14,6 +14,9 @@
 //   prefer-at-over-map       — a plain single-field projection `sig.map(p => p.x)`
 //                              should be `sig.at('x')` — a path signal that depends
 //                              only on `x`, not the whole source
+//   at-after-map             — `sig.map(fn).at('x')` / `derived(…).at('x')`: a mapped
+//                              signal has no static path to slice (runtime throw +
+//                              type error) — slice with `.at()` BEFORE `.map()`
 //
 // (There is deliberately no whole-`state`-coarseness rule: rendering a whole-state
 // object is already a TYPE error via `text`/`AttrValue` = `Reactive<string|number>`,
@@ -164,6 +167,15 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     diags.push({ rule, message, start: node.getStart(sf), length: node.getWidth(sf) })
   }
 
+  // A compact, single-line excerpt of an expression for quoting in messages —
+  // collapses whitespace and truncates so a long operand doesn't bloat the
+  // diagnostic. Quoting the offending text is what lets an LLM patch on the
+  // first retry (it can copy the suggested replacement verbatim).
+  const snippet = (n: ts.Node): string => {
+    const t = n.getText(sf).replace(/\s+/g, ' ').trim()
+    return t.length > 48 ? `${t.slice(0, 47)}…` : t
+  }
+
   // A REACTIVE signal value (at/map/derived/bare root) — but NOT a `.peek()`
   // chain, which yields a plain snapshot value that's fine to operate on.
   const isReactiveSignal = (expr: ts.Expression, roots: Roots): boolean => {
@@ -181,9 +193,10 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // ---- operator-on-signal: a Signal used as an operand ----
   const checkOperand = (expr: ts.Expression, ctx: string, roots: Roots): void => {
     if (isReactiveSignal(expr, roots)) {
+      const snip = snippet(expr)
       push(
         'operator-on-signal',
-        `Signal used in ${ctx}; operate on the value with .map() instead (e.g. sig.map(v => …)).`,
+        `Signal \`${snip}\` used in ${ctx}; operate on its value with .map() — e.g. \`${snip}.map(v => …)\` — instead of using the signal directly.`,
         expr,
       )
     }
@@ -196,6 +209,23 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       cur = cur.expression
     }
     return ts.isIdentifier(cur) && roots.has(cur.text)
+  }
+
+  // A MAPPED signal expression — the result of `<signal>.map(…)` or `derived(…)`.
+  // These carry no statically-known path, so `.at()` on them is unsupported
+  // (it throws at runtime and is a compile error in the types). Used to flag the
+  // `sig.map(fn).at('x')` foot-gun (`at-after-map`).
+  const isMappedSignalExpr = (expr: ts.Expression, roots: Roots): boolean => {
+    const e = ts.isParenthesizedExpression(expr) ? expr.expression : expr
+    if (!ts.isCallExpression(e)) return false
+    if (
+      ts.isPropertyAccessExpression(e.expression) &&
+      e.expression.name.text === 'map' &&
+      isSignalRootedAccess(e.expression.expression, roots)
+    ) {
+      return true
+    }
+    return ts.isIdentifier(e.expression) && e.expression.text === 'derived'
   }
 
   // ---- inside a .map/derived body: pure-derive + no-node-construction ----
@@ -347,9 +377,15 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     // peek-in-slot: a non-reactive snapshot used in a reactive slot (renders
     // once, never updates). Legitimate inside event handlers / derive bodies.
     if (!peekOk && isSignalPeek(node, roots)) {
+      // `node` is `<receiver>.peek()` — quote the receiver so the suggested fix
+      // is the user's actual signal, and offer the two reactive replacements:
+      // `.at('field')` to track a sub-field, `.map(v => …)` to derive a value.
+      const recv = snippet(
+        ((node as ts.CallExpression).expression as ts.PropertyAccessExpression).expression,
+      )
       push(
         'peek-in-slot',
-        '.peek() in a reactive slot reads once and never updates; use .at()/.map() for reactivity, or read it inside an event handler.',
+        `\`${recv}.peek()\` in a reactive slot reads once and never updates. For reactivity use \`${recv}.at('field')\` to track a sub-field, or \`${recv}.map(v => …)\` to derive a value; keep .peek() for event handlers/effects.`,
         node,
       )
     }
@@ -358,8 +394,9 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     if (ts.isBinaryExpression(node)) {
       const op = node.operatorToken.kind
       if (op !== ts.SyntaxKind.EqualsToken) {
-        checkOperand(node.left, 'an operator expression', roots)
-        checkOperand(node.right, 'an operator expression', roots)
+        const ctx = `an operator expression (${node.operatorToken.getText(sf)})`
+        checkOperand(node.left, ctx, roots)
+        checkOperand(node.right, ctx, roots)
       }
     }
     if (ts.isTemplateExpression(node)) {
@@ -377,6 +414,19 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     // not trip the derive-body rules. (DOM built by an Array.map *inside* a
     // signal `.map` body is still caught: lintDeriveBody walks the whole body.)
     if (ts.isCallExpression(node)) {
+      // at-after-map: `sig.map(fn).at('x')` / `derived(…).at('x')` — a mapped
+      // signal has no statically-known path to slice. Steer to slicing FIRST.
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'at' &&
+        isMappedSignalExpr(node.expression.expression, roots)
+      ) {
+        push(
+          'at-after-map',
+          `.at() after .map()/derived() has no statically-known path to slice — slice with .at() BEFORE mapping: \`sig.at('field').map(fn)\`, not \`sig.map(fn).at('field')\`.`,
+          node.expression.name,
+        )
+      }
       if (
         ts.isPropertyAccessExpression(node.expression) &&
         node.expression.name.text === 'map' &&

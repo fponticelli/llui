@@ -147,22 +147,25 @@ function pathHandle<T>(get: () => unknown, base: string): SignalHandle<T>
 
 ### `derived()`
 
-Combine N independent signals into one derived signal. Use when the inputs have
-no shared parent signal (cross-tree, or a per-row item signal + a component-state
-signal); for a single source, prefer {@link Signal.map}.
-The compiler lowers `derived(...)` inside a DIRECT view to an inline call. This
-is the equivalent RUNTIME handle for view-helper composition (where there is no
-statically-known path): `produce`/`peek` apply `fn` over the resolved sources and
-`deps` is the UNION of the sources' deps — so the chunked-mask reconciler fires
-the binding whenever ANY source changes, and commits only on an output change.
-All inputs must resolve against the same binding state (the common case: each is
-rooted at the component state, or all at the same row ctx).
-
 ```typescript
-function derived<T extends readonly unknown[], U>(
+export function derived<A, B, U>(a: Signal<A>, b: Signal<B>, fn: (a: A, b: B) => U): MappedSignal<U>
+export function derived<A, B, C, U>(
+  a: Signal<A>,
+  b: Signal<B>,
+  c: Signal<C>,
+  fn: (a: A, b: B, c: C) => U,
+): MappedSignal<U>
+export function derived<A, B, C, D, U>(
+  a: Signal<A>,
+  b: Signal<B>,
+  c: Signal<C>,
+  d: Signal<D>,
+  fn: (a: A, b: B, c: C, d: D) => U,
+): MappedSignal<U>
+export function derived<T extends readonly unknown[], U>(
   sigs: { readonly [K in keyof T]: Signal<T[K]> },
   fn: (...values: T) => U,
-): Signal<U>
+): MappedSignal<U>
 ```
 
 ### `tagSend()`
@@ -695,9 +698,27 @@ function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
 
 Define a signal component. Identity at runtime — the view has been lowered by
 the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>).
+The three type parameters:
+
+- **`S` — State.** The component's state shape. Must be JSON-serializable
+  (plain objects/arrays/primitives — no class instances, functions, Maps, or
+  Dates) so it can be snapshotted, time-travelled, and sent over the agent
+  wire. In `view`, `state` arrives as a `Signal<S>` — read it with
+  `state.at('field')`, `state.map(fn)`, or `state.peek()` (handlers/effects).
+- **`M` — Msg.** The message/action union the reducer handles. A
+  **discriminated union with a `type` field** (`{ type: 'inc' } | { type:
+'set'; value: number }`); the `type` discriminant is what the compiler,
+  devtools, and agent surface key off. Enforced by `M extends { type: string }`.
+- **`E` — Effect.** The effect union returned from `init`/`update`, also a
+  **discriminated union with a `type` field**. Defaults to `never` (a pure
+  component with no effects). Handled in `onEffect` (or by `@llui/effects`).
+  Spelling these out (and the `{ type: string }` constraint) catches a malformed
+  Msg/Effect union at the call site instead of at the first failed dispatch.
 
 ```typescript
-function component<S, M, E = never>(spec: SignalComponentSpec<S, M, E>): SignalComponentDef<S, M, E>
+function component<S, M extends { type: string }, E extends { type: string } = never>(
+  spec: SignalComponentSpec<S, M, E>,
+): SignalComponentDef<S, M, E>
 ```
 
 ### `mountApp()`
@@ -867,8 +888,24 @@ export type AttrValue = Reactive<string | number | boolean | null | undefined>
 
 ### `ElProps`
 
+Props for an element helper. Well-known `on*` handlers (see {@link ElEventMap})
+get their precise DOM event type, so `onClick: (e) => e.clientX` infers
+`e: MouseEvent` with no annotation. Every other key — attributes, `data-*`,
+`aria-*`, signals, and less-common events — is an {@link AttrValue} or a
+loosely-typed handler via the index signature, which also lets `connect()`
+part bags (with their own pre-typed handlers) spread in cleanly.
+The handler index falls back to `any` ON PURPOSE: a stricter index type would
+be a supertype of the precise `on*` handlers and reject them (function params
+are contravariant), so the precise types live in the mapped half and the
+index stays permissive.
+
 ```typescript
-export type ElProps = Record<string, AttrValue | ((ev: any) => void)>
+export type ElProps = {
+  [K in keyof ElEventMap]?: (ev: ElEventMap[K]) => void
+} & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: AttrValue | ((ev: any) => void) | undefined
+}
 ```
 
 ## Interfaces
@@ -884,8 +921,23 @@ vocabulary alongside `derived`:
 
 ```typescript
 export interface Signal<T> {
+  /**
+   * Slice into a sub-signal via a statically-typed dot path
+   * (`state.at('user.profile.name')`). The path is validated and the result type
+   * resolved at compile time.
+   *
+   * **Depth limit.** `ValidPath<T>` enumerates the union of *every* valid dotted
+   * path of `T` (to validate the argument and power autocomplete). That union
+   * grows multiplicatively with the state's width × depth, so on a large /
+   * deeply-nested `T` it can exceed TypeScript's instantiation limit and surface
+   * as `TS2589: Type instantiation is excessively deep`. The cost comes from the
+   * *whole state shape*, not the single path you wrote. If you hit it, reach for
+   * `.map(s => s.deep.path)` instead — a `.map()` derive sidesteps path typing
+   * entirely (it reads the whole slice; the runtime still gates it correctly) and
+   * is the supported escape hatch for very deep paths.
+   */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
-  map<U>(fn: (value: T) => U): Signal<U>
+  map<U>(fn: (value: T) => U): MappedSignal<U>
   peek(): T
 }
 ```

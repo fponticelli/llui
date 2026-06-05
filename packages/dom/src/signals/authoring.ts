@@ -45,7 +45,13 @@ export type Reactive<T> = Signal<T> | T
 
 const compiledAway = (name: string): never => {
   throw new Error(
-    `${name}() must be compiled by @llui/vite-plugin (signal authoring helper used at runtime)`,
+    `${name}() received a non-signal value at runtime — it was not lowered by @llui/vite-plugin.\n` +
+      `Checklist:\n` +
+      `  1. Is @llui/vite-plugin registered in your Vite config's \`plugins\`?\n` +
+      `  2. Is this module a .ts/.tsx file the plugin transforms (not plain .js, not in an excluded path)?\n` +
+      `  3. Did you restart the dev server / rebuild after changing the Vite config?\n` +
+      `  4. In a view HELPER or test, pass a real signal handle (state.at(…) / state.map(…)) — ${name}() needs a signal, not a plain value.\n` +
+      `When lowering is wired correctly, a direct-view ${name}() is compiled away and never reaches this code.`,
   )
 }
 
@@ -66,12 +72,70 @@ export function unsafeHtml(value: Reactive<string>): Mountable {
 
 // ── Elements ────────────────────────────────────────────────────────
 export type AttrValue = Reactive<string | number | boolean | null | undefined>
-// Event-handler props accept a handler for ANY specific Event subtype (component
-// `connect()` parts type them as `(e: KeyboardEvent)=>void` etc.). A single
-// non-`any` type can't both accept those AND keep good inline inference, so the
-// event param is intentionally `any` here (handlers are typed at their source).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ElProps = Record<string, AttrValue | ((ev: any) => void)>
+
+/** The DOM event type delivered to each well-known `on*` handler prop. Keep the
+ * keys camelCased (`onClick`, `onKeyDown`) — those are what the element helpers
+ * recognize and bind. Anything not listed here (rarer events, `data-*`, custom
+ * attributes) falls through to the {@link ElProps} index signature. */
+export interface ElEventMap {
+  onClick: MouseEvent
+  onDblClick: MouseEvent
+  onMouseDown: MouseEvent
+  onMouseUp: MouseEvent
+  onMouseEnter: MouseEvent
+  onMouseLeave: MouseEvent
+  onMouseMove: MouseEvent
+  onMouseOver: MouseEvent
+  onMouseOut: MouseEvent
+  onContextMenu: MouseEvent
+  onPointerDown: PointerEvent
+  onPointerUp: PointerEvent
+  onPointerMove: PointerEvent
+  onPointerEnter: PointerEvent
+  onPointerLeave: PointerEvent
+  onPointerCancel: PointerEvent
+  onKeyDown: KeyboardEvent
+  onKeyUp: KeyboardEvent
+  onKeyPress: KeyboardEvent
+  onInput: Event
+  onChange: Event
+  onSubmit: SubmitEvent
+  onReset: Event
+  onFocus: FocusEvent
+  onBlur: FocusEvent
+  onFocusIn: FocusEvent
+  onFocusOut: FocusEvent
+  onScroll: Event
+  onWheel: WheelEvent
+  onDrag: DragEvent
+  onDragStart: DragEvent
+  onDragEnd: DragEvent
+  onDragOver: DragEvent
+  onDragEnter: DragEvent
+  onDragLeave: DragEvent
+  onDrop: DragEvent
+  onTouchStart: TouchEvent
+  onTouchEnd: TouchEvent
+  onTouchMove: TouchEvent
+}
+
+/** Props for an element helper. Well-known `on*` handlers (see {@link ElEventMap})
+ * get their precise DOM event type, so `onClick: (e) => e.clientX` infers
+ * `e: MouseEvent` with no annotation. Every other key — attributes, `data-*`,
+ * `aria-*`, signals, and less-common events — is an {@link AttrValue} or a
+ * loosely-typed handler via the index signature, which also lets `connect()`
+ * part bags (with their own pre-typed handlers) spread in cleanly.
+ *
+ * The handler index falls back to `any` ON PURPOSE: a stricter index type would
+ * be a supertype of the precise `on*` handlers and reject them (function params
+ * are contravariant), so the precise types live in the mapped half and the
+ * index stays permissive. */
+export type ElProps = {
+  [K in keyof ElEventMap]?: (ev: ElEventMap[K]) => void
+} & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: AttrValue | ((ev: any) => void) | undefined
+}
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
  * or `tag()` — a leading array literal is children. Children are `Mountable`s (from
@@ -347,9 +411,28 @@ export interface SignalComponentSpec<S, M, E = never> {
   onEffect?: (effect: E, api: { send: Send<M>; state: Signal<S> }) => void | (() => void)
 }
 
-/** Define a signal component. Identity at runtime — the view has been lowered by
- * the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>). */
-export function component<S, M, E = never>(
+/**
+ * Define a signal component. Identity at runtime — the view has been lowered by
+ * the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>).
+ *
+ * The three type parameters:
+ * - **`S` — State.** The component's state shape. Must be JSON-serializable
+ *   (plain objects/arrays/primitives — no class instances, functions, Maps, or
+ *   Dates) so it can be snapshotted, time-travelled, and sent over the agent
+ *   wire. In `view`, `state` arrives as a `Signal<S>` — read it with
+ *   `state.at('field')`, `state.map(fn)`, or `state.peek()` (handlers/effects).
+ * - **`M` — Msg.** The message/action union the reducer handles. A
+ *   **discriminated union with a `type` field** (`{ type: 'inc' } | { type:
+ *   'set'; value: number }`); the `type` discriminant is what the compiler,
+ *   devtools, and agent surface key off. Enforced by `M extends { type: string }`.
+ * - **`E` — Effect.** The effect union returned from `init`/`update`, also a
+ *   **discriminated union with a `type` field**. Defaults to `never` (a pure
+ *   component with no effects). Handled in `onEffect` (or by `@llui/effects`).
+ *
+ * Spelling these out (and the `{ type: string }` constraint) catches a malformed
+ * Msg/Effect union at the call site instead of at the first failed dispatch.
+ */
+export function component<S, M extends { type: string }, E extends { type: string } = never>(
   spec: SignalComponentSpec<S, M, E>,
 ): SignalComponentDef<S, M, E> {
   return spec as SignalComponentDef<S, M, E>
