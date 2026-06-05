@@ -1,0 +1,323 @@
+/**
+ * Default theme for @llui/markdown-editor. Headless components target
+ * data-scope / data-part attributes; this stylesheet gives a polished default.
+ * Override the `--md-*` custom properties to retheme (e.g. for light mode).
+ *
+ *   import '@llui/markdown-editor/styles/editor.css'
+ */
+:root {
+  --md-bg: #0f1117;
+  --md-surface: #181b24;
+  --md-surface-2: #1f2330;
+  --md-border: #2b3040;
+  --md-text: #e6e8ee;
+  --md-muted: #9aa3b2;
+  --md-primary: #5b8cff;
+  --md-primary-soft: #2a3656;
+  --md-radius: 8px;
+  --md-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* ── Editor surface (Lexical's contentEditable host) ──────────────────── */
+[data-lexical-editor] {
+  position: relative;
+  outline: none;
+  padding: 1.1rem 1.25rem;
+  min-height: 8rem;
+  color: var(--md-text);
+}
+[data-lexical-editor] > * {
+  margin: 0 0 0.7rem;
+}
+[data-lexical-editor][data-empty='true']::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 1.1rem;
+  left: 1.25rem;
+  color: var(--md-muted);
+  pointer-events: none;
+}
+[data-lexical-editor] h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+[data-lexical-editor] h2 {
+  font-size: 1.3rem;
+}
+[data-lexical-editor] h3 {
+  font-size: 1.1rem;
+}
+[data-lexical-editor] blockquote {
+  border-left: 3px solid var(--md-primary);
+  margin-inline: 0;
+  padding-left: 0.9rem;
+  color: var(--md-muted);
+}
+[data-lexical-editor] ul,
+[data-lexical-editor] ol {
+  padding-left: 1.4rem;
+}
+[data-lexical-editor] a {
+  color: var(--md-primary);
+}
+[data-lexical-editor] code[data-lexical-text='true'] {
+  background: var(--md-surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  font-family: var(--md-mono);
+}
+[data-lexical-editor] code:not([data-lexical-text='true']) {
+  display: block;
+  white-space: pre;
+  background: var(--md-bg);
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  font-family: var(--md-mono);
+  overflow: auto;
+}
+
+/* Task-list items (li[role="checkbox"]) with a clickable checkbox. */
+[data-lexical-editor] li[role='checkbox'] {
+  position: relative;
+  list-style: none;
+  margin-left: -0.4rem;
+  padding-left: 1.5rem;
+  outline: none;
+}
+[data-lexical-editor] li[role='checkbox']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.25em;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--md-muted);
+  border-radius: 3px;
+  cursor: pointer;
+}
+[data-lexical-editor] li[role='checkbox'][aria-checked='true'] {
+  color: var(--md-muted);
+  text-decoration: line-through;
+}
+[data-lexical-editor] li[role='checkbox'][aria-checked='true']::before {
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+}
+[data-lexical-editor] li[role='checkbox'][aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 0.34rem;
+  top: 0.3em;
+  width: 0.28rem;
+  height: 0.55rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+/* ── Editor shell + toolbar ───────────────────────────────────────────── */
+[data-scope='md-editor'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  background: var(--md-surface);
+}
+[data-scope='md-toolbar'][data-part='root'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--md-border);
+  background: var(--md-surface-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+[data-scope='md-toolbar'][data-part='group'] {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding-right: 0.5rem;
+  border-right: 1px solid var(--md-border);
+}
+[data-scope='md-toolbar'][data-part='group']:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+[data-scope='md-toolbar'] [data-part='item'] {
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.4rem;
+  color: var(--md-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+[data-scope='md-toolbar'] [data-part='item']:hover {
+  background: var(--md-surface);
+}
+[data-scope='md-toolbar'] [data-part='item'][data-active] {
+  background: var(--md-primary-soft);
+  color: #fff;
+  border-color: var(--md-primary);
+}
+[data-scope='md-toolbar'] [data-part='item']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+[data-scope='md-toolbar'] [data-part='block-select'] {
+  font: inherit;
+  font-size: 0.85rem;
+  height: 2rem;
+  padding: 0 0.4rem;
+  color: var(--md-text);
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+[data-part='glyph'] {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+}
+[data-part='glyph'] svg {
+  display: block;
+}
+
+/* ── Callout decorator ────────────────────────────────────────────────── */
+[data-scope='md-callout'][data-part='root'] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--md-border);
+  border-left-width: 4px;
+  background: var(--md-surface-2);
+  margin: 0.6rem 0;
+}
+[data-scope='md-callout'] [data-part='badge'] {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  flex: none;
+}
+[data-scope='md-callout'] [data-part='text'] {
+  flex: 1;
+  padding-top: 0.1rem;
+  outline: none;
+  border-radius: 4px;
+}
+[data-scope='md-callout'] [data-part='text']:focus {
+  box-shadow: 0 0 0 2px var(--md-primary-soft);
+}
+[data-scope='md-callout'] [data-part='text']:empty::before {
+  content: 'Callout text…';
+  color: var(--md-muted);
+}
+[data-scope='md-callout'][data-kind='note'] {
+  border-left-color: #5b8cff;
+}
+[data-scope='md-callout'][data-kind='note'] [data-part='badge'] {
+  background: #5b8cff;
+}
+[data-scope='md-callout'][data-kind='tip'] {
+  border-left-color: #34d399;
+}
+[data-scope='md-callout'][data-kind='tip'] [data-part='badge'] {
+  background: #34d399;
+}
+[data-scope='md-callout'][data-kind='warning'] {
+  border-left-color: #fbbf24;
+}
+[data-scope='md-callout'][data-kind='warning'] [data-part='badge'] {
+  background: #b8860b;
+}
+[data-scope='md-callout'][data-kind='danger'] {
+  border-left-color: #f87171;
+}
+[data-scope='md-callout'][data-kind='danger'] [data-part='badge'] {
+  background: #ef4444;
+}
+
+/* ── Link dialog ──────────────────────────────────────────────────────── */
+[data-scope='dialog'][data-part='backdrop'] {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 10, 16, 0.6);
+  z-index: 50;
+}
+[data-scope='dialog'][data-part='positioner'] {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 51;
+}
+[data-md-link='box'] {
+  width: min(28rem, 100%);
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  color: var(--md-text);
+}
+[data-md-link='title'] {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.7rem;
+}
+[data-md-link='input'] {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--md-bg);
+  color: var(--md-text);
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  outline: none;
+}
+[data-md-link='input']:focus {
+  border-color: var(--md-primary);
+}
+[data-md-link='actions'] {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+[data-md-link='cancel'],
+[data-md-link='apply'] {
+  font: inherit;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  border: 1px solid var(--md-border);
+}
+[data-md-link='cancel'] {
+  background: var(--md-surface);
+  color: var(--md-text);
+}
+[data-md-link='apply'] {
+  background: var(--md-primary);
+  color: #fff;
+  border-color: var(--md-primary);
+}

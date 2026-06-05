@@ -5,6 +5,8 @@
 import {
   button,
   div,
+  option,
+  select,
   span,
   text,
   tagSend,
@@ -131,7 +133,34 @@ export interface ToolbarOptions {
   groups?: readonly (readonly string[])[]
   /** Glyph overrides (id → text/emoji). Merged over {@link DEFAULT_GLYPHS}. */
   glyphs?: Readonly<Record<string, string>>
+  /** Render the `block` group as a `<select>` dropdown instead of buttons
+   * (default true). */
+  blockSelect?: boolean
   'aria-label'?: string
+}
+
+/** Render the `block` group as a native `<select>` of block types. */
+function blockTypeSelect(
+  format: Signal<FormatState>,
+  send: Send<EditorMsg>,
+  blockItems: readonly CommandItem[],
+): Mountable {
+  return select(
+    {
+      'data-scope': 'md-toolbar',
+      'data-part': 'block-select',
+      'aria-label': 'Block type',
+      value: format.map((f) => blockItems.find((i) => i.isActive?.(f))?.id ?? ''),
+      onChange: (e: Event) => {
+        const id = (e.currentTarget as HTMLSelectElement).value
+        if (id) send({ type: 'runCommand', id })
+      },
+    },
+    [
+      option({ value: '', hidden: true }, [text('—')]),
+      ...blockItems.map((i) => option({ value: i.id }, [text(i.label)])),
+    ],
+  )
 }
 
 /** A ready-made grouped toolbar. Items not surfaced to `'toolbar'` are dropped. */
@@ -140,28 +169,42 @@ export function toolbar(opts: ToolbarOptions): Mountable {
   const byId = new Map(surfaceItems.map((i) => [i.id, i]))
   const parts = connectToolbar(opts.format, opts.send, surfaceItems)
   const glyphs = { ...DEFAULT_GLYPHS, ...(opts.glyphs ?? {}) }
-  const groups = opts.groups ?? groupItems(surfaceItems)
 
-  const groupEls = groups
-    .filter((ids) => ids.length > 0)
-    .map((ids) =>
+  const useBlockSelect = opts.blockSelect !== false && !opts.groups
+  const blockItems = useBlockSelect ? surfaceItems.filter((i) => i.group === 'block') : []
+  const buttonItems = useBlockSelect
+    ? surfaceItems.filter((i) => i.group !== 'block')
+    : surfaceItems
+  const groups = opts.groups ?? groupItems(buttonItems)
+
+  const children: Mountable[] = []
+  if (blockItems.length > 0) {
+    children.push(
+      div({ 'data-scope': 'md-toolbar', 'data-part': 'group' }, [
+        blockTypeSelect(opts.format, opts.send, blockItems),
+      ]),
+    )
+  }
+  for (const ids of groups) {
+    const present = ids.filter((id) => byId.has(id))
+    if (present.length === 0) continue
+    children.push(
       div(
         { 'data-scope': 'md-toolbar', 'data-part': 'group' },
-        ids
-          .filter((id) => byId.has(id))
-          .map((id) => {
-            const item = byId.get(id)!
-            const glyph = glyphs[id] ?? item.label
-            const glyphNode = glyph.trimStart().startsWith('<svg') ? unsafeHtml(glyph) : text(glyph)
-            return button({ ...parts.item(id) }, [
-              span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [glyphNode]),
-            ])
-          }),
+        present.map((id) => {
+          const item = byId.get(id)!
+          const glyph = glyphs[id] ?? item.label
+          const glyphNode = glyph.trimStart().startsWith('<svg') ? unsafeHtml(glyph) : text(glyph)
+          return button({ ...parts.item(id) }, [
+            span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [glyphNode]),
+          ])
+        }),
       ),
     )
+  }
 
   return div(
     { ...parts.root, ...(opts['aria-label'] ? { 'aria-label': opts['aria-label'] } : {}) },
-    groupEls,
+    children,
   )
 }

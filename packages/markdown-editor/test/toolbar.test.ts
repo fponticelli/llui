@@ -37,13 +37,17 @@ function selectAll(editor: LexicalEditor): void {
 }
 
 describe('toolbar surface', () => {
-  it('renders grouped toolbar buttons for surfaced items', () => {
+  it('renders grouped toolbar buttons + a block-type select', () => {
     app = mountApp(container, markdownEditor({ defaultValue: 'x', toolbar: true }))
     const root = container.querySelector('[data-scope="md-toolbar"][data-part="root"]')
     expect(root).not.toBeNull()
     expect(container.querySelector('[data-id="bold"]')).not.toBeNull()
-    expect(container.querySelector('[data-id="h1"]')).not.toBeNull()
     expect(container.querySelector('[data-id="bulletList"]')).not.toBeNull()
+    // Block types are presented as a <select>, not individual buttons.
+    const select = container.querySelector<HTMLSelectElement>('[data-part="block-select"]')
+    expect(select).not.toBeNull()
+    expect(container.querySelector('[data-id="h1"]')).toBeNull()
+    expect([...select!.options].map((o) => o.value)).toContain('h1')
     expect(container.querySelectorAll('[data-part="group"]').length).toBeGreaterThan(1)
   })
 

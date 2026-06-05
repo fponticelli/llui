@@ -186,12 +186,17 @@ export function markdownEditor(
       },
       onReady: (editor) => {
         editorRef = editor
+        if (config.placeholder) {
+          editor.getRootElement()?.setAttribute('data-placeholder', config.placeholder)
+        }
         config.onReady?.(editor)
       },
       onChange: (value) => send({ type: 'markdownChanged', value }),
       onSelectionChange: (ctx) => {
         const format = computeFormatState(ctx.editor, ctx)
         const text = ctx.editor.getEditorState().read(() => $getRoot().getTextContent())
+        // Toggle an empty marker so CSS can show the placeholder.
+        ctx.editor.getRootElement()?.setAttribute('data-empty', text === '' ? 'true' : 'false')
         send({ type: 'formatChanged', format, wordCount: countWords(text), charCount: text.length })
       },
       emit: (msg) => send(msg),

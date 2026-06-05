@@ -17,6 +17,7 @@ import {
   calloutPlugin,
   type EditorState,
 } from '@llui/markdown-editor'
+import '@llui/markdown-editor/styles/editor.css'
 import './main.css'
 
 const WELCOME_MD = [
@@ -41,9 +42,6 @@ const WELCOME_MD = [
   'const editor = markdownEditor({ toolbar: true })',
   '```',
 ].join('\n')
-
-const MINIMAL_MD =
-  'A minimal editor — **no toolbar**, just keyboard Markdown.\n\nTry typing `## ` or `> ` at the start of a line.'
 
 const SOURCE_MD = [
   '# Two-way binding',
@@ -111,8 +109,14 @@ roButton.addEventListener('click', () => {
 })
 controls.appendChild(roButton)
 
-// ── 2. Minimal editor (keyboard-only, no chrome) ──────────────────────────────
-mountApp(byId('minimal-editor'), markdownEditor({ defaultValue: MINIMAL_MD }))
+// ── 2. Minimal editor (keyboard-only, no chrome, with a placeholder) ──────────
+mountApp(
+  byId('minimal-editor'),
+  markdownEditor({
+    defaultValue: '',
+    placeholder: 'Type Markdown — **bold**, # heading, - list, > quote…',
+  }),
+)
 
 // ── 3. Two-way Markdown source binding (textarea ⇄ editor via the handle) ─────
 const textarea = byId('source-textarea') as HTMLTextAreaElement

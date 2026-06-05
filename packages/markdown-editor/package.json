@@ -20,10 +20,11 @@
     "./surfaces/toolbar": {
       "import": "./dist/surfaces/toolbar.js",
       "types": "./dist/surfaces/toolbar.d.ts"
-    }
+    },
+    "./styles/editor.css": "./dist/styles/editor.css"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/editor.css dist/styles/",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
     "test": "vitest run"
@@ -59,7 +60,9 @@
     "vitest": "^4.1.2",
     "@lexical/code-core": "^0.45.0"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/styles/editor.css"
+  ],
   "description": "WYSIWYG Markdown editor for LLui — hides Markdown behind a rich, pluggable editing widget built on Lexical",
   "keywords": [
     "llui",
