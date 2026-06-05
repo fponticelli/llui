@@ -14,6 +14,9 @@ benchmarks/bundle-composition.json
 # Editor workspace settings (peacock, etc.)
 .vscode/
 
+# Ephemeral git worktrees created by tooling (EnterWorktree / `git worktree add`).
+.claude/worktrees/
+
 # devmode-annotate notebook — developer-local notes/screenshots +
 # router chain-state file, not shared across the team unless
 # explicitly copied elsewhere.

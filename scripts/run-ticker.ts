@@ -9,8 +9,9 @@
  *   pnpm bench:ticker                # all 5 frameworks, all 9 ticker ops
  *   pnpm bench:ticker --framework llui
  *   pnpm bench:ticker --runs 3       # median-of-medians across N passes
- *   pnpm bench:ticker --save         # write results to ticker-baseline.json
+ *   pnpm bench:ticker --save         # write results to ticker-baseline.json (merges)
  *   pnpm bench:ticker --headful      # don't run Chrome in headless mode
+ *   pnpm bench:ticker --only burst-1k,batch-1k   # just those ops (fast iteration)
  */
 
 import { execSync } from 'node:child_process'
@@ -56,12 +57,23 @@ const saveBaseline = args.includes('--save')
 const headful = args.includes('--headful')
 let runs = 1
 const fwFilter: string[] = []
+// `--only burst-1k,batch-1k` (or `--only burst` / repeated flags) restricts the run
+// to ticker ops whose id or label contains any of the comma-separated needles —
+// handy for quickly comparing just a couple of ops without the full 9-op suite.
+const onlyFilter: string[] = []
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--framework' && i + 1 < args.length) {
     fwFilter.push(args[i + 1]!)
     i++
   } else if (args[i] === '--runs' && i + 1 < args.length) {
     runs = Math.max(1, parseInt(args[i + 1]!, 10))
+    i++
+  } else if (args[i] === '--only' && i + 1 < args.length) {
+    onlyFilter.push(
+      ...args[i + 1]!.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    )
     i++
   }
 }
@@ -93,7 +105,11 @@ for (const fw of FRAMEWORKS) {
   })
 }
 
-// ── Start jfb server if not running ─────────────────────────────
+// ── (Re)start the jfb server so it serves the freshly-built bundles ──────
+// We rebuild every app above, so a server left running from a PRIOR run would
+// serve STALE dist — a newly added/changed button wouldn't be found and the op
+// fails with `testElementLocatedById … timed out`. Always kill any listener on
+// 8080 and start fresh.
 
 function curlOk(url: string): boolean {
   try {
@@ -104,21 +120,24 @@ function curlOk(url: string): boolean {
   }
 }
 
-if (!curlOk('http://localhost:8080/ls')) {
-  console.log('Starting jfb server...')
-  execSync('npm start &', { cwd: JFB_REPO, stdio: 'ignore', shell: '/bin/bash' })
-  let ready = false
-  for (let i = 0; i < 15; i++) {
-    execSync('sleep 1')
-    if (curlOk('http://localhost:8080/ls')) {
-      ready = true
-      break
-    }
+try {
+  execSync('lsof -ti tcp:8080 | xargs kill 2>/dev/null', { shell: '/bin/bash', stdio: 'ignore' })
+} catch {
+  // nothing listening — fine
+}
+console.log('Starting jfb server (fresh)...')
+execSync('npm start &', { cwd: JFB_REPO, stdio: 'ignore', shell: '/bin/bash' })
+let ready = false
+for (let i = 0; i < 15; i++) {
+  execSync('sleep 1')
+  if (curlOk('http://localhost:8080/ls')) {
+    ready = true
+    break
   }
-  if (!ready) {
-    console.error('jfb server failed to start on port 8080')
-    process.exit(1)
-  }
+}
+if (!ready) {
+  console.error('jfb server failed to start on port 8080')
+  process.exit(1)
 }
 
 // ── Run benchmarks ──────────────────────────────────────────────
@@ -154,7 +173,19 @@ function medianOf(nums: number[]): number | null {
 }
 
 const toRun = fwFilter.length > 0 ? fwFilter : FRAMEWORKS
-const benchIdFilter = TICKER_BENCHMARKS.map((b) => b.id).join(' ')
+const SELECTED =
+  onlyFilter.length > 0
+    ? TICKER_BENCHMARKS.filter((b) =>
+        onlyFilter.some((n) => b.id.includes(n) || b.label.includes(n)),
+      )
+    : TICKER_BENCHMARKS
+if (SELECTED.length === 0) {
+  console.error(
+    `--only matched no ticker ops. Available: ${TICKER_BENCHMARKS.map((b) => b.label).join(', ')}`,
+  )
+  process.exit(1)
+}
+const benchIdFilter = SELECTED.map((b) => b.id).join(' ')
 
 for (let pass = 1; pass <= runs; pass++) {
   if (runs > 1) console.log(`\n=== Pass ${pass}/${runs} ===`)
@@ -171,7 +202,7 @@ for (let pass = 1; pass <= runs; pass++) {
       continue
     }
     const fwName = `${fw}-ticker`
-    for (const b of TICKER_BENCHMARKS) {
+    for (const b of SELECTED) {
       const m = readMedian(fwName, b.id)
       if (m == null) continue
       const key = `${fwName}/${b.id}`
@@ -185,7 +216,7 @@ for (let pass = 1; pass <= runs; pass++) {
 for (const fw of toRun) {
   const fwName = `${fw}-ticker`
   if (!current[fwName]) current[fwName] = {}
-  for (const b of TICKER_BENCHMARKS) {
+  for (const b of SELECTED) {
     const arr = samples.get(`${fwName}/${b.id}`) ?? []
     const agg = medianOf(arr)
     if (agg != null) current[fwName][b.id] = agg
@@ -201,7 +232,7 @@ console.log('\n=== Ticker results (median ms) ===\n')
 let header = 'Operation'.padEnd(LABEL_W) + cols.map((n) => n.padStart(W)).join('')
 console.log(header)
 console.log('-'.repeat(header.length))
-for (const b of TICKER_BENCHMARKS) {
+for (const b of SELECTED) {
   let line = b.label.padEnd(LABEL_W)
   for (const col of cols) {
     const v = current[col]?.[b.id]

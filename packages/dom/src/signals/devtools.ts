@@ -247,6 +247,14 @@ export interface ValidationError {
   /** Set by the legacy validator; the signal validator omits these. */
   expected?: string
   received?: string
+  /**
+   * A complete, valid example message — attached to the FIRST error so an LLM
+   * can construct the corrected message in one shot instead of inferring the
+   * shape from the schema. Built for the targeted variant (or a representative
+   * variant when the variant is unknown/missing), reusing any valid fields the
+   * caller already supplied.
+   */
+  example?: Record<string, unknown>
 }
 
 interface MsgSchemaShape {
@@ -254,12 +262,56 @@ interface MsgSchemaShape {
   variants: Record<string, Record<string, string>>
 }
 
+/** A placeholder value for a schema field whose type is only known as a STRING
+ * (the introspection schema carries type names, not structures). Handles the
+ * common scalar/array/literal-union cases; anything else (objects, custom named
+ * types) falls back to `null`. */
+function exampleValueForType(type: string): unknown {
+  const t = type.trim()
+  if (t.endsWith('[]') || t.startsWith('readonly ') || /^(ReadonlyArray|Array)</.test(t)) return []
+  if (t === 'string') return ''
+  if (t === 'number') return 0
+  if (t === 'boolean') return false
+  if (t === 'null' || t === 'undefined') return null
+  // string-literal / union — use the first member as a representative value
+  const first = t.split('|')[0]!.trim()
+  const lit = first.match(/^'([^']*)'$/) ?? first.match(/^"([^"]*)"$/)
+  if (lit) return lit[1]
+  if (/^-?\d+(\.\d+)?$/.test(first)) return Number(first)
+  if (first === 'true' || first === 'false') return first === 'true'
+  return null
+}
+
+/** Build a complete valid example for a variant, reusing any fields the caller
+ * already supplied (so the example is a direct correction, not a generic stub).
+ * Returns undefined when the variant has no schema (caller passes a fallback). */
+function exampleForVariant(
+  s: MsgSchemaShape,
+  tag: string | undefined,
+  provided?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (tag === undefined || !(tag in s.variants)) return undefined
+  const ex: Record<string, unknown> = { [s.discriminant]: tag }
+  for (const [field, type] of Object.entries(s.variants[tag]!)) {
+    ex[field] = provided && field in provided ? provided[field] : exampleValueForType(type)
+  }
+  return ex
+}
+
 /** Minimal message validation against the discriminated-union __msgSchema. */
 function validateAgainstSchema(msg: unknown, schema: object | undefined): ValidationError[] | null {
   if (!schema) return null
   const s = schema as MsgSchemaShape
+  // A representative variant for the "can't tell what they meant" cases.
+  const firstVariant = Object.keys(s.variants)[0]
   if (typeof msg !== 'object' || msg === null) {
-    return [{ path: '', message: 'message must be an object' }]
+    return [
+      {
+        path: '',
+        message: 'message must be an object',
+        example: exampleForVariant(s, firstVariant),
+      },
+    ]
   }
   const m = msg as Record<string, unknown>
   const tag = m[s.discriminant]
@@ -270,6 +322,7 @@ function validateAgainstSchema(msg: unknown, schema: object | undefined): Valida
         message: `unknown variant ${JSON.stringify(tag)}; expected one of ${Object.keys(s.variants)
           .map((v) => JSON.stringify(v))
           .join(', ')}`,
+        example: exampleForVariant(s, firstVariant),
       },
     ]
   }
@@ -281,7 +334,10 @@ function validateAgainstSchema(msg: unknown, schema: object | undefined): Valida
   // Contract is `ValidationError[] | null`: a VALID message is `null`, not `[]`.
   // Callers gate on truthiness (`if (errors) …`) and an empty array is truthy —
   // returning `[]` here made every schema-valid `send_message` report sent:false.
-  return errors.length > 0 ? errors : null
+  if (errors.length === 0) return null
+  // The example (the complete corrected message) rides on the first error.
+  errors[0]!.example = exampleForVariant(s, tag, m)
+  return errors
 }
 
 function clone<T>(v: T): T {

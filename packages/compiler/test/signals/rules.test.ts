@@ -7,6 +7,8 @@ function lint(src: string): SignalDiagnostic[] {
   return lintSignals(sf)
 }
 const rules = (src: string): string[] => [...new Set(lint(src).map((d) => d.rule))].sort()
+const messageFor = (src: string, rule: string): string =>
+  lint(src).find((d) => d.rule === rule)?.message ?? ''
 
 describe('operator-on-signal', () => {
   it('flags arithmetic / comparison / template / ternary / logical / unary on a signal', () => {
@@ -20,6 +22,15 @@ describe('operator-on-signal', () => {
   it('does NOT flag operations on plain values inside a .map body', () => {
     expect(rules("state.at('n').map((v) => v + 1)")).not.toContain('operator-on-signal')
     expect(rules("state.at('s').map((v) => `hi ${v}`)")).not.toContain('operator-on-signal')
+  })
+  it('quotes the offending expression AND the operator in the message', () => {
+    const msg = messageFor("const x = state.at('n') + 1", 'operator-on-signal')
+    // the exact offending signal expression, copy-pasteable into the fix
+    expect(msg).toContain("state.at('n')")
+    // the operator that triggered it
+    expect(msg).toContain('(+)')
+    // a tailored .map() example built from that expression
+    expect(msg).toContain("state.at('n').map(")
   })
   it('does NOT flag operators on a .peek() snapshot (peek yields a plain value)', () => {
     // common in event handlers: read current value, then compute/compare
@@ -198,6 +209,13 @@ describe('peek-in-slot', () => {
     ).toContain('peek-in-slot')
   })
 
+  it('quotes the receiver and suggests .at()/.map() concretely', () => {
+    const msg = messageFor("text(state.at('todos').peek())", 'peek-in-slot')
+    expect(msg).toContain("state.at('todos').peek()")
+    expect(msg).toContain("state.at('todos').at('field')")
+    expect(msg).toContain("state.at('todos').map(")
+  })
+
   it('does NOT flag .peek() inside an event handler', () => {
     expect(rules("button({ onClick: () => send(state.at('x').peek()) }, [])")).not.toContain(
       'peek-in-slot',
@@ -213,6 +231,44 @@ describe('peek-in-slot', () => {
     const r = rules("state.at('n').map((v) => v + state.at('m').peek())")
     expect(r).not.toContain('peek-in-slot')
     expect(r).toContain('pure-derive-body')
+  })
+})
+
+describe('at-after-map', () => {
+  it('flags .at() chained after a signal .map()', () => {
+    expect(rules("text(state.at('user').map((u) => u.profile).at('name'))")).toContain(
+      'at-after-map',
+    )
+  })
+  it('flags .at() chained after derived()', () => {
+    expect(
+      rules("text(derived([state.at('a'), state.at('b')], (a, b) => ({ x: a + b })).at('x'))"),
+    ).toContain('at-after-map')
+  })
+  it('flags .at() after a multi-.map() chain', () => {
+    expect(rules("text(state.at('a').map((a) => a).map((a) => a).at('x'))")).toContain(
+      'at-after-map',
+    )
+  })
+  it('flags it on a row item signal too', () => {
+    expect(
+      rules(
+        "each(state.at('rows'), { key: (r) => r.id, render: (item) => [text(item.map((r) => r.meta).at('label'))] })",
+      ),
+    ).toContain('at-after-map')
+  })
+  it('does NOT flag the idiomatic slice-before-map order', () => {
+    expect(rules("text(state.at('user').at('name').map((n) => n.toUpperCase()))")).not.toContain(
+      'at-after-map',
+    )
+  })
+  it('does NOT flag .at() on a plain (non-signal) array .map result', () => {
+    expect(rules('OPTS.map((o) => o).at')).not.toContain('at-after-map')
+  })
+  it('message names the fix order', () => {
+    const msg = messageFor("text(state.at('a').map((a) => a).at('x'))", 'at-after-map')
+    expect(msg).toContain('.at()')
+    expect(msg).toContain('BEFORE')
   })
 })
 

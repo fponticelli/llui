@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "tsx src/generate-benchmarks.ts && tsx src/generate-api.ts && tsx src/generate-llms.ts && pnpm exec prettier --write 'content/**/*.md' 'public/benchmark-data.json' --log-level silent && vite build",
+    "build": "tsx src/generate-benchmarks.ts && tsx src/generate-api.ts && tsx src/generate-llms.ts && tsx src/generate-examples.ts && pnpm exec prettier --write 'content/**/*.md' 'public/benchmark-data.json' --log-level silent && vite build && tsx src/build-examples.ts",
     "preview": "vite preview"
   },
   "dependencies": {

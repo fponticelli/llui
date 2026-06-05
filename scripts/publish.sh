@@ -29,7 +29,7 @@ set -e
 TIER1=(dom effects compiler)
 TIER2=(
   compiler-introspection compiler-devtools compiler-ssr
-  vite-plugin test router transitions components vike mcp agent
+  vite-plugin test router transitions components markdown vike mcp agent
 )
 TIER3=(agent-bridge)
 ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}" "${TIER3[@]}")

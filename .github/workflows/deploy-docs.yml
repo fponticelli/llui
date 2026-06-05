@@ -6,6 +6,7 @@ on:
     paths:
       - 'site/**'
       - 'docs/**'
+      - 'examples/**'
       - 'packages/*/README.md'
       - 'packages/*/src/**'
       - 'evaluation/prompts/system-prompt.md'
@@ -42,13 +43,26 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build LLui packages
-        run: pnpm turbo build --filter=@llui/dom --filter=@llui/vite-plugin --filter=@llui/vike
+        # @llui/dom, vite-plugin, vike power the site; components/effects/router/agent
+        # are needed to build the example mini-apps (transitive deps via ^build).
+        run: >-
+          pnpm turbo build
+          --filter=@llui/dom
+          --filter=@llui/vite-plugin
+          --filter=@llui/vike
+          --filter=@llui/components
+          --filter=@llui/effects
+          --filter=@llui/router
+          --filter=@llui/agent
 
-      - name: Generate benchmarks + API docs + LLM files
-        run: cd site && npx tsx src/generate-benchmarks.ts && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts
+      - name: Generate benchmarks + API docs + LLM files + example pages
+        run: cd site && npx tsx src/generate-benchmarks.ts && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts && npx tsx src/generate-examples.ts
 
       - name: Build site
         run: cd site && npx vite build
+
+      - name: Build + bundle example apps
+        run: cd site && npx tsx src/build-examples.ts
 
       - uses: actions/upload-pages-artifact@v3
         with:

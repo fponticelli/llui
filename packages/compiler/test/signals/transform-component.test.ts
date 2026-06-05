@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
+import ts from 'typescript'
 import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+
+/** Parse the lowered source and assert it has no syntax errors — catches edit
+ * overlaps / duplication (e.g. pass-2 double-lowering a pass-1 each) that a
+ * `toContain` substring check would miss. */
+function assertParses(src: string): void {
+  const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // `parseDiagnostics` is internal but populated by createSourceFile; a syntactically
+  // corrupt splice (duplicated tokens) surfaces here.
+  const diags = (sf as unknown as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? []
+  expect(diags.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([])
+}
 
 describe('transformSignalComponentSource', () => {
   it('rewrites a signal view and injects the runtime import', () => {
@@ -329,6 +341,125 @@ describe('transformSignalComponentSource', () => {
       )
       expect(out).toContain('onClick: () => batch(() => { dispatch(')
       expect(out).toContain('batch, state, send: dispatch')
+    })
+  })
+
+  describe('view-helper coverage (cross-function lowering — each in helper functions)', () => {
+    it('lowers an each inside a view-helper function to eachDirect (items handle verbatim, row → factory)', () => {
+      const src = [
+        "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
+        'function rowsView(items: Signal<readonly { id: number; label: string }[]>): Renderable {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
+        '}',
+        'const C = component({',
+        '  init: () => ({ items: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [rowsView(state.at("items"))],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // the helper's each becomes eachDirect, keeping the items handle VERBATIM
+      expect(out).toContain('eachDirect(items, (r) => r.id,')
+      expect(out).toContain('(doc, getCtx) =>')
+      expect(out).toContain('produce: (ctx) => ctx.item.label')
+      // NOT the component-rooted source form (helper params can't be statically rooted)
+      expect(out).not.toContain('signalEachDirect(')
+      // eachDirect import injected
+      expect(out).toMatch(/import \{[^}]*\beachDirect\b[^}]*\} from '@llui\/dom'/)
+    })
+
+    it('leaves a helper each VERBATIM when the row reads a non-root signal handle reactively', () => {
+      // `mode` is another helper signal param — reading it reactively in a row can't be
+      // ctx-rooted, so the row bails and the each stays the authoring (handle) form.
+      const src = [
+        "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
+        'function rowsView(items: Signal<readonly { id: number }[]>, mode: Signal<string>): Renderable {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({ class: mode.at("x") }, [text(item.at("y"))])] })])]',
+        '}',
+        'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [rowsView(state.at("items"), state.at("mode"))] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).not.toContain('eachDirect(')
+      expect(out).toContain('each(items, {') // authoring each, unchanged
+    })
+
+    it('does not turn a COMPONENT-view each into eachDirect (keeps the rooted signalEachDirect)', () => {
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).toContain('signalEachDirect(') // component-view path: rooted source
+      expect(out).not.toMatch(/(?<![A-Za-z])eachDirect\(/) // not the standalone handle form
+    })
+  })
+
+  describe('helper-row inlining (cross-function lowering — phase 2)', () => {
+    it('inlines a same-file row helper so the row lowers (params → call args)', () => {
+      const src = [
+        "import { component, div, span, text, each } from '@llui/dom'",
+        'function row(item, locale) {',
+        '  const entry = item.peek()',
+        "  return div({ class: 'activity-item' }, [span({}, [text(entry.user)]), span({}, [text(locale.map((l) => entry.ago + l))])])",
+        '}',
+        'const C = component({',
+        '  init: () => ({ items: [], locale: "en" }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [div({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("locale"))] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).toContain('signalEachDirect(') // the helper-row each now lowers
+      expect(out).toContain('const entry = getCtx().item') // helper's peek local inlined
+      expect(out).toContain('doc.createTextNode(String(entry.user))') // static from the value local
+      // the `locale` param was substituted with the call arg → component-state binding
+      expect(out).toContain('ctx.state.locale')
+    })
+
+    it('bails when a row helper uses spread props (e.g. sortable parts)', () => {
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'function row(item, parts) {',
+        "  return li({ ...parts.item(item.peek().id), class: 'r' }, [text(item.at('title'))])",
+        '}',
+        'const C = component({ init: () => ({ items: [], parts: {} }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("parts"))] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // spread → row factory bails → the each stays authoring (item leaks into row(...))
+      expect(out).not.toContain('signalEachDirect(')
+      expect(out).toContain('each(state.at("items")')
+    })
+
+    it('a component-view each is lowered ONCE (no pass-2 double-lowering) and the output parses', () => {
+      // Regression: pass-2 (helper coverage) must skip eaches already inside a pass-1
+      // component-view edit range. If pass1Ranges is captured before pass 1 runs, the
+      // each is lowered twice → overlapping edits → corrupt, unparseable output.
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect((out.match(/signalEachDirect\(/g) ?? []).length).toBe(1) // exactly once
+      expect((out.match(/(?<![A-Za-z])eachDirect\(/g) ?? []).length).toBe(0) // not also the helper form
+    })
+
+    it('does not inline an UNKNOWN (cross-file/imported) helper', () => {
+      const src = [
+        "import { component, ul, text, each } from '@llui/dom'",
+        "import { row } from './row'",
+        'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).not.toContain('signalEachDirect(') // can't resolve the helper body → authoring
     })
   })
 })

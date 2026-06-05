@@ -13,7 +13,46 @@ import {
   signalBranch,
   applyAttr,
 } from '../../src/signals/dom'
+import { ul, li, button, text, eachDirect } from '../../src/signals/authoring'
 import { derived } from '../../src/signals/handle'
+
+/** Compile + load a source that uses view-HELPER functions (authoring ul/li/text +
+ * the handle-consuming eachDirect), for the cross-function transform-coverage tests.
+ * Provides the authoring helpers the lowered helper bodies reference, on top of the
+ * compiled-runtime set. */
+function compileAndLoadWithHelpers(
+  authored: string,
+  name: string,
+): Parameters<typeof mountSignalComponent>[1] {
+  const lowered = transformSignalComponentSource(authored)
+  const body = lowered
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('import '))
+    .join('\n')
+    .replace(/export\s+const/g, 'const')
+  const wrapped = `(function(signalText, staticText, el, react, signalEachDirect, eachDirect, applyAttr, ul, li, button, text, component){
+    ${body}
+    return { ${name} }
+  })`
+  const js = ts.transpileModule(wrapped, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText
+  const factory = eval(js) as (...args: unknown[]) => Record<string, unknown>
+  return factory(
+    signalText,
+    staticText,
+    el,
+    react,
+    signalEachDirect,
+    eachDirect,
+    applyAttr,
+    ul,
+    li,
+    button,
+    text,
+    (s: unknown) => s,
+  )[name] as Parameters<typeof mountSignalComponent>[1]
+}
 
 // The compiler's direct-construction fast path: a static-skeleton `each` row
 // (elements + static attrs + static/signal `text`) lowers to `signalEachDirect`
@@ -319,5 +358,148 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect((h.getState() as { n: number }).n).toBe(3) // all three reducers ran
     expect(container.querySelector('.out')!.textContent).toBe('3')
     expect(commits).toBe(1) // ONE reconcile for the burst, not three
+  })
+
+  it('lowers a BLOCK-BODY row (local from item.peek() + static-from-local + handler) and runs it', () => {
+    // The github-explorer file-row shape: a block-body render with a local computed
+    // from item.peek(), a static icon chosen by that local, a reactive name, and a
+    // handler that dispatches the row path + local. Previously fell to authoring;
+    // now lowers to signalEachDirect via cross-function (block-body) lowering.
+    const FILES = `
+      import { component, ul, li, span, a, text, each } from '@llui/dom'
+      export const App = component({
+        init: () => [{ files: [{ id: 1, type: 'dir', name: 'src', path: '/src' }, { id: 2, type: 'file', name: 'README', path: '/README' }] }, []],
+        update: (s, m) => (m.type === 'open' ? [{ files: s.files, opened: m.path, openedDir: m.isDir }, []] : [s, []]),
+        view: ({ state, send }) => [
+          ul({}, [
+            each(state.at('files'), {
+              key: (f) => f.id,
+              render: (item) => {
+                const isDir = item.peek().type === 'dir'
+                return [
+                  li({}, [
+                    span({ class: isDir ? 'icon-dir' : 'icon-file' }, [text(isDir ? '📁' : '📄')]),
+                    a({ href: '#', onClick: (e) => { e.preventDefault(); send({ type: 'open', path: item.peek().path, isDir }) } }, [text(item.at('name'))]),
+                  ]),
+                ]
+              },
+            }),
+          ]),
+        ],
+      })
+    `
+    const out = transformSignalComponentSource(FILES)
+    expect(out).toContain('signalEachDirect(')
+    expect(out).not.toContain('signalEach(') // not the authoring fallback
+    expect(out).toContain("const isDir = getCtx().item.type === 'dir'")
+
+    const def = compileAndLoad(FILES, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const icons = (): string[] =>
+      [...container.querySelectorAll('span')].map((s) => s.textContent ?? '')
+    const iconClasses = (): string[] =>
+      [...container.querySelectorAll('span')].map((s) => s.className)
+    const names = (): string[] =>
+      [...container.querySelectorAll('a')].map((a) => a.textContent ?? '')
+
+    // static-from-local: icon glyph + class chosen by isDir; reactive name
+    expect(icons()).toEqual(['📁', '📄'])
+    expect(iconClasses()).toEqual(['icon-dir', 'icon-file'])
+    expect(names()).toEqual(['src', 'README'])
+
+    // handler reads the live row path + the per-row local isDir
+    container.querySelectorAll('a')[0]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { opened?: string; openedDir?: boolean }).opened).toBe('/src')
+    expect((h.getState() as { openedDir?: boolean }).openedDir).toBe(true)
+    container.querySelectorAll('a')[1]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { opened?: string }).opened).toBe('/README')
+    expect((h.getState() as { openedDir?: boolean }).openedDir).toBe(false)
+  })
+
+  it('lowers + runs an each inside a VIEW-HELPER function (eachDirect, items handle verbatim)', () => {
+    // The documented composition default: the list `each` lives in a helper function
+    // (rowsView), not the component view. Transform coverage lowers it to eachDirect —
+    // items handle kept verbatim, row → factory. Verify it renders + dispatches by id.
+    const HELPER = `
+      import { component, ul, li, button, text, each } from '@llui/dom'
+      function rowsView(items, send) {
+        return [
+          ul({}, [
+            each(items, {
+              key: (r) => r.id,
+              render: (item) => [
+                li({}, [button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
+              ],
+            }),
+          ]),
+        ]
+      }
+      export const App = component({
+        init: () => [{ rows: [{ id: 10, label: 'a' }, { id: 20, label: 'b' }] }, []],
+        update: (s, m) => (m.type === 'pick' ? [{ rows: s.rows, picked: m.id }, []] : [s, []]),
+        view: ({ state, send }) => rowsView(state.at('rows'), send),
+      })
+    `
+    const out = transformSignalComponentSource(HELPER)
+    expect(out).toContain('eachDirect(items, (r) => r.id,') // helper each lowered, items verbatim
+    expect(out).toContain('getCtx().item.id') // handler reads live row id
+
+    const def = compileAndLoadWithHelpers(HELPER, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const labels = (): string[] =>
+      [...container.querySelectorAll('button')].map((b) => b.textContent ?? '')
+    expect(labels()).toEqual(['a', 'b'])
+
+    container.querySelectorAll('button')[1]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(20)
+    container.querySelectorAll('button')[0]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(10)
+  })
+
+  it('inlines a same-file row HELPER and runs it (peek value + reactive item/state reads)', () => {
+    // Phase 2: render: (item) => [rowView(item, state.at('mode'))] inlines rowView's
+    // body (params → args) → a normal row that lowers. Verify: static-from-peek name,
+    // reactive item count, reactive component-state mode — all live. The 'list-item'
+    // class also exercises the leak-guard fix (substring 'item' must not bail).
+    const INLINE = `
+      import { component, div, span, text, each } from '@llui/dom'
+      function rowView(item, mode) {
+        const u = item.peek()
+        return div({ class: 'list-item' }, [
+          span({ class: 'nm' }, [text(u.name)]),
+          span({ class: 'ct' }, [text(item.at('count').map((c) => String(c)))]),
+          span({ class: 'md' }, [text(mode.map((m) => m + '!'))]),
+        ])
+      }
+      export const App = component({
+        init: () => [{ items: [{ id: 1, name: 'a', count: 0 }, { id: 2, name: 'b', count: 5 }], mode: 'x' }, []],
+        update: (s, m) => {
+          if (m.type === 'bump') return [{ ...s, items: s.items.map((it) => (it.id === m.id ? { ...it, count: it.count + 1 } : it)) }, []]
+          if (m.type === 'mode') return [{ ...s, mode: m.v }, []]
+          return [s, []]
+        },
+        view: ({ state }) => [div({}, [each(state.at('items'), { key: (it) => it.id, render: (item) => [rowView(item, state.at('mode'))] })])],
+      })
+    `
+    const out = transformSignalComponentSource(INLINE)
+    expect(out).toContain('signalEachDirect(') // helper inlined → row lowers
+    expect(out).toContain('const u = getCtx().item') // peek local inlined to live ctx
+
+    const def = compileAndLoad(INLINE, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const txt = (sel: string): string[] =>
+      [...container.querySelectorAll(sel)].map((e) => e.textContent ?? '')
+    expect(container.querySelectorAll('.list-item').length).toBe(2)
+    expect(txt('.nm')).toEqual(['a', 'b']) // static from peek
+    expect(txt('.ct')).toEqual(['0', '5']) // reactive item
+    expect(txt('.md')).toEqual(['x!', 'x!']) // reactive component state
+
+    h.send({ type: 'bump', id: 1 })
+    expect(txt('.ct')).toEqual(['1', '5']) // only row 1's reactive count changed
+    h.send({ type: 'mode', v: 'y' })
+    expect(txt('.md')).toEqual(['y!', 'y!']) // component-state fan-out to all rows
   })
 })

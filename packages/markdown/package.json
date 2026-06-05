@@ -1,0 +1,64 @@
+{
+  "name": "@llui/markdown",
+  "version": "0.9.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles/theme.css": "./dist/styles/theme.css",
+    "./styles/theme-dark.css": "./dist/styles/theme-dark.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && pnpm copy:css",
+    "copy:css": "node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/styles',{recursive:true});cpSync('src/styles','dist/styles',{recursive:true})\"",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/dom": "^0.8.0"
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.2",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "@types/mdast": "^4.0.4",
+    "@types/unist": "^3.0.3",
+    "jsdom": "^25.0.1",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "sideEffects": false,
+  "description": "LLui reactive Markdown rendering — parse to mdast, render real reactive DOM with custom per-node renderers and streaming-friendly keyed reuse",
+  "keywords": [
+    "llui",
+    "markdown",
+    "mdast",
+    "gfm",
+    "reactive",
+    "streaming"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/markdown"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/markdown#readme",
+  "files": [
+    "dist"
+  ]
+}

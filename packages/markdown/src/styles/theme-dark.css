@@ -1,0 +1,33 @@
+/* @llui/markdown — dark theme override.
+ *
+ * Import AFTER theme.css to opt into dark colors:
+ *     import '@llui/markdown/styles/theme.css'
+ *     import '@llui/markdown/styles/theme-dark.css'
+ * Only re-declares the CSS variables, so all layout rules in theme.css apply.
+ * Gate with a media query / class toggle as you prefer — here it tracks the OS. */
+
+@media (prefers-color-scheme: dark) {
+  .markdown-body {
+    --md-fg: #e6edf3;
+    --md-muted: #9198a1;
+    --md-border: #3d444d;
+    --md-accent: #4493f8;
+    --md-code-bg: #151b23;
+    --md-code-fg: #e6edf3;
+    --md-quote-border: #3d444d;
+  }
+}
+
+/* Explicit opt-in regardless of OS setting: add `data-theme="dark"` to the
+ * wrapper (or any ancestor) — e.g. `markdown(src, { class: 'markdown-body' })`
+ * on an element with `data-theme="dark"`. */
+[data-theme='dark'] .markdown-body,
+.markdown-body[data-theme='dark'] {
+  --md-fg: #e6edf3;
+  --md-muted: #9198a1;
+  --md-border: #3d444d;
+  --md-accent: #4493f8;
+  --md-code-bg: #151b23;
+  --md-code-fg: #e6edf3;
+  --md-quote-border: #3d444d;
+}

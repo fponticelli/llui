@@ -89,7 +89,7 @@ If a dependency changed, every package that imports from it at runtime must also
 ```
 Tier 1 (no in-repo deps): dom, effects, eslint-plugin-llui
 Tier 2 (depend on tier 1):
-  dom              → vite-plugin, test, router, transitions, components, vike, mcp, agent
+  dom              → vite-plugin, test, router, transitions, components, markdown, vike, mcp, agent
   effects          → (no in-repo dependents)
   eslint-plugin    → mcp
 Tier 3 (depend on tier 2):
@@ -98,7 +98,7 @@ Tier 3 (depend on tier 2):
 
 Cascade rules:
 
-- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
+- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
 - `eslint-plugin` changed → add `mcp`.
 - `effects` has no in-repo dependents today — no cascade.
 
@@ -107,6 +107,7 @@ Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These
 - `packages/components/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/router/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/transitions/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/markdown/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/vike/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/test/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/mcp/package.json` → `peerDependencies["@llui/dom"]`

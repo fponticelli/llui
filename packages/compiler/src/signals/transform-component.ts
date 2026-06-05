@@ -12,7 +12,12 @@
 // multi-slice bags are follow-ups.
 
 import ts from 'typescript'
-import { transformNodeExpr, setAutoBatchContext } from './transform-view.js'
+import {
+  transformNodeExpr,
+  setAutoBatchContext,
+  lowerHelperEach,
+  setHelperDecls,
+} from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -49,6 +54,7 @@ const RUNTIME_HELPERS = [
   'react',
   'signalEach',
   'signalEachDirect',
+  'eachDirect',
   'applyAttr',
   'signalShow',
   'signalBranch',
@@ -186,6 +192,30 @@ export function transformSignalComponentSource(
     return props
   }
 
+  // Collect same-file top-level view-helper declarations for phase-2 helper-row
+  // inlining: `function rowHelper(...) {...}` and `const rowHelper = (...) => ...`.
+  // A row `render: (item) => [rowHelper(item, …)]` inlines the resolved body.
+  const helpers = new Map<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+  >()
+  for (const stmt of sf.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
+      helpers.set(stmt.name.text, stmt)
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const d of stmt.declarationList.declarations) {
+        if (
+          ts.isIdentifier(d.name) &&
+          d.initializer &&
+          (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))
+        ) {
+          helpers.set(d.name.text, d.initializer)
+        }
+      }
+    }
+  }
+  setHelperDecls(helpers)
+
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
@@ -232,7 +262,48 @@ export function transformSignalComponentSource(
     }
     node.forEachChild(visit)
   }
-  visit(sf)
+
+  // The ambient helper registry + auto-batch context are module-level; a throw during
+  // lowering must not leak them into the NEXT file the (singleton) transform processes
+  // (a stale registry would resolve a helper name to the wrong file's declaration), so
+  // reset both in `finally` regardless of how the passes exit.
+  try {
+    // Pass 1: component views.
+    visit(sf)
+
+    // ── Pass 2: view-helper coverage ──────────────────────────────────────────
+    // Lower `each(...)` calls that live OUTSIDE a component view — i.e. inside view-
+    // helper functions (`fileTree(routeSig): Renderable { … each(…) }`), the documented
+    // composition default. Their items source roots in a call-site-bound signal param
+    // the compiler can't statically resolve, so the items handle is kept verbatim and
+    // only the row compiles to a factory (`eachDirect`). Skip any `each` already inside
+    // a pass-1 component-view edit range (those were lowered with a rooted source) —
+    // so `pass1Ranges` MUST be captured AFTER pass 1 has populated `edits`, else pass 2
+    // double-lowers a component-view each and emits overlapping edits.
+    const pass1Ranges = edits.map((e) => [e.start, e.end] as const)
+    const insidePass1 = (n: ts.Node): boolean =>
+      pass1Ranges.some(([s, e]) => s < e && n.getStart(sf) >= s && n.getEnd() <= e)
+    const visitHelpers = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'each' &&
+        !insidePass1(node)
+      ) {
+        const lowered = lowerHelperEach(node, sf)
+        if (lowered) {
+          edits.push({ start: node.getStart(sf), end: node.getEnd(), text: lowered })
+          transformedAny = true
+          return // row factory bails on structural children, so no lowerable nested each
+        }
+      }
+      node.forEachChild(visitHelpers)
+    }
+    visitHelpers(sf)
+  } finally {
+    setHelperDecls(null)
+    setAutoBatchContext(null)
+  }
 
   if (!transformedAny) return source
 

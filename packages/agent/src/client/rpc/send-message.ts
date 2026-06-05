@@ -89,7 +89,18 @@ export async function handleSendMessage(
   }
 
   if (ann?.dispatchMode === 'human-only') {
-    return { status: 'rejected', reason: 'human-only' }
+    // Enrich the rejection with a human-readable reason so the agent learns
+    // WHY (not just the bare `human-only` code). Route-gate enforcement is
+    // deliberately NOT applied on dispatch: `@routeGated` is an affordance-
+    // visibility concern (surfaced in list_actions as available:false), and a
+    // broken/throwing predicate must never be able to block a real dispatch.
+    return {
+      status: 'rejected',
+      reason: 'human-only',
+      detail: ann.intent
+        ? `"${ann.intent}" can only be triggered by the user (human-only action)`
+        : 'this action can only be triggered by the user (human-only)',
+    }
   }
 
   // Schema validation: when the compiler emitted a `__msgSchema`,
