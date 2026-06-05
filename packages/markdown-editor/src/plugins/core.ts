@@ -169,16 +169,6 @@ export function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin {
       isActive: (f) => f.blockType === 'check',
     },
     {
-      id: 'link',
-      label: 'Link',
-      icon: 'link',
-      group: 'inline',
-      keywords: ['url', 'href'],
-      run: (_e, ctx) => ctx.send({ type: 'openLink' }),
-      isActive: (f) => f.link,
-      surfaces: ['toolbar', 'floating', 'context'],
-    },
-    {
       id: 'undo',
       label: 'Undo',
       icon: 'undo',

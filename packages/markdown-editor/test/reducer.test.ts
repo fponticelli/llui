@@ -83,21 +83,8 @@ describe('update: setValue', () => {
 describe('update: overlays', () => {
   it('opens an overlay with a position and resets slash query for slash', () => {
     const [s] = update(
-      state({
-        ui: {
-          activeOverlay: 'none',
-          slashQuery: 'x',
-          menu: { x: 0, y: 0 },
-          linkDialog: { open: false },
-          linkUrl: '',
-        },
-      }),
-      {
-        type: 'openOverlay',
-        overlay: 'context',
-        x: 10,
-        y: 20,
-      },
+      state({ ui: { activeOverlay: 'none', slashQuery: 'x', menu: { x: 0, y: 0 } } }),
+      { type: 'openOverlay', overlay: 'context', x: 10, y: 20 },
     )
     expect(s.ui.activeOverlay).toBe('context')
     expect(s.ui.menu).toEqual({ x: 10, y: 20 })
@@ -105,18 +92,8 @@ describe('update: overlays', () => {
 
   it('closes an open overlay and clears the slash query', () => {
     const [s] = update(
-      state({
-        ui: {
-          activeOverlay: 'slash',
-          slashQuery: 'head',
-          menu: { x: 0, y: 0 },
-          linkDialog: { open: false },
-          linkUrl: '',
-        },
-      }),
-      {
-        type: 'closeOverlay',
-      },
+      state({ ui: { activeOverlay: 'slash', slashQuery: 'head', menu: { x: 0, y: 0 } } }),
+      { type: 'closeOverlay' },
     )
     expect(s.ui.activeOverlay).toBe('none')
     expect(s.ui.slashQuery).toBe('')

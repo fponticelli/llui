@@ -5,6 +5,7 @@ import type { LexicalEditor } from 'lexical'
 import type { Transformer } from '@lexical/markdown'
 import type { LexicalPlugin } from '@llui/lexical'
 import type { EditorMsg, EditorOutMsg, FormatState } from '../state.js'
+import type { PluginUI } from './ui.js'
 
 /** Which surfaces a command item appears in (default: all). */
 export type ItemSurface = 'toolbar' | 'floating' | 'slash' | 'context'
@@ -34,10 +35,13 @@ export interface CommandItem {
   surfaces?: readonly ItemSurface[]
 }
 
-/** A markdown editor plugin: engine wiring + transformers + UI items. */
+/** A markdown editor plugin: engine wiring + transformers + UI items + an
+ * optional stateful UI extension (its own state slice, reducer, view, effects). */
 export interface MarkdownPlugin extends LexicalPlugin<EditorOutMsg> {
   /** Markdown ↔ node transformers contributed to the registry. */
   transformers?: readonly Transformer[]
   /** Command items surfaced to the toolbar / slash / context menus. */
   items?: readonly CommandItem[]
+  /** A stateful UI extension keyed by this plugin's `name` (see {@link definePluginUI}). */
+  ui?: PluginUI
 }

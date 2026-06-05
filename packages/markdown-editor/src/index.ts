@@ -17,9 +17,23 @@ export {
   countWords,
 } from './state.js'
 
-export { type ItemSurface, type CommandItem, type MarkdownPlugin } from './plugins/types.js'
+export {
+  type ItemSurface,
+  type CommandItem,
+  type CommandContext,
+  type MarkdownPlugin,
+} from './plugins/types.js'
+
+export {
+  type PluginUI,
+  type PluginUISpec,
+  type PluginViewArgs,
+  type PluginEffectContext,
+  definePluginUI,
+} from './plugins/ui.js'
 
 export { type CorePluginOptions, corePlugin } from './plugins/core.js'
+export { type LinkPluginOptions, linkPlugin } from './plugins/link.js'
 export {
   type CalloutKind,
   type CalloutData,

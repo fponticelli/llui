@@ -3,7 +3,6 @@
 // `update` stays pure and DOM-free (fully unit-testable).
 
 import type { Alignment } from '@llui/lexical'
-import type { DialogMsg } from '@llui/components/dialog'
 
 /** The block kind at the selection — base rich-text kinds plus list/code,
  * resolved by the markdown layer. */
@@ -60,11 +59,9 @@ export interface EditorState {
     activeOverlay: OverlayKind
     slashQuery: string
     menu: { x: number; y: number }
-    /** Link dialog open state (drives the @llui/components dialog). */
-    linkDialog: { open: boolean }
-    /** Current value of the link dialog's URL input. */
-    linkUrl: string
   }
+  /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
+  plugins: Record<string, unknown>
   dirty: boolean
   readOnly: boolean
 }
@@ -78,12 +75,8 @@ export type EditorMsg =
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
   | { type: 'setReadOnly'; readOnly: boolean }
-  // Link dialog flow
-  | { type: 'openLink' }
-  | { type: 'showLink'; url: string }
-  | { type: 'setLinkUrl'; url: string }
-  | { type: 'submitLink' }
-  | { type: 'linkDialog'; msg: DialogMsg }
+  /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
+  | { type: 'plugin'; name: string; msg: unknown }
 
 /** The subset of messages a plugin may emit through its `PluginContext`. */
 export type EditorOutMsg = Extract<
@@ -96,10 +89,8 @@ export type EditorEffect =
   | { type: 'applyValue'; value: string }
   | { type: 'emitChange'; value: string }
   | { type: 'emitFormat'; format: FormatState }
-  /** Save the selection + read the current link URL, then open the dialog. */
-  | { type: 'beginLink' }
-  /** Restore the saved selection and toggle the link to `url` (empty removes). */
-  | { type: 'commitLink'; url: string }
+  /** An effect produced by a plugin's UI reducer (see {@link PluginUI}). */
+  | { type: 'pluginEffect'; name: string; effect: unknown }
 
 export interface InitOptions {
   value: string
@@ -114,13 +105,8 @@ export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
       format: EMPTY_FORMAT,
       wordCount,
       charCount: opts.value.length,
-      ui: {
-        activeOverlay: 'none',
-        slashQuery: '',
-        menu: { x: 0, y: 0 },
-        linkDialog: { open: false },
-        linkUrl: '',
-      },
+      ui: { activeOverlay: 'none', slashQuery: '', menu: { x: 0, y: 0 } },
+      plugins: {},
       dirty: false,
       readOnly: opts.readOnly,
     },
@@ -181,36 +167,10 @@ export function update(state: EditorState, msg: EditorMsg): [EditorState, Editor
       if (state.readOnly === msg.readOnly) return [state, []]
       return [{ ...state, readOnly: msg.readOnly }, []]
     }
-    case 'openLink': {
-      // Defer to an effect: it reads the live editor (selection + current URL).
-      return [state, [{ type: 'beginLink' }]]
-    }
-    case 'showLink': {
-      return [{ ...state, ui: { ...state.ui, linkUrl: msg.url, linkDialog: { open: true } } }, []]
-    }
-    case 'setLinkUrl': {
-      return [{ ...state, ui: { ...state.ui, linkUrl: msg.url } }, []]
-    }
-    case 'submitLink': {
-      return [
-        { ...state, ui: { ...state.ui, linkDialog: { open: false } } },
-        [{ type: 'commitLink', url: state.ui.linkUrl }],
-      ]
-    }
-    case 'linkDialog': {
-      const m = msg.msg
-      const open =
-        m.type === 'open'
-          ? true
-          : m.type === 'close'
-            ? false
-            : m.type === 'toggle'
-              ? !state.ui.linkDialog.open
-              : m.type === 'setOpen'
-                ? m.open
-                : state.ui.linkDialog.open
-      if (open === state.ui.linkDialog.open) return [state, []]
-      return [{ ...state, ui: { ...state.ui, linkDialog: { open } } }, []]
+    case 'plugin': {
+      // Plugin messages are routed by the host's composed reducer (it holds the
+      // plugin registry); the pure core reducer treats them as a no-op.
+      return [state, []]
     }
   }
 }

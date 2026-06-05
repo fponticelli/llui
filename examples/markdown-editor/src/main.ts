@@ -10,7 +10,13 @@
  * state stays hidden behind the widget.
  */
 import { mountApp } from '@llui/dom'
-import { markdownEditor, corePlugin, calloutPlugin, type EditorState } from '@llui/markdown-editor'
+import {
+  markdownEditor,
+  corePlugin,
+  linkPlugin,
+  calloutPlugin,
+  type EditorState,
+} from '@llui/markdown-editor'
 import './main.css'
 
 const WELCOME_MD = [
@@ -64,7 +70,7 @@ const fullApp = mountApp(
   byId('full-editor'),
   markdownEditor({
     toolbar: true,
-    plugins: [corePlugin(), calloutPlugin()],
+    plugins: [corePlugin(), linkPlugin(), calloutPlugin()],
     defaultValue: WELCOME_MD,
     changeDebounceMs: 150,
   }),
@@ -114,7 +120,7 @@ const sourceApp = mountApp(
   byId('source-editor'),
   markdownEditor({
     toolbar: true,
-    plugins: [corePlugin(), calloutPlugin()],
+    plugins: [corePlugin(), linkPlugin(), calloutPlugin()],
     defaultValue: SOURCE_MD,
     changeDebounceMs: 150,
     onChange: (md) => {

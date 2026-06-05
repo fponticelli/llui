@@ -1,24 +1,15 @@
 // `markdownEditor(config)` — the high-level component. Lexical owns the live
 // document; this wires the foreign seam to the markdown transformer converters,
-// surfaces the format state for the chrome, and routes command intents back to
-// the live editor through effects.
+// surfaces the format state for the chrome, routes command intents back to the
+// live editor through effects, and COMPOSES plugin UI extensions (each plugin's
+// state slice + reducer + view + effects) into the single component.
 
-import {
-  $getRoot,
-  $getSelection,
-  $isRangeSelection,
-  $setSelection,
-  type BaseSelection,
-  type EditorThemeClasses,
-  type LexicalEditor,
-} from 'lexical'
+import { $getRoot, $setSelection, type EditorThemeClasses, type LexicalEditor } from 'lexical'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
   registerMarkdownShortcuts,
 } from '@lexical/markdown'
-import { $findMatchingParent } from '@lexical/utils'
-import { $isLinkNode, $toggleLink } from '@lexical/link'
 import { component, div, type Renderable, type Signal, type SignalComponentDef } from '@llui/dom'
 import {
   lexicalForeign,
@@ -27,9 +18,10 @@ import {
   type DecoratorBridge,
 } from '@llui/lexical'
 import { corePlugin } from './plugins/core.js'
+import { linkPlugin } from './plugins/link.js'
 import { toolbar as renderToolbar } from './surfaces/toolbar.js'
-import { linkDialog } from './surfaces/link-dialog.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
+import type { PluginUI } from './plugins/ui.js'
 import { buildTransformers } from './transformers/registry.js'
 import { computeFormatState } from './format.js'
 import { makeOnEffect } from './effects.js'
@@ -44,19 +36,9 @@ import {
   type FormatState,
 } from './state.js'
 
-/** Read the URL of the link wrapping the current selection (empty if none). */
-function readLinkUrl(editor: LexicalEditor): string {
-  return editor.getEditorState().read(() => {
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection)) return ''
-    const link = $findMatchingParent(selection.anchor.getNode(), (node) => $isLinkNode(node))
-    return $isLinkNode(link) ? link.getURL() : ''
-  })
-}
-
 export interface EditorConfig {
   /** Plugins composing the feature set; order defines transformer precedence.
-   * Defaults to `[corePlugin()]` so the minimal editor still has full GFM. */
+   * Defaults to `[corePlugin(), linkPlugin()]` so the minimal editor has GFM + links. */
   plugins?: readonly MarkdownPlugin[]
   /** Initial markdown (uncontrolled seed). */
   defaultValue?: string
@@ -88,6 +70,11 @@ export interface EditorParts {
   format: Signal<FormatState>
 }
 
+/** Default plugin set when the consumer supplies none. */
+function defaultPlugins(): MarkdownPlugin[] {
+  return [corePlugin(), linkPlugin()]
+}
+
 /**
  * Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(...))`
  * or compose it inside a larger component.
@@ -95,20 +82,22 @@ export interface EditorParts {
 export function markdownEditor(
   config: EditorConfig = {},
 ): SignalComponentDef<EditorState, EditorMsg, EditorEffect> {
-  const plugins = config.plugins && config.plugins.length > 0 ? config.plugins : [corePlugin()]
+  const plugins = config.plugins && config.plugins.length > 0 ? config.plugins : defaultPlugins()
   const transformers = buildTransformers(plugins)
 
   const items: CommandItem[] = plugins.flatMap((p) => p.items ?? [])
   const itemsById = new Map(items.map((i) => [i.id, i]))
   const decorators: DecoratorBridge[] = plugins.flatMap((p) => p.decorators ?? [])
+  const pluginUIs: Array<{ name: string; ui: PluginUI }> = plugins
+    .filter((p): p is MarkdownPlugin & { ui: PluginUI } => p.ui !== undefined)
+    .map((p) => ({ name: p.name, ui: p.ui }))
+  const pluginUIByName = new Map(pluginUIs.map((p) => [p.name, p.ui]))
 
   // The live editor, captured at mount; effects dispatch through it.
   let editorRef: LexicalEditor | null = null
-  // The selection saved when the link dialog opens, restored when it commits
-  // (the modal steals focus/selection while open).
-  let savedSelection: BaseSelection | null = null
+  const getEditor = (): LexicalEditor | null => editorRef
 
-  const baseOnEffect = makeOnEffect(() => editorRef, itemsById, {
+  const baseOnEffect = makeOnEffect(getEditor, itemsById, {
     onChange: config.onChange,
     onFormatChange: config.onFormatChange,
     applyValue: (editor, value) =>
@@ -123,34 +112,47 @@ export function markdownEditor(
       ),
   })
 
-  const onEffect = (
+  const seedValue = config.value ? config.value.peek() : (config.defaultValue ?? '')
+
+  // ── Composed TEA: core + plugin UI slices ──────────────────────────────────
+  const composedInit = (): [EditorState, EditorEffect[]] => {
+    const [core, effects] = init({ value: seedValue, readOnly: config.readOnly ?? false })
+    const slices: Record<string, unknown> = {}
+    for (const { name, ui } of pluginUIs) slices[name] = ui.init()
+    return [{ ...core, plugins: slices }, effects]
+  }
+
+  const composedUpdate = (state: EditorState, msg: EditorMsg): [EditorState, EditorEffect[]] => {
+    if (msg.type === 'plugin') {
+      const ui = pluginUIByName.get(msg.name)
+      if (!ui?.update) return [state, []]
+      const result = ui.update(state.plugins[msg.name], msg.msg)
+      const [slice, effects] = (Array.isArray(result) ? result : [result, []]) as [
+        unknown,
+        unknown[],
+      ]
+      return [
+        { ...state, plugins: { ...state.plugins, [msg.name]: slice } },
+        effects.map((effect) => ({ type: 'pluginEffect' as const, name: msg.name, effect })),
+      ]
+    }
+    return update(state, msg)
+  }
+
+  const composedOnEffect = (
     effect: EditorEffect,
     api: { send: (msg: EditorMsg) => void; state: Signal<EditorState> },
   ): void => {
-    const editor = editorRef
-    if (effect.type === 'beginLink') {
-      if (!editor) return
-      savedSelection = editor.getEditorState().read(() => {
-        const selection = $getSelection()
-        return selection ? selection.clone() : null
+    if (effect.type === 'pluginEffect') {
+      const ui = pluginUIByName.get(effect.name)
+      ui?.onEffect?.(effect.effect, {
+        editor: getEditor,
+        send: (msg) => api.send({ type: 'plugin', name: effect.name, msg }),
       })
-      api.send({ type: 'showLink', url: readLinkUrl(editor) })
-      return
-    }
-    if (effect.type === 'commitLink') {
-      if (!editor) return
-      const url = effect.url.trim()
-      editor.update(() => {
-        if (savedSelection) $setSelection(savedSelection.clone())
-        $toggleLink(url === '' ? null : url)
-      })
-      savedSelection = null
       return
     }
     baseOnEffect(effect, api)
   }
-
-  const seedValue = config.value ? config.value.peek() : (config.defaultValue ?? '')
 
   const view = ({
     state,
@@ -194,26 +196,33 @@ export function markdownEditor(
       },
       emit: (msg) => send(msg),
     })
-    const dialog = linkDialog({
-      dialog: state.at('ui.linkDialog'),
-      url: state.at('ui.linkUrl'),
-      send,
+
+    // Plugin view contributions (overlays/panels) — each gets its own slice + send.
+    const pluginViews: Renderable = pluginUIs.flatMap(({ name, ui }) => {
+      if (!ui.view) return []
+      const rendered = ui.view({
+        state: state.at(`plugins.${name}`),
+        send: (msg) => send({ type: 'plugin', name, msg }),
+        editor: getEditor,
+      })
+      return Array.isArray(rendered) ? rendered : [rendered]
     })
-    if (!config.toolbar) return [host, dialog]
+
+    if (!config.toolbar) return [host, ...pluginViews]
     return [
       div({ 'data-scope': 'md-editor', 'data-part': 'root' }, [
         renderToolbar({ format: state.at('format'), send, items }),
         div({ 'data-scope': 'md-editor', 'data-part': 'surface' }, [host]),
       ]),
-      dialog,
+      ...pluginViews,
     ]
   }
 
   return component<EditorState, EditorMsg, EditorEffect>({
     name: 'MarkdownEditor',
-    init: () => init({ value: seedValue, readOnly: config.readOnly ?? false }),
-    update,
+    init: composedInit,
+    update: composedUpdate,
     view,
-    onEffect,
+    onEffect: composedOnEffect,
   })
 }
