@@ -750,7 +750,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // ── The view ───────────────────────────────────────────────────────────
 
   const view = ({ state, send }: SignalViewBag<HudState, HudMsg>): Renderable => [
-    ...floatingButton(send),
+    ...floatingButton(),
     ...modalView(state, send),
     // Toasts → portal into the fixed top-right container.
     portal(
@@ -767,7 +767,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ),
   ]
 
-  const floatingButton = (send: (m: HudMsg) => void): Renderable => [
+  const floatingButton = (): Renderable => [
     onMount(() => {
       // Wire drag imperatively on the button after it mounts.
       const btn = root.querySelector<HTMLButtonElement>('[data-llui-fab]')
@@ -782,7 +782,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         title: 'LLui annotate (Cmd+Shift+A) — drag to move',
         'aria-label': 'Open LLui annotation HUD',
         style: STYLES.button,
-        onClick: () => send({ type: 'modal/toggle' }),
+        // open()/close() (not a bare modal/toggle) so opening also refreshes
+        // the context subhead, re-anchors the modal, and focuses the textarea.
+        onClick: () => (getState().modalOpen ? close() : open()),
       },
       BUTTON_LABEL_LINES.map((line) => div({}, [text(line)])),
     ),
@@ -1001,7 +1003,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         },
         [
           // context subhead
-          div({ style: STYLES.contextSubhead }, [text(state.map((s) => s.contextLine))]),
+          div(
+            {
+              style: STYLES.contextSubhead,
+              'style.display': state.map((s) => (s.contextLine ? 'block' : 'none')),
+            },
+            [text(state.map((s) => s.contextLine))],
+          ),
           // lineage
           div(
             {
@@ -1063,15 +1071,23 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             ],
           ),
         ],
+        // No region attached → offer "Add region", but only while no
+        // element is attached either (the two attachments are mutually
+        // exclusive until submitted or cleared).
         () => [
-          button(
-            {
-              type: 'button',
-              title: 'Draw a rectangle on the page to attach to this note',
-              style: STYLES.inlineActionBtn,
-              onClick: () => void startRectFlow(),
-            },
-            [text('⌖ Add region')],
+          show(
+            state.map((s) => (s.pendingElement ? null : true)),
+            () => [
+              button(
+                {
+                  type: 'button',
+                  title: 'Draw a rectangle on the page to attach to this note',
+                  style: STYLES.inlineActionBtn,
+                  onClick: () => void startRectFlow(),
+                },
+                [text('⌖ Add region')],
+              ),
+            ],
           ),
         ],
       ),
@@ -1109,15 +1125,22 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
                   ],
                 ),
               ],
+              // No element attached → offer "Pick element", but only while
+              // no region is attached either.
               () => [
-                button(
-                  {
-                    type: 'button',
-                    title: 'Click an element on the page to attach it to this note',
-                    style: STYLES.inlineActionBtn,
-                    onClick: () => void startElementPickFlow(),
-                  },
-                  [text('⌖ Pick element')],
+                show(
+                  state.map((s) => (s.pendingRect ? null : true)),
+                  () => [
+                    button(
+                      {
+                        type: 'button',
+                        title: 'Click an element on the page to attach it to this note',
+                        style: STYLES.inlineActionBtn,
+                        onClick: () => void startElementPickFlow(),
+                      },
+                      [text('⌖ Pick element')],
+                    ),
+                  ],
                 ),
               ],
             ),
