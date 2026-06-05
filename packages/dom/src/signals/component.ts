@@ -41,11 +41,18 @@ function makeHandle<S>(get: () => unknown, base = ''): Signal<S> {
 export interface ComponentBag<S, M> {
   state: Signal<S>
   send: (msg: M) => void
+  /** Coalesce a burst of `send`s into ONE reconcile (see the handle's `batch`).
+   * Reducers/effects still run per message; only the DOM commit is deferred to the
+   * outermost `batch` exit. Use it to drain a burst of dispatches (e.g. a stream
+   * frame) from a handler/subscription as a single re-render. */
+  batch: (fn: () => void) => void
 }
 
 export interface EffectApi<S, M> {
   send: (msg: M) => void
   state: Signal<S>
+  /** Coalesce a burst of `send`s into ONE reconcile (see {@link ComponentBag.batch}). */
+  batch: (fn: () => void) => void
 }
 
 export interface SignalComponentDef<S, M, E = never> {
@@ -81,6 +88,15 @@ export interface SignalComponentDef<S, M, E = never> {
 
 export interface SignalComponentHandle<S, M> {
   send(msg: M): void
+  /** Coalesce a burst of `send`s into ONE reconcile + commit. Every message's
+   * reducer still runs in order (state advances message-by-message, effects fire
+   * per message), but the DOM reconcile + subscriber notification are deferred to
+   * a single pass against the FINAL state when the outermost `batch` returns.
+   * For N synchronous sends this turns N reconciles into 1 — the streaming /
+   * bulk-dispatch fast path (e.g. draining a websocket frame of ticks). State is
+   * applied by the time `batch` returns, so the synchronous-`send` contract holds
+   * at the batch boundary. Nested `batch` calls flush only at the outermost exit. */
+  batch(fn: () => void): void
   getState(): S
   /** no-op: signal `send` applies updates synchronously (kept for harness/agent
    * parity with the legacy handle). */
@@ -168,34 +184,60 @@ export function mountSignalComponent<S, M, E = never>(
   let uninstallDebug: (() => void) | null = null
 
   const runEffect = (effect: E): void => {
-    const cleanup = onEffectFn?.(effect, { send, state: handle })
+    const cleanup = onEffectFn?.(effect, { send, batch, state: handle })
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
 
-  // `send` is reentrancy-safe: a message dispatched WHILE another is being
-  // processed (the classic case: removing a focused node during `mount.update`
-  // fires `blur` synchronously, whose handler calls `send`) is queued and drained
-  // by the active call rather than running a NESTED reducer + reconcile. Nesting
-  // would mutate the scope tree / DOM mid-reconcile — e.g. corrupting an
-  // in-flight `removeBetween` walk into a NotFoundError, and silently skipping the
-  // outer message's effects. From a top-level caller `send` stays synchronous:
-  // the queue is fully drained before it returns (so `handle.flush()` parity and
-  // the "send applies immediately" contract hold).
+  // `send` is reentrancy-safe AND reconcile-coalescing: a message dispatched WHILE
+  // another is being processed (the classic case: removing a focused node during
+  // `mount.update` fires `blur` synchronously, whose handler calls `send`) is
+  // queued and processed by the active drain rather than running a NESTED reducer +
+  // reconcile (which would mutate the scope tree / DOM mid-reconcile — corrupting an
+  // in-flight `removeBetween` into a NotFoundError, or skipping the outer message's
+  // effects). A drain runs every queued reducer to quiescence, then reconciles the
+  // DOM ONCE against the settled state — so a synchronous burst of N sends (or a
+  // reentrant cascade) commits a single reconcile, not N. `mount.update` tracks its
+  // own last-committed state, so that one pass diffs last-commit → settled and
+  // commits the cumulative dirty set; intermediate states are never painted (same
+  // synchronous turn), so coalescing is render-equivalent. From a top-level caller
+  // `send` stays synchronous: the queue is fully drained and committed before it
+  // returns, so the "send applies immediately" contract holds at the call boundary.
   const queue: M[] = []
   let draining = false
-  function send(msg: M): void {
-    queue.push(msg)
-    if (draining) return
-    draining = true
-    try {
+  // While `batchDepth > 0` (inside `batch(fn)`), reducers still run and effects
+  // still fire, but the single commit is deferred to the outermost `batch` exit —
+  // extending the per-drain coalescing across several top-level sends (the
+  // streaming / bulk-dispatch fast path). `pendingCommit` records that state moved
+  // since the last reconcile, gating the commit.
+  let batchDepth = 0
+  let pendingCommit = false
+
+  // Reconcile + notify ONCE against the current state, if it moved since the last
+  // commit. The commit can re-enter `send` (a `blur` fired by a node removal), so
+  // callers loop until the queue is empty afterwards.
+  function commitPending(): void {
+    if (!pendingCommit) return
+    pendingCommit = false
+    const next = state
+    withBindingErrors(onBindingError, () => mount?.update(next))
+    for (const listener of subscribers) listener(next)
+  }
+
+  // Process the queue to quiescence: run all queued reducers (collecting their
+  // effects), commit once (unless batching), then run the collected effects after
+  // the DOM is live — matching the historical per-message "reconcile, then effect"
+  // order at settle granularity. A commit or effect may enqueue more (blur, an
+  // effect that sends), so loop until the queue drains.
+  function drain(): void {
+    do {
+      const pendingEffects: E[] = []
       while (queue.length > 0) {
         const m = queue.shift() as M
         const before = state
         const [next, effects] = normalize<S, E>(updateFn(state, m))
         if (!Object.is(next, state)) {
           state = next
-          withBindingErrors(onBindingError, () => mount?.update(next))
-          for (const listener of subscribers) listener(state)
+          pendingCommit = true
         }
         if (dev) {
           history.push({
@@ -208,10 +250,44 @@ export function mountSignalComponent<S, M, E = never>(
           })
           if (history.length > 1000) history.shift()
         }
-        for (const e of effects) runEffect(e)
+        for (const e of effects) pendingEffects.push(e)
       }
+      if (batchDepth === 0) commitPending()
+      for (const e of pendingEffects) runEffect(e)
+    } while (queue.length > 0)
+  }
+
+  function send(msg: M): void {
+    queue.push(msg)
+    if (draining) return
+    draining = true
+    try {
+      drain()
     } finally {
       draining = false
+    }
+  }
+
+  // Coalesce a burst of `send`s into one reconcile (see the handle's `batch` doc).
+  // Reentrancy-safe via `batchDepth` (nested `batch` flushes only at the outermost
+  // exit). An external batch (not nested in an active drain) drives its own commit
+  // drain on exit; a batch entered DURING a drain (e.g. from an effect) leaves the
+  // commit to that drain's loop. Flushes even if `fn` throws — state already
+  // advanced, so the DOM must catch up to stay consistent.
+  function batch(fn: () => void): void {
+    batchDepth++
+    try {
+      fn()
+    } finally {
+      batchDepth--
+      if (batchDepth === 0 && !draining) {
+        draining = true
+        try {
+          drain()
+        } finally {
+          draining = false
+        }
+      }
     }
   }
 
@@ -223,7 +299,7 @@ export function mountSignalComponent<S, M, E = never>(
       target instanceof Object && ('container' in target || 'anchor' in target)
         ? (target as MountTarget)
         : { container: target as Element, mode: hy ? 'replace' : 'append' }
-    mount = mountSignal(mt, state, () => def.view({ state: handle, send }), opts?.contexts)
+    mount = mountSignal(mt, state, () => def.view({ state: handle, send, batch }), opts?.contexts)
   })
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
@@ -253,6 +329,7 @@ export function mountSignalComponent<S, M, E = never>(
 
   return {
     send,
+    batch,
     getState: () => state,
     flush: () => {}, // send is synchronous — nothing to flush
     dispose: () => {

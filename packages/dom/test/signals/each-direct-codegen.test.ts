@@ -288,4 +288,36 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('signalEach(')
     expect(out).not.toContain('signalEachDirect(')
   })
+
+  it('compiled auto-batch handler coalesces a multi-send burst into one reconcile', () => {
+    // Opportunity A: a straight-line multi-send handler is auto-wrapped in batch(),
+    // so clicking commits ONE reconcile against the final state. We observe the
+    // reconcile count via a binding's commit counter.
+    const MULTI = `
+      import { component, div, button, text } from '@llui/dom'
+      export const App = component({
+        init: () => [{ n: 0 }, []],
+        update: (s, m) => (m.type === 'inc' ? [{ n: s.n + 1 }, []] : [s, []]),
+        view: ({ state, send }) => [
+          div({}, [
+            button({ onClick: () => { send({ type: 'inc' }); send({ type: 'inc' }); send({ type: 'inc' }) } }, [text('go')]),
+            div({ class: 'out' }, [text(state.at('n').map((v) => String(v)))]),
+          ]),
+        ],
+      })
+    `
+    const out = transformSignalComponentSource(MULTI)
+    expect(out).toContain('batch(() =>') // wrapped
+    expect(out).toContain('({ batch, state, send })') // bag injected
+
+    const def = compileAndLoad(MULTI, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    let commits = 0
+    h.subscribe(() => commits++)
+    container.querySelector('button')!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { n: number }).n).toBe(3) // all three reducers ran
+    expect(container.querySelector('.out')!.textContent).toBe('3')
+    expect(commits).toBe(1) // ONE reconcile for the burst, not three
+  })
 })

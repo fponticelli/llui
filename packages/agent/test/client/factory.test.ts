@@ -73,6 +73,7 @@ function makeHandle(initialState: FakeState) {
       // Simulate confirm Propose updating state inline so poll can detect
       void msg
     }),
+    batch: vi.fn((fn: () => void) => fn()),
     flush: vi.fn(),
     dispose: vi.fn(),
     subscribe: (listener: (s: FakeState) => void) => {
@@ -314,6 +315,7 @@ describe('createAgentClient', () => {
     const handle = {
       getState: () => state,
       send: vi.fn(),
+      batch: vi.fn((fn: () => void) => fn()),
       flush: vi.fn(),
       dispose: vi.fn(),
       subscribe: (l: (s: unknown) => void) => {

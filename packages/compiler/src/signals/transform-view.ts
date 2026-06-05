@@ -18,6 +18,64 @@ import ts from 'typescript'
 import { signalToProduce } from './lower.js'
 import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
 
+// ── Auto-batch ambient context (Opportunity A) ───────────────────────────────
+// Set by the component transform around each view's lowering (and reset after);
+// null otherwise. `sendName` is the bag's `send` local name. When active, a
+// straight-line event handler that does nothing but call `send(...)` two or more
+// times is wrapped in `batch(() => …)`, so a multi-dispatch handler commits ONE
+// reconcile instead of N — the provably-safe automatic slice of B (the handler
+// body has no statement between the sends that could observe the interim DOM).
+// A single-threaded source transform makes this module-scoped ambient state safe.
+let autoBatch: { sendName: string; used: boolean } | null = null
+
+/** Activate (or clear) the auto-batch context for the view about to be lowered.
+ * Returns the context so the caller can read `.used` afterward and inject `batch`
+ * into the bag if a handler was wrapped. */
+export function setAutoBatchContext(ctx: { sendName: string; used: boolean } | null): void {
+  autoBatch = ctx
+}
+
+/** True if `block` is a straight-line sequence of two-or-more bare `send(...)`
+ * calls and nothing else — the only handler shape it's provably safe to coalesce
+ * (no var reads, control flow, or DOM-observing calls between the dispatches). */
+function isStraightLineSends(block: ts.Block, sendName: string): boolean {
+  if (block.statements.length < 2) return false
+  for (const st of block.statements) {
+    if (!ts.isExpressionStatement(st)) return false
+    const e = st.expression
+    if (
+      !ts.isCallExpression(e) ||
+      !ts.isIdentifier(e.expression) ||
+      e.expression.text !== sendName
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Render an event-handler initializer to source. `rewriteRoots` (the row-factory
+ * path) rewrites `item`/`index`/`state` `.peek()` reads to live-row-ctx reads; omit
+ * it for component-level handlers (kept verbatim). When the ambient auto-batch
+ * context is active and the handler is a straight-line multi-`send` block, wrap its
+ * body in `batch(() => …)` and flag the context so the bag gains a `batch` binding. */
+function emitHandler(init: ts.Expression, sf: ts.SourceFile, rewriteRoots?: Roots): string {
+  const render = (n: ts.Node): string =>
+    rewriteRoots ? rewriteHandlerReads(n, sf, rewriteRoots) : n.getText(sf)
+  if (
+    autoBatch &&
+    (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) &&
+    !init.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) &&
+    ts.isBlock(init.body) &&
+    isStraightLineSends(init.body, autoBatch.sendName)
+  ) {
+    autoBatch.used = true
+    const params = init.parameters.map((p) => p.getText(sf)).join(', ')
+    return `(${params}) => batch(() => ${render(init.body)})`
+  }
+  return render(init)
+}
+
 /** The produce-wrapper parameter name for a roots map: `s` for the component
  * view, `ctx` inside an each row (where value prefixes are `ctx.item`/`ctx.state`). */
 function paramOf(roots: Roots): string {
@@ -506,7 +564,7 @@ function handlerRoots(itemParam: string, indexParam: string | null): Roots {
  * row signal's value in a handler, so matching it covers the toggle/remove pattern;
  * a non-peek row-param use is left untouched and caught by the caller's leak guard
  * (which then bails the whole factory to the render path). */
-function rewriteHandlerReads(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string {
+function rewriteHandlerReads(expr: ts.Node, sf: ts.SourceFile, roots: Roots): string {
   const base = expr.getStart(sf)
   const full = expr.getText(sf)
   const edits: Array<{ start: number; end: number; text: string }> = []
@@ -634,7 +692,7 @@ function lowerRowFactory(
           // guard below, which bails the whole factory to the render path.
           const init = p.initializer
           if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) return null
-          const handlerSrc = rewriteHandlerReads(init, sf, hRoots)
+          const handlerSrc = emitHandler(init, sf, hRoots)
           stmts.push(`${v}.addEventListener(${JSON.stringify(eventName(name))}, ${handlerSrc})`)
           continue
         }
@@ -715,6 +773,9 @@ function transformProps(
         if (collect) for (const d of deps) collect.add(d)
         return `${name}: react((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
       }
+      // `on*` event handler: kept verbatim, but a straight-line multi-`send` body is
+      // auto-wrapped in `batch(...)` so the burst commits one reconcile (Opportunity A).
+      if (/^on[A-Z]/.test(name)) return `${name}: ${emitHandler(p.initializer, sf)}`
       return `${name}: ${p.initializer.getText(sf)}`
     }
     return p.getText(sf) // shorthand / spread / method — verbatim

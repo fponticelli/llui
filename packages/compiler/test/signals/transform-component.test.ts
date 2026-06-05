@@ -272,4 +272,63 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain("signalText((s) => s.n, ['n'])")
     })
   })
+
+  describe('auto-batch (Opportunity A): provably-safe multi-send handlers', () => {
+    const view = (handler: string, bag = '{ state, send }'): string =>
+      [
+        "import { component, button, text } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        `  view: (${bag}) => [button({ onClick: ${handler} }, [text('x')])],`,
+        '})',
+      ].join('\n')
+
+    it('wraps a straight-line multi-send handler in batch(...) and injects batch into the bag', () => {
+      const out = transformSignalComponentSource(
+        view("() => { send({ type: 'a' }); send({ type: 'b' }) }"),
+      )
+      expect(out).toContain(
+        "onClick: () => batch(() => { send({ type: 'a' }); send({ type: 'b' }) })",
+      )
+      // the bag gains a `batch` binding (the runtime always provides it)
+      expect(out).toContain('view: ({ batch, state, send })')
+      // batch is NOT imported — it's a bag member, not a runtime helper
+      expect(/import \{[^}]*\bbatch\b[^}]*\} from '@llui\/dom'/.test(out)).toBe(false)
+    })
+
+    it('leaves a single-send handler alone (no batch, no bag change)', () => {
+      const out = transformSignalComponentSource(view("() => send({ type: 'a' })"))
+      expect(out).not.toContain('batch(')
+      expect(out).toContain('view: ({ state, send })') // bag untouched
+    })
+
+    it('does NOT wrap when a non-send statement sits between sends (could observe interim DOM)', () => {
+      const out = transformSignalComponentSource(
+        view("() => { send({ type: 'a' }); document.title = 'x'; send({ type: 'b' }) }"),
+      )
+      expect(out).not.toContain('batch(')
+      expect(out).toContain('view: ({ state, send })')
+    })
+
+    it('does not double-inject batch when the bag already destructures it', () => {
+      const out = transformSignalComponentSource(
+        view("() => { send({ type: 'a' }); send({ type: 'b' }) }", '{ state, send, batch }'),
+      )
+      expect(out).toContain('batch(() =>')
+      // exactly one `batch` in the bag (no injection on top of the author's)
+      expect(out).toContain('view: ({ state, send, batch })')
+    })
+
+    it('respects a renamed send binding', () => {
+      const out = transformSignalComponentSource(
+        view(
+          "() => { dispatch({ type: 'a' }); dispatch({ type: 'b' }) }",
+          '{ state, send: dispatch }',
+        ),
+      )
+      expect(out).toContain('onClick: () => batch(() => { dispatch(')
+      expect(out).toContain('batch, state, send: dispatch')
+    })
+  })
 })

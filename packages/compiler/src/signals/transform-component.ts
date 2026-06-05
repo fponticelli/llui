@@ -12,7 +12,7 @@
 // multi-slice bags are follow-ups.
 
 import ts from 'typescript'
-import { transformNodeExpr } from './transform-view.js'
+import { transformNodeExpr, setAutoBatchContext } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -75,6 +75,28 @@ function signalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Roots | 
     }
   }
   return null
+}
+
+/** The view bag's destructuring pattern plus the local name bound to `send` and
+ * whether `batch` is already bound — used to drive auto-batch (Opportunity A) and,
+ * when a handler is wrapped, to inject a `batch` binding into the bag. Null when the
+ * bag isn't an object pattern (then the component isn't a signal view anyway). */
+function bagInfo(
+  viewFn: ts.ArrowFunction | ts.FunctionExpression,
+): { pattern: ts.ObjectBindingPattern; sendName: string | null; hasBatch: boolean } | null {
+  const param = viewFn.parameters[0]
+  if (!param || !ts.isObjectBindingPattern(param.name)) return null
+  const pattern = param.name
+  let sendName: string | null = null
+  let hasBatch = false
+  for (const el of pattern.elements) {
+    if (!ts.isIdentifier(el.name)) continue
+    const key =
+      el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text
+    if (key === 'send') sendName = el.name.text
+    if (key === 'batch') hasBatch = true
+  }
+  return { pattern, sendName, hasBatch }
 }
 
 /** The returned node array of a view body — concise (`=> [...]`) OR a block body
@@ -182,9 +204,22 @@ export function transformSignalComponentSource(
           const roots = signalRoots(viewFn)
           const arr = returnedArray(viewFn)
           if (roots && arr) {
+            // Auto-batch (Opportunity A): wrap straight-line multi-`send` handlers
+            // in `batch(...)`. Active only when the bag destructures `send` (so the
+            // calls are recognizable). Reset after lowering this view.
+            const bag = bagInfo(viewFn)
+            const abCtx = bag?.sendName ? { sendName: bag.sendName, used: false } : null
+            setAutoBatchContext(abCtx)
             const rewritten = `[${arr.elements.map((e) => transformNodeExpr(e, sf, roots)).join(', ')}]`
+            setAutoBatchContext(null)
             edits.push({ start: arr.getStart(sf), end: arr.getEnd(), text: rewritten })
             transformedAny = true
+            // A wrapped handler references the bag's `batch`; inject the binding when
+            // the author didn't already destructure it (the runtime always provides it).
+            if (abCtx?.used && bag && !bag.hasBatch) {
+              const at = bag.pattern.getStart(sf) + 1 // just after `{`
+              edits.push({ start: at, end: at, text: ' batch,' })
+            }
             // splice introspection metadata after the view property (config object)
             const meta = metaForComponent(node.arguments[0], node)
             if (meta.length > 0) {

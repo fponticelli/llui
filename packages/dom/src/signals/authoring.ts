@@ -336,6 +336,8 @@ export function foreign<Inst, State extends Record<string, Signal<unknown>>>(spe
 export interface SignalViewBag<S, M> {
   state: Signal<S>
   send: Send<M>
+  /** Coalesce a burst of `send`s into ONE reconcile (see the handle's `batch`). */
+  batch: (fn: () => void) => void
 }
 
 export interface SignalComponentSpec<S, M, E = never> {
@@ -344,7 +346,10 @@ export interface SignalComponentSpec<S, M, E = never> {
   init: () => S | [S, E[]]
   update: (state: S, msg: M) => [S, E[]] | S
   view: (bag: SignalViewBag<S, M>) => Renderable
-  onEffect?: (effect: E, api: { send: Send<M>; state: Signal<S> }) => void | (() => void)
+  onEffect?: (
+    effect: E,
+    api: { send: Send<M>; state: Signal<S>; batch: (fn: () => void) => void },
+  ) => void | (() => void)
 }
 
 /** Define a signal component. Identity at runtime — the view has been lowered by

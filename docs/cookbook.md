@@ -168,6 +168,42 @@ case 'loadUser':
   ]]
 ```
 
+### Batching a burst of dispatches with `batch`
+
+`send` is synchronous — each call reconciles the DOM immediately. When you dispatch
+a _burst_ in one turn (draining a websocket frame, replaying a log), wrap it in
+`batch` to coalesce the whole burst into **one** reconcile against the final state.
+Every reducer still runs in order and effects still fire per message; only the DOM
+commit is deferred to when `batch` returns. `batch` is in the view/`onEffect` bag
+alongside `send`, and on the mount handle.
+
+```typescript
+// From a subscription / external driver (handle):
+socket.onmessage = (frame) =>
+  handle.batch(() => {
+    for (const tick of frame.ticks) handle.send({ type: 'tick', tick })
+  })
+
+// From inside the component (bag):
+view: ({ state, send, batch }) => [
+  button(
+    {
+      onClick: () =>
+        batch(() => {
+          send({ type: 'a' })
+          send({ type: 'b' })
+        }),
+    },
+    [text('Do both')],
+  ),
+]
+```
+
+State is applied by the time `batch` returns (the synchronous contract holds at the
+boundary). The compiler also auto-wraps a handler that does nothing but call
+`send(...)` two or more times — so `() => { send(a); send(b) }` is coalesced for you
+without writing `batch` by hand.
+
 ## Composition
 
 ### View functions (default)

@@ -93,7 +93,14 @@ export function renderNodes<S, M, E>(
   const [seed] = normalizeInit(def, initialState)
   const handle = pathHandle<S>(() => seed, '')
   const noopSend = (): void => {}
-  const tree = renderSignalTree(env, () => def.view({ state: handle, send: noopSend }), contexts)
+  // SSR has no live document to reconcile; `batch` just runs its body (whose sends
+  // are no-ops here), matching the no-op send.
+  const noopBatch = (fn: () => void): void => fn()
+  const tree = renderSignalTree(
+    env,
+    () => def.view({ state: handle, send: noopSend, batch: noopBatch }),
+    contexts,
+  )
   // Mount on the detached tree to bake initial values into the serialized HTML
   // (SSR has no live document; onMount/portal effects are intentionally skipped).
   tree.mount(seed)
