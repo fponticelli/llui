@@ -3,7 +3,7 @@
 // surfaces the format state for the chrome, and routes command intents back to
 // the live editor through effects.
 
-import { $getRoot, type EditorThemeClasses, type LexicalEditor } from 'lexical'
+import { $getRoot, $setSelection, type EditorThemeClasses, type LexicalEditor } from 'lexical'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
@@ -88,9 +88,15 @@ export function markdownEditor(
     onChange: config.onChange,
     onFormatChange: config.onFormatChange,
     applyValue: (editor, value) =>
-      editor.update(() => $convertFromMarkdownString(value, transformers), {
-        tag: PROGRAMMATIC_TAG,
-      }),
+      editor.update(
+        () => {
+          $convertFromMarkdownString(value, transformers)
+          // Clear selection so the reconciler doesn't pull DOM focus into the
+          // editor on an external push (e.g. typing in a bound source textarea).
+          $setSelection(null)
+        },
+        { tag: PROGRAMMATIC_TAG },
+      ),
   })
 
   const seedValue = config.value ? config.value.peek() : (config.defaultValue ?? '')
@@ -108,7 +114,10 @@ export function markdownEditor(
       plugins,
       serialize: (editor) =>
         editor.getEditorState().read(() => $convertToMarkdownString(transformers)),
-      deserialize: (_editor, value) => $convertFromMarkdownString(value, transformers),
+      deserialize: (_editor, value) => {
+        $convertFromMarkdownString(value, transformers)
+        $setSelection(null)
+      },
       defaultValue: config.value ? undefined : (config.defaultValue ?? ''),
       ...(config.value ? { value: config.value } : {}),
       readOnly: state.at('readOnly'),

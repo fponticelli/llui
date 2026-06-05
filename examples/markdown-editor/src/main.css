@@ -107,6 +107,24 @@ code {
   color: var(--muted);
 }
 
+.panel-note {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.tag {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  vertical-align: middle;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -214,8 +232,17 @@ code {
   font-family: var(--mono);
 }
 
-.editor [data-lexical-editor] code {
+/* Inline code: a formatted TextNode (`<code data-lexical-text>`). */
+.editor [data-lexical-editor] code[data-lexical-text='true'] {
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+
+/* Fenced code blocks: a CodeNode (`<code>` with no data-lexical-text). */
+.editor [data-lexical-editor] code:not([data-lexical-text='true']) {
   display: block;
+  white-space: pre;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;

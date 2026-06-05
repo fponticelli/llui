@@ -106,6 +106,10 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
         else throw error
       },
     })
+    // Vanilla Lexical does NOT make the root editable — the caller must set
+    // `contenteditable` (the React `<ContentEditable>` does this). Without it the
+    // browser shows no caret and ignores typing.
+    el.setAttribute('contenteditable', opts.readOnly.peek() ? 'false' : 'true')
     editor.setRootElement(el as HTMLElement)
     opts.onReady?.(editor)
 
@@ -202,7 +206,10 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
           b.editor.update(() => opts.deserialize(b.editor, incoming), { tag: PROGRAMMATIC_TAG })
           b.setLastEmitted(incoming)
         })
-        const unbindReadOnly = state.readOnly.bind((ro) => b.editor.setEditable(!ro))
+        const unbindReadOnly = state.readOnly.bind((ro) => {
+          b.editor.setEditable(!ro)
+          el.setAttribute('contenteditable', ro ? 'false' : 'true')
+        })
         return {
           dispose: () => {
             unbindValue()
@@ -220,7 +227,10 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     state: { readOnly },
     mount: ({ el, state }) => {
       const b = boot(el)
-      const unbindReadOnly = state.readOnly.bind((ro) => b.editor.setEditable(!ro))
+      const unbindReadOnly = state.readOnly.bind((ro) => {
+        b.editor.setEditable(!ro)
+        ;(el as HTMLElement).contentEditable = ro ? 'false' : 'true'
+      })
       return {
         dispose: () => {
           unbindReadOnly()

@@ -82,8 +82,8 @@ export const DEFAULT_GLYPHS: Readonly<Record<string, string>> = {
   bulletList: '•',
   numberList: '1.',
   checkList: '☑',
-  undo: '↶',
-  redo: '↷',
+  undo: '↺',
+  redo: '↻',
 }
 
 const GROUP_ORDER = ['inline', 'block', 'list', 'history']

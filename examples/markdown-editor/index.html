@@ -28,8 +28,17 @@
         <div class="split">
           <div id="full-editor" class="editor"></div>
           <aside class="panel">
+            <h3>Drive via the handle</h3>
+            <p class="panel-note">
+              These buttons send messages through the editor's public <code>send()</code> handle —
+              the same API an agent would use. Click into the editor first, then a button.
+            </p>
             <div class="controls" id="controls" aria-label="External commands"></div>
-            <h3>Live Markdown</h3>
+            <h3>Live Markdown <span class="tag">read-only output</span></h3>
+            <p class="panel-note">
+              The Markdown the editor produces, updated live. Display only — edit on the left, not
+              here.
+            </p>
             <pre id="markdown-output" class="md-out"></pre>
             <div id="stats" class="stats"></div>
           </aside>

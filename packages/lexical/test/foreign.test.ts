@@ -60,6 +60,9 @@ describe('lexicalForeign (uncontrolled)', () => {
     })
     app = mountApp(container, def)
 
+    // The host must be contentEditable (vanilla Lexical does not set this itself;
+    // without it the browser shows no caret and ignores typing).
+    expect(container.querySelector('[contenteditable="true"]')).not.toBeNull()
     // Seeded content is visible in the contentEditable host.
     expect(container.textContent).toContain('hello')
     // Seeding is programmatic → no outbound emission.
