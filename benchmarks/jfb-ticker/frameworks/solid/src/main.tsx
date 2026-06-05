@@ -5,7 +5,7 @@
 
 import { render } from 'solid-js/web'
 import { createStore, produce } from 'solid-js/store'
-import { For } from 'solid-js'
+import { For, batch } from 'solid-js'
 import { initialState, initialDashboard } from '../../../shared/data.js'
 import {
   generateTick,
@@ -25,6 +25,14 @@ type OpKind = 'mount' | 'tick' | 'narrow' | 'toggle' | 'churn' | 'clear'
 
 function op(kind: OpKind, iters: number): void {
   for (let i = 0; i < iters; i++) applyOnce(kind)
+}
+
+// Idiomatic coalesced burst (the `batch-1k` op): solid-js `batch` defers effect
+// re-runs so all N store writes flush as ONE update.
+function batchOp(kind: OpKind, iters: number): void {
+  batch(() => {
+    for (let i = 0; i < iters; i++) applyOnce(kind)
+  })
 }
 
 function applyOnce(kind: OpKind): void {
@@ -246,6 +254,9 @@ function App() {
         </button>
         <button id="burst-1k" type="button" class="btn" onClick={() => op('tick', 1000)}>
           Burst 1k
+        </button>
+        <button id="batch-1k" type="button" class="btn" onClick={() => batchOp('tick', 1000)}>
+          Batch 1k
         </button>
         <button id="narrow-100" type="button" class="btn" onClick={() => op('narrow', 100)}>
           100 narrow

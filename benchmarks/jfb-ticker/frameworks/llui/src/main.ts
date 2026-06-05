@@ -107,7 +107,7 @@ const App = component<State, Msg, never>({
         ]
     }
   },
-  view: ({ state, send }) => [
+  view: ({ state, send, batch }) => [
     div({ id: 'ticker' }, [
       h1({}, [text('LLui ticker')]),
 
@@ -273,6 +273,7 @@ const App = component<State, Msg, never>({
         actionButton('tick-1', '1 tick', 'tick', 1, send),
         actionButton('tick-100', '100 ticks', 'tick', 100, send),
         actionButton('burst-1k', 'Burst 1k', 'tick', 1000, send),
+        actionButton('batch-1k', 'Batch 1k', 'tick', 1000, send, batch),
         actionButton('narrow-100', '100 narrow', 'narrow', 100, send),
         actionButton('wide-toggle', 'Toggle mode', 'toggle', 1, send),
         actionButton('churn-50', 'Churn 50', 'churn', 1, send),

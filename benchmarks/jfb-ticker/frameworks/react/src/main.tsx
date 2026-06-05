@@ -129,6 +129,12 @@ function App() {
     }
   }
 
+  // Idiomatic coalesced burst (the `batch-1k` op): dispatch without flushSync so
+  // React 18 auto-batches all N dispatches in this event handler into ONE render.
+  function batchOp(kind: OpKind, iters: number): void {
+    for (let i = 0; i < iters; i++) dispatch({ kind, box: boxRef.current })
+  }
+
   const d: Dashboard = state.dashboard
   return (
     <div id="ticker">
@@ -181,6 +187,9 @@ function App() {
         </button>
         <button id="burst-1k" type="button" className="btn" onClick={() => op('tick', 1000)}>
           Burst 1k
+        </button>
+        <button id="batch-1k" type="button" className="btn" onClick={() => batchOp('tick', 1000)}>
+          Batch 1k
         </button>
         <button id="narrow-100" type="button" className="btn" onClick={() => op('narrow', 100)}>
           100 narrow

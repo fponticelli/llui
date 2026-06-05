@@ -50,27 +50,34 @@ Each operation runs **synchronously** (uses `flush()` in LLui, equivalent
 synchronous-commit in competitors) so jfb's DOM-stable detection fires
 immediately after.
 
-| ID            | Label       | What it does                                                               | Targets                |
-| ------------- | ----------- | -------------------------------------------------------------------------- | ---------------------- |
-| `mount`       | Mount 200   | Initial render: 200 symbols + dashboard                                    | mount cost             |
-| `tick-1`      | 1 tick      | One random tick: flip 2 dashboard paths + update 5 random symbols          | single-cycle baseline  |
-| `tick-100`    | 100 ticks   | 100 ticks applied as one batched update (single message? or 100 messages?) | amortized batch        |
-| `burst-1k`    | Burst 1k    | 1000 ticks in one batched update                                           | sustained churn        |
-| `narrow-100`  | 100 narrow  | 100 ticks that touch ONLY 1 dashboard path each (no symbol updates)        | mask gating efficiency |
-| `wide-toggle` | Toggle mode | Flip `displayMode` once                                                    | fan-out to every row   |
-| `churn-50`    | Churn 50    | Remove first 50 symbols, append 50 new ones                                | each() reconciliation  |
-| `clear`       | Clear       | Reset all rows + dashboard to zero                                         | unmount cost           |
+| ID            | Label       | What it does                                                                  | Targets                 |
+| ------------- | ----------- | ----------------------------------------------------------------------------- | ----------------------- |
+| `mount`       | Mount 200   | Initial render: 200 symbols + dashboard                                       | mount cost              |
+| `tick-1`      | 1 tick      | One random tick: flip 2 dashboard paths + update 5 random symbols             | single-cycle baseline   |
+| `tick-100`    | 100 ticks   | 100 ticks applied as one batched update (single message? or 100 messages?)    | amortized batch         |
+| `burst-1k`    | Burst 1k    | 1000 ticks in one batched update                                              | sustained churn         |
+| `narrow-100`  | 100 narrow  | 100 ticks that touch ONLY 1 dashboard path each (no symbol updates)           | mask gating efficiency  |
+| `wide-toggle` | Toggle mode | Flip `displayMode` once                                                       | fan-out to every row    |
+| `churn-50`    | Churn 50    | Remove first 50 symbols, append 50 new ones                                   | each() reconciliation   |
+| `clear`       | Clear       | Reset all rows + dashboard to zero                                            | unmount cost            |
+| `batch-1k`    | Batch 1k    | 1000 ticks **coalesced into ONE commit** via each framework's idiomatic batch | streaming/bulk-dispatch |
 
-**Two batching modes for `tick-100` and `burst-1k`:**
+**Sequential vs. coalesced — `burst-1k` and `batch-1k` are the two ends:**
 
-- _Batched_: all 1k ticks compute the final state in one `update()` call,
-  one DOM commit. This is the "amortized" path.
-- _Sequential_: 1k separate messages, queued through `send()`'s microtask
-  batching, one DOM commit. This is the "real send() coalescing" path.
+- `burst-1k` — _forced-synchronous_: 1000 ticks, each flushed to the DOM
+  individually (LLui synchronous `send()`, React `flushSync` per dispatch,
+  Svelte `flushSync()` per tick, Solid sync `setState`, vanilla direct DOM per
+  tick). Measures the per-cycle reconcile path under sustained churn.
+- `batch-1k` — _idiomatic coalesced_: the same 1000 ticks, but committed as ONE
+  reconcile using each framework's native batching: LLui `batch(() => …)`, React
+  18 auto-batch (dispatch loop without `flushSync`), Solid `batch(() => …)`,
+  Svelte's scheduler (mutate `$state` ×N then one `flushSync`), vanilla
+  (mutate the model ×N, then one DOM render pass). Measures the streaming /
+  bulk-dispatch fast path — draining a frame of N updates as a single re-render.
 
-Decision: ship sequential first. It's the more realistic shape for streaming
-data feeds, and it actually exercises the message queue. Add batched as
-`-batched` suffix variants later if useful.
+Both bump `tickCount` by +1000, so the harness uses the identical `#ticker-counter`
+post-condition for each; the only difference is how many DOM commits happen in
+between. Comparing the two columns shows each framework's coalescing headroom.
 
 ## What we expect to measure
 
@@ -119,7 +126,7 @@ versioned.
 
 ```bash
 pnpm bench:ticker:setup    # one-time: symlink apps into jfb-repo + apply patches
-pnpm bench:ticker          # all 5 frameworks × 8 ops
+pnpm bench:ticker          # all 5 frameworks × 9 ops
 pnpm bench:ticker --framework llui
 pnpm bench:ticker --runs 3 --save
 ```

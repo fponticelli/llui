@@ -184,4 +184,24 @@ export const benchTickerClear = new (class extends CPUBenchmarkWebdriverCDP {
     await testElementNotLocatedByXPath(driver, "//tbody/tr[1]", config.TIMEOUT, false);
   }
 })();
+
+// Coalesced counterpart of burst-1k: 1000 ticks committed as ONE update via each
+// framework's idiomatic batch. Same +1000 counter post-condition — the counter
+// reaches its final value once the single coalesced commit lands.
+export const benchTickerBatch1k = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["58_ticker_batch-1k"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "batch-1k", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "batch-1k", 1000);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "batch-1k", 1000);
+  }
+})();
 // === ticker-bench:classes:end ===

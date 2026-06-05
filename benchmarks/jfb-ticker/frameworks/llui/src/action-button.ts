@@ -3,7 +3,7 @@
 // a component `view`, not helper bodies — so it builds DOM with the RUNTIME signal
 // helpers (el / staticText) directly rather than the authoring ones.
 
-import { el, staticText } from '@llui/dom'
+import { el, staticText, type Mountable } from '@llui/dom'
 
 type ButtonMsg =
   | { type: 'mount' }
@@ -19,8 +19,17 @@ export function actionButton(
   msgType: ButtonMsg['type'],
   iters: number,
   send: (msg: ButtonMsg) => void,
-): Node {
+  // When provided, the burst is coalesced into ONE reconcile via the bag's `batch`
+  // (the idiomatic streaming path — the `batch-1k` op). Omit it for the forced-sync
+  // ops, where each `send` reconciles immediately.
+  batch?: (fn: () => void) => void,
+): Mountable {
   const msg = { type: msgType } as ButtonMsg
+  const dispatch = (): void => {
+    for (let i = 0; i < iters; i++) {
+      send(msg) // signal send is synchronous — DOM updates immediately
+    }
+  }
   return el('div', { class: 'btn-wrap' }, [
     el(
       'button',
@@ -28,11 +37,7 @@ export function actionButton(
         type: 'button',
         class: 'btn btn-primary',
         id,
-        onClick: () => {
-          for (let i = 0; i < iters; i++) {
-            send(msg) // signal send is synchronous — DOM updates immediately
-          }
-        },
+        onClick: batch ? () => batch(dispatch) : dispatch,
       },
       [staticText(label)],
     ),

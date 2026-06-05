@@ -86,4 +86,14 @@
     layoutEventRequired: true,
     additionalNumberOfRuns: 0,
   },
+  {
+    id: "58_ticker_batch-1k",
+    label: "ticker:batch-1k",
+    warmupCount: 2,
+    description: "1000 wide ticks coalesced into ONE commit via each framework's idiomatic batch (LLui batch(), React auto-batch, Solid batch(), Svelte scheduler, vanilla model+render). The streaming/bulk-dispatch counterpart of burst-1k.",
+    type: BenchmarkType.CPU,
+    allowBatching: true,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
 // === ticker-bench:end ===

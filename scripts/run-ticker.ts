@@ -6,7 +6,7 @@
  *   2. `pnpm bench:ticker:setup` — symlink ticker apps + apply patches.
  *
  * Usage:
- *   pnpm bench:ticker                # all 5 frameworks, all 8 ticker ops
+ *   pnpm bench:ticker                # all 5 frameworks, all 9 ticker ops
  *   pnpm bench:ticker --framework llui
  *   pnpm bench:ticker --runs 3       # median-of-medians across N passes
  *   pnpm bench:ticker --save         # write results to ticker-baseline.json
@@ -46,6 +46,7 @@ const TICKER_BENCHMARKS = [
   { id: '55_ticker_wide-toggle', label: 'wide-toggle' },
   { id: '56_ticker_churn-50', label: 'churn-50' },
   { id: '57_ticker_clear', label: 'clear' },
+  { id: '58_ticker_batch-1k', label: 'batch-1k' },
 ]
 
 const FRAMEWORKS = ['llui', 'vanillajs', 'solid', 'react', 'svelte']

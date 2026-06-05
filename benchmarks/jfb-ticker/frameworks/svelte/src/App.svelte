@@ -70,6 +70,13 @@
       flushSync()
     }
   }
+
+  // Idiomatic coalesced burst (the `batch-1k` op): mutate $state N times, then a
+  // single flushSync — Svelte's scheduler coalesces them into ONE DOM update.
+  function batchOp(kind: OpKind, iters: number): void {
+    for (let i = 0; i < iters; i++) applyOnce(kind)
+    flushSync()
+  }
 </script>
 
 <div id="ticker">
@@ -115,6 +122,7 @@
     <button id="tick-1" type="button" class="btn" onclick={() => op('tick', 1)}>1 tick</button>
     <button id="tick-100" type="button" class="btn" onclick={() => op('tick', 100)}>100 ticks</button>
     <button id="burst-1k" type="button" class="btn" onclick={() => op('tick', 1000)}>Burst 1k</button>
+    <button id="batch-1k" type="button" class="btn" onclick={() => batchOp('tick', 1000)}>Batch 1k</button>
     <button id="narrow-100" type="button" class="btn" onclick={() => op('narrow', 100)}>100 narrow</button>
     <button id="wide-toggle" type="button" class="btn" onclick={() => op('toggle', 1)}>Toggle mode</button>
     <button id="churn-50" type="button" class="btn" onclick={() => op('churn', 1)}>Churn 50</button>

@@ -214,6 +214,7 @@ function buildApp(): HTMLElement {
     btn('tick-1', '1 tick', () => op('tick', 1)),
     btn('tick-100', '100 ticks', () => op('tick', 100)),
     btn('burst-1k', 'Burst 1k', () => op('tick', 1000)),
+    btn('batch-1k', 'Batch 1k', () => batchOp(1000)),
     btn('narrow-100', '100 narrow', () => op('narrow', 100)),
     btn('wide-toggle', 'Toggle mode', () => op('toggle', 1)),
     btn('churn-50', 'Churn 50', () => op('churn', 1)),
@@ -239,6 +240,41 @@ type OpKind = 'mount' | 'tick' | 'narrow' | 'toggle' | 'churn' | 'clear'
 
 function op(kind: OpKind, iters: number): void {
   for (let i = 0; i < iters; i++) applyOnce(kind)
+}
+
+// Idiomatic coalesced burst (the `batch-1k` op): apply N ticks to the MODEL only
+// (no DOM writes), then sync the DOM once from the final model — the hand-rolled
+// analogue of a framework's batched commit (one write per cell, not N).
+function batchOp(iters: number): void {
+  for (let i = 0; i < iters; i++) {
+    const tick = generateTick(rng, state.symbols.length, state.dashboard.tickCount, state.symbols)
+    for (const [k, v] of Object.entries(tick.dashboardUpdates)) {
+      ;(state.dashboard as Record<string, unknown>)[k] = v
+    }
+    for (const patch of tick.symbolUpdates) {
+      const sym = state.symbols[patch.index]
+      if (!sym) continue
+      sym.price = patch.price
+      sym.change = patch.change
+      sym.changePct = patch.changePct
+      sym.volume = patch.volume
+      sym.lastTickAt = patch.lastTickAt
+    }
+  }
+  // single DOM sync from the final model
+  for (const key of Object.keys(state.dashboard) as (keyof Dashboard)[]) {
+    const ref = dashRefs[key]
+    if (ref) ref.data = fmt(key, state.dashboard[key])
+  }
+  for (const sym of state.symbols) {
+    const refs = rowRefs.get(sym.id)
+    if (!refs) continue
+    refs.price.data = sym.price.toFixed(2)
+    refs.change.data = sym.change.toFixed(2)
+    refs.changePct.data = sym.changePct.toFixed(2)
+    refs.volume.data = String(sym.volume)
+    refs.lastTickAt.data = String(sym.lastTickAt)
+  }
 }
 
 function applyOnce(kind: OpKind): void {
