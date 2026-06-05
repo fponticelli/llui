@@ -700,6 +700,25 @@ function buildScope(specs: readonly BindingSpec[]): SignalScope {
   return scopeFromSpecs(specs).scope
 }
 
+/** Do these specs have the SAME dep structure (count + per-binding dep paths, in
+ * order) as a cached signature? When true, a previously-built {@link ScopeShape}
+ * (PathTable + masks, derived purely from deps) applies unchanged — so an authoring
+ * `each` row can reuse it instead of rebuilding. A cheap array compare (no string
+ * alloc) that returns false for data-conditional rows, which then build fresh. */
+function depsSignatureMatches(
+  specs: readonly BindingSpec[],
+  cached: ReadonlyArray<readonly string[]>,
+): boolean {
+  if (specs.length !== cached.length) return false
+  for (let i = 0; i < specs.length; i++) {
+    const a = specs[i]!.deps
+    const b = cached[i]!
+    if (a.length !== b.length) return false
+    for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) return false
+  }
+  return true
+}
+
 /** Items source for `signalEach`: an accessor reading the array out of the
  * component state, plus the dep paths the list depends on — the items path AND
  * any component-state paths the rows read (so the list reconciles on either). */
@@ -905,6 +924,14 @@ function buildSignalEach<T>(
   // shape once (from the first row) and reuse it for all rows, skipping per-row
   // buildPathTable + bindingMask.
   let directShape: ScopeShape | null = null
+  // Authoring rows (the render-callback path) ALSO usually share a template, so
+  // their specs carry identical deps too — but a render MAY be data-conditional
+  // (e.g. a block body that branches on `item.peek()`), producing different specs
+  // per row. So we memoize the shape AND its dep signature, reuse it only when a
+  // row's specs match (cheap array compare, no PathTable/mask rebuild), and fall
+  // back to a fresh shape otherwise. Mirrors `directShape` for the verbatim path.
+  let authorShape: ScopeShape | null = null
+  let authorDeps: ReadonlyArray<readonly string[]> | null = null
   const reconcile = (input: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
@@ -1059,8 +1086,20 @@ function buildSignalEach<T>(
           directShape ??= r.shape
           built.host.scope = r.scope
           scope = r.scope
+        } else if (authorShape && depsSignatureMatches(built.specs, authorDeps!)) {
+          // Authoring row whose spec structure matches the cached template: reuse
+          // the shared shape, skipping per-row buildPathTable + bindingMask.
+          const r = scopeFromSpecs(built.specs, authorShape)
+          built.host.scope = r.scope
+          scope = r.scope
         } else {
-          scope = buildAndPublishScope(built)
+          // First authoring row, or a data-conditional row that diverged: build a
+          // fresh shape and (re)seed the cache for subsequent matching rows.
+          const r = scopeFromSpecs(built.specs)
+          authorShape = r.shape
+          authorDeps = built.specs.map((s) => s.deps)
+          built.host.scope = r.scope
+          scope = r.scope
         }
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
