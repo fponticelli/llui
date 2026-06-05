@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp } from '@llui/dom'
+import { $getRoot, type LexicalEditor } from 'lexical'
+import { $isTableNode, $isTableRowNode, $isTableCellNode } from '@lexical/table'
 import { markdownEditor } from '../src/editor.js'
 import { corePlugin } from '../src/plugins/core.js'
 import { linkPlugin } from '../src/plugins/link.js'
 import { contextMenuPlugin } from '../src/plugins/context-menu.js'
 import { floatingToolbarPlugin } from '../src/plugins/floating-toolbar.js'
+import { tablePlugin } from '../src/plugins/table.js'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -87,5 +90,44 @@ describe('floating toolbar plugin', () => {
     app.send({ type: 'plugin', name: 'floatingToolbar', msg: { type: 'hide' } })
     await wait(0)
     expect(document.querySelector('[data-scope="md-floating"][data-part="bar"]')).toBeNull()
+  })
+})
+
+describe('table editing tools', () => {
+  it('shows the toolbar in a cell and inserts a row at the selection', async () => {
+    let editor!: LexicalEditor
+    app = mountApp(
+      container,
+      markdownEditor({
+        plugins: [tablePlugin(), corePlugin()],
+        defaultValue: '| A | B |\n| --- | --- |\n| 1 | 2 |',
+        onReady: (e) => {
+          editor = e
+        },
+      }),
+    )
+    await wait(0)
+    // Place the caret in the first body cell.
+    editor.update(
+      () => {
+        const table = $getRoot().getChildren().find($isTableNode)
+        if (!$isTableNode(table)) return
+        const row = table.getChildren()[1]
+        if (!$isTableRowNode(row)) return
+        const cell = row.getChildren()[0]
+        if ($isTableCellNode(cell)) cell.selectStart()
+      },
+      { discrete: true },
+    )
+    await wait(0)
+    expect(document.querySelector('[data-scope="md-table-tools"][data-part="bar"]')).not.toBeNull()
+    expect(
+      document.querySelectorAll('[data-scope="md-table-tools"][data-part="tool"]').length,
+    ).toBe(7)
+
+    const rowsBefore = container.querySelectorAll('table tr').length
+    app.send({ type: 'plugin', name: 'table', msg: { type: 'op', id: 'rowBelow' } })
+    await wait(0)
+    expect(container.querySelectorAll('table tr').length).toBe(rowsBefore + 1)
   })
 })

@@ -5,12 +5,24 @@
 // Place `tablePlugin()` before `corePlugin()` so its multiline transformer is
 // tried ahead of the generic code-block one.
 
-import { $createParagraphNode, $createTextNode, type LexicalNode } from 'lexical'
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getSelection,
+  $isRangeSelection,
+  type LexicalNode,
+} from 'lexical'
 import { $insertNodeToNearestRoot } from '@lexical/utils'
 import {
   $createTableCellNode,
   $createTableNode,
   $createTableRowNode,
+  $deleteTableColumnAtSelection,
+  $deleteTableRowAtSelection,
+  $getTableCellNodeFromLexicalNode,
+  $getTableNodeFromLexicalNodeOrThrow,
+  $insertTableColumnAtSelection,
+  $insertTableRowAtSelection,
   $isTableNode,
   TableCellHeaderStates,
   TableCellNode,
@@ -18,7 +30,62 @@ import {
   TableRowNode,
 } from '@lexical/table'
 import type { MultilineElementTransformer } from '@lexical/markdown'
+import { button, derived, div, portal, show, text, type Signal } from '@llui/dom'
+import { definePluginUI } from './ui.js'
 import type { MarkdownPlugin } from './types.js'
+
+interface TableToolsState {
+  open: boolean
+  x: number
+  y: number
+}
+
+type TableToolsMsg =
+  | { type: 'show'; x: number; y: number }
+  | { type: 'hide' }
+  | { type: 'op'; id: string }
+type TableToolsEffect = { type: 'run'; id: string }
+
+const TABLE_TOOLS: ReadonlyArray<{ id: string; label: string; title: string }> = [
+  { id: 'rowAbove', label: '↑＋', title: 'Insert row above' },
+  { id: 'rowBelow', label: '↓＋', title: 'Insert row below' },
+  { id: 'colLeft', label: '←＋', title: 'Insert column left' },
+  { id: 'colRight', label: '→＋', title: 'Insert column right' },
+  { id: 'delRow', label: '✕R', title: 'Delete row' },
+  { id: 'delCol', label: '✕C', title: 'Delete column' },
+  { id: 'delTable', label: '🗑', title: 'Delete table' },
+]
+
+/** Run a table editing operation against the current cell selection. */
+function $runTableOp(id: string): void {
+  switch (id) {
+    case 'rowAbove':
+      $insertTableRowAtSelection(false)
+      return
+    case 'rowBelow':
+      $insertTableRowAtSelection(true)
+      return
+    case 'colLeft':
+      $insertTableColumnAtSelection(false)
+      return
+    case 'colRight':
+      $insertTableColumnAtSelection(true)
+      return
+    case 'delRow':
+      $deleteTableRowAtSelection()
+      return
+    case 'delCol':
+      $deleteTableColumnAtSelection()
+      return
+    case 'delTable': {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) return
+      const cell = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
+      if (cell) $getTableNodeFromLexicalNodeOrThrow(cell).remove()
+      return
+    }
+  }
+}
 
 function splitRow(line: string): string[] {
   return line
@@ -95,6 +162,80 @@ export function tablePlugin(): MarkdownPlugin {
     name: 'table',
     nodes: [TableNode, TableRowNode, TableCellNode],
     transformers: [TABLE_TRANSFORMER],
+    // A contextual toolbar appears above the table whenever the caret is in a cell.
+    register: (editor, ctx) => {
+      const refresh = (): void => {
+        const tableKey = editor.getEditorState().read(() => {
+          const selection = $getSelection()
+          if (!$isRangeSelection(selection)) return null
+          const cell = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
+          return cell ? $getTableNodeFromLexicalNodeOrThrow(cell).getKey() : null
+        })
+        const el = tableKey ? editor.getElementByKey(tableKey) : null
+        if (!el) {
+          ctx.emit({ type: 'plugin', name: 'table', msg: { type: 'hide' } })
+          return
+        }
+        const rect = el.getBoundingClientRect()
+        ctx.emit({
+          type: 'plugin',
+          name: 'table',
+          msg: { type: 'show', x: rect.left, y: rect.top },
+        })
+      }
+      return editor.registerUpdateListener(() => refresh())
+    },
+    ui: definePluginUI<TableToolsState, TableToolsMsg, TableToolsEffect>({
+      init: () => ({ open: false, x: 0, y: 0 }),
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'show':
+            return { open: true, x: msg.x, y: msg.y }
+          case 'hide':
+            return state.open ? { ...state, open: false } : state
+          case 'op':
+            return [state, [{ type: 'run', id: msg.id }]]
+        }
+      },
+      onEffect: (effect, ctx) => {
+        const editor = ctx.editor()
+        if (editor) editor.update(() => $runTableOp(effect.id))
+      },
+      view: ({ state, send }) => [
+        show(state.at('open'), () => [
+          portal(() => [
+            div(
+              {
+                'data-scope': 'md-table-tools',
+                'data-part': 'bar',
+                style: derived(
+                  state.at('x'),
+                  state.at('y'),
+                  (x, y) =>
+                    `position:fixed;left:${x}px;top:${y}px;transform:translateY(-118%);z-index:62`,
+                ) as Signal<string>,
+              },
+              TABLE_TOOLS.map((tool) =>
+                button(
+                  {
+                    type: 'button',
+                    'data-scope': 'md-table-tools',
+                    'data-part': 'tool',
+                    title: tool.title,
+                    'aria-label': tool.title,
+                    onMouseDown: (e: MouseEvent) => {
+                      e.preventDefault()
+                      send({ type: 'op', id: tool.id })
+                    },
+                  },
+                  [text(tool.label)],
+                ),
+              ),
+            ),
+          ]),
+        ]),
+      ],
+    }),
     items: [
       {
         id: 'table',

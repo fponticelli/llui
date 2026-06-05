@@ -289,6 +289,30 @@
   background: var(--md-surface-2);
   font-weight: 600;
 }
+[data-scope='md-table-tools'][data-part='bar'] {
+  display: flex;
+  gap: 0.1rem;
+  padding: 0.2rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+[data-scope='md-table-tools'][data-part='tool'] {
+  font: inherit;
+  font-size: 0.78rem;
+  min-width: 1.9rem;
+  height: 1.8rem;
+  padding: 0 0.3rem;
+  color: var(--md-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+[data-scope='md-table-tools'][data-part='tool']:hover {
+  background: var(--md-surface-2);
+}
 
 /* ── Math block ───────────────────────────────────────────────────────── */
 [data-scope='md-math'][data-part='root'] {
