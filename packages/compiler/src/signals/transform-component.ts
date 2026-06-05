@@ -262,7 +262,6 @@ export function transformSignalComponentSource(
     }
     node.forEachChild(visit)
   }
-  visit(sf)
 
   // ── Pass 2: view-helper coverage ────────────────────────────────────────────
   // Lower `each(...)` calls that live OUTSIDE a component view — i.e. inside view-
@@ -290,8 +289,18 @@ export function transformSignalComponentSource(
     }
     node.forEachChild(visitHelpers)
   }
-  visitHelpers(sf)
-  setHelperDecls(null)
+
+  // The ambient helper registry + auto-batch context are module-level; a throw during
+  // lowering must not leak them into the NEXT file the (singleton) transform processes
+  // (a stale registry would resolve a helper name to the wrong file's declaration), so
+  // reset both in `finally` regardless of how the passes exit.
+  try {
+    visit(sf)
+    visitHelpers(sf)
+  } finally {
+    setHelperDecls(null)
+    setAutoBatchContext(null)
+  }
 
   if (!transformedAny) return source
 
