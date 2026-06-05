@@ -1574,6 +1574,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         }
       },
     }),
+    { devtools: false },
   )
   ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = undefined
 

@@ -295,6 +295,7 @@ export async function pickElement(): Promise<PickResult> {
           }
         },
       }),
+      { devtools: false },
     )
   })
 }

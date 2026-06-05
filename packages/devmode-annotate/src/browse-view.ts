@@ -1216,6 +1216,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
       view: makeView(opts.origin, onReplay),
       onEffect: (eff, { send }) => runEffect(eff, send, opts, reportError),
     }),
+    { devtools: false },
   )
 
   let refreshTimer: ReturnType<typeof setTimeout> | null = null

@@ -233,6 +233,7 @@ export function drawRect(opts: DrawRectOptions = {}): Promise<DrawRectResult> {
           if (eff.type === 'resolve') settle(eff.rect, eff.reason)
         },
       }),
+      { devtools: false },
     )
   })
 }
