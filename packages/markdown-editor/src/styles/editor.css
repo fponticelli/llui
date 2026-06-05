@@ -300,6 +300,63 @@
   background: var(--md-primary-soft);
 }
 
+/* ── Context menu ─────────────────────────────────────────────────────── */
+[data-scope='md-context'][data-part='backdrop'] {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+[data-scope='md-context'][data-part='root'] {
+  min-width: 11rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.25rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+[data-scope='md-context'][data-part='option'] {
+  padding: 0.35rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  color: var(--md-text);
+  cursor: pointer;
+}
+[data-scope='md-context'][data-part='option']:hover {
+  background: var(--md-primary-soft);
+}
+
+/* ── Floating selection toolbar ───────────────────────────────────────── */
+[data-scope='md-floating'][data-part='bar'] {
+  display: flex;
+  gap: 0.1rem;
+  padding: 0.2rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+[data-scope='md-floating'][data-part='item'] {
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  padding: 0 0.35rem;
+  color: var(--md-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+[data-scope='md-floating'][data-part='item']:hover {
+  background: var(--md-surface-2);
+}
+[data-scope='md-floating'][data-part='item'][data-active] {
+  background: var(--md-primary-soft);
+  color: #fff;
+}
+
 /* ── Link dialog ──────────────────────────────────────────────────────── */
 [data-scope='dialog'][data-part='backdrop'] {
   position: fixed;
