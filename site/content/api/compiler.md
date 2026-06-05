@@ -959,6 +959,18 @@ export type MessageAnnotations = {
    * its dispatchMode-driven affordance behavior).
    */
   routeGate: string | null
+  /**
+   * Human-readable reason surfaced when the `@routeGated` predicate is
+   * FALSE. Authored as the optional second argument of `@routeGated`:
+   * `@routeGated("step === 'review'", "available during the review step")`.
+   * `list_actions` includes the gated variant as `available: false` with
+   * this string as `unavailableReason`, so the agent learns the action
+   * exists and what unblocks it instead of seeing it silently vanish.
+   *
+   * Null when `@routeGated` has no second argument (the runtime falls back
+   * to a generic "not available in the current state").
+   */
+  routeGateReason: string | null
 }
 ```
 

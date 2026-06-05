@@ -16,6 +16,7 @@ export function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): 
     if (v.requiresConfirm) return true
     if (v.dispatchMode !== 'shared') return true
     if (v.routeGate != null) return true
+    if (v.routeGateReason != null) return true
   }
   return false
 }
@@ -70,6 +71,17 @@ export function annotationsToObjectLiteral(
                   ts.factory.createPropertyAssignment(
                     'routeGate',
                     ts.factory.createStringLiteral(ann.routeGate),
+                  ),
+                ]
+              : []),
+            // `routeGateReason` rides alongside `routeGate` — emitted only when
+            // authored (the optional 2nd arg of `@routeGated`). The runtime
+            // falls back to a generic reason when it's absent.
+            ...(ann.routeGateReason != null
+              ? [
+                  ts.factory.createPropertyAssignment(
+                    'routeGateReason',
+                    ts.factory.createStringLiteral(ann.routeGateReason),
                   ),
                 ]
               : []),
@@ -139,6 +151,18 @@ export type MessageAnnotations = {
    * its dispatchMode-driven affordance behavior).
    */
   routeGate: string | null
+  /**
+   * Human-readable reason surfaced when the `@routeGated` predicate is
+   * FALSE. Authored as the optional second argument of `@routeGated`:
+   * `@routeGated("step === 'review'", "available during the review step")`.
+   * `list_actions` includes the gated variant as `available: false` with
+   * this string as `unavailableReason`, so the agent learns the action
+   * exists and what unblocks it instead of seeing it silently vanish.
+   *
+   * Null when `@routeGated` has no second argument (the runtime falls back
+   * to a generic "not available in the current state").
+   */
+  routeGateReason: string | null
 }
 
 const DEFAULT: MessageAnnotations = {
@@ -150,6 +174,7 @@ const DEFAULT: MessageAnnotations = {
   warning: null,
   emits: [],
   routeGate: null,
+  routeGateReason: null,
 }
 
 /**
@@ -244,6 +269,7 @@ function parseAnnotations(comment: string): MessageAnnotations {
   // we don't silently lock out one audience based on tag order.
   const dispatchMode: DispatchMode =
     human && !agent ? 'human-only' : agent && !human ? 'agent-only' : 'shared'
+  const rg = readRouteGate(comment)
   return {
     intent,
     alwaysAffordable: /@alwaysAffordable\b/.test(comment),
@@ -252,23 +278,34 @@ function parseAnnotations(comment: string): MessageAnnotations {
     examples: readExamples(comment),
     warning: readWarning(comment),
     emits: readEmits(comment),
-    routeGate: readRouteGate(comment),
+    routeGate: rg.gate,
+    routeGateReason: rg.reason,
   }
 }
 
 /**
  * Match `@routeGated("predicate-expression")` (and curly-quote
- * variant). Returns the verbatim predicate string — the runtime
- * compiles it with `new Function('state', 'return (' + src + ')')`
- * and evaluates against the current state to gate affordances.
+ * variant), with an OPTIONAL second string argument carrying the
+ * human-readable unavailability reason:
+ *
+ *   @routeGated("state.step === 'review'")
+ *   @routeGated("state.step === 'review'", "available during the review step")
+ *
+ * Returns the verbatim predicate string (`gate`) — the runtime compiles
+ * it with `new Function('state', 'return (' + src + ')')` and evaluates
+ * against the current state to gate affordances — and the optional
+ * `reason` string (null when the second argument is absent).
  *
  * Mirrors `@validates`'s grammar but with `state` as the bound
  * variable instead of `v` (since the predicate sees the whole app
  * state, not a single field value).
  */
-function readRouteGate(comment: string): string | null {
-  const match = comment.match(/@routeGated\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
+function readRouteGate(comment: string): { gate: string | null; reason: string | null } {
+  const match = comment.match(
+    /@routeGated\s*\(\s*["“]([^"”]*)["”]\s*(?:,\s*["“]([^"”]*)["”]\s*)?\)/,
+  )
+  if (!match) return { gate: null, reason: null }
+  return { gate: match[1] ?? null, reason: match[2] ?? null }
 }
 
 /**

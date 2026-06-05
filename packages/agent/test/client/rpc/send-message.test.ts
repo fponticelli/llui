@@ -68,7 +68,7 @@ describe('handleSendMessage — validation and annotations', () => {
     expect(result).toEqual({ status: 'rejected', reason: 'invalid' })
   })
 
-  it('human-only annotation → {status: rejected, reason: human-only}, no side effects', async () => {
+  it('human-only annotation → rejected with reason + a human-readable detail, no side effects', async () => {
     const send = vi.fn()
     const proposeConfirm = vi.fn()
     const annotations: Record<string, MessageAnnotations> = {
@@ -86,7 +86,10 @@ describe('handleSendMessage — validation and annotations', () => {
 
     const result = await handleSendMessage(host, { msg: { type: 'ClickButton' } })
 
-    expect(result).toEqual({ status: 'rejected', reason: 'human-only' })
+    expect(result.status).toBe('rejected')
+    expect(result).toMatchObject({ status: 'rejected', reason: 'human-only' })
+    // the rejection now explains WHY, referencing the variant's intent
+    expect((result as { detail?: string }).detail).toContain('click button')
     expect(send).not.toHaveBeenCalled()
     expect(proposeConfirm).not.toHaveBeenCalled()
   })
