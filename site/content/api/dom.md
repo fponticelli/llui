@@ -1574,6 +1574,14 @@ export interface ValidationError {
   /** Set by the legacy validator; the signal validator omits these. */
   expected?: string
   received?: string
+  /**
+   * A complete, valid example message — attached to the FIRST error so an LLM
+   * can construct the corrected message in one shot instead of inferring the
+   * shape from the schema. Built for the targeted variant (or a representative
+   * variant when the variant is unknown/missing), reusing any valid fields the
+   * caller already supplied.
+   */
+  example?: Record<string, unknown>
 }
 ```
 
