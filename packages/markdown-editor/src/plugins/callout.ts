@@ -46,10 +46,15 @@ function isCalloutData(value: unknown): value is CalloutData {
   )
 }
 
-type CalloutMsg = { type: 'cycle' }
+type CalloutMsg = { type: 'cycle' } | { type: 'commitText'; text: string }
 
-/** The LLui sub-view rendered inside a callout DecoratorNode. Clicking the badge
- * cycles the kind and persists it into the Lexical node (→ markdown updates). */
+// Keep keyboard/input/paste events from bubbling to the outer Lexical editor so
+// the nested editable text island edits natively without Lexical intercepting.
+const stop = (e: Event): void => e.stopPropagation()
+
+/** The LLui sub-view rendered inside a callout DecoratorNode. The badge cycles
+ * the kind; the text is an editable island that persists into the Lexical node
+ * on blur (both round-trip to markdown). */
 const calloutBridge = decoratorBridge<CalloutData, CalloutData, CalloutMsg, never>(
   BRIDGE_TYPE,
   (data, api) =>
@@ -62,6 +67,11 @@ const calloutBridge = decoratorBridge<CalloutData, CalloutData, CalloutMsg, neve
           api.update({ kind, text: state.text })
           return { ...state, kind }
         }
+        if (msg.type === 'commitText') {
+          if (msg.text === state.text) return state
+          api.update({ kind: state.kind, text: msg.text })
+          return { ...state, text: msg.text }
+        }
         return state
       },
       view: ({ state, send }) => [
@@ -71,6 +81,9 @@ const calloutBridge = decoratorBridge<CalloutData, CalloutData, CalloutMsg, neve
             'data-part': 'root',
             'data-kind': state.at('kind') as Signal<string>,
             contenteditable: 'false',
+            onKeyDown: stop,
+            onBeforeInput: stop,
+            onPaste: stop,
           },
           [
             button(
@@ -82,7 +95,17 @@ const calloutBridge = decoratorBridge<CalloutData, CalloutData, CalloutMsg, neve
               },
               [text(state.at('kind').map((k) => KIND_LABEL[k]))],
             ),
-            span({ 'data-part': 'text' }, [text(state.at('text') as Signal<string>)]),
+            span(
+              {
+                'data-part': 'text',
+                contenteditable: 'true',
+                role: 'textbox',
+                'aria-label': 'Callout text',
+                onBlur: (e: FocusEvent) =>
+                  send({ type: 'commitText', text: (e.target as HTMLElement).textContent ?? '' }),
+              },
+              [text(state.at('text') as Signal<string>)],
+            ),
           ],
         ),
       ],

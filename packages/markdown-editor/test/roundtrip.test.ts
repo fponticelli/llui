@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createHeadlessEditor } from '@lexical/headless'
 import { $convertFromMarkdownString, $convertToMarkdownString } from '@lexical/markdown'
+import { $getRoot } from 'lexical'
+import { $isListNode, $isListItemNode } from '@lexical/list'
 import { corePlugin } from '../src/plugins/core.js'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { GFM_NODES } from '../src/transformers/gfm.js'
@@ -51,6 +53,27 @@ describe('GFM markdown round-trip (in === out)', () => {
       expect(roundtrip(md)).toBe(md)
     })
   }
+
+  it('parses a task item as a real check-list item (not a bullet with literal [x])', () => {
+    const editor = createHeadlessEditor({
+      namespace: 'check',
+      nodes: [...GFM_NODES],
+      onError: (e) => {
+        throw e
+      },
+    })
+    editor.update(() => $convertFromMarkdownString('- [x] done\n- [ ] todo', transformers), {
+      discrete: true,
+    })
+    const checks = editor.getEditorState().read(() => {
+      const list = $getRoot().getFirstChild()
+      if (!$isListNode(list)) return null
+      return list
+        .getChildren()
+        .map((item) => ($isListItemNode(item) ? item.getChecked() : 'not-li'))
+    })
+    expect(checks).toEqual([true, false])
+  })
 
   it('preserves a multi-block document', () => {
     const doc = [

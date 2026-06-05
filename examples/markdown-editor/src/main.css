@@ -219,6 +219,47 @@ code {
   padding-left: 1.4rem;
 }
 
+/* Task-list items (Lexical renders them as li[role="checkbox"]). The ::before is
+   the clickable checkbox; registerCheckList toggles on a click in that region. */
+.editor li[role='checkbox'] {
+  position: relative;
+  list-style: none;
+  margin-left: -0.4rem;
+  padding-left: 1.5rem;
+  outline: none;
+}
+.editor li[role='checkbox']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.25em;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.editor li[role='checkbox'][aria-checked='true'] {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.editor li[role='checkbox'][aria-checked='true']::before {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.editor li[role='checkbox'][aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 0.34rem;
+  top: 0.3em;
+  width: 0.28rem;
+  height: 0.55rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
 .editor a {
   color: var(--primary);
 }
@@ -341,7 +382,19 @@ code {
 }
 
 [data-scope='md-callout'] [data-part='text'] {
+  flex: 1;
   padding-top: 0.1rem;
+  outline: none;
+  border-radius: 4px;
+}
+
+[data-scope='md-callout'] [data-part='text']:focus {
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+[data-scope='md-callout'] [data-part='text']:empty::before {
+  content: 'Callout text…';
+  color: var(--muted);
 }
 
 [data-scope='md-callout'][data-kind='note'] {

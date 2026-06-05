@@ -6,6 +6,7 @@ import {
   $createParagraphNode,
   $getSelection,
   $isRangeSelection,
+  COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
@@ -13,6 +14,7 @@ import {
   type LexicalEditor,
   type TextFormatType,
 } from 'lexical'
+import { mergeRegister } from '@lexical/utils'
 import { $setBlocksType } from '@lexical/selection'
 import { $createHeadingNode, $createQuoteNode, type HeadingTagType } from '@lexical/rich-text'
 import { $createCodeNode } from '@lexical/code-core'
@@ -20,9 +22,10 @@ import {
   INSERT_CHECK_LIST_COMMAND,
   INSERT_ORDERED_LIST_COMMAND,
   INSERT_UNORDERED_LIST_COMMAND,
+  registerCheckList,
   registerList,
 } from '@lexical/list'
-import { TOGGLE_LINK_COMMAND } from '@lexical/link'
+import { $toggleLink, TOGGLE_LINK_COMMAND } from '@lexical/link'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 import { GFM_NODES, GFM_TRANSFORMERS } from '../transformers/gfm.js'
 
@@ -212,7 +215,22 @@ export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
     nodes: GFM_NODES,
     transformers: GFM_TRANSFORMERS,
     items,
-    register: (editor) => registerList(editor),
+    // registerList wires list commands/indentation; registerCheckList adds the
+    // click-to-toggle on task items; the link command is registered directly
+    // (registerLink in 0.45 requires the extension-system store wiring).
+    register: (editor) =>
+      mergeRegister(
+        registerList(editor),
+        registerCheckList(editor),
+        editor.registerCommand(
+          TOGGLE_LINK_COMMAND,
+          (payload) => {
+            $toggleLink(payload)
+            return true
+          },
+          COMMAND_PRIORITY_LOW,
+        ),
+      ),
     shortcuts: [
       { combo: 'Mod-Alt-1', run: shortcut('h1') },
       { combo: 'Mod-Alt-2', run: shortcut('h2') },

@@ -43,9 +43,11 @@ export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
 export const GFM_TRANSFORMERS: readonly Transformer[] = [
   HEADING,
   QUOTE,
+  // CHECK_LIST must precede the plain list transformers: `- [ ]`/`- [x]` also
+  // match `- `, so UNORDERED_LIST would otherwise swallow it as bullet text.
+  CHECK_LIST,
   UNORDERED_LIST,
   ORDERED_LIST,
-  CHECK_LIST,
   CODE,
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
