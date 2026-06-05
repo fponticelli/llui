@@ -331,4 +331,58 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain('batch, state, send: dispatch')
     })
   })
+
+  describe('view-helper coverage (cross-function lowering — each in helper functions)', () => {
+    it('lowers an each inside a view-helper function to eachDirect (items handle verbatim, row → factory)', () => {
+      const src = [
+        "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
+        'function rowsView(items: Signal<readonly { id: number; label: string }[]>): Renderable {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
+        '}',
+        'const C = component({',
+        '  init: () => ({ items: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [rowsView(state.at("items"))],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      // the helper's each becomes eachDirect, keeping the items handle VERBATIM
+      expect(out).toContain('eachDirect(items, (r) => r.id,')
+      expect(out).toContain('(doc, getCtx) =>')
+      expect(out).toContain('produce: (ctx) => ctx.item.label')
+      // NOT the component-rooted source form (helper params can't be statically rooted)
+      expect(out).not.toContain('signalEachDirect(')
+      // eachDirect import injected
+      expect(out).toMatch(/import \{[^}]*\beachDirect\b[^}]*\} from '@llui\/dom'/)
+    })
+
+    it('leaves a helper each VERBATIM when the row reads a non-root signal handle reactively', () => {
+      // `mode` is another helper signal param — reading it reactively in a row can't be
+      // ctx-rooted, so the row bails and the each stays the authoring (handle) form.
+      const src = [
+        "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
+        'function rowsView(items: Signal<readonly { id: number }[]>, mode: Signal<string>): Renderable {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({ class: mode.at("x") }, [text(item.at("y"))])] })])]',
+        '}',
+        'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [rowsView(state.at("items"), state.at("mode"))] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).not.toContain('eachDirect(')
+      expect(out).toContain('each(items, {') // authoring each, unchanged
+    })
+
+    it('does not turn a COMPONENT-view each into eachDirect (keeps the rooted signalEachDirect)', () => {
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      expect(out).toContain('signalEachDirect(') // component-view path: rooted source
+      expect(out).not.toMatch(/(?<![A-Za-z])eachDirect\(/) // not the standalone handle form
+    })
+  })
 })

@@ -12,7 +12,7 @@
 // multi-slice bags are follow-ups.
 
 import ts from 'typescript'
-import { transformNodeExpr, setAutoBatchContext } from './transform-view.js'
+import { transformNodeExpr, setAutoBatchContext, lowerHelperEach } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -49,6 +49,7 @@ const RUNTIME_HELPERS = [
   'react',
   'signalEach',
   'signalEachDirect',
+  'eachDirect',
   'applyAttr',
   'signalShow',
   'signalBranch',
@@ -233,6 +234,34 @@ export function transformSignalComponentSource(
     node.forEachChild(visit)
   }
   visit(sf)
+
+  // ── Pass 2: view-helper coverage ────────────────────────────────────────────
+  // Lower `each(...)` calls that live OUTSIDE a component view — i.e. inside view-
+  // helper functions (`fileTree(routeSig): Renderable { … each(…) }`), the documented
+  // composition default. Their items source roots in a call-site-bound signal param
+  // the compiler can't statically resolve, so the items handle is kept verbatim and
+  // only the row compiles to a factory (`eachDirect`). Skip any `each` already inside
+  // a pass-1 component-view edit range (those were lowered with a rooted source).
+  const pass1Ranges = edits.map((e) => [e.start, e.end] as const)
+  const insidePass1 = (n: ts.Node): boolean =>
+    pass1Ranges.some(([s, e]) => s < e && n.getStart(sf) >= s && n.getEnd() <= e)
+  const visitHelpers = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'each' &&
+      !insidePass1(node)
+    ) {
+      const lowered = lowerHelperEach(node, sf)
+      if (lowered) {
+        edits.push({ start: node.getStart(sf), end: node.getEnd(), text: lowered })
+        transformedAny = true
+        return // row factory bails on structural children, so no lowerable nested each
+      }
+    }
+    node.forEachChild(visitHelpers)
+  }
+  visitHelpers(sf)
 
   if (!transformedAny) return source
 

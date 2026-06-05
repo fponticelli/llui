@@ -13,7 +13,46 @@ import {
   signalBranch,
   applyAttr,
 } from '../../src/signals/dom'
+import { ul, li, button, text, eachDirect } from '../../src/signals/authoring'
 import { derived } from '../../src/signals/handle'
+
+/** Compile + load a source that uses view-HELPER functions (authoring ul/li/text +
+ * the handle-consuming eachDirect), for the cross-function transform-coverage tests.
+ * Provides the authoring helpers the lowered helper bodies reference, on top of the
+ * compiled-runtime set. */
+function compileAndLoadWithHelpers(
+  authored: string,
+  name: string,
+): Parameters<typeof mountSignalComponent>[1] {
+  const lowered = transformSignalComponentSource(authored)
+  const body = lowered
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('import '))
+    .join('\n')
+    .replace(/export\s+const/g, 'const')
+  const wrapped = `(function(signalText, staticText, el, react, signalEachDirect, eachDirect, applyAttr, ul, li, button, text, component){
+    ${body}
+    return { ${name} }
+  })`
+  const js = ts.transpileModule(wrapped, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText
+  const factory = eval(js) as (...args: unknown[]) => Record<string, unknown>
+  return factory(
+    signalText,
+    staticText,
+    el,
+    react,
+    signalEachDirect,
+    eachDirect,
+    applyAttr,
+    ul,
+    li,
+    button,
+    text,
+    (s: unknown) => s,
+  )[name] as Parameters<typeof mountSignalComponent>[1]
+}
 
 // The compiler's direct-construction fast path: a static-skeleton `each` row
 // (elements + static attrs + static/signal `text`) lowers to `signalEachDirect`
@@ -376,5 +415,46 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     container.querySelectorAll('a')[1]!.dispatchEvent(new Event('click'))
     expect((h.getState() as { opened?: string }).opened).toBe('/README')
     expect((h.getState() as { openedDir?: boolean }).openedDir).toBe(false)
+  })
+
+  it('lowers + runs an each inside a VIEW-HELPER function (eachDirect, items handle verbatim)', () => {
+    // The documented composition default: the list `each` lives in a helper function
+    // (rowsView), not the component view. Transform coverage lowers it to eachDirect —
+    // items handle kept verbatim, row → factory. Verify it renders + dispatches by id.
+    const HELPER = `
+      import { component, ul, li, button, text, each } from '@llui/dom'
+      function rowsView(items, send) {
+        return [
+          ul({}, [
+            each(items, {
+              key: (r) => r.id,
+              render: (item) => [
+                li({}, [button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
+              ],
+            }),
+          ]),
+        ]
+      }
+      export const App = component({
+        init: () => [{ rows: [{ id: 10, label: 'a' }, { id: 20, label: 'b' }] }, []],
+        update: (s, m) => (m.type === 'pick' ? [{ rows: s.rows, picked: m.id }, []] : [s, []]),
+        view: ({ state, send }) => rowsView(state.at('rows'), send),
+      })
+    `
+    const out = transformSignalComponentSource(HELPER)
+    expect(out).toContain('eachDirect(items, (r) => r.id,') // helper each lowered, items verbatim
+    expect(out).toContain('getCtx().item.id') // handler reads live row id
+
+    const def = compileAndLoadWithHelpers(HELPER, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const labels = (): string[] =>
+      [...container.querySelectorAll('button')].map((b) => b.textContent ?? '')
+    expect(labels()).toEqual(['a', 'b'])
+
+    container.querySelectorAll('button')[1]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(20)
+    container.querySelectorAll('button')[0]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(10)
   })
 })

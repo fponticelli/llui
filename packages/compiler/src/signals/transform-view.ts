@@ -106,6 +106,33 @@ function loweredLeaksIdent(src: string, ident: string): boolean {
   return new RegExp(`(?<![.\\w$'"\`])${escaped}(?![\\w$])`).test(src)
 }
 
+/** True if `expr` reads a signal handle via `.at(...)`/`.map(...)` on a NON-root
+ * bare identifier — i.e. a handle the row-ctx roots (`item`/`index`/`state`) don't
+ * cover, such as a view-HELPER's signal param (`mode.at('x')`). Such a read must
+ * stay reactive, but a static text/attr slot would mis-emit it as `String(<handle>)`
+ * — so the caller bails that row to the authoring path. (`.peek()` is excluded: it
+ * returns a VALUE and the handle is in lexical scope, so emitting it once is fine.
+ * Array `.map`/`.at` false-positives only forgo the optimization, which is safe.) */
+function referencesNonRootSignal(expr: ts.Node, roots: Roots): boolean {
+  let found = false
+  const visit = (n: ts.Node): void => {
+    if (found) return
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      (n.expression.name.text === 'at' || n.expression.name.text === 'map') &&
+      ts.isIdentifier(n.expression.expression) &&
+      !roots.has(n.expression.expression.text)
+    ) {
+      found = true
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(expr)
+  return found
+}
+
 const ELEMENT_HELPERS = new Set([
   'div',
   'span',
@@ -693,6 +720,9 @@ function lowerRowFactory(
         // `text(isDir ? '📁' : '📄')` or `text(item.peek().name)`. Emit a one-time
         // text node; `.peek()` reads → live ctx, a leaked item/index handle is caught
         // by the final guard. (A `.map`/`.at` arg is a signal → the reactive path below.)
+        // Bail if it reads a non-root signal handle (e.g. a helper param) reactively —
+        // that must stay reactive, not be stringified once.
+        if (referencesNonRootSignal(arg, roots)) return false
         stmts.push(
           `${parentVar}.appendChild(doc.createTextNode(String(${rewriteHandlerReads(arg, sf, hRoots)})))`,
         )
@@ -778,6 +808,8 @@ function lowerRowFactory(
           stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, "")`)
         } else if (init.kind === ts.SyntaxKind.FalseKeyword) {
           // falsy boolean attr -> absent; nothing to emit
+        } else if (referencesNonRootSignal(init, roots)) {
+          return null // a non-root signal handle (e.g. helper param) read reactively
         } else {
           // Static (non-signal) value computed from row locals / view scope — apply
           // once via `applyAttr` (`.peek()` reads → live ctx; a leaked handle is caught
@@ -823,6 +855,43 @@ function lowerRowFactory(
  * the direct fast path bails on static occurrences so the slow path's `applyAttr`
  * handles them. Mirrors the runtime's `DOM_PROPERTIES`. */
 const DIRECT_SKIP_ATTRS = new Set(['value', 'checked', 'selected', 'indeterminate'])
+
+/** Lower a view-HELPER-scoped `each(items, { key, render })` to `eachDirect(items,
+ * key, factory)` — the handle-consuming authoring variant. Unlike the component-view
+ * each (whose items root in the bag `state`, lowered to a `{ items, deps }` source),
+ * a helper's items source roots in a CALL-SITE-bound signal param the compiler can't
+ * statically resolve, so the items expression is kept VERBATIM (a runtime handle) and
+ * only the ROW is compiled to a `RowFactory`. Returns null (→ leave the authoring
+ * `each`) when the row isn't factory-lowerable — incl. when it reads a non-root
+ * handle reactively (guarded inside `lowerRowFactory`). Used by the view-helper pass. */
+export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): string | null {
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'each') return null
+  const items = node.arguments[0]
+  const opts = node.arguments[1]
+  if (!items || !opts || !ts.isObjectLiteralExpression(opts)) return null
+  let keySrc: string | null = null
+  let renderFn: ts.Expression | null = null
+  let itemParam = 'item'
+  let indexParam: string | null = null
+  for (const p of opts.properties) {
+    if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
+    const name = p.name.getText(sf)
+    if (name === 'key') keySrc = p.initializer.getText(sf)
+    else if (name === 'render') {
+      renderFn = p.initializer
+      if (ts.isArrowFunction(renderFn) || ts.isFunctionExpression(renderFn)) {
+        if (renderFn.parameters[0] && ts.isIdentifier(renderFn.parameters[0].name))
+          itemParam = renderFn.parameters[0].name.text
+        if (renderFn.parameters[1] && ts.isIdentifier(renderFn.parameters[1].name))
+          indexParam = renderFn.parameters[1].name.text
+      }
+    } else return null // an unrecognized opt — bail conservatively
+  }
+  if (keySrc === null || !renderFn) return null
+  const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf)
+  if (!factory) return null
+  return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory})`
+}
 
 function transformProps(
   obj: ts.ObjectLiteralExpression,
