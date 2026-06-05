@@ -22,6 +22,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       '**/*.d.ts',
+      '**/*.prototype.ts', // scratch/prototype files — excluded from build, check, and lint
       '**/__fixtures__/**',
       'benchmarks/js-framework-benchmark-repo/**',
     ],
