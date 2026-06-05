@@ -71,11 +71,42 @@ function buildDashboardCell(
   return el('div', { class: 'ticker-cell' }, [el('span', { class: 'k' }, [label]), v])
 }
 
+// Canonical per-field formatting — the rendered text MUST be byte-identical to
+// the other framework implementations (react/solid/svelte/llui), which inline
+// these same rules. The split is purely by field, never by the runtime value:
+//   - 4-decimal currencies (EUR/GBP/CNY) → toFixed(4)
+//   - prices / changes / sectors / commodities / JPY → toFixed(2)
+//   - everything else (counts, status, mode) → raw String(value)
+// Note: NO `Number.isInteger` shortcut. The other frameworks always pad fixed
+// fields (e.g. sectorTech=0 renders "0.00", not "0"), so this must too.
+const FIXED4 = new Set<keyof Dashboard>(['usdEur', 'usdGbp', 'usdCny'])
+const FIXED2 = new Set<keyof Dashboard>([
+  'indexValue',
+  'indexChange',
+  'indexChangePct',
+  'sectorTech',
+  'sectorFin',
+  'sectorHealth',
+  'sectorEnergy',
+  'sectorConsumer',
+  'sectorIndustrial',
+  'sectorUtilities',
+  'sectorMaterials',
+  'sectorRealestate',
+  'sectorComm',
+  'sectorStaples',
+  'usdJpy',
+  'oil',
+  'gold',
+  'silver',
+  'copper',
+])
+
 function fmt(key: keyof Dashboard, value: Dashboard[typeof key]): string {
   if (typeof value === 'number') {
-    if (key === 'usdEur' || key === 'usdGbp' || key === 'usdCny') return value.toFixed(4)
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(2)
+    if (FIXED4.has(key)) return value.toFixed(4)
+    if (FIXED2.has(key)) return value.toFixed(2)
+    return String(value)
   }
   return String(value)
 }
