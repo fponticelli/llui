@@ -259,7 +259,14 @@ function readLeadingJSDoc(source: string, scanPos: number): string {
   return docs.join('\n')
 }
 
-function parseAnnotations(comment: string): MessageAnnotations {
+/**
+ * Parse a JSDoc comment string into `MessageAnnotations`. The single
+ * source of truth for the annotation grammar — used both for same-file
+ * Msg unions (here) and for cross-file resolution
+ * (`cross-file-resolver.ts` imports this rather than re-implementing it,
+ * so the two paths can't drift).
+ */
+export function parseAnnotations(comment: string): MessageAnnotations {
   if (!comment) return { ...DEFAULT, examples: [] }
   const intent = readIntent(comment)
   const human = /@humanOnly\b/.test(comment)

@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { type MessageAnnotations, type DispatchMode as MessageDispatchMode } from '@llui/compiler'
+import { type MessageAnnotations } from '@llui/compiler'
 import {
   type MsgSchema,
   type MsgField,
@@ -9,7 +9,7 @@ import {
   extractEffectSchema,
 } from './msg-schema.js'
 import { extractStateSchema } from './state-schema.js'
-import { extractMsgAnnotations } from './msg-annotations.js'
+import { extractMsgAnnotations, parseAnnotations } from './msg-annotations.js'
 
 /**
  * Resolved external type sources for the file under analysis: the source
@@ -284,7 +284,7 @@ async function collectMsgVariants(
       if (!variant) continue
       const comment = readLeadingJSDocForMember(located.source, alias, memberNodes, i)
       if (out[variant] === undefined) {
-        out[variant] = parseMessageAnnotations(comment)
+        out[variant] = parseAnnotations(comment)
       }
       continue
     }
@@ -349,80 +349,6 @@ function readLeadingJSDocForMember(
   // possible with weird formatting).
   const _end = member.pos
   return docs.join('\n')
-}
-
-function parseMessageAnnotations(comment: string): MessageAnnotations {
-  if (!comment) return defaultMessageAnnotations()
-  const intent = readIntentTag(comment)
-  const human = /@humanOnly\b/.test(comment)
-  const agent = /@agentOnly\b/.test(comment)
-  const dispatchMode: MessageDispatchMode =
-    human && !agent ? 'human-only' : agent && !human ? 'agent-only' : 'shared'
-  return {
-    intent,
-    alwaysAffordable: /@alwaysAffordable\b/.test(comment),
-    requiresConfirm: /@requiresConfirm\b/.test(comment),
-    dispatchMode,
-    examples: readExamplesTag(comment),
-    warning: readWarningTag(comment),
-    emits: readEmitsTag(comment),
-    routeGate: readRouteGateTag(comment),
-  }
-}
-
-function readRouteGateTag(comment: string): string | null {
-  const match = comment.match(/@routeGated\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
-}
-
-function readEmitsTag(comment: string): string[] {
-  const outer = comment.match(/@emits\s*\(([^)]*)\)/)
-  if (!outer || outer[1] === undefined) return []
-  const inner = outer[1]
-  const seen = new Set<string>()
-  const out: string[] = []
-  const re = /["“]([^"”]*)["”]/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(inner)) !== null) {
-    const v = m[1]
-    if (v === undefined || seen.has(v)) continue
-    seen.add(v)
-    out.push(v)
-  }
-  return out
-}
-
-function readExamplesTag(comment: string): string[] {
-  const out: string[] = []
-  const re = /@example\s*\(\s*["“]([^"”]*)["”]\s*\)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(comment)) !== null) {
-    if (m[1] !== undefined) out.push(m[1])
-  }
-  return out
-}
-
-function readWarningTag(comment: string): string | null {
-  const match = comment.match(/@warning\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
-}
-
-function defaultMessageAnnotations(): MessageAnnotations {
-  return {
-    intent: null,
-    alwaysAffordable: false,
-    requiresConfirm: false,
-    dispatchMode: 'shared',
-    examples: [],
-    warning: null,
-    emits: [],
-    routeGate: null,
-  }
-}
-
-function readIntentTag(comment: string): string | null {
-  const match = comment.match(/@intent\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
 }
 
 /**

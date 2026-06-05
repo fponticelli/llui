@@ -640,6 +640,18 @@ function extractMsgAnnotations(
 ): Record<string, MessageAnnotations> | null
 ```
 
+### `parseAnnotations()`
+
+Parse a JSDoc comment string into `MessageAnnotations`. The single
+source of truth for the annotation grammar — used both for same-file
+Msg unions (here) and for cross-file resolution
+(`cross-file-resolver.ts` imports this rather than re-implementing it,
+so the two paths can't drift).
+
+```typescript
+function parseAnnotations(comment: string): MessageAnnotations
+```
+
 ### `isRichField()`
 
 True when `f` is a rich descriptor (object with `type` key).
