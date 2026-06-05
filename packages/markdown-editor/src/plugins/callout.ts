@@ -3,7 +3,7 @@
 // TEA loop) with a clickable kind badge, and round-trips to `:::kind text`
 // markdown via a contributed element transformer.
 
-import { type ElementNode, type LexicalNode } from 'lexical'
+import { type ElementNode, type LexicalEditor, type LexicalNode } from 'lexical'
 import { $insertNodeToNearestRoot } from '@lexical/utils'
 import type { ElementTransformer } from '@lexical/markdown'
 import {
@@ -130,9 +130,35 @@ const CALLOUT_TRANSFORMER: ElementTransformer = {
   type: 'element',
 }
 
-/** Insert a fresh callout at the current selection. */
-export function $insertCallout(kind: CalloutKind = 'note', textValue = 'New callout'): void {
-  $insertNodeToNearestRoot($createLLuiDecoratorNode(BRIDGE_TYPE, { kind, text: textValue }))
+/** Insert a fresh callout at the current selection; returns the created node. */
+export function $insertCallout(
+  kind: CalloutKind = 'note',
+  textValue = 'New callout',
+): LLuiDecoratorNode {
+  return $insertNodeToNearestRoot($createLLuiDecoratorNode(BRIDGE_TYPE, { kind, text: textValue }))
+}
+
+/** Move focus into a callout's editable text island once it has decorated, and
+ * select its placeholder text so the next keystroke replaces it. */
+function focusCalloutText(editor: LexicalEditor, key: string, attempt = 0): void {
+  if (typeof requestAnimationFrame !== 'function') return
+  requestAnimationFrame(() => {
+    const span = editor.getElementByKey(key)?.querySelector('[data-part="text"]')
+    if (span instanceof HTMLElement) {
+      span.focus()
+      try {
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+      } catch {
+        /* selection API unavailable */
+      }
+    } else if (attempt < 3) {
+      focusCalloutText(editor, key, attempt + 1)
+    }
+  })
 }
 
 export interface CalloutPluginOptions {
@@ -154,7 +180,14 @@ export function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin {
         icon: 'callout',
         group: 'block',
         keywords: ['note', 'admonition', 'aside', 'tip', 'warning'],
-        run: (editor) => editor.update(() => $insertCallout(defaultKind)),
+        run: (editor) => {
+          let key = ''
+          editor.update(() => {
+            key = $insertCallout(defaultKind).getKey()
+          })
+          // Land the caret inside the new callout's text, not after the block.
+          focusCalloutText(editor, key)
+        },
         surfaces: ['toolbar', 'slash', 'context'],
       },
     ],

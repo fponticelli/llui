@@ -14,7 +14,7 @@ import {
   type LexicalEditor,
   type TextFormatType,
 } from 'lexical'
-import { mergeRegister } from '@lexical/utils'
+import { $findMatchingParent, mergeRegister } from '@lexical/utils'
 import { $setBlocksType } from '@lexical/selection'
 import { $createHeadingNode, $createQuoteNode, type HeadingTagType } from '@lexical/rich-text'
 import { $createCodeNode } from '@lexical/code-core'
@@ -25,7 +25,7 @@ import {
   registerCheckList,
   registerList,
 } from '@lexical/list'
-import { $toggleLink, TOGGLE_LINK_COMMAND } from '@lexical/link'
+import { $isLinkNode, $toggleLink, TOGGLE_LINK_COMMAND } from '@lexical/link'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 import { GFM_NODES, GFM_TRANSFORMERS } from '../transformers/gfm.js'
 
@@ -46,13 +46,43 @@ function heading(tag: HeadingTagType): (editor: LexicalEditor) => void {
   return block(() => $createHeadingNode(tag))
 }
 
+/** Resolve a link URL from the user. Return the URL to set, `''` to remove the
+ * link, or `null` to cancel. */
+export type LinkUrlResolver = (currentUrl: string | null, defaultUrl: string) => string | null
+
 export interface CorePluginOptions {
-  /** Default href inserted by the `link` command (the link editor refines it). */
+  /** Default href offered when prompting for a link URL. */
   defaultLinkHref?: string
+  /** How the `link` command obtains a URL. Defaults to `window.prompt`; swap in
+   * a custom dialog/popover here. */
+  resolveLinkUrl?: LinkUrlResolver
 }
+
+/** Read the URL of the link wrapping the current selection, if any. */
+function readSelectedLinkUrl(editor: LexicalEditor): string | null {
+  return editor.getEditorState().read(() => {
+    const selection = $getSelection()
+    if (!$isRangeSelection(selection)) return null
+    const link = $findMatchingParent(selection.anchor.getNode(), (node) => $isLinkNode(node))
+    return $isLinkNode(link) ? link.getURL() : null
+  })
+}
+
+const promptForUrl: LinkUrlResolver = (current, fallback) =>
+  typeof window !== 'undefined' && typeof window.prompt === 'function'
+    ? window.prompt('Link URL', current ?? fallback)
+    : null
 
 export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
   const defaultHref = opts.defaultLinkHref ?? 'https://'
+  const resolveLinkUrl = opts.resolveLinkUrl ?? promptForUrl
+
+  const applyLink = (editor: LexicalEditor): void => {
+    const url = resolveLinkUrl(readSelectedLinkUrl(editor), defaultHref)
+    if (url === null) return // cancelled
+    const trimmed = url.trim()
+    editor.dispatchCommand(TOGGLE_LINK_COMMAND, trimmed === '' ? null : trimmed)
+  }
 
   const items: CommandItem[] = [
     {
@@ -176,7 +206,7 @@ export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
       icon: 'link',
       group: 'inline',
       keywords: ['url', 'href'],
-      run: (e) => e.dispatchCommand(TOGGLE_LINK_COMMAND, defaultHref),
+      run: (e) => applyLink(e),
       isActive: (f) => f.link,
       surfaces: ['toolbar', 'floating', 'context'],
     },
