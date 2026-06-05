@@ -69,6 +69,16 @@ export const THEME_STYLESHEET = `
     --hud-kbd-fg: #c8c8d0;
   }
 }
+
+/* The HUD reuses @llui/components' data-scope/data-part hooks for behaviour.
+   A host app that loads the @llui/components theme would otherwise leak its
+   global component layout (e.g. [data-part="panel"] { padding: 16px }) into
+   the HUD. Neutralise padding/margin on those hooks within the HUD root; the
+   HUD's own inline styles (higher specificity) re-apply what it needs. */
+#llui-devmode-annotate-root [data-scope] {
+  padding: 0;
+  margin: 0;
+}
 `
 
 export const STYLES = {
