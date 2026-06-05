@@ -11,6 +11,38 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-05 — @llui/dom@0.8.0 (signalEachDirect + reconcile perf)
+
+**Released:** `@llui/dom@0.8.0`; `@llui/compiler@0.9.0`; `@llui/{vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,components,test}@0.9.0`; `@llui/{router,transitions,vike,agent}@0.8.0`; `llui-agent@0.8.0`; `@llui/mcp@0.10.0`
+
+Restores LLui to the leading benchmark pack after the signals migration: the create-construction regression is closed via a compiler direct-row path, and fine-grained streaming updates (a "ticker" suite) now lead the framework field. No breaking changes — all additive.
+
+### `@llui/dom@0.8.0`
+
+- **Added** `signalEachDirect` / authoring `eachDirect(items, key, rowFactory)` — a direct-construction keyed list: the same keyed reconcile as `each`, but each row is built by a `RowFactory` (direct DOM ops + binding specs wired by node reference) instead of running authoring helpers per row. New types `DirectRow` / `RowFactory`; `BindingSpec` is now exported as the factory contract. This is the compiler's fast-path target (see `@llui/compiler`) and is also usable hand-written.
+- **Improved** Each reconcile, two fine-grained-update wins: a **same-structure fast path** skips the O(n) keyed scan for in-place value updates (streaming ticks), and **state-fanout gating** skips the all-row re-evaluation sweep when the component-state paths a row reads didn't change. On the ticker suite: burst-1k 31.7 → 15.9 ms, tick-100 6.4 → 4.8 ms — LLui now beats every other framework on every ticker op.
+- **Improved** Lower per-node cost: class-based `Mountable` (one allocation, monomorphic `mount()`), `.at(path)` pre-splits its path once (no per-read `String.split`), and the binding mount/update loops drop the per-iteration `try/catch` on the common (no error-hook) path. Run-1k memory −11% vs the prior baseline.
+
+### `@llui/compiler@0.9.0`
+
+- **Added** Static-skeleton `each` rows (elements with static OR reactive attributes + static/signal `text`) lower to `signalEachDirect` with a generated `RowFactory` — direct DOM construction + bindings by node reference, no per-row authoring/`populate`/`pathHandle` overhead. Falls back to `signalEach` (unchanged behavior) for `on*` handlers, structural children, spreads, IDL/style props, dynamic args, or `index` reads.
+
+### `@llui/vite-plugin@0.9.0`, `@llui/compiler-devtools@0.9.0`, `@llui/compiler-introspection@0.9.0`, `@llui/compiler-ssr@0.9.0`
+
+- **Improved** Rebuilt against `@llui/compiler@0.9.0` (the direct-row codegen).
+
+### `@llui/components@0.9.0`, `@llui/test@0.9.0`, `@llui/router@0.8.0`, `@llui/transitions@0.8.0`, `@llui/vike@0.8.0`, `@llui/agent@0.8.0`, `llui-agent@0.8.0`
+
+- **Improved** Rebuilt against `@llui/dom@0.8.0`; peer `@llui/dom` range bumped to `^0.8.0`.
+
+### `@llui/mcp@0.10.0`
+
+- **Improved** Rebuilt against `@llui/dom@0.8.0` + `@llui/compiler@0.9.0`.
+
+### Docs
+
+- **Added** API reference regenerated for the new `signalEachDirect` / `eachDirect` / `DirectRow` / `RowFactory` / `BindingSpec` exports; README performance tables refreshed from an authoritative 5-run (standard + ticker) baseline; the `compiled-row-construction` proposal documents the full investigation.
+
 ## 2026-06-03 — 0.7.0
 
 **Released:** `@llui/dom@0.7.0`; `@llui/{router,transitions,vike,agent}@0.7.0`; `llui-agent@0.7.0`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr,components,test,vite-plugin}@0.8.0`; `@llui/mcp@0.9.0`
