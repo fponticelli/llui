@@ -841,13 +841,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       [
         ...headingRow(state, send),
         ...composeViewEl(state, send),
-        foreign({
-          tag: 'div',
-          mount: ({ el }) => {
-            el.appendChild(browse.el)
-            return browse
-          },
-        }),
+        // Browse view — hosted via foreign, shown only in the browse tab.
+        div({ 'style.display': state.map((s) => (s.view === 'browse' ? 'block' : 'none')) }, [
+          foreign({
+            tag: 'div',
+            mount: ({ el }) => {
+              el.appendChild(browse.el)
+              return browse
+            },
+          }),
+        ]),
         div(
           {
             style: STYLES.kbdHint,
