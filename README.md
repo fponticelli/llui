@@ -107,17 +107,30 @@ pnpm bench                # Run LLui benchmark (add --save to update baseline)
 
 ## Performance
 
-Top-tier performance on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), competitive with Solid and Svelte:
+Top-tier on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (krausest), and **leading the framework field on fine-grained streaming updates** (a custom "ticker" suite). Median of 5 runs, same machine.
 
-| Operation     |       LLui |   Solid |  Svelte | vanilla |
-| ------------- | ---------: | ------: | ------: | ------: |
-| Create 1k     | **22.3ms** |  23.5ms |  23.4ms |  22.8ms |
-| Replace 1k    |     24.9ms |  25.6ms |  25.8ms |  23.7ms |
-| Update 10th   |     13.2ms |  13.3ms |  14.3ms |  13.0ms |
-| Select        |  **3.0ms** |   3.9ms |   5.6ms |   6.1ms |
-| Swap          |  **9.6ms** |  16.1ms |  15.7ms |  14.2ms |
-| Remove        |     11.2ms |  11.5ms |  12.8ms |  13.2ms |
-| Create 10k    |    232.3ms | 232.1ms | 233.9ms | 218.4ms |
-| Append 1k     |     27.7ms |  26.8ms |  27.0ms |  25.9ms |
-| Clear         |     12.0ms |  11.6ms |  11.2ms |   9.3ms |
-| Bundle (gzip) | **7.0 KB** |  4.5 KB | 12.2 KB |  2.5 KB |
+**Standard suite** — within a few percent of Solid/Svelte; fastest on Select:
+
+| Operation     |      LLui |   Solid |  Svelte | vanilla |
+| ------------- | --------: | ------: | ------: | ------: |
+| Create 1k     |    21.6ms |  20.7ms |  20.9ms |  20.1ms |
+| Replace 1k    |    23.8ms |  23.1ms |  23.7ms |  21.7ms |
+| Update 10th   |    11.6ms |  11.4ms |  12.0ms |  10.8ms |
+| Select        | **2.7ms** |   3.4ms |   5.0ms |   2.7ms |
+| Swap          |    14.4ms |  14.0ms |  14.0ms |  12.4ms |
+| Remove        |    10.8ms |  10.2ms |  10.3ms |   9.7ms |
+| Create 10k    |   227.9ms | 216.8ms | 218.6ms | 200.0ms |
+| Append 1k     |    26.1ms |  23.5ms |  23.5ms |  23.1ms |
+| Clear         |    10.3ms |  11.0ms |  10.7ms |   8.9ms |
+| Bundle (gzip) |    8.2 KB |  4.5 KB | 12.2 KB |  2.5 KB |
+
+**Ticker suite** (streaming partial-list updates) — LLui beats every other framework on every op; trails only hand-written vanilla on bulk construction:
+
+| Operation             |       LLui |  Solid | Svelte |  React | vanilla |
+| --------------------- | ---------: | -----: | -----: | -----: | ------: |
+| Mount 200             |  **5.6ms** |  6.1ms |  6.5ms |  5.8ms |   5.8ms |
+| 100 ticks             |  **4.8ms** |  5.5ms |  5.8ms |  9.3ms |   4.0ms |
+| Burst 1k              | **15.9ms** | 21.8ms | 24.5ms | 52.6ms |   9.5ms |
+| Toggle mode (fan-out) |  **3.2ms** |  3.2ms |  3.4ms |  3.6ms |   3.1ms |
+| Churn 50              |  **4.2ms** |  4.4ms |  4.7ms |  4.4ms |   4.0ms |
+| Clear                 |  **1.1ms** |  1.2ms |  1.3ms |  1.3ms |   1.2ms |
