@@ -178,7 +178,7 @@ export function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin {
         id: 'callout',
         label: 'Callout',
         icon: 'callout',
-        group: 'block',
+        group: 'insert',
         keywords: ['note', 'admonition', 'aside', 'tip', 'warning'],
         run: (editor) => {
           let key = ''

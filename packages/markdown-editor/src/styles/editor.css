@@ -253,6 +253,31 @@
   background: #ef4444;
 }
 
+/* ── Image + horizontal-rule decorators ───────────────────────────────── */
+[data-scope='md-image'][data-part='root'] {
+  margin: 0.6rem 0;
+}
+[data-scope='md-image'] img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--md-border);
+  display: block;
+}
+[data-md-hr] {
+  border: none;
+  border-top: 1px solid var(--md-border);
+  margin: 1.2rem 0;
+}
+[data-md-image='alt'] {
+  margin-top: 0.5rem;
+}
+[data-md-image='file'] {
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--md-muted);
+}
+
 /* ── Link dialog ──────────────────────────────────────────────────────── */
 [data-scope='dialog'][data-part='backdrop'] {
   position: fixed;

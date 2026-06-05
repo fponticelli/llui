@@ -41,6 +41,9 @@ export {
   calloutPlugin,
   $insertCallout,
 } from './plugins/callout.js'
+export { hrPlugin, $insertHorizontalRule } from './plugins/hr.js'
+export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
+export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
 
 export { GFM_NODES, GFM_TRANSFORMERS } from './transformers/gfm.js'
 export { buildTransformers, orderTransformers } from './transformers/registry.js'

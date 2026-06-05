@@ -82,6 +82,9 @@ export function connectToolbar(
 const LINK_ICON =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 1 0-5-5l-1 1"/><path d="M14.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 1 0 5 5l1-1"/></svg>'
 
+const IMAGE_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>'
+
 /** Compact glyphs so the default toolbar reads as a real toolbar without icon
  * assets. SVG strings render as icons; everything else as text. Override via
  * `ToolbarOptions.glyphs`. */
@@ -91,6 +94,8 @@ export const DEFAULT_GLYPHS: Readonly<Record<string, string>> = {
   strikethrough: 'S',
   code: '</>',
   link: LINK_ICON,
+  image: IMAGE_ICON,
+  hr: '—',
   paragraph: '¶',
   h1: 'H1',
   h2: 'H2',
@@ -104,7 +109,7 @@ export const DEFAULT_GLYPHS: Readonly<Record<string, string>> = {
   redo: '↻',
 }
 
-const GROUP_ORDER = ['inline', 'block', 'list', 'history']
+const GROUP_ORDER = ['inline', 'block', 'list', 'insert', 'history']
 
 function groupItems(items: readonly CommandItem[]): string[][] {
   const groups = new Map<string, string[]>()

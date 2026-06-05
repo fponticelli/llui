@@ -14,6 +14,9 @@ import {
   markdownEditor,
   corePlugin,
   linkPlugin,
+  imagePlugin,
+  hrPlugin,
+  emojiPlugin,
   calloutPlugin,
   type EditorState,
 } from '@llui/markdown-editor'
@@ -41,6 +44,11 @@ const WELCOME_MD = [
   '```ts',
   'const editor = markdownEditor({ toolbar: true })',
   '```',
+  '',
+  '---',
+  '',
+  'Pluggable to the core — links, images, dividers, emoji :rocket:, and callouts',
+  'are all plugins. Type `:heart:` or `:tada:` and watch them swap. :sparkles:',
 ].join('\n')
 
 const SOURCE_MD = [
@@ -68,7 +76,14 @@ const fullApp = mountApp(
   byId('full-editor'),
   markdownEditor({
     toolbar: true,
-    plugins: [corePlugin(), linkPlugin(), calloutPlugin()],
+    plugins: [
+      corePlugin(),
+      linkPlugin(),
+      imagePlugin(),
+      hrPlugin(),
+      emojiPlugin(),
+      calloutPlugin(),
+    ],
     defaultValue: WELCOME_MD,
     changeDebounceMs: 150,
   }),
@@ -91,6 +106,8 @@ const commandButtons: ReadonlyArray<[string, string]> = [
   ['quote', 'Quote'],
   ['bulletList', '• List'],
   ['callout', '+ Callout'],
+  ['image', 'Image'],
+  ['horizontalRule', '— Divider'],
   ['undo', 'Undo'],
   ['redo', 'Redo'],
 ]
@@ -124,7 +141,14 @@ const sourceApp = mountApp(
   byId('source-editor'),
   markdownEditor({
     toolbar: true,
-    plugins: [corePlugin(), linkPlugin(), calloutPlugin()],
+    plugins: [
+      corePlugin(),
+      linkPlugin(),
+      imagePlugin(),
+      hrPlugin(),
+      emojiPlugin(),
+      calloutPlugin(),
+    ],
     defaultValue: SOURCE_MD,
     changeDebounceMs: 150,
     onChange: (md) => {
