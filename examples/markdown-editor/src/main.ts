@@ -20,6 +20,7 @@ import {
   contextMenuPlugin,
   floatingToolbarPlugin,
   mathPlugin,
+  mermaidPlugin,
   mentionPlugin,
   emojiPlugin,
   calloutPlugin,
@@ -59,6 +60,12 @@ const WELCOME_MD = [
   'bubble bar, or right-click for the context menu.',
   '',
   '$$E = mc^2$$',
+  '',
+  '```mermaid',
+  'graph TD',
+  '  A[Plugin] --> B[state slice]',
+  '  A --> C[view]',
+  '```',
 ].join('\n')
 
 const SOURCE_MD = [
@@ -87,6 +94,7 @@ const fullApp = mountApp(
   markdownEditor({
     toolbar: true,
     plugins: [
+      mermaidPlugin(),
       corePlugin(),
       linkPlugin(),
       imagePlugin(),
@@ -157,6 +165,7 @@ const sourceApp = mountApp(
   markdownEditor({
     toolbar: true,
     plugins: [
+      mermaidPlugin(),
       corePlugin(),
       linkPlugin(),
       imagePlugin(),

@@ -293,6 +293,28 @@
 [data-scope='md-math'] [data-part='preview'] {
   text-align: center;
 }
+
+/* ── Mermaid block ────────────────────────────────────────────────────── */
+[data-scope='md-mermaid'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  background: var(--md-surface-2);
+}
+[data-scope='md-mermaid'] [data-part='source'] {
+  font-family: var(--md-mono);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  color: var(--md-muted);
+  outline: none;
+}
+[data-scope='md-mermaid'] [data-part='source']:focus {
+  color: var(--md-text);
+}
 [data-md-image='alt'] {
   margin-top: 0.5rem;
 }

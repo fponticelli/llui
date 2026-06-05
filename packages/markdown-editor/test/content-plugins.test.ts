@@ -9,6 +9,7 @@ import { hrPlugin } from '../src/plugins/hr.js'
 import { emojiPlugin } from '../src/plugins/emoji.js'
 import { imagePlugin } from '../src/plugins/image.js'
 import { mathPlugin } from '../src/plugins/math.js'
+import { mermaidPlugin } from '../src/plugins/mermaid.js'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { GFM_NODES } from '../src/transformers/gfm.js'
 import { markdownEditor } from '../src/editor.js'
@@ -67,6 +68,25 @@ describe('content plugins — markdown round-trip', () => {
   it('math block round-trips to $$tex$$', () => {
     expect(convert('$$e = mc^2$$')).toBe('$$e = mc^2$$')
     expect(convert('$$\\int_0^1 x\\,dx$$')).toBe('$$\\int_0^1 x\\,dx$$')
+  })
+
+  it('mermaid fence round-trips (ordered before the code-block transformer)', () => {
+    // mermaidPlugin BEFORE corePlugin so its multiline transformer wins over CODE.
+    const t = buildTransformers([mermaidPlugin(), corePlugin()])
+    const editor = createHeadlessEditor({
+      namespace: 'mer',
+      nodes: [...GFM_NODES, LLuiDecoratorNode],
+      onError: (e) => {
+        throw e
+      },
+    })
+    const md = '```mermaid\ngraph TD\n  A --> B\n```'
+    let out = ''
+    editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
+    editor.getEditorState().read(() => {
+      out = $convertToMarkdownString(t)
+    })
+    expect(out).toBe(md)
   })
 })
 
