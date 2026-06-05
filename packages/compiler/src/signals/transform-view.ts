@@ -214,6 +214,38 @@ function arrowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
   return null
 }
 
+/** The row body for direct-factory lowering: any leading `const`/`let` declarations
+ * plus the returned node array — for a concise (`=> [...]`) OR block-body
+ * (`=> { <decls>; return [...] }`) render. Null when not lowerable as a static
+ * skeleton: a non-array return (including a data-conditional `cond ? [a] : [b]`,
+ * whose element structure varies per row), or any statement before the `return`
+ * that isn't a variable declaration. The declarations are validated + lowered by
+ * the caller (`item`/`index`/`state` `.peek()` reads → live row ctx; a signal-bound
+ * local bails). */
+function rowBody(
+  fn: ts.Expression,
+): { decls: readonly ts.VariableStatement[]; arr: ts.ArrayLiteralExpression } | null {
+  const concise = arrowReturnArray(fn)
+  if (concise) return { decls: [], arr: concise }
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  const body = fn.body
+  if (!body || !ts.isBlock(body)) return null
+  const decls: ts.VariableStatement[] = []
+  for (const stmt of body.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      decls.push(stmt)
+      continue
+    }
+    if (ts.isReturnStatement(stmt)) {
+      let e: ts.Expression | undefined = stmt.expression
+      while (e && ts.isParenthesizedExpression(e)) e = e.expression
+      return e && ts.isArrayLiteralExpression(e) ? { decls, arr: e } : null
+    }
+    return null // a non-declaration statement before the return — can't inline safely
+  }
+  return null // no array return
+}
+
 /**
  * Lower a structural arm/render callback's returned node array to `[node, ...]`
  * source under `armRoots`, collecting binding deps into `collect`, or return null
@@ -596,8 +628,13 @@ function rewriteHandlerReads(expr: ts.Node, sf: ts.SourceFile, roots: Roots): st
 /** Generate a direct-construction `RowFactory` source for a row built from a static
  * element skeleton: static/reactive attrs, static/signal `text` children, and
  * item/index-referencing event handlers (lowered to live-row-ctx reads — the common
- * toggle/remove-by-id list row). Returns the `(doc, getCtx) => { … return { nodes,
- * bindings } }` source, collecting reactive deps into `collect`, or null to fall
+ * toggle/remove-by-id list row). Also handles a BLOCK-BODY render
+ * (`(item) => { const x = item.peek()…; return [...] }`): leading `const`/`let`
+ * locals are emitted once per row (with `.peek()` reads rewritten to live ctx) so
+ * element/text/attr/handler slots can reference them — static values computed from a
+ * local (e.g. `text(isDir ? '📁' : '📄')`) lower too. Returns the `(doc, getCtx) =>
+ * { … return { nodes, bindings } }` source, collecting reactive deps into `collect`,
+ * or null to fall
  * back to `signalEach` — for static style./IDL props, non-arrow handlers (e.g.
  * `tagSend(...)`, whose agent-variant registration needs the authoring path),
  * spreads, dynamic args, structural children, helper calls, or `index`/opaque reads
@@ -609,14 +646,29 @@ function lowerRowFactory(
   sf: ts.SourceFile,
   collect?: Set<string>,
 ): string | null {
-  const arr = arrowReturnArray(fn)
-  if (!arr || arr.elements.length === 0) return null
+  const body = rowBody(fn)
+  if (!body || body.arr.elements.length === 0) return null
+  const { decls, arr } = body
   const roots = eachRoots(itemParam)
   const hRoots = handlerRoots(itemParam, indexParam)
   const stmts: string[] = []
   const bindings: string[] = []
   let counter = 0
   const fresh = (): string => `_n${counter++}`
+
+  // Block-body locals (e.g. `const isDir = item.peek().type === 'dir'`) run once per
+  // row at construction — emit them at the top of the factory with `item`/`index`/
+  // `state` `.peek()` reads rewritten to live-row-ctx reads, so later element/text/
+  // handler slots can reference them. A SIGNAL-bound local (`const n = item.at('x')`)
+  // is opaque to the static tracer (its uses must stay reactive but the alias hides
+  // the path) → bail to the authoring path.
+  for (const ds of decls) {
+    for (const d of ds.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.initializer) return null
+      if (isSignalExpr(d.initializer, roots)) return null
+      stmts.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
+    }
+  }
 
   const calleeName = (c: ts.CallExpression): string | null =>
     ts.isIdentifier(c.expression) ? c.expression.text : null
@@ -636,7 +688,16 @@ function lowerRowFactory(
         stmts.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
         return true
       }
-      if (!isSignalExpr(arg, roots)) return false
+      if (!isSignalExpr(arg, roots)) {
+        // Static (non-signal) text computed from row locals / view scope — e.g.
+        // `text(isDir ? '📁' : '📄')` or `text(item.peek().name)`. Emit a one-time
+        // text node; `.peek()` reads → live ctx, a leaked item/index handle is caught
+        // by the final guard. (A `.map`/`.at` arg is a signal → the reactive path below.)
+        stmts.push(
+          `${parentVar}.appendChild(doc.createTextNode(String(${rewriteHandlerReads(arg, sf, hRoots)})))`,
+        )
+        return true
+      }
       const { produce, deps } = signalToProduce(arg, sf, roots)
       if (collect) for (const d of deps) collect.add(d)
       const tv = fresh()
@@ -718,7 +779,12 @@ function lowerRowFactory(
         } else if (init.kind === ts.SyntaxKind.FalseKeyword) {
           // falsy boolean attr -> absent; nothing to emit
         } else {
-          return null // non-literal static value
+          // Static (non-signal) value computed from row locals / view scope — apply
+          // once via `applyAttr` (`.peek()` reads → live ctx; a leaked handle is caught
+          // by the final guard). style./IDL names already bailed above.
+          stmts.push(
+            `applyAttr(${v}, ${JSON.stringify(name)}, ${rewriteHandlerReads(init, sf, hRoots)})`,
+          )
         }
       }
     }

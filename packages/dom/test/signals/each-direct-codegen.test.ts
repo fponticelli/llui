@@ -320,4 +320,61 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(container.querySelector('.out')!.textContent).toBe('3')
     expect(commits).toBe(1) // ONE reconcile for the burst, not three
   })
+
+  it('lowers a BLOCK-BODY row (local from item.peek() + static-from-local + handler) and runs it', () => {
+    // The github-explorer file-row shape: a block-body render with a local computed
+    // from item.peek(), a static icon chosen by that local, a reactive name, and a
+    // handler that dispatches the row path + local. Previously fell to authoring;
+    // now lowers to signalEachDirect via cross-function (block-body) lowering.
+    const FILES = `
+      import { component, ul, li, span, a, text, each } from '@llui/dom'
+      export const App = component({
+        init: () => [{ files: [{ id: 1, type: 'dir', name: 'src', path: '/src' }, { id: 2, type: 'file', name: 'README', path: '/README' }] }, []],
+        update: (s, m) => (m.type === 'open' ? [{ files: s.files, opened: m.path, openedDir: m.isDir }, []] : [s, []]),
+        view: ({ state, send }) => [
+          ul({}, [
+            each(state.at('files'), {
+              key: (f) => f.id,
+              render: (item) => {
+                const isDir = item.peek().type === 'dir'
+                return [
+                  li({}, [
+                    span({ class: isDir ? 'icon-dir' : 'icon-file' }, [text(isDir ? '📁' : '📄')]),
+                    a({ href: '#', onClick: (e) => { e.preventDefault(); send({ type: 'open', path: item.peek().path, isDir }) } }, [text(item.at('name'))]),
+                  ]),
+                ]
+              },
+            }),
+          ]),
+        ],
+      })
+    `
+    const out = transformSignalComponentSource(FILES)
+    expect(out).toContain('signalEachDirect(')
+    expect(out).not.toContain('signalEach(') // not the authoring fallback
+    expect(out).toContain("const isDir = getCtx().item.type === 'dir'")
+
+    const def = compileAndLoad(FILES, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const icons = (): string[] =>
+      [...container.querySelectorAll('span')].map((s) => s.textContent ?? '')
+    const iconClasses = (): string[] =>
+      [...container.querySelectorAll('span')].map((s) => s.className)
+    const names = (): string[] =>
+      [...container.querySelectorAll('a')].map((a) => a.textContent ?? '')
+
+    // static-from-local: icon glyph + class chosen by isDir; reactive name
+    expect(icons()).toEqual(['📁', '📄'])
+    expect(iconClasses()).toEqual(['icon-dir', 'icon-file'])
+    expect(names()).toEqual(['src', 'README'])
+
+    // handler reads the live row path + the per-row local isDir
+    container.querySelectorAll('a')[0]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { opened?: string; openedDir?: boolean }).opened).toBe('/src')
+    expect((h.getState() as { openedDir?: boolean }).openedDir).toBe(true)
+    container.querySelectorAll('a')[1]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { opened?: string }).opened).toBe('/README')
+    expect((h.getState() as { openedDir?: boolean }).openedDir).toBe(false)
+  })
 })

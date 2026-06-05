@@ -278,3 +278,63 @@ describe('transformNodeExpr — unrecognized forms left verbatim', () => {
     )
   })
 })
+
+describe('transformNodeExpr — block-body each rows (cross-function lowering, phase 1)', () => {
+  const kind = (out: string): 'direct' | 'each' | 'verbatim' =>
+    out.includes('signalEachDirect(') ? 'direct' : out.includes('signalEach(') ? 'each' : 'verbatim'
+
+  it('lowers a block-body row to signalEachDirect: decl rewritten, static-from-local text + handler', () => {
+    const out = tx(
+      "each(state.at('files'), { key: (f) => f.id, render: (item) => { const isDir = item.peek().type === 'dir'; return [span({ class: isDir ? 'd' : 'f' }, [text(isDir ? '📁' : '📄'), text(item.at('name'))])] } })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    expect(out).toContain('(doc, getCtx) =>')
+    // the local is emitted at the top with the .peek() read rewritten to live ctx
+    expect(out).toContain("const isDir = getCtx().item.type === 'dir'")
+    // static value from the local → one-time text node + applyAttr, not a binding
+    expect(out).toContain("doc.createTextNode(String(isDir ? '📁' : '📄'))")
+    expect(out).toContain("applyAttr(_n0, \"class\", isDir ? 'd' : 'f')")
+    // the reactive read stays a binding
+    expect(out).toContain('produce: (ctx) => ctx.item.name')
+  })
+
+  it('bails to authoring when a local is SIGNAL-bound (opaque alias)', () => {
+    expect(
+      kind(
+        tx(
+          "each(state.at('r'), { key: (r) => r.id, render: (item) => { const n = item.at('x'); return [li([text(n)])] } })",
+        ),
+      ),
+    ).toBe('verbatim')
+  })
+
+  it('bails when a non-declaration statement precedes the return', () => {
+    expect(
+      kind(
+        tx(
+          "each(state.at('r'), { key: (r) => r.id, render: (item) => { sideEffect(); return [li([text(item.at('x'))])] } })",
+        ),
+      ),
+    ).toBe('verbatim')
+  })
+
+  it('bails on a data-conditional return (per-row structure varies)', () => {
+    expect(
+      kind(
+        tx(
+          "each(state.at('r'), { key: (r) => r.id, render: (item) => { const d = item.peek().d; return d ? [li([])] : [span([])] } })",
+        ),
+      ),
+    ).toBe('verbatim')
+  })
+
+  it('bails when a decl leaks the row param as a handle', () => {
+    expect(
+      kind(
+        tx(
+          "each(state.at('r'), { key: (r) => r.id, render: (item) => { const x = item; return [li([text(x.at('n'))])] } })",
+        ),
+      ),
+    ).toBe('verbatim')
+  })
+})
