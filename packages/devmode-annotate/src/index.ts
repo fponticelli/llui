@@ -45,6 +45,13 @@ import {
   type SignalViewBag,
 } from '@llui/dom'
 
+import {
+  collapsible,
+  type CollapsibleMsg,
+  type CollapsibleState,
+} from '@llui/components/collapsible'
+import { tabs, type TabsMsg, type TabsState } from '@llui/components/tabs'
+import { menu, type MenuMsg, type MenuState } from '@llui/components/menu'
 import { bakeAnnotations } from './bake.js'
 import { createBrowseView } from './browse-view.js'
 import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
@@ -208,9 +215,9 @@ function buildNoteBody(annotations: Annotation[]): NoteBody {
 
 interface HudState {
   modalOpen: boolean
-  view: 'compose' | 'browse'
-  moreOptionsOpen: boolean
-  solveMenuOpen: boolean
+  tabs: TabsState
+  moreOptions: CollapsibleState
+  solveMenu: MenuState
   draftProse: string
   pendingRect: NoteRect | null
   pendingElement: { selector: string; bbox: NoteRect } | null
@@ -226,10 +233,9 @@ type HudMsg =
   | { type: 'modal/open' }
   | { type: 'modal/close' }
   | { type: 'modal/toggle' }
-  | { type: 'view/toggle' }
-  | { type: 'moreOptions/toggle' }
-  | { type: 'solveMenu/toggle' }
-  | { type: 'solveMenu/close' }
+  | { type: 'tabs'; msg: TabsMsg }
+  | { type: 'moreOptions'; msg: CollapsibleMsg }
+  | { type: 'solveMenu'; msg: MenuMsg }
   | { type: 'setProse'; value: string }
   | { type: 'attach/rect'; rect: NoteRect | null }
   | { type: 'attach/element'; element: { selector: string; bbox: NoteRect } | null }
@@ -247,9 +253,9 @@ type HudEffect = TaskEffect | { type: 'persist' } | { type: 'reproStart' } | { t
 
 const initHud = (solveEnabled: boolean) => (): HudState => ({
   modalOpen: false,
-  view: 'compose',
-  moreOptionsOpen: false,
-  solveMenuOpen: false,
+  tabs: tabs.init({ items: ['compose', 'browse'], value: 'compose' }),
+  moreOptions: collapsible.init(),
+  solveMenu: menu.init(),
   draftProse: '',
   pendingRect: null,
   pendingElement: null,
@@ -265,8 +271,10 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
   switch (msg.type) {
     case 'modal/open':
       return [{ ...state, modalOpen: true, statusLine: '' }, [{ type: 'persist' }]]
-    case 'modal/close':
-      return [{ ...state, modalOpen: false, solveMenuOpen: false }, [{ type: 'persist' }]]
+    case 'modal/close': {
+      const [solveMenu] = menu.update(state.solveMenu, { type: 'close' })
+      return [{ ...state, modalOpen: false, solveMenu }, [{ type: 'persist' }]]
+    }
     case 'modal/toggle':
       return [
         {
@@ -276,17 +284,18 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
         },
         [{ type: 'persist' }],
       ]
-    case 'view/toggle':
-      return [
-        { ...state, view: state.view === 'compose' ? 'browse' : 'compose' },
-        [{ type: 'persist' }],
-      ]
-    case 'moreOptions/toggle':
-      return [{ ...state, moreOptionsOpen: !state.moreOptionsOpen }, []]
-    case 'solveMenu/toggle':
-      return [{ ...state, solveMenuOpen: !state.solveMenuOpen }, []]
-    case 'solveMenu/close':
-      return [{ ...state, solveMenuOpen: false }, []]
+    case 'tabs': {
+      const [tabsState] = tabs.update(state.tabs, msg.msg)
+      return [{ ...state, tabs: tabsState }, [{ type: 'persist' }]]
+    }
+    case 'moreOptions': {
+      const [moreOptions] = collapsible.update(state.moreOptions, msg.msg)
+      return [{ ...state, moreOptions }, []]
+    }
+    case 'solveMenu': {
+      const [solveMenu] = menu.update(state.solveMenu, msg.msg)
+      return [{ ...state, solveMenu }, []]
+    }
     case 'setProse':
       return [{ ...state, draftProse: msg.value }, [{ type: 'persist' }]]
     case 'attach/rect':
@@ -310,7 +319,7 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
       return [{ ...state, defaultIntent: msg.intent }, []]
     case 'chain/select':
       return [
-        { ...state, tasks: { ...state.tasks, selectedChain: msg.name }, solveMenuOpen: false },
+        { ...state, tasks: { ...state.tasks, selectedChain: msg.name } },
         [{ type: 'persist' }],
       ]
     case 'status/set':
@@ -319,12 +328,32 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
       return [{ ...state, contextLine: msg.line }, []]
     case 'task': {
       const [tasks, effs] = reduceTask(state.tasks, msg.msg)
-      return [{ ...state, tasks, statusLine: tasks.statusLine || state.statusLine }, effs]
+      let solveMenu = state.solveMenu
+      const items = solveMenuItems(tasks)
+      if (items.join('\u0000') !== solveMenu.items.join('\u0000')) {
+        ;[solveMenu] = menu.update(solveMenu, { type: 'setItems', items })
+      }
+      return [
+        { ...state, tasks, solveMenu, statusLine: tasks.statusLine || state.statusLine },
+        effs,
+      ]
     }
   }
 }
 
-// ── Lineage helper (pure) ────────────────────────────────────────────────
+// ── Lineage + solve-menu helpers (pure) ──────────────────────────────────
+
+/** The 'Start fresh' menu item value (sentinel — not a real chain name). */
+const SOLVE_FRESH = '__fresh__'
+
+/** Menu item values for the Solve resume dropdown: chains newest-first + fresh. */
+function solveMenuItems(tasks: TaskState): string[] {
+  return Object.values(tasks.chains)
+    .slice()
+    .sort((a, b) => b.ts - a.ts)
+    .map((c) => c.name)
+    .concat([SOLVE_FRESH])
+}
 
 function lineageText(tasks: TaskState): string {
   const entry = tasks.selectedChain ? tasks.chains[tasks.selectedChain] : null
@@ -831,36 +860,45 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     })
   }
 
-  const modalView = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    div(
-      {
-        'data-llui-modal': '',
-        style: STYLES.modal,
-        'style.display': state.map((s) => (s.modalOpen ? 'block' : 'none')),
-      },
-      [
-        ...headingRow(state, send),
-        ...composeViewEl(state, send),
-        // Browse view — hosted via foreign, shown only in the browse tab.
-        div({ 'style.display': state.map((s) => (s.view === 'browse' ? 'block' : 'none')) }, [
-          foreign({
-            tag: 'div',
-            mount: ({ el }) => {
-              el.appendChild(browse.el)
-              return browse
+  const modalView = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
+    const parts = tabsConnectFor(state, send)
+    return [
+      div(
+        {
+          'data-llui-modal': '',
+          style: STYLES.modal,
+          'style.display': state.map((s) => (s.modalOpen ? 'block' : 'none')),
+        },
+        [
+          ...headingRow(state, send),
+          ...composeViewEl(state, send),
+          // Browse view — the 'browse' tab panel, hosting the browse component.
+          div(
+            {
+              ...parts.item('browse').panel,
+              'style.display': state.map((s) => (s.tabs.value === 'browse' ? 'block' : 'none')),
             },
-          }),
-        ]),
-        div(
-          {
-            style: STYLES.kbdHint,
-            'style.display': state.map((s) => (s.view === 'compose' ? 'flex' : 'none')),
-          },
-          kbdHintParts(),
-        ),
-      ],
-    ),
-  ]
+            [
+              foreign({
+                tag: 'div',
+                mount: ({ el }) => {
+                  el.appendChild(browse.el)
+                  return browse
+                },
+              }),
+            ],
+          ),
+          div(
+            {
+              style: STYLES.kbdHint,
+              'style.display': state.map((s) => (s.tabs.value === 'compose' ? 'flex' : 'none')),
+            },
+            kbdHintParts(),
+          ),
+        ],
+      ),
+    ]
+  }
 
   const kbdHintParts = (): Renderable => {
     const kbd = (s: string): Mountable => span({ style: STYLES.kbd }, [text(s)])
@@ -870,42 +908,70 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     return out
   }
 
-  const headingRow = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    div(
-      {
-        'style.display': 'flex',
-        'style.justifyContent': 'flex-end',
-        'style.alignItems': 'center',
-        'style.minHeight': '18px',
-        'style.marginBottom': '4px',
+  const tabsConnectFor = (state: Signal<HudState>, send: (m: HudMsg) => void) =>
+    tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }), {
+      id: 'llui-hud-tabs',
+      onNavigate: (v) => {
+        if (v === 'browse') browse.onShow()
       },
-      [
-        button(
-          {
-            type: 'button',
-            'style.background': 'transparent',
-            'style.border': '0',
-            'style.padding': '0',
-            'style.cursor': 'pointer',
-            'style.color': 'var(--hud-fg-muted)',
-            'style.font': 'inherit',
-            'style.fontSize': '12px',
-            'style.textDecoration': 'underline',
-            'style.marginRight': 'auto',
-            onClick: () => {
-              send({ type: 'view/toggle' })
-              if (getState().view === 'browse') browse.onShow()
-            },
-          },
-          [text(state.map((s) => (s.view === 'compose' ? 'Browse notes' : '← New note')))],
+    })
+
+  const tabTrigger = (
+    parts: ReturnType<typeof tabsConnectFor>,
+    state: Signal<HudState>,
+    value: 'compose' | 'browse',
+    labelText: string,
+  ): Mountable =>
+    button(
+      {
+        ...parts.item(value).trigger,
+        'style.background': 'transparent',
+        'style.border': '0',
+        'style.padding': '0 2px',
+        'style.cursor': 'pointer',
+        'style.font': 'inherit',
+        'style.fontSize': '12px',
+        'style.color': state.map((s) =>
+          s.tabs.value === value ? 'var(--hud-fg)' : 'var(--hud-fg-muted)',
         ),
-        span({ 'style.display': 'flex', 'style.gap': '4px', 'style.alignItems': 'center' }, [
-          ...badge(state, 'working'),
-          ...badge(state, 'ready'),
-        ]),
-      ],
-    ),
-  ]
+        'style.textDecoration': state.map((s) => (s.tabs.value === value ? 'none' : 'underline')),
+        'style.fontWeight': state.map((s) => (s.tabs.value === value ? '600' : '400')),
+      },
+      [text(labelText)],
+    )
+
+  const headingRow = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
+    const parts = tabsConnectFor(state, send)
+    return [
+      div(
+        {
+          'style.display': 'flex',
+          'style.justifyContent': 'flex-end',
+          'style.alignItems': 'center',
+          'style.minHeight': '18px',
+          'style.marginBottom': '4px',
+        },
+        [
+          div(
+            {
+              ...parts.list,
+              'style.display': 'flex',
+              'style.gap': '8px',
+              'style.marginRight': 'auto',
+            },
+            [
+              tabTrigger(parts, state, 'compose', 'New note'),
+              tabTrigger(parts, state, 'browse', 'Browse notes'),
+            ],
+          ),
+          span({ 'style.display': 'flex', 'style.gap': '4px', 'style.alignItems': 'center' }, [
+            ...badge(state, 'working'),
+            ...badge(state, 'ready'),
+          ]),
+        ],
+      ),
+    ]
+  }
 
   const badge = (state: Signal<HudState>, which: 'working' | 'ready'): Renderable => {
     const count = state.map((s) => queueCounts(s.tasks)[which])
@@ -922,46 +988,50 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ]
   }
 
-  const composeViewEl = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    div(
-      {
-        'data-llui-view': 'compose',
-        'style.display': state.map((s) => (s.view === 'compose' ? 'flex' : 'none')),
-        'style.flexDirection': 'column',
-        'style.gap': '0',
-      },
-      [
-        // context subhead
-        div({ style: STYLES.contextSubhead }, [text(state.map((s) => s.contextLine))]),
-        // lineage
-        div(
-          {
-            'data-llui-lineage': '',
-            style: STYLES.contextSubhead + '; color: var(--hud-accent-fg); margin-top: -6px;',
-            'style.display': state.map((s) => (lineageText(s.tasks) ? 'block' : 'none')),
-          },
-          [text(state.map((s) => lineageText(s.tasks)))],
-        ),
-        ...attachmentRow(state, send),
-        ...toolbarRow(),
-        ...textareaForeign(state, send),
-        div({ style: STYLES.markdownHint }, [
-          text('Markdown supported · '),
-          span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘B')]),
-          text(' bold · '),
-          span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘I')]),
-          text(' italic · '),
-          span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘E')]),
-          text(' code'),
-        ]),
-        ...moreOptions(state, send),
-        div({ 'data-llui-status': '', style: STYLES.status }, [
-          text(state.map((s) => s.statusLine)),
-        ]),
-        ...actionsRow(state, send),
-      ],
-    ),
-  ]
+  const composeViewEl = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
+    const parts = tabsConnectFor(state, send)
+    return [
+      div(
+        {
+          ...parts.item('compose').panel,
+          'data-llui-view': 'compose',
+          'style.display': state.map((s) => (s.tabs.value === 'compose' ? 'flex' : 'none')),
+          'style.flexDirection': 'column',
+          'style.gap': '0',
+        },
+        [
+          // context subhead
+          div({ style: STYLES.contextSubhead }, [text(state.map((s) => s.contextLine))]),
+          // lineage
+          div(
+            {
+              'data-llui-lineage': '',
+              style: STYLES.contextSubhead + '; color: var(--hud-accent-fg); margin-top: -6px;',
+              'style.display': state.map((s) => (lineageText(s.tasks) ? 'block' : 'none')),
+            },
+            [text(state.map((s) => lineageText(s.tasks)))],
+          ),
+          ...attachmentRow(state, send),
+          ...toolbarRow(),
+          ...textareaForeign(state, send),
+          div({ style: STYLES.markdownHint }, [
+            text('Markdown supported · '),
+            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘B')]),
+            text(' bold · '),
+            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘I')]),
+            text(' italic · '),
+            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘E')]),
+            text(' code'),
+          ]),
+          ...moreOptions(state, send),
+          div({ 'data-llui-status': '', style: STYLES.status }, [
+            text(state.map((s) => s.statusLine)),
+          ]),
+          ...actionsRow(state, send),
+        ],
+      ),
+    ]
+  }
 
   const attachmentRow = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
     div({ style: STYLES.attachmentRow }, [
@@ -1150,74 +1220,77 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }),
   ]
 
-  const moreOptions = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    button(
-      {
-        type: 'button',
-        style: STYLES.moreOptionsToggle,
-        onClick: () => send({ type: 'moreOptions/toggle' }),
-      },
-      [text(state.map((s) => (s.moreOptionsOpen ? '▾ More options' : '▸ More options')))],
-    ),
-    div(
-      {
-        style: STYLES.moreOptionsBody,
-        'style.display': state.map((s) => (s.moreOptionsOpen ? 'block' : 'none')),
-      },
-      [
-        label({ style: STYLES.moreOptionsRow + '; cursor: pointer;' }, [
-          input({
-            type: 'checkbox',
-            'style.margin': '0',
-            checked: state.map((s) => s.verbose),
-            onChange: (e: Event) =>
-              send({ type: 'verbose/set', value: (e.currentTarget as HTMLInputElement).checked }),
-          }),
-          span({}, [text('Include verbose telemetry (state, message log, DOM snapshot)')]),
-        ]),
-        ...(reproEnabled
-          ? [
-              div({ style: STYLES.moreOptionsRow + '; margin-top: 6px;' }, [
-                button(
-                  {
-                    type: 'button',
-                    style: reproBtnStyle(false),
-                    'style.borderColor': state.map((s) =>
-                      s.reproRecording
-                        ? 'var(--hud-toast-border-fail)'
-                        : 'var(--hud-border-strong)',
-                    ),
-                    'style.color': state.map((s) =>
-                      s.reproRecording ? 'var(--hud-toast-border-fail)' : 'var(--hud-fg-muted)',
-                    ),
-                    onClick: (e: Event) => {
-                      e.preventDefault()
-                      send({ type: 'repro/toggle' })
+  const moreOptions = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
+    const parts = collapsible.connect(
+      state.at('moreOptions'),
+      (m) => send({ type: 'moreOptions', msg: m }),
+      { id: 'llui-more-options' },
+    )
+    return [
+      button({ ...parts.trigger, style: STYLES.moreOptionsToggle }, [
+        text(state.map((s) => (s.moreOptions.open ? '▾ More options' : '▸ More options'))),
+      ]),
+      div(
+        {
+          ...parts.content,
+          style: STYLES.moreOptionsBody,
+          'style.display': state.map((s) => (s.moreOptions.open ? 'block' : 'none')),
+        },
+        [
+          label({ style: STYLES.moreOptionsRow + '; cursor: pointer;' }, [
+            input({
+              type: 'checkbox',
+              'style.margin': '0',
+              checked: state.map((s) => s.verbose),
+              onChange: (e: Event) =>
+                send({ type: 'verbose/set', value: (e.currentTarget as HTMLInputElement).checked }),
+            }),
+            span({}, [text('Include verbose telemetry (state, message log, DOM snapshot)')]),
+          ]),
+          ...(reproEnabled
+            ? [
+                div({ style: STYLES.moreOptionsRow + '; margin-top: 6px;' }, [
+                  button(
+                    {
+                      type: 'button',
+                      style: reproBtnStyle(false),
+                      'style.borderColor': state.map((s) =>
+                        s.reproRecording
+                          ? 'var(--hud-toast-border-fail)'
+                          : 'var(--hud-border-strong)',
+                      ),
+                      'style.color': state.map((s) =>
+                        s.reproRecording ? 'var(--hud-toast-border-fail)' : 'var(--hud-fg-muted)',
+                      ),
+                      onClick: (e: Event) => {
+                        e.preventDefault()
+                        send({ type: 'repro/toggle' })
+                      },
                     },
-                  },
-                  [
+                    [
+                      text(
+                        state.map((s) =>
+                          s.reproRecording ? '■ Stop recording' : '● Start recording',
+                        ),
+                      ),
+                    ],
+                  ),
+                  span({ 'style.color': 'var(--hud-fg-subtle)', 'style.fontSize': '11px' }, [
                     text(
                       state.map((s) =>
-                        s.reproRecording ? '■ Stop recording' : '● Start recording',
+                        s.reproRecording
+                          ? 'capturing clicks, inputs, route changes…'
+                          : 'attaches a click+input trail for the LLM to replay',
                       ),
                     ),
-                  ],
-                ),
-                span({ 'style.color': 'var(--hud-fg-subtle)', 'style.fontSize': '11px' }, [
-                  text(
-                    state.map((s) =>
-                      s.reproRecording
-                        ? 'capturing clicks, inputs, route changes…'
-                        : 'attaches a click+input trail for the LLM to replay',
-                    ),
-                  ),
+                  ]),
                 ]),
-              ]),
-            ]
-          : []),
-      ],
-    ),
-  ]
+              ]
+            : []),
+        ],
+      ),
+    ]
+  }
 
   const reproBtnStyle = (_recording: boolean): string =>
     [
@@ -1262,134 +1335,116 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ]),
   ]
 
-  const solveSplit = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    div({ 'data-llui-solve-split': '', style: SPLIT_BTN_STYLES.container }, [
-      button(
-        {
-          type: 'button',
-          'data-llui-solve': '',
-          style: SPLIT_BTN_STYLES.main,
-          title: state.map((s) => {
-            const c = s.tasks.selectedChain ? s.tasks.chains[s.tasks.selectedChain] : null
-            return c
-              ? `Solve, resuming "${c.summary}" (⌘↩)`
-              : 'Solve, starting a fresh conversation (⌘↩)'
-          }),
-          onClick: () => submitWithIntent('task'),
-        },
-        [
-          span(
-            {
-              style: RESUME_GLYPH_STYLE,
-              'style.display': state.map((s) =>
-                s.tasks.selectedChain && s.tasks.chains[s.tasks.selectedChain]
-                  ? 'inline-flex'
-                  : 'none',
-              ),
-            },
-            [text('↻')],
-          ),
-          span({}, [text('Solve')]),
-        ],
-      ),
-      button(
-        {
-          type: 'button',
-          'aria-haspopup': 'menu',
-          'aria-expanded': state.map((s) => (s.solveMenuOpen ? 'true' : 'false')),
-          title: 'Resume options',
-          style: SPLIT_BTN_STYLES.caret,
-          'style.display': state.map((s) =>
-            Object.keys(s.tasks.chains).length > 0 ? 'inline-flex' : 'none',
-          ),
-          onClick: (e: Event) => {
-            e.stopPropagation()
-            send({ type: 'solveMenu/toggle' })
+  const solveSplit = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
+    const parts = menu.connect(state.at('solveMenu'), (m) => send({ type: 'solveMenu', msg: m }), {
+      id: 'llui-solve-menu',
+      onSelect: (v) => send({ type: 'chain/select', name: v === SOLVE_FRESH ? null : v }),
+    })
+    return [
+      div({ 'data-llui-solve-split': '', style: SPLIT_BTN_STYLES.container }, [
+        button(
+          {
+            type: 'button',
+            'data-llui-solve': '',
+            style: SPLIT_BTN_STYLES.main,
+            title: state.map((s) => {
+              const c = s.tasks.selectedChain ? s.tasks.chains[s.tasks.selectedChain] : null
+              return c
+                ? `Solve, resuming "${c.summary}" (⌘↩)`
+                : 'Solve, starting a fresh conversation (⌘↩)'
+            }),
+            onClick: () => submitWithIntent('task'),
           },
-        },
-        [text('▾')],
-      ),
-      div(
-        {
-          role: 'menu',
-          style: SPLIT_BTN_STYLES.menu,
-          'style.display': state.map((s) =>
-            s.solveMenuOpen && Object.keys(s.tasks.chains).length > 0 ? 'flex' : 'none',
-          ),
-        },
-        [
-          div(
-            {
-              'style.padding': '4px 8px 2px',
-              'style.fontSize': '10px',
-              'style.color': 'var(--hud-fg-subtle)',
-              'style.textTransform': 'uppercase',
-              'style.letterSpacing': '0.5px',
-            },
-            [text('Resume chain')],
-          ),
-          each(
-            state.map((s) =>
-              Object.values(s.tasks.chains)
-                .slice()
-                .sort((a, b) => b.ts - a.ts),
-            ),
-            {
-              key: (c) => c.name,
-              render: (c) => [
-                button(
-                  {
-                    type: 'button',
-                    role: 'menuitemradio',
-                    style: SPLIT_BTN_STYLES.menuItem,
-                    onClick: (e: Event) => {
-                      e.stopPropagation()
-                      send({ type: 'chain/select', name: c.peek().name })
-                    },
-                  },
-                  [
-                    text(
-                      c.map((entry) => {
-                        const active = getState().tasks.selectedChain === entry.name
-                        const summary = entry.summary || `(no summary — task ${entry.lastTaskId})`
-                        return `${active ? '● ' : '○ '}${summary}`
-                      }),
-                    ),
-                  ],
+          [
+            span(
+              {
+                style: RESUME_GLYPH_STYLE,
+                'style.display': state.map((s) =>
+                  s.tasks.selectedChain && s.tasks.chains[s.tasks.selectedChain]
+                    ? 'inline-flex'
+                    : 'none',
                 ),
-              ],
-            },
-          ),
-          div(
-            {
-              'style.height': '1px',
-              'style.background': 'var(--hud-border)',
-              'style.margin': '4px 6px',
-            },
-            [],
-          ),
-          button(
-            {
-              type: 'button',
-              role: 'menuitemradio',
-              style: SPLIT_BTN_STYLES.menuItem,
-              onClick: (e: Event) => {
-                e.stopPropagation()
-                send({ type: 'chain/select', name: null })
               },
-            },
-            [
+              [text('↻')],
+            ),
+            span({}, [text('Solve')]),
+          ],
+        ),
+        button(
+          {
+            ...parts.trigger,
+            title: 'Resume options',
+            style: SPLIT_BTN_STYLES.caret,
+            'style.display': state.map((s) =>
+              Object.keys(s.tasks.chains).length > 0 ? 'inline-flex' : 'none',
+            ),
+          },
+          [text('▾')],
+        ),
+      ]),
+      menu.overlay({
+        state: state.at('solveMenu'),
+        send: (m) => send({ type: 'solveMenu', msg: m }),
+        parts,
+        placement: 'bottom-end',
+        content: () => [
+          div({ ...parts.content, style: SPLIT_BTN_STYLES.menu, 'style.display': 'flex' }, [
+            div(
+              {
+                'style.padding': '4px 8px 2px',
+                'style.fontSize': '10px',
+                'style.color': 'var(--hud-fg-subtle)',
+                'style.textTransform': 'uppercase',
+                'style.letterSpacing': '0.5px',
+              },
+              [text('Resume chain')],
+            ),
+            each(
+              state.map((s) =>
+                Object.values(s.tasks.chains)
+                  .slice()
+                  .sort((a, b) => b.ts - a.ts)
+                  .map((c) => c.name),
+              ),
+              {
+                key: (name) => name,
+                render: (nameSig) => {
+                  const name = nameSig.peek()
+                  return [
+                    button({ ...parts.item(name).item, style: SPLIT_BTN_STYLES.menuItem }, [
+                      text(
+                        state.map((s) => {
+                          const entry = s.tasks.chains[name]
+                          const active = s.tasks.selectedChain === name
+                          const summary = entry?.summary || `(no summary — task ${name})`
+                          return `${active ? '● ' : '○ '}${summary}`
+                        }),
+                      ),
+                    ]),
+                  ]
+                },
+              },
+            ),
+            div(
+              {
+                'style.height': '1px',
+                'style.background': 'var(--hud-border)',
+                'style.margin': '4px 6px',
+              },
+              [],
+            ),
+            button({ ...parts.item(SOLVE_FRESH).item, style: SPLIT_BTN_STYLES.menuItem }, [
               text(
                 state.map((s) =>
                   s.tasks.selectedChain === null ? '● Start fresh' : '○ Start fresh',
                 ),
               ),
-            ],
-          ),
+            ]),
+          ]),
         ],
-      ),
-    ]),
-  ]
+      }),
+    ]
+  }
 
   const toastView = (t: Signal<Toast>, send: (m: HudMsg) => void): Renderable => {
     const border = (kind: Toast['kind']): string =>
@@ -1520,7 +1575,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         const s = getState()
         const data: PersistedHudState = {
           modalOpen: s.modalOpen,
-          view: s.view,
+          view: s.tabs.value as 'compose' | 'browse',
           draftProse: s.draftProse,
           selectedResumeChain: s.tasks.selectedChain,
         }
@@ -1550,7 +1605,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     handle.send({ type: 'chain/select', name: persisted.selectedResumeChain })
   }
   if (persisted.view === 'browse') {
-    handle.send({ type: 'view/toggle' })
+    handle.send({ type: 'tabs', msg: { type: 'setValue', value: 'browse' } })
     browse.onShow()
   }
   if (persisted.modalOpen) queueMicrotask(() => open())
@@ -1726,12 +1781,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   document.addEventListener('keydown', onKey)
 
-  const onDocClick = (e: MouseEvent): void => {
-    const split = root.querySelector('[data-llui-solve-split]')
-    if (split && !split.contains(e.target as Node)) handle.send({ type: 'solveMenu/close' })
-  }
-  document.addEventListener('click', onDocClick)
-
   const onResize = (): void => {
     if (getState().modalOpen) {
       refreshContext()
@@ -1791,7 +1840,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // ── Handle ────────────────────────────────────────────────────────────
   const destroy = (): void => {
     document.removeEventListener('keydown', onKey)
-    document.removeEventListener('click', onDocClick)
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', onResize)
       window.removeEventListener('error', onWindowError)

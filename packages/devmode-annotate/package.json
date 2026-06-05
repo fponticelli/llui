@@ -23,6 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@llui/components": "workspace:*",
     "@llui/dom": "workspace:*",
     "html-to-image": "^1.11.13"
   },

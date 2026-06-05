@@ -493,6 +493,9 @@ importers:
 
   packages/devmode-annotate:
     dependencies:
+      '@llui/components':
+        specifier: workspace:*
+        version: link:../components
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
