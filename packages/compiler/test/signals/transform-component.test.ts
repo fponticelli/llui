@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
+import ts from 'typescript'
 import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+
+/** Parse the lowered source and assert it has no syntax errors — catches edit
+ * overlaps / duplication (e.g. pass-2 double-lowering a pass-1 each) that a
+ * `toContain` substring check would miss. */
+function assertParses(src: string): void {
+  const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // `parseDiagnostics` is internal but populated by createSourceFile; a syntactically
+  // corrupt splice (duplicated tokens) surfaces here.
+  const diags = (sf as unknown as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? []
+  expect(diags.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([])
+}
 
 describe('transformSignalComponentSource', () => {
   it('rewrites a signal view and injects the runtime import', () => {
@@ -420,6 +432,24 @@ describe('transformSignalComponentSource', () => {
       // spread → row factory bails → the each stays authoring (item leaks into row(...))
       expect(out).not.toContain('signalEachDirect(')
       expect(out).toContain('each(state.at("items")')
+    })
+
+    it('a component-view each is lowered ONCE (no pass-2 double-lowering) and the output parses', () => {
+      // Regression: pass-2 (helper coverage) must skip eaches already inside a pass-1
+      // component-view edit range. If pass1Ranges is captured before pass 1 runs, the
+      // each is lowered twice → overlapping edits → corrupt, unparseable output.
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect((out.match(/signalEachDirect\(/g) ?? []).length).toBe(1) // exactly once
+      expect((out.match(/(?<![A-Za-z])eachDirect\(/g) ?? []).length).toBe(0) // not also the helper form
     })
 
     it('does not inline an UNKNOWN (cross-file/imported) helper', () => {

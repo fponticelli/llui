@@ -263,39 +263,42 @@ export function transformSignalComponentSource(
     node.forEachChild(visit)
   }
 
-  // ── Pass 2: view-helper coverage ────────────────────────────────────────────
-  // Lower `each(...)` calls that live OUTSIDE a component view — i.e. inside view-
-  // helper functions (`fileTree(routeSig): Renderable { … each(…) }`), the documented
-  // composition default. Their items source roots in a call-site-bound signal param
-  // the compiler can't statically resolve, so the items handle is kept verbatim and
-  // only the row compiles to a factory (`eachDirect`). Skip any `each` already inside
-  // a pass-1 component-view edit range (those were lowered with a rooted source).
-  const pass1Ranges = edits.map((e) => [e.start, e.end] as const)
-  const insidePass1 = (n: ts.Node): boolean =>
-    pass1Ranges.some(([s, e]) => s < e && n.getStart(sf) >= s && n.getEnd() <= e)
-  const visitHelpers = (node: ts.Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'each' &&
-      !insidePass1(node)
-    ) {
-      const lowered = lowerHelperEach(node, sf)
-      if (lowered) {
-        edits.push({ start: node.getStart(sf), end: node.getEnd(), text: lowered })
-        transformedAny = true
-        return // row factory bails on structural children, so no lowerable nested each
-      }
-    }
-    node.forEachChild(visitHelpers)
-  }
-
   // The ambient helper registry + auto-batch context are module-level; a throw during
   // lowering must not leak them into the NEXT file the (singleton) transform processes
   // (a stale registry would resolve a helper name to the wrong file's declaration), so
   // reset both in `finally` regardless of how the passes exit.
   try {
+    // Pass 1: component views.
     visit(sf)
+
+    // ── Pass 2: view-helper coverage ──────────────────────────────────────────
+    // Lower `each(...)` calls that live OUTSIDE a component view — i.e. inside view-
+    // helper functions (`fileTree(routeSig): Renderable { … each(…) }`), the documented
+    // composition default. Their items source roots in a call-site-bound signal param
+    // the compiler can't statically resolve, so the items handle is kept verbatim and
+    // only the row compiles to a factory (`eachDirect`). Skip any `each` already inside
+    // a pass-1 component-view edit range (those were lowered with a rooted source) —
+    // so `pass1Ranges` MUST be captured AFTER pass 1 has populated `edits`, else pass 2
+    // double-lowers a component-view each and emits overlapping edits.
+    const pass1Ranges = edits.map((e) => [e.start, e.end] as const)
+    const insidePass1 = (n: ts.Node): boolean =>
+      pass1Ranges.some(([s, e]) => s < e && n.getStart(sf) >= s && n.getEnd() <= e)
+    const visitHelpers = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'each' &&
+        !insidePass1(node)
+      ) {
+        const lowered = lowerHelperEach(node, sf)
+        if (lowered) {
+          edits.push({ start: node.getStart(sf), end: node.getEnd(), text: lowered })
+          transformedAny = true
+          return // row factory bails on structural children, so no lowerable nested each
+        }
+      }
+      node.forEachChild(visitHelpers)
+    }
     visitHelpers(sf)
   } finally {
     setHelperDecls(null)
