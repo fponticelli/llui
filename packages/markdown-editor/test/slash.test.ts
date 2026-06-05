@@ -3,6 +3,7 @@ import { mountApp } from '@llui/dom'
 import { markdownEditor } from '../src/editor.js'
 import { corePlugin } from '../src/plugins/core.js'
 import { slashPlugin } from '../src/plugins/slash.js'
+import { mentionPlugin } from '../src/plugins/mention.js'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -86,5 +87,32 @@ describe('slash menu plugin', () => {
     // (the filtering itself is exercised in the browser; here we assert the menu
     // surface renders what it is given)
     expect(app).toBeDefined()
+  })
+})
+
+describe('mention typeahead plugin', () => {
+  const mentionSend = (msg: unknown) => app!.send({ type: 'plugin', name: 'mention', msg })
+
+  it('renders @-candidates and tracks the highlight', async () => {
+    app = mountApp(
+      container,
+      markdownEditor({ plugins: [corePlugin(), mentionPlugin()], defaultValue: 'x' }),
+    )
+    mentionSend({
+      type: 'show',
+      query: '',
+      items: [
+        { id: 'ada', label: 'Ada' },
+        { id: 'grace', label: 'Grace' },
+      ],
+      x: 0,
+      y: 0,
+    })
+    await wait(0)
+    expect(options().map((o) => o.textContent)).toEqual(['@Ada', '@Grace'])
+    expect(options()[0]?.hasAttribute('data-active')).toBe(true)
+    mentionSend({ type: 'move', delta: 1 })
+    await wait(0)
+    expect(options()[1]?.hasAttribute('data-active')).toBe(true)
   })
 })

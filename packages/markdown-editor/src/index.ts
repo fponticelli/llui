@@ -45,6 +45,8 @@ export { hrPlugin, $insertHorizontalRule } from './plugins/hr.js'
 export { slashPlugin } from './plugins/slash.js'
 export { contextMenuPlugin } from './plugins/context-menu.js'
 export { floatingToolbarPlugin } from './plugins/floating-toolbar.js'
+export { type MathPluginOptions, mathPlugin } from './plugins/math.js'
+export { type Mention, type MentionPluginOptions, mentionPlugin } from './plugins/mention.js'
 export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
 

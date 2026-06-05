@@ -8,11 +8,18 @@ import { corePlugin } from '../src/plugins/core.js'
 import { hrPlugin } from '../src/plugins/hr.js'
 import { emojiPlugin } from '../src/plugins/emoji.js'
 import { imagePlugin } from '../src/plugins/image.js'
+import { mathPlugin } from '../src/plugins/math.js'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { GFM_NODES } from '../src/transformers/gfm.js'
 import { markdownEditor } from '../src/editor.js'
 
-const transformers = buildTransformers([corePlugin(), hrPlugin(), imagePlugin(), emojiPlugin()])
+const transformers = buildTransformers([
+  corePlugin(),
+  hrPlugin(),
+  imagePlugin(),
+  mathPlugin(),
+  emojiPlugin(),
+])
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function convert(markdown: string): string {
@@ -55,6 +62,11 @@ describe('content plugins — markdown round-trip', () => {
   it('a divider survives amid other blocks', () => {
     const doc = ['# Title', '', '---', '', 'After'].join('\n')
     expect(convert(doc)).toBe(doc)
+  })
+
+  it('math block round-trips to $$tex$$', () => {
+    expect(convert('$$e = mc^2$$')).toBe('$$e = mc^2$$')
+    expect(convert('$$\\int_0^1 x\\,dx$$')).toBe('$$\\int_0^1 x\\,dx$$')
   })
 })
 

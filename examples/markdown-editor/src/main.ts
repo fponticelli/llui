@@ -19,6 +19,8 @@ import {
   slashPlugin,
   contextMenuPlugin,
   floatingToolbarPlugin,
+  mathPlugin,
+  mentionPlugin,
   emojiPlugin,
   calloutPlugin,
   type EditorState,
@@ -52,6 +54,11 @@ const WELCOME_MD = [
   '',
   'Pluggable to the core — links, images, dividers, emoji :rocket:, and callouts',
   'are all plugins. Type `:heart:` or `:tada:` and watch them swap. :sparkles:',
+  '',
+  'Type `/` for the command menu, `@` to mention someone, select text for the',
+  'bubble bar, or right-click for the context menu.',
+  '',
+  '$$E = mc^2$$',
 ].join('\n')
 
 const SOURCE_MD = [
@@ -87,6 +94,8 @@ const fullApp = mountApp(
       slashPlugin(),
       contextMenuPlugin(),
       floatingToolbarPlugin(),
+      mathPlugin(),
+      mentionPlugin(),
       emojiPlugin(),
       calloutPlugin(),
     ],
@@ -155,6 +164,8 @@ const sourceApp = mountApp(
       slashPlugin(),
       contextMenuPlugin(),
       floatingToolbarPlugin(),
+      mathPlugin(),
+      mentionPlugin(),
       emojiPlugin(),
       calloutPlugin(),
     ],
