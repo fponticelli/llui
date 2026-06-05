@@ -69,6 +69,16 @@ export const THEME_STYLESHEET = `
     --hud-kbd-fg: #c8c8d0;
   }
 }
+
+/* The HUD reuses @llui/components' data-scope/data-part hooks for behaviour.
+   A host app that loads the @llui/components theme would otherwise leak its
+   global component layout (e.g. [data-part="panel"] { padding: 16px }) into
+   the HUD. Neutralise padding/margin on those hooks within the HUD root; the
+   HUD's own inline styles (higher specificity) re-apply what it needs. */
+#llui-devmode-annotate-root [data-scope] {
+  padding: 0;
+  margin: 0;
+}
 `
 
 export const STYLES = {
@@ -144,7 +154,7 @@ export const STYLES = {
   contextSubhead: [
     'font-size: 11px',
     'color: var(--hud-fg-muted)',
-    'margin-bottom: 10px',
+    'margin-bottom: 6px',
     'overflow: hidden',
     'text-overflow: ellipsis',
     'white-space: nowrap',
@@ -165,9 +175,9 @@ export const STYLES = {
   // Tiny markdown hint that sits below the textarea.
   markdownHint: ['margin-top: 4px', 'font-size: 11px', 'color: var(--hud-fg-subtle)'].join('; '),
 
-  status: 'margin-top: 8px; font-size: 12px; color: var(--hud-fg-muted); min-height: 16px;',
+  status: 'margin-top: 4px; font-size: 12px; color: var(--hud-fg-muted); min-height: 0;',
 
-  actions: 'display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;',
+  actions: 'display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px;',
 
   // Inline action buttons next to/above the textarea (e.g. "Add region").
   inlineActionBtn: [
@@ -244,7 +254,7 @@ export const STYLES = {
     'display: flex',
     'align-items: center',
     'gap: 8px',
-    'margin-bottom: 8px',
+    'margin-bottom: 6px',
     'flex-wrap: wrap',
   ].join('; '),
 

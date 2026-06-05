@@ -1,14 +1,23 @@
-// Element-pick overlay. Activated by the "⌖ Pick element" pill in
-// the compose view. Hovers over the page following the mouse,
-// drawing a thin outline + bbox label on whatever element sits
-// under the cursor. Click locks the selection and returns its
-// bbox + a stable CSS selector to the caller.
+// Element-pick overlay — authored with @llui/dom.
 //
-// The HUD modal is hidden by the caller while this is active so
-// the user can interact with the page. We exclude `#llui-devmode-
-// annotate-root` from elementFromPoint so the floating button never
-// becomes a pick target.
+// Activated by the "⌖ Pick element" pill in the compose view. A document-
+// level mousemove (the one imperative boundary: it must read the HOST app's
+// live DOM via elementFromPoint/getBoundingClientRect) feeds the hovered
+// element's bbox + selector into state; the dim scrim, outline and label are
+// rendered via `portal` to document.body with reactive bindings. Click locks
+// the selection; the outline lingers (dim removed) until the caller dismisses.
 
+import {
+  component,
+  mountSignalComponent,
+  div,
+  text,
+  portal,
+  show,
+  onMount,
+  type Renderable,
+  type SignalViewBag,
+} from '@llui/dom'
 import type { NoteRect } from './note-types.js'
 
 export interface PickResult {
@@ -18,19 +27,19 @@ export interface PickResult {
     bbox: NoteRect
   }
   /** Dismiss the lingering outline. Caller invokes once the user
-   *  Send / Cancels / re-picks. */
+   *  Send / Cancels / re-picks. Idempotent. */
   dismiss?: () => void
 }
 
 const PICKER_OVERLAY_ATTR = 'data-llui-element-picker'
+const HUD_ROOT = '#llui-devmode-annotate-root'
 
 /**
- * Build a short, stable CSS selector for the given element. Prefers
- * `#id`, then `tag.class` (first non-Llui class), then `tag:nth-of-type`.
- * Walks up at most 4 ancestors to give the LLM enough context to
- * locate the element in source.
+ * Build a short, stable CSS selector for the given element. Prefers `#id`,
+ * then `tag.class` (first non-Llui class), then `tag:nth-of-type`. Walks up
+ * at most 4 ancestors to give the LLM enough context to locate the element.
  */
-function buildSelector(el: Element): string {
+export function buildSelector(el: Element): string {
   const parts: string[] = []
   let cur: Element | null = el
   for (let depth = 0; cur && depth < 4; depth++, cur = cur.parentElement) {
@@ -55,149 +64,238 @@ function buildSelector(el: Element): string {
   return parts.join(' > ')
 }
 
-/**
- * Show the element-picker overlay. Resolves when the user clicks
- * (submit) or presses Escape (cancel). The outline lingers after
- * submit until `dismiss()` is called so the caller can show it as
- * a preview alongside the modal.
- */
-export async function pickElement(): Promise<PickResult> {
-  if (typeof document === 'undefined') return { reason: 'cancel' }
+// ── TEA shapes (exported for component tests) ────────────────────────────
 
-  // Three pieces:
-  //   - dim: full-viewport scrim active ONLY during picking. Removed
-  //     once the user clicks / cancels so the modal doesn't show
-  //     against a dimmed background.
-  //   - outline: the highlighted bbox. Stays after pick (lingers as a
-  //     preview), at a z-index BELOW the modal so the modal overlays
-  //     it cleanly.
-  //   - label: the selector + size readout. Same z-index as the
-  //     outline so it can't fight the modal either.
-  //
-  // The HUD modal lives at z-index 2147483647; we use 2147483645 for
-  // the lingering outline so anything in the modal (incl. the toast
-  // container) renders above it.
-  const dim = document.createElement('div')
-  dim.setAttribute(PICKER_OVERLAY_ATTR, 'dim')
-  dim.style.cssText = [
-    'position: fixed',
-    'inset: 0',
-    'pointer-events: none',
-    'background: rgba(0, 0, 0, 0.20)',
-    'z-index: 2147483645',
-  ].join('; ')
+export type PickPhase = 'picking' | 'picked'
 
-  const outline = document.createElement('div')
-  outline.setAttribute(PICKER_OVERLAY_ATTR, 'outline')
-  outline.style.cssText = [
-    'position: fixed',
-    'pointer-events: none',
-    'border: 2px solid #6366f1',
-    'background: rgba(99, 102, 241, 0.10)',
-    'border-radius: 3px',
-    'z-index: 2147483645',
-    'transition: top 30ms linear, left 30ms linear, width 30ms linear, height 30ms linear',
-    'display: none',
-  ].join('; ')
+export interface PickState {
+  phase: PickPhase
+  outline: NoteRect | null
+  selector: string | null
+  labelText: string
+  labelTop: number
+  labelLeft: number
+}
 
-  const label = document.createElement('div')
-  label.setAttribute(PICKER_OVERLAY_ATTR, 'label')
-  label.style.cssText = [
-    'position: fixed',
-    'pointer-events: none',
-    'background: #6366f1',
-    'color: white',
-    'padding: 2px 6px',
-    'border-radius: 3px',
-    'font: 11px/1.4 ui-monospace, SFMono-Regular, monospace',
-    'z-index: 2147483645',
-    'display: none',
-    'max-width: 320px',
-    'overflow: hidden',
-    'text-overflow: ellipsis',
-    'white-space: nowrap',
-  ].join('; ')
-
-  document.body.appendChild(dim)
-  document.body.appendChild(outline)
-  document.body.appendChild(label)
-
-  let currentTarget: Element | null = null
-  // `dismiss` (returned to the caller) tears down the lingering
-  // outline + label only. The viewport dim ALWAYS goes away as soon
-  // as picking ends, so the modal can render against the real page.
-  const dismiss = (): void => {
-    outline.remove()
-    label.remove()
-  }
-  const removeDim = (): void => {
-    dim.remove()
-  }
-
-  return new Promise<PickResult>((resolve) => {
-    const cleanupTransient = (): void => {
-      document.removeEventListener('mousemove', onMove, true)
-      document.removeEventListener('click', onClick, true)
-      document.removeEventListener('keydown', onKey, true)
+export type PickMsg =
+  | {
+      type: 'hover'
+      bbox: NoteRect
+      selector: string
+      label: string
+      labelTop: number
+      labelLeft: number
     }
-    const finish = (reason: 'submit' | 'cancel'): void => {
-      cleanupTransient()
-      removeDim()
-      if (reason === 'cancel' || !currentTarget) {
-        dismiss()
-        resolve({ reason: 'cancel' })
-        return
-      }
-      const rect = currentTarget.getBoundingClientRect()
-      const bbox: NoteRect = {
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        w: Math.round(rect.width),
-        h: Math.round(rect.height),
-      }
-      const selector = buildSelector(currentTarget)
-      resolve({
-        reason: 'submit',
-        element: { selector, bbox },
-        dismiss,
-      })
-    }
+  | { type: 'pick' }
+  | { type: 'cancel' }
 
+export type PickEffect = {
+  type: 'resolve'
+  reason: 'submit' | 'cancel'
+  selector?: string
+  bbox?: NoteRect
+}
+
+export const pickInit = (): PickState => ({
+  phase: 'picking',
+  outline: null,
+  selector: null,
+  labelText: '',
+  labelTop: 0,
+  labelLeft: 0,
+})
+
+export const pickReduce = (state: PickState, msg: PickMsg): [PickState, PickEffect[]] => {
+  switch (msg.type) {
+    case 'hover':
+      if (state.phase !== 'picking') return [state, []]
+      return [
+        {
+          ...state,
+          outline: msg.bbox,
+          selector: msg.selector,
+          labelText: msg.label,
+          labelTop: msg.labelTop,
+          labelLeft: msg.labelLeft,
+        },
+        [],
+      ]
+    case 'pick':
+      if (state.phase !== 'picking' || !state.outline || !state.selector) {
+        return [state, [{ type: 'resolve', reason: 'cancel' }]]
+      }
+      return [
+        { ...state, phase: 'picked' },
+        [{ type: 'resolve', reason: 'submit', selector: state.selector, bbox: state.outline }],
+      ]
+    case 'cancel':
+      return [state, [{ type: 'resolve', reason: 'cancel' }]]
+  }
+}
+
+const DIM_STYLE = {
+  'style.position': 'fixed',
+  'style.inset': '0',
+  'style.pointerEvents': 'none',
+  'style.background': 'rgba(0, 0, 0, 0.20)',
+  'style.zIndex': '2147483645',
+} as const
+
+const pickView = ({ state, send }: SignalViewBag<PickState, PickMsg>): Renderable => [
+  portal(() => [
+    // Dim scrim — only during active picking.
+    show(
+      state.map((s) => (s.phase === 'picking' ? true : null)),
+      () => [div({ [PICKER_OVERLAY_ATTR]: 'dim', ...DIM_STYLE }, [])],
+    ),
+    // Outline — present whenever an element is hovered/picked (lingers).
+    show(
+      state.map((s) => s.outline),
+      (o) => [
+        div(
+          {
+            [PICKER_OVERLAY_ATTR]: 'outline',
+            'style.position': 'fixed',
+            'style.pointerEvents': 'none',
+            'style.border': '2px solid #6366f1',
+            'style.background': 'rgba(99, 102, 241, 0.10)',
+            'style.borderRadius': '3px',
+            'style.zIndex': '2147483645',
+            'style.transition':
+              'top 30ms linear, left 30ms linear, width 30ms linear, height 30ms linear',
+            'style.top': o.map((r) => `${r.y}px`),
+            'style.left': o.map((r) => `${r.x}px`),
+            'style.width': o.map((r) => `${r.w}px`),
+            'style.height': o.map((r) => `${r.h}px`),
+          },
+          [],
+        ),
+      ],
+    ),
+    // Label — selector + size readout, follows the outline.
+    show(
+      state.map((s) => (s.outline ? s.labelText : null)),
+      () => [
+        div(
+          {
+            [PICKER_OVERLAY_ATTR]: 'label',
+            'style.position': 'fixed',
+            'style.pointerEvents': 'none',
+            'style.background': '#6366f1',
+            'style.color': 'white',
+            'style.padding': '2px 6px',
+            'style.borderRadius': '3px',
+            'style.font': '11px/1.4 ui-monospace, SFMono-Regular, monospace',
+            'style.zIndex': '2147483645',
+            'style.maxWidth': '320px',
+            'style.overflow': 'hidden',
+            'style.textOverflow': 'ellipsis',
+            'style.whiteSpace': 'nowrap',
+            'style.top': state.map((s) => `${s.labelTop}px`),
+            'style.left': state.map((s) => `${s.labelLeft}px`),
+          },
+          [text(state.map((s) => s.labelText))],
+        ),
+      ],
+    ),
+  ]),
+  // Document-level listeners reading the host app's live DOM (the one
+  // imperative boundary). Torn down on dispose via the returned cleanup.
+  onMount(() => {
     const onMove = (e: MouseEvent): void => {
       const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (!el) return
-      // Skip the HUD's own DOM — we don't want to pick the floating
-      // button or any of its descendants.
-      if (el.closest('#llui-devmode-annotate-root')) return
-      if (el === currentTarget) return
-      currentTarget = el
-      const rect = el.getBoundingClientRect()
-      outline.style.display = 'block'
-      outline.style.top = `${rect.top}px`
-      outline.style.left = `${rect.left}px`
-      outline.style.width = `${rect.width}px`
-      outline.style.height = `${rect.height}px`
-      label.style.display = 'block'
-      label.style.top = `${Math.max(2, rect.top - 22)}px`
-      label.style.left = `${rect.left}px`
-      label.textContent = `${buildSelector(el)}  ${Math.round(rect.width)}×${Math.round(rect.height)}`
+      if (!el || el.closest(HUD_ROOT)) return
+      const r = el.getBoundingClientRect()
+      const bbox: NoteRect = {
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+      }
+      const selector = buildSelector(el)
+      send({
+        type: 'hover',
+        bbox,
+        selector,
+        label: `${selector}  ${bbox.w}×${bbox.h}`,
+        labelTop: Math.max(2, bbox.y - 22),
+        labelLeft: bbox.x,
+      })
     }
     const onClick = (e: MouseEvent): void => {
-      if ((e.target as Element)?.closest('#llui-devmode-annotate-root')) return
+      if ((e.target as Element | null)?.closest(HUD_ROOT)) return
       e.preventDefault()
       e.stopPropagation()
-      finish('submit')
+      send({ type: 'pick' })
     }
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
-        finish('cancel')
+        send({ type: 'cancel' })
       }
     }
-
     document.addEventListener('mousemove', onMove, true)
     document.addEventListener('click', onClick, true)
     document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousemove', onMove, true)
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }),
+]
+
+/**
+ * Show the element-picker overlay. Resolves when the user clicks (submit) or
+ * presses Escape (cancel). The outline lingers after submit until `dismiss()`.
+ */
+export async function pickElement(): Promise<PickResult> {
+  if (typeof document === 'undefined') return { reason: 'cancel' }
+
+  const host = document.createElement('div')
+  host.setAttribute('data-llui-element-picker-host', '')
+  document.body.appendChild(host)
+
+  let disposed = false
+  let handle: ReturnType<typeof mountSignalComponent<PickState, PickMsg, PickEffect>> | null = null
+  const dismiss = (): void => {
+    if (disposed) return
+    disposed = true
+    handle?.dispose()
+    host.remove()
+  }
+
+  return new Promise<PickResult>((resolve) => {
+    let settled = false
+    const settle = (r: PickResult): void => {
+      if (settled) return
+      settled = true
+      if (r.reason === 'cancel') dismiss()
+      resolve(r)
+    }
+
+    handle = mountSignalComponent<PickState, PickMsg, PickEffect>(
+      host,
+      component<PickState, PickMsg, PickEffect>({
+        name: 'llui-devmode-annotate:picker',
+        init: pickInit,
+        update: pickReduce,
+        view: pickView,
+        onEffect: (eff) => {
+          if (eff.type !== 'resolve') return
+          if (eff.reason === 'submit' && eff.selector && eff.bbox) {
+            settle({
+              reason: 'submit',
+              element: { selector: eff.selector, bbox: eff.bbox },
+              dismiss,
+            })
+          } else {
+            settle({ reason: 'cancel' })
+          }
+        },
+      }),
+      { devtools: false },
+    )
   })
 }

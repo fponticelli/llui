@@ -1,17 +1,37 @@
-// Notes browser view. Mounted inside the HUD modal alongside the
-// compose view; the user toggles between them via a "Browse" link.
+// Notes browser view — authored with @llui/dom.
 //
-// Responsibilities:
-//   - Pick a session from the dropdown.
-//   - List notes in that session, newest first.
-//   - Click a note → expand: full prose + status timeline + edit + delete.
-//   - Edit calls PATCH /_llui/notes/:id, Delete calls DELETE /_llui/notes/:id.
-//   - Re-fetch whenever the HUD receives a `note-{created,updated,deleted}` SSE event.
+// Mounted inside the HUD modal alongside the compose view. A single TEA
+// component over one serializable state tree: pick a session, list its notes
+// (newest first), filter client-side, expand a row to see prose + status
+// timeline + screenshot + proposed-diff + actions (re-solve / replay / edit /
+// delete), and select rows for bulk delete / wontfix. Keyed `each`/`show`
+// reconciliation replaces the old `innerHTML = ''` rebuilds, so an SSE-driven
+// refresh updates only changed rows (scroll + expanded content survive).
 //
-// The view is fully self-contained — it returns a DOM root + an
-// `update()` method the parent calls when new SSE events arrive.
+// Public API is unchanged: createBrowseView(opts) → { el, refresh, onShow }.
 
+import {
+  component,
+  mountSignalComponent,
+  div,
+  span,
+  button,
+  input,
+  textarea,
+  img,
+  pre,
+  each,
+  show,
+  portal,
+  text,
+  type Signal,
+  type Renderable,
+  type SignalViewBag,
+} from '@llui/dom'
+import { select, type SelectMsg, type SelectState } from '@llui/components/select'
 import { btnStyle, STYLES } from './styles.js'
+
+// ── Domain shapes (server payloads) ──────────────────────────────────────
 
 interface SessionSummary {
   id: string
@@ -42,6 +62,28 @@ interface StatusTransition {
   reason?: string
 }
 
+interface ProposedDiff {
+  summary: string
+  confidence: string
+  files: Array<{ path: string; patch: string }>
+}
+
+interface NoteFrontmatterLite {
+  kind: string
+  author: string
+  intent?: string
+  screenshot?: string | null
+  proposedDiff?: ProposedDiff
+  replyTo?: string
+}
+
+/** Full note JSON fetched lazily on expand. */
+interface FullNote {
+  frontmatter: NoteFrontmatterLite
+  prose: string
+  body?: { repro?: unknown[] }
+}
+
 /** Filters applied client-side over the fetched notes list. */
 interface BrowseFilters {
   kind: 'all' | 'text' | 'rect' | 'capture' | 'reply'
@@ -50,8 +92,29 @@ interface BrowseFilters {
   text: string
 }
 
+export interface BrowseViewHandle {
+  /** The root DOM element to append to the modal. */
+  el: HTMLElement
+  /** Re-fetch sessions + current note list. Cheap on every SSE event;
+   *  debounced internally. */
+  refresh: () => void
+  /** Called when the view becomes visible. Triggers an immediate fetch if
+   *  it hasn't loaded yet. */
+  onShow: () => void
+}
+
+export interface BrowseViewOptions {
+  origin: string
+  /** Reports user actions back to the host modal (errors → status line). */
+  onError?: (message: string) => void
+  /** Replay a captured repro trace against the live DOM. */
+  onReplayRepro?: (events: unknown[]) => Promise<{ applied: number; skipped: unknown[] }>
+}
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
 /** Buckets `status` into the high-level categories the filter UI uses. */
-function statusBucket(s: string | undefined): BrowseFilters['status'] {
+export function statusBucket(s: string | undefined): BrowseFilters['status'] {
   if (!s || s === 'open') return 'open'
   if (s === 'claimed' || s === 'in-progress' || s === 'accepted') return 'working'
   if (s === 'proposed') return 'proposed'
@@ -59,994 +122,1348 @@ function statusBucket(s: string | undefined): BrowseFilters['status'] {
   return 'closed' // rejected | wontfix | failed
 }
 
-export interface BrowseViewHandle {
-  /** The root DOM element to append to the modal. */
-  el: HTMLElement
-  /** Re-fetch sessions + current note list. Cheap to call on every
-   *  SSE event; debounced internally. */
-  refresh: () => void
-  /** Called when the view becomes visible. Triggers an immediate
-   *  fetch if it hasn't loaded yet. */
-  onShow: () => void
+export function statusGlyph(status: string | undefined): string {
+  switch (status) {
+    case 'claimed':
+    case 'in-progress':
+      return '🤖'
+    case 'proposed':
+      return '✓'
+    case 'applied':
+      return '✅'
+    case 'rejected':
+    case 'wontfix':
+      return '✗'
+    case 'failed':
+      return '❌'
+    default:
+      return ''
+  }
 }
 
-export interface BrowseViewOptions {
-  origin: string
-  /** Reports user actions back to the host modal — used to surface
-   *  errors via the existing status line / toast system. */
-  onError?: (message: string) => void
-  /** Replay a captured repro trace against the live DOM. Wired up
-   *  by the parent HUD so the browse view can show a "▶ Replay"
-   *  button on notes carrying `body.repro`. */
-  onReplayRepro?: (events: unknown[]) => Promise<{ applied: number; skipped: unknown[] }>
+export function kindGlyph(kind: string): string {
+  switch (kind) {
+    case 'rect':
+      return '⌖'
+    case 'capture':
+      return '📸'
+    case 'reply':
+      return '↩'
+    default:
+      return '📝'
+  }
 }
 
-/**
- * Build the browse-view DOM tree + return a handle. The parent owns
- * mount/unmount and visibility toggling.
- */
-export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
-  const { origin } = opts
-  const reportError = opts.onError ?? ((m) => console.warn('[llui:browse]', m))
+export function matchesFilters(n: NoteSummary, f: BrowseFilters): boolean {
+  if (f.kind !== 'all' && n.kind !== f.kind) return false
+  if (f.author !== 'all' && n.author !== f.author) return false
+  if (f.status !== 'all' && statusBucket(n.status) !== f.status) return false
+  if (f.text && !n.preview.toLowerCase().includes(f.text.toLowerCase())) return false
+  return true
+}
 
-  const el = document.createElement('div')
-  el.setAttribute('data-llui-browse-view', '')
-  el.style.cssText = 'display: none; flex-direction: column; gap: 8px;'
+// ── TEA shapes ───────────────────────────────────────────────────────────
 
-  // Header row: session selector + refresh button
-  const headerRow = document.createElement('div')
-  headerRow.style.cssText = 'display: flex; gap: 8px; align-items: center;'
+type Phase = 'idle' | 'loading' | 'ready'
 
-  const sessionSelect = document.createElement('select')
-  sessionSelect.style.cssText = [
-    'flex: 1',
-    'padding: 4px 6px',
-    'border-radius: 6px',
-    'border: 1px solid var(--hud-border-strong)',
-    'background: var(--hud-input-bg)',
-    'color: var(--hud-fg)',
-    'font: inherit',
-    'font-size: 12px',
-  ].join('; ')
+interface ExpansionData {
+  prose: string
+  frontmatter: NoteFrontmatterLite
+  history: StatusTransition[]
+  repro: unknown[]
+}
 
-  const refreshBtn = document.createElement('button')
-  refreshBtn.type = 'button'
-  refreshBtn.textContent = '↻'
-  // Notes auto-refresh whenever the server broadcasts a
-  // note-created / note-updated / note-deleted / status-changed
-  // event. This button is the escape hatch for out-of-band edits
-  // (e.g. someone wrote files directly with an MCP tool, or SSE
-  // dropped briefly during a long solve).
-  refreshBtn.title = 'Reload from disk (notes auto-refresh on activity)'
-  refreshBtn.style.cssText = STYLES.toolbarBtn + '; padding: 4px 8px;'
+export interface BrowseState {
+  phase: Phase
+  sessions: SessionSummary[]
+  /** Session picker — its value[0] is the canonical current session id. */
+  sessionSelect: SelectState
+  notes: NoteSummary[]
+  /** Filter pickers — each value[0] is the canonical filter value. */
+  kindSelect: SelectState
+  authorSelect: SelectState
+  statusSelect: SelectState
+  /** Free-text search (a plain input, not a select). */
+  searchText: string
+  expandedNoteId: string | null
+  selectedIds: string[]
+  /** hydrated expansions keyed by note id; 'loading' while in flight */
+  expansions: Record<string, ExpansionData | 'loading'>
+  /** note id currently in inline-edit mode, + the draft prose */
+  editingNoteId: string | null
+  editDraft: string
+  /** full-size screenshot lightbox src, or null when closed */
+  lightboxSrc: string | null
+}
 
-  headerRow.append(sessionSelect, refreshBtn)
+export type BrowseMsg =
+  | { type: 'show' }
+  | { type: 'refresh' }
+  | { type: 'sessions/loaded'; sessions: SessionSummary[] }
+  | { type: 'notes/loaded'; notes: NoteSummary[] }
+  | { type: 'sessionSelect'; msg: SelectMsg }
+  | { type: 'kindSelect'; msg: SelectMsg }
+  | { type: 'authorSelect'; msg: SelectMsg }
+  | { type: 'statusSelect'; msg: SelectMsg }
+  | { type: 'filter/text'; value: string }
+  | { type: 'row/toggleExpand'; id: string }
+  | { type: 'row/toggleSelect'; id: string }
+  | { type: 'expansion/loaded'; id: string; data: ExpansionData }
+  | { type: 'selection/clear' }
+  | { type: 'note/delete'; id: string }
+  | { type: 'bulk/delete' }
+  | { type: 'bulk/wontfix' }
+  | { type: 'edit/start'; id: string; prose: string }
+  | { type: 'edit/change'; value: string }
+  | { type: 'edit/cancel' }
+  | { type: 'edit/save' }
+  | { type: 'reSolve'; prose: string }
+  | { type: 'replay'; events: unknown[] }
+  | { type: 'diff/accept'; taskId: string }
+  | { type: 'diff/reject'; taskId: string }
+  | { type: 'lightbox/open'; src: string }
+  | { type: 'lightbox/close' }
 
-  // Filter row: kind / author / status selects + free-text search.
-  const filterRow = document.createElement('div')
-  filterRow.style.cssText = [
-    'display: grid',
-    'grid-template-columns: 1fr 1fr 1fr',
-    'gap: 4px',
-    'align-items: center',
-    'font-size: 11px',
-  ].join('; ')
+export type BrowseEffect =
+  | { type: 'fetchSessions' }
+  | { type: 'fetchNotes'; sessionId: string | null }
+  | { type: 'fetchExpansion'; id: string; sessionId: string }
+  | { type: 'deleteNote'; id: string; sessionId: string }
+  | { type: 'bulkDelete'; ids: string[]; sessionId: string }
+  | { type: 'bulkStatus'; ids: string[]; to: string; sessionId: string }
+  | { type: 'patchProse'; id: string; prose: string; sessionId: string }
+  | { type: 'postStatus'; taskId: string; to: 'accepted' | 'rejected'; sessionId: string }
+  | { type: 'reSolve'; prose: string }
+  | { type: 'replay'; events: unknown[] }
+  | { type: 'report'; message: string }
 
-  const selectStyle = [
-    'padding: 3px 4px',
-    'border-radius: 4px',
-    'border: 1px solid var(--hud-border-strong)',
-    'background: var(--hud-input-bg)',
-    'color: var(--hud-fg)',
-    'font: inherit',
-    'font-size: 11px',
-  ].join('; ')
+// Static filter option lists: [value, label]. The select's `items` are the
+// values; labels are looked up for rendering.
+const KIND_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All kinds'],
+  ['text', '📝 text'],
+  ['rect', '⌖ rect'],
+  ['capture', '📸 capture'],
+  ['reply', '↩ reply'],
+]
+const AUTHOR_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All authors'],
+  ['human', '👤 human'],
+  ['llm', '🤖 llm'],
+]
+const STATUS_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All statuses'],
+  ['open', 'open'],
+  ['working', 'working'],
+  ['proposed', 'proposed'],
+  ['applied', 'applied'],
+  ['closed', 'closed'],
+]
 
-  const mkFilterSelect = (options: ReadonlyArray<readonly [string, string]>): HTMLSelectElement => {
-    const sel = document.createElement('select')
-    sel.style.cssText = selectStyle
-    for (const [value, label] of options) {
-      const opt = document.createElement('option')
-      opt.value = value
-      opt.textContent = label
-      sel.appendChild(opt)
+const filterSelectInit = (options: ReadonlyArray<readonly [string, string]>): SelectState =>
+  select.init({ items: options.map(([v]) => v), value: ['all'] })
+
+export const browseInit = (): BrowseState => ({
+  phase: 'idle',
+  sessions: [],
+  sessionSelect: select.init({ items: [], value: [] }),
+  notes: [],
+  kindSelect: filterSelectInit(KIND_OPTIONS),
+  authorSelect: filterSelectInit(AUTHOR_OPTIONS),
+  statusSelect: filterSelectInit(STATUS_OPTIONS),
+  searchText: '',
+  expandedNoteId: null,
+  selectedIds: [],
+  expansions: {},
+  editingNoteId: null,
+  editDraft: '',
+  lightboxSrc: null,
+})
+
+// ── Selectors — the select slices are the source of truth ────────────────
+
+/** The canonical current session id (select value[0]). */
+export const currentSessionId = (s: BrowseState): string | null => s.sessionSelect.value[0] ?? null
+
+/** The active filters, derived from the select slices + search text. */
+export const activeFilters = (s: BrowseState): BrowseFilters => ({
+  kind: (s.kindSelect.value[0] ?? 'all') as BrowseFilters['kind'],
+  author: (s.authorSelect.value[0] ?? 'all') as BrowseFilters['author'],
+  status: (s.statusSelect.value[0] ?? 'all') as BrowseFilters['status'],
+  text: s.searchText,
+})
+
+/** Keep the current session if it still exists, else default to most recent. */
+function pickSession(sessions: SessionSummary[], current: string | null): string | null {
+  if (sessions.length === 0) return null
+  if (current && sessions.some((s) => s.id === current)) return current
+  return sessions[sessions.length - 1]!.id
+}
+
+export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, BrowseEffect[]] => {
+  const sid = currentSessionId(state)
+  switch (msg.type) {
+    case 'show':
+      if (state.phase !== 'idle') return [state, []]
+      return [{ ...state, phase: 'loading' }, [{ type: 'fetchSessions' }]]
+
+    case 'refresh':
+      return [state, [{ type: 'fetchSessions' }]]
+
+    case 'sessions/loaded': {
+      const picked = pickSession(msg.sessions, sid)
+      let sessionSelect = state.sessionSelect
+      ;[sessionSelect] = select.update(sessionSelect, {
+        type: 'setItems',
+        items: msg.sessions.map((s) => s.id),
+      })
+      ;[sessionSelect] = select.update(sessionSelect, {
+        type: 'setValue',
+        value: picked ? [picked] : [],
+      })
+      return [
+        { ...state, phase: 'ready', sessions: msg.sessions, sessionSelect },
+        [{ type: 'fetchNotes', sessionId: picked }],
+      ]
     }
-    return sel
-  }
-  const kindFilter = mkFilterSelect([
-    ['all', 'All kinds'],
-    ['text', '📝 text'],
-    ['rect', '⌖ rect'],
-    ['capture', '📸 capture'],
-    ['reply', '↩ reply'],
-  ])
-  const authorFilter = mkFilterSelect([
-    ['all', 'All authors'],
-    ['human', '👤 human'],
-    ['llm', '🤖 llm'],
-  ])
-  const statusFilter = mkFilterSelect([
-    ['all', 'All statuses'],
-    ['open', 'open'],
-    ['working', 'working'],
-    ['proposed', 'proposed'],
-    ['applied', 'applied'],
-    ['closed', 'closed'],
-  ])
 
-  const searchInput = document.createElement('input')
-  searchInput.type = 'search'
-  searchInput.placeholder = 'Search prose…'
-  searchInput.style.cssText = [
-    'grid-column: 1 / span 3',
-    'padding: 4px 6px',
-    'border-radius: 4px',
-    'border: 1px solid var(--hud-border-strong)',
-    'background: var(--hud-input-bg)',
-    'color: var(--hud-fg)',
-    'font: inherit',
-    'font-size: 11px',
-  ].join('; ')
-
-  filterRow.append(kindFilter, authorFilter, statusFilter, searchInput)
-
-  // Notes list
-  const listEl = document.createElement('div')
-  listEl.style.cssText = [
-    'display: flex',
-    'flex-direction: column',
-    'gap: 4px',
-    'max-height: 320px',
-    'overflow-y: auto',
-    'padding: 2px',
-  ].join('; ')
-
-  // Empty / loading state
-  const emptyEl = document.createElement('div')
-  emptyEl.style.cssText = [
-    'padding: 16px 8px',
-    'text-align: center',
-    'color: var(--hud-fg-subtle)',
-    'font-size: 12px',
-  ].join('; ')
-
-  // Bulk action bar — visible only when >=1 row checkbox is active.
-  const bulkBar = document.createElement('div')
-  bulkBar.style.cssText = [
-    'display: none',
-    'align-items: center',
-    'gap: 8px',
-    'padding: 6px 8px',
-    'background: var(--hud-accent-bg)',
-    'color: var(--hud-accent-fg)',
-    'border-radius: 6px',
-    'font-size: 12px',
-  ].join('; ')
-  const bulkCount = document.createElement('span')
-  bulkCount.style.cssText = 'flex: 1;'
-  const bulkDeleteBtn = document.createElement('button')
-  bulkDeleteBtn.type = 'button'
-  bulkDeleteBtn.textContent = 'Delete'
-  bulkDeleteBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
-  const bulkWontfixBtn = document.createElement('button')
-  bulkWontfixBtn.type = 'button'
-  bulkWontfixBtn.textContent = 'Mark wontfix'
-  bulkWontfixBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
-  const bulkClearBtn = document.createElement('button')
-  bulkClearBtn.type = 'button'
-  bulkClearBtn.textContent = '✕'
-  bulkClearBtn.title = 'Clear selection'
-  bulkClearBtn.style.cssText = [
-    'background: transparent',
-    'border: 0',
-    'color: inherit',
-    'cursor: pointer',
-    'font-size: 14px',
-    'line-height: 1',
-    'padding: 0 4px',
-  ].join('; ')
-  bulkBar.append(bulkCount, bulkWontfixBtn, bulkDeleteBtn, bulkClearBtn)
-
-  el.append(headerRow, filterRow, bulkBar, listEl, emptyEl)
-
-  // ── State ──────────────────────────────────────────────────────
-  let sessions: SessionSummary[] = []
-  let currentSessionId: string | null = null
-  let notes: NoteSummary[] = []
-  let expandedNoteId: string | null = null
-  let loaded = false
-  let refreshTimer: ReturnType<typeof setTimeout> | null = null
-  const filters: BrowseFilters = { kind: 'all', author: 'all', status: 'all', text: '' }
-  const selectedIds = new Set<string>()
-  // Cache of full note JSON (frontmatter + prose + body) keyed by id.
-  // Populated on expand so the diff viewer / re-solve / screenshot
-  // preview can render without re-fetching the same note. Cleared on
-  // refresh or session change.
-  interface CachedNote {
-    frontmatter: {
-      kind: string
-      author: string
-      intent?: string
-      screenshot?: string | null
-      proposedDiff?: {
-        summary: string
-        confidence: string
-        files: Array<{ path: string; patch: string }>
-      }
-      replyTo?: string
+    case 'notes/loaded': {
+      const notes = msg.notes.slice().sort((a, b) => (a.ts < b.ts ? 1 : -1))
+      return [{ ...state, notes }, []]
     }
-    prose: string
-    body?: { repro?: unknown[] }
-  }
-  const noteCache = new Map<string, CachedNote>()
-  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-  function matchesFilters(n: NoteSummary): boolean {
-    if (filters.kind !== 'all' && n.kind !== filters.kind) return false
-    if (filters.author !== 'all' && n.author !== filters.author) return false
-    if (filters.status !== 'all' && statusBucket(n.status) !== filters.status) return false
-    if (filters.text && !n.preview.toLowerCase().includes(filters.text.toLowerCase())) return false
-    return true
-  }
-
-  // ── Fetch helpers ──────────────────────────────────────────────
-  async function fetchSessions(): Promise<void> {
-    try {
-      const res = await fetch(`${origin}/_llui/sessions`)
-      if (!res.ok) throw new Error(`GET /_llui/sessions → ${res.status}`)
-      const payload = (await res.json()) as { sessions: SessionSummary[] }
-      sessions = payload.sessions ?? []
-      if (sessions.length === 0) {
-        currentSessionId = null
-      } else if (!currentSessionId || !sessions.find((s) => s.id === currentSessionId)) {
-        // Pick the most recently-started session by default. The
-        // backend returns them in start order; take the last one.
-        currentSessionId = sessions[sessions.length - 1]!.id
-      }
-      renderSessionSelect()
-    } catch (err) {
-      reportError(`failed to load sessions: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  async function fetchNotes(): Promise<void> {
-    if (!currentSessionId) {
-      notes = []
-      renderNotes()
-      return
-    }
-    try {
-      const res = await fetch(
-        `${origin}/_llui/notes?sessionId=${encodeURIComponent(currentSessionId)}`,
-      )
-      if (!res.ok) throw new Error(`GET /_llui/notes → ${res.status}`)
-      const payload = (await res.json()) as { notes: NoteSummary[] }
-      notes = (payload.notes ?? []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1))
-      renderNotes()
-    } catch (err) {
-      reportError(`failed to load notes: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  async function fetchStatusHistory(noteId: string): Promise<StatusTransition[]> {
-    if (!currentSessionId) return []
-    try {
-      const res = await fetch(
-        `${origin}/_llui/notes/${noteId}/status?sessionId=${encodeURIComponent(currentSessionId)}`,
-      )
-      if (!res.ok) return []
-      const payload = (await res.json()) as { history?: StatusTransition[] }
-      return payload.history ?? []
-    } catch {
-      return []
-    }
-  }
-
-  async function fetchNoteJson(noteId: string): Promise<CachedNote | null> {
-    if (!currentSessionId) return null
-    const cached = noteCache.get(noteId)
-    if (cached) return cached
-    try {
-      const res = await fetch(
-        `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}&format=json`,
-      )
-      if (!res.ok) return null
-      const payload = (await res.json()) as CachedNote
-      noteCache.set(noteId, payload)
-      return payload
-    } catch {
-      return null
-    }
-  }
-
-  async function patchNoteProse(noteId: string, prose: string): Promise<boolean> {
-    if (!currentSessionId) return false
-    try {
-      const res = await fetch(
-        `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}`,
+    case 'sessionSelect': {
+      const prev = sid
+      const [sessionSelect] = select.update(state.sessionSelect, msg.msg)
+      const next = sessionSelect.value[0] ?? null
+      if (next === prev) return [{ ...state, sessionSelect }, []]
+      // Session actually changed → reset the view and refetch.
+      return [
         {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ prose }),
+          ...state,
+          sessionSelect,
+          expandedNoteId: null,
+          editingNoteId: null,
+          selectedIds: [],
+          expansions: {},
         },
-      )
-      if (!res.ok) {
-        reportError(`save failed (${res.status})`)
-        return false
+        [{ type: 'fetchNotes', sessionId: next }],
+      ]
+    }
+
+    // Filters are pure client-side state — reconciliation makes per-keystroke
+    // re-render cheap, so the old 120ms search debounce is gone.
+    case 'kindSelect': {
+      const [kindSelect] = select.update(state.kindSelect, msg.msg)
+      return [{ ...state, kindSelect }, []]
+    }
+    case 'authorSelect': {
+      const [authorSelect] = select.update(state.authorSelect, msg.msg)
+      return [{ ...state, authorSelect }, []]
+    }
+    case 'statusSelect': {
+      const [statusSelect] = select.update(state.statusSelect, msg.msg)
+      return [{ ...state, statusSelect }, []]
+    }
+    case 'filter/text':
+      return [{ ...state, searchText: msg.value }, []]
+
+    case 'row/toggleExpand': {
+      if (state.expandedNoteId === msg.id) {
+        return [{ ...state, expandedNoteId: null, editingNoteId: null }, []]
       }
-      return true
-    } catch (err) {
-      reportError(`save failed: ${err instanceof Error ? err.message : String(err)}`)
-      return false
-    }
-  }
-
-  async function deleteNote(noteId: string): Promise<boolean> {
-    if (!currentSessionId) return false
-    try {
-      const res = await fetch(
-        `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}`,
-        { method: 'DELETE' },
-      )
-      if (!res.ok) {
-        reportError(`delete failed (${res.status})`)
-        return false
-      }
-      return true
-    } catch (err) {
-      reportError(`delete failed: ${err instanceof Error ? err.message : String(err)}`)
-      return false
-    }
-  }
-
-  // ── Render ─────────────────────────────────────────────────────
-  function renderSessionSelect(): void {
-    sessionSelect.innerHTML = ''
-    if (sessions.length === 0) {
-      const opt = document.createElement('option')
-      opt.textContent = '(no sessions)'
-      opt.disabled = true
-      sessionSelect.appendChild(opt)
-      sessionSelect.disabled = true
-      return
-    }
-    sessionSelect.disabled = false
-    for (const s of sessions) {
-      const opt = document.createElement('option')
-      opt.value = s.id
-      opt.textContent = `${s.id} (${s.noteCount})`
-      if (s.id === currentSessionId) opt.selected = true
-      sessionSelect.appendChild(opt)
-    }
-  }
-
-  function statusGlyph(status: string | undefined): string {
-    switch (status) {
-      case 'claimed':
-      case 'in-progress':
-        return '🤖'
-      case 'proposed':
-        return '✓'
-      case 'applied':
-        return '✅'
-      case 'rejected':
-      case 'wontfix':
-        return '✗'
-      case 'failed':
-        return '❌'
-      default:
-        return ''
-    }
-  }
-
-  function kindGlyph(kind: string): string {
-    switch (kind) {
-      case 'rect':
-        return '⌖'
-      case 'capture':
-        return '📸'
-      case 'reply':
-        return '↩'
-      case 'text':
-      default:
-        return '📝'
-    }
-  }
-
-  function renderNotes(): void {
-    listEl.innerHTML = ''
-    const visible = notes.filter(matchesFilters)
-    if (visible.length === 0) {
-      if (notes.length === 0) {
-        emptyEl.textContent = currentSessionId
-          ? 'no notes in this session yet'
-          : 'no sessions yet — drop a note from the compose view'
-      } else {
-        emptyEl.textContent = `no notes match the current filters (${notes.length} hidden)`
-      }
-      emptyEl.style.display = 'block'
-    } else {
-      emptyEl.style.display = 'none'
-      for (const note of visible) {
-        listEl.appendChild(renderNoteRow(note))
-      }
-    }
-    renderBulkBar()
-  }
-
-  function renderBulkBar(): void {
-    const n = selectedIds.size
-    if (n === 0) {
-      bulkBar.style.display = 'none'
-      return
-    }
-    bulkBar.style.display = 'flex'
-    bulkCount.textContent = `${n} selected`
-  }
-
-  function renderNoteRow(note: NoteSummary): HTMLElement {
-    const row = document.createElement('div')
-    row.setAttribute('data-llui-note-id', note.id)
-    row.style.cssText = [
-      'border: 1px solid var(--hud-border)',
-      'border-radius: 6px',
-      'background: var(--hud-surface)',
-      'padding: 6px 8px',
-      'font-size: 12px',
-      'cursor: pointer',
-    ].join('; ')
-
-    const isExpanded = note.id === expandedNoteId
-
-    // ── Summary line ──
-    const summary = document.createElement('div')
-    summary.style.cssText = 'display: flex; align-items: center; gap: 6px;'
-
-    const checkbox = document.createElement('input')
-    checkbox.type = 'checkbox'
-    checkbox.checked = selectedIds.has(note.id)
-    checkbox.style.cssText = 'flex: 0 0 auto; margin: 0;'
-    checkbox.addEventListener('click', (e) => {
-      e.stopPropagation()
-    })
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) selectedIds.add(note.id)
-      else selectedIds.delete(note.id)
-      renderBulkBar()
-    })
-
-    const glyph = document.createElement('span')
-    glyph.textContent = kindGlyph(note.kind)
-    glyph.style.cssText = 'flex: 0 0 auto;'
-
-    const idBadge = document.createElement('span')
-    idBadge.textContent = note.id
-    idBadge.style.cssText = [
-      'font-family: ui-monospace, SFMono-Regular, monospace',
-      'font-size: 10px',
-      'color: var(--hud-fg-subtle)',
-      'flex: 0 0 auto',
-    ].join('; ')
-
-    const previewEl = document.createElement('span')
-    previewEl.textContent = note.preview || '(no prose)'
-    previewEl.style.cssText = [
-      'flex: 1 1 auto',
-      'overflow: hidden',
-      'text-overflow: ellipsis',
-      'white-space: nowrap',
-      'color: var(--hud-fg)',
-    ].join('; ')
-
-    const statusEl = document.createElement('span')
-    statusEl.textContent = statusGlyph(note.status)
-    statusEl.title = note.status ?? ''
-    statusEl.style.cssText = 'flex: 0 0 auto;'
-
-    summary.append(checkbox, glyph, idBadge, previewEl, statusEl)
-    row.appendChild(summary)
-
-    if (isExpanded) {
-      const expansion = document.createElement('div')
-      expansion.style.cssText = 'margin-top: 8px; display: flex; flex-direction: column; gap: 6px;'
-      expansion.appendChild(renderExpansionPlaceholder())
-      row.appendChild(expansion)
-      // Async fill — fetch the full prose + status history once expanded.
-      void hydrateExpansion(note, expansion)
+      const already = state.expansions[msg.id]
+      const effects: BrowseEffect[] =
+        already || !sid ? [] : [{ type: 'fetchExpansion', id: msg.id, sessionId: sid }]
+      return [
+        {
+          ...state,
+          expandedNoteId: msg.id,
+          editingNoteId: null,
+          expansions: already ? state.expansions : { ...state.expansions, [msg.id]: 'loading' },
+        },
+        effects,
+      ]
     }
 
-    // Click anywhere on the row toggles expansion — but ignore clicks
-    // bubbling up from the expansion area (the textarea + buttons).
-    row.addEventListener('click', (e) => {
-      if (e.target !== summary && (e.target as HTMLElement).closest('[data-llui-expansion]')) {
-        return
-      }
-      expandedNoteId = isExpanded ? null : note.id
-      renderNotes()
-    })
+    case 'expansion/loaded':
+      return [{ ...state, expansions: { ...state.expansions, [msg.id]: msg.data } }, []]
 
-    return row
-  }
-
-  function renderExpansionPlaceholder(): HTMLElement {
-    const ph = document.createElement('div')
-    ph.setAttribute('data-llui-expansion', '')
-    ph.textContent = 'loading…'
-    ph.style.cssText = 'color: var(--hud-fg-subtle); font-size: 11px;'
-    return ph
-  }
-
-  async function hydrateExpansion(note: NoteSummary, expansion: HTMLElement): Promise<void> {
-    const [full, history] = await Promise.all([fetchNoteJson(note.id), fetchStatusHistory(note.id)])
-    const prose = full?.prose ?? ''
-    const frontmatter = full?.frontmatter ?? { kind: note.kind, author: note.author }
-    expansion.innerHTML = ''
-    expansion.setAttribute('data-llui-expansion', '')
-
-    // Screenshot preview (when the note carries one) — fetched lazily
-    // by the browser via the existing /_llui/notes/:id/screenshot
-    // endpoint. Click toggles a full-size lightbox.
-    if (frontmatter.screenshot && currentSessionId) {
-      const wrap = document.createElement('div')
-      wrap.style.cssText = 'display: flex; justify-content: center;'
-      const img = document.createElement('img')
-      img.src = `${origin}/_llui/notes/${note.id}/screenshot?sessionId=${encodeURIComponent(currentSessionId)}`
-      img.alt = 'screenshot'
-      img.style.cssText = [
-        'max-width: 100%',
-        'max-height: 200px',
-        'border: 1px solid var(--hud-border)',
-        'border-radius: 4px',
-        'cursor: zoom-in',
-        'background: var(--hud-surface)',
-      ].join('; ')
-      img.addEventListener('click', (e) => {
-        e.stopPropagation()
-        openLightbox(img.src)
-      })
-      wrap.appendChild(img)
-      expansion.appendChild(wrap)
+    case 'row/toggleSelect': {
+      const has = state.selectedIds.includes(msg.id)
+      const selectedIds = has
+        ? state.selectedIds.filter((id) => id !== msg.id)
+        : [...state.selectedIds, msg.id]
+      return [{ ...state, selectedIds }, []]
     }
 
-    // Prose viewer (with inline edit toggle).
-    const proseBox = document.createElement('div')
-    proseBox.style.cssText = [
-      'padding: 8px',
-      'background: var(--hud-bg)',
-      'border: 1px solid var(--hud-border)',
-      'border-radius: 4px',
-      'white-space: pre-wrap',
-      'font-size: 12px',
-      'color: var(--hud-fg)',
-      'max-height: 160px',
-      'overflow-y: auto',
-    ].join('; ')
-    proseBox.textContent = prose || '(no prose)'
-    expansion.appendChild(proseBox)
+    case 'selection/clear':
+      return [{ ...state, selectedIds: [] }, []]
 
-    // Diff viewer — reply notes carry a `proposedDiff`. Render each
-    // file as a colored unified diff (red removed / green added).
-    // Inline Accept / Reject buttons drive the status transition for
-    // the ORIGINAL task note (replyTo).
-    if (frontmatter.proposedDiff && frontmatter.replyTo) {
-      expansion.appendChild(renderProposedDiff(frontmatter.replyTo, frontmatter.proposedDiff))
+    case 'note/delete':
+      if (!sid) return [state, []]
+      return [
+        { ...state, expandedNoteId: null, editingNoteId: null },
+        [{ type: 'deleteNote', id: msg.id, sessionId: sid }],
+      ]
+
+    case 'bulk/delete': {
+      if (state.selectedIds.length === 0 || !sid) return [state, []]
+      return [
+        { ...state, selectedIds: [] },
+        [{ type: 'bulkDelete', ids: state.selectedIds, sessionId: sid }],
+      ]
     }
 
-    // Status timeline.
-    const timeline = document.createElement('div')
-    timeline.style.cssText = 'font-size: 11px; color: var(--hud-fg-muted);'
-    if (history.length > 0) {
-      const list = document.createElement('div')
-      list.style.cssText = 'display: flex; flex-direction: column; gap: 2px;'
-      for (const t of history) {
-        const row = document.createElement('div')
-        const when = t.ts ? new Date(t.ts).toLocaleTimeString() : ''
-        row.textContent = `${when}  ${t.from ?? '·'} → ${t.to}${t.reason ? ` (${t.reason.slice(0, 60)})` : ''}`
-        row.style.cssText = 'font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px;'
-        list.appendChild(row)
-      }
-      timeline.appendChild(list)
-    } else {
-      timeline.textContent = 'no status transitions'
-    }
-    expansion.appendChild(timeline)
-
-    // Action row: Re-solve (task notes only) · Replay repro (when present) · Edit · Delete.
-    const actions = document.createElement('div')
-    actions.style.cssText = 'display: flex; gap: 6px; justify-content: flex-end;'
-    if (frontmatter.intent === 'task') {
-      const resolveBtn = document.createElement('button')
-      resolveBtn.type = 'button'
-      resolveBtn.textContent = '↻ Re-solve'
-      resolveBtn.title =
-        'Submit a fresh task with this prose, chained off the previous conversation'
-      resolveBtn.style.cssText = btnStyle('secondary') + '; padding: 4px 10px; font-size: 11px;'
-      resolveBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        void reSolveFrom(note, prose)
-      })
-      actions.appendChild(resolveBtn)
-    }
-    // Show "▶ Replay" when the note captured a repro trace AND the
-    // host plumbed a replay function.
-    const reproEvents = full?.body?.repro
-    if (opts.onReplayRepro && Array.isArray(reproEvents) && reproEvents.length > 0) {
-      const replayBtn = document.createElement('button')
-      replayBtn.type = 'button'
-      replayBtn.textContent = `▶ Replay (${reproEvents.length})`
-      replayBtn.title = `Re-dispatch the ${reproEvents.length} captured interaction(s) against the live DOM`
-      replayBtn.style.cssText = btnStyle('secondary') + '; padding: 4px 10px; font-size: 11px;'
-      replayBtn.addEventListener('click', async (e) => {
-        e.stopPropagation()
-        try {
-          const result = await opts.onReplayRepro!(reproEvents)
-          const ok = result.applied
-          const skipped = result.skipped.length
-          reportError(
-            skipped > 0
-              ? `Replayed ${ok}, skipped ${skipped} (target selector(s) no longer match)`
-              : `Replayed ${ok} event(s)`,
-          )
-        } catch (err) {
-          reportError(`Replay failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      })
-      actions.appendChild(replayBtn)
-    }
-    const editBtn = document.createElement('button')
-    editBtn.type = 'button'
-    editBtn.textContent = 'Edit'
-    editBtn.style.cssText = btnStyle('secondary') + '; padding: 4px 10px; font-size: 11px;'
-    const deleteBtn = document.createElement('button')
-    deleteBtn.type = 'button'
-    deleteBtn.textContent = 'Delete'
-    deleteBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
-    actions.append(editBtn, deleteBtn)
-
-    expansion.appendChild(actions)
-
-    editBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      enterEditMode(note, expansion, prose)
-    })
-    deleteBtn.addEventListener('click', async (e) => {
-      e.stopPropagation()
-      if (!confirm(`Delete note ${note.id}? This cannot be undone.`)) return
-      const ok = await deleteNote(note.id)
-      if (ok) {
-        expandedNoteId = null
-        await fetchNotes()
-      }
-    })
-  }
-
-  /**
-   * Render a proposed-diff block: per-file colored unified diffs with
-   * inline Accept / Reject buttons that POST a status transition for
-   * the original task note (`taskId` == the reply's replyTo).
-   */
-  function renderProposedDiff(
-    taskId: string,
-    proposed: {
-      summary: string
-      confidence: string
-      files: Array<{ path: string; patch: string }>
-    },
-  ): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.style.cssText = [
-      'border: 1px solid var(--hud-border)',
-      'border-radius: 4px',
-      'overflow: hidden',
-    ].join('; ')
-
-    const head = document.createElement('div')
-    head.style.cssText = [
-      'padding: 6px 8px',
-      'font-size: 11px',
-      'background: var(--hud-surface)',
-      'color: var(--hud-fg-muted)',
-      'display: flex',
-      'align-items: center',
-      'gap: 6px',
-    ].join('; ')
-    const headTitle = document.createElement('span')
-    headTitle.textContent = `Proposed (${proposed.confidence}) — ${proposed.summary}`
-    headTitle.style.cssText = 'flex: 1; color: var(--hud-fg);'
-    const acceptBtn = document.createElement('button')
-    acceptBtn.type = 'button'
-    acceptBtn.textContent = 'Accept'
-    acceptBtn.style.cssText = btnStyle('primary') + '; padding: 3px 8px; font-size: 10px;'
-    const rejectBtn = document.createElement('button')
-    rejectBtn.type = 'button'
-    rejectBtn.textContent = 'Reject'
-    rejectBtn.style.cssText = btnStyle('ghost') + '; padding: 3px 8px; font-size: 10px;'
-    head.append(headTitle, acceptBtn, rejectBtn)
-    wrap.appendChild(head)
-
-    for (const file of proposed.files) {
-      const fileWrap = document.createElement('div')
-      fileWrap.style.cssText = 'border-top: 1px solid var(--hud-border);'
-      const filePath = document.createElement('div')
-      filePath.textContent = file.path
-      filePath.style.cssText = [
-        'padding: 4px 8px',
-        'font-family: ui-monospace, SFMono-Regular, monospace',
-        'font-size: 10px',
-        'background: var(--hud-surface)',
-        'color: var(--hud-fg-muted)',
-      ].join('; ')
-      fileWrap.appendChild(filePath)
-      const pre = document.createElement('pre')
-      pre.style.cssText = [
-        'margin: 0',
-        'padding: 6px 8px',
-        'font-family: ui-monospace, SFMono-Regular, monospace',
-        'font-size: 10px',
-        'line-height: 1.4',
-        'overflow-x: auto',
-        'max-height: 220px',
-        'overflow-y: auto',
-        'background: var(--hud-bg)',
-      ].join('; ')
-      for (const line of file.patch.split('\n')) {
-        const lineEl = document.createElement('div')
-        lineEl.textContent = line
-        if (line.startsWith('+') && !line.startsWith('+++')) {
-          lineEl.style.cssText = 'background: rgba(22, 163, 74, 0.10); color: #15803d;'
-        } else if (line.startsWith('-') && !line.startsWith('---')) {
-          lineEl.style.cssText = 'background: rgba(239, 68, 68, 0.10); color: #b91c1c;'
-        } else if (line.startsWith('@@')) {
-          lineEl.style.cssText = 'color: var(--hud-fg-subtle);'
-        }
-        pre.appendChild(lineEl)
-      }
-      fileWrap.appendChild(pre)
-      wrap.appendChild(fileWrap)
-    }
-
-    const post = async (to: 'accepted' | 'rejected'): Promise<void> => {
-      if (!currentSessionId) return
-      try {
-        const res = await fetch(
-          `${origin}/_llui/notes/${taskId}/status?sessionId=${encodeURIComponent(currentSessionId)}`,
+    case 'bulk/wontfix': {
+      if (state.selectedIds.length === 0 || !sid) return [state, []]
+      return [
+        { ...state, selectedIds: [] },
+        [
           {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ to, by: 'human' }),
+            type: 'bulkStatus',
+            ids: state.selectedIds,
+            to: 'wontfix',
+            sessionId: sid,
           },
-        )
-        if (!res.ok) reportError(`${to} failed (${res.status})`)
-      } catch (err) {
-        reportError(`${to} failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
+        ],
+      ]
     }
-    acceptBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      void post('accepted')
-    })
-    rejectBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      void post('rejected')
-    })
 
-    return wrap
-  }
-
-  /**
-   * Full-size screenshot overlay. Click anywhere or press Esc to dismiss.
-   */
-  function openLightbox(src: string): void {
-    const overlay = document.createElement('div')
-    overlay.style.cssText = [
-      'position: fixed',
-      'inset: 0',
-      'background: rgba(0, 0, 0, 0.8)',
-      'z-index: 2147483647',
-      'display: flex',
-      'align-items: center',
-      'justify-content: center',
-      'cursor: zoom-out',
-      'padding: 32px',
-    ].join('; ')
-    const big = document.createElement('img')
-    big.src = src
-    big.style.cssText =
-      'max-width: 100%; max-height: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.6);'
-    overlay.appendChild(big)
-    document.body.appendChild(overlay)
-    const dismiss = (): void => {
-      overlay.remove()
-      document.removeEventListener('keydown', onKey)
-    }
-    overlay.addEventListener('click', dismiss)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') dismiss()
-    }
-    document.addEventListener('keydown', onKey)
-  }
-
-  /**
-   * Submit a fresh task that re-uses the prose of an existing task
-   * note. Resume defaults to true so the new spawn picks up the
-   * conversation where the previous one left off.
-   */
-  async function reSolveFrom(_note: NoteSummary, prose: string): Promise<void> {
-    if (!prose.trim()) {
-      reportError('cannot re-solve a task with empty prose')
-      return
-    }
-    try {
-      // Minimal frontmatter — the server backfills id + ts and the
-      // router only reads intent/resume/url/route etc. We don't have
-      // the full original frontmatter here (the JSON endpoint returns
-      // it but we don't need ALL fields for a re-solve).
-      const body = {
-        body: prose,
-        frontmatter: {
-          author: 'human',
-          kind: 'text',
-          captureLevel: 'standard',
-          url: typeof location !== 'undefined' ? location.href : '',
-          route: null,
-          routeParams: {},
-          viewport: {
-            w: typeof window !== 'undefined' ? window.innerWidth : 0,
-            h: typeof window !== 'undefined' ? window.innerHeight : 0,
-            dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+    case 'edit/start':
+      return [{ ...state, editingNoteId: msg.id, editDraft: msg.prose }, []]
+    case 'edit/change':
+      return [{ ...state, editDraft: msg.value }, []]
+    case 'edit/cancel':
+      return [{ ...state, editingNoteId: null }, []]
+    case 'edit/save': {
+      if (!state.editingNoteId || !sid) return [state, []]
+      return [
+        { ...state, editingNoteId: null },
+        [
+          {
+            type: 'patchProse',
+            id: state.editingNoteId,
+            prose: state.editDraft,
+            sessionId: sid,
           },
-          componentPath: null,
-          componentMeta: null,
-          annotations: [],
-          screenshot: null,
-          agentSchemas: [],
-          llui: { runtime: 'unknown', compiler: 'unknown' },
-          intent: 'task',
-          resume: true,
-        },
-        noteBody: {},
-      }
-      const res = await fetch(`${origin}/_llui/notes`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        reportError(`re-solve failed (${res.status})`)
-        return
-      }
-      void doRefresh()
-    } catch (err) {
-      reportError(`re-solve failed: ${err instanceof Error ? err.message : String(err)}`)
+        ],
+      ]
     }
+
+    case 'reSolve':
+      return [state, [{ type: 'reSolve', prose: msg.prose }]]
+
+    case 'replay':
+      return [state, [{ type: 'replay', events: msg.events }]]
+
+    case 'diff/accept':
+      if (!sid) return [state, []]
+      return [
+        state,
+        [
+          {
+            type: 'postStatus',
+            taskId: msg.taskId,
+            to: 'accepted',
+            sessionId: sid,
+          },
+        ],
+      ]
+    case 'diff/reject':
+      if (!sid) return [state, []]
+      return [
+        state,
+        [
+          {
+            type: 'postStatus',
+            taskId: msg.taskId,
+            to: 'rejected',
+            sessionId: sid,
+          },
+        ],
+      ]
+
+    case 'lightbox/open':
+      return [{ ...state, lightboxSrc: msg.src }, []]
+    case 'lightbox/close':
+      return [{ ...state, lightboxSrc: null }, []]
   }
+}
 
-  function enterEditMode(note: NoteSummary, expansion: HTMLElement, currentProse: string): void {
-    expansion.innerHTML = ''
-    expansion.setAttribute('data-llui-expansion', '')
+// ── Row view-model (projected per derive; `each` rows get only the item) ──
 
-    const textarea = document.createElement('textarea')
-    textarea.value = currentProse
-    textarea.rows = 5
-    textarea.style.cssText = STYLES.textarea + '; font-size: 12px;'
+interface RowVM {
+  id: string
+  glyph: string
+  preview: string
+  statusGlyph: string
+  statusTitle: string
+  selected: boolean
+  expanded: boolean
+  editing: boolean
+  editDraft: string
+  expansion: ExpansionData | 'loading' | null
+}
 
-    const actions = document.createElement('div')
-    actions.style.cssText = 'display: flex; gap: 6px; justify-content: flex-end;'
-    const saveBtn = document.createElement('button')
-    saveBtn.type = 'button'
-    saveBtn.textContent = 'Save'
-    saveBtn.style.cssText = btnStyle('primary') + '; padding: 4px 10px; font-size: 11px;'
-    const cancelBtn = document.createElement('button')
-    cancelBtn.type = 'button'
-    cancelBtn.textContent = 'Cancel'
-    cancelBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
-    actions.append(cancelBtn, saveBtn)
-
-    expansion.append(textarea, actions)
-    textarea.focus()
-
-    saveBtn.addEventListener('click', async (e) => {
-      e.stopPropagation()
-      const ok = await patchNoteProse(note.id, textarea.value)
-      if (ok) {
-        await fetchNotes()
-        // hydrateExpansion will run again on the re-render since the
-        // note stays expanded.
+function projectRows(s: BrowseState): RowVM[] {
+  return s.notes
+    .filter((n) => matchesFilters(n, activeFilters(s)))
+    .map((n): RowVM => {
+      const expanded = s.expandedNoteId === n.id
+      return {
+        id: n.id,
+        glyph: kindGlyph(n.kind),
+        preview: n.preview || '(no prose)',
+        statusGlyph: statusGlyph(n.status),
+        statusTitle: n.status ?? '',
+        selected: s.selectedIds.includes(n.id),
+        expanded,
+        editing: s.editingNoteId === n.id,
+        editDraft: s.editingNoteId === n.id ? s.editDraft : '',
+        expansion: expanded ? (s.expansions[n.id] ?? 'loading') : null,
       }
     })
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      // Re-render to drop back into view mode.
-      renderNotes()
-    })
+}
+
+function emptyMessage(s: BrowseState): string | null {
+  const visible = s.notes.filter((n) => matchesFilters(n, activeFilters(s)))
+  if (visible.length > 0) return null
+  if (s.notes.length === 0) {
+    return currentSessionId(s)
+      ? 'no notes in this session yet'
+      : 'no sessions yet — drop a note from the compose view'
   }
+  return `no notes match the current filters (${s.notes.length} hidden)`
+}
 
-  // ── Wire ───────────────────────────────────────────────────────
-  sessionSelect.addEventListener('change', () => {
-    currentSessionId = sessionSelect.value
-    expandedNoteId = null
-    selectedIds.clear()
-    noteCache.clear()
-    void fetchNotes()
-  })
-  refreshBtn.addEventListener('click', () => {
-    void doRefresh()
-  })
+// ── Styles ───────────────────────────────────────────────────────────────
 
-  // Filter wiring — every change re-renders from the in-memory list,
-  // no server round-trip.
-  kindFilter.addEventListener('change', () => {
-    filters.kind = kindFilter.value as BrowseFilters['kind']
-    renderNotes()
-  })
-  authorFilter.addEventListener('change', () => {
-    filters.author = authorFilter.value as BrowseFilters['author']
-    renderNotes()
-  })
-  statusFilter.addEventListener('change', () => {
-    filters.status = statusFilter.value as BrowseFilters['status']
-    renderNotes()
-  })
-  searchInput.addEventListener('input', () => {
-    if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-    searchDebounceTimer = setTimeout(() => {
-      searchDebounceTimer = null
-      filters.text = searchInput.value
-      renderNotes()
-    }, 120)
-  })
+const STYLE_SELECT =
+  'padding: 3px 4px; border-radius: 4px; border: 1px solid var(--hud-border-strong);' +
+  ' background: var(--hud-input-bg); color: var(--hud-fg); font: inherit; font-size: 11px;'
+const STYLE_ROW =
+  'border: 1px solid var(--hud-border); border-radius: 6px; background: var(--hud-surface);' +
+  ' padding: 6px 8px; font-size: 12px; cursor: pointer;'
+const SMALL_BTN = '; padding: 4px 10px; font-size: 11px;'
 
-  // Bulk actions.
-  bulkClearBtn.addEventListener('click', () => {
-    selectedIds.clear()
-    renderNotes()
-  })
-  bulkDeleteBtn.addEventListener('click', async () => {
-    const ids = [...selectedIds]
-    if (ids.length === 0) return
-    if (!confirm(`Delete ${ids.length} note(s)? This cannot be undone.`)) return
-    const results = await Promise.all(ids.map((id) => deleteNote(id)))
-    selectedIds.clear()
-    if (results.some((ok) => !ok)) reportError('one or more deletes failed')
-    await fetchNotes()
-  })
-  bulkWontfixBtn.addEventListener('click', async () => {
-    const ids = [...selectedIds]
-    if (ids.length === 0 || !currentSessionId) return
-    if (!confirm(`Mark ${ids.length} task(s) as wontfix?`)) return
-    const sid = currentSessionId
-    await Promise.all(
-      ids.map((id) =>
-        fetch(`${origin}/_llui/notes/${id}/status?sessionId=${encodeURIComponent(sid)}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ to: 'wontfix', by: 'human' }),
-        }).catch(() => null),
+type Send = SignalViewBag<BrowseState, BrowseMsg>['send']
+
+// ── View: proposed-diff block ────────────────────────────────────────────
+
+function diffView(send: Send, exp: ExpansionData): Renderable {
+  const fm = exp.frontmatter
+  if (!fm.proposedDiff || !fm.replyTo) return []
+  const taskId = fm.replyTo
+  const proposed = fm.proposedDiff
+  return [
+    div(
+      {
+        'style.border': '1px solid var(--hud-border)',
+        'style.borderRadius': '4px',
+        'style.overflow': 'hidden',
+        'style.marginTop': '6px',
+      },
+      [
+        div(
+          {
+            'style.padding': '6px 8px',
+            'style.fontSize': '11px',
+            'style.background': 'var(--hud-surface)',
+            'style.display': 'flex',
+            'style.alignItems': 'center',
+            'style.gap': '6px',
+          },
+          [
+            span({ 'style.flex': '1', 'style.color': 'var(--hud-fg)' }, [
+              text(`Proposed (${proposed.confidence}) — ${proposed.summary}`),
+            ]),
+            button(
+              {
+                type: 'button',
+                style: btnStyle('primary') + '; padding: 3px 8px; font-size: 10px;',
+                onClick: (e: Event) => {
+                  e.stopPropagation()
+                  send({ type: 'diff/accept', taskId })
+                },
+              },
+              [text('Accept')],
+            ),
+            button(
+              {
+                type: 'button',
+                style: btnStyle('ghost') + '; padding: 3px 8px; font-size: 10px;',
+                onClick: (e: Event) => {
+                  e.stopPropagation()
+                  send({ type: 'diff/reject', taskId })
+                },
+              },
+              [text('Reject')],
+            ),
+          ],
+        ),
+        ...proposed.files.map((file) =>
+          div({ 'style.borderTop': '1px solid var(--hud-border)' }, [
+            div(
+              {
+                'style.padding': '4px 8px',
+                'style.fontFamily': 'ui-monospace, SFMono-Regular, monospace',
+                'style.fontSize': '10px',
+                'style.background': 'var(--hud-surface)',
+                'style.color': 'var(--hud-fg-muted)',
+              },
+              [text(file.path)],
+            ),
+            pre(
+              {
+                'style.margin': '0',
+                'style.padding': '6px 8px',
+                'style.fontFamily': 'ui-monospace, SFMono-Regular, monospace',
+                'style.fontSize': '10px',
+                'style.lineHeight': '1.4',
+                'style.overflowX': 'auto',
+                'style.maxHeight': '220px',
+                'style.overflowY': 'auto',
+                'style.background': 'var(--hud-bg)',
+              },
+              file.patch.split('\n').map((line) => {
+                const added = line.startsWith('+') && !line.startsWith('+++')
+                const removed = line.startsWith('-') && !line.startsWith('---')
+                const hunk = line.startsWith('@@')
+                const style = added
+                  ? 'background: rgba(22, 163, 74, 0.10); color: #15803d;'
+                  : removed
+                    ? 'background: rgba(239, 68, 68, 0.10); color: #b91c1c;'
+                    : hunk
+                      ? 'color: var(--hud-fg-subtle);'
+                      : ''
+                return div({ style }, [text(line)])
+              }),
+            ),
+          ]),
+        ),
+      ],
+    ),
+  ]
+}
+
+// ── View: expansion (loaded) ─────────────────────────────────────────────
+
+function loadedExpansion(
+  origin: string,
+  send: Send,
+  onReplay: boolean,
+  noteId: string,
+  item: Signal<RowVM>,
+  data: Signal<ExpansionData>,
+): Renderable {
+  return [
+    // Screenshot preview (click → lightbox).
+    show(
+      data.map((d) => (d.frontmatter.screenshot ? d.frontmatter.screenshot : null)),
+      () => [
+        div({ 'style.display': 'flex', 'style.justifyContent': 'center' }, [
+          img({
+            src: data.map(
+              (d) =>
+                `${origin}/_llui/notes/${noteId}/screenshot?ts=${encodeURIComponent(
+                  d.frontmatter.screenshot ?? '',
+                )}`,
+            ),
+            alt: 'screenshot',
+            'style.maxWidth': '100%',
+            'style.maxHeight': '200px',
+            'style.border': '1px solid var(--hud-border)',
+            'style.borderRadius': '4px',
+            'style.cursor': 'zoom-in',
+            'style.background': 'var(--hud-surface)',
+            onClick: (e: Event) => {
+              e.stopPropagation()
+              send({ type: 'lightbox/open', src: (e.currentTarget as HTMLImageElement).src })
+            },
+          }),
+        ]),
+      ],
+    ),
+    // Prose viewer OR inline edit textarea.
+    show(
+      item.map((r) => (r.editing ? true : null)),
+      () => [
+        textarea({
+          rows: 5,
+          style: STYLES.textarea + '; font-size: 12px;',
+          value: item.map((r) => r.editDraft),
+          onInput: (e: Event) =>
+            send({ type: 'edit/change', value: (e.currentTarget as HTMLTextAreaElement).value }),
+          onClick: (e: Event) => e.stopPropagation(),
+        }),
+      ],
+      () => [
+        div(
+          {
+            'style.padding': '8px',
+            'style.background': 'var(--hud-bg)',
+            'style.border': '1px solid var(--hud-border)',
+            'style.borderRadius': '4px',
+            'style.whiteSpace': 'pre-wrap',
+            'style.fontSize': '12px',
+            'style.color': 'var(--hud-fg)',
+            'style.maxHeight': '160px',
+            'style.overflowY': 'auto',
+          },
+          [text(data.map((d) => d.prose || '(no prose)'))],
+        ),
+      ],
+    ),
+    // Proposed-diff block (reply notes only).
+    show(
+      data.map((d) => (d.frontmatter.proposedDiff && d.frontmatter.replyTo ? d : null)),
+      (d) => diffView(send, d.peek()),
+    ),
+    // Status timeline.
+    div({ 'style.fontSize': '11px', 'style.color': 'var(--hud-fg-muted)' }, [
+      show(
+        data.map((d) => (d.history.length > 0 ? d.history : null)),
+        (history) => [
+          each(history, {
+            key: (t) => `${t.noteId}:${t.ts}:${t.to}`,
+            render: (t) => [
+              div(
+                {
+                  'style.fontFamily': 'ui-monospace, SFMono-Regular, monospace',
+                  'style.fontSize': '10px',
+                },
+                [
+                  text(
+                    t.map(
+                      (x) =>
+                        `${x.ts ? new Date(x.ts).toLocaleTimeString() : ''}  ${x.from ?? '·'} → ${x.to}${
+                          x.reason ? ` (${x.reason.slice(0, 60)})` : ''
+                        }`,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          }),
+        ],
+        () => [text('no status transitions')],
       ),
-    )
-    selectedIds.clear()
-    await fetchNotes()
+    ]),
+    // Action row.
+    ...actionRow(send, onReplay, noteId, item, data),
+  ]
+}
+
+function actionRow(
+  send: Send,
+  onReplay: boolean,
+  noteId: string,
+  item: Signal<RowVM>,
+  data: Signal<ExpansionData>,
+): Renderable {
+  return [
+    div({ 'style.display': 'flex', 'style.gap': '6px', 'style.justifyContent': 'flex-end' }, [
+      // Re-solve (task notes only).
+      show(
+        data.map((d) => (d.frontmatter.intent === 'task' ? true : null)),
+        () => [
+          button(
+            {
+              type: 'button',
+              title: 'Submit a fresh task with this prose, chained off the previous conversation',
+              style: btnStyle('secondary') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                send({ type: 'reSolve', prose: data.peek().prose })
+              },
+            },
+            [text('↻ Re-solve')],
+          ),
+        ],
+      ),
+      // Replay (notes carrying a repro trace, when host plumbed a replay fn).
+      show(
+        data.map((d) => (onReplay && d.repro.length > 0 ? d.repro.length : null)),
+        (count) => [
+          button(
+            {
+              type: 'button',
+              style: btnStyle('secondary') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                send({ type: 'replay', events: data.peek().repro })
+              },
+            },
+            [text(count.map((n) => `▶ Replay (${n})`))],
+          ),
+        ],
+      ),
+      // Edit / Save+Cancel toggle.
+      show(
+        item.map((r) => (r.editing ? true : null)),
+        () => [
+          button(
+            {
+              type: 'button',
+              style: btnStyle('ghost') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                send({ type: 'edit/cancel' })
+              },
+            },
+            [text('Cancel')],
+          ),
+          button(
+            {
+              type: 'button',
+              style: btnStyle('primary') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                send({ type: 'edit/save' })
+              },
+            },
+            [text('Save')],
+          ),
+        ],
+        () => [
+          button(
+            {
+              type: 'button',
+              style: btnStyle('secondary') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                send({ type: 'edit/start', id: noteId, prose: data.peek().prose })
+              },
+            },
+            [text('Edit')],
+          ),
+          button(
+            {
+              type: 'button',
+              style: btnStyle('ghost') + SMALL_BTN,
+              onClick: (e: Event) => {
+                e.stopPropagation()
+                if (!confirm(`Delete note ${noteId}? This cannot be undone.`)) return
+                send({ type: 'note/delete', id: noteId })
+              },
+            },
+            [text('Delete')],
+          ),
+        ],
+      ),
+    ]),
+  ]
+}
+
+function expansionView(
+  origin: string,
+  send: Send,
+  onReplay: boolean,
+  item: Signal<RowVM>,
+  exp: Signal<ExpansionData | 'loading'>,
+): Renderable {
+  const noteId = item.peek().id
+  return [
+    div(
+      {
+        'data-llui-expansion': '',
+        'style.marginTop': '8px',
+        'style.display': 'flex',
+        'style.flexDirection': 'column',
+        'style.gap': '6px',
+      },
+      [
+        show(
+          exp.map((e) => (e === 'loading' ? true : null)),
+          () => [
+            div({ 'style.color': 'var(--hud-fg-subtle)', 'style.fontSize': '11px' }, [
+              text('loading…'),
+            ]),
+          ],
+        ),
+        show(
+          exp.map((e) => (e === 'loading' ? null : e)),
+          (data) => loadedExpansion(origin, send, onReplay, noteId, item, data),
+        ),
+      ],
+    ),
+  ]
+}
+
+// ── View: row ────────────────────────────────────────────────────────────
+
+function rowView(origin: string, onReplay: boolean, item: Signal<RowVM>, send: Send): Renderable {
+  return [
+    div(
+      {
+        'data-llui-note-id': item.map((r) => r.id),
+        style: STYLE_ROW,
+        onClick: () => send({ type: 'row/toggleExpand', id: item.peek().id }),
+      },
+      [
+        div({ 'style.display': 'flex', 'style.alignItems': 'center', 'style.gap': '6px' }, [
+          input({
+            type: 'checkbox',
+            checked: item.map((r) => r.selected),
+            'style.flex': '0 0 auto',
+            'style.margin': '0',
+            onClick: (e: Event) => e.stopPropagation(),
+            onChange: () => send({ type: 'row/toggleSelect', id: item.peek().id }),
+          }),
+          span({ 'style.flex': '0 0 auto' }, [text(item.map((r) => r.glyph))]),
+          span(
+            {
+              'style.fontFamily': 'ui-monospace, SFMono-Regular, monospace',
+              'style.fontSize': '10px',
+              'style.color': 'var(--hud-fg-subtle)',
+              'style.flex': '0 0 auto',
+            },
+            [text(item.map((r) => r.id))],
+          ),
+          span(
+            {
+              'style.flex': '1 1 auto',
+              'style.overflow': 'hidden',
+              'style.textOverflow': 'ellipsis',
+              'style.whiteSpace': 'nowrap',
+              'style.color': 'var(--hud-fg)',
+            },
+            [text(item.map((r) => r.preview))],
+          ),
+          span({ 'style.flex': '0 0 auto', title: item.map((r) => r.statusTitle) }, [
+            text(item.map((r) => r.statusGlyph)),
+          ]),
+        ]),
+        show(
+          item.map((r) => r.expansion),
+          (exp) => expansionView(origin, send, onReplay, item, exp),
+        ),
+      ],
+    ),
+  ]
+}
+
+// ── View: root ───────────────────────────────────────────────────────────
+
+function makeView(origin: string, onReplay: boolean) {
+  return ({ state, send }: SignalViewBag<BrowseState, BrowseMsg>): Renderable => [
+    div(
+      {
+        'data-llui-browse-view': '',
+        'style.display': 'flex',
+        'style.flexDirection': 'column',
+        'style.gap': '8px',
+      },
+      [
+        // Header: session select + refresh.
+        div({ 'style.display': 'flex', 'style.gap': '8px', 'style.alignItems': 'center' }, [
+          ...sessionSelectCmp(state, send),
+          button(
+            {
+              type: 'button',
+              title: 'Reload from disk (notes auto-refresh on activity)',
+              style: STYLES.toolbarBtn + '; padding: 4px 8px;',
+              onClick: () => send({ type: 'refresh' }),
+            },
+            [text('↻')],
+          ),
+        ]),
+        // Filter row.
+        div(
+          {
+            'style.display': 'grid',
+            'style.gridTemplateColumns': '1fr 1fr 1fr',
+            'style.gap': '4px',
+          },
+          [
+            ...filterSelectCmp(state, send, 'kindSelect', 'llui-browse-kind', KIND_OPTIONS),
+            ...filterSelectCmp(state, send, 'authorSelect', 'llui-browse-author', AUTHOR_OPTIONS),
+            ...filterSelectCmp(state, send, 'statusSelect', 'llui-browse-status', STATUS_OPTIONS),
+            input({
+              type: 'search',
+              placeholder: 'Search prose…',
+              'style.gridColumn': '1 / span 3',
+              style: STYLE_SELECT,
+              value: state.map((s) => activeFilters(s).text),
+              onInput: (e: Event) =>
+                send({ type: 'filter/text', value: (e.currentTarget as HTMLInputElement).value }),
+            }),
+          ],
+        ),
+        // Bulk bar — present only while ≥1 row is selected.
+        show(
+          state.map((s) => (s.selectedIds.length > 0 ? s.selectedIds.length : null)),
+          (count) => [
+            div(
+              {
+                'style.display': 'flex',
+                'style.alignItems': 'center',
+                'style.gap': '8px',
+                'style.padding': '6px 8px',
+                'style.background': 'var(--hud-accent-bg)',
+                'style.color': 'var(--hud-accent-fg)',
+                'style.borderRadius': '6px',
+                'style.fontSize': '12px',
+              },
+              [
+                span({ 'style.flex': '1' }, [text(count.map((n) => `${n} selected`))]),
+                button(
+                  {
+                    type: 'button',
+                    style: btnStyle('ghost') + SMALL_BTN,
+                    onClick: () => {
+                      if (confirm(`Mark ${count.peek()} task(s) as wontfix?`))
+                        send({ type: 'bulk/wontfix' })
+                    },
+                  },
+                  [text('Mark wontfix')],
+                ),
+                button(
+                  {
+                    type: 'button',
+                    style: btnStyle('ghost') + SMALL_BTN,
+                    onClick: () => {
+                      if (confirm(`Delete ${count.peek()} note(s)? This cannot be undone.`))
+                        send({ type: 'bulk/delete' })
+                    },
+                  },
+                  [text('Delete')],
+                ),
+                button(
+                  {
+                    type: 'button',
+                    title: 'Clear selection',
+                    style:
+                      'background: transparent; border: 0; color: inherit; cursor: pointer;' +
+                      ' font-size: 14px; line-height: 1; padding: 0 4px;',
+                    onClick: () => send({ type: 'selection/clear' }),
+                  },
+                  [text('✕')],
+                ),
+              ],
+            ),
+          ],
+        ),
+        // Notes list — keyed reconcile.
+        div(
+          {
+            'style.display': 'flex',
+            'style.flexDirection': 'column',
+            'style.gap': '4px',
+            'style.maxHeight': '320px',
+            'style.overflowY': 'auto',
+            'style.padding': '2px',
+          },
+          [
+            each(state.map(projectRows), {
+              key: (r) => r.id,
+              render: (item) => rowView(origin, onReplay, item, send),
+            }),
+          ],
+        ),
+        // Empty / no-match message.
+        show(state.map(emptyMessage), (msg) => [
+          div(
+            {
+              'style.padding': '16px 8px',
+              'style.textAlign': 'center',
+              'style.color': 'var(--hud-fg-subtle)',
+              'style.fontSize': '12px',
+            },
+            [text(msg)],
+          ),
+        ]),
+        // Screenshot lightbox (portaled to body, above everything).
+        show(
+          state.map((s) => s.lightboxSrc),
+          (src) => [
+            portal(() => [
+              div(
+                {
+                  'style.position': 'fixed',
+                  'style.inset': '0',
+                  'style.background': 'rgba(0, 0, 0, 0.8)',
+                  'style.zIndex': '2147483647',
+                  'style.display': 'flex',
+                  'style.alignItems': 'center',
+                  'style.justifyContent': 'center',
+                  'style.cursor': 'zoom-out',
+                  'style.padding': '32px',
+                  onClick: () => send({ type: 'lightbox/close' }),
+                },
+                [
+                  img({
+                    src,
+                    'style.maxWidth': '100%',
+                    'style.maxHeight': '100%',
+                    'style.boxShadow': '0 20px 60px rgba(0,0,0,0.6)',
+                  }),
+                ],
+              ),
+            ]),
+          ],
+        ),
+      ],
+    ),
+  ]
+}
+
+type FilterSliceKey = 'kindSelect' | 'authorSelect' | 'statusSelect'
+type SliceKey = FilterSliceKey | 'sessionSelect'
+
+const MENU_ITEM_STYLE =
+  'display: block; width: 100%; text-align: left; padding: 4px 8px; border: 0;' +
+  ' background: transparent; color: var(--hud-fg); cursor: pointer; font: inherit; font-size: 11px;'
+const LISTBOX_STYLE =
+  'background: var(--hud-bg); border: 1px solid var(--hud-border-strong); border-radius: 4px;' +
+  ' box-shadow: 0 4px 16px rgba(0,0,0,0.25); padding: 2px; z-index: 2147483647; max-height: 240px; overflow-y: auto;'
+
+const labelOf = (value: string, options: ReadonlyArray<readonly [string, string]>): string =>
+  options.find(([v]) => v === value)?.[1] ?? value
+
+/** A filter dropdown (static options) backed by @llui/components/select. */
+function filterSelectCmp(
+  state: Signal<BrowseState>,
+  send: (m: BrowseMsg) => void,
+  sliceKey: FilterSliceKey,
+  id: string,
+  options: ReadonlyArray<readonly [string, string]>,
+): Renderable {
+  const slice = state.at(sliceKey)
+  const parts = select.connect(slice, (m) => send({ type: sliceKey, msg: m }), { id })
+  return [
+    button({ ...parts.trigger, style: STYLE_SELECT + '; text-align: left;' }, [
+      text(slice.map((ss) => labelOf(ss.value[0] ?? 'all', options))),
+    ]),
+    select.overlay({
+      state: slice,
+      send: (m) => send({ type: sliceKey, msg: m }),
+      parts,
+      sameWidth: true,
+      content: () => [
+        div(
+          { ...parts.content, style: LISTBOX_STYLE },
+          options.map(([value, label], index) =>
+            button({ ...parts.item(value, index).item, style: MENU_ITEM_STYLE }, [text(label)]),
+          ),
+        ),
+      ],
+    }),
+  ]
+}
+
+/** The session dropdown (dynamic items) backed by @llui/components/select. */
+function sessionSelectCmp(state: Signal<BrowseState>, send: (m: BrowseMsg) => void): Renderable {
+  const slice = state.at('sessionSelect')
+  const parts = select.connect(slice, (m) => send({ type: 'sessionSelect', msg: m }), {
+    id: 'llui-browse-session',
   })
+  return [
+    button({ ...parts.trigger, style: STYLE_SELECT + '; flex: 1; text-align: left;' }, [
+      text(
+        state.map((s) => {
+          const v = s.sessionSelect.value[0]
+          if (!v) return '(no sessions)'
+          const sess = s.sessions.find((x) => x.id === v)
+          return sess ? `${sess.id} (${sess.noteCount})` : v
+        }),
+      ),
+    ]),
+    select.overlay({
+      state: slice,
+      send: (m) => send({ type: 'sessionSelect', msg: m }),
+      parts,
+      sameWidth: true,
+      content: () => [
+        div({ ...parts.content, style: LISTBOX_STYLE }, [
+          each(
+            state.map((s) => s.sessions),
+            {
+              key: (sess) => sess.id,
+              render: (sess, index) => [
+                button(
+                  { ...parts.item(sess.peek().id, index.peek()).item, style: MENU_ITEM_STYLE },
+                  [text(sess.map((x) => `${x.id} (${x.noteCount})`))],
+                ),
+              ],
+            },
+          ),
+        ]),
+      ],
+    }),
+  ]
+}
 
-  function doRefresh(): Promise<void> {
-    return fetchSessions().then(fetchNotes)
-  }
+// keep a reference so `SliceKey` is used (documents the select slice keys).
+export type BrowseSelectSlice = SliceKey
 
-  function refresh(): void {
-    // Debounce — SSE events can arrive in bursts during a solve.
+// ── Effects + handle ─────────────────────────────────────────────────────
+
+export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
+  const reportError = opts.onError ?? ((m) => console.warn('[llui:browse]', m))
+  const onReplay = !!opts.onReplayRepro
+
+  const host = document.createElement('div')
+  host.setAttribute('data-llui-browse-host', '')
+
+  const handle = mountSignalComponent<BrowseState, BrowseMsg, BrowseEffect>(
+    host,
+    component<BrowseState, BrowseMsg, BrowseEffect>({
+      name: 'llui-devmode-annotate:browse',
+      init: browseInit,
+      update: browseReduce,
+      view: makeView(opts.origin, onReplay),
+      onEffect: (eff, { send }) => runEffect(eff, send, opts, reportError),
+    }),
+    { devtools: false },
+  )
+
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  const refresh = (): void => {
     if (refreshTimer) return
     refreshTimer = setTimeout(() => {
       refreshTimer = null
-      void doRefresh()
+      handle.send({ type: 'refresh' })
     }, 100)
   }
+  const onShow = (): void => handle.send({ type: 'show' })
 
-  function onShow(): void {
-    if (!loaded) {
-      loaded = true
-      void doRefresh()
-    }
+  return { el: host, refresh, onShow }
+}
+
+function runEffect(
+  eff: BrowseEffect,
+  send: (msg: BrowseMsg) => void,
+  opts: BrowseViewOptions,
+  reportError: (m: string) => void,
+): void {
+  const { origin } = opts
+  const fail = (label: string, err: unknown): void =>
+    reportError(`${label}: ${err instanceof Error ? err.message : String(err)}`)
+
+  switch (eff.type) {
+    case 'report':
+      reportError(eff.message)
+      return
+
+    case 'fetchSessions':
+      void (async () => {
+        try {
+          const res = await fetch(`${origin}/_llui/sessions`)
+          if (!res.ok) throw new Error(`GET /_llui/sessions → ${res.status}`)
+          const payload = (await res.json()) as { sessions: SessionSummary[] }
+          send({ type: 'sessions/loaded', sessions: payload.sessions ?? [] })
+        } catch (err) {
+          fail('failed to load sessions', err)
+        }
+      })()
+      return
+
+    case 'fetchNotes':
+      void (async () => {
+        if (!eff.sessionId) {
+          send({ type: 'notes/loaded', notes: [] })
+          return
+        }
+        try {
+          const res = await fetch(
+            `${origin}/_llui/notes?sessionId=${encodeURIComponent(eff.sessionId)}`,
+          )
+          if (!res.ok) throw new Error(`GET /_llui/notes → ${res.status}`)
+          const payload = (await res.json()) as { notes: NoteSummary[] }
+          send({ type: 'notes/loaded', notes: payload.notes ?? [] })
+        } catch (err) {
+          fail('failed to load notes', err)
+        }
+      })()
+      return
+
+    case 'fetchExpansion':
+      void (async () => {
+        try {
+          const [full, history] = await Promise.all([
+            fetch(
+              `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}&format=json`,
+            )
+              .then((r) => (r.ok ? (r.json() as Promise<FullNote>) : null))
+              .catch(() => null),
+            fetch(
+              `${origin}/_llui/notes/${eff.id}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
+            )
+              .then((r) => (r.ok ? (r.json() as Promise<{ history?: StatusTransition[] }>) : null))
+              .catch(() => null),
+          ])
+          const fm: NoteFrontmatterLite = full?.frontmatter ?? { kind: 'text', author: 'human' }
+          const repro = Array.isArray(full?.body?.repro) ? full!.body!.repro! : []
+          send({
+            type: 'expansion/loaded',
+            id: eff.id,
+            data: {
+              prose: full?.prose ?? '',
+              frontmatter: fm,
+              history: history?.history ?? [],
+              repro,
+            },
+          })
+        } catch (err) {
+          fail('failed to load note', err)
+        }
+      })()
+      return
+
+    case 'deleteNote':
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}`,
+            { method: 'DELETE' },
+          )
+          if (!res.ok) reportError(`delete failed (${res.status})`)
+          send({ type: 'refresh' })
+        } catch (err) {
+          fail('delete failed', err)
+        }
+      })()
+      return
+
+    case 'bulkDelete':
+      void (async () => {
+        const results = await Promise.all(
+          eff.ids.map((id) =>
+            fetch(`${origin}/_llui/notes/${id}?sessionId=${encodeURIComponent(eff.sessionId)}`, {
+              method: 'DELETE',
+            })
+              .then((r) => r.ok)
+              .catch(() => false),
+          ),
+        )
+        if (results.some((ok) => !ok)) reportError('one or more deletes failed')
+        send({ type: 'refresh' })
+      })()
+      return
+
+    case 'bulkStatus':
+      void (async () => {
+        await Promise.all(
+          eff.ids.map((id) =>
+            fetch(
+              `${origin}/_llui/notes/${id}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ to: eff.to, by: 'human' }),
+              },
+            ).catch(() => null),
+          ),
+        )
+        send({ type: 'refresh' })
+      })()
+      return
+
+    case 'patchProse':
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}`,
+            {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ prose: eff.prose }),
+            },
+          )
+          if (!res.ok) {
+            reportError(`save failed (${res.status})`)
+            return
+          }
+          send({ type: 'refresh' })
+        } catch (err) {
+          fail('save failed', err)
+        }
+      })()
+      return
+
+    case 'postStatus':
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${origin}/_llui/notes/${eff.taskId}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ to: eff.to, by: 'human' }),
+            },
+          )
+          if (!res.ok) reportError(`${eff.to} failed (${res.status})`)
+        } catch (err) {
+          fail(`${eff.to} failed`, err)
+        }
+      })()
+      return
+
+    case 'reSolve':
+      void (async () => {
+        if (!eff.prose.trim()) {
+          reportError('cannot re-solve a task with empty prose')
+          return
+        }
+        try {
+          const body = {
+            body: eff.prose,
+            frontmatter: {
+              author: 'human',
+              kind: 'text',
+              captureLevel: 'standard',
+              url: typeof location !== 'undefined' ? location.href : '',
+              route: null,
+              routeParams: {},
+              viewport: {
+                w: typeof window !== 'undefined' ? window.innerWidth : 0,
+                h: typeof window !== 'undefined' ? window.innerHeight : 0,
+                dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+              },
+              componentPath: null,
+              componentMeta: null,
+              annotations: [],
+              screenshot: null,
+              agentSchemas: [],
+              llui: { runtime: 'unknown', compiler: 'unknown' },
+              intent: 'task',
+              resume: true,
+            },
+            noteBody: {},
+          }
+          const res = await fetch(`${origin}/_llui/notes`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            reportError(`re-solve failed (${res.status})`)
+            return
+          }
+          send({ type: 'refresh' })
+        } catch (err) {
+          fail('re-solve failed', err)
+        }
+      })()
+      return
+
+    case 'replay':
+      void (async () => {
+        if (!opts.onReplayRepro) return
+        try {
+          const result = await opts.onReplayRepro(eff.events)
+          const skipped = result.skipped.length
+          reportError(
+            skipped > 0
+              ? `Replayed ${result.applied}, skipped ${skipped} (target selector(s) no longer match)`
+              : `Replayed ${result.applied} event(s)`,
+          )
+        } catch (err) {
+          fail('Replay failed', err)
+        }
+      })()
+      return
   }
-
-  return { el, refresh, onShow }
 }

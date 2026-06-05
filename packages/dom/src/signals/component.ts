@@ -150,6 +150,12 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Register this component in the global devtools registry
+   * (`__lluiComponents` / `__lluiDebug`). Default `true` in dev. Set `false`
+   * for self-introspecting dev tooling (e.g. an in-app debug HUD authored with
+   * LLui) so it doesn't pollute the host app's component list that external
+   * tools — the MCP server, agent bridge, debug-collector — read. */
+  devtools?: boolean
 }
 
 /** Mount a signal component and drive its update loop. The target is a container
@@ -306,7 +312,7 @@ export function mountSignalComponent<S, M, E = never>(
     for (const e of initialEffects) runEffect(e)
   }
 
-  if (dev) {
+  if (dev && opts?.devtools !== false) {
     uninstallDebug = installSignalDebug({
       name: def.name ?? 'SignalComponent',
       getState: () => state,

@@ -1,15 +1,26 @@
-// Drawing overlay for rect annotations. Mounts a full-viewport
-// transparent layer that intercepts pointer events and draws the
-// in-progress rectangle. On mouseup, the overlay STAYS VISIBLE so the
-// user can see the selection while the modal asks for confirmation;
-// the caller invokes `dismiss()` from the resolved result when the
-// user clicks Send/Cancel.
+// Drawing overlay for rect annotations — authored with @llui/dom.
 //
-// Layer is z-indexed above everything except the HUD modal; pointer-
-// events: auto so we capture clicks during the drag, but the layer is
-// transparent so the user still sees the page underneath while drawing.
-// After mouseup, pointer-events disable so the modal can take focus.
+// Mounts a full-viewport transparent layer (its own independent LLui root)
+// that intercepts pointer events and draws the in-progress rectangle as an
+// SVG rect bound to state. On mouseup the overlay STAYS VISIBLE (pointer-
+// events disabled) so the user can see the selection while the modal asks
+// for confirmation; the caller invokes `dismiss()` from the resolved result.
+//
+// The drag is a pure reducer (down/move/up → geometry); the only side effect
+// is resolving the outside Promise. All imperative DOM is gone — the SVG rect
+// geometry, cursor, pointer-events and hint opacity are reactive bindings.
 
+import {
+  component,
+  mountSignalComponent,
+  div,
+  svg,
+  rect as svgRect,
+  text,
+  onMount,
+  type Renderable,
+  type SignalViewBag,
+} from '@llui/dom'
 import type { NoteRect } from './note-types.js'
 
 export interface DrawRectOptions {
@@ -25,17 +36,164 @@ export interface DrawRectOptions {
 export interface DrawRectResult {
   rect: NoteRect | null
   reason: 'submit' | 'cancel'
-  /** Remove the overlay from the DOM. Call this when the user has
-   *  responded to the captured rect (Send / Cancel in the modal). For
-   *  the 'cancel' reason the overlay is already dismissed when the
-   *  promise resolves; calling dismiss() then is a no-op. */
+  /** Remove the overlay from the DOM. Idempotent. */
   dismiss(): void
 }
 
+// ── TEA shapes (exported for component tests) ────────────────────────────
+
+export type RectPhase = 'idle' | 'drawing' | 'captured'
+
+export interface RectState {
+  phase: RectPhase
+  startX: number
+  startY: number
+  rect: NoteRect | null
+  hintVisible: boolean
+}
+
+export type RectMsg =
+  | { type: 'down'; x: number; y: number }
+  | { type: 'move'; x: number; y: number }
+  | { type: 'up' }
+  | { type: 'escape' }
+  | { type: 'fadeHint' }
+
+/** The only side effect: report the resolved selection to the outside world. */
+export type RectEffect = { type: 'resolve'; rect: NoteRect | null; reason: 'submit' | 'cancel' }
+
+export const rectInit = (): RectState => ({
+  phase: 'idle',
+  startX: 0,
+  startY: 0,
+  rect: null,
+  hintVisible: true,
+})
+
+export const rectReduce = (state: RectState, msg: RectMsg): [RectState, RectEffect[]] => {
+  switch (msg.type) {
+    case 'down':
+      return [
+        {
+          phase: 'drawing',
+          startX: msg.x,
+          startY: msg.y,
+          rect: { x: msg.x, y: msg.y, w: 0, h: 0 },
+          hintVisible: false,
+        },
+        [],
+      ]
+    case 'move': {
+      if (state.phase !== 'drawing') return [state, []]
+      const x = Math.min(state.startX, msg.x)
+      const y = Math.min(state.startY, msg.y)
+      const w = Math.abs(msg.x - state.startX)
+      const h = Math.abs(msg.y - state.startY)
+      return [{ ...state, rect: { x, y, w, h } }, []]
+    }
+    case 'up': {
+      if (state.phase !== 'drawing') return [state, []]
+      const r = state.rect
+      // Tiny drags are accidental clicks — treat as cancel.
+      if (!r || r.w < 4 || r.h < 4) {
+        return [
+          { ...state, phase: 'captured' },
+          [{ type: 'resolve', rect: null, reason: 'cancel' }],
+        ]
+      }
+      // Stay 'captured' (overlay visible, pointer-events off) so the user
+      // sees the region while the modal confirms.
+      return [{ ...state, phase: 'captured' }, [{ type: 'resolve', rect: r, reason: 'submit' }]]
+    }
+    case 'escape':
+      return [state, [{ type: 'resolve', rect: null, reason: 'cancel' }]]
+    case 'fadeHint':
+      return [{ ...state, hintVisible: false }, []]
+  }
+}
+
+const rectView = (
+  { state, send }: SignalViewBag<RectState, RectMsg>,
+  strokeColor: string,
+  hintFadeMs: number,
+): Renderable => [
+  div(
+    {
+      'data-llui-overlay': 'rect',
+      'style.position': 'fixed',
+      'style.inset': '0',
+      'style.zIndex': '2147483645',
+      'style.background': 'rgba(0,0,0,0.04)',
+      'style.cursor': state.map((s) => (s.phase === 'captured' ? 'default' : 'crosshair')),
+      // After capture, let clicks pass through to the HUD modal.
+      'style.pointerEvents': state.map((s) => (s.phase === 'captured' ? 'none' : 'auto')),
+      onMouseDown: (e: MouseEvent) => send({ type: 'down', x: e.clientX, y: e.clientY }),
+      onMouseMove: (e: MouseEvent) => send({ type: 'move', x: e.clientX, y: e.clientY }),
+      onMouseUp: () => send({ type: 'up' }),
+    },
+    [
+      svg(
+        {
+          width: '100%',
+          height: '100%',
+          'style.position': 'absolute',
+          'style.inset': '0',
+          'style.pointerEvents': 'none',
+        },
+        [
+          svgRect({
+            fill: 'rgba(255,82,82,0.12)',
+            stroke: strokeColor,
+            'stroke-width': '2',
+            x: state.map((s) => String(s.rect?.x ?? 0)),
+            y: state.map((s) => String(s.rect?.y ?? 0)),
+            width: state.map((s) => String(s.rect?.w ?? 0)),
+            height: state.map((s) => String(s.rect?.h ?? 0)),
+          }),
+        ],
+      ),
+      // Hint pill — first <div> child (the overlay test reads it by tag).
+      div(
+        {
+          'style.position': 'absolute',
+          'style.top': '12px',
+          'style.left': '50%',
+          'style.transform': 'translateX(-50%)',
+          'style.background': 'rgba(0,0,0,0.78)',
+          'style.color': 'white',
+          'style.padding': '6px 12px',
+          'style.borderRadius': '999px',
+          'style.font': '13px -apple-system, BlinkMacSystemFont, sans-serif',
+          'style.pointerEvents': 'none',
+          'style.transition': 'opacity 400ms ease',
+          'style.opacity': state.map((s) => (s.hintVisible ? '1' : '0')),
+        },
+        [text('Click and drag to mark a region — Esc to cancel')],
+      ),
+      // Global Escape + hint auto-fade timer, torn down on dispose.
+      onMount(() => {
+        const onKey = (e: KeyboardEvent): void => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            send({ type: 'escape' })
+          }
+        }
+        document.addEventListener('keydown', onKey)
+        const timer =
+          hintFadeMs > 0 ? setTimeout(() => send({ type: 'fadeHint' }), hintFadeMs) : null
+        return () => {
+          document.removeEventListener('keydown', onKey)
+          if (timer) clearTimeout(timer)
+        }
+      }),
+    ],
+  ),
+]
+
 /**
- * Activate the drawing overlay. Returns a promise that resolves when
- * the user releases the mouse (with the rect + dismiss callback) or
- * hits Escape (with null + an already-dismissed overlay).
+ * Activate the drawing overlay. Returns a promise that resolves when the
+ * user releases the mouse (with the rect + dismiss callback) or hits Escape
+ * (with null + an already-dismissed overlay).
  */
 export function drawRect(opts: DrawRectOptions = {}): Promise<DrawRectResult> {
   const strokeColor = opts.strokeColor ?? '#ff5252'
@@ -43,142 +201,39 @@ export function drawRect(opts: DrawRectOptions = {}): Promise<DrawRectResult> {
   const hintFadeMs = opts.hintFadeMs ?? 2500
 
   return new Promise((resolve) => {
-    const overlay = document.createElement('div')
-    overlay.setAttribute('data-llui-overlay', 'rect')
-    overlay.style.cssText = [
-      'position: fixed',
-      'inset: 0',
-      'z-index: 2147483645',
-      'cursor: crosshair',
-      'background: rgba(0,0,0,0.04)',
-    ].join('; ')
+    const host = document.createElement('div')
+    host.setAttribute('data-llui-overlay-host', 'rect')
+    container.appendChild(host)
 
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.setAttribute('width', '100%')
-    svg.setAttribute('height', '100%')
-    svg.style.cssText = 'position: absolute; inset: 0; pointer-events: none;'
-
-    const rectEl = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-    rectEl.setAttribute('fill', 'rgba(255,82,82,0.12)')
-    rectEl.setAttribute('stroke', strokeColor)
-    rectEl.setAttribute('stroke-width', '2')
-    rectEl.setAttribute('width', '0')
-    rectEl.setAttribute('height', '0')
-    svg.appendChild(rectEl)
-
-    const hint = document.createElement('div')
-    hint.textContent = 'Click and drag to mark a region — Esc to cancel'
-    hint.style.cssText = [
-      'position: absolute',
-      'top: 12px',
-      'left: 50%',
-      'transform: translateX(-50%)',
-      'background: rgba(0,0,0,0.78)',
-      'color: white',
-      'padding: 6px 12px',
-      'border-radius: 999px',
-      'font: 13px -apple-system, BlinkMacSystemFont, sans-serif',
-      'pointer-events: none',
-      'transition: opacity 400ms ease',
-    ].join('; ')
-    // Set opacity as a property so jsdom + the browser both reflect
-    // it via hint.style.opacity reliably.
-    hint.style.opacity = '1'
-
-    overlay.append(svg, hint)
-    container.appendChild(overlay)
-
-    // Auto-fade the hint after a few seconds — the user has read it by
-    // then and the bright pill is distracting once they're focused.
-    let hintFadeTimer: ReturnType<typeof setTimeout> | null =
-      hintFadeMs > 0
-        ? setTimeout(() => {
-            hint.style.opacity = '0'
-          }, hintFadeMs)
-        : null
-    const fadeHintNow = (): void => {
-      if (hintFadeTimer) {
-        clearTimeout(hintFadeTimer)
-        hintFadeTimer = null
-      }
-      hint.style.opacity = '0'
-    }
-
-    let startX = 0
-    let startY = 0
-    let drawing = false
-    let dismissed = false
-    let lastRect: NoteRect | null = null
-
-    const cleanup = (): void => {
-      if (hintFadeTimer) clearTimeout(hintFadeTimer)
-      overlay.removeEventListener('mousedown', onDown)
-      overlay.removeEventListener('mousemove', onMove)
-      overlay.removeEventListener('mouseup', onUp)
-      document.removeEventListener('keydown', onKey)
-    }
+    let disposed = false
     const dismiss = (): void => {
-      if (dismissed) return
-      dismissed = true
-      cleanup()
-      overlay.remove()
+      if (disposed) return
+      disposed = true
+      handle.dispose() // tears down bindings + onMount cleanups (keydown/timer)
+      host.remove()
     }
 
-    const onDown = (e: MouseEvent): void => {
-      startX = e.clientX
-      startY = e.clientY
-      drawing = true
-      fadeHintNow()
-      rectEl.setAttribute('x', String(startX))
-      rectEl.setAttribute('y', String(startY))
-      rectEl.setAttribute('width', '0')
-      rectEl.setAttribute('height', '0')
+    let settled = false
+    const settle = (r: NoteRect | null, reason: 'submit' | 'cancel'): void => {
+      if (settled) return
+      settled = true
+      if (reason === 'cancel') dismiss()
+      resolve({ rect: r, reason, dismiss })
     }
 
-    const onMove = (e: MouseEvent): void => {
-      if (!drawing) return
-      const x = Math.min(startX, e.clientX)
-      const y = Math.min(startY, e.clientY)
-      const w = Math.abs(e.clientX - startX)
-      const h = Math.abs(e.clientY - startY)
-      rectEl.setAttribute('x', String(x))
-      rectEl.setAttribute('y', String(y))
-      rectEl.setAttribute('width', String(w))
-      rectEl.setAttribute('height', String(h))
-      lastRect = { x, y, w, h }
-    }
-
-    const onUp = (): void => {
-      if (!drawing) return
-      drawing = false
-
-      // Tiny drags are accidental clicks — dismiss and treat as cancel.
-      if (!lastRect || lastRect.w < 4 || lastRect.h < 4) {
-        dismiss()
-        resolve({ rect: null, reason: 'cancel', dismiss })
-        return
-      }
-
-      // Keep the overlay alive so the user can see the highlighted
-      // region while the HUD modal asks for confirmation. Disable
-      // pointer events so clicks pass through to the modal.
-      overlay.style.pointerEvents = 'none'
-      overlay.style.cursor = 'default'
-      cleanup()
-      resolve({ rect: lastRect, reason: 'submit', dismiss })
-    }
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        dismiss()
-        resolve({ rect: null, reason: 'cancel', dismiss })
-      }
-    }
-
-    overlay.addEventListener('mousedown', onDown)
-    overlay.addEventListener('mousemove', onMove)
-    overlay.addEventListener('mouseup', onUp)
-    document.addEventListener('keydown', onKey)
+    // init has no effects, so onEffect cannot fire before `handle` is bound.
+    const handle = mountSignalComponent<RectState, RectMsg, RectEffect>(
+      host,
+      component<RectState, RectMsg, RectEffect>({
+        name: 'llui-devmode-annotate:rect',
+        init: rectInit,
+        update: rectReduce,
+        view: (bag) => rectView(bag, strokeColor, hintFadeMs),
+        onEffect: (eff) => {
+          if (eff.type === 'resolve') settle(eff.rect, eff.reason)
+        },
+      }),
+      { devtools: false },
+    )
   })
 }
