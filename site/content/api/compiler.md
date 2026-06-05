@@ -998,12 +998,11 @@ The "bare type" of a field. Covers five cases:
   a field's type is a local interface/type alias the extractor could
   follow (depth-limited; cross-file references stay `'unknown'`).
 - array of element type: `{kind: 'array', element: <bare type>}`.
-- discriminated union of objects: `{kind: 'discriminated-union',
-  discriminant: 'kind', variants: {a: {...}, b: {...}}}`. Emitted
-  when every member of a union is an object literal sharing one
+- discriminated union of objects:
+  `{kind: 'discriminated-union', discriminant: 'kind', variants: {a: {...}, b: {...}}}`.
+  Emitted when every member of a union is an object literal sharing one
   literal-string property name with distinct values. Symmetric with
-  how the top-level Msg union itself is encoded — same shape,
-  recursed.
+  how the top-level Msg union itself is encoded — same shape, recursed.
   The synthesizer in `@llui/agent`'s `list_actions` walks these to build
   copy-paste-ready payload examples; the validator in `send_message`
   walks them too (treating object/array as "any" since deep validation
