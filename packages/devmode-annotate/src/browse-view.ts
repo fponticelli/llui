@@ -16,8 +16,6 @@ import {
   div,
   span,
   button,
-  select,
-  option,
   input,
   textarea,
   img,
@@ -27,10 +25,10 @@ import {
   portal,
   text,
   type Signal,
-  type Mountable,
   type Renderable,
   type SignalViewBag,
 } from '@llui/dom'
+import { select, type SelectMsg, type SelectState } from '@llui/components/select'
 import { btnStyle, STYLES } from './styles.js'
 
 // ── Domain shapes (server payloads) ──────────────────────────────────────
@@ -178,9 +176,15 @@ interface ExpansionData {
 export interface BrowseState {
   phase: Phase
   sessions: SessionSummary[]
-  currentSessionId: string | null
+  /** Session picker — its value[0] is the canonical current session id. */
+  sessionSelect: SelectState
   notes: NoteSummary[]
-  filters: BrowseFilters
+  /** Filter pickers — each value[0] is the canonical filter value. */
+  kindSelect: SelectState
+  authorSelect: SelectState
+  statusSelect: SelectState
+  /** Free-text search (a plain input, not a select). */
+  searchText: string
   expandedNoteId: string | null
   selectedIds: string[]
   /** hydrated expansions keyed by note id; 'loading' while in flight */
@@ -197,10 +201,10 @@ export type BrowseMsg =
   | { type: 'refresh' }
   | { type: 'sessions/loaded'; sessions: SessionSummary[] }
   | { type: 'notes/loaded'; notes: NoteSummary[] }
-  | { type: 'session/select'; id: string }
-  | { type: 'filter/kind'; value: BrowseFilters['kind'] }
-  | { type: 'filter/author'; value: BrowseFilters['author'] }
-  | { type: 'filter/status'; value: BrowseFilters['status'] }
+  | { type: 'sessionSelect'; msg: SelectMsg }
+  | { type: 'kindSelect'; msg: SelectMsg }
+  | { type: 'authorSelect'; msg: SelectMsg }
+  | { type: 'statusSelect'; msg: SelectMsg }
   | { type: 'filter/text'; value: string }
   | { type: 'row/toggleExpand'; id: string }
   | { type: 'row/toggleSelect'; id: string }
@@ -233,25 +237,60 @@ export type BrowseEffect =
   | { type: 'replay'; events: unknown[] }
   | { type: 'report'; message: string }
 
-const initialFilters = (): BrowseFilters => ({
-  kind: 'all',
-  author: 'all',
-  status: 'all',
-  text: '',
-})
+// Static filter option lists: [value, label]. The select's `items` are the
+// values; labels are looked up for rendering.
+const KIND_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All kinds'],
+  ['text', '📝 text'],
+  ['rect', '⌖ rect'],
+  ['capture', '📸 capture'],
+  ['reply', '↩ reply'],
+]
+const AUTHOR_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All authors'],
+  ['human', '👤 human'],
+  ['llm', '🤖 llm'],
+]
+const STATUS_OPTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'All statuses'],
+  ['open', 'open'],
+  ['working', 'working'],
+  ['proposed', 'proposed'],
+  ['applied', 'applied'],
+  ['closed', 'closed'],
+]
+
+const filterSelectInit = (options: ReadonlyArray<readonly [string, string]>): SelectState =>
+  select.init({ items: options.map(([v]) => v), value: ['all'] })
 
 export const browseInit = (): BrowseState => ({
   phase: 'idle',
   sessions: [],
-  currentSessionId: null,
+  sessionSelect: select.init({ items: [], value: [] }),
   notes: [],
-  filters: initialFilters(),
+  kindSelect: filterSelectInit(KIND_OPTIONS),
+  authorSelect: filterSelectInit(AUTHOR_OPTIONS),
+  statusSelect: filterSelectInit(STATUS_OPTIONS),
+  searchText: '',
   expandedNoteId: null,
   selectedIds: [],
   expansions: {},
   editingNoteId: null,
   editDraft: '',
   lightboxSrc: null,
+})
+
+// ── Selectors — the select slices are the source of truth ────────────────
+
+/** The canonical current session id (select value[0]). */
+export const currentSessionId = (s: BrowseState): string | null => s.sessionSelect.value[0] ?? null
+
+/** The active filters, derived from the select slices + search text. */
+export const activeFilters = (s: BrowseState): BrowseFilters => ({
+  kind: (s.kindSelect.value[0] ?? 'all') as BrowseFilters['kind'],
+  author: (s.authorSelect.value[0] ?? 'all') as BrowseFilters['author'],
+  status: (s.statusSelect.value[0] ?? 'all') as BrowseFilters['status'],
+  text: s.searchText,
 })
 
 /** Keep the current session if it still exists, else default to most recent. */
@@ -262,6 +301,7 @@ function pickSession(sessions: SessionSummary[], current: string | null): string
 }
 
 export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, BrowseEffect[]] => {
+  const sid = currentSessionId(state)
   switch (msg.type) {
     case 'show':
       if (state.phase !== 'idle') return [state, []]
@@ -271,10 +311,19 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
       return [state, [{ type: 'fetchSessions' }]]
 
     case 'sessions/loaded': {
-      const currentSessionId = pickSession(msg.sessions, state.currentSessionId)
+      const picked = pickSession(msg.sessions, sid)
+      let sessionSelect = state.sessionSelect
+      ;[sessionSelect] = select.update(sessionSelect, {
+        type: 'setItems',
+        items: msg.sessions.map((s) => s.id),
+      })
+      ;[sessionSelect] = select.update(sessionSelect, {
+        type: 'setValue',
+        value: picked ? [picked] : [],
+      })
       return [
-        { ...state, phase: 'ready', sessions: msg.sessions, currentSessionId },
-        [{ type: 'fetchNotes', sessionId: currentSessionId }],
+        { ...state, phase: 'ready', sessions: msg.sessions, sessionSelect },
+        [{ type: 'fetchNotes', sessionId: picked }],
       ]
     }
 
@@ -283,29 +332,41 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
       return [{ ...state, notes }, []]
     }
 
-    case 'session/select':
+    case 'sessionSelect': {
+      const prev = sid
+      const [sessionSelect] = select.update(state.sessionSelect, msg.msg)
+      const next = sessionSelect.value[0] ?? null
+      if (next === prev) return [{ ...state, sessionSelect }, []]
+      // Session actually changed → reset the view and refetch.
       return [
         {
           ...state,
-          currentSessionId: msg.id,
+          sessionSelect,
           expandedNoteId: null,
           editingNoteId: null,
           selectedIds: [],
           expansions: {},
         },
-        [{ type: 'fetchNotes', sessionId: msg.id }],
+        [{ type: 'fetchNotes', sessionId: next }],
       ]
+    }
 
     // Filters are pure client-side state — reconciliation makes per-keystroke
     // re-render cheap, so the old 120ms search debounce is gone.
-    case 'filter/kind':
-      return [{ ...state, filters: { ...state.filters, kind: msg.value } }, []]
-    case 'filter/author':
-      return [{ ...state, filters: { ...state.filters, author: msg.value } }, []]
-    case 'filter/status':
-      return [{ ...state, filters: { ...state.filters, status: msg.value } }, []]
+    case 'kindSelect': {
+      const [kindSelect] = select.update(state.kindSelect, msg.msg)
+      return [{ ...state, kindSelect }, []]
+    }
+    case 'authorSelect': {
+      const [authorSelect] = select.update(state.authorSelect, msg.msg)
+      return [{ ...state, authorSelect }, []]
+    }
+    case 'statusSelect': {
+      const [statusSelect] = select.update(state.statusSelect, msg.msg)
+      return [{ ...state, statusSelect }, []]
+    }
     case 'filter/text':
-      return [{ ...state, filters: { ...state.filters, text: msg.value } }, []]
+      return [{ ...state, searchText: msg.value }, []]
 
     case 'row/toggleExpand': {
       if (state.expandedNoteId === msg.id) {
@@ -313,9 +374,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
       }
       const already = state.expansions[msg.id]
       const effects: BrowseEffect[] =
-        already || !state.currentSessionId
-          ? []
-          : [{ type: 'fetchExpansion', id: msg.id, sessionId: state.currentSessionId }]
+        already || !sid ? [] : [{ type: 'fetchExpansion', id: msg.id, sessionId: sid }]
       return [
         {
           ...state,
@@ -342,22 +401,22 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
       return [{ ...state, selectedIds: [] }, []]
 
     case 'note/delete':
-      if (!state.currentSessionId) return [state, []]
+      if (!sid) return [state, []]
       return [
         { ...state, expandedNoteId: null, editingNoteId: null },
-        [{ type: 'deleteNote', id: msg.id, sessionId: state.currentSessionId }],
+        [{ type: 'deleteNote', id: msg.id, sessionId: sid }],
       ]
 
     case 'bulk/delete': {
-      if (state.selectedIds.length === 0 || !state.currentSessionId) return [state, []]
+      if (state.selectedIds.length === 0 || !sid) return [state, []]
       return [
         { ...state, selectedIds: [] },
-        [{ type: 'bulkDelete', ids: state.selectedIds, sessionId: state.currentSessionId }],
+        [{ type: 'bulkDelete', ids: state.selectedIds, sessionId: sid }],
       ]
     }
 
     case 'bulk/wontfix': {
-      if (state.selectedIds.length === 0 || !state.currentSessionId) return [state, []]
+      if (state.selectedIds.length === 0 || !sid) return [state, []]
       return [
         { ...state, selectedIds: [] },
         [
@@ -365,7 +424,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
             type: 'bulkStatus',
             ids: state.selectedIds,
             to: 'wontfix',
-            sessionId: state.currentSessionId,
+            sessionId: sid,
           },
         ],
       ]
@@ -378,7 +437,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
     case 'edit/cancel':
       return [{ ...state, editingNoteId: null }, []]
     case 'edit/save': {
-      if (!state.editingNoteId || !state.currentSessionId) return [state, []]
+      if (!state.editingNoteId || !sid) return [state, []]
       return [
         { ...state, editingNoteId: null },
         [
@@ -386,7 +445,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
             type: 'patchProse',
             id: state.editingNoteId,
             prose: state.editDraft,
-            sessionId: state.currentSessionId,
+            sessionId: sid,
           },
         ],
       ]
@@ -399,7 +458,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
       return [state, [{ type: 'replay', events: msg.events }]]
 
     case 'diff/accept':
-      if (!state.currentSessionId) return [state, []]
+      if (!sid) return [state, []]
       return [
         state,
         [
@@ -407,12 +466,12 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
             type: 'postStatus',
             taskId: msg.taskId,
             to: 'accepted',
-            sessionId: state.currentSessionId,
+            sessionId: sid,
           },
         ],
       ]
     case 'diff/reject':
-      if (!state.currentSessionId) return [state, []]
+      if (!sid) return [state, []]
       return [
         state,
         [
@@ -420,7 +479,7 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
             type: 'postStatus',
             taskId: msg.taskId,
             to: 'rejected',
-            sessionId: state.currentSessionId,
+            sessionId: sid,
           },
         ],
       ]
@@ -449,7 +508,7 @@ interface RowVM {
 
 function projectRows(s: BrowseState): RowVM[] {
   return s.notes
-    .filter((n) => matchesFilters(n, s.filters))
+    .filter((n) => matchesFilters(n, activeFilters(s)))
     .map((n): RowVM => {
       const expanded = s.expandedNoteId === n.id
       return {
@@ -468,10 +527,10 @@ function projectRows(s: BrowseState): RowVM[] {
 }
 
 function emptyMessage(s: BrowseState): string | null {
-  const visible = s.notes.filter((n) => matchesFilters(n, s.filters))
+  const visible = s.notes.filter((n) => matchesFilters(n, activeFilters(s)))
   if (visible.length > 0) return null
   if (s.notes.length === 0) {
-    return s.currentSessionId
+    return currentSessionId(s)
       ? 'no notes in this session yet'
       : 'no sessions yet — drop a note from the compose view'
   }
@@ -899,33 +958,7 @@ function makeView(origin: string, onReplay: boolean) {
       [
         // Header: session select + refresh.
         div({ 'style.display': 'flex', 'style.gap': '8px', 'style.alignItems': 'center' }, [
-          select(
-            {
-              'style.flex': '1',
-              style: STYLE_SELECT,
-              value: state.map((s) => s.currentSessionId ?? ''),
-              disabled: state.map((s) => s.sessions.length === 0),
-              onChange: (e: Event) =>
-                send({ type: 'session/select', id: (e.currentTarget as HTMLSelectElement).value }),
-            },
-            [
-              show(
-                state.map((s) => (s.sessions.length === 0 ? true : null)),
-                () => [option({ value: '' }, [text('(no sessions)')])],
-              ),
-              each(
-                state.map((s) => s.sessions),
-                {
-                  key: (s) => s.id,
-                  render: (s) => [
-                    option({ value: s.map((x) => x.id) }, [
-                      text(s.map((x) => `${x.id} (${x.noteCount})`)),
-                    ]),
-                  ],
-                },
-              ),
-            ],
-          ),
+          ...sessionSelectCmp(state, send),
           button(
             {
               type: 'button',
@@ -944,44 +977,15 @@ function makeView(origin: string, onReplay: boolean) {
             'style.gap': '4px',
           },
           [
-            filterSelect(
-              state.map((s) => s.filters.kind),
-              [
-                ['all', 'All kinds'],
-                ['text', '📝 text'],
-                ['rect', '⌖ rect'],
-                ['capture', '📸 capture'],
-                ['reply', '↩ reply'],
-              ],
-              (v) => send({ type: 'filter/kind', value: v as BrowseFilters['kind'] }),
-            ),
-            filterSelect(
-              state.map((s) => s.filters.author),
-              [
-                ['all', 'All authors'],
-                ['human', '👤 human'],
-                ['llm', '🤖 llm'],
-              ],
-              (v) => send({ type: 'filter/author', value: v as BrowseFilters['author'] }),
-            ),
-            filterSelect(
-              state.map((s) => s.filters.status),
-              [
-                ['all', 'All statuses'],
-                ['open', 'open'],
-                ['working', 'working'],
-                ['proposed', 'proposed'],
-                ['applied', 'applied'],
-                ['closed', 'closed'],
-              ],
-              (v) => send({ type: 'filter/status', value: v as BrowseFilters['status'] }),
-            ),
+            ...filterSelectCmp(state, send, 'kindSelect', 'llui-browse-kind', KIND_OPTIONS),
+            ...filterSelectCmp(state, send, 'authorSelect', 'llui-browse-author', AUTHOR_OPTIONS),
+            ...filterSelectCmp(state, send, 'statusSelect', 'llui-browse-status', STATUS_OPTIONS),
             input({
               type: 'search',
               placeholder: 'Search prose…',
               'style.gridColumn': '1 / span 3',
               style: STYLE_SELECT,
-              value: state.map((s) => s.filters.text),
+              value: state.map((s) => activeFilters(s).text),
               onInput: (e: Event) =>
                 send({ type: 'filter/text', value: (e.currentTarget as HTMLInputElement).value }),
             }),
@@ -1105,20 +1109,94 @@ function makeView(origin: string, onReplay: boolean) {
   ]
 }
 
-function filterSelect(
-  value: Signal<string>,
+type FilterSliceKey = 'kindSelect' | 'authorSelect' | 'statusSelect'
+type SliceKey = FilterSliceKey | 'sessionSelect'
+
+const MENU_ITEM_STYLE =
+  'display: block; width: 100%; text-align: left; padding: 4px 8px; border: 0;' +
+  ' background: transparent; color: var(--hud-fg); cursor: pointer; font: inherit; font-size: 11px;'
+const LISTBOX_STYLE =
+  'background: var(--hud-bg); border: 1px solid var(--hud-border-strong); border-radius: 4px;' +
+  ' box-shadow: 0 4px 16px rgba(0,0,0,0.25); padding: 2px; z-index: 2147483647; max-height: 240px; overflow-y: auto;'
+
+const labelOf = (value: string, options: ReadonlyArray<readonly [string, string]>): string =>
+  options.find(([v]) => v === value)?.[1] ?? value
+
+/** A filter dropdown (static options) backed by @llui/components/select. */
+function filterSelectCmp(
+  state: Signal<BrowseState>,
+  send: (m: BrowseMsg) => void,
+  sliceKey: FilterSliceKey,
+  id: string,
   options: ReadonlyArray<readonly [string, string]>,
-  onChange: (v: string) => void,
-): Mountable {
-  return select(
-    {
-      style: STYLE_SELECT,
-      value,
-      onChange: (e: Event) => onChange((e.currentTarget as HTMLSelectElement).value),
-    },
-    options.map(([v, label]) => option({ value: v }, [text(label)])),
-  )
+): Renderable {
+  const slice = state.at(sliceKey)
+  const parts = select.connect(slice, (m) => send({ type: sliceKey, msg: m }), { id })
+  return [
+    button({ ...parts.trigger, style: STYLE_SELECT + '; text-align: left;' }, [
+      text(slice.map((ss) => labelOf(ss.value[0] ?? 'all', options))),
+    ]),
+    select.overlay({
+      state: slice,
+      send: (m) => send({ type: sliceKey, msg: m }),
+      parts,
+      sameWidth: true,
+      content: () => [
+        div(
+          { ...parts.content, style: LISTBOX_STYLE },
+          options.map(([value, label], index) =>
+            button({ ...parts.item(value, index).item, style: MENU_ITEM_STYLE }, [text(label)]),
+          ),
+        ),
+      ],
+    }),
+  ]
 }
+
+/** The session dropdown (dynamic items) backed by @llui/components/select. */
+function sessionSelectCmp(state: Signal<BrowseState>, send: (m: BrowseMsg) => void): Renderable {
+  const slice = state.at('sessionSelect')
+  const parts = select.connect(slice, (m) => send({ type: 'sessionSelect', msg: m }), {
+    id: 'llui-browse-session',
+  })
+  return [
+    button({ ...parts.trigger, style: STYLE_SELECT + '; flex: 1; text-align: left;' }, [
+      text(
+        state.map((s) => {
+          const v = s.sessionSelect.value[0]
+          if (!v) return '(no sessions)'
+          const sess = s.sessions.find((x) => x.id === v)
+          return sess ? `${sess.id} (${sess.noteCount})` : v
+        }),
+      ),
+    ]),
+    select.overlay({
+      state: slice,
+      send: (m) => send({ type: 'sessionSelect', msg: m }),
+      parts,
+      sameWidth: true,
+      content: () => [
+        div({ ...parts.content, style: LISTBOX_STYLE }, [
+          each(
+            state.map((s) => s.sessions),
+            {
+              key: (sess) => sess.id,
+              render: (sess, index) => [
+                button(
+                  { ...parts.item(sess.peek().id, index.peek()).item, style: MENU_ITEM_STYLE },
+                  [text(sess.map((x) => `${x.id} (${x.noteCount})`))],
+                ),
+              ],
+            },
+          ),
+        ]),
+      ],
+    }),
+  ]
+}
+
+// keep a reference so `SliceKey` is used (documents the select slice keys).
+export type BrowseSelectSlice = SliceKey
 
 // ── Effects + handle ─────────────────────────────────────────────────────
 

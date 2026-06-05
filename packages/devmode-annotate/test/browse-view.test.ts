@@ -5,6 +5,7 @@ import {
   browseReduce,
   matchesFilters,
   statusBucket,
+  currentSessionId,
   type BrowseState,
   type BrowseMsg,
   type BrowseEffect,
@@ -66,14 +67,14 @@ describe('browse-view reducer', () => {
         { id: 's2', noteCount: 1 },
       ],
     })
-    expect(h.state.currentSessionId).toBe('s2')
+    expect(currentSessionId(h.state)).toBe('s2')
     expect(h.effects).toEqual([{ type: 'fetchNotes', sessionId: 's2' }])
   })
 
   it('sessions/loaded keeps the current session if it still exists', () => {
     const h = testComponent(def)
     h.send({ type: 'sessions/loaded', sessions: [{ id: 's1', noteCount: 1 }] })
-    h.send({ type: 'session/select', id: 's1' })
+    h.send({ type: 'sessionSelect', msg: { type: 'selectOption', value: 's1' } })
     h.send({
       type: 'sessions/loaded',
       sessions: [
@@ -81,7 +82,7 @@ describe('browse-view reducer', () => {
         { id: 's2', noteCount: 1 },
       ],
     })
-    expect(h.state.currentSessionId).toBe('s1')
+    expect(currentSessionId(h.state)).toBe('s1')
   })
 
   it('notes/loaded sorts newest-first', () => {
@@ -188,7 +189,7 @@ describe('browse-view reducer', () => {
     })
     h.send({ type: 'row/toggleSelect', id: 'a' })
     h.send({ type: 'row/toggleExpand', id: 'b' })
-    h.send({ type: 'session/select', id: 's1' })
+    h.send({ type: 'sessionSelect', msg: { type: 'selectOption', value: 's1' } })
     expect(h.state.selectedIds).toEqual([])
     expect(h.state.expandedNoteId).toBe(null)
     expect(h.state.expansions).toEqual({})
