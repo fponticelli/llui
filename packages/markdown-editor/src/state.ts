@@ -78,10 +78,11 @@ export type EditorMsg =
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 
-/** The subset of messages a plugin may emit through its `PluginContext`. */
+/** The subset of messages a plugin may emit through its `PluginContext` (e.g. a
+ * `register` listener routing an editor event into its own plugin UI). */
 export type EditorOutMsg = Extract<
   EditorMsg,
-  { type: 'openOverlay' | 'closeOverlay' | 'slashQuery' }
+  { type: 'openOverlay' | 'closeOverlay' | 'slashQuery' | 'plugin' }
 >
 
 export type EditorEffect =

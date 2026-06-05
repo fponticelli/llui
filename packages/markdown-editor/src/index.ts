@@ -42,6 +42,7 @@ export {
   $insertCallout,
 } from './plugins/callout.js'
 export { hrPlugin, $insertHorizontalRule } from './plugins/hr.js'
+export { slashPlugin } from './plugins/slash.js'
 export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
 

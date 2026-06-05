@@ -44,4 +44,7 @@ export interface MarkdownPlugin extends LexicalPlugin<EditorOutMsg> {
   items?: readonly CommandItem[]
   /** A stateful UI extension keyed by this plugin's `name` (see {@link definePluginUI}). */
   ui?: PluginUI
+  /** Receive the merged command items from all plugins (e.g. a slash menu lists
+   * every plugin's items). Called once at editor construction. */
+  onItems?: (items: readonly CommandItem[]) => void
 }

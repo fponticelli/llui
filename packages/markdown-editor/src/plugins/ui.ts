@@ -16,6 +16,8 @@ export interface PluginEffectContext<M> {
   editor: () => LexicalEditor | null
   /** Dispatch a message back into this plugin. */
   send: (msg: M) => void
+  /** Dispatch a host editor message (e.g. `{type:'runCommand', id}`). */
+  emit: (msg: unknown) => void
 }
 
 /** Args for a plugin's `view` — its reactive state slice + a scoped dispatcher. */
@@ -33,9 +35,12 @@ export interface PluginUISpec<S, M, E = never> {
   update?: (state: S, msg: M) => S | [S, E[]]
   /** View contribution (overlays/panels), rendered by the host. */
   view?: (args: PluginViewArgs<S, M>) => Renderable
-  /** Effect handler with live-editor access. */
+  /** Effect handler with live-editor access + host dispatch. */
   onEffect?: (effect: E, ctx: PluginEffectContext<M>) => void
 }
+
+/** The host message type a plugin effect may emit (the editor's full Msg). */
+export type HostEmit = (msg: unknown) => void
 
 /** The type-erased form stored on a plugin and consumed by the host. */
 export interface PluginUI {
@@ -67,6 +72,7 @@ export function definePluginUI<S, M, E = never>(spec: PluginUISpec<S, M, E>): Pl
           spec.onEffect!(effect as E, {
             editor: ctx.editor,
             send: ctx.send as (msg: M) => void,
+            emit: ctx.emit,
           })
       : undefined,
   }

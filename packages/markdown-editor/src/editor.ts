@@ -87,6 +87,8 @@ export function markdownEditor(
 
   const items: CommandItem[] = plugins.flatMap((p) => p.items ?? [])
   const itemsById = new Map(items.map((i) => [i.id, i]))
+  // Share the merged item list with plugins that want it (e.g. the slash menu).
+  for (const plugin of plugins) plugin.onItems?.(items)
   const decorators: DecoratorBridge[] = plugins.flatMap((p) => p.decorators ?? [])
   const pluginUIs: Array<{ name: string; ui: PluginUI }> = plugins
     .filter((p): p is MarkdownPlugin & { ui: PluginUI } => p.ui !== undefined)
@@ -148,6 +150,7 @@ export function markdownEditor(
       ui?.onEffect?.(effect.effect, {
         editor: getEditor,
         send: (msg) => api.send({ type: 'plugin', name: effect.name, msg }),
+        emit: (msg) => api.send(msg as EditorMsg),
       })
       return
     }

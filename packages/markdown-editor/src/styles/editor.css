@@ -278,6 +278,28 @@
   color: var(--md-muted);
 }
 
+/* ── Slash command menu ───────────────────────────────────────────────── */
+[data-scope='md-slash'][data-part='root'] {
+  min-width: 12rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.25rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+[data-scope='md-slash'][data-part='option'] {
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.88rem;
+  color: var(--md-text);
+  cursor: pointer;
+}
+[data-scope='md-slash'][data-part='option'][data-active] {
+  background: var(--md-primary-soft);
+}
+
 /* ── Link dialog ──────────────────────────────────────────────────────── */
 [data-scope='dialog'][data-part='backdrop'] {
   position: fixed;
