@@ -1,6 +1,19 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { drawRect } from '../src/overlay.js'
+import { testComponent, reducer } from '@llui/test'
+import {
+  drawRect,
+  rectInit,
+  rectReduce,
+  type RectState,
+  type RectMsg,
+  type RectEffect,
+} from '../src/overlay.js'
+
+const rectDef = reducer<RectState, RectMsg, RectEffect>({
+  init: () => [rectInit(), []],
+  update: rectReduce,
+})
 
 function dispatchMouse(target: Element, type: string, x: number, y: number): void {
   target.dispatchEvent(
@@ -128,5 +141,62 @@ describe('drawRect overlay', () => {
     expect(hint.style.opacity).toBe('0')
     dispatchMouse(overlay, 'mouseup', 10, 10)
     await promise
+  })
+})
+
+// Idiomatic LLui: the drag logic is a pure reducer, testable at the message
+// level via @llui/test with no DOM/jsdom at all.
+describe('rect overlay reducer', () => {
+  it('initialises idle with the hint visible', () => {
+    const h = testComponent(rectDef)
+    expect(h.state.phase).toBe('idle')
+    expect(h.state.hintVisible).toBe(true)
+    expect(h.state.rect).toBe(null)
+  })
+
+  it('down→move computes the rect and hides the hint', () => {
+    const h = testComponent(rectDef)
+    h.send({ type: 'down', x: 100, y: 80 })
+    expect(h.state.phase).toBe('drawing')
+    expect(h.state.hintVisible).toBe(false)
+    h.send({ type: 'move', x: 250, y: 200 })
+    expect(h.state.rect).toEqual({ x: 100, y: 80, w: 150, h: 120 })
+  })
+
+  it('normalises a reverse-direction drag', () => {
+    const h = testComponent(rectDef)
+    h.sendAll([
+      { type: 'down', x: 300, y: 250 },
+      { type: 'move', x: 100, y: 80 },
+    ])
+    expect(h.state.rect).toEqual({ x: 100, y: 80, w: 200, h: 170 })
+  })
+
+  it('up on a real drag emits resolve:submit with the rect', () => {
+    const h = testComponent(rectDef)
+    h.sendAll([{ type: 'down', x: 50, y: 50 }, { type: 'move', x: 150, y: 150 }, { type: 'up' }])
+    expect(h.state.phase).toBe('captured')
+    expect(h.effects).toEqual([
+      { type: 'resolve', rect: { x: 50, y: 50, w: 100, h: 100 }, reason: 'submit' },
+    ])
+  })
+
+  it('up on a tiny (<4px) drag emits resolve:cancel', () => {
+    const h = testComponent(rectDef)
+    h.sendAll([{ type: 'down', x: 100, y: 100 }, { type: 'move', x: 102, y: 101 }, { type: 'up' }])
+    expect(h.effects).toEqual([{ type: 'resolve', rect: null, reason: 'cancel' }])
+  })
+
+  it('escape emits resolve:cancel', () => {
+    const h = testComponent(rectDef)
+    h.send({ type: 'escape' })
+    expect(h.effects).toEqual([{ type: 'resolve', rect: null, reason: 'cancel' }])
+  })
+
+  it('move before down is ignored', () => {
+    const h = testComponent(rectDef)
+    h.send({ type: 'move', x: 10, y: 10 })
+    expect(h.state.phase).toBe('idle')
+    expect(h.state.rect).toBe(null)
   })
 })

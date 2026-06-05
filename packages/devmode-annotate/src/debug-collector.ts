@@ -80,6 +80,21 @@ interface ComponentsGlobal {
 const MESSAGE_LIMIT = 50
 const EFFECT_LIMIT = 50
 
+/**
+ * Component-name prefix used by the HUD's OWN @llui/dom components (browse
+ * view, rect overlay, element picker, the HUD shell). Now that the HUD is
+ * authored with LLui, those components register into the same
+ * `__lluiComponents` registry we walk to introspect the HOST app — so every
+ * collector skips entries carrying this prefix. The HUD must be invisible to
+ * its own telemetry.
+ */
+export const HUD_COMPONENT_PREFIX = 'llui-devmode-annotate:'
+
+/** Registry entries belonging to the host app (HUD-internal components removed). */
+function hostEntries(components: Record<string, DebugApiLike>): Array<[string, DebugApiLike]> {
+  return Object.entries(components).filter(([name]) => !name.startsWith(HUD_COMPONENT_PREFIX))
+}
+
 export interface CollectOptions {
   /** Override the global lookup. Tests inject a stub map. */
   components?: Record<string, DebugApiLike>
@@ -97,7 +112,7 @@ export interface CollectOptions {
 export function collectDebugSnapshot(opts: CollectOptions = {}): NoteBody {
   const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
   if (!components) return {}
-  const componentEntries = Object.entries(components)
+  const componentEntries = hostEntries(components)
   if (componentEntries.length === 0) return {}
 
   const messageLimit = opts.messageLimit ?? MESSAGE_LIMIT
@@ -226,7 +241,7 @@ export function collectSourceMap(
   if (typeof document === 'undefined') return []
   const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
   if (!components) return []
-  const entries = Object.entries(components)
+  const entries = hostEntries(components)
   if (entries.length === 0) return []
 
   const samples = Math.max(1, opts.samples ?? 3)
@@ -327,7 +342,7 @@ function cssEscape(value: string): string {
 export function collectComponentInfo(opts: CollectOptions = {}): ComponentInfoSnapshot | null {
   const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
   if (!components) return null
-  const entries = Object.entries(components)
+  const entries = hostEntries(components)
   if (entries.length === 0) return null
 
   const names = entries.map(([name]) => name)

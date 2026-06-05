@@ -23,9 +23,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@llui/dom": "workspace:*",
     "html-to-image": "^1.11.13"
   },
   "devDependencies": {
+    "@llui/test": "workspace:*",
     "jsdom": "^29.0.1",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"

@@ -493,10 +493,16 @@ importers:
 
   packages/devmode-annotate:
     dependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
     devDependencies:
+      '@llui/test':
+        specifier: workspace:*
+        version: link:../test
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1
