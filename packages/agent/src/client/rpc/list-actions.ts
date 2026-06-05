@@ -59,6 +59,16 @@ export type ListActionsResult = {
     source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
+    /**
+     * Whether the action can be dispatched right now. Omitted (= `true`)
+     * for reachable actions; `false` for a variant whose `@routeGated`
+     * predicate is currently falsy — surfaced as unavailable rather than
+     * hidden, so the agent knows it exists and what unblocks it.
+     */
+    available?: boolean
+    /** Why an `available: false` action can't be dispatched now (from the
+     * `@routeGated` reason, or a generic fallback). */
+    unavailableReason?: string | null
     /** Cautionary text from `@warning` JSDoc, or null. */
     warning: string | null
     /** Concrete examples from `@example` JSDoc, in source order. */
@@ -126,7 +136,6 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     if (schema && !(d.variant in schema.variants)) continue
     const ann = annotations[d.variant]
     if (ann?.dispatchMode === 'human-only') continue
-    if (!passesRouteGate(ann, state)) continue
     seen.add(d.variant)
     const variantSchema = schema?.variants[d.variant]
     out.push({
@@ -137,6 +146,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       source: 'binding',
       selectorHint: null,
       payloadHint: null,
+      ...gateFields(ann, state),
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
       emits: ann?.emits ?? [],
@@ -149,7 +159,6 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   for (const msg of affordances) {
     const ann = annotations[msg.type]
     if (ann?.dispatchMode === 'human-only') continue
-    if (!passesRouteGate(ann, state)) continue
     seen.add(msg.type)
     const { type, ...rest } = msg
     const variantSchema = schema?.variants[type]
@@ -161,6 +170,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       source: 'always-affordable',
       selectorHint: null,
       payloadHint: Object.keys(rest).length > 0 ? rest : null,
+      ...gateFields(ann, state),
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
       emits: ann?.emits ?? [],
@@ -179,7 +189,6 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     if (seen.has(variant)) continue
     if (ann.dispatchMode === 'human-only') continue
     if (!ann.alwaysAffordable) continue
-    if (!passesRouteGate(ann, state)) continue
     seen.add(variant)
     const fields = schema?.variants[variant]
     out.push({
@@ -190,6 +199,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       source: 'always-affordable',
       selectorHint: null,
       payloadHint: fields ? synthesizePayload(variant, fields) : null,
+      ...gateFields(ann, state),
       warning: ann.warning,
       examples: ann.examples,
       emits: ann.emits,
@@ -221,7 +231,6 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       const ann = annotations[variant]
       if (ann?.dispatchMode !== 'agent-only') continue
       if (explicitAffordances && !affordanceVariants.has(variant)) continue
-      if (!passesRouteGate(ann, state)) continue
       out.push({
         variant,
         intent: ann.intent,
@@ -230,6 +239,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
         source: 'schema',
         selectorHint: null,
         payloadHint: synthesizePayload(variant, fields),
+        ...gateFields(ann, state),
         warning: ann.warning,
         examples: ann.examples,
         emits: ann.emits,
@@ -252,27 +262,38 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
  * shape — copy-paste-ready into `send_message`.
  */
 /**
- * Evaluate `@routeGated("predicate")` against the current state.
- * Returns true (variant passes) when:
- *   - the variant has no `@routeGated` annotation, OR
- *   - the predicate evaluates truthy with `state` bound.
+ * Evaluate `@routeGated("predicate")` against the current state and return
+ * the availability fields to spread onto an action entry:
+ *   - `{}` (available) when the variant has no `@routeGated` annotation OR
+ *     the predicate evaluates truthy with `state` bound.
+ *   - `{ available: false, unavailableReason }` when the predicate is falsy
+ *     (or throws — fail-closed). The reason is the `@routeGated` 2nd arg, or
+ *     a generic fallback. The variant is SURFACED as unavailable rather than
+ *     dropped, so the agent learns it exists and what unblocks it.
  *
  * Predicate is compiled lazily via `new Function('state', 'return (' +
  * src + ')')` and cached in a module-level Map. Compile failures
- * (syntactically broken predicates) degrade to "true" so a single
- * malformed annotation doesn't paralyze the affordance pass — the
+ * (syntactically broken predicates) degrade to "available" so a single
+ * malformed annotation doesn't wrongly mark a variant unavailable — the
  * build-time linter is the right place to catch syntactic issues.
- * Evaluation throws fail-closed (return false) since a predicate that
- * crashes on the current state shouldn't surface the variant.
  */
-function passesRouteGate(ann: MessageAnnotations | undefined, state: unknown): boolean {
+function gateFields(
+  ann: MessageAnnotations | undefined,
+  state: unknown,
+): { available?: false; unavailableReason?: string } {
   const src = ann?.routeGate
-  if (!src) return true
+  if (!src) return {}
   const predicate = compileRouteGate(src)
+  let passes: boolean
   try {
-    return Boolean(predicate(state))
+    passes = Boolean(predicate(state))
   } catch {
-    return false
+    passes = false
+  }
+  if (passes) return {}
+  return {
+    available: false,
+    unavailableReason: ann?.routeGateReason ?? 'not available in the current state',
   }
 }
 

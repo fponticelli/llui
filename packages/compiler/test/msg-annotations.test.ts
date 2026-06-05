@@ -25,6 +25,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
       delete: {
         intent: 'Delete item',
@@ -35,6 +36,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
       checkout: {
         intent: 'Place order',
@@ -45,6 +47,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
       nav: {
         intent: 'Navigate',
@@ -55,6 +58,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
     })
   })
@@ -187,6 +191,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
     })
   })
@@ -208,6 +213,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
     })
   })
@@ -228,6 +234,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
       b: {
         intent: null,
@@ -238,6 +245,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
     })
   })
@@ -258,6 +266,7 @@ type Msg =
       warning: null,
       emits: [],
       routeGate: null,
+      routeGateReason: null,
     })
   })
 
@@ -281,6 +290,7 @@ type Msg =
         warning: null,
         emits: [],
         routeGate: null,
+        routeGateReason: null,
       },
     })
   })
@@ -309,6 +319,7 @@ type Msg =
       warning: null,
       emits: [],
       routeGate: null,
+      routeGateReason: null,
     })
   })
 
@@ -351,5 +362,30 @@ type Msg =
   | { type: 'Plain' }
 `
     expect(extractMsgAnnotations(src)?.Plain?.routeGate).toBeNull()
+  })
+
+  it('extracts the optional @routeGated reason (2nd arg) into routeGateReason', () => {
+    const src = `
+type Msg =
+  /**
+   * @intent("Approve")
+   * @routeGated("state.step === 'review'", "available during the review step")
+   */
+  | { type: 'approve' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.approve?.routeGate).toBe("state.step === 'review'")
+    expect(r?.approve?.routeGateReason).toBe('available during the review step')
+  })
+
+  it('routeGateReason is null when @routeGated has only a predicate', () => {
+    const src = `
+type Msg =
+  /** @routeGated("state.ready") */
+  | { type: 'go' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.go?.routeGate).toBe('state.ready')
+    expect(r?.go?.routeGateReason).toBeNull()
   })
 })

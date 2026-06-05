@@ -502,17 +502,44 @@ describe('handleListActions', () => {
 
   // ── @routeGated predicate ──────────────────────────────────────
 
-  it('hides variants whose @routeGated predicate evaluates falsy', () => {
-    // Compile-time alternative to runtime agentAffordances. The
-    // predicate sees `state` at the call site; if it's falsy, the
-    // variant doesn't surface in list_actions. Same effect as
-    // explicitly NOT including the variant in agentAffordances —
-    // just authored at the Msg definition instead of in a separate
-    // hook.
+  it('surfaces variants whose @routeGated predicate evaluates falsy as available:false with the authored reason', () => {
+    // The variant is NOT hidden — it's surfaced as unavailable so the
+    // agent learns it exists and what unblocks it. The authored 2nd arg
+    // of @routeGated becomes the unavailableReason.
     const result = handleListActions(
       makeHost({
         descriptors: [],
         state: { matrixState: { kind: 'idle' } }, // not loaded
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+            routeGate: "state.matrixState.kind === 'loaded'",
+            routeGateReason: 'load a matrix first',
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0]?.variant).toBe('Matrix/AddCriteria')
+    expect(result.actions[0]?.available).toBe(false)
+    expect(result.actions[0]?.unavailableReason).toBe('load a matrix first')
+  })
+
+  it('falls back to a generic unavailableReason when @routeGated has no reason', () => {
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        state: { matrixState: { kind: 'idle' } },
         annotations: {
           'Matrix/AddCriteria': {
             intent: 'Add criteria',
@@ -531,10 +558,11 @@ describe('handleListActions', () => {
         },
       }),
     )
-    expect(result.actions).toHaveLength(0)
+    expect(result.actions[0]?.available).toBe(false)
+    expect(result.actions[0]?.unavailableReason).toBe('not available in the current state')
   })
 
-  it('surfaces variants whose @routeGated predicate evaluates truthy', () => {
+  it('surfaces variants whose @routeGated predicate evaluates truthy (available, no flag)', () => {
     const result = handleListActions(
       makeHost({
         descriptors: [],
@@ -559,12 +587,14 @@ describe('handleListActions', () => {
     )
     expect(result.actions).toHaveLength(1)
     expect(result.actions[0]?.variant).toBe('Matrix/AddCriteria')
+    expect(result.actions[0]?.available).toBeUndefined() // available actions omit the flag
+    expect(result.actions[0]?.unavailableReason).toBeUndefined()
   })
 
-  it('routeGate predicate that throws is treated as fail-closed (variant hidden)', () => {
+  it('routeGate predicate that throws is fail-closed → surfaced as unavailable', () => {
     // Predicate references state.foo but state has no foo — TypeError
-    // bubbles up and we treat it as "predicate said no." Avoids
-    // surfacing variants the author meant to gate.
+    // bubbles up and we treat it as "predicate said no", surfacing the
+    // variant as available:false (rather than dropping it).
     const result = handleListActions(
       makeHost({
         descriptors: [],
@@ -584,7 +614,8 @@ describe('handleListActions', () => {
         schema: { discriminant: 'type', variants: { X: {} } },
       }),
     )
-    expect(result.actions).toHaveLength(0)
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0]?.available).toBe(false)
   })
 
   // ── @agentOnly gated by agentAffordances ───────────────────────

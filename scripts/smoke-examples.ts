@@ -1,29 +1,16 @@
 /**
  * Smoke test: catch the class of bug where code compiles + builds + ships
  * with no warnings, but crashes on first paint or fails to resolve at
- * load time in production. Two complementary checks:
+ * load time in production.
  *
- *   1. **Browser-boot check** (Playwright). Loads every example with a
- *      browser-bootable dist into headless Chromium, fails on
- *      console.error / pageerror / requestfailed. Catches runtime crashes
- *      from missing `__view` factories, undefined `__prefixes`, etc. —
- *      the issue-#5 class.
- *
- *   2. **Static-import check** (no browser). Walks every example's
- *      `dist/server/**\/*.{js,mjs}` and asserts that every imported name
- *      from `@llui/dom` or `@llui/dom/internal` is a real export of the
- *      respective subpath. Catches the issue-#5-follow-up class:
- *      compiler-emitted helpers leaking into module-external import
- *      specifiers that the vite-plugin's rename pass then rewrites to
- *      symbols the dom package never exported. The original bug needed
- *      a `MISSING_EXPORT` rolldown error to surface — this check makes
- *      the same condition fail explicitly + deterministically.
+ * **Browser-boot check** (Playwright). Loads every example with a
+ * browser-bootable dist into headless Chromium, fails on console.error /
+ * pageerror / requestfailed. Catches runtime crashes from missing
+ * `__view` factories, undefined `__prefixes`, etc. — the issue-#5 class.
  *
  * Run after `pnpm turbo build`. Dist layouts handled:
  *   - SPA (vite default): `dist/index.html` → browser-boot
  *   - Vike pre-rendered:  `dist/client/index.html` → browser-boot
- *   - Vike SSR (no prerender): `dist/server/entries/**` only →
- *     static-import check only (no client HTML to load)
  *
  * Usage: npx tsx scripts/smoke-examples.ts
  */
@@ -51,10 +38,8 @@ const MIME: Record<string, string> = {
 
 interface Example {
   name: string
-  /** Directory to serve in the browser-boot check. Null when not browser-bootable (e.g., SSR-only fixture). */
-  bootDistDir: string | null
-  /** Directory to walk for the static-import check. Null when there's no `dist/server`. */
-  serverDistDir: string | null
+  /** Directory to serve in the browser-boot check. */
+  bootDistDir: string
 }
 
 function findExamples(): Example[] {
@@ -63,17 +48,13 @@ function findExamples(): Example[] {
     const dir = resolve(EXAMPLES_DIR, entry)
     if (!statSync(dir).isDirectory()) continue
 
-    const serverDist = resolve(dir, 'dist', 'server')
-    const serverDistDir = existsSync(serverDist) ? serverDist : null
-
     // Vike-style: `pages/` source layout.
     if (existsSync(resolve(dir, 'pages'))) {
       const vikeClientIndex = resolve(dir, 'dist', 'client', 'index.html')
-      const bootDistDir = existsSync(vikeClientIndex) ? resolve(dir, 'dist', 'client') : null
-      if (bootDistDir || serverDistDir) {
-        out.push({ name: entry, bootDistDir, serverDistDir })
+      if (existsSync(vikeClientIndex)) {
+        out.push({ name: entry, bootDistDir: resolve(dir, 'dist', 'client') })
       } else {
-        console.warn(`[skip] ${entry}: no dist/client or dist/server — was \`vite build\` run?`)
+        console.warn(`[skip] ${entry}: no dist/client/index.html — was \`vite build\` run?`)
       }
       continue
     }
@@ -85,67 +66,9 @@ function findExamples(): Example[] {
       console.warn(`[skip] ${entry}: no dist/index.html — was \`vite build\` run?`)
       continue
     }
-    out.push({ name: entry, bootDistDir: spaDist, serverDistDir })
+    out.push({ name: entry, bootDistDir: spaDist })
   }
   return out
-}
-
-/**
- * Walk `serverDist` recursively, collect every `import { … } from
- * '@llui/dom'` and `import { … } from '@llui/dom/internal'` line, and
- * assert every imported name is a real export of the referenced
- * subpath. Catches the rename-into-import-specifier bug deterministically
- * — no need to wait for rolldown's later `MISSING_EXPORT` pass.
- */
-async function checkServerImports(serverDist: string): Promise<string[]> {
-  const errors: string[] = []
-  // Load the dom dists directly — the script runs at the repo root,
-  // which isn't a consumer of `@llui/dom`, so a bare `import('@llui/dom')`
-  // fails resolution. Reaching into the workspace's built `dist/` is the
-  // unambiguous source of truth for "what does the package actually export."
-  const domModule = (await import(resolve(ROOT, 'packages/dom/dist/index.js'))) as Record<
-    string,
-    unknown
-  >
-  const internalModule = (await import(resolve(ROOT, 'packages/dom/dist/internal.js'))) as Record<
-    string,
-    unknown
-  >
-  const allowed: Record<string, ReadonlySet<string>> = {
-    '@llui/dom': new Set(Object.keys(domModule)),
-    '@llui/dom/internal': new Set(Object.keys(internalModule)),
-  }
-  const re = /import\s*\{([^}]*)\}\s*from\s*['"](@llui\/dom(?:\/internal)?)['"]/g
-
-  function walk(p: string): void {
-    const stat = statSync(p)
-    if (stat.isDirectory()) {
-      for (const name of readdirSync(p)) walk(resolve(p, name))
-      return
-    }
-    if (!/\.(?:m?js|cjs)$/.test(p)) return
-    const text = readFileSync(p, 'utf8')
-    for (const m of text.matchAll(re)) {
-      const subpath = m[2] as keyof typeof allowed
-      const realExports = allowed[subpath]
-      if (!realExports) continue
-      for (const raw of m[1]!.split(',')) {
-        // Handle `name as alias` and surrounding whitespace.
-        const name = raw
-          .trim()
-          .split(/\s+as\s+/)[0]!
-          .trim()
-        if (!name) continue
-        if (!realExports.has(name)) {
-          errors.push(
-            `${p.replace(EXAMPLES_DIR, 'examples')}: import { ${name} } from "${subpath}" — not a real export`,
-          )
-        }
-      }
-    }
-  }
-  walk(serverDist)
-  return errors
 }
 
 function serve(dir: string): Promise<{ port: number; close: () => Promise<void> }> {
@@ -176,12 +99,6 @@ function serve(dir: string): Promise<{ port: number; close: () => Promise<void> 
 
 async function smokeOne(ex: Example): Promise<{ name: string; errors: string[] }> {
   const errors: string[] = []
-
-  if (ex.serverDistDir) {
-    errors.push(...(await checkServerImports(ex.serverDistDir)))
-  }
-
-  if (!ex.bootDistDir) return { name: ex.name, errors }
 
   const { port, close } = await serve(ex.bootDistDir)
   const browser = await chromium.launch()

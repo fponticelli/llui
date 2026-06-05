@@ -112,7 +112,7 @@ function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarn
 ### `defineTestComponent()`
 
 ```typescript
-function defineTestComponent<S, M, E = never>(
+function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(
   input: DefineTestComponentInput<S, M, E>,
 ): SignalComponentDef<S, M, E>
 ```
@@ -150,7 +150,9 @@ mount, flagging the mistake. Override via `name` when you want the
 history trail to match your module.
 
 ```typescript
-function reducer<S, M, E = never>(opts: ReducerOptions<S, M, E>): SignalComponentDef<S, M, E>
+function reducer<S, M extends { type: string }, E extends { type: string } = never>(
+  opts: ReducerOptions<S, M, E>,
+): SignalComponentDef<S, M, E>
 ```
 
 ### `emulateBlurOnRemoval()`
@@ -234,7 +236,11 @@ function replayAgentSession(
 ### `DefineTestComponentInput`
 
 ```typescript
-export interface DefineTestComponentInput<S, M, E = never> {
+export interface DefineTestComponentInput<
+  S,
+  M extends { type: string },
+  E extends { type: string } = never,
+> {
   name: string
   init: () => [S, E[]] | S
   update: (state: S, msg: M) => [S, E[]] | S
@@ -246,7 +252,7 @@ export interface DefineTestComponentInput<S, M, E = never> {
 ### `ReducerOptions`
 
 ```typescript
-export interface ReducerOptions<S, M, E = never> {
+export interface ReducerOptions<S, M extends { type: string }, E extends { type: string } = never> {
   init: () => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   name?: string

@@ -1,6 +1,15 @@
 # Proposal: developer experience & API ergonomics
 
-**Status:** proposed · **Audience:** future session. Items below come from a survey of the authoring API, compiler lint rules, types, and the agent/MCP surface. **Each cites a file as a starting point but should be re-verified against current code before implementing** (memory/code drift). Ranked by impact × (1/effort).
+**Status:** Tiers 1–4 shipped (4.3 was already built). · **Audience:** future session. Items below come from a survey of the authoring API, compiler lint rules, types, and the agent/MCP surface. **Each cites a file as a starting point but should be re-verified against current code before implementing** (memory/code drift). Ranked by impact × (1/effort).
+
+**Progress log:**
+
+- **Tier 1 — done.** All three messages now quote the offending expression and give the exact fix (`packages/compiler/src/signals/rules.ts`, `authoring.ts` `compiledAway`).
+- **Tier 2 — done.** `.at()`-after-`.map()` is a compile error (`MappedSignal`) + a non-bypassable `at-after-map` lint rule; variadic `derived(a, b, fn)` overloads added; element `on*` handlers get precise DOM event types (`ElEventMap`). `snapshot()` alias intentionally skipped (duplicate verb across the compiler surface).
+- **Tier 3 — done.** `component<S, M, E>` documents S/M/E and nudges `M`/`E` toward `{ type: string }`; `Signal.at` JSDoc documents the `ValidPath` depth limit (root cause: it enumerates the union of all dotted paths, multiplicative in width × depth) + the `.map()` fallback.
+- **Tier 4.1 — done.** `validateMessage` now attaches a complete valid `example` to the first error (`packages/dom/src/signals/devtools.ts`); the MCP `llui_validate_message` tool relays it through unchanged.
+- **Tier 4.3 — already shipped (verified).** `llui_binding_graph` (`packages/mcp/src/tools/debug-api.ts`), the static-compiler dep-paths tool (`static-compiler.ts`), `llui_mask_legend`, and `llui_explain_mask` already provide the `{ binding → state paths }` inversion. No work needed.
+- **Tier 4.2 — done.** Gated variants (`@routeGated` predicate falsy) now surface in `list_actions` as `available: false` + `unavailableReason` instead of vanishing. The reason comes from the optional 2nd arg of `@routeGated("expr", "reason")` (parsed in `packages/compiler/src/msg-annotations.ts` → `routeGateReason`), with a generic fallback. The human-only dispatch rejection now carries a reason in `detail` (`send-message.ts`). Route-gate is deliberately NOT enforced on dispatch (a broken predicate must not be able to block a real dispatch). Static reasons only; a dynamic predicate-with-reason hook is left for a later pass.
 
 Guiding principle for this repo: **compile-time errors are the primary guardrail** (LLMs ignore warnings → framework lint rules are non-bypassable build errors in `@llui/compiler`, never ESLint). So error-message quality is a first-class DX lever, especially for LLM authoring.
 

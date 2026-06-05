@@ -122,4 +122,56 @@ describe('authoring surface types', () => {
       })
     void _
   })
+
+  it('rejects a Msg union without a `type` discriminant', () => {
+    const _ = () =>
+      // @ts-expect-error — Msg must be a discriminated union with a `type` field
+      component<{ n: number }, { kind: 'inc' }>({
+        init: () => ({ n: 0 }),
+        update: (s) => s,
+        view: ({ state }) => [text(state.at('n').map(String))],
+      })
+    void _
+  })
+})
+
+describe('element event-handler typing', () => {
+  it('infers the precise DOM event for well-known on* handlers (no annotation)', () => {
+    const _ = () => {
+      // onClick → MouseEvent
+      button({ onClick: (e) => void (e.clientX + e.clientY) }, [])
+      // onKeyDown → KeyboardEvent
+      div({ onKeyDown: (e) => void e.key }, [])
+      // onInput → Event (target read through the generic event)
+      div({ onInput: (e) => void e.target }, [])
+    }
+    void _
+  })
+
+  it('accepts a zero-arg handler (the most common authoring form)', () => {
+    const _ = () => button({ onClick: () => void 0 }, [])
+    void _
+  })
+
+  it('accepts signals, static attrs, and custom/data/aria keys', () => {
+    const _ = (busy: import('../../src/signals/types').Signal<boolean>) =>
+      div(
+        {
+          class: busy.map((b) => (b ? 'spin' : 'idle')),
+          id: 'x',
+          tabIndex: -1,
+          'data-foo': 'bar',
+          'aria-busy': busy,
+        },
+        [],
+      )
+    void _
+  })
+
+  it('rejects reading the wrong event field on a well-known handler', () => {
+    const _ = () =>
+      // @ts-expect-error — MouseEvent has no `.key`
+      button({ onClick: (e) => void e.key }, [])
+    void _
+  })
 })

@@ -1,18 +1,19 @@
 {
-  "name": "@llui/example-vike-ssr-smoke",
+  "name": "@llui/example-markdown-showcase",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@llui/dom": "workspace:*",
-    "@llui/vike": "workspace:*",
-    "vike": "^0.4.256"
+    "@llui/markdown": "workspace:*"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",
-    "typescript": "^6.0.0",
+    "@types/mdast": "^4.0.4",
     "vite": "^8.0.0"
   }
 }

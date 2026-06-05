@@ -74,6 +74,49 @@ describe('installSignalDebug', () => {
     expect(g.__lluiDebug).toBeUndefined()
   })
 
+  it('attaches a valid example message to validation errors', () => {
+    const base = {
+      name: 'Todos',
+      getState: () => ({}),
+      setState: () => {},
+      send: () => {},
+      pureUpdate: () => [{}, []] as [unknown, unknown[]],
+      history: [],
+      clearHistory: () => {},
+      msgSchema: {
+        discriminant: 'type',
+        variants: {
+          add: { title: 'string', count: 'number', done: 'boolean' },
+          rename: { id: 'number', to: 'string' },
+          setMode: { mode: "'a' | 'b'" },
+        },
+      },
+    }
+    const uninstall = installSignalDebug(base)
+    const api = g.__lluiDebug
+
+    // missing fields on a KNOWN variant → example completes it, reusing supplied fields
+    const e1 = api.validateMessage({ type: 'add', title: 'Buy milk' })
+    expect(e1?.[0].example).toEqual({ type: 'add', title: 'Buy milk', count: 0, done: false })
+
+    // unknown variant → example shows a representative valid variant's shape
+    const e2 = api.validateMessage({ type: 'nope' })
+    expect(e2?.[0].example?.type).toBe('add')
+
+    // non-object → example present
+    const e3 = api.validateMessage(42)
+    expect(e3?.[0].example).toBeTruthy()
+
+    // string-literal union field → first literal used as the placeholder
+    const e4 = api.validateMessage({ type: 'setMode' })
+    expect(e4?.[0].example).toEqual({ type: 'setMode', mode: 'a' })
+
+    // a VALID message stays null (no example, no errors)
+    expect(api.validateMessage({ type: 'rename', id: 1, to: 'x' })).toBeNull()
+
+    uninstall()
+  })
+
   it('uniquifies duplicate component names', () => {
     const base = {
       getState: () => ({}),

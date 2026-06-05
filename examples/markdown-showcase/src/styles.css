@@ -1,0 +1,249 @@
+/* Markdown showcase — app chrome (the preview content itself is styled by
+ * @llui/markdown/styles/theme.css). */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #ffffff;
+  --panel: #f6f8fa;
+  --chrome: #ffffff;
+  --line: #d1d9e0;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --accent: #0969da;
+}
+
+.app.dark {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --chrome: #0d1117;
+  --line: #30363d;
+  --fg: #e6edf3;
+  --muted: #9198a1;
+  --accent: #4493f8;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+.app {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  z-index: 10;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.brand .logo {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+.brand .title {
+  letter-spacing: -0.01em;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn.ghost {
+  background: transparent;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ── Panes ── */
+.panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  min-height: 0;
+}
+@media (max-width: 800px) {
+  .panes {
+    grid-template-columns: 1fr;
+  }
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.pane-label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 1rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.pill {
+  font-size: 0.66rem;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* the foreign() host (last child of the editor pane) fills + lets its textarea scroll */
+.editor-pane > div:last-child {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 1.25rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  tab-size: 2;
+  overflow: auto;
+}
+
+.preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem 2rem;
+}
+.preview .markdown-body {
+  max-width: 46rem;
+}
+
+/* ── Custom-renderer demo styles ── */
+.heading-wrap {
+  position: relative;
+  display: block;
+}
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  opacity: 0;
+  text-decoration: none;
+  color: var(--muted);
+  transition: opacity 0.12s;
+}
+.heading-wrap:hover .heading-anchor {
+  opacity: 1;
+}
+
+.callout {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin: 0 0 1em;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.callout-icon {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+.callout-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.code-block {
+  margin: 0 0 1em;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.code-lang {
+  padding: 0.3rem 0.85rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.code-block pre {
+  margin: 0;
+  border-radius: 0;
+}

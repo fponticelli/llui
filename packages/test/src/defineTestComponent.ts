@@ -9,7 +9,11 @@
 import { component, type SignalComponentDef } from '@llui/dom'
 import type { SignalViewBag, Renderable } from '@llui/dom'
 
-export interface DefineTestComponentInput<S, M, E = never> {
+export interface DefineTestComponentInput<
+  S,
+  M extends { type: string },
+  E extends { type: string } = never,
+> {
   name: string
   init: () => [S, E[]] | S
   update: (state: S, msg: M) => [S, E[]] | S
@@ -17,9 +21,11 @@ export interface DefineTestComponentInput<S, M, E = never> {
   onEffect?: SignalComponentDef<S, M, E>['onEffect']
 }
 
-export function defineTestComponent<S, M, E = never>(
-  input: DefineTestComponentInput<S, M, E>,
-): SignalComponentDef<S, M, E> {
+export function defineTestComponent<
+  S,
+  M extends { type: string },
+  E extends { type: string } = never,
+>(input: DefineTestComponentInput<S, M, E>): SignalComponentDef<S, M, E> {
   return component<S, M, E>({
     name: input.name,
     init: input.init,

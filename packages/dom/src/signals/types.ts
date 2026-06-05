@@ -66,9 +66,42 @@ export type ValidPath<T> = T extends null | undefined
  * - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
  */
 export interface Signal<T> {
+  /**
+   * Slice into a sub-signal via a statically-typed dot path
+   * (`state.at('user.profile.name')`). The path is validated and the result type
+   * resolved at compile time.
+   *
+   * **Depth limit.** `ValidPath<T>` enumerates the union of *every* valid dotted
+   * path of `T` (to validate the argument and power autocomplete). That union
+   * grows multiplicatively with the state's width × depth, so on a large /
+   * deeply-nested `T` it can exceed TypeScript's instantiation limit and surface
+   * as `TS2589: Type instantiation is excessively deep`. The cost comes from the
+   * *whole state shape*, not the single path you wrote. If you hit it, reach for
+   * `.map(s => s.deep.path)` instead — a `.map()` derive sidesteps path typing
+   * entirely (it reads the whole slice; the runtime still gates it correctly) and
+   * is the supported escape hatch for very deep paths.
+   */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
-  map<U>(fn: (value: T) => U): Signal<U>
+  map<U>(fn: (value: T) => U): MappedSignal<U>
   peek(): T
+}
+
+/**
+ * A signal produced by `.map()` (or `derived()`). It has the same reactive
+ * vocabulary as {@link Signal} — `map`, `peek`, and chaining — EXCEPT `at`: a
+ * mapped signal carries no statically-known state path, so there is nothing to
+ * slice into. `.at()` on it is therefore a COMPILE ERROR (and throws at
+ * runtime). Slice with `.at()` BEFORE `.map()`:
+ *
+ *     sig.at('field').map(fn)   // ✅ narrow first, then transform
+ *     sig.map(fn).at('field')   // ❌ no path to slice (use the form above)
+ *
+ * A `MappedSignal<T>` is still assignable to `Signal<T>`, so it flows into every
+ * slot/helper that accepts a signal unchanged.
+ */
+export interface MappedSignal<T> extends Signal<T> {
+  /** @deprecated `.at()` is unavailable after `.map()` — slice with `.at()` BEFORE `.map()` (`sig.at('field').map(fn)`). */
+  at: never
 }
 
 /**

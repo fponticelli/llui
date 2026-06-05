@@ -77,6 +77,13 @@ export type MessageAnnotations = {
    * behavior applies).
    */
   routeGate?: string | null
+  /**
+   * Human-readable reason surfaced when `routeGate` is FALSE — the
+   * optional 2nd argument of `@routeGated("expr", "reason")`. Becomes the
+   * `unavailableReason` on the gated action in `list_actions`. Null/absent
+   * when not authored (a generic reason is used instead).
+   */
+  routeGateReason?: string | null
 }
 
 export type MessageSchemaEntry = {
@@ -142,6 +149,20 @@ export type LapActionsResponse = {
     source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
+    /**
+     * Whether the action can be dispatched right now. Omitted (treated as
+     * `true`) for reachable actions. `false` for a variant whose
+     * `@routeGated` predicate is currently falsy — it's surfaced (so the
+     * agent knows it exists and what unblocks it) rather than hidden.
+     * Pair with `unavailableReason`.
+     */
+    available?: boolean
+    /**
+     * Why an `available: false` action can't be dispatched now — from the
+     * `@routeGated` reason (its optional 2nd arg), or a generic fallback.
+     * Null/absent for available actions.
+     */
+    unavailableReason?: string | null
     /** Cautionary text from `@warning` JSDoc, or null. */
     warning: string | null
     /** Concrete examples from `@example` JSDoc, in source order. */

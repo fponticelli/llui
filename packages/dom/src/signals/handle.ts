@@ -17,7 +17,7 @@ import { resolveSegments } from './mask.js'
 // `derived`), so the handle→dom import is a benign one-way edge (dom does not
 // import handle).
 import { __inRowBuild, isRowLocalDep, rebaseRowDep } from './dom.js'
-import type { Signal } from './types.js'
+import type { Signal, MappedSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
 
@@ -28,6 +28,17 @@ export interface SignalHandle<T> extends Signal<T> {
   /** resolve the value from the binding's state (component or row ctx) */
   readonly produce: (state: unknown) => T
   /** dependency paths into the binding's state */
+  readonly deps: readonly string[]
+}
+
+/** A runtime handle produced by `.map()` / `derived()` — same carrier as
+ * {@link SignalHandle}, but its public `at` is the {@link MappedSignal} `never`
+ * (a mapped signal has no static path to slice). A `MappedHandle<T>` is
+ * assignable to `SignalHandle<T>`, so it flows through the build helpers
+ * unchanged. */
+export interface MappedHandle<T> extends MappedSignal<T> {
+  readonly [SIGNAL]: true
+  readonly produce: (state: unknown) => T
   readonly deps: readonly string[]
 }
 
@@ -71,8 +82,14 @@ function derivedHandle<T>(
   peek: () => T,
   produce: (state: unknown) => T,
   deps: readonly string[],
-): SignalHandle<T> {
-  return {
+): MappedHandle<T> {
+  // The carrier keeps a THROWING `at` as a runtime safety net for uncompiled
+  // view-helper code; the public type is `MappedSignal` (`at: never`), which
+  // can't hold that callable value — so build the object as a `SignalHandle`
+  // (callable `at`) and widen to `MappedHandle` on return. The compile error
+  // (`MappedSignal.at: never`) + the `at-after-map` lint are the real guards;
+  // this throw only fires if both are bypassed.
+  const h: SignalHandle<T> = {
     [SIGNAL]: true,
     produce,
     deps,
@@ -87,6 +104,7 @@ function derivedHandle<T>(
         deps,
       )) as Signal<T>['map'],
   }
+  return h as MappedHandle<T>
 }
 
 /**
@@ -94,18 +112,54 @@ function derivedHandle<T>(
  * no shared parent signal (cross-tree, or a per-row item signal + a component-state
  * signal); for a single source, prefer {@link Signal.map}.
  *
+ * Two call forms — pick whichever reads cleaner:
+ *
+ *     derived(a, b, (va, vb) => …)   // variadic: 2–4 sources, positional values
+ *     derived([a, b, …c], (…vals) => …)  // array: any N, tuple-typed values
+ *
  * The compiler lowers `derived(...)` inside a DIRECT view to an inline call. This
  * is the equivalent RUNTIME handle for view-helper composition (where there is no
  * statically-known path): `produce`/`peek` apply `fn` over the resolved sources and
  * `deps` is the UNION of the sources' deps — so the chunked-mask reconciler fires
  * the binding whenever ANY source changes, and commits only on an output change.
  * All inputs must resolve against the same binding state (the common case: each is
- * rooted at the component state, or all at the same row ctx).
+ * rooted at the component state, or all at the same row ctx). The result is a
+ * {@link MappedSignal} — like a `.map()`, it carries no path, so `.at()` on it is
+ * a compile error (slice the sources before combining).
  */
+export function derived<A, B, U>(a: Signal<A>, b: Signal<B>, fn: (a: A, b: B) => U): MappedSignal<U>
+export function derived<A, B, C, U>(
+  a: Signal<A>,
+  b: Signal<B>,
+  c: Signal<C>,
+  fn: (a: A, b: B, c: C) => U,
+): MappedSignal<U>
+export function derived<A, B, C, D, U>(
+  a: Signal<A>,
+  b: Signal<B>,
+  c: Signal<C>,
+  d: Signal<D>,
+  fn: (a: A, b: B, c: C, d: D) => U,
+): MappedSignal<U>
 export function derived<T extends readonly unknown[], U>(
   sigs: { readonly [K in keyof T]: Signal<T[K]> },
   fn: (...values: T) => U,
-): Signal<U> {
+): MappedSignal<U>
+export function derived(...args: readonly unknown[]): MappedSignal<unknown> {
+  const fn = args[args.length - 1] as (...values: readonly unknown[]) => unknown
+  // `derived([a, b], fn)` (array form) vs `derived(a, b, fn)` (variadic): the
+  // array form is exactly two args whose first is an array of signals.
+  const sigs = (
+    args.length === 2 && Array.isArray(args[0]) ? args[0] : args.slice(0, -1)
+  ) as readonly Signal<unknown>[]
+  return combineSignals(sigs, fn)
+}
+
+/** Shared implementation behind every `derived(...)` overload. */
+function combineSignals(
+  sigs: readonly Signal<unknown>[],
+  fn: (...values: readonly unknown[]) => unknown,
+): MappedHandle<unknown> {
   const handles: SignalHandle<unknown>[] = []
   for (const s of sigs) {
     if (!isSignalHandle(s)) {
@@ -113,11 +167,6 @@ export function derived<T extends readonly unknown[], U>(
     }
     handles.push(s)
   }
-  // Resolving N sources yields a value array spread into `fn(...values: T)`. The
-  // array IS `T` by construction (handles[i] produces T[i]), but that invariant is
-  // erased at runtime, so call through an unknown-arity view of `fn` — the single
-  // unavoidable cast at this type-erasure boundary.
-  const apply = fn as (...values: readonly unknown[]) => U
 
   // Built inside an `each` row, the inputs see the combined row ctx
   // `{ item, state, index }`. Item/index inputs already read it correctly, but a
@@ -136,9 +185,9 @@ export function derived<T extends readonly unknown[], U>(
     }
     return { produce: (ctx: unknown) => h.produce(ctx), deps: h.deps }
   })
-  return derivedHandle<U>(
-    () => apply(...handles.map((h) => h.peek())),
-    (state) => apply(...inputs.map((i) => i.produce(state))),
+  return derivedHandle<unknown>(
+    () => fn(...handles.map((h) => h.peek())),
+    (state) => fn(...inputs.map((i) => i.produce(state))),
     [...new Set(inputs.flatMap((i) => i.deps))],
   )
 }
