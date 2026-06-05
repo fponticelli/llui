@@ -63,7 +63,13 @@ Cross-function lowering must do the same when the row body is **reached through 
 
 ### Phase 3 — cross-file helper rows (hardest, likely skip)
 
-`rowHelper` imported from another module/package. Requires either (a) the compiler to follow the import and inline across files (it already does cross-file Msg/State analysis via the manifest — `packages/compiler/src/signals/cross-file-walker.ts` — but inlining a function _body_ is a larger step), or (b) the precompiled-library ABI to ship a **row-factory form** of the helper alongside its narrowing metadata (`__llui_deps.json`). Both are substantial. **Recommend skipping** unless phase 2 proves high-value and cross-file helpers are common.
+`rowHelper` imported from another module/package. **Status: DEFERRED — two concrete blockers, verified this session (resume here):**
+
+1. **The lowering transform has no `Program`/checker.** `transformSignalComponentSource` runs on a single `ts.createSourceFile` (source→source per file). Cross-file symbol resolution DOES exist — `packages/compiler/src/accessor-resolver.ts:resolveCrossFileAccessor(use, checker)` follows an import alias (incl. `getAliasedSymbol`) to a helper's `FunctionDeclaration`/arrow in another file — but it requires a `TypeChecker`, and it's wired into the separate cross-file dep-analysis pass (`cross-file-walker.ts`), NOT into lowering. Phase 2's inliner resolves SAME-file helpers by AST name lookup (no checker). To reach cross-file you'd either run lowering inside a `Program` (big architecture change) or have the adapter pre-resolve helper bodies and pass them in via the `preExtracted`/`typeSources` options channel (the pattern already used for cross-file Msg/State).
+
+2. **Even with the body resolved, source-inlining breaks scope.** The helper body's FREE references (other helpers, imported fns like `relativeAgo`) live in the helper's module, not the consumer's — inlining the body verbatim into the consumer's factory references undefined identifiers. Fixing this needs transitive import injection (resolve every free ref → emit + dedup imports into the consumer), which is the genuinely hard part and is independent of resolution.
+
+So the only sound path is **(b) precompiled-library row-factory ABI**: a library's build emits a self-contained `RowFactory` form of its row helpers alongside `__llui_deps.json` (`build-manifest.ts`/`manifest-io.ts`/`manifest-resolve.ts`), and the consumer emits `eachDirect(items, key, libRowFactory)` referencing the imported factory. No scope problem (the factory is self-contained + already-compiled). Worth it ONLY when shipping precompiled component packages; for in-app cross-file helpers it's not justified. **Recommend: skip unless a precompiled-library use case appears.**
 
 ## Feasibility / blockers
 
@@ -73,7 +79,8 @@ Cross-function lowering must do the same when the row body is **reached through 
 | Block body, **data-conditional** returned structure               | —     | No — bail (per-row shape divergence)                                                    |
 | Same-file helper, concise/array body, extra args from view scope  | 2     | Yes (resolve decl + inline + bind params)                                               |
 | Helper reused across sites / recursive / returns a helper         | —     | Bail (inline only direct, non-recursive helpers)                                        |
-| Cross-file / cross-package helper                                 | 3     | Hard — defer                                                                            |
+| Cross-file in-app helper                                          | 3     | Deferred — no checker in transform + scope/import injection (see Phase 3 above)         |
+| Cross-package (precompiled library) helper                        | 3b    | Deferred — needs row-factory ABI extension to `__llui_deps.json` (the only sound path)  |
 | Helper with its own structural children (show/each)               | 1–2   | Inherit the existing `lowerRowFactory` bail (structural child → `signalEach`/authoring) |
 
 Safety net already exists: `lowerRowFactory` returns `null` on anything it can't wire, and `loweredLeaksIdent` guards a leaked row param — so a partial implementation that bails conservatively is always correct, just unoptimized.
@@ -84,8 +91,8 @@ Safety net already exists: `lowerRowFactory` returns `null` on anything it can't
 - **Correctness of inlining**: locals with side effects, closures over mutable view state, `peek` vs reactive reads — the `getCtx()` rewrite must be exact (reuse `rewriteHandlerReads`/`signalToProduce`). Heavy test coverage required (mirror the A test matrix).
 - **Maintenance**: cross-function lowering meaningfully grows the compiler's surface and coupling to TS binding resolution.
 
-## Recommendation
+## Recommendation (updated — phases 1–2 + coverage shipped)
 
-**Defer.** Build **phase 1 (block-body)** first if/when needed — it's the smallest, self-contained extension of `lowerRowFactory` and unblocks `examples/github-explorer`-shaped rows. Consider **phase 2 (same-file helper)** only if a real consumer profiles a create bottleneck on a large helper-row list. **Skip phase 3** absent strong demand. Until then, the shipped scope-shape memoization gives a small broad mitigation, and Opportunity A covers the common inline rows.
+Phases 1–2 and view-helper transform-coverage are **done** (see the Shipped section at top). The only remaining piece is **phase 3 (cross-file / precompiled-library)** — **deferred**, and a future session should resume from the two blockers documented in the Phase 3 section: (1) no `Program`/checker in the lowering transform, (2) cross-file source-inlining breaks scope. The sound path is the precompiled-library row-factory ABI; build it ONLY if a precompiled-component-package use case appears. For in-app cross-file helpers, the ROI doesn't justify the import-injection complexity.
 
-See also: [[../improvements/perf.md]] (Opportunities A/B, shipped) and [[compiled-row-construction.md]] (the `RowFactory` runtime contract).
+See also: [[../improvements/perf.md]] (Opportunities A/B/C shipped; **Opportunity D — element-level dirty tracking — analyzed and NOT recommended**, with the Solid-vs-LLui evidence) and [[compiled-row-construction.md]] (the `RowFactory` runtime contract).

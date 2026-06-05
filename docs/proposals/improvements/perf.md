@@ -47,16 +47,34 @@ Brought the direct-construction path to the common list row by emitting handlers
 
 If a genuinely high-frequency consumer appears (a game loop, a 144 Hz feed) that _wants_ DOM-lags-state-by-a-frame for max throughput, add an **opt-in** scheduler — e.g. `mountSignalComponent(…, { scheduler: 'raf' })` or a `sendAsync` that coalesces all sends in a frame and reconciles at the next `requestAnimationFrame`. Requirements if pursued: a non-browser fallback (SSR/jsdom/headless agent have no rAF → microtask or synchronous), a real `flush()` to force a synchronous commit (tests/agent), and explicit docs that `getState()` and the DOM diverge between frames. **Not a default**; only build it when a real workload needs it.
 
-## Verified dead-ends — do NOT re-chase (measured this session)
+## Opportunity C — cross-function `each`-row lowering — ✅ SHIPPED (phases 1–2 + coverage)
+
+Block-body rows, `each` inside view-helper functions, and same-file helper-row inlining all lower now. Full writeup + the remaining **phase 3 (cross-file/precompiled-library)** notes live in `docs/proposals/v2-compiler/cross-function-row-lowering.md`. TL;DR for a future session: phase 3 is blocked by (a) the lowering transform having no `Program`/checker and (b) cross-file source-inlining breaking scope (the helper body's free refs aren't importable into the consumer) — so the only sound path is a precompiled-library row-factory ABI, worth it only if shipping precompiled component packages.
+
+## Opportunity D (analyzed — NOT recommended) — element-level dirty tracking
+
+The chunked-mask reconcile is path-level; a future idea was element/row-level dirty tracking to make a partial-list update O(changed) instead of O(rows). **Measured evidence says don't:**
+
+- **Fine-grained reactivity loses here.** Solid (the per-cell exemplar, which does exactly granular path-tracking via stores) is SLOWER than LLui on both ticker burst ops: `burst-1k` 21.4 vs **16.0**, `batch-1k` 12.0 vs **6.0** (real-browser medians, this branch's `batch-1k` run).
+- **The row scan isn't the cost.** The same-structure fast path's per-row `Object.is(item, row.ctx.item)` is ~ns and only the changed rows do work (the reducer's `slice()` keeps unchanged element refs `===`). The ~6 µs/tick gap to hand-written **vanilla (9.6)** is immutable-TEA reducer allocation (slice + per-row spreads) + mask-gating bookkeeping — element-level tracking removes neither.
+- **The large-list niche is already covered.** The only place an O(rows)-per-tick scan bites is a huge (10k+) high-frequency list, and `virtualEach` already makes that O(visible). Beating O(n) on a non-virtualized huge list would require granular setState-by-path mutation, which breaks the immutable-state contract central to TEA (and Solid's store model, which does that, still loses at 200 rows).
+
+Revisit ONLY with a concrete workload that (a) isn't virtualizable and (b) profiles the row scan (not reducer allocs) as the bottleneck. Absent that, this is a net regression risk.
+
+## Verified dead-ends — do NOT re-chase (measured)
 
 - **`cloneNode` templating** — clone == `createElement` (~1.1 ms/1000 rows). No win.
-- **Lean per-row scope** (Map→array, lazy Set, cheaper Mountable repr) — sub-noise; create is layout-bound.
+- **Lean per-row scope** (Map→array, lazy Set, cheaper Mountable repr) — sub-noise; create is layout-bound. (NUANCE: for REACTIVE rows the per-row authoring JS is ~2.7× direct — but the fix is direct construction / lowering, not micro-opts. See cross-function-row-lowering.md.)
 - **create-10k / append** — layout/paint at scale, not JS-addressable.
 - **swap/update "regressions"** — cold-start/harness artifacts; reconcile is optimal (swap = 2 LIS moves, ~4.8 ms warm).
 - **Default microtask/rAF auto-batching** — rejected (see Opportunity B): breaks the synchronous contract for no paint saving; only viable as an opt-in mode (option 4).
+- **Element-level dirty tracking** — see Opportunity D: measured net-negative (Solid slower; gap is reducer allocs, not scan; large lists use `virtualEach`).
 
-## Suggested order
+## Suggested order (remaining)
 
-1. ~~**A** — the real-app unlock (item-handler lowering + factory ctx). Biggest reach.~~ ✅ shipped.
-2. ~~**B** — `batch()` for streaming + substrate coalescing + compiler auto-wrap.~~ ✅ shipped.
-3. **Option 4** — opt-in frame-scheduled mode, only if a high-frequency consumer needs it.
+1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.
+2. ~~**B** — `batch()` + drain-coalescing substrate + compiler auto-wrap.~~ ✅ shipped.
+3. ~~**C** — cross-function row lowering (block-body, view-helper coverage, same-file inlining).~~ ✅ shipped.
+4. **Phase 3 of C** — precompiled-library row-factory ABI. Only if shipping precompiled component packages. See cross-function-row-lowering.md.
+5. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.
+6. ~~Element-level dirty tracking~~ — analyzed, **not recommended** (Opportunity D).
