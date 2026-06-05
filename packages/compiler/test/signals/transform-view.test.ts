@@ -124,10 +124,51 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(tx(src)).toBe(src)
   })
 
-  it('leaves an each VERBATIM when the row param is read inside an event handler', () => {
+  it('lowers an each whose handler reads the row param to signalEachDirect (live ctx)', () => {
+    // the universal toggle/remove-by-id list row: `item` leaks ONLY into an event
+    // handler. The direct factory binds it by reading the live row ctx at event
+    // time — `item.at('id').peek()` -> `getCtx().item.id` — instead of bailing.
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => send({ type: 'rm', id: item.at('id').peek() }) }, [text(item.at('name'))])] })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    // the factory takes the live-ctx accessor and attaches a click listener whose
+    // item read is lowered to a getCtx() read; the row param is NOT a free var
+    expect(out).toContain('(doc, getCtx) =>')
+    expect(out).toContain(
+      'addEventListener("click", () => send({ type: \'rm\', id: getCtx().item.id }))',
+    )
+    // the reactive text child still lowers to a ctx-read binding
+    expect(out).toContain('produce: (ctx) => ctx.item.name')
+  })
+
+  it('lowers a handler reading index + state via .peek() to live-ctx reads', () => {
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item, index) => [button({ onClick: () => send({ type: 'x', i: index.peek(), m: state.at('mode').peek() }) }, [text(item.at('name'))])] })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    expect(out).toContain(
+      'addEventListener("click", () => send({ type: \'x\', i: getCtx().index, m: getCtx().state.mode }))',
+    )
+  })
+
+  it('leaves an each VERBATIM when the row param leaks into a handler as a HANDLE (non-peek)', () => {
+    // `f(item)` passes the item handle itself — the factory can't rewrite that to a
+    // ctx read, so the leak guard bails to the runtime authoring each (real handle).
     const src =
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => item.peek() }, [text(item.at('name'))])] })"
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => f(item) }, [text(item.at('name'))])] })"
     expect(tx(src)).toBe(src)
+  })
+
+  it('falls back to signalEach when a handler is a tagSend(...) call (needs authoring path)', () => {
+    // a tagged handler registers agent-dispatchable variants via the authoring
+    // populate path; the direct factory can't, so it falls back to signalEach (which
+    // still lowers the row, just through the render callback).
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: tagSend('rm', () => send({ type: 'rm' })) }, [text(item.at('name'))])] })",
+    )
+    expect(out).toContain('signalEach(')
+    expect(out).not.toContain('signalEachDirect(')
   })
 
   it('leaves an each VERBATIM when the render is a block body (not a concise array)', () => {

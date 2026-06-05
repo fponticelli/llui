@@ -29,6 +29,7 @@ export {
   react,
   signalEach,
   signalEachDirect,
+  applyAttr,
   signalShow,
   signalUnsafeHtml,
   signalBranch,

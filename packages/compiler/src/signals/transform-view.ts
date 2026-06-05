@@ -237,39 +237,44 @@ export function transformNodeExpr(
             }
           }
         }
-        // rows read ctx.item.* and ctx.state.* — `eachRoots` rewrites the item
-        // param to `ctx.item`; `lowerArmArray` guards against either row param
-        // leaking into a verbatim helper call / handler (the dashboard crash) and
-        // against a non-array render body. Either case -> verbatim runtime `each`.
-        const renderDeps = new Set<string>()
-        const body =
-          renderFn &&
-          lowerArmArray(renderFn, sf, eachRoots(itemParam), [itemParam, indexParam], renderDeps)
-        if (body != null) {
-          // source: items accessor (component roots) + deps = items deps PLUS the
-          // component-state paths the rows read (render `state.*` deps, un-namespaced)
+        // Build the items accessor (component roots) + the each's deps: the items
+        // deps PLUS the component-state paths the rows read (render `state.*` deps,
+        // un-namespaced), and propagate those to an enclosing collector so a parent
+        // `each` reconciles when any of them change. `renderDeps` is filled by
+        // whichever lowering path runs (factory bindings or the render arm).
+        const emitSource = (renderDeps: ReadonlySet<string>): string => {
           const itemsLowered = signalToProduce(items, sf, roots)
           const rowStateDeps = [...renderDeps]
             .filter((d) => d === 'state' || d.startsWith('state.'))
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
-          const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
-          // Nested in an enclosing row: propagate this each's component-state deps
-          // (its list accessor + the state.* paths its rows read) to the outer
-          // collector so the PARENT each reconciles when any of them change.
           if (collect) {
             for (const d of itemsLowered.deps) collect.add(d)
             for (const d of renderDeps) if (d === 'state' || d.startsWith('state.')) collect.add(d)
           }
-          // FAST PATH: if the row is a static element skeleton with only static
-          // attrs + text bindings, emit a direct-construction `RowFactory` and
-          // `signalEachDirect` — skipping the per-row authoring/Mountable/populate/
-          // pathHandle overhead. Falls back to `signalEach` for anything richer
-          // (reactive attrs, event handlers, structural children, helper calls).
-          const factory = renderFn && lowerRowFactory(renderFn, itemParam, sf)
-          if (factory) return `signalEachDirect(${source}, ${keySrc}, ${factory})`
-          return `signalEach(${source}, ${keySrc}, () => ${body})`
+          return `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
         }
+
+        // FAST PATH (tried first): direct-construction `RowFactory` +
+        // `signalEachDirect`, skipping the per-row authoring/Mountable/populate/
+        // pathHandle overhead. It builds the static element skeleton AND binds the
+        // common list row's item/index-referencing event handlers (toggle/remove by
+        // id) by reading the live row ctx — so real rows reach this path, not just
+        // the handler-free benchmark shape. Reactive attrs/IDL props are bound too.
+        const factoryDeps = new Set<string>()
+        const factory =
+          renderFn && lowerRowFactory(renderFn, itemParam, indexParam, sf, factoryDeps)
+        if (factory) return `signalEachDirect(${emitSource(factoryDeps)}, ${keySrc}, ${factory})`
+
+        // Render-callback path: lowerable rows the factory can't build directly
+        // (structural children, helper calls) but that DON'T leak the row param into
+        // a verbatim handler. `lowerArmArray` rewrites item reads to `ctx.item` and
+        // guards against either row param leaking and against a non-array body.
+        const renderDeps = new Set<string>()
+        const body =
+          renderFn &&
+          lowerArmArray(renderFn, sf, eachRoots(itemParam), [itemParam, indexParam], renderDeps)
+        if (body != null) return `signalEach(${emitSource(renderDeps)}, ${keySrc}, () => ${body})`
         // unlowerable render -> fall through to verbatim (runtime authoring each)
       }
     }
@@ -475,17 +480,81 @@ export function transformNodeExpr(
   return node.getText(sf)
 }
 
-/** Generate a direct-construction `RowFactory` source for a static-skeleton row
- * (elements with static OR reactive attrs + static/signal `text` children).
- * Returns the `(doc) => { … return { nodes, bindings } }` source, or null to fall
- * back to `signalEach` — for `on*` handlers (may close over the row item), style./
- * IDL props, spreads, dynamic args, structural children, helper calls, or
- * `index`/opaque reads it can't wire.
- * See docs/proposals/v2-compiler/compiled-row-construction.md. */
-function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile): string | null {
+/** `onClick` -> `click`, `onKeyDown` -> `keydown`. Mirrors the runtime's
+ * `eventName` (dom.ts) so a compiled row attaches the same listener the authoring
+ * path would. */
+function eventName(prop: string): string {
+  return prop.slice(2).toLowerCase()
+}
+
+/** Roots for lowering an event-handler body in a direct row: the row params and
+ * component `state` resolve to reads off the LIVE row ctx (`getCtx().item` / `.index`
+ * / `.state`), so a handler reads the current row's values at event time. */
+function handlerRoots(itemParam: string, indexParam: string | null): Roots {
+  const m = new Map<string, { value: string; dep: string }>([
+    [itemParam, { value: 'getCtx().item', dep: 'item' }],
+    ['state', { value: 'getCtx().state', dep: 'state' }],
+  ])
+  if (indexParam) m.set(indexParam, { value: 'getCtx().index', dep: 'index' })
+  return m
+}
+
+/** Rewrite the `.peek()`-terminated signal reads inside an event-handler expression
+ * to reads off the live row ctx (`item.at('id').peek()` -> `getCtx().item.id`),
+ * leaving every other token verbatim (so `send`, the message shape, DOM access, and
+ * any closed-over locals are preserved). `.peek()` is the only legal way to read a
+ * row signal's value in a handler, so matching it covers the toggle/remove pattern;
+ * a non-peek row-param use is left untouched and caught by the caller's leak guard
+ * (which then bails the whole factory to the render path). */
+function rewriteHandlerReads(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string {
+  const base = expr.getStart(sf)
+  const full = expr.getText(sf)
+  const edits: Array<{ start: number; end: number; text: string }> = []
+  const visit = (n: ts.Node): void => {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      n.expression.name.text === 'peek' &&
+      isSignalExpr(n, roots)
+    ) {
+      // a row-signal value read — replace `<chain>.peek()` with its lowered source.
+      edits.push({
+        start: n.getStart(sf) - base,
+        end: n.getEnd() - base,
+        text: signalToProduce(n, sf, roots).produce,
+      })
+      return // the receiver is consumed; don't descend into it
+    }
+    n.forEachChild(visit)
+  }
+  visit(expr)
+  if (edits.length === 0) return full
+  edits.sort((a, b) => b.start - a.start) // splice right-to-left so offsets stay valid
+  let out = full
+  for (const e of edits) out = out.slice(0, e.start) + e.text + out.slice(e.end)
+  return out
+}
+
+/** Generate a direct-construction `RowFactory` source for a row built from a static
+ * element skeleton: static/reactive attrs, static/signal `text` children, and
+ * item/index-referencing event handlers (lowered to live-row-ctx reads — the common
+ * toggle/remove-by-id list row). Returns the `(doc, getCtx) => { … return { nodes,
+ * bindings } }` source, collecting reactive deps into `collect`, or null to fall
+ * back to `signalEach` — for static style./IDL props, non-arrow handlers (e.g.
+ * `tagSend(...)`, whose agent-variant registration needs the authoring path),
+ * spreads, dynamic args, structural children, helper calls, or `index`/opaque reads
+ * it can't wire. See docs/proposals/v2-compiler/compiled-row-construction.md. */
+function lowerRowFactory(
+  fn: ts.Expression,
+  itemParam: string,
+  indexParam: string | null,
+  sf: ts.SourceFile,
+  collect?: Set<string>,
+): string | null {
   const arr = arrowReturnArray(fn)
   if (!arr || arr.elements.length === 0) return null
   const roots = eachRoots(itemParam)
+  const hRoots = handlerRoots(itemParam, indexParam)
   const stmts: string[] = []
   const bindings: string[] = []
   let counter = 0
@@ -511,6 +580,7 @@ function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile
       }
       if (!isSignalExpr(arg, roots)) return false
       const { produce, deps } = signalToProduce(arg, sf, roots)
+      if (collect) for (const d of deps) collect.add(d)
       const tv = fresh()
       stmts.push(`const ${tv} = doc.createTextNode('')`)
       stmts.push(`${parentVar}.appendChild(${tv})`)
@@ -555,20 +625,33 @@ function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile
       for (const p of propsExpr.properties) {
         if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
         const name = p.name.getText(sf)
-        if (/^on[A-Z]/.test(name)) return null // event handler (bail — may close over item)
-        if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // IDL/style
+        if (/^on[A-Z]/.test(name)) {
+          // Event handler. Only a plain function expression is bound directly — its
+          // item/index/state `.peek()` reads are lowered to live-row-ctx reads so it
+          // can dispatch by row id without a per-row item handle. A `tagSend(...)` or
+          // other call form bails (its agent-variant registration needs the authoring
+          // path); after rewriting, a non-peek row-param use is caught by the leak
+          // guard below, which bails the whole factory to the render path.
+          const init = p.initializer
+          if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) return null
+          const handlerSrc = rewriteHandlerReads(init, sf, hRoots)
+          stmts.push(`${v}.addEventListener(${JSON.stringify(eventName(name))}, ${handlerSrc})`)
+          continue
+        }
         if (isSignalExpr(p.initializer, roots)) {
-          // Reactive attribute -> a binding slot that applies the attr to the
-          // located node. Mirrors `applyAttr`'s attribute path (style./IDL are
-          // already excluded above): null/false removes, true sets empty, else
-          // stringifies.
+          // Reactive prop -> a binding slot that applies the value to the located
+          // node via the runtime's `applyAttr` (so style./IDL/content-attr quirks —
+          // e.g. a checkbox's `checked` IDL property — are handled identically to the
+          // authoring path, not re-inlined here). Reactive IDL props are why the
+          // common `input({ checked: item.at('done') })` row reaches the direct path.
           const { produce, deps } = signalToProduce(p.initializer, sf, roots)
-          const q = JSON.stringify(name)
+          if (collect) for (const d of deps) collect.add(d)
           bindings.push(
-            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { if (v == null || v === false) ${v}.removeAttribute(${q}); else ${v}.setAttribute(${q}, v === true ? '' : String(v)) } }`,
+            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => applyAttr(${v}, ${JSON.stringify(name)}, v) }`,
           )
           continue
         }
+        if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // static IDL/style
         const init = p.initializer
         if (ts.isStringLiteralLike(init) || ts.isNumericLiteral(init)) {
           stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)
@@ -601,7 +684,15 @@ function lowerRowFactory(fn: ts.Expression, itemParam: string, sf: ts.SourceFile
     topVars.push(v)
   }
 
-  return `(doc) => { ${stmts.join('; ')}; return { nodes: [${topVars.join(', ')}], bindings: [${bindings.join(', ')}] } }`
+  const src = `(doc, getCtx) => { ${stmts.join('; ')}; return { nodes: [${topVars.join(', ')}], bindings: [${bindings.join(', ')}] } }`
+  // Safety net: a row param that survived as a FREE identifier (a non-peek row-param
+  // use a handler/binding couldn't rewrite — e.g. `onClick: () => f(item)` passing
+  // the handle) would be `item is not defined` at runtime. Bail so the render path
+  // (real item/index handles) takes it instead. (`getCtx().item`/`ctx.item` reads
+  // are `.`-prefixed, so they don't trip this — see `loweredLeaksIdent`.)
+  if (loweredLeaksIdent(src, itemParam)) return null
+  if (indexParam !== null && loweredLeaksIdent(src, indexParam)) return null
+  return src
 }
 
 /** Attribute names the runtime applies as live IDL properties (not `setAttribute`);

@@ -21,14 +21,13 @@ This is the **universal** list pattern (toggle/remove/select by row id). So:
 - The direct-construction fast path (`signalEachDirect`) currently benefits **almost no real code** — only rows with no item-referencing handlers (the jfb benchmark, after it was restructured to a delegated click).
 - Real rows fall to the verbatim path: per-row authoring helpers + `pathHandle` allocation + `el`/`Mountable` + `populate` per node, per row. (They DO get the A/B reconcile wins on update, just not direct construction on create.)
 
-## Opportunity A (highest value) — lower rows with item-referencing handlers/reads
+## Opportunity A (highest value) — lower rows with item-referencing handlers/reads — ✅ SHIPPED
 
-Bring the direct-construction path to the common list row by emitting handlers that bind the row's item. This subsumes the old "handler slots" + "lowering coverage" items — they're the same blocker.
+Brought the direct-construction path to the common list row by emitting handlers that bind the row's item. Subsumed the old "handler slots" + "lowering coverage" items.
 
-- **Compiler:** when a render callback leaks `item`/`index` only into event handlers (and otherwise lowers), don't bail — emit those handlers into the `RowFactory`, reading the row item through a row-ctx accessor instead of the free `item` handle.
-- **Runtime contract:** extend `RowFactory` so the factory (or its handler closures) can reach the live row ctx — e.g. `(doc, getCtx) => DirectRow` where `getCtx().item` is the current row item (mirrors how the verbatim path's `pathHandle(getCtx, 'item')` already works). `item.at('id').peek()` in a handler compiles to a read off `getCtx()`.
-- **Scope:** start with handlers that reference `item`/`index` via `.peek()` (the toggle/remove pattern). Reactive props + text already lower (0.8.0).
-- **Gate (measure first):** the verbatim path already gets A/B on update, so the win here is **create/replace of handler-bearing lists**. Confirm with a categorized trace on a todomvc-shaped create that the per-row authoring/`pathHandle` cost is material before building the codegen — create may be partly layout-bound even here.
+- **Compiler** (`packages/compiler/src/signals/transform-view.ts`): the `each` branch now tries `lowerRowFactory` FIRST. The factory emits `(doc, getCtx) => …`; an `on*` handler that is a plain arrow/function is attached via `addEventListener`, with its `item`/`index`/`state` `.peek()` reads rewritten to live-row-ctx reads (`item.at('id').peek()` → `getCtx().item.id`) by `rewriteHandlerReads`. Reactive props — including IDL props (`checked`/`value`/`selected`/`indeterminate`) and `style.*` — bind through the exported runtime `applyAttr`, so the canonical `input({ checked: item.at('done'), onClick: … })` row lowers fully. A leak guard (`loweredLeaksIdent`) bails to `signalEach`/verbatim if a row param survives as a free identifier (a non-peek handle use); a `tagSend(...)` handler also bails (its agent-variant registration needs the authoring path).
+- **Runtime contract** (`packages/dom/src/signals/dom.ts`): `RowFactory = (doc, getCtx) => DirectRow`; `buildSignalEach` passes `() => holder.ctx` (the live `{ item, state, index }` box the reconcile keeps current). `applyAttr` is now exported from `@llui/dom` and listed in the compiler's `RUNTIME_HELPERS`. Handler closures read `getCtx()` at event time, so dispatch-by-id stays correct across keyed reorders.
+- **Result:** the real `examples/todomvc` `each` lowers to `signalEachDirect` (was 100% verbatim). Measured **~20% less JS create cost** for 10k handler-bearing rows (142→113 ms, JS-only in jsdom; a real browser dilutes this with shared layout cost, but the JS reduction is real). Update path is the shared reconcile — unchanged. Tests: `transform-view.test.ts` (handler/index/state lowering, leak + tagSend fallback) and `each-direct-codegen.test.ts` (todomvc-shaped dispatch-by-id, reactive `checked`, dispatch-correct-after-reorder).
 
 ## Opportunity B — `send()` coalescing for burst/streaming
 
@@ -46,5 +45,5 @@ Bring the direct-construction path to the common list row by emitting handlers t
 
 ## Suggested order
 
-1. **A** — the real-app unlock (item-handler lowering + factory ctx). Biggest reach.
+1. ~~**A** — the real-app unlock (item-handler lowering + factory ctx). Biggest reach.~~ ✅ shipped.
 2. **B** — `batch()` for streaming, if a real consumer needs it.

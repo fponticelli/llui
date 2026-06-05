@@ -279,7 +279,13 @@ const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowe
 // → the matching option's `selected`); this set does not affect that path.
 const DOM_PROPERTIES = new Set(['value', 'checked', 'selected', 'indeterminate'])
 
-function applyAttr(node: Element, name: string, value: unknown): void {
+/** Apply a single non-reactive prop VALUE to `node`: `style.*` → individual style
+ * property, form-control IDL props (`value`/`checked`/`selected`/`indeterminate`)
+ * → live property assignment, everything else → content attribute (null/false
+ * removes, true sets empty). Exported so a compiler-emitted {@link RowFactory}'s
+ * reactive-prop `commit` routes through the same DOM-application logic the
+ * authoring path uses (rather than re-inlining the IDL/style quirks). */
+export function applyAttr(node: Element, name: string, value: unknown): void {
   // `style.transform` / `style.zIndex` -> individual style properties
   if (name.startsWith('style.')) {
     const style = (node as HTMLElement).style
@@ -725,8 +731,13 @@ export interface DirectRow {
   bindings: readonly BindingSpec[]
 }
 
-/** Builds a fresh {@link DirectRow} (new nodes + binding closures) per row. */
-export type RowFactory = (doc: SignalDoc) => DirectRow
+/** Builds a fresh {@link DirectRow} (new nodes + binding closures) per row.
+ * `getCtx` exposes the row's LIVE `{ item, state, index }` ctx (the same box the
+ * binding `produce(ctx)` reads), so a row's event-handler closures can read the
+ * current row item at event time — `onClick: () => send({ type: 'toggle', id:
+ * getCtx().item.id })` — the direct-path analogue of the render path's
+ * `pathHandle(getCtx, 'item')`. Rows with no item-referencing handlers ignore it. */
+export type RowFactory = (doc: SignalDoc, getCtx: () => RowCtx<unknown>) => DirectRow
 
 /**
  * Indices into `a` that form a longest strictly-increasing subsequence, skipping
@@ -982,7 +993,7 @@ function buildSignalEach<T>(
         // forceInRow: the row build (and every nested arm/row build) operates on
         // the combined ctx, so structural primitives inside it become row-aware.
         const built = rowFactory
-          ? buildDirectRow(rowFactory(doc))
+          ? buildDirectRow(rowFactory(doc, () => holder.ctx))
           : runBuild(doc, () => renderRow!(() => holder.ctx), c, undefined, true)
         // Probe the template once (all rows share it): does any VALUE spec need
         // rebasing (non-row-local dep), and does any binding read component state?

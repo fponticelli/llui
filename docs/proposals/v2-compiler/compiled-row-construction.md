@@ -113,7 +113,8 @@ After the direct path, create-1k JS is **2.44 ms** (Layout 7.36 + Style 3.08 + P
 - ✅ Runtime contract (`signalEachDirect`/`eachDirect`, shared per-each-site mask/table memo) + tests.
 - ✅ Compiler codegen: static-skeleton `each` rows auto-lower to `signalEachDirect` + generated `RowFactory`; correctness-safe fallback to `signalEach`; auto-import.
 - ✅ Benchmark dogfoods the compiler (authored `each`, no hand-written factory): Create 1k **21.8 ms** (Solid 20.8 / pre-signal 21.2), Create 10k 235, Replace 24.7 — PlausibilityCheck passes.
-- Remaining (optional, lower value): broaden lowering to reach `each` in IIFE/helper positions _without_ restructuring (a general transform-coverage expansion); reactive-attr / event-handler slot kinds in `lowerRowFactory` (today they fall back to `signalEach`).
+- ✅ Item-referencing event handlers + reactive IDL props now lower (`docs/proposals/improvements/perf.md` Opportunity A): `lowerRowFactory` emits `(doc, getCtx) => …`, attaches `on*` handlers whose `item/index/state` `.peek()` reads are rewritten to live-row-ctx reads (`getCtx().item.id`), and routes reactive props (incl. `checked`/`value`/`selected`/style.) through the exported `applyAttr`. The universal toggle/remove-by-id list row (the whole todomvc row) reaches the direct path; ~20% less JS create cost for handler-bearing rows (JS-only, jsdom). A `tagSend(...)` handler or a non-peek row-param use (a leaked handle) still falls back to `signalEach`/verbatim.
+- Remaining (optional, lower value): broaden lowering to reach `each` in IIFE/helper positions _without_ restructuring (a general transform-coverage expansion).
 
 ## Remaining Phase 1 work (the actual codegen)
 

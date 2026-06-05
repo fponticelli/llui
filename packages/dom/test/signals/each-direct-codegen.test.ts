@@ -11,6 +11,7 @@ import {
   signalEach,
   signalEachDirect,
   signalBranch,
+  applyAttr,
 } from '../../src/signals/dom'
 import { derived } from '../../src/signals/handle'
 
@@ -31,7 +32,7 @@ function compileAndLoad(
     .filter((l) => !l.trimStart().startsWith('import '))
     .join('\n')
     .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalEachDirect, signalBranch, derived, component){
+  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalEachDirect, applyAttr, signalBranch, derived, component){
     ${body}
     return { ${name} }
   })`
@@ -47,6 +48,7 @@ function compileAndLoad(
     signalShow,
     signalEach,
     signalEachDirect,
+    applyAttr,
     signalBranch,
     derived,
     (s: unknown) => s,
@@ -152,6 +154,116 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(li().getAttribute('class')).toBe('y')
     h.send({ type: 'set', rows: [{ id: 1, label: 'a', cls: null }] })
     expect(li().hasAttribute('class')).toBe(false)
+  })
+
+  it('lowers a todomvc-shaped row (item-handler + reactive checked) and dispatches by id', () => {
+    // The universal list row: a reactive `checked` IDL prop + item-referencing
+    // toggle/remove handlers. Previously this fell fully verbatim; now it reaches
+    // the direct path, with handlers reading the live row ctx for the row id.
+    const TODOS = `
+      import { component, ul, li, input, label, button, text, each } from '@llui/dom'
+      export const App = component({
+        init: () => [{ todos: [{ id: 1, text: 'a', done: false }, { id: 2, text: 'b', done: true }] }, []],
+        update: (s, m) => {
+          if (m.type === 'toggle') return [{ todos: s.todos.map((t) => (t.id === m.id ? { ...t, done: !t.done } : t)) }, []]
+          if (m.type === 'remove') return [{ todos: s.todos.filter((t) => t.id !== m.id) }, []]
+          return [s, []]
+        },
+        view: ({ state, send }) => [
+          ul({}, [
+            each(state.at('todos'), {
+              key: (t) => t.id,
+              render: (item) => [
+                li({}, [
+                  input({
+                    type: 'checkbox',
+                    checked: item.at('done'),
+                    onClick: () => send({ type: 'toggle', id: item.at('id').peek() }),
+                  }),
+                  label({}, [text(item.at('text'))]),
+                  button({ class: 'destroy', onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [
+                    text('x'),
+                  ]),
+                ]),
+              ],
+            }),
+          ]),
+        ],
+      })
+    `
+    const out = transformSignalComponentSource(TODOS)
+    expect(out).toContain('signalEachDirect(')
+    expect(out).not.toContain('signalEach(') // no slow render-callback fallback
+    expect(out).toContain('(doc, getCtx) =>')
+    expect(out).toContain('getCtx().item.id') // handler reads the live row id
+    expect(out).toContain('applyAttr(') // reactive checked routed through applyAttr
+
+    const def = compileAndLoad(TODOS, 'App')
+    const container = document.createElement('div')
+    mountSignalComponent(container, def)
+    const boxes = (): HTMLInputElement[] => [...container.querySelectorAll('input')]
+    const labels = (): string[] =>
+      [...container.querySelectorAll('label')].map((l) => l.textContent ?? '')
+
+    // reactive `checked` IDL prop reflects initial state
+    expect(boxes().map((b) => b.checked)).toEqual([false, true])
+    expect(labels()).toEqual(['a', 'b'])
+
+    // clicking row 1's checkbox dispatches toggle with id:1 (read from the live ctx)
+    boxes()[0]!.dispatchEvent(new Event('click'))
+    expect(boxes().map((b) => b.checked)).toEqual([true, true])
+
+    // clicking row 2's destroy button dispatches remove with id:2
+    const destroyButtons = [...container.querySelectorAll('button.destroy')]
+    destroyButtons[1]!.dispatchEvent(new Event('click'))
+    expect(labels()).toEqual(['a'])
+    expect(boxes().map((b) => b.checked)).toEqual([true])
+  })
+
+  it('handler reads stay correct after a keyed reorder (live ctx, not stale closure)', () => {
+    // After rows are reordered, each row's handler must still dispatch ITS current
+    // id — the closure reads `getCtx()`, which the reconcile keeps current.
+    const TODOS = `
+      import { component, ul, li, button, text, each } from '@llui/dom'
+      export const App = component({
+        init: () => [{ rows: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }] }, []],
+        update: (s, m) => {
+          if (m.type === 'set') return [{ rows: m.rows }, []]
+          if (m.type === 'pick') return [{ rows: s.rows, picked: m.id }, []]
+          return [s, []]
+        },
+        view: ({ state, send }) => [
+          ul({}, [
+            each(state.at('rows'), {
+              key: (r) => r.id,
+              render: (item) => [
+                li({}, [button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
+              ],
+            }),
+          ]),
+        ],
+      })
+    `
+    const def = compileAndLoad(TODOS, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const buttons = (): HTMLButtonElement[] => [...container.querySelectorAll('button')]
+
+    // reorder: [2, 1]
+    h.send({
+      type: 'set',
+      rows: [
+        { id: 2, label: 'b' },
+        { id: 1, label: 'a' },
+      ],
+    })
+    expect(buttons().map((b) => b.textContent)).toEqual(['b', 'a'])
+
+    // the first button is now row id:2 — clicking must dispatch id:2
+    buttons()[0]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(2)
+    buttons()[1]!.dispatchEvent(new Event('click'))
+    expect((h.getState() as { picked?: number }).picked).toBe(1)
   })
 
   it('falls back to signalEach when a row has a structural child', () => {
