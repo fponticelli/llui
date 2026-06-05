@@ -105,7 +105,11 @@ for (const fw of FRAMEWORKS) {
   })
 }
 
-// ── Start jfb server if not running ─────────────────────────────
+// ── (Re)start the jfb server so it serves the freshly-built bundles ──────
+// We rebuild every app above, so a server left running from a PRIOR run would
+// serve STALE dist — a newly added/changed button wouldn't be found and the op
+// fails with `testElementLocatedById … timed out`. Always kill any listener on
+// 8080 and start fresh.
 
 function curlOk(url: string): boolean {
   try {
@@ -116,21 +120,24 @@ function curlOk(url: string): boolean {
   }
 }
 
-if (!curlOk('http://localhost:8080/ls')) {
-  console.log('Starting jfb server...')
-  execSync('npm start &', { cwd: JFB_REPO, stdio: 'ignore', shell: '/bin/bash' })
-  let ready = false
-  for (let i = 0; i < 15; i++) {
-    execSync('sleep 1')
-    if (curlOk('http://localhost:8080/ls')) {
-      ready = true
-      break
-    }
+try {
+  execSync('lsof -ti tcp:8080 | xargs kill 2>/dev/null', { shell: '/bin/bash', stdio: 'ignore' })
+} catch {
+  // nothing listening — fine
+}
+console.log('Starting jfb server (fresh)...')
+execSync('npm start &', { cwd: JFB_REPO, stdio: 'ignore', shell: '/bin/bash' })
+let ready = false
+for (let i = 0; i < 15; i++) {
+  execSync('sleep 1')
+  if (curlOk('http://localhost:8080/ls')) {
+    ready = true
+    break
   }
-  if (!ready) {
-    console.error('jfb server failed to start on port 8080')
-    process.exit(1)
-  }
+}
+if (!ready) {
+  console.error('jfb server failed to start on port 8080')
+  process.exit(1)
 }
 
 // ── Run benchmarks ──────────────────────────────────────────────
