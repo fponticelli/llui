@@ -127,4 +127,34 @@ describe('batch in the view bag', () => {
     expect(container.querySelector('div')!.textContent).toBe('3')
     expect(commits).toEqual([3]) // one reconcile from the bag's batch
   })
+
+  it('an onEffect handler can coalesce a burst via the effect bag `batch`', () => {
+    const container = document.createElement('div')
+    const commits: number[] = []
+    type EM = { type: 'kick' } | { type: 'inc' }
+    type EE = { type: 'burst'; n: number }
+    const h = mountSignalComponent<{ n: number }, EM, EE>(container, {
+      init: () => [{ n: 0 }, []],
+      update: (s, m) => {
+        if (m.type === 'kick') return [s, [{ type: 'burst', n: 3 }]]
+        if (m.type === 'inc') return [{ n: s.n + 1 }, []]
+        return [s, []]
+      },
+      // the effect bag exposes `batch` alongside `send` — coalesce the burst it drives
+      onEffect: (e, { send, batch }) => {
+        if (e.type === 'burst') {
+          batch(() => {
+            for (let i = 0; i < e.n; i++) send({ type: 'inc' })
+          })
+        }
+      },
+      view: ({ state }) => [div([text(state.at('n').map((v) => String(v)))])],
+    })
+    h.subscribe((s) => commits.push(s.n))
+    h.send({ type: 'kick' }) // → effect → batch(3× inc)
+    expect(h.getState().n).toBe(3)
+    expect(container.querySelector('div')!.textContent).toBe('3')
+    // 'kick' didn't change state (no commit); the batched 3 incs commit once
+    expect(commits).toEqual([3])
+  })
 })

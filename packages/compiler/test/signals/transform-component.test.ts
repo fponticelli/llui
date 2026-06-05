@@ -461,5 +461,87 @@ describe('transformSignalComponentSource', () => {
       const out = transformSignalComponentSource(src)
       expect(out).not.toContain('signalEachDirect(') // can't resolve the helper body → authoring
     })
+
+    // ── regression coverage: pass1+pass2 interaction + inlining hygiene bails ──
+    it('lowers BOTH a component-view each (signalEachDirect) and a helper each (eachDirect) in one file', () => {
+      // Exercises the pass-1 / pass-2 boundary together (the double-lowering bug's
+      // neighborhood): the component-view each gets a rooted signalEachDirect, the
+      // helper-scoped each gets the handle-consuming eachDirect — exactly one of each.
+      const src = [
+        "import { component, ul, li, text, each, type Signal } from '@llui/dom'",
+        'function side(items: Signal<readonly { id: number }[]>) {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("y"))])] })])]',
+        '}',
+        'const C = component({',
+        '  init: () => ({ rows: [] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect((out.match(/signalEachDirect\(/g) ?? []).length).toBe(1)
+      expect((out.match(/(?<![A-Za-z])eachDirect\(/g) ?? []).length).toBe(1)
+    })
+
+    it('bails inlining when the helper returns an ARRAY (nested-array shape)', () => {
+      const src = [
+        "import { component, ul, div, text, each } from '@llui/dom'",
+        'function row(item) { return [div({}, [text(item.at("x"))])] }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('signalEachDirect(')
+    })
+
+    it('bails inlining a RECURSIVE helper (its nested each is a structural child)', () => {
+      const src = [
+        "import { component, ul, div, text, each } from '@llui/dom'",
+        'function row(item) { return div({}, [each(item.at("kids"), { key: (k) => k.id, render: (k) => [row(k)] })]) }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('signalEachDirect(')
+    })
+
+    it('bails inlining when a param is used as an object SHORTHAND (hygiene)', () => {
+      const src = [
+        "import { component, ul, div, text, each } from '@llui/dom'",
+        'function row(item, mode) { const o = { mode }; return div({}, [text(item.at("x"))]) }',
+        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('signalEachDirect(')
+    })
+
+    it('bails inlining on arg/param count mismatch', () => {
+      const src = [
+        "import { component, ul, div, text, each } from '@llui/dom'",
+        'function row(item, extra) { return div({}, [text(item.at("x"))]) }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('signalEachDirect(')
+    })
+
+    it('substitutes a helper param NAMED `state` to the call arg, rooting on the component state', () => {
+      // `state` here is a helper param (shadowing the convention name); substitution
+      // replaces it with the call arg `state.at("mode")`, which roots on the component
+      // state → the binding reads ctx.state.mode, not a leaked param.
+      const src = [
+        "import { component, ul, div, text, each } from '@llui/dom'",
+        'function row(item, state) { return div({}, [text(state.map((m) => m))]) }',
+        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEachDirect(')
+      expect(out).toContain("deps: ['state.mode']")
+      expect(out).toContain('ctx.state.mode')
+    })
   })
 })

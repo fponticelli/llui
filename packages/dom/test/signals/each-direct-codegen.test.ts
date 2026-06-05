@@ -195,6 +195,29 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(li().hasAttribute('class')).toBe(false)
   })
 
+  it('lowers a reactive `value` IDL prop (different applyAttr branch than checked) and updates it', () => {
+    // `value` is an IDL property (set via node.value, not setAttribute) — a distinct
+    // applyAttr branch from `checked`. Reactive `value` on an input must reflect + update.
+    const VALUE_ROW = `
+      import { component, ul, li, input, each } from '@llui/dom'
+      export const App = component({
+        init: () => [{ rows: [{ id: 1, v: 'hi' }] }, []],
+        update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
+        view: ({ state }) => [
+          ul({}, [each(state.at('rows'), { key: (r) => r.id, render: (item) => [li([input({ value: item.at('v') })])] })]),
+        ],
+      })
+    `
+    expect(transformSignalComponentSource(VALUE_ROW)).toContain('signalEachDirect(')
+    const def = compileAndLoad(VALUE_ROW, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const inp = (): HTMLInputElement => container.querySelector('input')!
+    expect(inp().value).toBe('hi') // IDL property set, not just attribute
+    h.send({ type: 'set', rows: [{ id: 1, v: 'bye' }] })
+    expect(inp().value).toBe('bye')
+  })
+
   it('lowers a todomvc-shaped row (item-handler + reactive checked) and dispatches by id', () => {
     // The universal list row: a reactive `checked` IDL prop + item-referencing
     // toggle/remove handlers. Previously this fell fully verbatim; now it reaches
