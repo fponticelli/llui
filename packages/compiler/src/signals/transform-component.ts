@@ -12,7 +12,12 @@
 // multi-slice bags are follow-ups.
 
 import ts from 'typescript'
-import { transformNodeExpr, setAutoBatchContext, lowerHelperEach } from './transform-view.js'
+import {
+  transformNodeExpr,
+  setAutoBatchContext,
+  lowerHelperEach,
+  setHelperDecls,
+} from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -187,6 +192,30 @@ export function transformSignalComponentSource(
     return props
   }
 
+  // Collect same-file top-level view-helper declarations for phase-2 helper-row
+  // inlining: `function rowHelper(...) {...}` and `const rowHelper = (...) => ...`.
+  // A row `render: (item) => [rowHelper(item, …)]` inlines the resolved body.
+  const helpers = new Map<
+    string,
+    ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+  >()
+  for (const stmt of sf.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
+      helpers.set(stmt.name.text, stmt)
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const d of stmt.declarationList.declarations) {
+        if (
+          ts.isIdentifier(d.name) &&
+          d.initializer &&
+          (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))
+        ) {
+          helpers.set(d.name.text, d.initializer)
+        }
+      }
+    }
+  }
+  setHelperDecls(helpers)
+
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
@@ -262,6 +291,7 @@ export function transformSignalComponentSource(
     node.forEachChild(visitHelpers)
   }
   visitHelpers(sf)
+  setHelperDecls(null)
 
   if (!transformedAny) return source
 

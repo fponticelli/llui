@@ -35,6 +35,144 @@ export function setAutoBatchContext(ctx: { sendName: string; used: boolean } | n
   autoBatch = ctx
 }
 
+// ── Phase-2 helper-row inlining: same-file view-helper declarations ───────────
+// Set by the component transform (the whole file's top-level fn/arrow decls keyed
+// by name) before lowering; null otherwise. A row `render: (item) => [rowHelper(item,
+// …)]` is inlined by substituting `rowHelper`'s body for the call (params → call
+// args), reducing to a normal inline row the existing factory lowers. Same-file only.
+type HelperDecl = ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+let helperDecls: ReadonlyMap<string, HelperDecl> | null = null
+export function setHelperDecls(m: ReadonlyMap<string, HelperDecl> | null): void {
+  helperDecls = m
+}
+
+/** Substitute `subst` param names with their arg source inside `node`, returning the
+ * rewritten source — or null when hygiene can't be guaranteed (a param is shadowed
+ * by a local/param, or used as an object shorthand `{ locale }` that can't be
+ * spliced). Skips property names (`obj.locale`) and object keys. */
+function substituteParams(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  subst: Map<string, string>,
+): string | null {
+  const base = node.getStart(sf)
+  let full = node.getText(sf)
+  const edits: Array<{ start: number; end: number; text: string }> = []
+  let ok = true
+  const visit = (n: ts.Node): void => {
+    if (!ok) return
+    if (ts.isIdentifier(n) && subst.has(n.text)) {
+      const p = n.parent
+      if (ts.isPropertyAccessExpression(p) && p.name === n) return // obj.NAME — property
+      if (ts.isPropertyAssignment(p) && p.name === n) return // { NAME: ... } — key
+      if (ts.isShorthandPropertyAssignment(p) && p.name === n) {
+        ok = false // { locale } — would need `{ locale: <arg> }`; bail
+        return
+      }
+      if (
+        (ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isBindingElement(p)) &&
+        p.name === n
+      ) {
+        ok = false // param shadowed by a local/param binding
+        return
+      }
+      edits.push({ start: n.getStart(sf) - base, end: n.getEnd() - base, text: subst.get(n.text)! })
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(node)
+  if (!ok) return null
+  edits.sort((a, b) => b.start - a.start)
+  for (const e of edits) full = full.slice(0, e.start) + e.text + full.slice(e.end)
+  return full
+}
+
+/** The leading var declarations + single returned expression of a helper body
+ * (concise `=> expr` or block `{ <decls>; return expr }`), or null. */
+function helperReturn(
+  decl: HelperDecl,
+): { declStmts: readonly ts.VariableStatement[]; ret: ts.Expression } | null {
+  const body = decl.body
+  if (!body) return null
+  if (!ts.isBlock(body)) return { declStmts: [], ret: body } // concise arrow `=> expr`
+  const declStmts: ts.VariableStatement[] = []
+  for (const stmt of body.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      declStmts.push(stmt)
+      continue
+    }
+    if (ts.isReturnStatement(stmt) && stmt.expression) return { declStmts, ret: stmt.expression }
+    return null // a non-decl statement before return — can't inline
+  }
+  return null
+}
+
+/** If `fn` is a row render of the form `(params) => [helper(args)]` where `helper`
+ * is a same-file view helper returning a SINGLE element, inline the helper's body
+ * (params → args) and return the synthetic inlined render arrow + its source file.
+ * Reduces a helper row to a normal inline row that {@link lowerRowFactory} lowers.
+ * Returns null when not inlinable (unknown/cross-file helper, arg/param mismatch,
+ * hygiene failure, non-single-element render) — the row then stays on its path. */
+function inlineHelperRender(
+  fn: ts.Expression,
+  sf: ts.SourceFile,
+): { fn: ts.Expression; sf: ts.SourceFile } | null {
+  if (!helperDecls) return null
+  const rb = rowBody(fn)
+  if (!rb || rb.decls.length > 0 || rb.arr.elements.length !== 1) return null
+  const callEl = rb.arr.elements[0]!
+  if (!ts.isCallExpression(callEl) || !ts.isIdentifier(callEl.expression)) return null
+  const decl = helperDecls.get(callEl.expression.text)
+  if (!decl) return null
+  const params = decl.parameters
+  if (params.length !== callEl.arguments.length) return null
+  const subst = new Map<string, string>()
+  for (let i = 0; i < params.length; i++) {
+    const pn = params[i]!.name
+    if (!ts.isIdentifier(pn)) return null // destructured param — bail
+    subst.set(pn.text, callEl.arguments[i]!.getText(sf))
+  }
+  const hr = helperReturn(decl)
+  if (!hr) return null
+  const retSub = substituteParams(hr.ret, sf, subst)
+  if (retSub === null) return null
+  // the helper returns a single element; the render array wraps it (`[E]`). If the
+  // helper itself returned an array, that's a nested-array shape we don't inline.
+  if (ts.isArrayLiteralExpression(hr.ret)) return null
+  const declSubs: string[] = []
+  for (const d of hr.declStmts) {
+    const s = substituteParams(d, sf, subst)
+    if (s === null) return null
+    declSubs.push(s.replace(/;\s*$/, ''))
+  }
+  const renderParams =
+    ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)
+      ? fn.parameters.map((p) => p.getText(sf)).join(', ')
+      : ''
+  const inlinedSrc =
+    declSubs.length > 0
+      ? `(${renderParams}) => { ${declSubs.join('; ')}; return [${retSub}] }`
+      : `(${renderParams}) => [${retSub}]`
+  const newSf = ts.createSourceFile(
+    '__inl.ts',
+    `const __r = ${inlinedSrc}`,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  let arrow: ts.Expression | null = null
+  const find = (n: ts.Node): void => {
+    if (arrow) return
+    if (ts.isVariableDeclaration(n) && n.initializer && ts.isArrowFunction(n.initializer)) {
+      arrow = n.initializer
+      return
+    }
+    n.forEachChild(find)
+  }
+  find(newSf)
+  return arrow ? { fn: arrow, sf: newSf } : null
+}
+
 /** True if `block` is a straight-line sequence of two-or-more bare `send(...)`
  * calls and nothing else — the only handler shape it's provably safe to coalesce
  * (no var reads, control flow, or DOM-observing calls between the dispatches). */
@@ -91,19 +229,56 @@ function eachRoots(itemParam: string): Roots {
   ])
 }
 
-// True if a lowered render string still references `ident` as a free identifier
-// (i.e. as a standalone word not reached through a member access and not inside a
-// string). The lowering rewrites legitimate row-param reads to `ctx.item` /
-// `ctx.index` (the word there is preceded by `.`) and records deps as quoted
-// strings like `'item.title'` (preceded by a quote); a bare occurrence elsewhere
-// means the param leaked into a verbatim position — an event handler or a helper
-// call like `activityItem(item, ...)` — that the lowered `() => [...]` render
-// can't bind. Such an `each` must stay verbatim so the runtime authoring `each`
-// (which binds real item/index handles) renders it. We exclude `.`/quote-prefixed
-// occurrences; any false positive only forgoes the optimization, so this is safe.
+/** True if `expr` is a signal expression that yields a HANDLE (not a peeked value):
+ * `item`, `item.at('x')`, `item.map(...)`, `derived(...)` — but NOT `item.peek()` /
+ * `item.at('x').peek()`, which return a plain value. A handle-valued block-body local
+ * (`const n = item.at('x')`) is opaque to the static tracer (later uses must stay
+ * reactive but the alias hides the path) so the row bails on it; a peeked-value local
+ * (`const v = item.peek()`) is fine — it lowers to a one-time live-ctx read. */
+function isSignalHandleExpr(expr: ts.Expression, roots: Roots): boolean {
+  if (!isSignalExpr(expr, roots)) return false
+  let e: ts.Expression = expr
+  while (ts.isParenthesizedExpression(e)) e = e.expression
+  return !(
+    ts.isCallExpression(e) &&
+    ts.isPropertyAccessExpression(e.expression) &&
+    e.expression.name.text === 'peek'
+  )
+}
+
+// True if the lowered source `src` references `ident` as a FREE identifier — i.e.
+// the row param leaked into a verbatim position (an event handler or a helper call
+// like `activityItem(item, ...)`) that the lowered factory can't bind. The lowering
+// rewrites legitimate row-param reads to `ctx.item`/`getCtx().item` (a property
+// access, not a free ref), so a surviving free `item` means a real leak; such a row
+// must stay on the authoring path. Parsed + AST-walked (NOT a regex) so a property
+// name (`getCtx().item`), an object key, a re-binding, or a string LITERAL that
+// merely contains the name as a substring (e.g. `class: 'activity-item'`) is not a
+// false positive. Defensive: an unparseable `src` counts as a leak (conservative).
 function loweredLeaksIdent(src: string, ident: string): boolean {
-  const escaped = ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?<![.\\w$'"\`])${escaped}(?![\\w$])`).test(src)
+  const sf = ts.createSourceFile('__leak.ts', `const __x = (${src})`, ts.ScriptTarget.Latest, true)
+  let leaks = false
+  const visit = (n: ts.Node): void => {
+    if (leaks) return
+    if (ts.isIdentifier(n) && n.text === ident) {
+      const p = n.parent
+      // `obj.item` (property name) / `{ item: … }` (key): not a free reference.
+      if (ts.isPropertyAccessExpression(p) && p.name === n) return
+      if (ts.isPropertyAssignment(p) && p.name === n) return
+      // a binding that re-introduces the name (param/local) — not a leak of the row param.
+      if (
+        (ts.isParameter(p) || ts.isVariableDeclaration(p) || ts.isBindingElement(p)) &&
+        p.name === n
+      ) {
+        return
+      }
+      leaks = true // a standalone reference (incl. object shorthand `{ item }`)
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(sf)
+  return leaks
 }
 
 /** True if `expr` reads a signal handle via `.at(...)`/`.map(...)` on a NON-root
@@ -667,12 +842,18 @@ function rewriteHandlerReads(expr: ts.Node, sf: ts.SourceFile, roots: Roots): st
  * spreads, dynamic args, structural children, helper calls, or `index`/opaque reads
  * it can't wire. See docs/proposals/v2-compiler/compiled-row-construction.md. */
 function lowerRowFactory(
-  fn: ts.Expression,
+  fnIn: ts.Expression,
   itemParam: string,
   indexParam: string | null,
-  sf: ts.SourceFile,
+  sfIn: ts.SourceFile,
   collect?: Set<string>,
 ): string | null {
+  // Phase-2 helper-row inlining: `(item) => [rowHelper(item, …)]` → the helper's body
+  // inlined (params → args), reducing to a normal inline row. The inlined arrow lives
+  // in its own synthetic source file, so rebind `fn`/`sf` to the effective pair.
+  const inlined = inlineHelperRender(fnIn, sfIn)
+  const fn = inlined ? inlined.fn : fnIn
+  const sf = inlined ? inlined.sf : sfIn
   const body = rowBody(fn)
   if (!body || body.arr.elements.length === 0) return null
   const { decls, arr } = body
@@ -692,7 +873,7 @@ function lowerRowFactory(
   for (const ds of decls) {
     for (const d of ds.declarationList.declarations) {
       if (!ts.isIdentifier(d.name) || !d.initializer) return null
-      if (isSignalExpr(d.initializer, roots)) return null
+      if (isSignalHandleExpr(d.initializer, roots)) return null // handle alias — opaque
       stmts.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
     }
   }

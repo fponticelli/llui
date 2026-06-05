@@ -298,6 +298,25 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     expect(out).toContain('produce: (ctx) => ctx.item.name')
   })
 
+  it('lowers a PEEKED-VALUE local (const v = item.peek()) — a value, not a handle alias', () => {
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const v = item.peek(); return [li([text(v.label)])] } })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    expect(out).toContain('const v = getCtx().item') // peek read → live ctx, value local
+    expect(out).toContain('doc.createTextNode(String(v.label))') // static from the value local
+  })
+
+  it('lowers a row whose class string CONTAINS the row-param name (no false leak)', () => {
+    // `class: 'activity-item'` contains the substring "item" — the AST leak guard must
+    // not treat that string literal as a free `item` reference.
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [li({ class: 'activity-item' }, [text(item.at('label'))])] })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    expect(out).toContain('setAttribute("class", "activity-item")')
+  })
+
   it('bails to authoring when a local is SIGNAL-bound (opaque alias)', () => {
     expect(
       kind(

@@ -457,4 +457,49 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     container.querySelectorAll('button')[0]!.dispatchEvent(new Event('click'))
     expect((h.getState() as { picked?: number }).picked).toBe(10)
   })
+
+  it('inlines a same-file row HELPER and runs it (peek value + reactive item/state reads)', () => {
+    // Phase 2: render: (item) => [rowView(item, state.at('mode'))] inlines rowView's
+    // body (params → args) → a normal row that lowers. Verify: static-from-peek name,
+    // reactive item count, reactive component-state mode — all live. The 'list-item'
+    // class also exercises the leak-guard fix (substring 'item' must not bail).
+    const INLINE = `
+      import { component, div, span, text, each } from '@llui/dom'
+      function rowView(item, mode) {
+        const u = item.peek()
+        return div({ class: 'list-item' }, [
+          span({ class: 'nm' }, [text(u.name)]),
+          span({ class: 'ct' }, [text(item.at('count').map((c) => String(c)))]),
+          span({ class: 'md' }, [text(mode.map((m) => m + '!'))]),
+        ])
+      }
+      export const App = component({
+        init: () => [{ items: [{ id: 1, name: 'a', count: 0 }, { id: 2, name: 'b', count: 5 }], mode: 'x' }, []],
+        update: (s, m) => {
+          if (m.type === 'bump') return [{ ...s, items: s.items.map((it) => (it.id === m.id ? { ...it, count: it.count + 1 } : it)) }, []]
+          if (m.type === 'mode') return [{ ...s, mode: m.v }, []]
+          return [s, []]
+        },
+        view: ({ state }) => [div({}, [each(state.at('items'), { key: (it) => it.id, render: (item) => [rowView(item, state.at('mode'))] })])],
+      })
+    `
+    const out = transformSignalComponentSource(INLINE)
+    expect(out).toContain('signalEachDirect(') // helper inlined → row lowers
+    expect(out).toContain('const u = getCtx().item') // peek local inlined to live ctx
+
+    const def = compileAndLoad(INLINE, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const txt = (sel: string): string[] =>
+      [...container.querySelectorAll(sel)].map((e) => e.textContent ?? '')
+    expect(container.querySelectorAll('.list-item').length).toBe(2)
+    expect(txt('.nm')).toEqual(['a', 'b']) // static from peek
+    expect(txt('.ct')).toEqual(['0', '5']) // reactive item
+    expect(txt('.md')).toEqual(['x!', 'x!']) // reactive component state
+
+    h.send({ type: 'bump', id: 1 })
+    expect(txt('.ct')).toEqual(['1', '5']) // only row 1's reactive count changed
+    h.send({ type: 'mode', v: 'y' })
+    expect(txt('.md')).toEqual(['y!', 'y!']) // component-state fan-out to all rows
+  })
 })
