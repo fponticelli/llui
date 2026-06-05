@@ -20,7 +20,8 @@
     "@lexical/selection": "^0.45.0",
     "@lexical/table": "^0.45.0",
     "@lexical/utils": "^0.45.0",
-    "@lexical/code-core": "^0.45.0"
+    "@lexical/code-core": "^0.45.0",
+    "@llui/components": "workspace:*"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

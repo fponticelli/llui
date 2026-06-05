@@ -4,7 +4,12 @@
 
 import type { LexicalEditor } from 'lexical'
 import type { CommandItem } from './plugins/types.js'
-import type { EditorEffect, FormatState } from './state.js'
+import type { EditorEffect, EditorMsg, FormatState } from './state.js'
+
+/** The api the component passes to `onEffect` (send + state). */
+export interface EffectApi {
+  send: (msg: EditorMsg) => void
+}
 
 export interface EffectConfig {
   onChange?: (markdown: string) => void
@@ -19,13 +24,13 @@ export function makeOnEffect(
   getEditor: () => LexicalEditor | null,
   items: ReadonlyMap<string, CommandItem>,
   config: EffectConfig,
-): (effect: EditorEffect) => void {
-  return (effect) => {
+): (effect: EditorEffect, api: EffectApi) => void {
+  return (effect, api) => {
     switch (effect.type) {
       case 'execCommand': {
         const editor = getEditor()
         const item = items.get(effect.id)
-        if (editor && item) item.run(editor)
+        if (editor && item) item.run(editor, { send: api.send })
         return
       }
       case 'applyValue': {

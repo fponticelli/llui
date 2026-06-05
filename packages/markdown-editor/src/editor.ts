@@ -3,12 +3,22 @@
 // surfaces the format state for the chrome, and routes command intents back to
 // the live editor through effects.
 
-import { $getRoot, $setSelection, type EditorThemeClasses, type LexicalEditor } from 'lexical'
+import {
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  $setSelection,
+  type BaseSelection,
+  type EditorThemeClasses,
+  type LexicalEditor,
+} from 'lexical'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
   registerMarkdownShortcuts,
 } from '@lexical/markdown'
+import { $findMatchingParent } from '@lexical/utils'
+import { $isLinkNode, $toggleLink } from '@lexical/link'
 import { component, div, type Renderable, type Signal, type SignalComponentDef } from '@llui/dom'
 import {
   lexicalForeign,
@@ -18,6 +28,7 @@ import {
 } from '@llui/lexical'
 import { corePlugin } from './plugins/core.js'
 import { toolbar as renderToolbar } from './surfaces/toolbar.js'
+import { linkDialog } from './surfaces/link-dialog.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
 import { buildTransformers } from './transformers/registry.js'
 import { computeFormatState } from './format.js'
@@ -32,6 +43,16 @@ import {
   type EditorState,
   type FormatState,
 } from './state.js'
+
+/** Read the URL of the link wrapping the current selection (empty if none). */
+function readLinkUrl(editor: LexicalEditor): string {
+  return editor.getEditorState().read(() => {
+    const selection = $getSelection()
+    if (!$isRangeSelection(selection)) return ''
+    const link = $findMatchingParent(selection.anchor.getNode(), (node) => $isLinkNode(node))
+    return $isLinkNode(link) ? link.getURL() : ''
+  })
+}
 
 export interface EditorConfig {
   /** Plugins composing the feature set; order defines transformer precedence.
@@ -83,8 +104,11 @@ export function markdownEditor(
 
   // The live editor, captured at mount; effects dispatch through it.
   let editorRef: LexicalEditor | null = null
+  // The selection saved when the link dialog opens, restored when it commits
+  // (the modal steals focus/selection while open).
+  let savedSelection: BaseSelection | null = null
 
-  const onEffect = makeOnEffect(() => editorRef, itemsById, {
+  const baseOnEffect = makeOnEffect(() => editorRef, itemsById, {
     onChange: config.onChange,
     onFormatChange: config.onFormatChange,
     applyValue: (editor, value) =>
@@ -98,6 +122,33 @@ export function markdownEditor(
         { tag: PROGRAMMATIC_TAG },
       ),
   })
+
+  const onEffect = (
+    effect: EditorEffect,
+    api: { send: (msg: EditorMsg) => void; state: Signal<EditorState> },
+  ): void => {
+    const editor = editorRef
+    if (effect.type === 'beginLink') {
+      if (!editor) return
+      savedSelection = editor.getEditorState().read(() => {
+        const selection = $getSelection()
+        return selection ? selection.clone() : null
+      })
+      api.send({ type: 'showLink', url: readLinkUrl(editor) })
+      return
+    }
+    if (effect.type === 'commitLink') {
+      if (!editor) return
+      const url = effect.url.trim()
+      editor.update(() => {
+        if (savedSelection) $setSelection(savedSelection.clone())
+        $toggleLink(url === '' ? null : url)
+      })
+      savedSelection = null
+      return
+    }
+    baseOnEffect(effect, api)
+  }
 
   const seedValue = config.value ? config.value.peek() : (config.defaultValue ?? '')
 
@@ -143,12 +194,18 @@ export function markdownEditor(
       },
       emit: (msg) => send(msg),
     })
-    if (!config.toolbar) return [host]
+    const dialog = linkDialog({
+      dialog: state.at('ui.linkDialog'),
+      url: state.at('ui.linkUrl'),
+      send,
+    })
+    if (!config.toolbar) return [host, dialog]
     return [
       div({ 'data-scope': 'md-editor', 'data-part': 'root' }, [
         renderToolbar({ format: state.at('format'), send, items }),
         div({ 'data-scope': 'md-editor', 'data-part': 'surface' }, [host]),
       ]),
+      dialog,
     ]
   }
 

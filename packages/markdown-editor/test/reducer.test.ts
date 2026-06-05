@@ -83,7 +83,15 @@ describe('update: setValue', () => {
 describe('update: overlays', () => {
   it('opens an overlay with a position and resets slash query for slash', () => {
     const [s] = update(
-      state({ ui: { activeOverlay: 'none', slashQuery: 'x', menu: { x: 0, y: 0 } } }),
+      state({
+        ui: {
+          activeOverlay: 'none',
+          slashQuery: 'x',
+          menu: { x: 0, y: 0 },
+          linkDialog: { open: false },
+          linkUrl: '',
+        },
+      }),
       {
         type: 'openOverlay',
         overlay: 'context',
@@ -97,7 +105,15 @@ describe('update: overlays', () => {
 
   it('closes an open overlay and clears the slash query', () => {
     const [s] = update(
-      state({ ui: { activeOverlay: 'slash', slashQuery: 'head', menu: { x: 0, y: 0 } } }),
+      state({
+        ui: {
+          activeOverlay: 'slash',
+          slashQuery: 'head',
+          menu: { x: 0, y: 0 },
+          linkDialog: { open: false },
+          linkUrl: '',
+        },
+      }),
       {
         type: 'closeOverlay',
       },

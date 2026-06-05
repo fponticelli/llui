@@ -294,6 +294,9 @@ importers:
       '@lexical/utils':
         specifier: ^0.45.0
         version: 0.45.0
+      '@llui/components':
+        specifier: workspace:*
+        version: link:../../packages/components
       '@llui/dom':
         specifier: workspace:*
         version: link:../../packages/dom

@@ -4,10 +4,16 @@
 import type { LexicalEditor } from 'lexical'
 import type { Transformer } from '@lexical/markdown'
 import type { LexicalPlugin } from '@llui/lexical'
-import type { EditorOutMsg, FormatState } from '../state.js'
+import type { EditorMsg, EditorOutMsg, FormatState } from '../state.js'
 
 /** Which surfaces a command item appears in (default: all). */
 export type ItemSurface = 'toolbar' | 'floating' | 'slash' | 'context'
+
+/** Handed to a command item's `run` so it can talk back to the host (e.g. open
+ * the link dialog) instead of only mutating the editor. */
+export interface CommandContext {
+  send: (msg: EditorMsg) => void
+}
 
 /** A user-invokable editor command surfaced to the chrome. Its reactive
  * active/disabled state is read from {@link FormatState}; `run` mutates the
@@ -24,7 +30,7 @@ export interface CommandItem {
   keywords?: readonly string[]
   isActive?: (format: FormatState) => boolean
   isDisabled?: (format: FormatState) => boolean
-  run: (editor: LexicalEditor) => void
+  run: (editor: LexicalEditor, ctx: CommandContext) => void
   surfaces?: readonly ItemSurface[]
 }
 

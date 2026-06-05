@@ -6,7 +6,6 @@ import {
   $createParagraphNode,
   $getSelection,
   $isRangeSelection,
-  COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
@@ -14,7 +13,7 @@ import {
   type LexicalEditor,
   type TextFormatType,
 } from 'lexical'
-import { $findMatchingParent, mergeRegister } from '@lexical/utils'
+import { mergeRegister } from '@lexical/utils'
 import { $setBlocksType } from '@lexical/selection'
 import { $createHeadingNode, $createQuoteNode, type HeadingTagType } from '@lexical/rich-text'
 import { $createCodeNode } from '@lexical/code-core'
@@ -25,9 +24,10 @@ import {
   registerCheckList,
   registerList,
 } from '@lexical/list'
-import { $isLinkNode, $toggleLink, TOGGLE_LINK_COMMAND } from '@lexical/link'
-import type { CommandItem, MarkdownPlugin } from './types.js'
+import type { CommandContext, CommandItem, MarkdownPlugin } from './types.js'
 import { GFM_NODES, GFM_TRANSFORMERS } from '../transformers/gfm.js'
+
+const NOOP_CTX: CommandContext = { send: () => {} }
 
 function inline(format: TextFormatType): (editor: LexicalEditor) => void {
   return (editor) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, format)
@@ -46,44 +46,12 @@ function heading(tag: HeadingTagType): (editor: LexicalEditor) => void {
   return block(() => $createHeadingNode(tag))
 }
 
-/** Resolve a link URL from the user. Return the URL to set, `''` to remove the
- * link, or `null` to cancel. */
-export type LinkUrlResolver = (currentUrl: string | null, defaultUrl: string) => string | null
-
 export interface CorePluginOptions {
-  /** Default href offered when prompting for a link URL. */
-  defaultLinkHref?: string
-  /** How the `link` command obtains a URL. Defaults to `window.prompt`; swap in
-   * a custom dialog/popover here. */
-  resolveLinkUrl?: LinkUrlResolver
+  /** Reserved for future core options. */
+  readonly _?: never
 }
 
-/** Read the URL of the link wrapping the current selection, if any. */
-function readSelectedLinkUrl(editor: LexicalEditor): string | null {
-  return editor.getEditorState().read(() => {
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection)) return null
-    const link = $findMatchingParent(selection.anchor.getNode(), (node) => $isLinkNode(node))
-    return $isLinkNode(link) ? link.getURL() : null
-  })
-}
-
-const promptForUrl: LinkUrlResolver = (current, fallback) =>
-  typeof window !== 'undefined' && typeof window.prompt === 'function'
-    ? window.prompt('Link URL', current ?? fallback)
-    : null
-
-export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
-  const defaultHref = opts.defaultLinkHref ?? 'https://'
-  const resolveLinkUrl = opts.resolveLinkUrl ?? promptForUrl
-
-  const applyLink = (editor: LexicalEditor): void => {
-    const url = resolveLinkUrl(readSelectedLinkUrl(editor), defaultHref)
-    if (url === null) return // cancelled
-    const trimmed = url.trim()
-    editor.dispatchCommand(TOGGLE_LINK_COMMAND, trimmed === '' ? null : trimmed)
-  }
-
+export function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin {
   const items: CommandItem[] = [
     {
       id: 'bold',
@@ -206,7 +174,7 @@ export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
       icon: 'link',
       group: 'inline',
       keywords: ['url', 'href'],
-      run: (e) => applyLink(e),
+      run: (_e, ctx) => ctx.send({ type: 'openLink' }),
       isActive: (f) => f.link,
       surfaces: ['toolbar', 'floating', 'context'],
     },
@@ -236,7 +204,7 @@ export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
     (editor: LexicalEditor): boolean => {
       const item = byId.get(id)
       if (!item) return false
-      item.run(editor)
+      item.run(editor, NOOP_CTX)
       return true
     }
 
@@ -246,21 +214,9 @@ export function corePlugin(opts: CorePluginOptions = {}): MarkdownPlugin {
     transformers: GFM_TRANSFORMERS,
     items,
     // registerList wires list commands/indentation; registerCheckList adds the
-    // click-to-toggle on task items; the link command is registered directly
-    // (registerLink in 0.45 requires the extension-system store wiring).
-    register: (editor) =>
-      mergeRegister(
-        registerList(editor),
-        registerCheckList(editor),
-        editor.registerCommand(
-          TOGGLE_LINK_COMMAND,
-          (payload) => {
-            $toggleLink(payload)
-            return true
-          },
-          COMMAND_PRIORITY_LOW,
-        ),
-      ),
+    // click-to-toggle on task items. (Linking is handled by the editor's link
+    // dialog via $toggleLink — see commitLink in editor.ts.)
+    register: (editor) => mergeRegister(registerList(editor), registerCheckList(editor)),
     shortcuts: [
       { combo: 'Mod-Alt-1', run: shortcut('h1') },
       { combo: 'Mod-Alt-2', run: shortcut('h2') },

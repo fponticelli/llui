@@ -41,3 +41,5 @@ export {
   connectToolbar,
   toolbar,
 } from './surfaces/toolbar.js'
+
+export { type LinkDialogOptions, linkDialog } from './surfaces/link-dialog.js'

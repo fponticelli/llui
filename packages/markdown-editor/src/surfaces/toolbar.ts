@@ -2,7 +2,17 @@
 // idiom) driven reactively by the format signal; `toolbar` is a ready-made
 // grouped toolbar Mountable for consumers who don't want to hand-render buttons.
 
-import { button, div, span, text, tagSend, type Mountable, type Send, type Signal } from '@llui/dom'
+import {
+  button,
+  div,
+  span,
+  text,
+  tagSend,
+  unsafeHtml,
+  type Mountable,
+  type Send,
+  type Signal,
+} from '@llui/dom'
 import type { CommandItem } from '../plugins/types.js'
 import type { EditorMsg, FormatState } from '../state.js'
 
@@ -65,14 +75,20 @@ export function connectToolbar(
   }
 }
 
+/** Inline SVG icon (monochrome, inherits `currentColor`) used where a glyph
+ * reads poorly. A glyph string starting with `<svg` is rendered as markup. */
+const LINK_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 1 0-5-5l-1 1"/><path d="M14.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 1 0 5 5l1-1"/></svg>'
+
 /** Compact glyphs so the default toolbar reads as a real toolbar without icon
- * assets. Override via `ToolbarOptions.glyphs`. */
+ * assets. SVG strings render as icons; everything else as text. Override via
+ * `ToolbarOptions.glyphs`. */
 export const DEFAULT_GLYPHS: Readonly<Record<string, string>> = {
   bold: 'B',
   italic: 'I',
   strikethrough: 'S',
   code: '</>',
-  link: '🔗',
+  link: LINK_ICON,
   paragraph: '¶',
   h1: 'H1',
   h2: 'H2',
@@ -136,8 +152,9 @@ export function toolbar(opts: ToolbarOptions): Mountable {
           .map((id) => {
             const item = byId.get(id)!
             const glyph = glyphs[id] ?? item.label
+            const glyphNode = glyph.trimStart().startsWith('<svg') ? unsafeHtml(glyph) : text(glyph)
             return button({ ...parts.item(id) }, [
-              span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [text(glyph)]),
+              span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [glyphNode]),
             ])
           }),
       ),
