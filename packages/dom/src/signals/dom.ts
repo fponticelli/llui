@@ -318,42 +318,62 @@ function eventName(prop: string): string {
   return prop.slice(2).toLowerCase()
 }
 
-/** Apply props (reactive `react(...)` → binding; `on*` fn → listener; else attr)
- * and append children to an already-created element. */
+/** Apply one prop: reactive `react(...)` / signal handle → binding spec; `on*` fn →
+ * listener; else a static attr applied immediately. */
+function applyProp(c: BuildCtx, node: Element, name: string, value: PropValue): void {
+  if (isReactive(value)) {
+    c.specs.push({
+      deps: value.deps,
+      produce: value.produce,
+      commit: (out) => applyAttr(node, name, out),
+    })
+  } else if (isSignalHandle(value)) {
+    // A raw signal handle reached a prop slot: the compiler lowers INLINE
+    // `state.map(...)` props to `react(...)`, but a signal stored in a variable
+    // (a local const, a spread, a helper return) is opaque to it and passes
+    // through verbatim. Bind it reactively here — same as the authoring element
+    // helpers do — rather than stringifying the handle into the attribute
+    // ("[object Object]", a silently-stuck value).
+    c.specs.push({
+      deps: value.deps,
+      produce: value.produce as (s: unknown) => unknown,
+      commit: (out) => applyAttr(node, name, out),
+    })
+  } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
+    node.addEventListener(eventName(name), value as EventListener)
+    // tagSend-tagged handler → register the agent-dispatchable variants live.
+    const variants = (value as { __lluiVariants?: readonly string[] }).__lluiVariants
+    if (variants) registerVariants(c, variants)
+  } else {
+    applyAttr(node, name, value)
+  }
+}
+
+/** Append children, THEN apply props — and apply form-control SELECTION props
+ * (`value`/`checked`/`selected`/`indeterminate`) AFTER all other props.
+ *
+ * Two ordering rules, both because a browser resolves form-control selection
+ * against the element's current shape and silently drops what doesn't fit yet,
+ * with no re-commit afterwards (output-equality holds the stale value):
+ *
+ *  1. Children first → a child's structural binding (an `each`/`show` spec) is
+ *     registered, hence COMMITTED at `scope.mount`, before the element's own prop
+ *     bindings. So `<select value=…>` whose `<option>`s come from `each()` sees its
+ *     options before its `value` commits — otherwise the assignment hits an empty
+ *     <select> and falls back to the first/auto-selected option.
+ *  2. Selection props last → `<input type=range value=… min=… max=…>` clamps
+ *     `.value` to whatever `min`/`max` are set at assignment time, so `value` must
+ *     commit after them REGARDLESS of author key order (an LLM may emit props in
+ *     any order; behavior must not depend on it).
+ *
+ * (Per-`<option selected>` ordering relative to the controlling <select> is handled
+ * one level up, by `each` mounting a new row only after inserting it — see there.) */
 function populate(
   node: Element,
   props: Readonly<Record<string, PropValue>>,
   children: readonly ChildNode[],
 ): void {
   const c = requireCtx()
-  for (const [name, value] of Object.entries(props)) {
-    if (isReactive(value)) {
-      c.specs.push({
-        deps: value.deps,
-        produce: value.produce,
-        commit: (out) => applyAttr(node, name, out),
-      })
-    } else if (isSignalHandle(value)) {
-      // A raw signal handle reached a prop slot: the compiler lowers INLINE
-      // `state.map(...)` props to `react(...)`, but a signal stored in a variable
-      // (a local const, a spread, a helper return) is opaque to it and passes
-      // through verbatim. Bind it reactively here — same as the authoring element
-      // helpers do — rather than stringifying the handle into the attribute
-      // ("[object Object]", a silently-stuck value).
-      c.specs.push({
-        deps: value.deps,
-        produce: value.produce as (s: unknown) => unknown,
-        commit: (out) => applyAttr(node, name, out),
-      })
-    } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
-      node.addEventListener(eventName(name), value as EventListener)
-      // tagSend-tagged handler → register the agent-dispatchable variants live.
-      const variants = (value as { __lluiVariants?: readonly string[] }).__lluiVariants
-      if (variants) registerVariants(c, variants)
-    } else {
-      applyAttr(node, name, value)
-    }
-  }
   for (const child of children) {
     if (typeof child === 'string' || typeof child === 'number') {
       node.appendChild(c.doc.createTextNode(String(child)))
@@ -363,6 +383,10 @@ function populate(
       node.appendChild(materialize(child))
     }
   }
+  const entries = Object.entries(props)
+  for (const [name, value] of entries)
+    if (!DOM_PROPERTIES.has(name)) applyProp(c, node, name, value)
+  for (const [name, value] of entries) if (DOM_PROPERTIES.has(name)) applyProp(c, node, name, value)
 }
 
 /** An element node. `ns === null` → `createElement`; otherwise `createElementNS`.
@@ -1115,7 +1139,16 @@ function buildSignalEach<T>(
           built.host.scope = r.scope
           scope = r.scope
         }
-        scope.mount(ctx) // row scope's "state" is the combined ctx
+        // NOTE: the row scope is NOT mounted here. Its bindings commit in phase 3,
+        // AFTER the row's nodes are inserted into the parent (see the `mounted`
+        // gate below) — so a binding that depends on the node being connected to
+        // its controlling parent resolves correctly. The canonical case is
+        // `<option selected>`: a single `<select>` coordinates selection across its
+        // options, so `option.selected = true` only takes effect once the option is
+        // a child of the select; committing it on the still-detached row would be
+        // silently dropped, with no re-commit (output-equality). This mirrors the
+        // top-level mount contract ("insert FIRST, then mount") that `each` is the
+        // last structural primitive to honor.
         row = {
           scope,
           nodes: built.nodes,
@@ -1203,6 +1236,10 @@ function buildSignalEach<T>(
         for (const node of row.nodes) parent.insertBefore(node, anchor)
         if (!row.mounted) {
           row.mounted = true
+          // Commit the row's bindings now that its nodes are connected to the
+          // parent (e.g. options to their <select>); then run onMount. Both fire
+          // exactly once, on first insertion.
+          row.scope.mount(row.ctx)
           runMounts(row.mounts, parent as Element, row.teardowns)
         }
       } else if (!keep.has(i)) {
