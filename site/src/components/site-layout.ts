@@ -108,7 +108,11 @@ export function siteLayout({
           navLink('/api/test', 'api/test', 'test', slug),
           navLink('/api/vike', 'api/vike', 'vike', slug),
           navLink('/api/mcp', 'api/mcp', 'mcp', slug),
+          navLink('/api/agent', 'api/agent', 'agent', slug),
+          navLink('/api/agent-bridge', 'api/agent-bridge', 'agent-bridge', slug),
           navLink('/api/devmode-annotate', 'api/devmode-annotate', 'devmode-annotate', slug),
+          navLink('/api/lexical', 'api/lexical', 'lexical', slug),
+          navLink('/api/markdown-editor', 'api/markdown-editor', 'markdown-editor', slug),
         ],
       ),
 

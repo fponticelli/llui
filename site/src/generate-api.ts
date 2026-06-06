@@ -518,7 +518,11 @@ function injectSection(filePath: string, marker: string, content: string): void 
   let output: string
   if (existing.includes(startMarker)) {
     const re = new RegExp(`${escapeRegex(startMarker)}[\\s\\S]*?${escapeRegex(endMarker)}`, 'g')
-    output = existing.replace(re, `${startMarker}\n\n${content}\n${endMarker}`)
+    // Use a replacer FUNCTION, not a string: a string replacement interprets
+    // `$&`/`` $` ``/`$'`/`$n` patterns, and generated API docs legitimately contain
+    // `` `$` `` (e.g. JSDoc "calls `$`-prefixed APIs"), which would otherwise splice
+    // the pre-match text into the output and corrupt the page.
+    output = existing.replace(re, () => `${startMarker}\n\n${content}\n${endMarker}`)
   } else {
     output = existing.trimEnd() + `\n\n${startMarker}\n\n${content}\n${endMarker}\n`
   }
@@ -589,6 +593,39 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'compiler-devtools', sourceFiles: ['index.ts'] },
   { name: 'compiler-ssr', sourceFiles: ['index.ts'] },
   { name: 'devmode-annotate', sourceFiles: ['index.ts'] },
+  // `index.ts` re-exports `from './x.js'` chains the extractor doesn't follow —
+  // scan the concrete public ABI source files directly.
+  {
+    name: 'lexical',
+    sourceFiles: ['plugin.ts', 'register.ts', 'selection.ts', 'foreign.ts', 'decorator.ts'],
+  },
+  {
+    name: 'markdown-editor',
+    sourceFiles: [
+      'editor.ts',
+      'state.ts',
+      'format.ts',
+      'plugins/types.ts',
+      'plugins/ui.ts',
+      'plugins/core.ts',
+      'plugins/link.ts',
+      'plugins/callout.ts',
+      'plugins/hr.ts',
+      'plugins/slash.ts',
+      'plugins/context-menu.ts',
+      'plugins/floating-toolbar.ts',
+      'plugins/math.ts',
+      'plugins/mermaid.ts',
+      'plugins/mention.ts',
+      'plugins/emoji.ts',
+      'plugins/image.ts',
+      'plugins/table.ts',
+      'transformers/gfm.ts',
+      'transformers/registry.ts',
+      'surfaces/toolbar.ts',
+      'surfaces/link-dialog.ts',
+    ],
+  },
 ]
 
 // Components are special — use the component extractor

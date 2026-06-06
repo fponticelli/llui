@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { PACKAGES } from '../pages/api/@pkg/packages.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
@@ -23,6 +24,9 @@ function readLocal(path: string): string {
     return ''
   }
 }
+
+// Strip a leading YAML frontmatter block (`---\n…\n---\n`).
+const stripFrontmatter = (md: string): string => md.replace(/^---[\s\S]*?---\n/, '')
 
 // --- llms.txt (concise) ---
 
@@ -47,6 +51,9 @@ const llmsTxt = `# LLui
 - @llui/mcp — MCP server for LLM debug tools
 - @llui/agent — LLM control surface: LAP server + browser client (observe/send_message with drain semantics)
 - @llui/agent-bridge — MCP bridge CLI (llui-agent) translating Claude Desktop tool calls to LAP
+- @llui/devmode-annotate — Dev-only HUD: annotate the running app into a shared on-disk notebook the LLM reads/writes
+- @llui/lexical — Low-level Lexical ↔ signal-runtime binding: lexicalForeign seam, plugin contract, DecoratorNode ↔ LLui sub-view bridge
+- @llui/markdown-editor — WYSIWYG Markdown editor: markdownEditor() component, transformer registry, GFM/callout plugins, toolbar surface
 
 ## Documentation
 
@@ -93,9 +100,28 @@ console.log('Generated llms.txt')
 // --- llms-full.txt (comprehensive) ---
 
 const systemPrompt = read('evaluation/prompts/system-prompt.md')
-const gettingStarted = readLocal('content/getting-started.md').replace(/^---[\s\S]*?---\n/, '')
-const cookbook = readLocal('content/cookbook.md').replace(/^---[\s\S]*?---\n/, '')
-const apiRef = read('docs/designs/09 API Reference.md')
+const gettingStarted = stripFrontmatter(readLocal('content/getting-started.md'))
+const cookbook = stripFrontmatter(readLocal('content/cookbook.md'))
+
+// Build the API reference by concatenating the per-package pages produced by
+// generate-api.ts (which runs immediately before this script). PACKAGES is the
+// same canonical list that drives the `/api/<pkg>` routes, so the full reference
+// always covers exactly the published pages — in the same order. (The legacy
+// hand-written `docs/designs/09 API Reference.md` was removed with the
+// pre-signal design docs, which previously left this section empty.)
+const apiRef = PACKAGES.map((pkg) => {
+  const md = readLocal(`content/api/${pkg}.md`)
+  if (!md) {
+    console.warn(`  ⚠ no content/api/${pkg}.md — omitted from llms-full.txt`)
+    return ''
+  }
+  // Drop frontmatter and the auto-api injection markers (HTML comments).
+  return stripFrontmatter(md)
+    .replace(/<!-- auto-api:(?:start|end) -->\n?/g, '')
+    .trim()
+})
+  .filter(Boolean)
+  .join('\n\n---\n\n')
 
 const llmsFullTxt = `# LLui — Complete LLM Reference
 

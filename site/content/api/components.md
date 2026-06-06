@@ -1,11 +1,11 @@
 ---
 title: '@llui/components'
-description: '54 headless components + opt-in CSS theme and Tailwind class helpers'
+description: '58 headless components + opt-in CSS theme and Tailwind class helpers'
 ---
 
 # @llui/components
 
-54 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
+58 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -91,11 +91,11 @@ view: ({ state, send }) => {
 }
 ```
 
-## Components (54)
+## Components (58)
 
 ### Form controls
 
-accordion, checkbox, collapsible, editable, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, toggle, toggle-group
+accordion, checkbox, collapsible, editable, form, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, theme-switch, toggle, toggle-group
 
 ### Overlays
 
@@ -103,7 +103,7 @@ alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigati
 
 ### Data display
 
-async-list, avatar, carousel, cascade-select, listbox, pagination, progress, qr-code, scroll-area, steps, toc, tree-view
+async-list, avatar, carousel, cascade-select, clipboard, in-view, listbox, pagination, progress, qr-code, scroll-area, sortable, steps, toc, tree-view
 
 ### Pickers
 
@@ -111,7 +111,7 @@ color-picker, date-input, date-picker, time-picker, angle-slider
 
 ### Media / canvas
 
-file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, timer
+file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, splitter, timer
 
 ### Patterns
 

@@ -1,21 +1,4 @@
-const PACKAGES = [
-  'dom',
-  'compiler',
-  'vite-plugin',
-  'compiler-introspection',
-  'compiler-devtools',
-  'compiler-ssr',
-  'effects',
-  'test',
-  'components',
-  'router',
-  'transitions',
-  'vike',
-  'mcp',
-  'agent',
-  'agent-bridge',
-  'devmode-annotate',
-]
+import { PACKAGES } from './packages.js'
 
 export default (pageContext: { urlPathname: string }) => {
   const match = pageContext.urlPathname.match(/^\/api\/(.+?)(?:\/)?$/)

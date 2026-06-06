@@ -19,6 +19,9 @@
 - @llui/mcp — MCP server for LLM debug tools
 - @llui/agent — LLM control surface: LAP server + browser client (observe/send_message with drain semantics)
 - @llui/agent-bridge — MCP bridge CLI (llui-agent) translating Claude Desktop tool calls to LAP
+- @llui/devmode-annotate — Dev-only HUD: annotate the running app into a shared on-disk notebook the LLM reads/writes
+- @llui/lexical — Low-level Lexical ↔ signal-runtime binding: lexicalForeign seam, plugin contract, DecoratorNode ↔ LLui sub-view bridge
+- @llui/markdown-editor — WYSIWYG Markdown editor: markdownEditor() component, transformer registry, GFM/callout plugins, toolbar surface
 
 ## Documentation
 
