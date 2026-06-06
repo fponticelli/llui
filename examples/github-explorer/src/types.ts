@@ -73,40 +73,12 @@ export type Route =
 
 import type { Async, ApiError, Effect as BuiltinEffect } from '@llui/effects'
 import type { RouterEffect } from '@llui/router/connect'
-import {
-  agentConnect,
-  agentConfirm,
-  agentLog,
-  agentAttention,
-  type AgentEffect,
-} from '@llui/agent/client'
 
 export type { Async, ApiError }
-
-type AgentConnectMsg = agentConnect.AgentConnectMsg
-type AgentConfirmMsg = agentConfirm.AgentConfirmMsg
-type AgentLogMsg = agentLog.AgentLogMsg
-type AgentAttentionMsg = agentAttention.AgentAttentionMsg
-
-export { agentConnect, agentConfirm, agentLog, agentAttention }
-
-export type AgentUiState = {
-  /** True for ~2s after the user clicks the Copy snippet button. */
-  copied: boolean
-}
-
-export type AgentUiMsg = { type: 'Copy' } | { type: 'CopyFaded' }
 
 export interface State {
   route: Route
   query: string
-  agent: {
-    connect: agentConnect.AgentConnectState
-    confirm: agentConfirm.AgentConfirmState
-    log: agentLog.AgentLogState
-    attention: agentAttention.AgentAttentionState
-    ui: AgentUiState
-  }
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -140,18 +112,7 @@ export type Msg =
   | { type: 'prevPage' }
   /** @intent("Open a file or directory from the tree") @alwaysAffordable */
   | { type: 'openPath'; path: string; isDir: boolean }
-  // Agent sub-component messages (envelope pattern — internal routing, not dispatchable by Claude)
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'connect'; msg: AgentConnectMsg }
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'confirm'; msg: AgentConfirmMsg }
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'log'; msg: AgentLogMsg }
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'attention'; msg: AgentAttentionMsg }
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'ui'; msg: AgentUiMsg }
 
 // ── Effects ──────────────────────────────────────────────────────
 
-export type Effect = BuiltinEffect | RouterEffect | AgentEffect
+export type Effect = BuiltinEffect | RouterEffect

@@ -20,7 +20,6 @@ export function header(query: Signal<string>, send: Send<Msg>): Mountable {
           input({
             type: 'text',
             placeholder: 'Search repositories...',
-            'data-agent': 'search-input',
             value: query,
             onInput: (e: Event) =>
               send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),

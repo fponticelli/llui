@@ -84,7 +84,7 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
           loading: () => [div({ class: 'loading' }, [text('Searching...')])],
           empty: () => [div({ class: 'loading' }, [text('No repositories found.')])],
           results: () => [
-            ul({ class: 'repo-list', 'data-agent': 'search-results' }, [
+            ul({ class: 'repo-list' }, [
               each(
                 route.map((r) => searchRepos(r)),
                 {
@@ -96,7 +96,6 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
             div({ class: 'pagination' }, [
               button(
                 {
-                  'data-agent': 'prev-page',
                   disabled: route.map((r) => currentPage(r) <= 1),
                   onClick: () => send({ type: 'prevPage' }),
                 },
@@ -111,7 +110,6 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
               ),
               button(
                 {
-                  'data-agent': 'next-page',
                   disabled: route.map((r) => currentPage(r) * 10 >= searchTotal(r)),
                   onClick: () => send({ type: 'nextPage' }),
                 },
