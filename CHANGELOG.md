@@ -11,6 +11,86 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-06 — 0.9.0 (Markdown editor: @llui/lexical + @llui/markdown-editor)
+
+**Released:** **new** `@llui/lexical@0.1.0`, `@llui/markdown-editor@0.1.0`, `@llui/markdown@0.9.0`; `@llui/dom@0.9.0`; `@llui/compiler@0.10.0`; `@llui/{vite-plugin,test,components,compiler-introspection,compiler-devtools,compiler-ssr}@0.10.0`; `@llui/{router,transitions,vike,agent}@0.9.0`; `llui-agent@0.9.0`; `@llui/mcp@0.11.0`; `@llui/effects@0.1.0`; `@llui/devmode-annotate@0.1.0`
+
+Headline: a WYSIWYG Markdown editor built on Lexical, shipped as two new packages. Plus per-row reconcile perf in the runtime, broader compiler `each`-row lowering, and `batch()` send coalescing.
+
+### Breaking
+
+- **`@llui/compiler@0.10.0`** — the signal lint set is broader and stricter (it runs as non-bypassable build errors). Code that was previously accepted may now fail the build if it trips a newly-covered rule (e.g. node construction in a body, an operator applied to a signal). The compiler error names the rule and the fix.
+
+### Migration
+
+- If a build newly fails a signal lint rule after upgrading `@llui/compiler` / `@llui/vite-plugin`, fix the flagged expression as the error message describes — there is no opt-out (by design: LLMs ignore warnings, so framework rules are hard errors).
+
+### `@llui/lexical@0.1.0` (new)
+
+- **Added** Low-level Lexical ↔ signal-runtime binding: the `lexicalForeign` seam (markdown-agnostic, injected serialize/deserialize), the `LexicalPlugin` contract, keyboard-shortcut wiring, and a `DecoratorNode` ↔ LLui sub-view bridge so a Lexical node can host an independent LLui component.
+
+### `@llui/markdown-editor@0.1.0` (new)
+
+- **Added** `markdownEditor(config)` — a WYSIWYG editor that hides Markdown behind a rich editing surface (Lexical owns the live document; Markdown is the serialization boundary). Scales from a bare keyboard-formatting field to a Google-Docs-class surface.
+- **Added** 14 composable plugins on three seams (plugin-UI / decorator bridge / transformer registry): GFM core, link dialog, image, horizontal rule, emoji, editable callout decorator, math, mermaid, GFM tables with classic cell-editing tools, slash command menu, `@`-mentions, right-click context menu, and a floating selection toolbar.
+- **Added** A shared anchored-overlay primitive backing all positioned surfaces, a transformer registry governing round-trip fidelity, a ready-made toolbar surface, and a shipped theme (`@llui/markdown-editor/styles/editor.css`). Demo in `examples/markdown-editor`.
+
+### `@llui/markdown@0.9.0` (new)
+
+- **Added** `@llui/markdown` — reactive Markdown rendering (render Markdown to live LLui nodes) with a showcase demo.
+
+### `@llui/dom@0.9.0`
+
+- **Improved** Per-row reconcile cost: `each` rows clone a template and each row gets a lean, class-based signal scope (1 allocation per row instead of 5).
+- **Added** `batch(fn)` — coalesce a burst of `send`s into a single reconcile (drain a websocket frame of N ticks as one re-render); available on the handle and in the view / `onEffect` bag. The compiler also auto-wraps provably-safe straight-line multi-`send` handlers.
+- **Added** Dev tooling can opt out of the global `__lluiComponents` registry via `mountSignalComponent(el, def, { devtools: false })` — so an embedded tool's own components don't pollute the host app's introspection.
+- **Improved** Error-message clarity, an `.at()`-after-`.map()` guard, variadic `derived`, and typed handler signatures.
+
+### `@llui/compiler@0.10.0`
+
+- **Added** Broader `each`-row lowering to `signalEachDirect` — block-body rows, rows inside view-helper functions, item-handler list rows, and same-file row-helper inlining (cross-function phases 1–2).
+- **Added** `batch(...)` auto-wrap for straight-line multi-`send` handlers.
+- **Improved** Expanded signal lint coverage (see Breaking).
+- **Fixed** Double-lowering (pass-1 edit ranges are now captured after pass 1 runs) and a cross-file leak of ambient lowering state on throw.
+
+### `@llui/compiler-introspection@0.10.0` · `@llui/compiler-devtools@0.10.0` · `@llui/compiler-ssr@0.10.0`
+
+- **Improved** Rebuilt against `@llui/compiler@0.10.0`.
+
+### `@llui/effects@0.1.0`
+
+- **Added** A `log` effect builder (`LogEffect`) and a `delay` alias for `timeout`.
+
+### `@llui/agent@0.9.0`
+
+- **Added** `@routeGated` actions are surfaced to the agent as unavailable with a reason (Tier 4.2).
+- **Improved** Validation errors carry a valid example message (Tier 4.1).
+
+### `@llui/vite-plugin@0.10.0`
+
+- **Improved** Notes frontmatter parsing and on-disk store; rebuilt against the new runtime + compiler.
+
+### `@llui/mcp@0.11.0`
+
+- **Improved** CDP and relay transport robustness.
+
+### `@llui/router@0.9.0` · `@llui/vike@0.9.0` · `@llui/test@0.10.0`
+
+- **Fixed** Code-review findings across `connect`/guards/navigation (router), `onRenderHtml` (vike), and `propertyTest` (test); all rebuilt against `@llui/dom@0.9.0`.
+
+### `@llui/components@0.10.0` · `@llui/transitions@0.9.0` · `llui-agent@0.9.0`
+
+- **Improved** Rebuilt against `@llui/dom@0.9.0`.
+
+### `@llui/devmode-annotate@0.1.0`
+
+- **Added** Now published. The compose field is a real embedded `markdownEditor()` (replacing the raw textarea + hand-rolled Markdown toolbar); new public `AnnotateHudHandle.setProse(text)` to set the draft programmatically.
+- **Improved** Migrated the HUD to idiomatic LLui and adopted `@llui/components` (select, etc.); tightened the compose layout and fixed host `@llui/components` CSS leaking into the HUD.
+
+### Docs
+
+- Regenerated API references; recorded the measured conclusions of the create/reorder perf investigation and the remaining perf opportunities; published the example mini-apps as live embedded demos.
+
 ## 2026-06-05 — @llui/dom@0.8.0 (signalEachDirect + reconcile perf)
 
 **Released:** `@llui/dom@0.8.0`; `@llui/compiler@0.9.0`; `@llui/{vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,components,test}@0.9.0`; `@llui/{router,transitions,vike,agent}@0.8.0`; `llui-agent@0.8.0`; `@llui/mcp@0.10.0`
