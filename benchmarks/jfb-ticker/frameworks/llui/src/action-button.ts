@@ -30,16 +30,17 @@ export function actionButton(
       send(msg) // signal send is synchronous — DOM updates immediately
     }
   }
-  return el('div', { class: 'btn-wrap' }, [
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'btn btn-primary',
-        id,
-        onClick: batch ? () => batch(dispatch) : dispatch,
-      },
-      [staticText(label)],
-    ),
-  ])
+  // Markup must be byte-identical to the other framework implementations:
+  // a bare `<button id type class="btn">label</button>` with no wrapper and no
+  // extra classes, so the rendered controls row looks the same across frameworks.
+  return el(
+    'button',
+    {
+      id,
+      type: 'button',
+      class: 'btn',
+      onClick: batch ? () => batch(dispatch) : dispatch,
+    },
+    [staticText(label)],
+  )
 }
