@@ -12,7 +12,7 @@ import {
   $isRangeSelection,
   type LexicalNode,
 } from 'lexical'
-import { $insertNodeToNearestRoot } from '@lexical/utils'
+import { $insertNodeToNearestRoot, mergeRegister } from '@lexical/utils'
 import {
   $createTableCellNode,
   $createTableNode,
@@ -24,14 +24,16 @@ import {
   $insertTableColumnAtSelection,
   $insertTableRowAtSelection,
   $isTableNode,
+  $isTableSelection,
   TableCellHeaderStates,
   TableCellNode,
   TableNode,
   TableRowNode,
 } from '@lexical/table'
 import type { MultilineElementTransformer } from '@lexical/markdown'
-import { button, derived, div, portal, show, text, type Signal } from '@llui/dom'
+import { button, text } from '@llui/dom'
 import { definePluginUI } from './ui.js'
+import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
 import type { MarkdownPlugin } from './types.js'
 
 interface TableToolsState {
@@ -79,7 +81,9 @@ function $runTableOp(id: string): void {
       return
     case 'delTable': {
       const selection = $getSelection()
-      if (!$isRangeSelection(selection)) return
+      // A focused cell is a RangeSelection; a multi-cell drag is a TableSelection.
+      // Both carry an anchor pointing into a cell — accept either.
+      if (!$isRangeSelection(selection) && !$isTableSelection(selection)) return
       const cell = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
       if (cell) $getTableNodeFromLexicalNodeOrThrow(cell).remove()
       return
@@ -162,37 +166,59 @@ export function tablePlugin(): MarkdownPlugin {
     name: 'table',
     nodes: [TableNode, TableRowNode, TableCellNode],
     transformers: [TABLE_TRANSFORMER],
-    // A contextual toolbar appears above the table whenever the caret is in a cell.
+    // A contextual toolbar appears above the table whenever the selection is in a
+    // cell. It tracks the table's viewport rect, so it repositions on scroll/resize
+    // (not just on editor updates) and only re-emits when the rect actually moves.
     register: (editor, ctx) => {
+      let lastKey: string | null = null
+      let lastX = NaN
+      let lastY = NaN
       const refresh = (): void => {
         const tableKey = editor.getEditorState().read(() => {
           const selection = $getSelection()
-          if (!$isRangeSelection(selection)) return null
+          // RangeSelection = caret in a cell; TableSelection = multi-cell drag.
+          if (!$isRangeSelection(selection) && !$isTableSelection(selection)) return null
           const cell = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
           return cell ? $getTableNodeFromLexicalNodeOrThrow(cell).getKey() : null
         })
         const el = tableKey ? editor.getElementByKey(tableKey) : null
         if (!el) {
-          ctx.emit({ type: 'plugin', name: 'table', msg: { type: 'hide' } })
+          if (lastKey !== null) {
+            lastKey = null
+            lastX = NaN
+            lastY = NaN
+            ctx.emit({ type: 'plugin', name: 'table', msg: { type: 'hide' } })
+          }
           return
         }
         const rect = el.getBoundingClientRect()
+        // Typing inside a cell never moves the table's top-left; skip the redundant
+        // emit so the overlay isn't reconciled on every keystroke.
+        if (tableKey === lastKey && rect.left === lastX && rect.top === lastY) return
+        lastKey = tableKey
+        lastX = rect.left
+        lastY = rect.top
         ctx.emit({
           type: 'plugin',
           name: 'table',
           msg: { type: 'show', x: rect.left, y: rect.top },
         })
       }
-      return editor.registerUpdateListener(() => refresh())
+      return mergeRegister(
+        editor.registerUpdateListener(() => refresh()),
+        onViewportChange(refresh),
+      )
     },
     ui: definePluginUI<TableToolsState, TableToolsMsg, TableToolsEffect>({
       init: () => ({ open: false, x: 0, y: 0 }),
       update: (state, msg) => {
         switch (msg.type) {
           case 'show':
-            return { open: true, x: msg.x, y: msg.y }
+            return state.open && state.x === msg.x && state.y === msg.y
+              ? state
+              : { open: true, x: msg.x, y: msg.y }
           case 'hide':
-            return state.open ? { ...state, open: false } : state
+            return hideOverlay(state)
           case 'op':
             return [state, [{ type: 'run', id: msg.id }]]
         }
@@ -201,40 +227,33 @@ export function tablePlugin(): MarkdownPlugin {
         const editor = ctx.editor()
         if (editor) editor.update(() => $runTableOp(effect.id))
       },
-      view: ({ state, send }) => [
-        show(state.at('open'), () => [
-          portal(() => [
-            div(
-              {
-                'data-scope': 'md-table-tools',
-                'data-part': 'bar',
-                style: derived(
-                  state.at('x'),
-                  state.at('y'),
-                  (x, y) =>
-                    `position:fixed;left:${x}px;top:${y}px;transform:translateY(-118%);z-index:62`,
-                ) as Signal<string>,
-              },
-              TABLE_TOOLS.map((tool) =>
-                button(
-                  {
-                    type: 'button',
-                    'data-scope': 'md-table-tools',
-                    'data-part': 'tool',
-                    title: tool.title,
-                    'aria-label': tool.title,
-                    onMouseDown: (e: MouseEvent) => {
-                      e.preventDefault()
-                      send({ type: 'op', id: tool.id })
-                    },
+      view: ({ state, send }) =>
+        overlayRoot({
+          open: state.at('open'),
+          x: state.at('x'),
+          y: state.at('y'),
+          zIndex: OVERLAY_Z.tableTools,
+          // Lift the bar above the table's top edge.
+          transform: 'transform:translateY(-118%)',
+          attrs: { 'data-scope': 'md-table-tools', 'data-part': 'bar' },
+          children: () =>
+            TABLE_TOOLS.map((tool) =>
+              button(
+                {
+                  type: 'button',
+                  'data-scope': 'md-table-tools',
+                  'data-part': 'tool',
+                  title: tool.title,
+                  'aria-label': tool.title,
+                  onMouseDown: (e: MouseEvent) => {
+                    e.preventDefault()
+                    send({ type: 'op', id: tool.id })
                   },
-                  [text(tool.label)],
-                ),
+                },
+                [text(tool.label)],
               ),
             ),
-          ]),
-        ]),
-      ],
+        }),
     }),
     items: [
       {

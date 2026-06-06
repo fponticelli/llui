@@ -4,10 +4,11 @@
 // command on the still-live selection.
 
 import { $getSelection, $isRangeSelection } from 'lexical'
-import { $findMatchingParent } from '@lexical/utils'
+import { $findMatchingParent, mergeRegister } from '@lexical/utils'
 import { $isLinkNode } from '@lexical/link'
-import { button, div, each, portal, show, span, text, unsafeHtml, type Signal } from '@llui/dom'
+import { button, each, span, text, unsafeHtml, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
+import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
 import { DEFAULT_GLYPHS } from '../surfaces/toolbar.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
@@ -112,7 +113,11 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
           msg: { type: 'show', x: rect.left + rect.width / 2, y: rect.top, items },
         })
       }
-      return editor.registerUpdateListener(() => refresh())
+      return mergeRegister(
+        editor.registerUpdateListener(() => refresh()),
+        // Keep the bubble glued to the selection while the page scrolls.
+        onViewportChange(refresh),
+      )
     },
     ui: definePluginUI<FloatState, FloatMsg, FloatEffect>({
       init: () => ({ open: false, x: 0, y: 0, items: [] }),
@@ -121,7 +126,7 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
           case 'show':
             return { open: msg.items.length > 0, x: msg.x, y: msg.y, items: msg.items }
           case 'hide':
-            return state.open ? { ...state, open: false } : state
+            return hideOverlay(state)
           case 'run': {
             const item = state.items[msg.index]
             return item ? [state, [{ type: 'run', id: item.id }]] : state
@@ -131,58 +136,38 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
       onEffect: (effect, ctx) => {
         ctx.emit({ type: 'runCommand', id: effect.id })
       },
-      view: ({ state, send }) => [
-        show(state.at('open'), () => [
-          portal(() => [
-            div(
-              {
-                'data-scope': 'md-floating',
-                'data-part': 'root',
-                style: state.at('x').map((x) => `--md-fx:${x}px`) as Signal<string>,
-              },
-              [
-                div(
+      // `x` is the selection's horizontal centre; the transform centres the bar on
+      // it and lifts it above the selection.
+      view: ({ state, send }) =>
+        overlayRoot({
+          open: state.at('open'),
+          x: state.at('x'),
+          y: state.at('y'),
+          zIndex: OVERLAY_Z.floatingToolbar,
+          transform: 'transform:translate(-50%,-115%)',
+          attrs: { 'data-scope': 'md-floating', 'data-part': 'bar' },
+          children: () => [
+            each(state.at('items') as Signal<BarItem[]>, {
+              key: (it) => it.id,
+              render: (item, index) => [
+                button(
                   {
+                    type: 'button',
                     'data-scope': 'md-floating',
-                    'data-part': 'bar',
-                    style: state
-                      .at('y')
-                      .map(
-                        (y) =>
-                          `position:fixed;left:var(--md-fx);top:${y}px;transform:translate(-50%,-115%);z-index:62`,
-                      ) as Signal<string>,
+                    'data-part': 'item',
+                    'data-active': item.map((it) => (it.active ? '' : undefined)),
+                    'aria-label': item.map((it) => it.label),
+                    onMouseDown: (e: MouseEvent) => {
+                      e.preventDefault()
+                      send({ type: 'run', index: index.peek() })
+                    },
                   },
-                  [
-                    each(state.at('items') as Signal<BarItem[]>, {
-                      key: (it) => it.id,
-                      render: (item, index) => [
-                        button(
-                          {
-                            type: 'button',
-                            'data-scope': 'md-floating',
-                            'data-part': 'item',
-                            'data-active': item.map((it) => (it.active ? '' : undefined)),
-                            'aria-label': item.map((it) => it.label),
-                            onMouseDown: (e: MouseEvent) => {
-                              e.preventDefault()
-                              send({ type: 'run', index: index.peek() })
-                            },
-                          },
-                          [
-                            span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [
-                              renderGlyph(item),
-                            ]),
-                          ],
-                        ),
-                      ],
-                    }),
-                  ],
+                  [span({ 'data-part': 'glyph', 'aria-hidden': 'true' }, [renderGlyph(item)])],
                 ),
               ],
-            ),
-          ]),
-        ]),
-      ],
+            }),
+          ],
+        }),
     }),
   }
 }

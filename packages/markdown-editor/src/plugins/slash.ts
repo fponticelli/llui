@@ -15,8 +15,9 @@ import {
   KEY_ESCAPE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
-import { div, each, portal, show, text, derived, type Signal } from '@llui/dom'
+import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
+import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
 interface MenuItem {
@@ -158,7 +159,7 @@ export function slashPlugin(): MarkdownPlugin {
               y: msg.y,
             }
           case 'hide':
-            return state.open ? { ...state, open: false } : state
+            return hideOverlay(state)
           case 'move': {
             if (!state.open || state.items.length === 0) return state
             const index = (state.index + msg.delta + state.items.length) % state.items.length
@@ -166,7 +167,7 @@ export function slashPlugin(): MarkdownPlugin {
           }
           case 'choose': {
             const item = state.items[state.index]
-            if (!state.open || !item) return state.open ? { ...state, open: false } : state
+            if (!state.open || !item) return hideOverlay(state)
             return [{ ...state, open: false }, [{ type: 'run', id: item.id, query: state.query }]]
           }
           case 'click': {
@@ -191,42 +192,33 @@ export function slashPlugin(): MarkdownPlugin {
         })
         ctx.emit({ type: 'runCommand', id: effect.id })
       },
-      view: ({ state, send }) => [
-        show(state.at('open'), () => [
-          portal(() => [
-            div(
-              {
-                'data-scope': 'md-slash',
-                'data-part': 'root',
-                style: derived(
-                  state.at('x'),
-                  state.at('y'),
-                  (x, y) => `position:fixed;left:${x}px;top:${y}px;z-index:60`,
+      view: ({ state, send }) =>
+        overlayRoot({
+          open: state.at('open'),
+          x: state.at('x'),
+          y: state.at('y'),
+          zIndex: OVERLAY_Z.typeahead,
+          attrs: { 'data-scope': 'md-slash', 'data-part': 'root' },
+          children: () => [
+            each(state.at('items') as Signal<MenuRow[]>, {
+              key: (it) => it.id,
+              render: (item, index) => [
+                div(
+                  {
+                    'data-scope': 'md-slash',
+                    'data-part': 'option',
+                    'data-active': item.map((it) => (it.active ? '' : undefined)),
+                    onMouseDown: (e: MouseEvent) => {
+                      e.preventDefault()
+                      send({ type: 'click', index: index.peek() })
+                    },
+                  },
+                  [text(item.map((it) => it.label))],
                 ),
-              },
-              [
-                each(state.at('items') as Signal<MenuRow[]>, {
-                  key: (it) => it.id,
-                  render: (item, index) => [
-                    div(
-                      {
-                        'data-scope': 'md-slash',
-                        'data-part': 'option',
-                        'data-active': item.map((it) => (it.active ? '' : undefined)),
-                        onMouseDown: (e: MouseEvent) => {
-                          e.preventDefault()
-                          send({ type: 'click', index: index.peek() })
-                        },
-                      },
-                      [text(item.map((it) => it.label))],
-                    ),
-                  ],
-                }),
               ],
-            ),
-          ]),
-        ]),
-      ],
+            }),
+          ],
+        }),
     }),
   }
 }

@@ -2,8 +2,9 @@
 // `contextmenu` listener on the editor root and opens the menu at the pointer;
 // the plugin-UI renders the menu and runs the chosen command.
 
-import { div, each, portal, show, text, derived, type Signal } from '@llui/dom'
+import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
+import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
 interface MenuItem {
@@ -63,10 +64,10 @@ export function contextMenuPlugin(): MarkdownPlugin {
           case 'open':
             return { open: msg.items.length > 0, x: msg.x, y: msg.y, items: msg.items }
           case 'close':
-            return state.open ? { ...state, open: false } : state
+            return hideOverlay(state)
           case 'choose': {
             const item = state.items[msg.index]
-            if (!item) return state.open ? { ...state, open: false } : state
+            if (!item) return hideOverlay(state)
             return [{ ...state, open: false }, [{ type: 'run', id: item.id }]]
           }
         }
@@ -74,10 +75,15 @@ export function contextMenuPlugin(): MarkdownPlugin {
       onEffect: (effect, ctx) => {
         ctx.emit({ type: 'runCommand', id: effect.id })
       },
-      view: ({ state, send }) => [
-        show(state.at('open'), () => [
-          portal(() => [
-            // Backdrop closes the menu on any outside interaction.
+      view: ({ state, send }) =>
+        overlayRoot({
+          open: state.at('open'),
+          x: state.at('x'),
+          y: state.at('y'),
+          zIndex: OVERLAY_Z.contextMenu,
+          attrs: { 'data-scope': 'md-context', 'data-part': 'root' },
+          // Backdrop closes the menu on any outside interaction.
+          before: () => [
             div({
               'data-scope': 'md-context',
               'data-part': 'backdrop',
@@ -87,38 +93,26 @@ export function contextMenuPlugin(): MarkdownPlugin {
                 send({ type: 'close' })
               },
             }),
-            div(
-              {
-                'data-scope': 'md-context',
-                'data-part': 'root',
-                style: derived(
-                  state.at('x'),
-                  state.at('y'),
-                  (x, y) => `position:fixed;left:${x}px;top:${y}px;z-index:61`,
+          ],
+          children: () => [
+            each(state.at('items') as Signal<MenuItem[]>, {
+              key: (it) => it.id,
+              render: (item, index) => [
+                div(
+                  {
+                    'data-scope': 'md-context',
+                    'data-part': 'option',
+                    onMouseDown: (e: MouseEvent) => {
+                      e.preventDefault()
+                      send({ type: 'choose', index: index.peek() })
+                    },
+                  },
+                  [text(item.map((it) => it.label))],
                 ),
-              },
-              [
-                each(state.at('items') as Signal<MenuItem[]>, {
-                  key: (it) => it.id,
-                  render: (item, index) => [
-                    div(
-                      {
-                        'data-scope': 'md-context',
-                        'data-part': 'option',
-                        onMouseDown: (e: MouseEvent) => {
-                          e.preventDefault()
-                          send({ type: 'choose', index: index.peek() })
-                        },
-                      },
-                      [text(item.map((it) => it.label))],
-                    ),
-                  ],
-                }),
               ],
-            ),
-          ]),
-        ]),
-      ],
+            }),
+          ],
+        }),
     }),
   }
 }

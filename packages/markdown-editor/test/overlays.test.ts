@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp } from '@llui/dom'
-import { $getRoot, type LexicalEditor } from 'lexical'
-import { $isTableNode, $isTableRowNode, $isTableCellNode } from '@lexical/table'
+import { $getRoot, $setSelection, type LexicalEditor } from 'lexical'
+import {
+  $createTableSelectionFrom,
+  $isTableNode,
+  $isTableRowNode,
+  $isTableCellNode,
+} from '@lexical/table'
 import { markdownEditor } from '../src/editor.js'
 import { corePlugin } from '../src/plugins/core.js'
 import { linkPlugin } from '../src/plugins/link.js'
@@ -129,5 +134,45 @@ describe('table editing tools', () => {
     app.send({ type: 'plugin', name: 'table', msg: { type: 'op', id: 'rowBelow' } })
     await wait(0)
     expect(container.querySelectorAll('table tr').length).toBe(rowsBefore + 1)
+  })
+
+  it('stays visible under a multi-cell TableSelection and can delete the table', async () => {
+    let editor!: LexicalEditor
+    app = mountApp(
+      container,
+      markdownEditor({
+        plugins: [tablePlugin(), corePlugin()],
+        defaultValue: '| A | B |\n| --- | --- |\n| 1 | 2 |',
+        onReady: (e) => {
+          editor = e
+        },
+      }),
+    )
+    await wait(0)
+    // Drag-select from header cell A to body cell 2 — a TableSelection, not a
+    // RangeSelection. A RangeSelection-only check would have hidden the toolbar.
+    editor.update(
+      () => {
+        const table = $getRoot().getChildren().find($isTableNode)
+        if (!$isTableNode(table)) return
+        const header = table.getChildren()[0]
+        const body = table.getChildren()[1]
+        if (!$isTableRowNode(header) || !$isTableRowNode(body)) return
+        const anchor = header.getChildren()[0]
+        const focus = body.getChildren()[1]
+        if ($isTableCellNode(anchor) && $isTableCellNode(focus)) {
+          $setSelection($createTableSelectionFrom(table, anchor, focus))
+        }
+      },
+      { discrete: true },
+    )
+    await wait(0)
+    expect(document.querySelector('[data-scope="md-table-tools"][data-part="bar"]')).not.toBeNull()
+
+    // Delete-table must work under a TableSelection (not silently no-op).
+    expect(container.querySelectorAll('table').length).toBe(1)
+    app.send({ type: 'plugin', name: 'table', msg: { type: 'op', id: 'delTable' } })
+    await wait(0)
+    expect(container.querySelectorAll('table').length).toBe(0)
   })
 })
