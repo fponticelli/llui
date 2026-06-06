@@ -189,6 +189,24 @@ interface HydrationEnvelope {
   page: { name: string; state: unknown }
 }
 
+/**
+ * Serialize the hydration envelope for safe embedding inside an inline
+ * `<script>` tag. `JSON.stringify` alone is NOT script-safe: a state string
+ * containing `</script>` (or `<!--`, `<script`) breaks out of the script
+ * element, and the JSON-legal raw line separators U+2028 / U+2029 are invalid
+ * inside a JS string literal. Escaping `<` to its `<` form neutralizes
+ * every HTML-sensitive sequence (`</script>`, `<!--`, `<script`) while
+ * remaining valid JSON, since `<` never appears in JSON syntax outside string
+ * contents. The document template is trusted; the serialized STATE is data and
+ * must be treated as untrusted.
+ */
+function serializeStateForScript(envelope: HydrationEnvelope): string {
+  return JSON.stringify(envelope)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+}
+
 async function renderPage(
   pageContext: PageContext,
   options: RenderHtmlOptions,
@@ -207,7 +225,7 @@ async function renderPage(
 
   const document = options.document ?? DEFAULT_DOCUMENT
   const head = pageContext.head ?? ''
-  const state = JSON.stringify(envelope)
+  const state = serializeStateForScript(envelope)
   const documentHtml = document({ html, state, head, pageContext })
 
   return {

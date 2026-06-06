@@ -233,6 +233,15 @@ export interface ConnectOptions<R> {
    * - `false` → block (e.g. unsaved changes prompt)
    */
   beforeLeave?: (from: R, to: R) => boolean
+
+  /**
+   * Build the message dispatched by the `navigate()` effect (and the
+   * popstate/hashchange listener and `link()`) when the route changes.
+   * Defaults to `{ type: 'navigate', route }`. Override only if your app
+   * uses a different message shape for route changes; the same factory then
+   * applies to every route-change dispatch so they stay consistent.
+   */
+  navigateMsg?: (route: R) => unknown
 }
 ```
 
@@ -270,12 +279,12 @@ export interface ConnectedRouter<R> {
    * navigation from arbitrary reducers had to either re-implement the
    * delegation or live with desynced `state.route`.
    *
-   * Requires that the app has mounted `listener()` (typically inside
-   * the shell view) — the navigate effect uses the send/factory
-   * captured there. If `navigate()` runs before `listener()` mounts,
-   * the URL still updates but no message is dispatched and a
-   * `console.warn` surfaces the gap. After listener unmount the same
-   * fallback applies.
+   * Dispatches through the `send` the effect runner hands every effect,
+   * so it works from ANY effect — including an `init()` effect that runs
+   * before any view mounts. It does NOT depend on `listener()` being
+   * mounted (that only handles browser-driven popstate/hashchange).
+   * The message shape is `{ type: 'navigate', route }` unless overridden
+   * via `connectRouter`'s `navigateMsg` option.
    */
   navigate(route: R): RouterEffect
   /** Effect: go back */

@@ -66,6 +66,18 @@ export interface IntervalEffect {
   msg: unknown
 }
 
+/**
+ * Write to the console as an effect (effects-as-data debug aid). The signal
+ * runtime intentionally does NOT special-case a `log` effect in core — it is
+ * just data handled here, like every other effect.
+ */
+export interface LogEffect {
+  type: 'log'
+  message: string
+  level?: 'log' | 'info' | 'warn' | 'error' | 'debug'
+  data?: unknown
+}
+
 export type StorageScope = 'local' | 'session'
 
 /** Write a JSON value to localStorage/sessionStorage. Fire-and-forget. */
@@ -194,6 +206,7 @@ type BuiltinEffect =
   | DebounceEffect
   | TimeoutEffect
   | IntervalEffect
+  | LogEffect
   | StorageSetEffect
   | StorageRemoveEffect
   | StorageGetEffect
@@ -247,6 +260,21 @@ export function timeout<M>(ms: number, msg: M): TimeoutEffect {
 
 export function interval<M>(key: string, ms: number, msg: M): IntervalEffect {
   return { type: 'interval', key, ms, msg }
+}
+
+/**
+ * Delay then dispatch a message — the effects-as-data form of `setTimeout`.
+ * This is the replacement for the old core `delay` effect: `delay(ms, msg)` is
+ * `timeout(ms, msg)` (fire `msg` once after `ms`; auto-cancels on unmount).
+ */
+export const delay = timeout
+
+/** Log to the console as an effect. Replaces the old core `log` effect. */
+export function log(
+  message: string,
+  opts?: { level?: LogEffect['level']; data?: unknown },
+): LogEffect {
+  return { type: 'log', message, ...opts }
 }
 
 // ── Storage ───────────────────────────────────────────────────────
@@ -549,6 +577,9 @@ function dispatchEffect(
     case 'interval':
       runInterval(effect as IntervalEffect, send, signal, cancelControllers)
       break
+    case 'log':
+      runLog(effect as LogEffect)
+      break
     case 'storage-set':
       runStorageSet(effect as StorageSetEffect)
       break
@@ -795,6 +826,12 @@ function runTimeout(effect: TimeoutEffect, send: InternalSend, signal: AbortSign
     if (!signal.aborted) send(effect.msg as Record<string, unknown>)
   }, effect.ms)
   signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+}
+
+function runLog(effect: LogEffect): void {
+  const fn = console[effect.level ?? 'log'] ?? console.log
+  if (effect.data !== undefined) fn(effect.message, effect.data)
+  else fn(effect.message)
 }
 
 function runInterval(

@@ -119,7 +119,20 @@ export class CdpSessionManager implements CdpTransport {
     if (!this.session) return []
     let items = this.session.networkBuffer
     if (filter?.urlPattern) {
-      const re = new RegExp(filter.urlPattern)
+      // urlPattern is caller-supplied (an MCP tool arg). A malformed pattern
+      // (e.g. `[`) makes `new RegExp` throw synchronously; guard it so a bad
+      // filter surfaces as a clean error instead of crashing the tool call.
+      let re: RegExp
+      try {
+        re = new RegExp(filter.urlPattern)
+      } catch (err) {
+        throw new Error(
+          `Invalid urlPattern regex ${JSON.stringify(filter.urlPattern)}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          { cause: err },
+        )
+      }
       items = items.filter((e) => re.test(e.url))
     }
     if (filter?.status != null) {

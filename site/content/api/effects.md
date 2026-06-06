@@ -241,6 +241,14 @@ function timeout<M>(ms: number, msg: M): TimeoutEffect
 function interval<M>(key: string, ms: number, msg: M): IntervalEffect
 ```
 
+### `log()`
+
+Log to the console as an effect. Replaces the old core `log` effect.
+
+```typescript
+function log(message: string, opts?: { level?: LogEffect['level']; data?: unknown }): LogEffect
+```
+
 ### `storageLoad()`
 
 Synchronous read from storage. Use at init time to seed state. Returns `null` on miss or invalid JSON.
@@ -557,6 +565,21 @@ export interface IntervalEffect {
 }
 ```
 
+### `LogEffect`
+
+Write to the console as an effect (effects-as-data debug aid). The signal
+runtime intentionally does NOT special-case a `log` effect in core — it is
+just data handled here, like every other effect.
+
+```typescript
+export interface LogEffect {
+  type: 'log'
+  message: string
+  level?: 'log' | 'info' | 'warn' | 'error' | 'debug'
+  data?: unknown
+}
+```
+
 ### `StorageSetEffect`
 
 Write a JSON value to localStorage/sessionStorage. Fire-and-forget.
@@ -754,6 +777,18 @@ export interface EffectCtx<E, M> {
   send: (msg: M) => void
   signal: AbortSignal
 }
+```
+
+## Constants
+
+### `delay`
+
+Delay then dispatch a message — the effects-as-data form of `setTimeout`.
+This is the replacement for the old core `delay` effect: `delay(ms, msg)` is
+`timeout(ms, msg)` (fire `msg` once after `ms`; auto-cancels on unmount).
+
+```typescript
+const delay
 ```
 
 <!-- auto-api:end -->

@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createNote,
+  deleteNote,
   listNotes,
   listSessions,
   readNote,
   readScreenshot,
+  updateNoteProse,
 } from '../src/notes/store.js'
 import { resolveCurrentSession } from '../src/notes/session.js'
 import type { NoteBody, NoteFrontmatter } from '../src/notes/types.js'
@@ -365,5 +367,58 @@ describe('format overrides', () => {
     })
     expect(res.sessionId).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}$/)
     expect(res.filename).toMatch(/^\d{3,}-human-text-edit-button-copy\.md$/)
+  })
+})
+
+describe('sessionId path traversal', () => {
+  // Regression: `sessionId` arrives from the HTTP query string unvalidated.
+  // A `../`-style value previously joined straight into a filesystem path,
+  // letting a request read or delete files outside the notes root.
+  let secretDir: string
+
+  beforeEach(() => {
+    secretDir = mkdtempSync(join(tmpdir(), 'llui-notes-secret-'))
+    // A file that matches the canonical note filename so findNoteFile would
+    // otherwise locate (and deleteNote would unlink) it.
+    writeFileSync(join(secretDir, '001-human-text-secret.md'), 'top secret', 'utf8')
+  })
+
+  afterEach(() => {
+    rmSync(secretDir, { recursive: true, force: true })
+  })
+
+  function traversalTo(target: string): string {
+    // Relative path from notesRoot up to a sibling dir, e.g. `../llui-notes-secret-xxxx`.
+    return join('..', target.slice(target.lastIndexOf('/') + 1))
+  }
+
+  it('readNote rejects a traversing sessionId instead of escaping the root', () => {
+    expect(() => readNote(notesRoot, traversalTo(secretDir), '001')).toThrow(/invalid sessionId/)
+  })
+
+  it('deleteNote refuses to unlink a file outside the notes root', () => {
+    const target = join(secretDir, '001-human-text-secret.md')
+    expect(() => deleteNote(notesRoot, traversalTo(secretDir), '001')).toThrow(/invalid sessionId/)
+    expect(existsSync(target)).toBe(true)
+  })
+
+  it('updateNoteProse rejects a traversing sessionId', () => {
+    expect(() => updateNoteProse(notesRoot, traversalTo(secretDir), '001', 'pwned')).toThrow(
+      /invalid sessionId/,
+    )
+    expect(readFileSync(join(secretDir, '001-human-text-secret.md'), 'utf8')).toBe('top secret')
+  })
+
+  it('rejects an absolute sessionId', () => {
+    expect(() => readNote(notesRoot, secretDir, '001')).toThrow(/invalid sessionId/)
+  })
+
+  it('still accepts a normal session folder name', () => {
+    const created = createNote(notesRoot, {
+      body: 'legit note',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    })
+    expect(() => readNote(notesRoot, created.sessionId, created.id)).not.toThrow()
   })
 })

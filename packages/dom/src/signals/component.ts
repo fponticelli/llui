@@ -190,7 +190,22 @@ export function mountSignalComponent<S, M, E = never>(
   let uninstallDebug: (() => void) | null = null
 
   const runEffect = (effect: E): void => {
-    const cleanup = onEffectFn?.(effect, { send, batch, state: handle })
+    if (onEffectFn === undefined) {
+      // An effect was returned from init()/update() but there is no handler to
+      // process it — it is silently dropped. This is the classic footgun (e.g.
+      // returning a delay/log/http effect with no onEffect wired). Surface it
+      // loudly in dev so it doesn't no-op in silence.
+      if (dev) {
+        console.warn(
+          `[llui] ${def.name ?? 'component'}: an effect was emitted but no onEffect ` +
+            `handler is registered, so it was dropped. Wire onEffect (e.g. @llui/effects ` +
+            `handleEffects, or the delay()/log() builders) to handle it.`,
+          effect,
+        )
+      }
+      return
+    }
+    const cleanup = onEffectFn(effect, { send, batch, state: handle })
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
 

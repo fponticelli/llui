@@ -178,6 +178,26 @@ export class WebSocketRelayTransport implements RelayTransport {
       throw new Error('WebSocketRelayTransport: provide either `port` or `attachTo`.')
     }
     this.wsServer.on('connection', (ws) => {
+      // Single-client bridge: a new connection supersedes any previous one.
+      // The `pending` map is keyed by request id, not per-socket, so any
+      // in-flight requests belong to the socket we're replacing and will
+      // never be answered now — reject them and close the stale socket so
+      // they fail fast instead of hanging until the per-request timeout.
+      // (The stale socket's `close` handler is a no-op here because
+      // `browserWs` already points at the new socket.)
+      if (this.browserWs !== null && this.browserWs !== ws) {
+        const stale = this.browserWs
+        this.browserWs = null
+        for (const p of this.pending.values()) {
+          p.reject(new Error('superseded by new browser connection'))
+        }
+        this.pending.clear()
+        try {
+          stale.close()
+        } catch {
+          // already closing/closed; nothing to do
+        }
+      }
       this.browserWs = ws
       this.onConnect?.()
       ws.on('message', (raw) => {

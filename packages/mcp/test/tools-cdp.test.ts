@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { LluiMcpServer } from '../src/index'
+import { CdpSessionManager } from '../src/transports/cdp'
 import type { CdpTransport, ConsoleEntry, NetworkEntry, ErrorEntry } from '../src/tool-registry'
 
 function mockCdp(overrides: Partial<CdpTransport> = {}): CdpTransport {
@@ -104,6 +105,42 @@ describe('llui_browser_close', () => {
     }
     expect(result.closed).toBe(true)
     expect(cdp.closeBrowser).toHaveBeenCalled()
+  })
+})
+
+describe('CdpSessionManager.getNetworkBuffer urlPattern', () => {
+  const entry: NetworkEntry = {
+    requestId: 'r1',
+    url: 'http://localhost/api/users',
+    method: 'GET',
+    status: 200,
+    startTime: 1000,
+    endTime: 1050,
+    durationMs: 50,
+    failed: false,
+  }
+
+  function managerWithBuffer(buffer: NetworkEntry[]): CdpSessionManager {
+    const mgr = new CdpSessionManager()
+    // Inject a minimal session so getNetworkBuffer reaches the filter path
+    // (it returns [] when there is no session). Only `networkBuffer` is read.
+    ;(mgr as unknown as { session: { networkBuffer: NetworkEntry[] } }).session = {
+      networkBuffer: buffer,
+    }
+    return mgr
+  }
+
+  it('filters by a valid pattern', () => {
+    const mgr = managerWithBuffer([entry])
+    expect(mgr.getNetworkBuffer(undefined, { urlPattern: 'users' })).toEqual([entry])
+    expect(mgr.getNetworkBuffer(undefined, { urlPattern: 'nope' })).toEqual([])
+  })
+
+  it('throws a clean error for a malformed pattern instead of crashing', () => {
+    const mgr = managerWithBuffer([entry])
+    // `[` is an invalid regex; previously `new RegExp` threw a raw SyntaxError
+    // out of the tool handler.
+    expect(() => mgr.getNetworkBuffer(undefined, { urlPattern: '[' })).toThrow(/Invalid urlPattern/)
   })
 })
 
