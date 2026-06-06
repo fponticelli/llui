@@ -42,12 +42,6 @@ export const EXAMPLES: ExampleMeta[] = [
     blurb: 'The classic TodoMVC reference app: add, toggle, filter, clear.',
   },
   {
-    slug: 'signals-showcase',
-    pkg: '@llui/example-signals-showcase',
-    title: 'Signals Showcase',
-    blurb: 'Counter, todos, and an editor that exercise the whole signal surface.',
-  },
-  {
     slug: 'form-validation',
     pkg: '@llui/example-form-validation',
     title: 'Form Validation',
@@ -82,6 +76,13 @@ export const EXAMPLES: ExampleMeta[] = [
     pkg: 'github-explorer',
     title: 'GitHub Explorer',
     blurb: 'Routed GitHub browser with search, file tree, and agent affordances.',
+  },
+  {
+    slug: 'vike-layout',
+    pkg: '@llui/example-vike-layout',
+    title: 'Vike Layout (SSR)',
+    blurb: 'Persistent nested layouts with @llui/vike, prerendered to static HTML.',
+    vike: true,
   },
 ]
 

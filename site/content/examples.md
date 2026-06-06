@@ -14,10 +14,6 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <h3>TodoMVC</h3>
     <p>The classic TodoMVC reference app: add, toggle, filter, clear.</p>
   </a>
-  <a class="example-card" href="/examples/signals-showcase">
-    <h3>Signals Showcase</h3>
-    <p>Counter, todos, and an editor that exercise the whole signal surface.</p>
-  </a>
   <a class="example-card" href="/examples/form-validation">
     <h3>Form Validation</h3>
     <p>A sign-up form with Zod schema validation and live field errors.</p>
@@ -41,5 +37,9 @@ Every example below is a real LLui app, built from source and embedded live. Ope
   <a class="example-card" href="/examples/github-explorer">
     <h3>GitHub Explorer</h3>
     <p>Routed GitHub browser with search, file tree, and agent affordances.</p>
+  </a>
+  <a class="example-card" href="/examples/vike-layout">
+    <h3>Vike Layout (SSR)</h3>
+    <p>Persistent nested layouts with @llui/vike, prerendered to static HTML.</p>
   </a>
 </div>
