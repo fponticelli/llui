@@ -415,7 +415,7 @@ describe('transformSignalComponentSource', () => {
       const out = transformSignalComponentSource(src)
       expect(out).toContain('signalEachDirect(') // the helper-row each now lowers
       expect(out).toContain('const entry = getCtx().item') // helper's peek local inlined
-      expect(out).toContain('doc.createTextNode(String(entry.user))') // static from the value local
+      expect(out).toContain('data = String(entry.user)') // static from the value local, per-clone .data
       // the `locale` param was substituted with the call arg → component-state binding
       expect(out).toContain('ctx.state.locale')
     })

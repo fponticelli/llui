@@ -289,11 +289,12 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     )
     expect(out).toContain('signalEachDirect(')
     expect(out).toContain('(doc, getCtx) =>')
-    // the local is emitted at the top with the .peek() read rewritten to live ctx
+    // the local is emitted at the top of the per-clone section, .peek() → live ctx
     expect(out).toContain("const isDir = getCtx().item.type === 'dir'")
-    // static value from the local → one-time text node + applyAttr, not a binding
-    expect(out).toContain("doc.createTextNode(String(isDir ? '📁' : '📄'))")
-    expect(out).toContain("applyAttr(_n0, \"class\", isDir ? 'd' : 'f')")
+    // static value from the local → placeholder text node + per-clone .data, not a binding
+    expect(out).toContain("data = String(isDir ? '📁' : '📄')")
+    // per-row static attr on the top root (located as the clone root `_r0`)
+    expect(out).toContain("applyAttr(_r0, \"class\", isDir ? 'd' : 'f')")
     // the reactive read stays a binding
     expect(out).toContain('produce: (ctx) => ctx.item.name')
   })
@@ -304,7 +305,7 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     )
     expect(out).toContain('signalEachDirect(')
     expect(out).toContain('const v = getCtx().item') // peek read → live ctx, value local
-    expect(out).toContain('doc.createTextNode(String(v.label))') // static from the value local
+    expect(out).toContain('data = String(v.label)') // static from the value local, per-clone .data
   })
 
   it('lowers a row whose class string CONTAINS the row-param name (no false leak)', () => {

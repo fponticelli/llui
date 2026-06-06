@@ -823,24 +823,34 @@ export function signalEachDirect<T>(
   return mountable(() => buildSignalEach(source, key, undefined, rowFactory))
 }
 
+/** Shared, never-mutated empty descriptor registry for direct rows. A direct row
+ * (built by a `RowFactory` straight to DOM, not via `runBuild`/`populate`) never
+ * registers tagSend agent variants, so its `descriptors` is write-once-never-read
+ * dead data that only exists to satisfy the shared `built` shape. Sharing one
+ * frozen-empty instance avoids a `new Map()` per row (10k rows = 10k Maps on a
+ * create-10k). Do NOT write to it. */
+const EMPTY_DESCRIPTORS: ReadonlyMap<string, number> = new Map<string, number>()
+
 /** Wrap a {@link DirectRow} into the `built` shape `buildSignalEach` expects.
  * Direct rows carry no teardowns/mounts/descriptors and own no nested scope; the
- * keyed reconcile, scope-build, and mount are shared with the render path. */
+ * keyed reconcile, scope-build, and mount are shared with the render path.
+ * `specs` is `dr.bindings` directly (no per-row copy) — direct rows are never
+ * rebased (their deps are all row-local), so `built.specs` is never reassigned. */
 function buildDirectRow(dr: DirectRow): {
   nodes: readonly Node[]
-  specs: BindingSpec[]
+  specs: readonly BindingSpec[]
   host: { scope: SignalScope | null }
   teardowns: Array<() => void>
   mounts: Array<(root: Element) => void | (() => void)>
-  descriptors: Map<string, number>
+  descriptors: ReadonlyMap<string, number>
 } {
   return {
     nodes: dr.nodes,
-    specs: dr.bindings.slice(),
+    specs: dr.bindings,
     host: { scope: null },
     teardowns: [],
     mounts: [],
-    descriptors: new Map(),
+    descriptors: EMPTY_DESCRIPTORS,
   }
 }
 
@@ -1078,26 +1088,30 @@ function buildSignalEach<T>(
         }
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
-        if (needsRebase) built.specs = rebaseRowSpecs(built.specs)
+        // Local (not a reassignment of `built.specs`) so the direct-row `built`
+        // can hand `specs` through as the shared readonly `dr.bindings` (no copy).
+        const rowSpecs: readonly BindingSpec[] = needsRebase
+          ? rebaseRowSpecs(built.specs)
+          : built.specs
         let scope: SignalScope
         if (rowFactory) {
           // Direct path: reuse the shared per-each-site shape (built once).
-          const r = scopeFromSpecs(built.specs, directShape ?? undefined)
+          const r = scopeFromSpecs(rowSpecs, directShape ?? undefined)
           directShape ??= r.shape
           built.host.scope = r.scope
           scope = r.scope
-        } else if (authorShape && depsSignatureMatches(built.specs, authorDeps!)) {
+        } else if (authorShape && depsSignatureMatches(rowSpecs, authorDeps!)) {
           // Authoring row whose spec structure matches the cached template: reuse
           // the shared shape, skipping per-row buildPathTable + bindingMask.
-          const r = scopeFromSpecs(built.specs, authorShape)
+          const r = scopeFromSpecs(rowSpecs, authorShape)
           built.host.scope = r.scope
           scope = r.scope
         } else {
           // First authoring row, or a data-conditional row that diverged: build a
           // fresh shape and (re)seed the cache for subsequent matching rows.
-          const r = scopeFromSpecs(built.specs)
+          const r = scopeFromSpecs(rowSpecs)
           authorShape = r.shape
-          authorDeps = built.specs.map((s) => s.deps)
+          authorDeps = rowSpecs.map((s) => s.deps)
           built.host.scope = r.scope
           scope = r.scope
         }

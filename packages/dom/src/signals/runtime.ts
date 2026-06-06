@@ -89,11 +89,22 @@ export function createSignalScope(
   table: PathTable,
   bindings: readonly SignalBinding[],
 ): SignalScope {
-  const last = new Map<SignalBinding, unknown>()
-  const children = new Set<SignalScope>()
-  // Reused across updates (update is synchronous and non-reentrant per scope),
-  // so a hot reconcile allocates no dirty masks.
-  const dirty = new Uint32Array(table.chunkCount)
+  const n = bindings.length
+  // Last produced value per binding, indexed by binding POSITION (not a Map keyed
+  // by binding object). `each` builds one scope PER ROW, so this is allocated N
+  // times for an N-row list — a flat array indexed in lockstep with `bindings`
+  // avoids the per-row Map allocation + per-evaluation object-hash lookups. A leaf
+  // row's hot path (mount + per-tick update) is now pure indexed array reads.
+  const last = new Array<unknown>(n)
+  // Child scopes (show/branch/each content). Allocated lazily — a LEAF row (no
+  // structural children, the overwhelmingly common list-row case) never allocates
+  // a Set. `null` ⇒ no children.
+  let children: Set<SignalScope> | null = null
+  // Dirty chunk-set, reused across this scope's updates (update is synchronous and
+  // non-reentrant per scope). Allocated lazily on first update — a row that is
+  // created and never individually updated (e.g. a static create-1k/10k list that
+  // is then cleared) never allocates one.
+  let dirty: Uint32Array | null = null
 
   return {
     mount(state: unknown): void {
@@ -103,18 +114,20 @@ export function createSignalScope(
       // default exactly as before. The safe path (below) is taken only while a
       // hook is active (agent/debug sessions), where it reports + continues.
       if (errorHandlers.length === 0) {
-        for (const b of bindings) {
+        for (let i = 0; i < n; i++) {
+          const b = bindings[i]!
           const v = b.produce(state)
           b.commit(v)
-          last.set(b, v)
+          last[i] = v
         }
         return
       }
-      for (const b of bindings) {
+      for (let i = 0; i < n; i++) {
+        const b = bindings[i]!
         try {
           const v = b.produce(state)
           b.commit(v)
-          last.set(b, v)
+          last[i] = v
         } catch (err) {
           // Hook installed: report and continue siblings, leaving this binding's
           // last value untouched (DOM keeps its prior value).
@@ -126,26 +139,29 @@ export function createSignalScope(
     update(oldState: unknown, newState: unknown): void {
       // Skip the whole binding sweep when nothing this scope tracks changed —
       // the common case for an unchanged `each` row whose item ref is identical.
-      if (computeDirtyInto(table, oldState, newState, dirty)) {
+      const d = dirty ?? (dirty = new Uint32Array(table.chunkCount))
+      if (computeDirtyInto(table, oldState, newState, d)) {
         // Fast path mirrors mount(): try/catch-free hot loop unless a
         // binding-error hook is active.
         if (errorHandlers.length === 0) {
-          for (const b of bindings) {
-            if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
+          for (let i = 0; i < n; i++) {
+            const b = bindings[i]!
+            if (!intersects(b.mask, d)) continue // gate: irrelevant binding
             const v = b.produce(newState)
-            if (!Object.is(v, last.get(b))) {
+            if (!Object.is(v, last[i])) {
               b.commit(v) // output-equality: only commit real changes
-              last.set(b, v)
+              last[i] = v
             }
           }
         } else {
-          for (const b of bindings) {
-            if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
+          for (let i = 0; i < n; i++) {
+            const b = bindings[i]!
+            if (!intersects(b.mask, d)) continue // gate: irrelevant binding
             try {
               const v = b.produce(newState)
-              if (!Object.is(v, last.get(b))) {
+              if (!Object.is(v, last[i])) {
                 b.commit(v) // output-equality: only commit real changes
-                last.set(b, v)
+                last[i] = v
               }
             } catch (err) {
               reportBindingError(err)
@@ -156,14 +172,14 @@ export function createSignalScope(
       // propagate to mounted child scopes (own bindings above may have
       // added/removed children; newly-mounted children are already current and
       // no-op here via output-equality).
-      for (const c of children) c.update(oldState, newState)
+      if (children !== null) for (const c of children) c.update(oldState, newState)
     },
 
     addChild(child: SignalScope): void {
-      children.add(child)
+      ;(children ??= new Set<SignalScope>()).add(child)
     },
     removeChild(child: SignalScope): void {
-      children.delete(child)
+      children?.delete(child)
     },
   }
 }

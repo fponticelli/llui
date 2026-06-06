@@ -9,6 +9,15 @@ Read [[../../../.claude]] memory `reference-perf-measurement` first (or the summ
 - `signalEachDirect` + compiler codegen: a static-skeleton `each` row lowers to a `RowFactory` (direct DOM + bindings by node ref). **But it only reaches rows the compiler actually lowers.**
 - Two reconcile wins in `buildSignalEach` — **same-structure fast path** (skip the O(n) keyed scan for in-place updates) and **state-fanout gating** (skip the all-row sweep when read state-paths are unchanged). These live in the shared reconcile, so **every `each` benefits, including the verbatim authoring path**. (burst-1k 31.7→15.9.)
 
+## Create-ops: cloneNode templating + lean per-row scope — ✅ SHIPPED (2026-06-06)
+
+Closes the create-ops gap to Solid/vanilla. The root cause: `signalEachDirect`'s `RowFactory` built every row via ~23 per-node `createElement`/`setAttribute`/`appendChild` calls — while **both** frameworks LLui trailed on create (vanillajs `rowTemplate.cloneNode(true)` in `frameworks/keyed/vanillajs/src/Main.js`, Solid compiled `cloneNode`) clone a hoisted template.
+
+- **cloneNode codegen** (`packages/compiler/src/signals/transform-view.ts` `lowerRowFactory`): the row now compiles to an IIFE caching a static **skeleton** (elements + static attrs + literal text, built once via `createElement`) and returns a `(doc, getCtx)` factory that does `_sk.cloneNode(true)` per row + a `childNodes`-index walk to the dynamic nodes (reactive/per-row text, elements with reactive attrs/handlers). The runtime `DirectRow` (`{nodes, bindings}`) contract is **unchanged** — only construction changed. Falls back unchanged for everything that already bailed. **Measured −38% / −0.41 µs/row** row construction (real-Chromium, isolated, 3 stable runs).
+- **Lean per-row scope** (`packages/dom/src/signals/runtime.ts` `createSignalScope` + `dom.ts` `buildDirectRow`): `last` Map→position-indexed array; `children` Set→null-until-`addChild`; `dirty` Uint32Array→lazy; direct-row `descriptors`→shared frozen-empty; no per-row specs copy. **−0.17 µs/row** scope cost (V8), update path 3.8% faster, **−10% Run-1k memory** in the full bench.
+- **Incidental bug fixed**: lowered `'aria-hidden': 'true'` emitted `setAttribute("'aria-hidden'", …)` (quoted-key not unquoted) — now `setAttribute("aria-hidden", …)`.
+- **Same-session A/B** (drift-controlled, fresh OLD baseline): Create 10k 222.1→217.1 (−2%), Run-1k mem 2.9→2.6 (−10%), all other ops within ±1-3% noise, **no regressions**. The create win is ~2% because these ops are ~95% layout — but that ~2% JS slice is the entire inter-framework delta to Solid (see methodology note below). Tests: `transform-view.test.ts`, `transform-component.test.ts`, `each-direct-codegen.test.ts` (clone+walk dispatch-by-id / reactive / reorder, end-to-end in jsdom).
+
 ## The finding that drives this proposal
 
 **Real list rows do not lower at all today** — not even to `signalEach`. Verified by transforming the examples:
@@ -61,10 +70,14 @@ The chunked-mask reconcile is path-level; a future idea was element/row-level di
 
 Revisit ONLY with a concrete workload that (a) isn't virtualizable and (b) profiles the row scan (not reducer allocs) as the bottleneck. Absent that, this is a net regression risk.
 
+## Methodology correction (2026-06-06) — "layout-bound" ≠ "JS doesn't matter"
+
+The old framing ("jfb create-ops are layout-bound; don't micro-opt JS there") confused two things. Create's _absolute_ time IS ~95% layout/paint. But the _inter-framework delta_ (LLui vs Solid vs vanilla, identical DOM ⇒ identical layout) lives 100% in the ~5% JS slice — so JS is the **only** lever on rank. The two items below were marked dead-ends on that flawed reasoning + a mis-measurement; both were refuted with isolated real-Chromium measurement and shipped (see "Create-ops" section above). When measuring a small create-ops JS win, the full jfb bench is too noisy (~±15% run-to-run drift swamps a ~2% op-level change) — use an isolated detached-fragment construction bench, or trust a same-session A/B + the memory metric.
+
 ## Verified dead-ends — do NOT re-chase (measured)
 
-- **`cloneNode` templating** — clone == `createElement` (~1.1 ms/1000 rows). No win.
-- **Lean per-row scope** (Map→array, lazy Set, cheaper Mountable repr) — sub-noise; create is layout-bound. (NUANCE: for REACTIVE rows the per-row authoring JS is ~2.7× direct — but the fix is direct construction / lowering, not micro-opts. See cross-function-row-lowering.md.)
+- ~~**`cloneNode` templating** — clone == `createElement`.~~ **REFUTED + SHIPPED** — `cloneNode(deep)` of a hoisted template is 38% faster than per-node createElement for a real multi-node row. See "Create-ops" above.
+- ~~**Lean per-row scope** — sub-noise.~~ **REFUTED + SHIPPED** (jsdom had masked the JS delta). See "Create-ops" above.
 - **create-10k / append** — layout/paint at scale, not JS-addressable.
 - **swap/update "regressions"** — cold-start/harness artifacts; reconcile is optimal (swap = 2 LIS moves, ~4.8 ms warm).
 - **Default microtask/rAF auto-batching** — rejected (see Opportunity B): breaks the synchronous contract for no paint saving; only viable as an opt-in mode (option 4).
