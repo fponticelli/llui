@@ -307,3 +307,132 @@ describe('clean signal code produces no diagnostics', () => {
     expect(lint(src)).toEqual([])
   })
 })
+
+describe('async-update', () => {
+  it('flags an async update reducer', () => {
+    const src = `component({ init: () => ({ n: 0 }), update: async (s, m) => [s, []], view: ({ state }) => [] })`
+    expect(rules(src)).toContain('async-update')
+  })
+  it('flags an async init', () => {
+    const src = `component({ init: async () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [] })`
+    expect(rules(src)).toContain('async-update')
+  })
+  it('does NOT flag a synchronous reducer', () => {
+    const src = `component({ init: () => ({ n: 0 }), update: (s, m) => [s, []], view: ({ state }) => [] })`
+    expect(rules(src)).not.toContain('async-update')
+  })
+  it('does NOT flag an async onEffect (effects may be async, fire-and-forget)', () => {
+    const src = `component({ init: () => ({ n: 0 }), update: (s) => s, onEffect: async (e) => {}, view: ({ state }) => [] })`
+    expect(rules(src)).not.toContain('async-update')
+  })
+})
+
+describe('controlled-input', () => {
+  it('flags an input with a reactive value but no onInput/onChange', () => {
+    expect(rules("input({ value: state.at('name') }, [])")).toContain('controlled-input')
+    expect(rules("textarea({ value: state.at('bio') }, [])")).toContain('controlled-input')
+  })
+  it('does NOT flag when onInput is present', () => {
+    expect(
+      rules("input({ value: state.at('name'), onInput: (e) => send({ type: 'x' }) }, [])"),
+    ).not.toContain('controlled-input')
+  })
+  it('does NOT flag when onChange is present', () => {
+    expect(
+      rules("input({ value: state.at('name'), onChange: (e) => send({ type: 'x' }) }, [])"),
+    ).not.toContain('controlled-input')
+  })
+  it('does NOT flag a static (non-reactive) value', () => {
+    expect(rules("input({ value: 'static' }, [])")).not.toContain('controlled-input')
+  })
+  it('does NOT flag a one-shot .peek() value', () => {
+    expect(rules("input({ value: state.at('name').peek() }, [])")).not.toContain('controlled-input')
+  })
+  it('does NOT flag when props are spread (cannot reason about dynamic props)', () => {
+    expect(rules("input({ ...attrs, value: state.at('name') }, [])")).not.toContain(
+      'controlled-input',
+    )
+  })
+})
+
+describe('a11y', () => {
+  it('flags <img> without alt', () => {
+    expect(rules("img({ src: state.at('url') }, [])")).toContain('a11y')
+    expect(rules("el('img', { src: '/x.png' }, [])")).toContain('a11y')
+  })
+  it('does NOT flag <img> with alt (including empty alt for decorative)', () => {
+    expect(rules("img({ src: '/x.png', alt: 'A cat' }, [])")).not.toContain('a11y')
+    expect(rules("img({ src: '/x.png', alt: '' }, [])")).not.toContain('a11y')
+  })
+  it('flags onClick on a non-interactive element without role + tabIndex', () => {
+    expect(rules("div({ onClick: () => send({ type: 'x' }) }, [])")).toContain('a11y')
+    expect(rules("div({ onClick: () => 0, role: 'button' }, [])")).toContain('a11y')
+  })
+  it('does NOT flag onClick on a non-interactive element WITH role + tabIndex', () => {
+    expect(rules("div({ onClick: () => 0, role: 'button', tabIndex: 0 }, [])")).not.toContain(
+      'a11y',
+    )
+  })
+  it('does NOT flag onClick on a natively interactive element', () => {
+    expect(rules("button({ onClick: () => send({ type: 'x' }) }, [])")).not.toContain('a11y')
+    expect(rules("a({ href: '/x', onClick: () => 0 }, [])")).not.toContain('a11y')
+  })
+})
+
+describe('exhaustive-update', () => {
+  const comp = (msgType: string, updateBody: string) => `
+    type Msg = ${msgType}
+    component<{ n: number }, Msg, never>({
+      init: () => ({ n: 0 }),
+      update: (s, msg) => { ${updateBody} },
+      view: ({ state }) => [],
+    })`
+
+  it('flags a switch that misses a Msg variant', () => {
+    const src = comp(
+      `{ type: 'a' } | { type: 'b' } | { type: 'c' }`,
+      `switch (msg.type) { case 'a': return s; case 'b': return s }`,
+    )
+    expect(rules(src)).toContain('exhaustive-update')
+    expect(messageFor(src, 'exhaustive-update')).toContain("'c'")
+  })
+
+  it('does NOT flag a switch that handles every variant', () => {
+    const src = comp(
+      `{ type: 'a' } | { type: 'b' }`,
+      `switch (msg.type) { case 'a': return s; case 'b': return s }`,
+    )
+    expect(rules(src)).not.toContain('exhaustive-update')
+  })
+
+  it('does NOT flag when a default branch exists', () => {
+    const src = comp(
+      `{ type: 'a' } | { type: 'b' }`,
+      `switch (msg.type) { case 'a': return s; default: return s }`,
+    )
+    expect(rules(src)).not.toContain('exhaustive-update')
+  })
+
+  it('handles an inline Msg union type argument', () => {
+    const src = `component<{ n: number }, { type: 'a' } | { type: 'b' }, never>({
+      init: () => ({ n: 0 }),
+      update: (s, msg) => { switch (msg.type) { case 'a': return s } },
+      view: ({ state }) => [],
+    })`
+    expect(rules(src)).toContain('exhaustive-update')
+  })
+
+  it('does NOT flag when the Msg type is not resolvable in this file (imported)', () => {
+    const src = `component<{ n: number }, ExternalMsg, never>({
+      init: () => ({ n: 0 }),
+      update: (s, msg) => { switch (msg.type) { case 'a': return s } },
+      view: ({ state }) => [],
+    })`
+    expect(rules(src)).not.toContain('exhaustive-update')
+  })
+
+  it('does NOT flag when update dispatches without a switch (cannot analyze)', () => {
+    const src = comp(`{ type: 'a' } | { type: 'b' }`, `if (msg.type === 'a') return s; return s`)
+    expect(rules(src)).not.toContain('exhaustive-update')
+  })
+})

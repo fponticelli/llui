@@ -26,6 +26,15 @@ export interface ConnectOptions<R> {
    * - `false` → block (e.g. unsaved changes prompt)
    */
   beforeLeave?: (from: R, to: R) => boolean
+
+  /**
+   * Build the message dispatched by the `navigate()` effect (and the
+   * popstate/hashchange listener and `link()`) when the route changes.
+   * Defaults to `{ type: 'navigate', route }`. Override only if your app
+   * uses a different message shape for route changes; the same factory then
+   * applies to every route-change dispatch so they stay consistent.
+   */
+  navigateMsg?: (route: R) => unknown
 }
 
 export interface ConnectedRouter<R> {
@@ -59,12 +68,12 @@ export interface ConnectedRouter<R> {
    * navigation from arbitrary reducers had to either re-implement the
    * delegation or live with desynced `state.route`.
    *
-   * Requires that the app has mounted `listener()` (typically inside
-   * the shell view) — the navigate effect uses the send/factory
-   * captured there. If `navigate()` runs before `listener()` mounts,
-   * the URL still updates but no message is dispatched and a
-   * `console.warn` surfaces the gap. After listener unmount the same
-   * fallback applies.
+   * Dispatches through the `send` the effect runner hands every effect,
+   * so it works from ANY effect — including an `init()` effect that runs
+   * before any view mounts. It does NOT depend on `listener()` being
+   * mounted (that only handles browser-driven popstate/hashchange).
+   * The message shape is `{ type: 'navigate', route }` unless overridden
+   * via `connectRouter`'s `navigateMsg` option.
    */
   navigate(route: R): RouterEffect
   /** Effect: go back */
@@ -117,14 +126,11 @@ export function connectRouter<R>(
   options?: ConnectOptions<R>,
 ): ConnectedRouter<R> {
   let currentRoute: R | null = null
-  // Captured by listener() at mount, cleared at unmount. The
-  // navigate() effect reads these to dispatch the navigate message
-  // after pushState — they are the bridge between the reducer-side
-  // (which produces effects) and the dispatcher-side (which receives
-  // messages). Module-scope inside the closure: at most one listener
-  // is active per ConnectedRouter (the shell view).
-  let listenerSend: ((msg: unknown) => void) | null = null
-  let listenerFactory: ((route: R) => unknown) | null = null
+  // The canonical route-change message factory. Used by the navigate()
+  // effect, the popstate/hashchange listener, and link() so every
+  // route-change dispatch produces the same message shape.
+  const navigateMsg: (route: R) => unknown =
+    options?.navigateMsg ?? ((r: R) => ({ type: 'navigate', route: r }))
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route
    * to navigate to, or `null` if navigation should be blocked.
@@ -136,14 +142,19 @@ export function connectRouter<R>(
     if (options?.beforeEnter) {
       const result = options.beforeEnter(newRoute, currentRoute)
       if (result === false) return null
-      if (result !== undefined && result !== null && typeof result === 'object') {
+      // Any non-`false`, non-nullish return is a redirect Route. Routes are
+      // generic `R` and may be primitives (e.g. a string-union route), so
+      // gate on nullishness, NOT `typeof === 'object'` — the latter silently
+      // dropped string/number redirects and let navigation proceed to the
+      // original target (an auth-guard bypass).
+      if (result !== undefined && result !== null) {
         return result as R
       }
     }
     return newRoute
   }
 
-  function applyEffect(effect: RouterEffect): void {
+  function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
     switch (effect.action) {
       case 'push': {
         const target = router.match(effect.path!)
@@ -172,13 +183,14 @@ export function connectRouter<R>(
         break
       }
       case 'navigate': {
-        // pushState semantics + dispatch the navigate message so the
-        // app reducer sees the route change. This is the asymmetry
-        // fix: link() always did push+send (because click handlers run
-        // synchronously in view code with send/factory in scope), but
-        // push() as an effect could only do push (no access to send).
-        // navigate() resolves it by reading the closure variables that
-        // listener() sets at mount time.
+        // pushState semantics + dispatch the route-change message so the
+        // app reducer sees the change. The asymmetry fix: link() always did
+        // push+send because click handlers run in view code with send in
+        // scope, while push() as an effect could only do push. navigate()
+        // resolves it by dispatching through the `send` the effect runner
+        // already hands every effect — so it works from ANY effect (an
+        // init() effect included), with no dependency on listener() having
+        // mounted first.
         const target = router.match(effect.path!)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
@@ -189,13 +201,7 @@ export function connectRouter<R>(
           history.pushState(null, '', finalPath)
         }
         currentRoute = finalRoute
-        if (listenerSend !== null && listenerFactory !== null) {
-          listenerSend(listenerFactory(finalRoute))
-        } else {
-          console.warn(
-            '@llui/router: navigate() effect dispatched but listener() is not mounted — URL updated, but no navigate message was sent. Mount connectedRouter.listener() in your shell view, or use push() and dispatch the route-changed message yourself.',
-          )
-        }
+        send(navigateMsg(finalRoute))
         break
       }
       case 'back':
@@ -230,28 +236,21 @@ export function connectRouter<R>(
       return { type: '__router', action: 'scroll', x, y }
     },
 
-    handleEffect({ effect }) {
+    handleEffect({ effect, send }) {
       if (effect.type !== '__router') return false
-      applyEffect(effect as RouterEffect)
+      applyEffect(effect as RouterEffect, send as (msg: unknown) => void)
       return true
     },
 
     listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable {
-      const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
-      // Place the onMount marker in the view; its callback registers the URL listener
-      // on mount. (onMount is a lazy Mountable — calling it for side effect and
-      // discarding the return would never register.)
+      const factory = msgFactory ?? (navigateMsg as (route: R) => M)
+      // Place the onMount marker in the view; its callback registers the URL
+      // listener on mount. (onMount is a lazy Mountable — calling it for side
+      // effect and discarding the return would never register.) The listener
+      // dispatches via its own captured `send` for browser-driven URL changes
+      // (popstate/hashchange); the navigate() effect no longer depends on it.
       return [
         onMount(() => {
-          // Capture send/factory so the navigate() effect can dispatch
-          // route-changed messages from any reducer, not just from
-          // popstate or click handlers. Stored as the generic `unknown`
-          // shape so applyEffect doesn't need to know R or M; the only
-          // consumer is the navigate case above, which round-trips R
-          // through factory back to the user's M.
-          listenerSend = send as (msg: unknown) => void
-          listenerFactory = factory as (route: R) => unknown
-
           const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
           const handler = () => {
             const input =
@@ -272,8 +271,6 @@ export function connectRouter<R>(
           window.addEventListener(event, handler)
           return () => {
             window.removeEventListener(event, handler)
-            listenerSend = null
-            listenerFactory = null
           }
         }),
       ]
@@ -286,7 +283,7 @@ export function connectRouter<R>(
       children: readonly ChildNode[],
       msgFactory?: (route: R) => M,
     ): Mountable {
-      const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
+      const factory = msgFactory ?? (navigateMsg as (route: R) => M)
       return a(
         {
           ...attrs,

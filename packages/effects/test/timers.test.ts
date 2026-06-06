@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
-import { handleEffects, timeout, interval, cancel, type Effect } from '../src/index'
+import { handleEffects, timeout, interval, cancel, delay, log, type Effect } from '../src/index'
 
 describe('timeout() / interval()', () => {
   let send: Mock<(msg: Record<string, unknown>) => void>
@@ -91,5 +91,37 @@ describe('timeout() / interval()', () => {
     controller.abort()
     vi.advanceTimersByTime(200)
     expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('delay() is timeout() — fires msg once after the delay', () => {
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
+    handler({ effect: delay(100, { type: 'done' }), send, signal })
+
+    vi.advanceTimersByTime(100)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({ type: 'done' })
+  })
+})
+
+describe('log()', () => {
+  it('writes to the console at the requested level', () => {
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
+    const send = vi.fn<(msg: Record<string, unknown>) => void>()
+    const signal = new AbortController().signal
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    handler({ effect: log('hello'), send, signal })
+    expect(logSpy).toHaveBeenCalledWith('hello')
+
+    handler({ effect: log('careful', { level: 'warn', data: { n: 1 } }), send, signal })
+    expect(warnSpy).toHaveBeenCalledWith('careful', { n: 1 })
+
+    // log is fire-and-forget — never dispatches a message
+    expect(send).not.toHaveBeenCalled()
+
+    logSpy.mockRestore()
+    warnSpy.mockRestore()
   })
 })

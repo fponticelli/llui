@@ -50,6 +50,44 @@ describe('signal component — effects (effects-as-data)', () => {
     expect(fx).toHaveBeenCalledWith('boot')
   })
 
+  it('warns in dev when an effect is emitted but no onEffect is registered', () => {
+    // Silent-drop footgun: returning an effect with no handler used to no-op
+    // silently. In dev the runtime now warns so it is visible.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = mountSignalComponent<{ n: number }, { type: 'go' }, { type: 'fx' }>(
+      document.createElement('div'),
+      {
+        name: 'NoHandler',
+        init: () => ({ n: 0 }),
+        update: (s) => [s, [{ type: 'fx' }]],
+        // no onEffect
+        view: () => [],
+      },
+    )
+    h.send({ type: 'go' })
+    expect(warnSpy).toHaveBeenCalled()
+    expect(warnSpy.mock.calls.some((c) => String(c[0]).includes('no onEffect'))).toBe(true)
+    warnSpy.mockRestore()
+    h.dispose()
+  })
+
+  it('does not warn when an onEffect handler IS registered', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = mountSignalComponent<{ n: number }, { type: 'go' }, { type: 'fx' }>(
+      document.createElement('div'),
+      {
+        init: () => ({ n: 0 }),
+        update: (s) => [s, [{ type: 'fx' }]],
+        onEffect: () => {},
+        view: () => [],
+      },
+    )
+    h.send({ type: 'go' })
+    expect(warnSpy.mock.calls.some((c) => String(c[0]).includes('no onEffect'))).toBe(false)
+    warnSpy.mockRestore()
+    h.dispose()
+  })
+
   it('collects and runs effect cleanups on dispose', () => {
     const cleanup = vi.fn()
     const h = mountSignalComponent<{ n: number }, { type: 'sub' }, { type: 'listen' }>(

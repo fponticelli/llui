@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { propertyTest } from '../src/property-test'
 import { defineTestComponent } from '../src/defineTestComponent'
-import { component, each, li, ol, text } from '@llui/dom'
+import { component, div, each, li, ol, text } from '@llui/dom'
 
 describe('propertyTest', () => {
   it('passes when all invariants hold', () => {
@@ -112,6 +112,50 @@ describe('propertyTest', () => {
           },
         },
       })
+    })
+
+    it('observes the mounted state, not a parallel shadow reduction', () => {
+      // Regression: mount mode used to ALSO run def.update separately to
+      // advance a shadow `state`, and checked invariants/assertDom against
+      // that shadow — not the mounted component. For an impure reducer the two
+      // diverge (the reducer ran twice per message), so the asserted state
+      // disagreed with the DOM. Now state is read back from the handle and the
+      // reducer runs exactly once per message.
+      let calls = 0
+      const observedTags: number[] = []
+      const Impure = component<{ tag: number }, { type: 'tick' }, never>({
+        name: 'Impure',
+        init: () => [{ tag: 0 }, []],
+        update: () => {
+          calls += 1
+          return [{ tag: calls }, []]
+        },
+        view: ({ state }) => [div([text(state.map((s) => String(s.tag)))])],
+      })
+
+      propertyTest(Impure, {
+        invariants: [
+          (state) => {
+            observedTags.push(state.tag)
+            return true
+          },
+        ],
+        messageGenerators: { tick: () => ({ type: 'tick' as const }) },
+        runs: 1,
+        maxSequenceLength: 5,
+        mount: {
+          // DOM reflects the mounted reduction; `state` is read back from the
+          // same handle, so they always agree. A shadow def.update would make
+          // `calls` advance twice per message and this would mismatch.
+          assertDom: (state, container) => container.textContent === String(state.tag),
+        },
+      })
+
+      // tag 0 from the initial-state check, then exactly one increment per tick
+      // (the reducer ran once per message, not twice).
+      expect(observedTags[0]).toBe(0)
+      const ticks = observedTags.slice(1)
+      ticks.forEach((tag, i) => expect(tag).toBe(i + 1))
     })
 
     it('fails loudly when assertDom returns false (DOM/state mismatch)', () => {

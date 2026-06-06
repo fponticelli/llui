@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createRouter, route, param } from '../src/index'
+import type { Router } from '../src/index'
 import { connectRouter } from '../src/connect'
 
 type Route =
@@ -83,6 +84,55 @@ describe('router guards', () => {
         signal: new AbortController().signal,
       })
       expect(pushSpy).toHaveBeenCalledWith(null, '', '/login')
+      pushSpy.mockRestore()
+    })
+  })
+
+  describe('beforeEnter with primitive routes', () => {
+    // Regression: a redirect was previously only honored when the returned
+    // route was `typeof === 'object'`, so a primitive (string/number) route
+    // redirect was silently dropped and navigation proceeded to the original
+    // target — an auth-guard bypass for any non-object Route type.
+    function makeStringRouter(): Router<string> {
+      const toPath = (r: string) => (r === 'home' ? '/' : `/${r}`)
+      return {
+        match: (input) => input.replace(/^\/+/, '') || 'home',
+        toPath,
+        href: toPath,
+        mode: 'history',
+        routes: [],
+        fallback: 'home',
+      }
+    }
+
+    it('redirects when a string route is returned', () => {
+      const routing = connectRouter<string>(makeStringRouter(), {
+        beforeEnter: (to) => (to === 'admin' ? 'login' : undefined),
+      })
+
+      const pushSpy = vi.spyOn(history, 'pushState')
+      routing.handleEffect({
+        effect: routing.push('admin'),
+        send: vi.fn(),
+        signal: new AbortController().signal,
+      })
+      // Must land on the redirect target, NOT the original /admin.
+      expect(pushSpy).toHaveBeenCalledWith(null, '', '/login')
+      pushSpy.mockRestore()
+    })
+
+    it('allows navigation when the guard returns undefined', () => {
+      const routing = connectRouter<string>(makeStringRouter(), {
+        beforeEnter: () => undefined,
+      })
+
+      const pushSpy = vi.spyOn(history, 'pushState')
+      routing.handleEffect({
+        effect: routing.push('admin'),
+        send: vi.fn(),
+        signal: new AbortController().signal,
+      })
+      expect(pushSpy).toHaveBeenCalledWith(null, '', '/admin')
       pushSpy.mockRestore()
     })
   })

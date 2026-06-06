@@ -101,6 +101,33 @@ describe('onRenderHtml', () => {
     const result = await onRenderHtml({ Page: TestPage })
     expect(result.documentHtml).toHaveProperty('_escaped')
   })
+
+  it('escapes script-breakout sequences in the serialized state (XSS)', async () => {
+    // State is data, not template: a `</script>` in user-controlled state
+    // must not be able to close the hydration <script> and inject markup.
+    const payload = '</script><script>alert(document.cookie)</script>'
+    const Malicious = component<State, never, never>({
+      name: 'Malicious',
+      init: () => ({ greeting: payload }),
+      update: (s) => s,
+      view: ({ state }) => [text(state.map((s) => s.greeting))],
+    })
+
+    const render = createOnRenderHtml({ domEnv })
+    const result = await render({ Page: Malicious })
+    const html = getHtml(result)
+
+    // The raw breakout sequence must not appear anywhere in the document.
+    expect(html).not.toContain(payload)
+    // `<` is neutralized to its < escape inside the state script.
+    expect(html).toContain('\\u003c/script>')
+    // Hydration data is still preserved — it round-trips via JSON.parse on
+    // the client because the escapes are valid JSON string escapes.
+    expect(result.pageContext.lluiState).toEqual({
+      layouts: [],
+      page: { name: 'Malicious', state: { greeting: payload } },
+    })
+  })
 })
 
 describe('createOnRenderHtml', () => {

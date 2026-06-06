@@ -14,7 +14,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 import { resolveCurrentSession } from './session.js'
@@ -158,6 +158,22 @@ export function createNote(
   }
 }
 
+/**
+ * Resolve `<notesRoot>/<sessionId>` and verify it stays within `notesRoot`.
+ * `sessionId` arrives from the HTTP query string and is otherwise unvalidated
+ * (session folder names are free-form), so a value like `../../etc` would
+ * escape the notes root and let a request read or delete arbitrary files.
+ * Throw on any traversal rather than touching anything outside the root.
+ */
+function resolveSessionDir(notesRoot: string, sessionId: string): string {
+  const root = resolve(notesRoot)
+  const dir = resolve(root, sessionId)
+  if (dir !== root && !dir.startsWith(root + sep)) {
+    throw new Error(`invalid sessionId: ${JSON.stringify(sessionId)}`)
+  }
+  return dir
+}
+
 function findNoteFile(sessionDir: string, id: string): string | null {
   if (!existsSync(sessionDir)) return null
   const prefix = `${id}-`
@@ -168,7 +184,7 @@ function findNoteFile(sessionDir: string, id: string): string | null {
 }
 
 export function readNote(notesRoot: string, sessionId: string, id: string): SerializedNote {
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const filename = findNoteFile(sessionDir, id)
   if (!filename) {
     throw new Error(`note not found: ${sessionId}/${id}`)
@@ -189,7 +205,7 @@ export function updateNoteProse(
   id: string,
   newProse: string,
 ): SerializedNote {
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const filename = findNoteFile(sessionDir, id)
   if (!filename) throw new Error(`note not found: ${sessionId}/${id}`)
   const existing = parseNote(readFileSync(join(sessionDir, filename), 'utf8'))
@@ -206,7 +222,7 @@ export function updateNoteProse(
  * since downstream readers filter by id.
  */
 export function deleteNote(notesRoot: string, sessionId: string, id: string): string[] {
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const filename = findNoteFile(sessionDir, id)
   if (!filename) return []
   const removed: string[] = []
@@ -221,7 +237,7 @@ export function deleteNote(notesRoot: string, sessionId: string, id: string): st
 }
 
 export function readScreenshot(notesRoot: string, sessionId: string, id: string): Buffer | null {
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const mdFilename = findNoteFile(sessionDir, id)
   if (!mdFilename) return null
   const pngPath = join(sessionDir, mdFilename.replace(/\.md$/, '.png'))
@@ -242,14 +258,15 @@ function noteFileToSummary(
 ): NoteSummary | null {
   const parsed = parseFilename(filename)
   if (!parsed) return null
-  const md = readFileSync(join(notesRoot, sessionId, filename), 'utf8')
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
+  const md = readFileSync(join(sessionDir, filename), 'utf8')
   let note: SerializedNote
   try {
     note = parseNote(md)
   } catch {
     return null
   }
-  const pngPath = join(notesRoot, sessionId, filename.replace(/\.md$/, '.png'))
+  const pngPath = join(sessionDir, filename.replace(/\.md$/, '.png'))
   const fm = note.frontmatter as typeof note.frontmatter & {
     intent?: NoteSummary['intent']
     chainName?: string
@@ -283,7 +300,7 @@ export function listNotes(notesRoot: string, query: ListNotesQuery): ListNotesRe
     return { sessionId: '', notes: [], total: 0 }
   }
   const sessionId = query.sessionId ?? resolveCurrentSession(notesRoot).sessionId
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const filenames = listNoteFilenames(sessionDir)
 
   const summaries: NoteSummary[] = []
@@ -371,7 +388,7 @@ export function cleanupResolvedTask(
   sessionId: string,
   taskNoteId: string,
 ): string[] {
-  const sessionDir = join(notesRoot, sessionId)
+  const sessionDir = resolveSessionDir(notesRoot, sessionId)
   if (!existsSync(sessionDir)) return []
   const deleted: string[] = []
   const filenames = listNoteFilenames(sessionDir)

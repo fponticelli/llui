@@ -24,6 +24,16 @@
 // A "pass a slice" rule on top of those was circumventable (`fmt(state)` →
 // `state.map(fmt)` keeps the same dep) and over-fired on composition; removed.)
 //
+// Also restored (compile-time errors):
+//   async-update      — async init()/update(): a reducer must return its result as
+//                       data ([state, effects]); an async one returns a Promise.
+//   controlled-input  — input/textarea with a reactive `value` but no onInput/onChange
+//                       (the binding overwrites the user's keystrokes every update).
+//   exhaustive-update — `switch (msg.type)` in update() that misses a Msg variant
+//                       (with no `default`); an unhandled message silently no-ops.
+//   a11y              — <img> without `alt`; onClick on a non-interactive element with
+//                       no `role` + `tabIndex` (not keyboard-accessible).
+//
 // Each diagnostic has a message and a source position (start offset + length).
 
 import ts from 'typescript'
@@ -76,6 +86,123 @@ const ELEMENT_HELPERS = new Set([
   'signalText',
 ])
 const REACTIVE_METHODS = new Set(['peek', 'at', 'map'])
+// Elements that are natively focusable/clickable — an onClick on these needs no
+// extra role/tabIndex for keyboard accessibility.
+const INTERACTIVE_TAGS = new Set(['button', 'a', 'input', 'select', 'textarea', 'option'])
+// ELEMENT_HELPERS entries that don't produce a DOM *element* with attributes.
+const NON_ELEMENT_HELPERS = new Set(['text', 'el', 'signalText'])
+
+/** True when an arrow/function expression carries the `async` modifier. */
+function isAsyncFunction(node: ts.Node): boolean {
+  return (
+    (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+    (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false)
+  )
+}
+
+/** The `type: '<literal>'` discriminant of a type-literal/interface member list,
+ * or null when there is no string-literal `type` member (can't reason about it). */
+function discriminantOfMembers(members: ts.NodeArray<ts.TypeElement>): string | null {
+  for (const m of members) {
+    if (!ts.isPropertySignature(m) || !m.name || !ts.isIdentifier(m.name)) continue
+    if (m.name.text !== 'type') continue
+    if (!m.type || !ts.isLiteralTypeNode(m.type) || !ts.isStringLiteral(m.type.literal)) return null
+    return m.type.literal.text
+  }
+  return null
+}
+
+/**
+ * Collect the discriminant `type` string literals of a Msg union resolvable
+ * WITHIN this file. Returns null when the union can't be fully resolved locally
+ * (an imported/composed TypeReference, a non-string discriminant, an
+ * intersection, …) — exhaustiveness is only flagged when every variant is
+ * visible, so a partial view never produces a false positive.
+ */
+function collectMsgVariantsLocal(
+  sf: ts.SourceFile,
+  typeNode: ts.TypeNode,
+  seen: Set<string> = new Set(),
+): Set<string> | null {
+  let t = typeNode
+  while (ts.isParenthesizedTypeNode(t)) t = t.type
+
+  if (ts.isUnionTypeNode(t)) {
+    const out = new Set<string>()
+    for (const member of t.types) {
+      const sub = collectMsgVariantsLocal(sf, member, seen)
+      if (!sub) return null
+      for (const v of sub) out.add(v)
+    }
+    return out
+  }
+  if (ts.isTypeLiteralNode(t)) {
+    const v = discriminantOfMembers(t.members)
+    return v ? new Set([v]) : null
+  }
+  if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
+    const name = t.typeName.text
+    if (seen.has(name)) return new Set()
+    seen.add(name)
+    let resolved: Set<string> | null = null
+    let found = false
+    sf.forEachChild((n) => {
+      if (found) return
+      if (ts.isTypeAliasDeclaration(n) && n.name.text === name) {
+        found = true
+        resolved = collectMsgVariantsLocal(sf, n.type, seen)
+      } else if (ts.isInterfaceDeclaration(n) && n.name.text === name) {
+        found = true
+        const v = discriminantOfMembers(n.members)
+        resolved = v ? new Set([v]) : null
+      }
+    })
+    return found ? resolved : null // not declared in this file (imported) → bail
+  }
+  return null
+}
+
+/**
+ * Find a `switch (msg.type) { … }` in the update reducer and return the set of
+ * handled case literals + whether a `default` clause exists. Returns null when
+ * there is no analyzable switch on `<msgParam>.type` (e.g. if/else dispatch, or
+ * a computed case label) so exhaustiveness stays quiet rather than guess.
+ */
+function updateSwitchCases(
+  body: ts.Node,
+  msgParam: string,
+): { handled: Set<string>; hasDefault: boolean } | null {
+  let result: { handled: Set<string>; hasDefault: boolean } | null = null
+  let bailed = false
+  const walk = (n: ts.Node): void => {
+    if (result || bailed) return
+    if (ts.isSwitchStatement(n)) {
+      const e = n.expression
+      if (
+        ts.isPropertyAccessExpression(e) &&
+        e.name.text === 'type' &&
+        ts.isIdentifier(e.expression) &&
+        e.expression.text === msgParam
+      ) {
+        const handled = new Set<string>()
+        let hasDefault = false
+        for (const clause of n.caseBlock.clauses) {
+          if (ts.isDefaultClause(clause)) hasDefault = true
+          else if (ts.isStringLiteralLike(clause.expression)) handled.add(clause.expression.text)
+          else {
+            bailed = true // computed case label — can't reason about coverage
+            return
+          }
+        }
+        result = { handled, hasDefault }
+        return
+      }
+    }
+    n.forEachChild(walk)
+  }
+  walk(body)
+  return bailed ? null : result
+}
 
 /** Identifier names of a callback's parameters (skips destructured/rest). */
 function fnParamNames(fn: ts.Node): string[] {
@@ -337,6 +464,98 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     node.expression.name.text === 'peek' &&
     isSignalExpr(node.expression.expression, roots)
 
+  // ---- element-level lint: controlled-input + a11y ----
+  // Resolve an element-helper call to its tag + props object: `div({...})` /
+  // `input({...})` (tag = callee) and `el('input', {...})` (tag = first arg).
+  // Returns null for non-element calls (text/el-without-string/structural/etc).
+  const elementCall = (
+    node: ts.CallExpression,
+  ): { tag: string; props: ts.ObjectLiteralExpression | null } | null => {
+    const callee = node.expression
+    if (
+      ts.isIdentifier(callee) &&
+      ELEMENT_HELPERS.has(callee.text) &&
+      !NON_ELEMENT_HELPERS.has(callee.text)
+    ) {
+      const a0 = node.arguments[0]
+      return { tag: callee.text, props: a0 && ts.isObjectLiteralExpression(a0) ? a0 : null }
+    }
+    if (ts.isIdentifier(callee) && callee.text === 'el') {
+      const a0 = node.arguments[0]
+      if (!a0 || !ts.isStringLiteralLike(a0)) return null
+      const a1 = node.arguments[1]
+      return { tag: a0.text, props: a1 && ts.isObjectLiteralExpression(a1) ? a1 : null }
+    }
+    return null
+  }
+
+  const findProp = (
+    obj: ts.ObjectLiteralExpression,
+    name: string,
+  ): ts.PropertyAssignment | undefined =>
+    obj.properties.find(
+      (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(sf) === name,
+    )
+  const hasProp = (obj: ts.ObjectLiteralExpression, name: string): boolean =>
+    obj.properties.some(
+      (p) =>
+        (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) &&
+        p.name.getText(sf) === name,
+    )
+  const hasSpread = (obj: ts.ObjectLiteralExpression): boolean =>
+    obj.properties.some((p) => ts.isSpreadAssignment(p))
+
+  const lintElementCall = (node: ts.CallExpression, roots: Roots): void => {
+    const ec = elementCall(node)
+    if (!ec || !ec.props) return
+    const { tag, props } = ec
+    // A spread (`...attrs`) can carry any of the props we check for, so we
+    // can't soundly flag missing alt / onInput / role — stay quiet.
+    if (hasSpread(props)) return
+
+    // a11y: <img> must have an alt (use `alt: ''` for decorative images).
+    if (tag === 'img' && !hasProp(props, 'alt')) {
+      push(
+        'a11y',
+        `<img> is missing an \`alt\` attribute — add \`alt: '…'\` (or \`alt: ''\` for a decorative image) so screen readers can describe it.`,
+        node,
+      )
+    }
+
+    // a11y: onClick on a non-interactive element needs role + tabIndex so it is
+    // reachable and activatable by keyboard.
+    const onClick = findProp(props, 'onClick')
+    if (
+      onClick &&
+      !INTERACTIVE_TAGS.has(tag) &&
+      !(hasProp(props, 'role') && hasProp(props, 'tabIndex'))
+    ) {
+      push(
+        'a11y',
+        `onClick on a non-interactive <${tag}> is not keyboard-accessible — use a <button>/<a>, or add both \`role\` and \`tabIndex\` so it can be focused and activated by keyboard.`,
+        onClick.name,
+      )
+    }
+
+    // controlled-input: a reactive `value` with no onInput/onChange re-asserts
+    // state on every update and discards the user's keystrokes.
+    if (tag === 'input' || tag === 'textarea') {
+      const value = findProp(props, 'value')
+      if (
+        value &&
+        isReactiveSignal(value.initializer, roots) &&
+        !hasProp(props, 'onInput') &&
+        !hasProp(props, 'onChange')
+      ) {
+        push(
+          'controlled-input',
+          `Controlled <${tag}> has a reactive \`value\` but no \`onInput\`/\`onChange\` — the binding overwrites the user's typing on every state update. Add an onInput handler that sends the new value.`,
+          value,
+        )
+      }
+    }
+  }
+
   function visit(node: ts.Node, roots: Roots, peekOk: boolean): void {
     // component({ … view: (bag) => [...] }) — lint the view body under the SAME
     // root the lowering uses (the bag's `state` alias), so an aliased bag like
@@ -348,20 +567,68 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       node.arguments[0] &&
       ts.isObjectLiteralExpression(node.arguments[0])
     ) {
+      let updateFn: ts.ArrowFunction | ts.FunctionExpression | undefined
       for (const prop of node.arguments[0].properties) {
-        if (
-          ts.isPropertyAssignment(prop) &&
-          prop.name.getText(sf) === 'view' &&
-          (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
-        ) {
-          const alias = viewStateAlias(prop.initializer)
-          const body = fnBody(prop.initializer)
-          if (alias && body) {
-            visit(body, singleRoot(alias), false)
-            continue
+        if (ts.isPropertyAssignment(prop)) {
+          const propName = prop.name.getText(sf)
+          // async-update: init()/update() must return data synchronously. An
+          // async reducer returns a Promise that the runtime treats as state.
+          if ((propName === 'init' || propName === 'update') && isAsyncFunction(prop.initializer)) {
+            push(
+              'async-update',
+              `${propName}() must be synchronous and pure — it returns its result as data ([state, effects]); an \`async\` ${propName} returns a Promise that corrupts state. Model async work as an effect handled in onEffect (e.g. @llui/effects http()).`,
+              prop.initializer,
+            )
+          }
+          if (
+            propName === 'update' &&
+            (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+          ) {
+            updateFn = prop.initializer
+          }
+          if (
+            propName === 'view' &&
+            (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+          ) {
+            const alias = viewStateAlias(prop.initializer)
+            const body = fnBody(prop.initializer)
+            if (alias && body) {
+              visit(body, singleRoot(alias), false)
+              continue
+            }
           }
         }
         visit(prop, roots, false) // init/update/onEffect etc.: plain values
+      }
+
+      // exhaustive-update: when the Msg union is fully resolvable in this file
+      // and update() dispatches via `switch (msg.type)`, flag any variant the
+      // switch doesn't handle (and that no `default` would catch).
+      const msgArg = node.typeArguments?.[1]
+      const updateBody = updateFn ? fnBody(updateFn) : undefined
+      const msgParam =
+        updateFn && updateFn.parameters[1] && ts.isIdentifier(updateFn.parameters[1].name)
+          ? updateFn.parameters[1].name.text
+          : null
+      if (msgArg && updateBody && msgParam) {
+        const variants = collectMsgVariantsLocal(sf, msgArg)
+        if (variants && variants.size > 0) {
+          const sw = updateSwitchCases(updateBody, msgParam)
+          if (sw && !sw.hasDefault) {
+            const missing = [...variants].filter((v) => !sw.handled.has(v))
+            if (missing.length > 0) {
+              push(
+                'exhaustive-update',
+                `update() does not handle message type(s) ${missing
+                  .map((m) => `'${m}'`)
+                  .join(
+                    ', ',
+                  )} — add a case for each (or a \`default\` branch). An unhandled message silently no-ops.`,
+                updateFn!,
+              )
+            }
+          }
+        }
       }
       return
     }
@@ -373,6 +640,9 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       if (callee === 'show') return visitShow(node, roots, peekOk)
       if (callee === 'branch') return visitBranch(node, roots, peekOk)
     }
+
+    // element-level lint (controlled-input, a11y) on element-helper calls
+    if (ts.isCallExpression(node)) lintElementCall(node, roots)
 
     // peek-in-slot: a non-reactive snapshot used in a reactive slot (renders
     // once, never updates). Legitimate inside event handlers / derive bodies.

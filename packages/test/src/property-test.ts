@@ -52,35 +52,55 @@ export function propertyTest<S, M, E>(
   }
 
   for (let run = 0; run < runs; run++) {
-    const [initState, initEffects] = normalize(def.init())
-    let state = initState
     const sequence: { name: string; msg: M }[] = []
-
-    // Check invariants on initial state
-    checkInvariants(config.invariants, state, initEffects, sequence)
-
     const seqLen = 1 + Math.floor(Math.random() * maxLen)
 
     if (config.mount) {
-      // Mount mode — exercise the actual render/reconcile pipeline.
-      // Captures console.error so accessor throws bubble up as
-      // test failures instead of hiding in the test runner's noise.
+      // Mount mode — exercise the actual render/reconcile pipeline. The
+      // mounted component IS the system under test: we drive it with
+      // handle.send, then OBSERVE it (state read back via handle.getState,
+      // effects collected from the component's own onEffect). We do NOT run a
+      // parallel def.update — a shadow reduction would diverge from the mounted
+      // state for any non-deterministic/side-effecting reducer, so invariants
+      // and assertDom could disagree with the real DOM (false pass or fail).
+      //
+      // Captures console.error so accessor throws bubble up as test failures
+      // instead of hiding in the test runner's noise.
       const errs: string[] = []
       const origError = console.error
       console.error = (...args: unknown[]) => {
         errs.push(args.join(' '))
       }
       const container = (config.mount.container ?? (() => document.createElement('div')))()
-      const handle = mountApp(container, def)
+
+      // Collect the effects the mounted component actually emits (from init and
+      // from each send), chaining to any real onEffect so its behavior is
+      // preserved. `stepEffects` is reset per dispatch so invariants see only
+      // the effects produced by that message.
+      let stepEffects: E[] = []
+      const collectingDef: SignalComponentDef<S, M, E> = {
+        ...def,
+        onEffect: (effect: E, api) => {
+          stepEffects.push(effect)
+          return def.onEffect?.(effect, api)
+        },
+      }
+      const handle = mountApp(container, collectingDef)
       try {
+        // Initial state + init effects from the real mount.
+        let curState = handle.getState()
+        checkInvariants(config.invariants, curState, stepEffects, sequence)
+
         for (let step = 0; step < seqLen; step++) {
           const genName = genNames[Math.floor(Math.random() * genNames.length)]!
           const gen = config.messageGenerators[genName]!
-          const msg = gen.length === 0 ? (gen as () => M)() : (gen as (s: S) => M)(state)
+          // Generate from the mounted component's real current state.
+          const msg = gen.length === 0 ? (gen as () => M)() : (gen as (s: S) => M)(curState)
           sequence.push({ name: genName, msg })
 
-          handle.send(msg)
+          stepEffects = []
           try {
+            handle.send(msg)
             handle.flush()
           } catch (e) {
             const err = e instanceof Error ? e : new Error(String(e))
@@ -94,14 +114,15 @@ export function propertyTest<S, M, E>(
             )
           }
 
-          const [newState, effects] = normalize(def.update(state, msg))
-          state = newState
-          checkInvariants(config.invariants, state, effects, sequence)
+          // Observe the system under test: read state back, check the effects
+          // it actually emitted.
+          curState = handle.getState()
+          checkInvariants(config.invariants, curState, stepEffects, sequence)
 
           if (config.mount.assertDom) {
             let ok: boolean | void
             try {
-              ok = config.mount.assertDom(state, container)
+              ok = config.mount.assertDom(curState, container)
             } catch (e) {
               const err = e instanceof Error ? e : new Error(String(e))
               const seqStr = sequence.map((s) => s.name).join(' → ')
@@ -115,7 +136,7 @@ export function propertyTest<S, M, E>(
               const seqStr = sequence.map((s) => s.name).join(' → ')
               throw new Error(
                 `propertyTest(mount): assertDom returned false after sequence: [${seqStr}]\n` +
-                  `State: ${JSON.stringify(state)}`,
+                  `State: ${JSON.stringify(curState)}`,
               )
             }
           }
@@ -135,7 +156,12 @@ export function propertyTest<S, M, E>(
       continue
     }
 
-    // Reducer-only mode (original behavior).
+    // Reducer-only mode (original behavior) — no DOM; the harness IS the
+    // single source of truth, so a shadow reduction is correct here.
+    const [initState, initEffects] = normalize(def.init())
+    let state = initState
+    checkInvariants(config.invariants, state, initEffects, sequence)
+
     for (let step = 0; step < seqLen; step++) {
       const genName = genNames[Math.floor(Math.random() * genNames.length)]!
       const gen = config.messageGenerators[genName]!
