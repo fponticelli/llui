@@ -14,9 +14,10 @@
  *   pnpm -w run bench -- --save                # Save new LLui results as baseline
  */
 
-import { execSync, spawn, type ChildProcess } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
+import { keepAwake } from '../scripts/keep-awake'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -142,28 +143,9 @@ if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/dist/benchmarkRunner.js'))) {
 }
 
 // ── Keep the machine awake (macOS) ──
-// Benchmark runs are long; an idle/display sleep mid-run skews timings. On macOS,
-// hold a `caffeinate` process that watches this PID (-w) so it auto-exits when we
-// do — including on crash — then kill it explicitly at the end for good measure.
-let caffeinate: ChildProcess | undefined
-if (process.platform === 'darwin') {
-  try {
-    caffeinate = spawn('caffeinate', ['-disu', '-w', String(process.pid)], {
-      stdio: 'ignore',
-      detached: false,
-    })
-    caffeinate.on('error', () => {
-      caffeinate = undefined
-    })
-  } catch {
-    caffeinate = undefined
-  }
-}
-function stopCaffeinate() {
-  if (caffeinate && !caffeinate.killed) caffeinate.kill()
-  caffeinate = undefined
-}
-process.on('exit', stopCaffeinate)
+// Benchmark runs are long; an idle/display/system sleep mid-run skews timings or
+// kills the run. Hold a `caffeinate` assertion for the life of this process.
+const stopAwake = keepAwake()
 
 // ── Build LLui ──
 
@@ -421,6 +403,6 @@ if (saveBaseline) {
   console.log(`\n✅ Baseline saved to ${BASELINE}`)
 }
 
-stopCaffeinate()
+stopAwake()
 
 console.log()

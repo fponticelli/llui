@@ -17,6 +17,7 @@
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
+import { keepAwake } from './keep-awake'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -94,6 +95,12 @@ if (!cdpSource.includes('benchTickerMount')) {
 }
 
 console.log(`jfb-repo: ${JFB_REPO}`)
+
+// ── Keep the machine awake (macOS) ──
+// The ticker suite builds 5 apps then drives Chrome for the full op matrix —
+// minutes per pass. An idle/system sleep mid-run skews timings or suspends the
+// jfb server and Chrome. Hold a `caffeinate` assertion for the life of this run.
+const stopAwake = keepAwake()
 
 // ── Build all 5 ticker apps ─────────────────────────────────────
 
@@ -245,3 +252,5 @@ if (saveBaseline) {
   writeFileSync(BASELINE, JSON.stringify(current, null, 2) + '\n')
   console.log(`\nSaved baseline to ${BASELINE}`)
 }
+
+stopAwake()
