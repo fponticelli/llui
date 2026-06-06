@@ -19,9 +19,14 @@ set -e
 # Tier 1: no in-repo runtime deps — publish first.
 # Tier 2: depend on tier 1. Within-tier order is best-effort by
 #   who-depends-on-whom for log readability; npm has no strict
-#   visibility ordering once a package is published.
+#   visibility ordering once a package is published. `lexical` (the
+#   low-level Lexical↔runtime binding) belongs here — it peers only on
+#   `@llui/dom`.
 # Tier 3: depend on tier 2. `agent-bridge` consumes `@llui/agent` and
-#   publishes as `llui-agent`.
+#   publishes as `llui-agent`. `markdown-editor` consumes `@llui/lexical`
+#   and `@llui/components`, so it must publish after both.
+#   `devmode-annotate` (the dev-mode HUD) consumes `@llui/markdown-editor`,
+#   so it publishes last.
 #
 # `eslint-plugin-llui` was deleted in the lint→compiler migration
 # (v0.3.0); all framework lint rules now emit as compile-time errors
@@ -29,9 +34,9 @@ set -e
 TIER1=(dom effects compiler)
 TIER2=(
   compiler-introspection compiler-devtools compiler-ssr
-  vite-plugin test router transitions components markdown vike mcp agent
+  vite-plugin test router transitions components markdown lexical vike mcp agent
 )
-TIER3=(agent-bridge)
+TIER3=(agent-bridge markdown-editor devmode-annotate)
 ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}" "${TIER3[@]}")
 
 # If args provided, use them; otherwise publish all

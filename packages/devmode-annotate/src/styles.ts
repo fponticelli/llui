@@ -79,6 +79,26 @@ export const THEME_STYLESHEET = `
   padding: 0;
   margin: 0;
 }
+
+/* The embedded markdownEditor ships its own stylesheet keyed on --md-* custom
+   properties (dark defaults). Remap them to the HUD palette so the editor tracks
+   the HUD's light/dark theme, and let the contenteditable fill the host box. */
+#llui-devmode-annotate-root [data-llui-editor] {
+  --md-bg: var(--hud-input-bg);
+  --md-surface: var(--hud-surface);
+  --md-surface-2: var(--hud-surface-strong);
+  --md-border: var(--hud-border-strong);
+  --md-text: var(--hud-fg);
+  --md-muted: var(--hud-fg-muted);
+  --md-primary: var(--hud-primary);
+  --md-primary-soft: var(--hud-accent-bg);
+}
+#llui-devmode-annotate-root [data-llui-editor] [data-lexical-editor] {
+  min-height: 92px;
+  padding: 8px;
+  outline: none;
+  font: inherit;
+}
 `
 
 export const STYLES = {
@@ -172,7 +192,20 @@ export const STYLES = {
     'resize: vertical',
   ].join('; '),
 
-  // Tiny markdown hint that sits below the textarea.
+  // Host box for the embedded `markdownEditor()` — looks like the old textarea
+  // (bordered, scrollable). The editor's own CSS styles the contenteditable inside.
+  editorHost: [
+    'width: 100%',
+    'box-sizing: border-box',
+    'border: 1px solid var(--hud-border-strong)',
+    'border-radius: 6px',
+    'background: var(--hud-input-bg)',
+    'min-height: 96px',
+    'max-height: 240px',
+    'overflow: auto',
+  ].join('; '),
+
+  // Tiny markdown hint that sits below the editor.
   markdownHint: ['margin-top: 4px', 'font-size: 11px', 'color: var(--hud-fg-subtle)'].join('; '),
 
   status: 'margin-top: 4px; font-size: 12px; color: var(--hud-fg-muted); min-height: 0;',

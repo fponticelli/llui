@@ -128,6 +128,9 @@ export interface AnnotateHudHandle {
   open(): void
   close(): void
   destroy(): void
+  /** Programmatically set the compose draft (Markdown). Flows into the embedded
+   * editor like a restored draft. */
+  setProse(text: string): void
   submit(
     prose: string,
     opts?: {

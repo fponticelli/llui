@@ -28,14 +28,25 @@ class StubEventSource {
   }
 }
 
+const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
+
+/** Seed the compose draft via the persisted-state restore path so the embedded
+ * markdown editor mounts with prose in it — the WYSIWYG field has no `.value` to
+ * poke directly. Call BEFORE `mountAnnotateHud`. */
+function seedProse(text: string): void {
+  localStorage.setItem(HUD_STATE_KEY, JSON.stringify({ draftProse: text }))
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
+  localStorage.clear()
   StubEventSource.instances = []
   ;(globalThis as { EventSource?: unknown }).EventSource = StubEventSource
 })
 
 afterEach(() => {
   document.body.innerHTML = ''
+  localStorage.clear()
   delete (globalThis as { EventSource?: unknown }).EventSource
 })
 
@@ -113,11 +124,10 @@ async function waitForWorkingCount(expected: number): Promise<void> {
 describe('live status feedback during Solve', () => {
   it('action buttons stay ENABLED after Solve so the user can capture more tasks', async () => {
     mockFetch('042')
+    seedProse('fix the button')
     mountAnnotateHud({ origin: 'http://localhost' })
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const ta = root.querySelector('textarea')!
     const solveBtn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
-    ta.value = 'fix the button'
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
 
@@ -135,11 +145,8 @@ describe('live status feedback during Solve', () => {
 
   it('shows the failure reason when status-changed: failed', async () => {
     mockFetch('007')
+    seedProse('fix it')
     mountAnnotateHud({ origin: 'http://localhost' })
-    const ta = document.querySelector(
-      '#llui-devmode-annotate-root textarea',
-    )! as HTMLTextAreaElement
-    ta.value = 'fix it'
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
     const sse = StubEventSource.instances[0]!
@@ -154,11 +161,8 @@ describe('live status feedback during Solve', () => {
 
   it('ignores status-changed for other notes', async () => {
     mockFetch('100')
+    seedProse('a')
     mountAnnotateHud({ origin: 'http://localhost' })
-    const ta = document.querySelector(
-      '#llui-devmode-annotate-root textarea',
-    )! as HTMLTextAreaElement
-    ta.value = 'a'
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
     const sse = StubEventSource.instances[0]!
@@ -194,17 +198,16 @@ describe('live status feedback during Solve', () => {
       )
     }) as unknown as typeof fetch
 
-    mountAnnotateHud({ origin: 'http://localhost' })
+    const handle = mountAnnotateHud({ origin: 'http://localhost' })
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const ta = root.querySelector('textarea')!
 
-    ta.value = 'task 1'
+    handle.setProse('task 1')
     clickSolve()
     await waitForWorkingCount(1)
-    ta.value = 'task 2'
+    handle.setProse('task 2')
     clickSolve()
     await waitForWorkingCount(2)
-    ta.value = 'task 3'
+    handle.setProse('task 3')
     clickSolve()
     await waitForWorkingCount(3)
 
@@ -242,11 +245,8 @@ describe('live status feedback during Solve', () => {
       )
     }) as unknown as typeof fetch
 
-    mountAnnotateHud({ origin: 'http://localhost' })
-    const ta = document.querySelector(
-      '#llui-devmode-annotate-root textarea',
-    )! as HTMLTextAreaElement
-    ta.value = 'fix this'
+    const handle = mountAnnotateHud({ origin: 'http://localhost' })
+    handle.setProse('fix this')
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
 
@@ -286,11 +286,8 @@ describe('live status feedback during Solve', () => {
 
   it('fires a toast notification when a task hits a terminal state', async () => {
     mockFetch('010')
-    mountAnnotateHud({ origin: 'http://localhost' })
-    const ta = document.querySelector(
-      '#llui-devmode-annotate-root textarea',
-    )! as HTMLTextAreaElement
-    ta.value = 'fix this'
+    const handle = mountAnnotateHud({ origin: 'http://localhost' })
+    handle.setProse('fix this')
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
 
@@ -325,15 +322,12 @@ describe('live status feedback during Solve', () => {
         { status: 201 },
       )
     }) as unknown as typeof fetch
-    mountAnnotateHud({ origin: 'http://localhost' })
-    const ta = document.querySelector(
-      '#llui-devmode-annotate-root textarea',
-    )! as HTMLTextAreaElement
+    const handle = mountAnnotateHud({ origin: 'http://localhost' })
 
-    ta.value = 'task A'
+    handle.setProse('task A')
     clickSolve()
     await waitForWorkingCount(1)
-    ta.value = 'task B'
+    handle.setProse('task B')
     clickSolve()
     await waitForWorkingCount(2)
 
@@ -363,13 +357,12 @@ describe('live status feedback during Solve', () => {
 
   it("'Save note' does NOT track status (intent=note isn't in the queue)", async () => {
     mockFetch('008')
-    mountAnnotateHud({ origin: 'http://localhost' })
+    const handle = mountAnnotateHud({ origin: 'http://localhost' })
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const ta = root.querySelector('textarea')!
     const saveBtn = Array.from(root.querySelectorAll('button')).find(
       (b) => b.textContent === 'Save note',
     )!
-    ta.value = 'fyi'
+    handle.setProse('fyi')
     saveBtn.click()
     await new Promise((r) => setTimeout(r, 5))
     expect(saveBtn.disabled).toBe(false) // re-enabled immediately for notes

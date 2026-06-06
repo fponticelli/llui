@@ -71,7 +71,7 @@ for pkg in $PUBLISHABLE; do
 done
 ```
 
-Note: directory names don't always match the published package name. `eslint-plugin-llui/` publishes as `@llui/eslint-plugin`; `agent-bridge/` publishes as `llui-agent`. The detection loop reads `package.json` for the name; downstream steps that reference the package use the directory name (since publish.sh and add-js-extensions.mjs operate on directories).
+Note: directory names don't always match the published package name. `agent-bridge/` publishes as `llui-agent`. The detection loop reads `package.json` for the name; downstream steps that reference the package use the directory name (since publish.sh and add-js-extensions.mjs operate on directories).
 
 Also check root-level changes that affect all package build output:
 
@@ -87,19 +87,22 @@ If `--all` was passed on the command line, skip detection entirely.
 If a dependency changed, every package that imports from it at runtime must also bump so consumers pick up the new behavior. The graph:
 
 ```
-Tier 1 (no in-repo deps): dom, effects, eslint-plugin-llui
+Tier 1 (no in-repo deps): dom, effects, compiler
 Tier 2 (depend on tier 1):
-  dom              → vite-plugin, test, router, transitions, components, markdown, vike, mcp, agent
-  effects          → (no in-repo dependents)
-  eslint-plugin    → mcp
+  dom      → vite-plugin, test, router, transitions, components, markdown, lexical, vike, mcp, agent
+  compiler → compiler-introspection, compiler-devtools, compiler-ssr
+  effects  → (no in-repo dependents)
 Tier 3 (depend on tier 2):
-  agent            → agent-bridge (publishes as llui-agent)
+  agent              → agent-bridge (publishes as llui-agent)
+  lexical, components → markdown-editor
 ```
 
 Cascade rules:
 
-- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
-- `eslint-plugin` changed → add `mcp`.
+- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `lexical`, `markdown-editor`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
+- `compiler` changed → add `compiler-introspection`, `compiler-devtools`, `compiler-ssr` (the opt-in compiler modules).
+- `lexical` changed → add `markdown-editor` (peer-depends on `@llui/lexical`).
+- `components` changed → add `markdown-editor` (peer-depends on `@llui/components`).
 - `effects` has no in-repo dependents today — no cascade.
 
 Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These must be updated to the new `dom` version during the bump (step 5):
@@ -108,10 +111,14 @@ Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These
 - `packages/router/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/transitions/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/markdown/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/lexical/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/vike/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/test/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/mcp/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/agent/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/markdown-editor/package.json` → `peerDependencies["@llui/dom"]`
+
+**`@llui/markdown-editor` carries two more `@llui` peer ranges than the dom-only cascade above** — `peerDependencies["@llui/lexical"]` and `peerDependencies["@llui/components"]`. When `lexical` or `components` bumps, `markdown-editor`'s peer range for that package must bump too, exactly like the `@llui/dom` updates. The step-5 bump script only rewrites `@llui/dom`, so add `@llui/lexical` / `@llui/components` to its rewrite block (or hand-edit `packages/markdown-editor/package.json`) whenever either is in the changed set.
 
 **Always derive this list from the actual files**, not from this README — run the snippet below before bumping to catch any package that's quietly grown or lost a peer:
 
@@ -284,8 +291,8 @@ Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragrap
 **Heading conventions:**
 
 - `## YYYY-MM-DD — <qualifier>` — date first so the anchor is stable across lockstep-vs-split releases.
-- `<qualifier>` is the tier-1 lockstep version when tier-1 packages bumped (e.g. `2026-04-14 — 0.0.14`). Even when `@llui/effects` / `@llui/mcp` / `@llui/eslint-plugin` shipped at different numbers on the same day, the tier-1 version is the primary anchor — the full version list goes in the **Released:** line immediately below.
-- When only one or two off-cadence packages shipped, use them as the qualifier instead: `2026-04-13 — @llui/eslint-plugin@0.0.10, @llui/mcp@0.0.7`.
+- `<qualifier>` is the tier-1 lockstep version when tier-1 packages bumped (e.g. `2026-04-14 — 0.0.14`). Even when `@llui/effects` / `@llui/mcp` shipped at different numbers on the same day, the tier-1 version is the primary anchor — the full version list goes in the **Released:** line immediately below.
+- When only one or two off-cadence packages shipped, use them as the qualifier instead: `2026-04-13 — @llui/effects@0.1.0, @llui/mcp@0.0.7`.
 - The `**Released:**` line directly below the heading spells out the concrete bumps. Always include it, even when the qualifier covers everything, so readers can grep a package name and find every release it appears in.
 
 **Bullet conventions:**
@@ -300,7 +307,7 @@ Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragrap
 1. **Breaking** — at the top, before any per-package section. Users evaluating an upgrade read this first.
 2. **Migration** — immediately after Breaking, when actions are needed.
 3. **Tier-1 packages first** — usually `@llui/dom` then `@llui/vite-plugin`, then the rest in rough dependency order.
-4. **Off-cadence packages** — `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, `llui-agent` after tier-1.
+4. **Off-cadence packages** — `@llui/effects`, `@llui/mcp`, `@llui/agent`, `llui-agent` after tier-1.
 5. **All packages — build output** — near the end, before Docs.
 6. **Docs** — if there's anything worth noting.
 

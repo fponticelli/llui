@@ -24,10 +24,24 @@
   },
   "dependencies": {
     "@llui/components": "workspace:*",
-    "@llui/dom": "workspace:*",
-    "html-to-image": "^1.11.13"
+    "@llui/lexical": "workspace:*",
+    "@llui/markdown-editor": "workspace:*",
+    "html-to-image": "^1.11.13",
+    "lexical": "^0.45.0",
+    "@lexical/markdown": "^0.45.0",
+    "@lexical/rich-text": "^0.45.0",
+    "@lexical/list": "^0.45.0",
+    "@lexical/link": "^0.45.0",
+    "@lexical/table": "^0.45.0",
+    "@lexical/selection": "^0.45.0",
+    "@lexical/utils": "^0.45.0",
+    "@lexical/code-core": "^0.45.0"
+  },
+  "peerDependencies": {
+    "@llui/dom": "^0.8.0"
   },
   "devDependencies": {
+    "@llui/dom": "workspace:*",
     "@llui/test": "workspace:*",
     "jsdom": "^29.0.1",
     "typescript": "^6.0.2",

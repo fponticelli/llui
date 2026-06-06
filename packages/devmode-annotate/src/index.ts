@@ -44,6 +44,16 @@ import {
   type Signal,
   type SignalViewBag,
 } from '@llui/dom'
+import {
+  corePlugin,
+  floatingToolbarPlugin,
+  linkPlugin,
+  markdownEditor,
+  slashPlugin,
+  type EditorState,
+} from '@llui/markdown-editor'
+import '@llui/markdown-editor/styles/editor.css'
+import type { LexicalEditor } from 'lexical'
 
 import {
   collapsible,
@@ -67,13 +77,11 @@ import {
   THEME_STYLESHEET,
 } from './styles.js'
 import {
-  BULLET_PREFIX,
   clampOffset,
   computeModalAnchor,
   deriveKind,
   deriveSavedPosition,
   DRAG_THRESHOLD_PX,
-  NUMBER_PREFIX,
   parseSavedPosition,
   queueCounts,
   reduceTask,
@@ -82,8 +90,6 @@ import {
   type TaskMsg,
   type TaskState,
   taskInitialState,
-  toggleLinePrefix,
-  toggleWrap,
   type Toast,
   type ToastAction,
 } from './hud-core.js'
@@ -112,6 +118,9 @@ export interface AnnotateHudHandle {
   open(): void
   close(): void
   destroy(): void
+  /** Programmatically set the compose draft (Markdown). Flows into the embedded
+   * editor like a restored draft. */
+  setProse(text: string): void
   submit(
     prose: string,
     opts?: {
@@ -380,8 +389,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const elementPickEnabled = opts.elementPick !== false
   const reproEnabled = opts.repro !== false
 
-  // Imperative refs (the foreign textarea + DOM nodes used for measurement).
-  let textareaEl: HTMLTextAreaElement | null = null
+  // Imperative refs (the embedded markdown editor + DOM nodes used for measurement).
+  // The prose field is a nested `markdownEditor()` app mounted into a `foreign`
+  // host; `mdApp` is its handle (read/clear via `setValue`), `editorApi` the live
+  // Lexical editor (for focus).
+  let mdApp: ReturnType<typeof mountSignalComponent> | null = null
+  let editorApi: LexicalEditor | null = null
   let modalEl: HTMLElement | null = null
 
   const reproRecorder = createReproRecorder()
@@ -418,7 +431,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // ── Imperative bridge fns (declared before the view so handlers close over them) ──
 
   const getState = (): HudState => handle.getState()
-  const proseValue = (): string => (textareaEl ? textareaEl.value : getState().draftProse)
+  // Prefer the live editor's serialized markdown over the (debounced) state mirror
+  // so a submit fired right after the last keystroke still captures it.
+  const proseValue = (): string =>
+    mdApp ? (mdApp.getState() as EditorState).value : getState().draftProse
 
   const reanchorModal = (): void => {
     if (!modalEl) return
@@ -446,7 +462,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     handle.send({ type: 'modal/open' })
     refreshContext()
     queueMicrotask(reanchorModal)
-    textareaEl?.focus()
+    queueMicrotask(() => editorApi?.focus())
   }
   const close = (): void => handle.send({ type: 'modal/close' })
 
@@ -598,7 +614,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const chainName = intent === 'task' ? (s.tasks.selectedChain ?? mintChainName()) : undefined
     submit(prose, { intent, captureLevel, resume: true, ...(chainName ? { chainName } : {}) }).then(
       async (result) => {
-        if (textareaEl) textareaEl.value = ''
+        // Clearing draftProse pushes '' into the editor via the foreign value bind.
         handle.send({ type: 'setProse', value: '' })
         handle.send({ type: 'clearAttachments' })
         handle.send({ type: 'verbose/set', value: false })
@@ -720,31 +736,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     })
     if (!res.ok) throw new Error(`devmode-annotate: POST ${url} → ${res.status}`)
     return (await res.json()) as CreateNoteResponse
-  }
-
-  // Markdown toolbar — pure transforms applied to the foreign textarea.
-  const applyWrap = (marker: string): void => {
-    if (!textareaEl) return
-    const next = toggleWrap(
-      { value: textareaEl.value, start: textareaEl.selectionStart, end: textareaEl.selectionEnd },
-      marker,
-    )
-    textareaEl.value = next.value
-    textareaEl.focus()
-    textareaEl.setSelectionRange(next.start, next.end)
-    handle.send({ type: 'setProse', value: next.value })
-  }
-  const applyLinePrefix = (p: { add: (i: number) => string; match: RegExp }): void => {
-    if (!textareaEl) return
-    const next = toggleLinePrefix(
-      { value: textareaEl.value, start: textareaEl.selectionStart, end: textareaEl.selectionEnd },
-      p.add,
-      p.match,
-    )
-    textareaEl.value = next.value
-    textareaEl.focus()
-    textareaEl.setSelectionRange(next.start, next.end)
-    handle.send({ type: 'setProse', value: next.value })
   }
 
   // ── The view ───────────────────────────────────────────────────────────
@@ -1020,16 +1011,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             [text(state.map((s) => lineageText(s.tasks)))],
           ),
           ...attachmentRow(state, send),
-          ...toolbarRow(),
-          ...textareaForeign(state, send),
+          ...editorForeign(state, send),
           div({ style: STYLES.markdownHint }, [
-            text('Markdown supported · '),
-            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘B')]),
-            text(' bold · '),
-            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘I')]),
-            text(' italic · '),
-            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘E')]),
-            text(' code'),
+            text('Rich editor · select text to format · '),
+            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('/')]),
+            text(' for commands · '),
+            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘↵')]),
+            text(' to submit'),
           ]),
           ...moreOptions(state, send),
           div({ 'data-llui-status': '', style: STYLES.status }, [
@@ -1149,96 +1137,70 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ]),
   ]
 
-  const toolbarRow = (): Renderable => [
-    div({ style: STYLES.toolbar }, [
-      button(
-        {
-          type: 'button',
-          title: 'Bold (Cmd/Ctrl+B)',
-          style: STYLES.toolbarBtn + '; font-weight: 700;',
-          onClick: () => applyWrap('**'),
-        },
-        [text('B')],
-      ),
-      button(
-        {
-          type: 'button',
-          title: 'Italic (Cmd/Ctrl+I)',
-          style: STYLES.toolbarBtn + '; font-style: italic;',
-          onClick: () => applyWrap('*'),
-        },
-        [text('I')],
-      ),
-      button(
-        {
-          type: 'button',
-          title: 'Inline code (Cmd/Ctrl+E)',
-          style:
-            STYLES.toolbarBtn +
-            '; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px;',
-          onClick: () => applyWrap('`'),
-        },
-        [text('</>')],
-      ),
-      button(
-        {
-          type: 'button',
-          title: 'Bullet list',
-          style: STYLES.toolbarBtn,
-          onClick: () => applyLinePrefix(BULLET_PREFIX),
-        },
-        [text('•')],
-      ),
-      button(
-        {
-          type: 'button',
-          title: 'Numbered list',
-          style:
-            STYLES.toolbarBtn +
-            '; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px;',
-          onClick: () => applyLinePrefix(NUMBER_PREFIX),
-        },
-        [text('1.')],
-      ),
-    ]),
-  ]
-
-  const textareaForeign = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
-    foreign({
-      tag: 'textarea',
+  // The prose field is a real `markdownEditor()` (WYSIWYG, hides the Markdown).
+  // It's mounted as a nested app inside a `foreign` host so the surrounding HUD
+  // stays one TEA component. Formatting (bold/italic/code/lists/links) is the
+  // editor's job — its floating selection toolbar + Markdown shortcuts replace the
+  // old hand-rolled toolbar. Cmd/Ctrl+Enter submits (plain Enter is a newline).
+  interface EditorInst {
+    app: ReturnType<typeof mountSignalComponent>
+    unbind: () => void
+    onKey: (e: KeyboardEvent) => void
+    host: HTMLElement
+  }
+  const editorForeign = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
+    foreign<EditorInst, { value: Signal<string> }>({
+      tag: 'div',
       state: { value: state.at('draftProse') },
       mount: ({ el, state: { value } }) => {
-        const ta = el as HTMLTextAreaElement
-        textareaEl = ta
-        ta.placeholder = 'Describe the issue…'
-        ta.rows = 5
-        ta.style.cssText = STYLES.textarea
-        value.bind((v) => {
-          if (ta.value !== v) ta.value = v
+        const host = el as HTMLElement
+        host.setAttribute('data-llui-editor', '')
+        host.style.cssText = STYLES.editorHost
+        let last = value.peek()
+        const app = mountSignalComponent(
+          host,
+          markdownEditor({
+            defaultValue: last,
+            placeholder: 'Describe the issue…',
+            // Near-synchronous so a quick Solve click captures the last keystrokes.
+            changeDebounceMs: 50,
+            plugins: [corePlugin(), linkPlugin(), floatingToolbarPlugin(), slashPlugin()],
+            onChange: (md) => {
+              last = md
+              send({ type: 'setProse', value: md })
+            },
+            onReady: (ed) => {
+              editorApi = ed
+            },
+          }),
+          // Keep the HUD's own editor out of the global __lluiComponents registry
+          // so it never pollutes the app component-info / debug snapshots the HUD
+          // collects (the HUD itself mounts with devtools:false for the same reason).
+          { devtools: false },
+        )
+        mdApp = app
+        // External pushes (persistence restore, clear-on-submit) → into the editor,
+        // echo-guarded against our own onChange round-trips.
+        const unbind = value.bind((v) => {
+          if (v === last) return
+          last = v
+          app.send({ type: 'setValue', value: v })
         })
-        ta.addEventListener('input', () => send({ type: 'setProse', value: ta.value }))
-        ta.addEventListener('keydown', (e: KeyboardEvent) => {
-          const cmd = e.metaKey || e.ctrlKey
-          if (!cmd) return
-          if (e.key === 'b' || e.key === 'B') {
+        const onKey = (e: KeyboardEvent): void => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault()
-            applyWrap('**')
-          } else if (e.key === 'i' || e.key === 'I') {
-            e.preventDefault()
-            applyWrap('*')
-          } else if (e.key === 'e' || e.key === 'E') {
-            e.preventDefault()
-            applyWrap('`')
-          } else if (e.key === 'Enter') {
-            e.preventDefault()
-            if (e.shiftKey || !solveEnabled) submitWithIntent('note')
-            else submitWithIntent('task')
+            submitWithIntent(e.shiftKey || !solveEnabled ? 'note' : 'task')
           }
-        })
-        return ta
+        }
+        host.addEventListener('keydown', onKey, true)
+        return { app, unbind, onKey, host }
       },
-      unmount: () => {
-        textareaEl = null
+      unmount: (inst) => {
+        inst.host.removeEventListener('keydown', inst.onKey, true)
+        inst.unbind()
+        inst.app.dispose()
+        if (mdApp === inst.app) mdApp = null
+        editorApi = null
       },
     }),
   ]
@@ -1578,7 +1540,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   )
   ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = undefined
 
-  // Now that the textarea foreign has mounted, query the modal ref.
+  // Now that the editor foreign has mounted, query the modal ref.
   modalEl = root.querySelector<HTMLElement>('[data-llui-modal]')
 
   let progressTickInterval: ReturnType<typeof setInterval> | null = null
@@ -1622,7 +1584,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   const persisted = readPersisted()
   if (persisted.draftProse) {
-    // setProse → state.draftProse → the foreign textarea's value.bind syncs the DOM.
+    // setProse → state.draftProse → the editor foreign's value.bind → setValue.
     handle.send({ type: 'setProse', value: persisted.draftProse })
   }
   if (persisted.selectedResumeChain !== undefined && persisted.selectedResumeChain !== null) {
@@ -1833,10 +1795,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       'What was happening when this fired?',
     ]
     const value = lines.join('\n')
-    if (textareaEl) textareaEl.value = value
+    // setProse flows into the editor via the foreign value bind; open() focuses it.
     handle.send({ type: 'setProse', value })
     open()
-    queueMicrotask(() => textareaEl?.setSelectionRange(value.length, value.length))
   }
   const onWindowError = (e: ErrorEvent): void => {
     if (autoCaptureEnabled) fillFromError('error', e.message || String(e.error), e.error?.stack)
@@ -1881,6 +1842,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     open,
     close,
     destroy,
+    setProse: (text) => handle.send({ type: 'setProse', value: text }),
     submit,
     drawRect: startRectFlow,
     handleCaptureRequest,
@@ -1902,6 +1864,7 @@ function noopHandle(): AnnotateHudHandle {
     open: noop,
     close: noop,
     destroy: noop,
+    setProse: noop,
     submit: rejectNotMounted,
     drawRect: () => Promise.resolve(null),
     handleCaptureRequest: rejectNotMounted,

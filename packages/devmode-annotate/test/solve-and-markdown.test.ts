@@ -1,8 +1,13 @@
 /// <reference lib="dom" />
-// Tests for the Save / Solve action buttons and the markdown toolbar.
+// Tests for the Save / Solve action buttons. Prose now comes from the embedded
+// `markdownEditor()`; tests seed it via the persisted draft (the real restore
+// path). The Markdown formatting logic lives in hud-core and is covered by
+// hud-core.test.ts — the hand-rolled toolbar it used to drive is gone.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mountAnnotateHud } from '../src/index.js'
+
+const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
 
 function mockFetch(): Array<[string, RequestInit]> {
   const calls: Array<[string, RequestInit]> = []
@@ -16,29 +21,20 @@ function mockFetch(): Array<[string, RequestInit]> {
   return calls
 }
 
-function dispatchKey(
-  target: Element,
-  key: string,
-  opts: { metaKey?: boolean; ctrlKey?: boolean } = {},
-): void {
-  target.dispatchEvent(
-    new KeyboardEvent('keydown', {
-      key,
-      metaKey: opts.metaKey,
-      ctrlKey: opts.ctrlKey,
-      bubbles: true,
-      cancelable: true,
-    }),
-  )
+/** Seed the compose draft via the persisted-state restore path so the embedded
+ * editor mounts with prose already in it. */
+function seedProse(text: string): void {
+  localStorage.setItem(HUD_STATE_KEY, JSON.stringify({ draftProse: text }))
 }
 
 beforeEach(() => {
   document.body.innerHTML = ''
-  localStorage.removeItem('llui-devmode-annotate.position')
+  localStorage.clear()
 })
 
 afterEach(() => {
   document.body.innerHTML = ''
+  localStorage.clear()
 })
 
 describe('Save / Solve action buttons', () => {
@@ -53,12 +49,20 @@ describe('Save / Solve action buttons', () => {
     expect(root.querySelector('[data-llui-solve]')).not.toBeNull()
   })
 
-  it("Solve submits with intent='task'", async () => {
-    const calls = mockFetch()
+  it('mounts the embedded markdown editor in the compose tab', () => {
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const textarea = root.querySelector('textarea')!
-    textarea.value = 'fix it'
+    expect(root.querySelector('[data-llui-editor]')).not.toBeNull()
+    // The WYSIWYG surface is a Lexical contenteditable, not a textarea.
+    expect(root.querySelector('[data-llui-editor] [data-lexical-editor]')).not.toBeNull()
+    expect(root.querySelector('textarea')).toBeNull()
+  })
+
+  it("Solve submits with intent='task'", async () => {
+    const calls = mockFetch()
+    seedProse('fix it')
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
     const solveBtn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
     solveBtn.click()
     await new Promise((r) => setTimeout(r, 5))
@@ -70,10 +74,9 @@ describe('Save / Solve action buttons', () => {
 
   it("Save note submits with intent='note'", async () => {
     const calls = mockFetch()
+    seedProse('just fyi')
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const textarea = root.querySelector('textarea')!
-    textarea.value = 'just fyi'
     const saveBtn = Array.from(root.querySelectorAll('button')).find(
       (b) => b.textContent === 'Save note',
     )!
@@ -83,162 +86,5 @@ describe('Save / Solve action buttons', () => {
       frontmatter: { intent: string }
     }
     expect(body.frontmatter.intent).toBe('note')
-  })
-})
-
-describe('Markdown toolbar', () => {
-  function getTextarea(): HTMLTextAreaElement {
-    const root = document.getElementById('llui-devmode-annotate-root')!
-    return root.querySelector('textarea')!
-  }
-  function clickToolBtn(label: string): void {
-    const root = document.getElementById('llui-devmode-annotate-root')!
-    const btn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === label)!
-    btn.click()
-  }
-
-  it('B button wraps selection in **bold**', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'make this bold'
-    ta.setSelectionRange(5, 9) // "this"
-    clickToolBtn('B')
-    expect(ta.value).toBe('make **this** bold')
-  })
-
-  it('I button wraps in *italic* asterisks', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'italic this'
-    ta.setSelectionRange(7, 11)
-    clickToolBtn('I')
-    expect(ta.value).toBe('italic *this*')
-  })
-
-  it('code button wraps in backticks', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'call foo() please'
-    ta.setSelectionRange(5, 10)
-    clickToolBtn('</>')
-    expect(ta.value).toBe('call `foo()` please')
-  })
-
-  it("bullet button prefixes lines with '- '", () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'one\ntwo\nthree'
-    ta.setSelectionRange(0, 13)
-    clickToolBtn('•')
-    expect(ta.value).toBe('- one\n- two\n- three')
-  })
-
-  it("numbered button prefixes lines with '1. ', '2. '…", () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'one\ntwo'
-    ta.setSelectionRange(0, 7)
-    clickToolBtn('1.')
-    expect(ta.value).toBe('1. one\n2. two')
-  })
-
-  it('Cmd+B keyboard shortcut bolds the selection', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'word'
-    ta.setSelectionRange(0, 4)
-    dispatchKey(ta, 'b', { metaKey: true })
-    expect(ta.value).toBe('**word**')
-  })
-
-  it('Cmd+I shortcut italicizes', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'word'
-    ta.setSelectionRange(0, 4)
-    dispatchKey(ta, 'i', { metaKey: true })
-    expect(ta.value).toBe('*word*')
-  })
-
-  it('Cmd+E shortcut wraps in backticks', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'word'
-    ta.setSelectionRange(0, 4)
-    dispatchKey(ta, 'e', { metaKey: true })
-    expect(ta.value).toBe('`word`')
-  })
-
-  it('inserts placeholder text when nothing is selected', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = ''
-    ta.setSelectionRange(0, 0)
-    clickToolBtn('B')
-    expect(ta.value).toBe('**text**')
-  })
-
-  it('Bold twice toggles (strips the wrap) when selection includes the markers', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = '**word**'
-    ta.setSelectionRange(0, 8)
-    clickToolBtn('B')
-    expect(ta.value).toBe('word')
-  })
-
-  it('Bold toggle works when selection is the inner text with markers flanking', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = '**word**'
-    ta.setSelectionRange(2, 6) // just "word"
-    clickToolBtn('B')
-    expect(ta.value).toBe('word')
-  })
-
-  it('Italic toggle round-trips: wrap, then unwrap from the inner selection', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'word'
-    ta.setSelectionRange(0, 4)
-    clickToolBtn('I')
-    expect(ta.value).toBe('*word*')
-    expect(ta.selectionStart).toBe(1)
-    expect(ta.selectionEnd).toBe(5)
-    clickToolBtn('I')
-    expect(ta.value).toBe('word')
-  })
-
-  it('Code toggle strips backticks on second press', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = '`foo()`'
-    ta.setSelectionRange(0, 7)
-    clickToolBtn('</>')
-    expect(ta.value).toBe('foo()')
-  })
-
-  it('Bullet toggle: prefix once, strip on second press', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'one\ntwo'
-    ta.setSelectionRange(0, 7)
-    clickToolBtn('•')
-    expect(ta.value).toBe('- one\n- two')
-    ta.setSelectionRange(0, ta.value.length)
-    clickToolBtn('•')
-    expect(ta.value).toBe('one\ntwo')
-  })
-
-  it('Numbered toggle: strip on second press', () => {
-    mountAnnotateHud({ subscribeEvents: false })
-    const ta = getTextarea()
-    ta.value = 'one\ntwo'
-    ta.setSelectionRange(0, 7)
-    clickToolBtn('1.')
-    expect(ta.value).toBe('1. one\n2. two')
-    ta.setSelectionRange(0, ta.value.length)
-    clickToolBtn('1.')
-    expect(ta.value).toBe('one\ntwo')
   })
 })

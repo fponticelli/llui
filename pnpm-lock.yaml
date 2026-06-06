@@ -542,16 +542,49 @@ importers:
 
   packages/devmode-annotate:
     dependencies:
+      '@lexical/code-core':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/link':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/list':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/markdown':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/rich-text':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/selection':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/table':
+        specifier: ^0.45.0
+        version: 0.45.0
+      '@lexical/utils':
+        specifier: ^0.45.0
+        version: 0.45.0
       '@llui/components':
         specifier: workspace:*
         version: link:../components
-      '@llui/dom':
+      '@llui/lexical':
         specifier: workspace:*
-        version: link:../dom
+        version: link:../lexical
+      '@llui/markdown-editor':
+        specifier: workspace:*
+        version: link:../markdown-editor
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
+      lexical:
+        specifier: ^0.45.0
+        version: 0.45.0
     devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
       '@llui/test':
         specifier: workspace:*
         version: link:../test

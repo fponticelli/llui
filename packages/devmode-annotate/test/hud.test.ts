@@ -27,8 +27,8 @@ describe('mountAnnotateHud', () => {
     const root = document.getElementById('llui-devmode-annotate-root')!
     const floating = root.querySelector('button')!
     floating.click()
-    const textarea = root.querySelector('textarea')!
-    expect(textarea).not.toBeNull()
+    // The prose field is the embedded markdown editor (a contenteditable).
+    expect(root.querySelector('[data-llui-editor]')).not.toBeNull()
     // jsdom doesn't compute display; we check the inline style on the modal container instead
     const modal = root.querySelector('[data-llui-modal]') as HTMLElement
     expect(modal.style.display).toBe('block')
