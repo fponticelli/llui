@@ -4,6 +4,11 @@
 
 Read [[../../../.claude]] memory `reference-perf-measurement` first (or the summary in `docs/proposals/v2-compiler/compiled-row-construction.md`). TL;DR of the methodology: **measure with a CDP categorized split (Script/Layout/Style), rebuild `dist` before benching, run LLui-only for LLui-change measurement, and trust LLui-vs-LLui deltas (the machine drifts ~2× run-to-run).** jfb create-ops are layout-bound (don't micro-opt JS there); ticker/streaming-update ops are JS/reconcile-bound (real headroom).
 
+**Two methodology lessons added 2026-06-07 (read before chasing a "regression"):**
+
+1. **Isolate the mechanism; don't trust DOM-op counts.** A change that reduces DOM mutations (fragment-batched insert, `Range.deleteContents` bulk-remove) is NOT automatically faster: the browser already coalesces write-only DOM mutations and lays out once per frame, and the reconcile never reads layout mid-pass — so N `insertBefore`/`removeChild` ≈ one batched op. Both measured non-wins (see dead-ends). Build the isolated real-Chromium A/B before assuming.
+2. **A "we were faster before" claim is settled by the ABSOLUTE trajectory, not the relative gap.** Competitor numbers in the saved baselines were re-measured between runs and drift (Solid Remove 10.5→11.8→9.7 across baselines), so "LLui beat Solid on N/9 ops" shifts even when LLui doesn't change. Pull LLui's OWN absolute number per op across the relevant commits (`git show <c>:benchmarks/jfb-baseline.json`). Done 2026-06-07: **LLui improved on every jfb op across the signals migration** — no LLui regression; the relative shift was competitor variance.
+
 ## What already shipped (0.8.0) — and its reach
 
 - `signalEachDirect` + compiler codegen: a static-skeleton `each` row lowers to a `RowFactory` (direct DOM + bindings by node ref). **But it only reaches rows the compiler actually lowers.**
@@ -17,6 +22,22 @@ Closes the create-ops gap to Solid/vanilla. The root cause: `signalEachDirect`'s
 - **Lean per-row scope** (`packages/dom/src/signals/runtime.ts` `createSignalScope` + `dom.ts` `buildDirectRow`): `last` Map→position-indexed array; `children` Set→null-until-`addChild`; `dirty` Uint32Array→lazy; direct-row `descriptors`→shared frozen-empty; no per-row specs copy. **−0.17 µs/row** scope cost (V8), update path 3.8% faster, **−10% Run-1k memory** in the full bench.
 - **Incidental bug fixed**: lowered `'aria-hidden': 'true'` emitted `setAttribute("'aria-hidden'", …)` (quoted-key not unquoted) — now `setAttribute("aria-hidden", …)`.
 - **Same-session A/B** (drift-controlled, fresh OLD baseline): Create 10k 222.1→217.1 (−2%), Run-1k mem 2.9→2.6 (−10%), all other ops within ±1-3% noise, **no regressions**. The create win is ~2% because these ops are ~95% layout — but that ~2% JS slice is the entire inter-framework delta to Solid (see methodology note below). Tests: `transform-view.test.ts`, `transform-component.test.ts`, `each-direct-codegen.test.ts` (clone+walk dispatch-by-id / reactive / reorder, end-to-end in jsdom).
+
+## Class-based per-row scope — ✅ SHIPPED (2026-06-07, commit `67c3ab73`)
+
+`createSignalScope` returned a closure-captured object literal (object + 4 method closures = 5 allocations/row); `each` builds one scope per row, so a 10k create allocated 50k objects of scope plumbing. Now a class instance `SignalScopeImpl` (1 allocation/row, methods on the prototype), same behavior/lazy discipline. Isolated V8: **~50% faster scope create+mount (0.135→0.067 µs/row)** + proportionally less GC. Sub-noise on the layout-bound bench; a clean win with a memory benefit. 246 dom tests green.
+
+## Final state & measured conclusion (2026-06-07) — create is at the noise floor; the regression was a phantom
+
+Triggered by a "LLui used to beat Solid; the signals migration deteriorated it" pushback. Investigated against the git-history baselines (no re-benching) — and the conclusion **redirects all future jfb perf work**:
+
+- **No LLui regression.** LLui's OWN absolute jfb numbers IMPROVED on every op across the signals migration (Apr-legacy→now): Create1k 23.9→21.1, Create10k 237→216, Replace 25.7→23.0, Update 13.6→11.1, Select 2.9→2.5, Remove 10.8→10.4, Append 27.3→25.3, Clear 11.1→10.0 (Swap 13.9→13.7, within its noise band). The signals migration sped LLui up.
+- **The "we beat Solid before" snapshot was competitor variance.** The last pre-signals baseline (`a60cd678`, May) had LLui beating Solid on 5/9 ops — but that was a run where SOLID measured slow (Remove 11.8, Swap 14.2); the current run has Solid fast (9.7, 12.9). LLui's numbers barely moved. Same-run-within-a-baseline is valid; cross-baseline competitor numbers are not.
+- **The legacy reconcile's techniques are measured non-wins at jfb scale.** The deleted legacy `each` (`6fcb5291^:packages/dom/src/primitives/each.ts`) had dedicated swap/remove/replace fast-paths (allocation-free parallel walks, `Range.deleteContents`, fragment insert, raw `string|number` keys, a `survivorsInOrder` gate). Measured: fragment-insert and `Range`-remove are coalesced-away (0% / non-win); the specialized-vs-general reconcile JS bookkeeping (`String(key)`×n + `newKeys`/`newRows`/`seen`/`oldPos`/`sources`/`lisIndices`) is only **~54 µs/op on 1000 rows (76→22 µs) ≈ 0.4 % of a ~13 ms op**. Restoring them recovers nothing visible.
+- **What we can derive from Solid/Svelte:** their reconcile/DOM cleverness is exactly what's coalesced-away here; their real edge is fine-grained per-cell reactivity, which shows up only in the **ticker/streaming** suite — where LLui already LEADS (same-structure fast path + state-fanout gating beat Solid's stores on burst updates).
+- **Compiler leverage (the one thing beyond Solid/Svelte):** the compiler can read the reducer and classify the array op (`filter`→remove, `[...,x]`→append, index-swap→swap) to make reconcile O(changed) instead of O(n) — legacy LLui had this (`79afaa05`). It's real architecture, but **also sub-noise for jfb** (append O(added) saves ~0.1 ms of a 25 ms op); it only pays off on huge, high-frequency, non-virtualizable lists — already covered by `virtualEach` + the same-structure fast path. Build it only behind a concrete such workload.
+
+**Recommendation:** stop optimizing the nine jfb ops — LLui is at Solid parity within measurement noise, improved across the migration, and those ops are layout-dominated at the noise floor. The next _visible_ win lives in the suites contested on merit (ticker/streaming) or in DX/bundle, not here.
 
 ## The finding that drives this proposal
 
@@ -78,8 +99,12 @@ The old framing ("jfb create-ops are layout-bound; don't micro-opt JS there") co
 
 - ~~**`cloneNode` templating** — clone == `createElement`.~~ **REFUTED + SHIPPED** — `cloneNode(deep)` of a hoisted template is 38% faster than per-node createElement for a real multi-node row. See "Create-ops" above.
 - ~~**Lean per-row scope** — sub-noise.~~ **REFUTED + SHIPPED** (jsdom had masked the JS delta). See "Create-ops" above.
-- **create-10k / append** — layout/paint at scale, not JS-addressable.
-- **swap/update "regressions"** — cold-start/harness artifacts; reconcile is optimal (swap = 2 LIS moves, ~4.8 ms warm).
+- **Fragment-batched row insertion** (one `DocumentFragment` insert vs N `insertBefore`) — **measured non-win** (3-8% SLOWER): the browser coalesces layout for consecutive inserts; the fragment adds extra node-moving. (2026-06-07)
+- **`Range.deleteContents` bulk-remove vs N `removeChild`** — **measured non-win** (0%): removal is coalesced too. (2026-06-07)
+- **Slot-model** (shared per-template produce/applier + per-row `targets[]`, no per-row binding objects/closures) — **measured non-win** (0.008 µs/row ≈ 0.08 ms on create-10k): V8 already optimizes loop-allocated closures + small monomorphic binding objects, and `directShape` shares masks. Not worth a new `DirectRow` contract + 2nd scope impl. (2026-06-07)
+- **Restoring the legacy specialized swap/remove/replace reconcile paths** — **measured non-win** (~54 µs/op on 1000 rows ≈ 0.4 % of the op). The reorder/remove/replace "regression" was competitor variance, not an LLui slowdown (see Final state above).
+- **create-10k / append as JS targets** — layout/paint at scale; JS slice is the only inter-framework lever but it's at the noise floor (cloneNode + scope work already landed it).
+- **swap/update "regressions"** — high-variance/cold-start (pre-signals swap itself ranged 8.6–13.9); LLui's absolute numbers are stable/improved across the migration. Don't read single-baseline swap/remove deltas as regressions.
 - **Default microtask/rAF auto-batching** — rejected (see Opportunity B): breaks the synchronous contract for no paint saving; only viable as an opt-in mode (option 4).
 - **Element-level dirty tracking** — see Opportunity D: measured net-negative (Solid slower; gap is reducer allocs, not scan; large lists use `virtualEach`).
 
