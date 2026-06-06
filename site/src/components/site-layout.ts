@@ -94,7 +94,6 @@ export function siteLayout({
           navLink('/examples/i18n-lazy', 'examples/i18n-lazy', 'i18n + Lazy', slug),
           navLink('/examples/virtualization', 'examples/virtualization', 'Virtualization', slug),
           navLink('/examples/github-explorer', 'examples/github-explorer', 'GitHub Explorer', slug),
-          navLink('/examples/vike-layout', 'examples/vike-layout', 'Vike Layout (SSR)', slug),
           span({ class: 'nav-section' }, [text('Packages')]),
           navLink('/api/dom', 'api/dom', 'dom', slug),
           navLink('/api/compiler', 'api/compiler', 'compiler', slug),

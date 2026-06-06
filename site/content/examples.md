@@ -42,8 +42,4 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <h3>GitHub Explorer</h3>
     <p>Routed GitHub browser with search, file tree, and agent affordances.</p>
   </a>
-  <a class="example-card" href="/examples/vike-layout">
-    <h3>Vike Layout (SSR)</h3>
-    <p>Persistent nested layouts with @llui/vike, prerendered to static HTML.</p>
-  </a>
 </div>

@@ -83,13 +83,6 @@ export const EXAMPLES: ExampleMeta[] = [
     title: 'GitHub Explorer',
     blurb: 'Routed GitHub browser with search, file tree, and agent affordances.',
   },
-  {
-    slug: 'vike-layout',
-    pkg: '@llui/example-vike-layout',
-    title: 'Vike Layout (SSR)',
-    blurb: 'Persistent nested layouts with @llui/vike, prerendered to static HTML.',
-    vike: true,
-  },
 ]
 
 /** Just the URL segments — used by the dynamic route + prerender enumerator. */
