@@ -859,14 +859,43 @@ function lowerRowFactory(
   const { decls, arr } = body
   const roots = eachRoots(itemParam)
   const hRoots = handlerRoots(itemParam, indexParam)
-  const stmts: string[] = []
+  // The row is built by CLONING a per-each-site template (Solid/vanilla's strategy,
+  // and what the keyed bench's faster competitors do): the static skeleton (elements,
+  // static attrs, literal text) is created ONCE via `createElement` and cached, then
+  // `cloneNode(true)`d per row (one C++ deep-copy vs ~N JS→C++ createElement crossings
+  // — ~38% faster row construction, measured real-Chromium). Per clone we walk to the
+  // dynamic nodes (reactive/per-row text + elements with reactive attrs/handlers) by
+  // child-index path and wire them. Two emission buffers:
+  //   skel — static skeleton construction (runs once, in `_build`)
+  //   wire — per-clone work (block-body locals, node locators, handlers, per-row attrs/text)
+  const skel: string[] = []
+  const wire: string[] = []
   const bindings: string[] = []
   let counter = 0
-  const fresh = (): string => `_n${counter++}`
+  const freshId = (): number => counter++
+  // skeleton node id -> its location in the clone: which top root + child-index path.
+  const nodePath = new Map<number, { root: number; path: readonly number[] }>()
+  // node id -> memoized per-clone locator var (so two bindings on one node share one walk).
+  const cloneVar = new Map<number, string>()
+
+  // Emit (once) a per-clone locator for skeleton node `id` and return the var holding
+  // the cloned node. A node at a top root (empty path) IS the clone root var `_r{root}`
+  // — no walk needed. Otherwise navigate the clone by child index from its root.
+  const locate = (id: number): string => {
+    const loc = nodePath.get(id)!
+    if (loc.path.length === 0) return `_r${loc.root}`
+    const cached = cloneVar.get(id)
+    if (cached) return cached
+    const name = `_c${id}`
+    const nav = loc.path.map((i) => `.childNodes[${i}]`).join('')
+    wire.push(`const ${name} = _r${loc.root}${nav}`)
+    cloneVar.set(id, name)
+    return name
+  }
 
   // Block-body locals (e.g. `const isDir = item.peek().type === 'dir'`) run once per
-  // row at construction — emit them at the top of the factory with `item`/`index`/
-  // `state` `.peek()` reads rewritten to live-row-ctx reads, so later element/text/
+  // ROW (per clone) — emit them at the top of the per-clone section with `item`/`index`/
+  // `state` `.peek()` reads rewritten to live-row-ctx reads, so later per-row text/attr/
   // handler slots can reference them. A SIGNAL-bound local (`const n = item.at('x')`)
   // is opaque to the static tracer (its uses must stay reactive but the alias hides
   // the path) → bail to the authoring path.
@@ -874,17 +903,24 @@ function lowerRowFactory(
     for (const d of ds.declarationList.declarations) {
       if (!ts.isIdentifier(d.name) || !d.initializer) return null
       if (isSignalHandleExpr(d.initializer, roots)) return null // handle alias — opaque
-      stmts.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
+      wire.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
     }
   }
 
   const calleeName = (c: ts.CallExpression): string | null =>
     ts.isIdentifier(c.expression) ? c.expression.text : null
 
-  // Append a child to `parentVar`; returns false to bail the whole row.
-  const buildChild = (child: ts.Expression, parentVar: string): boolean => {
+  // Build a child node at child-index `path` under skeleton `parentVar`; returns false
+  // to bail the whole row. Static literal text bakes into the skeleton; reactive and
+  // per-row-computed text become an empty placeholder text node (located + filled per clone).
+  const buildChild = (
+    child: ts.Expression,
+    parentVar: string,
+    root: number,
+    path: readonly number[],
+  ): boolean => {
     if (ts.isStringLiteralLike(child) || ts.isNumericLiteral(child)) {
-      stmts.push(`${parentVar}.appendChild(doc.createTextNode(${JSON.stringify(child.text)}))`)
+      skel.push(`${parentVar}.appendChild(doc.createTextNode(${JSON.stringify(child.text)}))`)
       return true
     }
     if (!ts.isCallExpression(child)) return false
@@ -893,43 +929,53 @@ function lowerRowFactory(
       const arg = child.arguments[0]
       if (!arg) return false
       if (ts.isStringLiteralLike(arg)) {
-        stmts.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
+        skel.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
         return true
       }
       if (!isSignalExpr(arg, roots)) {
         // Static (non-signal) text computed from row locals / view scope — e.g.
-        // `text(isDir ? '📁' : '📄')` or `text(item.peek().name)`. Emit a one-time
-        // text node; `.peek()` reads → live ctx, a leaked item/index handle is caught
-        // by the final guard. (A `.map`/`.at` arg is a signal → the reactive path below.)
-        // Bail if it reads a non-root signal handle (e.g. a helper param) reactively —
-        // that must stay reactive, not be stringified once.
+        // `text(isDir ? '📁' : '📄')` or `text(item.peek().name)`. A placeholder text
+        // node in the skeleton, its `.data` written per clone; `.peek()` reads → live
+        // ctx, a leaked item/index handle is caught by the final guard. (A `.map`/`.at`
+        // arg is a signal → the reactive path below.) Bail if it reads a non-root
+        // signal handle (e.g. a helper param) reactively — that must stay reactive.
         if (referencesNonRootSignal(arg, roots)) return false
-        stmts.push(
-          `${parentVar}.appendChild(doc.createTextNode(String(${rewriteHandlerReads(arg, sf, hRoots)})))`,
-        )
+        const id = freshId()
+        nodePath.set(id, { root, path })
+        skel.push(`const _n${id} = doc.createTextNode('')`)
+        skel.push(`${parentVar}.appendChild(_n${id})`)
+        wire.push(`${locate(id)}.data = String(${rewriteHandlerReads(arg, sf, hRoots)})`)
         return true
       }
       const { produce, deps } = signalToProduce(arg, sf, roots)
       if (collect) for (const d of deps) collect.add(d)
-      const tv = fresh()
-      stmts.push(`const ${tv} = doc.createTextNode('')`)
-      stmts.push(`${parentVar}.appendChild(${tv})`)
+      const id = freshId()
+      nodePath.set(id, { root, path })
+      skel.push(`const _n${id} = doc.createTextNode('')`)
+      skel.push(`${parentVar}.appendChild(_n${id})`)
       bindings.push(
-        `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { ${tv}.data = v == null ? '' : String(v) } }`,
+        `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { ${locate(id)}.data = v == null ? '' : String(v) } }`,
       )
       return true
     }
     if (callee && ELEMENT_HELPERS.has(callee)) {
-      const cv = buildElement(child)
-      if (cv === null) return false
-      stmts.push(`${parentVar}.appendChild(${cv})`)
+      const cid = buildElement(child, root, path)
+      if (cid === null) return false
+      skel.push(`${parentVar}.appendChild(_n${cid})`)
       return true
     }
     return false // structural / helper / unknown -> bail
   }
 
-  // Emit construction for an element-helper call; returns its var, or null to bail.
-  function buildElement(call: ts.CallExpression): string | null {
+  // Emit skeleton construction for an element-helper call at child-index `path` under
+  // top root `root`; returns its skeleton node id, or null to bail. Static attrs/text
+  // go to the skeleton; handlers, reactive attrs, and per-row-computed attrs are wired
+  // per clone against the located node.
+  function buildElement(
+    call: ts.CallExpression,
+    root: number,
+    path: readonly number[],
+  ): number | null {
     const callee = calleeName(call)
     if (!callee || !ELEMENT_HELPERS.has(callee)) return null
     const a0 = call.arguments[0]
@@ -949,79 +995,104 @@ function lowerRowFactory(
     } else {
       return null // dynamic args
     }
-    const v = fresh()
-    stmts.push(`const ${v} = doc.createElement(${JSON.stringify(callee)})`)
+    const id = freshId()
+    nodePath.set(id, { root, path })
+    skel.push(`const _n${id} = doc.createElement(${JSON.stringify(callee)})`)
     if (propsExpr) {
       for (const p of propsExpr.properties) {
         if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
-        const name = p.name.getText(sf)
+        // The UNQUOTED property name. `p.name.getText()` keeps the source quotes
+        // for a string-literal key (`'aria-hidden'` → emits `setAttribute("'aria-
+        // hidden'", …)`, a literally-misnamed attribute) — use `.text`, and bail
+        // on a computed key (can't name it statically).
+        if (
+          !ts.isIdentifier(p.name) &&
+          !ts.isStringLiteralLike(p.name) &&
+          !ts.isNumericLiteral(p.name)
+        )
+          return null
+        const name = p.name.text
         if (/^on[A-Z]/.test(name)) {
           // Event handler. Only a plain function expression is bound directly — its
           // item/index/state `.peek()` reads are lowered to live-row-ctx reads so it
           // can dispatch by row id without a per-row item handle. A `tagSend(...)` or
           // other call form bails (its agent-variant registration needs the authoring
           // path); after rewriting, a non-peek row-param use is caught by the leak
-          // guard below, which bails the whole factory to the render path.
+          // guard below, which bails the whole factory to the render path. Attached
+          // per clone to the located node.
           const init = p.initializer
           if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) return null
           const handlerSrc = emitHandler(init, sf, hRoots)
-          stmts.push(`${v}.addEventListener(${JSON.stringify(eventName(name))}, ${handlerSrc})`)
+          wire.push(
+            `${locate(id)}.addEventListener(${JSON.stringify(eventName(name))}, ${handlerSrc})`,
+          )
           continue
         }
         if (isSignalExpr(p.initializer, roots)) {
           // Reactive prop -> a binding slot that applies the value to the located
-          // node via the runtime's `applyAttr` (so style./IDL/content-attr quirks —
-          // e.g. a checkbox's `checked` IDL property — are handled identically to the
-          // authoring path, not re-inlined here). Reactive IDL props are why the
-          // common `input({ checked: item.at('done') })` row reaches the direct path.
+          // (cloned) node via the runtime's `applyAttr` (so style./IDL/content-attr
+          // quirks — e.g. a checkbox's `checked` IDL property — are handled identically
+          // to the authoring path). Reactive IDL props are why the common
+          // `input({ checked: item.at('done') })` row reaches the direct path.
           const { produce, deps } = signalToProduce(p.initializer, sf, roots)
           if (collect) for (const d of deps) collect.add(d)
           bindings.push(
-            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => applyAttr(${v}, ${JSON.stringify(name)}, v) }`,
+            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => applyAttr(${locate(id)}, ${JSON.stringify(name)}, v) }`,
           )
           continue
         }
         if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // static IDL/style
         const init = p.initializer
         if (ts.isStringLiteralLike(init) || ts.isNumericLiteral(init)) {
-          stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)
+          skel.push(`_n${id}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)
         } else if (init.kind === ts.SyntaxKind.TrueKeyword) {
-          stmts.push(`${v}.setAttribute(${JSON.stringify(name)}, "")`)
+          skel.push(`_n${id}.setAttribute(${JSON.stringify(name)}, "")`)
         } else if (init.kind === ts.SyntaxKind.FalseKeyword) {
           // falsy boolean attr -> absent; nothing to emit
         } else if (referencesNonRootSignal(init, roots)) {
           return null // a non-root signal handle (e.g. helper param) read reactively
         } else {
           // Static (non-signal) value computed from row locals / view scope — apply
-          // once via `applyAttr` (`.peek()` reads → live ctx; a leaked handle is caught
-          // by the final guard). style./IDL names already bailed above.
-          stmts.push(
-            `applyAttr(${v}, ${JSON.stringify(name)}, ${rewriteHandlerReads(init, sf, hRoots)})`,
+          // once PER CLONE via `applyAttr` on the located node (`.peek()` reads → live
+          // ctx; a leaked handle is caught by the final guard). style./IDL names bailed.
+          wire.push(
+            `applyAttr(${locate(id)}, ${JSON.stringify(name)}, ${rewriteHandlerReads(init, sf, hRoots)})`,
           )
         }
       }
     }
     if (childrenExpr) {
+      let ci = 0
       for (const child of childrenExpr.elements) {
-        if (!buildChild(child, v)) return null
+        if (!buildChild(child, `_n${id}`, root, [...path, ci])) return null
+        ci++ // every child produces exactly one node → child-index === DOM childNodes index
       }
     }
-    return v
+    return id
   }
 
-  const topVars: string[] = []
+  const topIds: number[] = []
   for (const el of arr.elements) {
     // A keyed row's top-level node must be a stable ELEMENT (buildSignalEach
     // rejects a bare structural fragment as a row root).
     if (!ts.isCallExpression(el)) return null
     const callee = calleeName(el)
     if (!callee || !ELEMENT_HELPERS.has(callee)) return null
-    const v = buildElement(el)
-    if (v === null) return null
-    topVars.push(v)
+    const id = buildElement(el, topIds.length, [])
+    if (id === null) return null
+    topIds.push(id)
   }
 
-  const src = `(doc, getCtx) => { ${stmts.join('; ')}; return { nodes: [${topVars.join(', ')}], bindings: [${bindings.join(', ')}] } }`
+  // Assemble: an IIFE caching the skeleton (one per each-site, built lazily on the
+  // first row with that row's `doc`), returning the per-row `(doc, getCtx)` factory.
+  const skelReturn = `[${topIds.map((id) => `_n${id}`).join(', ')}]`
+  const rootClones = topIds.map((_, r) => `const _r${r} = _sk[${r}].cloneNode(true)`).join('; ')
+  const nodesArr = topIds.map((_, r) => `_r${r}`).join(', ')
+  const wirePart = wire.length ? `${wire.join('; ')}; ` : ''
+  const src =
+    `(() => { let _sk; const _build = (doc) => { ${skel.join('; ')}; return ${skelReturn} }; ` +
+    `return (doc, getCtx) => { if (_sk === undefined) _sk = _build(doc); ${rootClones}; ${wirePart}` +
+    `return { nodes: [${nodesArr}], bindings: [${bindings.join(', ')}] } } })()`
   // Safety net: a row param that survived as a FREE identifier (a non-peek row-param
   // use a handler/binding couldn't rewrite — e.g. `onClick: () => f(item)` passing
   // the handle) would be `item is not defined` at runtime. Bail so the render path
