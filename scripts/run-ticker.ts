@@ -87,13 +87,6 @@ if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/dist/benchmarkRunner.js'))) {
   process.exit(1)
 }
 
-const cdpFile = resolve(JFB_REPO, 'webdriver-ts/src/benchmarksWebdriverCDP.ts')
-const cdpSource = readFileSync(cdpFile, 'utf8')
-if (!cdpSource.includes('benchTickerMount')) {
-  console.error('Ticker patches not applied. Run `pnpm bench:ticker:setup` first.')
-  process.exit(1)
-}
-
 console.log(`jfb-repo: ${JFB_REPO}`)
 
 // ── Keep the machine awake (macOS) ──
@@ -110,6 +103,46 @@ for (const fw of FRAMEWORKS) {
     cwd: resolve(TICKER_DIR, 'frameworks', fw),
     stdio: 'inherit',
   })
+}
+
+// ── Ensure the harness registers every op we're about to run ────────────
+// The jfb webdriver harness only measures benchmark ids compiled into it. If the
+// ticker patches are stale — a new op added to the jfb-patches templates but not
+// yet applied, or the jfb repo re-cloned by `bench:setup` (which wipes the
+// patches) — the missing ops run nothing and silently report `—`. Detect that
+// against the COMPILED harness (what actually runs) and re-apply `setup-ticker`
+// automatically so the full suite, batch-1k included, always runs.
+
+function harnessRegisteredIds(): Set<string> {
+  const compiled = resolve(JFB_REPO, 'webdriver-ts/dist/benchmarksWebdriverCDP.js')
+  if (!existsSync(compiled)) return new Set()
+  const src = readFileSync(compiled, 'utf8')
+  return new Set(TICKER_BENCHMARKS.map((b) => b.id).filter((id) => src.includes(id)))
+}
+
+function missingOps(): string[] {
+  const have = harnessRegisteredIds()
+  return TICKER_BENCHMARKS.map((b) => b.id).filter((id) => !have.has(id))
+}
+
+{
+  const missing = missingOps()
+  if (missing.length > 0) {
+    console.log(
+      `\n⚙️  Ticker harness is missing ${missing.length} op(s) [${missing.join(', ')}] — ` +
+        `applying setup-ticker to register them...`,
+    )
+    execSync(`tsx ${resolve(ROOT, 'scripts/setup-ticker.ts')}`, { cwd: ROOT, stdio: 'inherit' })
+    const stillMissing = missingOps()
+    if (stillMissing.length > 0) {
+      console.error(
+        `Ticker harness still missing [${stillMissing.join(', ')}] after setup. ` +
+          `Inspect benchmarks/jfb-ticker/jfb-patches/ and run \`pnpm bench:ticker:setup\`.`,
+      )
+      process.exit(1)
+    }
+    console.log('✓ Ticker harness up to date.')
+  }
 }
 
 // ── (Re)start the jfb server so it serves the freshly-built bundles ──────
