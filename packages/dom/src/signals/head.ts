@@ -115,7 +115,15 @@ export function domHeadSink(doc: SignalDoc): HeadSink {
 
   interface ElRec {
     el: Element
-    adopted: boolean
+    // `true` only when we adopted a genuinely FOREIGN pre-existing element (an
+    // unmarked static `<title>` in the HTML template): it is not ours, so on
+    // clear we RESTORE its original text/attrs rather than remove it. An
+    // LLui-owned element — client-created, OR an SSR element we emitted and
+    // re-adopted on hydration via its `data-llui-head` marker — is `false`: once
+    // no writer claims it (the last `show`/`branch`/component arm that placed it
+    // unmounts), it is stale and must be REMOVED from `<head>`. Restoring it
+    // instead would leak the server-rendered tag onto the next client route.
+    foreign: boolean
     baseText: string | null
     baseAttrs: Map<string, string | null>
     managed: Set<string>
@@ -140,19 +148,28 @@ export function domHeadSink(doc: SignalDoc): HeadSink {
   function ensureEl(key: string, tag: string): ElRec {
     const existing = elements.get(key)
     if (existing) return existing
-    let el = findMarked(key)
+    const marked = findMarked(key)
+    // A marked element is LLui's own SSR output (re-adopted, not foreign). The
+    // `<title>` fallback can adopt a genuinely foreign static title to override.
+    let el = marked
     if (!el && tag === 'title') el = head!.querySelector('title')
     let rec: ElRec
     if (el) {
       const baseAttrs = new Map<string, string | null>()
       const attrs = el.attributes
       for (let i = 0; i < attrs.length; i++) baseAttrs.set(attrs[i]!.name, attrs[i]!.value)
-      rec = { el, adopted: true, baseText: el.textContent, baseAttrs, managed: new Set() }
+      rec = {
+        el,
+        foreign: marked === null,
+        baseText: el.textContent,
+        baseAttrs,
+        managed: new Set(),
+      }
     } else {
       el = doc.createElement(tag)
       el.setAttribute('data-llui-head', key)
       head!.appendChild(el)
-      rec = { el, adopted: false, baseText: null, baseAttrs: new Map(), managed: new Set() }
+      rec = { el, foreign: false, baseText: null, baseAttrs: new Map(), managed: new Set() }
     }
     elements.set(key, rec)
     return rec
@@ -180,7 +197,7 @@ export function domHeadSink(doc: SignalDoc): HeadSink {
   function clearEl(key: string): void {
     const rec = elements.get(key)
     if (!rec) return
-    if (rec.adopted) {
+    if (rec.foreign) {
       for (const name of rec.managed) if (!rec.baseAttrs.has(name)) applyAttr(rec.el, name, null)
       for (const [name, val] of rec.baseAttrs) applyAttr(rec.el, name, val)
       rec.el.textContent = rec.baseText ?? ''
