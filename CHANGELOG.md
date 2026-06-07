@@ -11,6 +11,32 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-07 — packaging: caret-pin sibling `@llui/*` deps
+
+**Released:** `@llui/vite-plugin@0.11.1`; `@llui/mcp@0.12.2`; `@llui/{compiler-introspection,compiler-devtools,compiler-ssr}@0.11.1`; `@llui/devmode-annotate@0.2.2`; `llui-agent@0.10.1`
+
+Publish-metadata fix only — no code changes. Sibling `@llui/*` entries under `dependencies` used `workspace:*`, which `pnpm publish` rewrites to an **exact** version pin. A single sibling minor bump then stranded dependents a version behind: published `@llui/vite-plugin@0.11.0` exact-pinned `@llui/devmode-annotate@0.2.0`, dragging a dormant duplicate pre-0.11 head-model tree (`devmode-annotate`/`markdown-editor`/`lexical`/`components`) into consumer lockfiles, each declaring an unmet `@llui/dom ^0.10.0` peer on `@llui/dom@0.11`. Surfaced by dice.run. Switching the specs to `workspace:^` makes published tarballs carry caret ranges, so a future minor bump of a sibling no longer leaves the dev-tooling chain a version behind.
+
+### `@llui/vite-plugin@0.11.1`
+
+- **Fixed** sibling `@llui/*` `dependencies` (`compiler`, `compiler-devtools`, `compiler-introspection`, `compiler-ssr`, `devmode-annotate`) now publish as caret ranges instead of exact pins. Republished so consumers on `@llui/dom@0.11` stop resolving the stale `@llui/devmode-annotate@0.2.0` chain.
+
+### `@llui/devmode-annotate@0.2.2`
+
+- **Fixed** sibling `@llui/{components,lexical,markdown-editor}` `dependencies` publish as caret ranges instead of exact pins.
+
+### `@llui/{compiler-introspection,compiler-devtools,compiler-ssr}@0.11.1`
+
+- **Fixed** `@llui/compiler` (and inter-module) `dependencies` publish as caret ranges. ABI skew stays guarded by the separate `compilerVersion` semver check (`@llui/compiler` `module.ts` + `manifest-io.ts`), so caret is safe.
+
+### `@llui/mcp@0.12.2`
+
+- **Fixed** sibling `@llui/{compiler,compiler-devtools,compiler-introspection,vite-plugin}` `dependencies` publish as caret ranges instead of exact pins.
+
+### `llui-agent@0.10.1`
+
+- **Fixed** `@llui/agent` dependency publishes as a caret range instead of an exact pin.
+
 ## 2026-06-07 — 0.11.0 (head / metadata management)
 
 **Released:** `@llui/{dom,vike}@0.11.0`; `@llui/{agent,markdown,router,transitions}@0.10.1`; `@llui/{components,test}@0.11.1`; `@llui/mcp@0.12.1`; `@llui/{lexical,markdown-editor,devmode-annotate}@0.2.1`
