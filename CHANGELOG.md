@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-07 — 0.11.1
+
+**Released:** `@llui/dom@0.11.1`; `@llui/lexical@0.2.2`; `@llui/markdown-editor@0.2.2`; `@llui/lexical-collab@0.2.0` (new); `@llui/{agent@0.10.2,components@0.11.2,devmode-annotate@0.2.3,markdown@0.10.2,mcp@0.12.3,router@0.10.2,test@0.11.2,transitions@0.10.2,vike@0.11.1}`
+
+Ships a `@llui/dom` head-management fix plus opt-in real-time collaborative editing for the Lexical binding (new `@llui/lexical-collab` package). No breaking changes.
+
+### Migration
+
+- **dice.run / SSR head consumers** may revert the "never gate head with `show()`" workaround — head primitives gated by `show()`/`branch()` now release correctly on client navigation.
+
+### `@llui/dom@0.11.1`
+
+- **Fixed** head primitives (`title`/`meta`/`link`/`script`/…) placed inside `show()`/`branch()`/`each()` (or a `subApp` page) now release from `<head>` when their arm unmounts on a **client-side** navigation. Previously, an entry that was server-rendered and re-adopted on hydration was _restored to its SSR content_ instead of removed, leaking stale `<head>` tags (wrong canonical / JSON-LD / meta) onto the destination route. The sink now distinguishes LLui-owned elements (client-created, or re-adopted SSR tags marked `data-llui-head` → removed when no writer remains) from genuinely foreign pre-existing elements (an unmarked static `<title>` → restored). Surfaced by dice.run.
+
+### `@llui/lexical@0.2.2`
+
+- **Added** two boot options on `lexicalForeign`: `history?: boolean` (default `true`; set `false` to skip the built-in `@lexical/history` stack) and `seedMode?: 'auto' | 'deferred'` (defer the boot-time seed to an external owner). Both must be off for collaborative editing — a local undo stack crosses peers and per-client seeding duplicates content.
+
+### `@llui/lexical-collab@0.2.0` (new)
+
+- **Added** real-time collaborative editing via Yjs. `yjsCollab(config)` composes `@lexical/yjs` into one `register(editor)`: CRDT sync, a local-origin-scoped `UndoManager`, a sync-gated bootstrap (one peer seeds while the shared doc is empty), presence cursors, and `TOGGLE_CONNECT`. The network provider is injected (`y-websocket` / `y-webrtc` / Hocuspocus), keeping Yjs out of non-collab bundles.
+
+### `@llui/markdown-editor@0.2.2`
+
+- **Added** a dependency-free collab seam: the editor injects a markdown seed (`defaultValue` + its transformers) and status sinks into a new `state.collab` slice; throws on `collab` + `value` together (the CRDT owns the content).
+- **Added** a live presence indicator in the built-in toolbar — a connection dot (offline/connecting/synced) and live peer count ("Only you" / "N editing") via an optional `Signal` on `ToolbarOptions`; inert when collab is off.
+
+### Cascade peer bumps (no code change)
+
+- `@llui/dom`'s bump rolls the `peerDependencies["@llui/dom"]` range forward to `^0.11.1` for: `@llui/agent@0.10.2`, `@llui/components@0.11.2`, `@llui/devmode-annotate@0.2.3`, `@llui/markdown@0.10.2`, `@llui/mcp@0.12.3`, `@llui/router@0.10.2`, `@llui/test@0.11.2`, `@llui/transitions@0.10.2`, `@llui/vike@0.11.1`.
+
 ## 2026-06-07 — packaging: caret-pin sibling `@llui/*` deps
 
 **Released:** `@llui/vite-plugin@0.11.1`; `@llui/mcp@0.12.2`; `@llui/{compiler-introspection,compiler-devtools,compiler-ssr}@0.11.1`; `@llui/devmode-annotate@0.2.2`; `llui-agent@0.10.1`
