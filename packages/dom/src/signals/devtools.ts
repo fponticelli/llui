@@ -178,7 +178,7 @@ export interface LluiDebugAPI {
 
   // ── DOM inspection (legacy-only; optional) ─────────────────────
   inspectElement?(selector: string): ElementReport | null
-  getRenderedHtml?(selector?: string, maxLength?: number): string
+  getRenderedHtml?(selector?: string, maxlength?: number): string
   dispatchDomEvent?(
     selector: string,
     type: string,

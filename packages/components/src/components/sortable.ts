@@ -212,7 +212,7 @@ export interface SortableParts {
     'data-scope': 'sortable'
     'data-part': 'handle'
     role: 'button'
-    tabIndex: 0
+    tabindex: 0
     'aria-grabbed': Signal<boolean>
     'aria-label': string
     onPointerDown: (e: PointerEvent) => void
@@ -483,7 +483,7 @@ export function connect(
       'data-scope': 'sortable',
       'data-part': 'handle',
       role: 'button',
-      tabIndex: 0,
+      tabindex: 0,
       'aria-grabbed': state.map((s) => {
         const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId

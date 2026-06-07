@@ -81,9 +81,9 @@ describe('pin-input.connect', () => {
     expect(read(p.input(0).type, init({ mask: false }))).toBe('text')
   })
 
-  it('input inputMode tracks pin type', () => {
-    expect(read(p.input(0).inputMode, init({ type: 'numeric' }))).toBe('numeric')
-    expect(read(p.input(0).inputMode, init({ type: 'alphabetic' }))).toBe('text')
+  it('input inputmode tracks pin type', () => {
+    expect(read(p.input(0).inputmode, init({ type: 'numeric' }))).toBe('numeric')
+    expect(read(p.input(0).inputmode, init({ type: 'alphabetic' }))).toBe('text')
   })
 
   it('onInput sends setValue', () => {

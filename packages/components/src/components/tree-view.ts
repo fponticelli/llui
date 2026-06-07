@@ -301,7 +301,7 @@ export interface TreeItemParts {
     'aria-selected': Signal<boolean | undefined>
     'aria-level': number
     'aria-busy': Signal<'true' | undefined>
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     'data-scope': 'tree-view'
     'data-part': 'item'
     'data-value': string
@@ -399,7 +399,7 @@ export function connect(
         ),
         'aria-level': depth + 1,
         'aria-busy': state.map((s) => (isLoading(s, id) ? 'true' : undefined)),
-        tabIndex: state.map((s) => (s.focused === id ? 0 : -1)),
+        tabindex: state.map((s) => (s.focused === id ? 0 : -1)),
         'data-scope': 'tree-view',
         'data-part': 'item',
         'data-value': id,

@@ -76,7 +76,7 @@ export interface CheckboxParts {
     'data-disabled': Signal<'' | undefined>
     'data-scope': 'checkbox'
     'data-part': 'root'
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -84,7 +84,7 @@ export interface CheckboxParts {
   hiddenInput: {
     type: 'checkbox'
     'aria-hidden': 'true'
-    tabIndex: -1
+    tabindex: -1
     style: string
     checked: Signal<boolean>
     indeterminate: Signal<boolean>
@@ -115,7 +115,7 @@ export function connect(state: Signal<CheckboxState>, send: Send<CheckboxMsg>): 
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'checkbox',
       'data-part': 'root',
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
       onKeyDown: tagSend(send, ['toggle'], (e: KeyboardEvent) => {
         if (e.key === ' ') {
@@ -127,7 +127,7 @@ export function connect(state: Signal<CheckboxState>, send: Send<CheckboxMsg>): 
     hiddenInput: {
       type: 'checkbox',
       'aria-hidden': 'true',
-      tabIndex: -1,
+      tabindex: -1,
       style: HIDDEN_STYLE,
       checked: state.map((s) => s.checked === true),
       indeterminate: state.map((s) => s.checked === 'indeterminate'),

@@ -78,7 +78,7 @@ export interface DrawerParts {
     id: string
     'aria-modal': 'true'
     'aria-labelledby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'drawer'
     'data-part': 'content'
@@ -151,7 +151,7 @@ export function connect(
       id: contentId,
       'aria-modal': 'true',
       'aria-labelledby': titleId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'drawer',
       'data-part': 'content',

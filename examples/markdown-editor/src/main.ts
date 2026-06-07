@@ -123,7 +123,7 @@ const output = byId('markdown-output')
 const stats = byId('stats')
 const renderPanel = (s: EditorState): void => {
   output.textContent = s.value
-  stats.textContent = `${s.wordCount} words · ${s.charCount} chars${s.dirty ? ' · edited' : ''}${s.readOnly ? ' · read-only' : ''}`
+  stats.textContent = `${s.wordCount} words · ${s.charCount} chars${s.dirty ? ' · edited' : ''}${s.readonly ? ' · read-only' : ''}`
 }
 renderPanel(fullApp.getState() as EditorState)
 fullApp.subscribe((s) => renderPanel(s as EditorState))
@@ -147,12 +147,12 @@ for (const [id, label] of commandButtons) {
   controls.appendChild(button)
 }
 
-let readOnly = false
+let readonly = false
 const roButton = el('button', { className: 'ctl ctl-toggle', textContent: 'Read-only' })
 roButton.addEventListener('click', () => {
-  readOnly = !readOnly
-  roButton.setAttribute('aria-pressed', String(readOnly))
-  fullApp.send({ type: 'setReadOnly', readOnly })
+  readonly = !readonly
+  roButton.setAttribute('aria-pressed', String(readonly))
+  fullApp.send({ type: 'setReadOnly', readonly })
 })
 controls.appendChild(roButton)
 

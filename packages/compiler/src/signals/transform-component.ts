@@ -19,6 +19,7 @@ import {
   setHelperDecls,
 } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
+import { applyTextEdits, type TextEdit } from './apply-edits.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
 import { extractMsgAnnotations } from '../msg-annotations.js'
@@ -61,11 +62,7 @@ const RUNTIME_HELPERS = [
   'signalForeign',
 ]
 
-interface Edit {
-  start: number
-  end: number
-  text: string
-}
+type Edit = TextEdit
 
 /** The `state` (and any extra) root names a signal view destructures from its
  * bag parameter, or null if this isn't a signal view. */
@@ -308,10 +305,7 @@ export function transformSignalComponentSource(
   if (!transformedAny) return source
 
   // apply edits back-to-front so offsets stay valid
-  let out = source
-  for (const e of edits.sort((a, b) => b.start - a.start)) {
-    out = out.slice(0, e.start) + e.text + out.slice(e.end)
-  }
+  let out = applyTextEdits(source, edits)
 
   // inject import for the helpers actually used
   const used = RUNTIME_HELPERS.filter((h) => new RegExp(`\\b${h}\\(`).test(out))

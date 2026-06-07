@@ -183,7 +183,7 @@ export interface MenuItemParts {
     'data-scope': 'menu'
     'data-part': 'item'
     'data-value': string
-    tabIndex: -1
+    tabindex: -1
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -211,7 +211,7 @@ export interface MenuParts {
     role: 'menu'
     id: string
     'aria-labelledby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'content'
@@ -319,7 +319,7 @@ export function connect(
       role: 'menu',
       id: contentId,
       'aria-labelledby': triggerId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'menu',
       'data-part': 'content',
@@ -335,7 +335,7 @@ export function connect(
         'data-scope': 'menu',
         'data-part': 'item',
         'data-value': value,
-        tabIndex: -1,
+        tabindex: -1,
         onClick: tagSend(send, ['select'], () => {
           send({ type: 'select', value })
           opts.onSelect?.(value)

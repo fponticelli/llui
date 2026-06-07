@@ -25,7 +25,7 @@ export interface DateInputState {
   max: Date | null
   error: DateError
   disabled: boolean
-  readOnly: boolean
+  readonly: boolean
   required: boolean
 }
 
@@ -52,7 +52,7 @@ export interface DateInputInit {
   min?: Date | null
   max?: Date | null
   disabled?: boolean
-  readOnly?: boolean
+  readonly?: boolean
   required?: boolean
 }
 
@@ -115,7 +115,7 @@ export function init(opts: DateInputInit = {}): DateInputState {
     max,
     error: validate(value, min, max),
     disabled: opts.disabled ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
     required: opts.required ?? false,
   }
 }
@@ -125,7 +125,7 @@ export function update(
   msg: DateInputMsg,
   format: 'iso' | 'us' | 'eu' = 'iso',
 ): [DateInputState, never[]] {
-  if ((state.disabled || state.readOnly) && msg.type === 'setInput') return [state, []]
+  if ((state.disabled || state.readonly) && msg.type === 'setInput') return [state, []]
   switch (msg.type) {
     case 'setInput': {
       const parsed = parseDate(msg.value, format)
@@ -163,12 +163,12 @@ export interface DateInputParts {
   }
   input: {
     type: 'text'
-    inputMode: 'numeric'
-    autoComplete: 'off'
-    spellCheck: false
+    inputmode: 'numeric'
+    autocomplete: 'off'
+    spellcheck: false
     value: Signal<string>
     disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    readonly: Signal<boolean>
     required: Signal<boolean>
     'aria-invalid': Signal<'true' | undefined>
     placeholder?: string
@@ -214,12 +214,12 @@ export function connect(
     },
     input: {
       type: 'text',
-      inputMode: 'numeric',
-      autoComplete: 'off',
-      spellCheck: false,
+      inputmode: 'numeric',
+      autocomplete: 'off',
+      spellcheck: false,
       value: state.map((s) => s.input),
       disabled: state.map((s) => s.disabled),
-      readOnly: state.map((s) => s.readOnly),
+      readonly: state.map((s) => s.readonly),
       required: state.map((s) => s.required),
       'aria-invalid': state.map((s) => (s.error ? 'true' : undefined)),
       ...(opts.placeholder !== undefined ? { placeholder: opts.placeholder } : {}),

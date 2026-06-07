@@ -63,7 +63,7 @@ export interface EditorState {
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
   dirty: boolean
-  readOnly: boolean
+  readonly: boolean
 }
 
 export type EditorMsg =
@@ -74,7 +74,7 @@ export type EditorMsg =
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
-  | { type: 'setReadOnly'; readOnly: boolean }
+  | { type: 'setReadOnly'; readonly: boolean }
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 
@@ -95,7 +95,7 @@ export type EditorEffect =
 
 export interface InitOptions {
   value: string
-  readOnly: boolean
+  readonly: boolean
 }
 
 export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
@@ -109,7 +109,7 @@ export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
       ui: { activeOverlay: 'none', slashQuery: '', menu: { x: 0, y: 0 } },
       plugins: {},
       dirty: false,
-      readOnly: opts.readOnly,
+      readonly: opts.readonly,
     },
     [],
   ]
@@ -165,8 +165,8 @@ export function update(state: EditorState, msg: EditorMsg): [EditorState, Editor
       return [{ ...state, ui: { ...state.ui, slashQuery: msg.query } }, []]
     }
     case 'setReadOnly': {
-      if (state.readOnly === msg.readOnly) return [state, []]
-      return [{ ...state, readOnly: msg.readOnly }, []]
+      if (state.readonly === msg.readonly) return [state, []]
+      return [{ ...state, readonly: msg.readonly }, []]
     }
     case 'plugin': {
       // Plugin messages are routed by the host's composed reducer (it holds the

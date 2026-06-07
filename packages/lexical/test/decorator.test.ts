@@ -16,7 +16,7 @@ import {
 } from '../src/decorator.js'
 
 interface AppState {
-  readOnly: boolean
+  readonly: boolean
 }
 type AppMsg = { type: 'noop' }
 
@@ -59,13 +59,13 @@ describe('LLuiDecoratorNode bridge', () => {
 
     const def = component<AppState, AppMsg, never>({
       name: 'Host',
-      init: () => ({ readOnly: false }),
+      init: () => ({ readonly: false }),
       update: (s) => s,
       view: ({ state }) => [
         lexicalForeign({
           namespace: 'decorator',
           nodes: [LLuiDecoratorNode],
-          readOnly: state.at('readOnly'),
+          readonly: state.at('readonly'),
           serialize: (e) => e.getEditorState().read(() => $getRoot().getTextContent()),
           deserialize: (_e, _v) => {
             $getRoot().clear().append($createParagraphNode())

@@ -377,6 +377,96 @@ describe('a11y', () => {
     expect(rules("button({ onClick: () => send({ type: 'x' }) }, [])")).not.toContain('a11y')
     expect(rules("a({ href: '/x', onClick: () => 0 }, [])")).not.toContain('a11y')
   })
+  it('does NOT flag onClick when role is presentation/none (no own functionality)', () => {
+    expect(rules("div({ role: 'presentation', onClick: () => 0 }, [])")).not.toContain('a11y')
+    expect(rules("div({ role: 'none', onClick: () => 0 }, [])")).not.toContain('a11y')
+  })
+  it('accepts the lowercase tabindex HTML-attribute spelling (no a11y error)', () => {
+    // a11y is satisfied — keyboard-reachable at runtime. The casing is steered
+    // by the separate `convention` rule, not by failing a11y here.
+    expect(rules("span({ onClick: () => 0, role: 'button', tabindex: 0 }, [])")).not.toContain(
+      'a11y',
+    )
+  })
+})
+
+describe('convention (attribute casing → HTML-native lowercase)', () => {
+  it('nudges camelCase tabIndex toward HTML-native tabindex', () => {
+    const src = "div({ role: 'button', tabIndex: 0, onClick: () => 0 }, [])"
+    expect(rules(src)).toContain('convention')
+    // message quotes the lowercase replacement so it's copy-pasteable
+    expect(messageFor(src, 'convention')).toContain('tabindex')
+  })
+  it('does NOT flag the lowercase tabindex form', () => {
+    expect(rules("div({ role: 'button', tabindex: 0, onClick: () => 0 }, [])")).not.toContain(
+      'convention',
+    )
+  })
+  it('fires even when the element has a spread', () => {
+    expect(rules('div({ tabIndex: 0, ...attrs }, [])')).toContain('convention')
+  })
+  it('covers the broadened camelCase DOM set (readOnly, spellCheck, maxLength, colSpan, …)', () => {
+    expect(messageFor('input({ readOnly: true }, [])', 'convention')).toContain('readonly')
+    expect(messageFor('input({ spellCheck: false }, [])', 'convention')).toContain('spellcheck')
+    expect(messageFor('input({ maxLength: 5 }, [])', 'convention')).toContain('maxlength')
+    expect(messageFor('td({ colSpan: 2 }, [])', 'convention')).toContain('colspan')
+    expect(messageFor("input({ inputMode: 'numeric' }, [])", 'convention')).toContain('inputmode')
+  })
+  it('does NOT flag the HTML-native lowercase forms', () => {
+    expect(rules("div({ contenteditable: 'false' }, [])")).not.toContain('convention')
+    expect(rules("input({ autocomplete: 'off', maxlength: 1 }, [])")).not.toContain('convention')
+  })
+  it('flags camelCase contentEditable toward lowercase', () => {
+    expect(messageFor("span({ contentEditable: 'true' }, [])", 'convention')).toContain(
+      'contenteditable',
+    )
+  })
+  it('carries a rename fix on the key span', () => {
+    const d = lint('div({ tabIndex: 0 }, [])').find((x) => x.rule === 'convention')!
+    expect(d.fix).toBeTruthy()
+    expect(d.fix!.edits).toHaveLength(1)
+    // the edit replaces just the `tabIndex` key with `tabindex`
+    expect(d.fix!.edits[0]!.newText).toBe('tabindex')
+  })
+})
+
+describe('event-handler-casing', () => {
+  it('flags a miscased known handler (silent non-binding bug)', () => {
+    const src = 'div({ onclick: () => 0 }, [])'
+    expect(rules(src)).toContain('event-handler-casing')
+    expect(messageFor(src, 'event-handler-casing')).toContain('onClick')
+  })
+  it('fixes multiword handlers to their exact canonical casing', () => {
+    expect(messageFor('div({ onkeydown: () => 0 }, [])', 'event-handler-casing')).toContain(
+      'onKeyDown',
+    )
+    expect(messageFor('div({ onmouseover: () => 0 }, [])', 'event-handler-casing')).toContain(
+      'onMouseOver',
+    )
+  })
+  it('does NOT flag a correctly-cased handler', () => {
+    expect(rules('div({ onClick: () => 0 }, [])')).not.toContain('event-handler-casing')
+  })
+  it('does NOT flag an unknown on-prefixed name (no canonical to suggest)', () => {
+    expect(rules('div({ onfoobar: () => 0 }, [])')).not.toContain('event-handler-casing')
+  })
+})
+
+describe('attr-name (React-isms that silently break)', () => {
+  it('flags className and offers `class`', () => {
+    const src = "div({ className: 'x' }, [])"
+    expect(rules(src)).toContain('attr-name')
+    const d = lint(src).find((x) => x.rule === 'attr-name')!
+    expect(d.message).toContain('class')
+    expect(d.fix!.edits[0]!.newText).toBe('class')
+  })
+  it('flags htmlFor and offers `for`', () => {
+    expect(messageFor("label({ htmlFor: 'x' }, [])", 'attr-name')).toContain('for')
+  })
+  it('does NOT flag the native class / for', () => {
+    expect(rules("div({ class: 'x' }, [])")).not.toContain('attr-name')
+    expect(rules("label({ for: 'x' }, [])")).not.toContain('attr-name')
+  })
 })
 
 describe('exhaustive-update', () => {

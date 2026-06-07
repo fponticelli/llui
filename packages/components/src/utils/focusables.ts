@@ -27,8 +27,8 @@ export function isFocusable(el: Element): boolean {
   if (el.getAttribute('aria-hidden') === 'true') return false
   if (el.hidden) return false
   // Check tabindex
-  const tabIndex = el.getAttribute('tabindex')
-  if (tabIndex !== null && parseInt(tabIndex, 10) < 0) return false
+  const tabindex = el.getAttribute('tabindex')
+  if (tabindex !== null && parseInt(tabindex, 10) < 0) return false
   return el.matches(FOCUSABLE_SELECTOR)
 }
 

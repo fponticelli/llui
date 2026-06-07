@@ -5,9 +5,9 @@ import { lexicalForeign } from '../src/foreign.js'
 
 interface AppState {
   value: string
-  readOnly: boolean
+  readonly: boolean
 }
-type AppMsg = { type: 'set'; value: string } | { type: 'setReadOnly'; readOnly: boolean }
+type AppMsg = { type: 'set'; value: string } | { type: 'setReadOnly'; readonly: boolean }
 
 function serialize(editor: LexicalEditor): string {
   return editor.getEditorState().read(() => $getRoot().getTextContent())
@@ -40,13 +40,13 @@ describe('lexicalForeign (uncontrolled)', () => {
     const changes: string[] = []
     const def = component<AppState, AppMsg, never>({
       name: 'Uncontrolled',
-      init: () => ({ value: '', readOnly: false }),
+      init: () => ({ value: '', readonly: false }),
       update: (s, m) =>
-        m.type === 'set' ? { ...s, value: m.value } : { ...s, readOnly: m.readOnly },
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
       view: ({ state }) => [
         lexicalForeign({
           namespace: 'uncontrolled',
-          readOnly: state.at('readOnly'),
+          readonly: state.at('readonly'),
           serialize,
           deserialize,
           defaultValue: 'hello',
@@ -79,17 +79,17 @@ describe('lexicalForeign (uncontrolled)', () => {
     expect(changes.at(-1)).toBe('world')
   })
 
-  it('toggles editability reactively from the readOnly signal', async () => {
+  it('toggles editability reactively from the readonly signal', async () => {
     let editor!: LexicalEditor
     const def = component<AppState, AppMsg, never>({
       name: 'ReadOnly',
-      init: () => ({ value: '', readOnly: true }),
+      init: () => ({ value: '', readonly: true }),
       update: (s, m) =>
-        m.type === 'set' ? { ...s, value: m.value } : { ...s, readOnly: m.readOnly },
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
       view: ({ state }) => [
         lexicalForeign({
           namespace: 'ro',
-          readOnly: state.at('readOnly'),
+          readonly: state.at('readonly'),
           serialize,
           deserialize,
           defaultValue: 'locked',
@@ -104,7 +104,7 @@ describe('lexicalForeign (uncontrolled)', () => {
     // The contentEditable attribute is only present when editable.
     expect(container.querySelector('[contenteditable="true"]')).toBeNull()
 
-    app.send({ type: 'setReadOnly', readOnly: false })
+    app.send({ type: 'setReadOnly', readonly: false })
     await wait(0)
     expect(editor.isEditable()).toBe(true)
   })
@@ -121,13 +121,13 @@ describe('lexicalForeign (controlled)', () => {
     }
     const def = component<AppState, AppMsg, never>({
       name: 'Controlled',
-      init: () => ({ value: 'start', readOnly: false }),
+      init: () => ({ value: 'start', readonly: false }),
       update: (s, m) =>
-        m.type === 'set' ? { ...s, value: m.value } : { ...s, readOnly: m.readOnly },
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
       view: ({ state }) => [
         lexicalForeign({
           namespace: 'controlled',
-          readOnly: state.at('readOnly'),
+          readonly: state.at('readonly'),
           value: state.at('value') as Signal<string>,
           serialize,
           deserialize: trackingDeserialize,

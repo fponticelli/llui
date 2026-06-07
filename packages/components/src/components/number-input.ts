@@ -14,7 +14,7 @@ export interface NumberInputState {
   max: number
   step: number
   disabled: boolean
-  readOnly: boolean
+  readonly: boolean
   /** Allow a free-text input value while the user is typing. */
   rawText: string
 }
@@ -43,7 +43,7 @@ export interface NumberInputInit {
   max?: number
   step?: number
   disabled?: boolean
-  readOnly?: boolean
+  readonly?: boolean
 }
 
 export function init(opts: NumberInputInit = {}): NumberInputState {
@@ -54,7 +54,7 @@ export function init(opts: NumberInputInit = {}): NumberInputState {
     max: opts.max ?? Infinity,
     step: opts.step ?? 1,
     disabled: opts.disabled ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
     rawText: value === null ? '' : String(value),
   }
 }
@@ -82,7 +82,7 @@ function decimalPlaces(n: number): number {
 }
 
 export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInputState, never[]] {
-  if (msg.type !== 'setDisabled' && (state.disabled || state.readOnly)) {
+  if (msg.type !== 'setDisabled' && (state.disabled || state.readonly)) {
     // Allow setRawText for controlled typing? No — disabled means no interaction.
     return [state, []]
   }
@@ -135,14 +135,14 @@ export interface NumberInputParts {
   input: {
     type: 'text'
     role: 'spinbutton'
-    inputMode: 'decimal'
+    inputmode: 'decimal'
     'aria-valuemin': Signal<number | undefined>
     'aria-valuemax': Signal<number | undefined>
     'aria-valuenow': Signal<number | undefined>
     'aria-disabled': Signal<'true' | undefined>
     'aria-readonly': Signal<'true' | undefined>
     disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    readonly: Signal<boolean>
     value: Signal<string>
     'data-scope': 'number-input'
     'data-part': 'input'
@@ -157,7 +157,7 @@ export interface NumberInputParts {
     disabled: Signal<boolean>
     'data-scope': 'number-input'
     'data-part': 'increment'
-    tabIndex: -1
+    tabindex: -1
     onClick: (e: MouseEvent) => void
   }
   decrement: {
@@ -167,7 +167,7 @@ export interface NumberInputParts {
     disabled: Signal<boolean>
     'data-scope': 'number-input'
     'data-part': 'decrement'
-    tabIndex: -1
+    tabindex: -1
     onClick: (e: MouseEvent) => void
   }
 }
@@ -206,14 +206,14 @@ export function connect(
     input: {
       type: 'text',
       role: 'spinbutton',
-      inputMode: 'decimal',
+      inputmode: 'decimal',
       'aria-valuemin': state.map((st) => (isFinite(st.min) ? st.min : undefined)),
       'aria-valuemax': state.map((st) => (isFinite(st.max) ? st.max : undefined)),
       'aria-valuenow': state.map((st) => st.value ?? undefined),
       'aria-disabled': state.map((st) => (st.disabled ? 'true' : undefined)),
-      'aria-readonly': state.map((st) => (st.readOnly ? 'true' : undefined)),
+      'aria-readonly': state.map((st) => (st.readonly ? 'true' : undefined)),
       disabled: state.map((st) => st.disabled),
-      readOnly: state.map((st) => st.readOnly),
+      readonly: state.map((st) => st.readonly),
       value: state.map((st) => st.rawText),
       'data-scope': 'number-input',
       'data-part': 'input',
@@ -261,24 +261,24 @@ export function connect(
       type: 'button',
       'aria-label': incrementLabel,
       'aria-disabled': state.map((st) =>
-        st.disabled || st.readOnly || (st.value ?? 0) >= st.max ? 'true' : undefined,
+        st.disabled || st.readonly || (st.value ?? 0) >= st.max ? 'true' : undefined,
       ),
-      disabled: state.map((st) => st.disabled || st.readOnly || (st.value ?? 0) >= st.max),
+      disabled: state.map((st) => st.disabled || st.readonly || (st.value ?? 0) >= st.max),
       'data-scope': 'number-input',
       'data-part': 'increment',
-      tabIndex: -1,
+      tabindex: -1,
       onClick: tagSend(send, ['increment'], () => send({ type: 'increment' })),
     },
     decrement: {
       type: 'button',
       'aria-label': decrementLabel,
       'aria-disabled': state.map((st) =>
-        st.disabled || st.readOnly || (st.value ?? 0) <= st.min ? 'true' : undefined,
+        st.disabled || st.readonly || (st.value ?? 0) <= st.min ? 'true' : undefined,
       ),
-      disabled: state.map((st) => st.disabled || st.readOnly || (st.value ?? 0) <= st.min),
+      disabled: state.map((st) => st.disabled || st.readonly || (st.value ?? 0) <= st.min),
       'data-scope': 'number-input',
       'data-part': 'decrement',
-      tabIndex: -1,
+      tabindex: -1,
       onClick: tagSend(send, ['decrement'], () => send({ type: 'decrement' })),
     },
   }

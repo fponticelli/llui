@@ -139,7 +139,7 @@ export interface SliderThumbParts {
     'data-scope': 'slider'
     'data-part': 'thumb'
     'data-index': string
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onKeyDown: (e: KeyboardEvent) => void
     style: Signal<string>
   }
@@ -215,7 +215,7 @@ export function connect(state: Signal<SliderState>, send: Send<SliderMsg>): Slid
         'data-scope': 'slider',
         'data-part': 'thumb',
         'data-index': String(index),
-        tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+        tabindex: state.map((s) => (s.disabled ? -1 : 0)),
         style: state.map((s) => thumbStyle(s, index)),
         onKeyDown: (e: KeyboardEvent) => handleThumbKey(e, index, send),
       },

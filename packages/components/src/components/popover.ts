@@ -69,7 +69,7 @@ export interface PopoverParts {
     role: 'dialog'
     id: string
     'aria-labelledby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'content'
@@ -136,7 +136,7 @@ export function connect(
       role: 'dialog',
       id: contentId,
       'aria-labelledby': titleId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((st) => (st.open ? 'open' : 'closed')),
       'data-scope': 'popover',
       'data-part': 'content',

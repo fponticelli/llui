@@ -52,7 +52,7 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Controlled document signal; the editor follows it (echo-guarded). */
   value?: Signal<string>
   /** Reactive read-only flag (always supplied by the host's state). */
-  readOnly: Signal<boolean>
+  readonly: Signal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
   /** Outbound: serialized document changed (debounced, real edits only). */
@@ -100,7 +100,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
       namespace: opts.namespace,
       nodes,
       theme: opts.theme,
-      editable: !opts.readOnly.peek(),
+      editable: !opts.readonly.peek(),
       onError: (error: Error) => {
         if (opts.onError) opts.onError(error)
         else throw error
@@ -109,7 +109,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     // Vanilla Lexical does NOT make the root editable — the caller must set
     // `contenteditable` (the React `<ContentEditable>` does this). Without it the
     // browser shows no caret and ignores typing.
-    el.setAttribute('contenteditable', opts.readOnly.peek() ? 'false' : 'true')
+    el.setAttribute('contenteditable', opts.readonly.peek() ? 'false' : 'true')
     editor.setRootElement(el as HTMLElement)
     opts.onReady?.(editor)
 
@@ -192,13 +192,13 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     }
   }
 
-  const readOnly = opts.readOnly
+  const readonly = opts.readonly
   const controlled = opts.value
 
   if (controlled) {
-    return foreign<ForeignInst, { value: Signal<string>; readOnly: Signal<boolean> }>({
+    return foreign<ForeignInst, { value: Signal<string>; readonly: Signal<boolean> }>({
       tag: 'div',
-      state: { value: controlled, readOnly },
+      state: { value: controlled, readonly },
       mount: ({ el, state }) => {
         const b = boot(el)
         const unbindValue = state.value.bind((incoming) => {
@@ -206,7 +206,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
           b.editor.update(() => opts.deserialize(b.editor, incoming), { tag: PROGRAMMATIC_TAG })
           b.setLastEmitted(incoming)
         })
-        const unbindReadOnly = state.readOnly.bind((ro) => {
+        const unbindReadOnly = state.readonly.bind((ro) => {
           b.editor.setEditable(!ro)
           el.setAttribute('contenteditable', ro ? 'false' : 'true')
         })
@@ -222,12 +222,12 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     })
   }
 
-  return foreign<ForeignInst, { readOnly: Signal<boolean> }>({
+  return foreign<ForeignInst, { readonly: Signal<boolean> }>({
     tag: 'div',
-    state: { readOnly },
+    state: { readonly },
     mount: ({ el, state }) => {
       const b = boot(el)
-      const unbindReadOnly = state.readOnly.bind((ro) => {
+      const unbindReadOnly = state.readonly.bind((ro) => {
         b.editor.setEditable(!ro)
         ;(el as HTMLElement).contentEditable = ro ? 'false' : 'true'
       })

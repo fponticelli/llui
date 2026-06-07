@@ -40,7 +40,7 @@ export interface FileUploadState {
   maxSize: number
   minFileSize: number
   required: boolean
-  readOnly: boolean
+  readonly: boolean
   invalid: boolean
   dragging: boolean
 }
@@ -76,7 +76,7 @@ export interface FileUploadInit {
   maxSize?: number
   minFileSize?: number
   required?: boolean
-  readOnly?: boolean
+  readonly?: boolean
   invalid?: boolean
 }
 
@@ -91,7 +91,7 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
     maxSize: opts.maxSize ?? 0,
     minFileSize: opts.minFileSize ?? 0,
     required: opts.required ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
     invalid: opts.invalid ?? false,
     dragging: false,
   }
@@ -182,7 +182,7 @@ export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadS
   if (state.disabled && msg.type !== 'clear' && msg.type !== 'clearRejected') {
     return [state, []]
   }
-  if (state.readOnly && (msg.type === 'setFiles' || msg.type === 'addFiles')) {
+  if (state.readonly && (msg.type === 'setFiles' || msg.type === 'addFiles')) {
     return [state, []]
   }
   switch (msg.type) {
@@ -309,7 +309,7 @@ export interface FileUploadParts {
   }
   hiddenInput: {
     type: 'file'
-    tabIndex: -1
+    tabindex: -1
     'aria-hidden': 'true'
     style: string
     disabled: Signal<boolean>
@@ -431,7 +431,7 @@ export function connect(
       'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
       'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
       'data-invalid': state.map((st) => (st.invalid ? '' : undefined)),
-      'data-readonly': state.map((st) => (st.readOnly ? '' : undefined)),
+      'data-readonly': state.map((st) => (st.readonly ? '' : undefined)),
     },
     dropzone: {
       'data-scope': 'file-upload',
@@ -463,7 +463,7 @@ export function connect(
     },
     hiddenInput: {
       type: 'file',
-      tabIndex: -1,
+      tabindex: -1,
       'aria-hidden': 'true',
       style: HIDDEN_STYLE,
       disabled: state.map((st) => st.disabled),

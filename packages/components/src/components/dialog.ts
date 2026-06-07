@@ -102,7 +102,7 @@ export interface DialogParts {
     'aria-modal': 'true' | undefined
     'aria-labelledby': string
     'aria-describedby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'content'
@@ -180,7 +180,7 @@ export function connect(
       'aria-modal': modal ? 'true' : undefined,
       'aria-labelledby': titleId,
       'aria-describedby': descId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'dialog',
       'data-part': 'content',

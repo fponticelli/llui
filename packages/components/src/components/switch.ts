@@ -49,7 +49,7 @@ export interface SwitchParts {
     'data-disabled': Signal<'' | undefined>
     'data-scope': 'switch'
     'data-part': 'root'
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -67,7 +67,7 @@ export interface SwitchParts {
     type: 'checkbox'
     role: 'switch'
     'aria-hidden': 'true'
-    tabIndex: -1
+    tabindex: -1
     style: string
     checked: Signal<boolean>
     disabled: Signal<boolean>
@@ -89,7 +89,7 @@ export function connect(state: Signal<SwitchState>, send: Send<SwitchMsg>): Swit
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'switch',
       'data-part': 'root',
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
       onKeyDown: tagSend(send, ['toggle'], (e) => {
         if (e.key === ' ' || e.key === 'Enter') {
@@ -112,7 +112,7 @@ export function connect(state: Signal<SwitchState>, send: Send<SwitchMsg>): Swit
       type: 'checkbox',
       role: 'switch',
       'aria-hidden': 'true',
-      tabIndex: -1,
+      tabindex: -1,
       style: HIDDEN_STYLE,
       checked: state.map((s) => s.checked),
       disabled: state.map((s) => s.disabled),

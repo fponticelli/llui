@@ -232,9 +232,9 @@ describe('sortable.connect', () => {
     ).toBe(true)
   })
 
-  it('handle has tabIndex=0 for keyboard focus', () => {
+  it('handle has tabindex=0 for keyboard focus', () => {
     const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
-    expect(parts.handle('apple', 2).tabIndex).toBe(0)
+    expect(parts.handle('apple', 2).tabindex).toBe(0)
   })
 
   it('handle role is button', () => {

@@ -159,7 +159,7 @@ describe('element event-handler typing', () => {
         {
           class: busy.map((b) => (b ? 'spin' : 'idle')),
           id: 'x',
-          tabIndex: -1,
+          tabindex: -1,
           'data-foo': 'bar',
           'aria-busy': busy,
         },

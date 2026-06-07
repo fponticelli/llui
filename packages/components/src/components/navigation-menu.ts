@@ -106,7 +106,7 @@ export interface NavItemParts {
     'data-part': 'trigger'
     'data-state': Signal<'open' | 'closed'>
     'data-value': string
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -197,7 +197,7 @@ export function connect(
           'data-part': 'trigger',
           'data-state': state.map((st) => (isOpen(st, id) ? 'open' : 'closed')),
           'data-value': id,
-          tabIndex: state.map((st) => (st.focused === id ? 0 : -1)),
+          tabindex: state.map((st) => (st.focused === id ? 0 : -1)),
           onClick: tagSend(send, ['toggleBranch'], () => {
             if (options.isBranch) {
               send({ type: 'toggleBranch', id, ancestorIds })

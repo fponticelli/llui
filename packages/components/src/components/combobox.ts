@@ -279,7 +279,7 @@ export interface ComboboxParts {
   input: {
     type: 'text'
     role: 'combobox'
-    autoComplete: 'off'
+    autocomplete: 'off'
     'aria-autocomplete': 'list'
     'aria-expanded': Signal<boolean>
     'aria-controls': string
@@ -299,7 +299,7 @@ export interface ComboboxParts {
     'aria-label': string
     'aria-expanded': Signal<boolean>
     'aria-controls': string
-    tabIndex: -1
+    tabindex: -1
     'data-scope': 'combobox'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -313,7 +313,7 @@ export interface ComboboxParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'combobox'
     'data-part': 'content'
@@ -355,7 +355,7 @@ export function connect(
     input: {
       type: 'text',
       role: 'combobox',
-      autoComplete: 'off',
+      autocomplete: 'off',
       'aria-autocomplete': 'list',
       'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
@@ -422,7 +422,7 @@ export function connect(
       'aria-label': triggerLabel,
       'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-scope': 'combobox',
       'data-part': 'trigger',
       onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
@@ -436,7 +436,7 @@ export function connect(
       role: 'listbox',
       id: contentId,
       'aria-labelledby': inputId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'combobox',
       'data-part': 'content',

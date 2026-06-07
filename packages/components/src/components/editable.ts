@@ -65,7 +65,7 @@ export interface EditableParts {
     'data-disabled': Signal<'' | undefined>
   }
   preview: {
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'editable'
     'data-part': 'preview'
@@ -139,7 +139,7 @@ export function connect(
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     preview: {
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'editable',
       'data-part': 'preview',

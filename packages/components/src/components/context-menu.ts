@@ -133,7 +133,7 @@ export interface ContextMenuItemParts {
     'data-scope': 'context-menu'
     'data-part': 'item'
     'data-value': string
-    tabIndex: -1
+    tabindex: -1
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -154,7 +154,7 @@ export interface ContextMenuParts {
   content: {
     role: 'menu'
     id: string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'context-menu'
     'data-part': 'content'
@@ -193,7 +193,7 @@ export function connect(
     content: {
       role: 'menu',
       id: contentId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'context-menu',
       'data-part': 'content',
@@ -233,7 +233,7 @@ export function connect(
         'data-scope': 'context-menu',
         'data-part': 'item',
         'data-value': value,
-        tabIndex: -1,
+        tabindex: -1,
         onClick: tagSend(send, ['select'], () => {
           send({ type: 'select', value })
           opts.onSelect?.(value)

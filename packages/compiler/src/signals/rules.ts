@@ -32,18 +32,51 @@
 //   exhaustive-update — `switch (msg.type)` in update() that misses a Msg variant
 //                       (with no `default`); an unhandled message silently no-ops.
 //   a11y              — <img> without `alt`; onClick on a non-interactive element with
-//                       no `role` + `tabIndex` (not keyboard-accessible).
+//                       no `role` + `tabindex` (not keyboard-accessible). Exempts
+//                       role="presentation"/"none"; accepts `tabindex`/`tabIndex`.
+//   convention        — a multiword DOM attribute written in camelCase when LLui
+//                       authors the HTML-native lowercase form (e.g. `tabIndex` →
+//                       `tabindex`, matching `class`/`for`/`aria-*`). Both bind
+//                       identically at runtime; this steers to one spelling.
+//                       Carries an autofix (and is auto-applied by the vite plugin).
+//   event-handler-casing — a known handler name miscased (`onclick` → `onClick`).
+//                       The binder only binds `/^on[A-Z]/`, so the miscased form is
+//                       a dead attribute that never fires. Correctness; has a fix.
+//                       (Handlers are the ONE camelCase exception — runtime-required.)
+//   attr-name         — a React-ism that silently doesn't apply (`className` →
+//                       `class`, `htmlFor` → `for`). Correctness; has a fix.
 //
-// Each diagnostic has a message and a source position (start offset + length).
+// Each diagnostic has a message, a source position (start offset + length), and —
+// for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
 
 import ts from 'typescript'
 import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
+import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
+
+/** A single text replacement, as absolute char offsets into the linted source. */
+export interface LintEdit {
+  start: number
+  end: number
+  newText: string
+}
+
+/** A deterministic, mechanically-applicable fix for a diagnostic — the same
+ * shape an editor quick-fix or `applyLintFixes` consumes. A diagnostic carries
+ * at most one (the single obvious correction); multi-option fixes aren't needed
+ * for the rename-style rules that produce them. */
+export interface LintFix {
+  /** Short label, e.g. "Rename to `tabindex`". */
+  title: string
+  edits: LintEdit[]
+}
 
 export interface SignalDiagnostic {
   rule: string
   message: string
   start: number
   length: number
+  /** Present iff the diagnostic is mechanically fixable (rename-style rules). */
+  fix?: LintFix
 }
 
 const SIDE_EFFECT_CALLS = new Set([
@@ -89,6 +122,94 @@ const REACTIVE_METHODS = new Set(['peek', 'at', 'map'])
 // Elements that are natively focusable/clickable — an onClick on these needs no
 // extra role/tabIndex for keyboard accessibility.
 const INTERACTIVE_TAGS = new Set(['button', 'a', 'input', 'select', 'textarea', 'option'])
+// Attribute names with a canonical LLui spelling, keyed by the LOWERCASE form of
+// what an author might write. `kind`:
+//   'convention' — a multiword DOM attribute written in camelCase. LLui authors
+//     attributes in their HTML-NATIVE lowercase form (the same way it uses
+//     `class`/`for`, not React's `className`/`htmlFor`, and `aria-*`/`data-*`),
+//     so the camelCase spelling is non-idiomatic. It still binds (setAttribute is
+//     case-insensitive), so this is runtime-neutral and auto-fixed. The target
+//     (`to`) is just the HTML attribute name — an unambiguous lowercasing, so the
+//     catch-list can be broad. (DOM IDL property *access* on a node, e.g.
+//     `el.tabIndex`, is the JS API and is NOT an element-prop key, so it is never
+//     reached by this rule.)
+//   'broken' — a React-ism that silently does NOT apply: a `className`/`htmlFor`
+//     prop is written verbatim via `setAttribute` as a dead `classname`/`htmlfor`
+//     attribute and the class/label is never set. A correctness bug → hard error.
+// Keyed by lowercase so any casing of a known name matches; only flagged when the
+// WRITTEN spelling differs from `to` (so the lowercase form is never flagged).
+interface AttrCorrection {
+  to: string
+  kind: 'convention' | 'broken'
+}
+const ATTR_CORRECTIONS = new Map<string, AttrCorrection>([
+  ['tabindex', { to: 'tabindex', kind: 'convention' }],
+  ['readonly', { to: 'readonly', kind: 'convention' }],
+  ['spellcheck', { to: 'spellcheck', kind: 'convention' }],
+  ['maxlength', { to: 'maxlength', kind: 'convention' }],
+  ['minlength', { to: 'minlength', kind: 'convention' }],
+  ['colspan', { to: 'colspan', kind: 'convention' }],
+  ['rowspan', { to: 'rowspan', kind: 'convention' }],
+  ['contenteditable', { to: 'contenteditable', kind: 'convention' }],
+  ['crossorigin', { to: 'crossorigin', kind: 'convention' }],
+  ['inputmode', { to: 'inputmode', kind: 'convention' }],
+  ['autocomplete', { to: 'autocomplete', kind: 'convention' }],
+  ['autofocus', { to: 'autofocus', kind: 'convention' }],
+  ['novalidate', { to: 'novalidate', kind: 'convention' }],
+  ['formaction', { to: 'formaction', kind: 'convention' }],
+  ['classname', { to: 'class', kind: 'broken' }],
+  ['htmlfor', { to: 'for', kind: 'broken' }],
+])
+// Canonical `on*` event-handler names the runtime binds. Mirrors `@llui/dom`'s
+// `ElEventMap` — kept here independently (like `ELEMENT_HELPERS`) so the compiler
+// needs no `@llui/dom` dependency. The binder only treats `/^on[A-Z]/` as a
+// listener, so a miscased `onclick`/`onkeydown` silently never binds — caught by
+// the `event-handler-casing` rule, which renames to the canonical form below.
+const EVENT_HANDLER_BY_LOWER = new Map<string, string>(
+  (
+    [
+      'onClick',
+      'onDblClick',
+      'onMouseDown',
+      'onMouseUp',
+      'onMouseEnter',
+      'onMouseLeave',
+      'onMouseMove',
+      'onMouseOver',
+      'onMouseOut',
+      'onContextMenu',
+      'onPointerDown',
+      'onPointerUp',
+      'onPointerMove',
+      'onPointerEnter',
+      'onPointerLeave',
+      'onPointerCancel',
+      'onKeyDown',
+      'onKeyUp',
+      'onKeyPress',
+      'onInput',
+      'onChange',
+      'onSubmit',
+      'onReset',
+      'onFocus',
+      'onBlur',
+      'onFocusIn',
+      'onFocusOut',
+      'onScroll',
+      'onWheel',
+      'onDrag',
+      'onDragStart',
+      'onDragEnd',
+      'onDragOver',
+      'onDragEnter',
+      'onDragLeave',
+      'onDrop',
+      'onTouchStart',
+      'onTouchEnd',
+      'onTouchMove',
+    ] as const
+  ).map((h) => [h.toLowerCase(), h]),
+)
 // ELEMENT_HELPERS entries that don't produce a DOM *element* with attributes.
 const NON_ELEMENT_HELPERS = new Set(['text', 'el', 'signalText'])
 
@@ -290,8 +411,8 @@ function withParams(base: Roots, params: readonly string[]): Roots {
  */
 export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   const diags: SignalDiagnostic[] = []
-  const push = (rule: string, message: string, node: ts.Node): void => {
-    diags.push({ rule, message, start: node.getStart(sf), length: node.getWidth(sf) })
+  const push = (rule: string, message: string, node: ts.Node, fix?: LintFix): void => {
+    diags.push({ rule, message, start: node.getStart(sf), length: node.getWidth(sf), fix })
   }
 
   // A compact, single-line excerpt of an expression for quoting in messages —
@@ -502,13 +623,91 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) &&
         p.name.getText(sf) === name,
     )
+  // Case-insensitive attribute presence — mirrors the runtime binder, which
+  // routes every non-handler prop through `setAttribute`, where HTML attribute
+  // names are case-insensitive (so `tabIndex` and `tabindex` bind identically).
+  // Handler props are matched EXACTLY by their callers, because the binder only
+  // treats `/^on[A-Z]/` as a listener — a lowercase `onclick` is NOT an event
+  // handler at runtime. So this helper is for attributes only.
+  const hasAttr = (obj: ts.ObjectLiteralExpression, name: string): boolean =>
+    obj.properties.some(
+      (p) =>
+        (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) &&
+        p.name.getText(sf).toLowerCase() === name.toLowerCase(),
+    )
+  // Static string value of a prop, if it's a plain string literal (else undefined).
+  const stringPropValue = (obj: ts.ObjectLiteralExpression, name: string): string | undefined => {
+    const p = findProp(obj, name)
+    return p && ts.isStringLiteralLike(p.initializer) ? p.initializer.text : undefined
+  }
   const hasSpread = (obj: ts.ObjectLiteralExpression): boolean =>
     obj.properties.some((p) => ts.isSpreadAssignment(p))
+  // The key node + its unquoted text for a (shorthand) property assignment, or
+  // null for spreads / computed / numeric keys (not renameable name props).
+  const propKey = (p: ts.ObjectLiteralElementLike): { node: ts.Node; text: string } | null => {
+    if (!ts.isPropertyAssignment(p) && !ts.isShorthandPropertyAssignment(p)) return null
+    const name = p.name
+    if (ts.isIdentifier(name) || ts.isStringLiteralLike(name))
+      return { node: name, text: name.text }
+    return null
+  }
+  // A rename fix that replaces a key node's span with `to` (a valid identifier
+  // key, so it works whether the original was `tabindex:` or `'tabindex':`).
+  const renameFix = (nameNode: ts.Node, to: string): LintFix => ({
+    title: `Rename to \`${to}\``,
+    edits: [{ start: nameNode.getStart(sf), end: nameNode.getEnd(), newText: to }],
+  })
 
   const lintElementCall = (node: ts.CallExpression, roots: Roots): void => {
     const ec = elementCall(node)
     if (!ec || !ec.props) return
     const { tag, props } = ec
+
+    // Attribute / event-handler NAME casing. Checked independently of the spread
+    // guard below — a spread can't rename a literally-written key — so these fire
+    // even alongside `...attrs`. Each carries a deterministic rename fix.
+    for (const p of props.properties) {
+      const key = propKey(p)
+      if (!key) continue
+      const lower = key.text.toLowerCase()
+
+      // event-handler-casing (correctness): a known handler name, miscased. The
+      // binder only binds `/^on[A-Z]/`, so `onclick`/`onkeydown` silently never
+      // fire — they're written as dead attributes. Rename to the canonical form.
+      const canonicalHandler = EVENT_HANDLER_BY_LOWER.get(lower)
+      if (canonicalHandler && key.text !== canonicalHandler) {
+        push(
+          'event-handler-casing',
+          `\`${key.text}\` is not bound as an event handler — the runtime only recognizes \`/^on[A-Z]/\` names, so \`${key.text}\` is written as a dead attribute and never fires. Use \`${canonicalHandler}\`.`,
+          key.node,
+          renameFix(key.node, canonicalHandler),
+        )
+        continue
+      }
+
+      // Attribute-name correction: a camelCase DOM idiom written lowercase
+      // (convention — binds fine, auto-fixed) or a React-ism that silently
+      // doesn't apply (broken — hard error, with a fix).
+      const correction = ATTR_CORRECTIONS.get(lower)
+      if (correction && key.text !== correction.to) {
+        if (correction.kind === 'convention') {
+          push(
+            'convention',
+            `\`${key.text}\` is a camelCase DOM spelling — LLui authors attributes in their HTML-native lowercase form (like \`class\`/\`for\`/\`aria-*\`). Use \`${correction.to}\`. Both bind identically at runtime; one spelling keeps views consistent.`,
+            key.node,
+            renameFix(key.node, correction.to),
+          )
+        } else {
+          push(
+            'attr-name',
+            `\`${key.text}\` does not apply at runtime — LLui uses the HTML-native attribute \`${correction.to}\`. A \`${key.text}\` prop is written verbatim via setAttribute (a dead \`${lower}\` attribute), so its value never takes effect. Rename to \`${correction.to}\`.`,
+            key.node,
+            renameFix(key.node, correction.to),
+          )
+        }
+      }
+    }
+
     // A spread (`...attrs`) can carry any of the props we check for, so we
     // can't soundly flag missing alt / onInput / role — stay quiet.
     if (hasSpread(props)) return
@@ -522,17 +721,29 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       )
     }
 
-    // a11y: onClick on a non-interactive element needs role + tabIndex so it is
-    // reachable and activatable by keyboard.
+    // a11y: onClick on a non-interactive element needs role + tabindex so it is
+    // reachable and activatable by keyboard. Two exemptions:
+    //  - role="presentation"/"none": the author has explicitly removed the
+    //    element from the a11y tree, so it exposes no functionality of its own
+    //    (the keyboard story is owned by focusable children). ARIA's
+    //    presentational-role conflict resolution also means adding tabindex here
+    //    would re-expose native semantics — the opposite of what's wanted.
+    //  - tabindex in any casing: `hasAttr` matches it case-insensitively (the
+    //    runtime binds it the same way), so a camelCase `tabIndex` still satisfies
+    //    keyboard-reachability here. The HTML-native lowercase form is steered
+    //    toward by the separate `convention` rule, not by failing a11y.
     const onClick = findProp(props, 'onClick')
+    const role = stringPropValue(props, 'role')
+    const isPresentational = role === 'presentation' || role === 'none'
     if (
       onClick &&
       !INTERACTIVE_TAGS.has(tag) &&
-      !(hasProp(props, 'role') && hasProp(props, 'tabIndex'))
+      !isPresentational &&
+      !(hasProp(props, 'role') && hasAttr(props, 'tabindex'))
     ) {
       push(
         'a11y',
-        `onClick on a non-interactive <${tag}> is not keyboard-accessible — use a <button>/<a>, or add both \`role\` and \`tabIndex\` so it can be focused and activated by keyboard.`,
+        `onClick on a non-interactive <${tag}> is not keyboard-accessible — use a <button>/<a>, add both \`role\` and \`tabindex\` so it can be focused and activated by keyboard, or set \`role: 'presentation'\` if the element exposes no functionality of its own.`,
         onClick.name,
       )
     }
@@ -754,6 +965,8 @@ export interface SignalLintMessage {
   start: number
   line: number
   column: number
+  /** Present iff the diagnostic is mechanically fixable (see {@link LintFix}). */
+  fix?: LintFix
 }
 
 /**
@@ -771,6 +984,28 @@ export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLint
       start: d.start,
       line: lc.line + 1,
       column: lc.character,
+      ...(d.fix ? { fix: d.fix } : {}),
     }
   })
+}
+
+/**
+ * Apply the fixes carried by `messages` to `source`, returning the rewritten
+ * code and how many fixes applied vs. were skipped (overlapping with one already
+ * applied). Messages without a `fix` are ignored, so a caller can pass a filtered
+ * subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
+ * not re-lint; the caller decides whether a second pass is warranted.
+ */
+export function applyLintFixes(
+  source: string,
+  messages: ReadonlyArray<{ fix?: LintFix }>,
+): { code: string; applied: number; skipped: number } {
+  const edits: TextEdit[] = []
+  for (const m of messages) {
+    if (!m.fix) continue
+    for (const e of m.fix.edits) edits.push({ start: e.start, end: e.end, text: e.newText })
+  }
+  if (edits.length === 0) return { code: source, applied: 0, skipped: 0 }
+  const { kept, skipped } = mergeNonOverlapping(edits)
+  return { code: applyTextEdits(source, kept), applied: kept.length, skipped }
 }

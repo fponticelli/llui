@@ -22,7 +22,7 @@ export interface AngleSliderState {
   max: number
   step: number
   disabled: boolean
-  readOnly: boolean
+  readonly: boolean
 }
 
 export type AngleSliderMsg =
@@ -43,7 +43,7 @@ export interface AngleSliderInit {
   max?: number
   step?: number
   disabled?: boolean
-  readOnly?: boolean
+  readonly?: boolean
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -65,12 +65,12 @@ export function init(opts: AngleSliderInit = {}): AngleSliderState {
     max,
     step,
     disabled: opts.disabled ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
   }
 }
 
 export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSliderState, never[]] {
-  if (state.disabled || state.readOnly) {
+  if (state.disabled || state.readonly) {
     if (msg.type === 'setValue' || msg.type === 'increment' || msg.type === 'decrement') {
       return [state, []]
     }
@@ -135,7 +135,7 @@ export interface AngleSliderParts {
     'aria-orientation': 'horizontal'
     'aria-disabled': Signal<'true' | undefined>
     'aria-readonly': Signal<'true' | undefined>
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     'data-scope': 'angle-slider'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
@@ -192,8 +192,8 @@ export function connect(
       'aria-valuetext': state.map((s) => fmt(s.value)),
       'aria-orientation': 'horizontal',
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
-      'aria-readonly': state.map((s) => (s.readOnly ? 'true' : undefined)),
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      'aria-readonly': state.map((s) => (s.readonly ? 'true' : undefined)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       'data-scope': 'angle-slider',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),

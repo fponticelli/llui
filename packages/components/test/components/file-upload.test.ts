@@ -209,9 +209,9 @@ describe('rejected files', () => {
   })
 })
 
-describe('readOnly + invalid', () => {
-  it('readOnly blocks addFiles and setFiles', () => {
-    const s0 = init({ readOnly: true })
+describe('readonly + invalid', () => {
+  it('readonly blocks addFiles and setFiles', () => {
+    const s0 = init({ readonly: true })
     const [s1] = update(s0, { type: 'addFiles', files: [makeFile('a', 1)] })
     expect(s1.files).toEqual([])
     const [s2] = update(s0, { type: 'setFiles', files: [makeFile('b', 1)] })
@@ -235,7 +235,7 @@ describe('connect: new parts + attrs', () => {
   it('root exposes data-invalid + data-readonly', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     expect(read(p.root['data-invalid'], init({ invalid: true }))).toBe('')
-    expect(read(p.root['data-readonly'], init({ readOnly: true }))).toBe('')
+    expect(read(p.root['data-readonly'], init({ readonly: true }))).toBe('')
   })
 
   it('capture + directory options set hidden input attrs', () => {

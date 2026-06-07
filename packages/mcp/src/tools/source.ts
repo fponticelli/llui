@@ -87,7 +87,7 @@ export function registerSourceTools(registry: ToolRegistry): void {
     {
       name: 'llui_compiler_diagnostics',
       description:
-        'Run the @llui/compiler signal lint rules against every .ts/.tsx file in a directory and return the union of structured diagnostics. Each diagnostic has { id, severity, category, message, file, line, column } — the same rules the vite-plugin surfaces as build errors. Use this to inspect a project for LLui rule violations without spinning up a full Vite build.',
+        'Run the @llui/compiler signal lint rules against every .ts/.tsx file in a directory and return the union of structured diagnostics. Each diagnostic has { id, severity, category, message, file, line, column } — the same rules the vite-plugin surfaces as build errors. Rename-style rules (convention, event-handler-casing, attr-name) also include a `fix` { title, edits: [{ start, end, oldText, newText }] } you can apply directly to the source. Use this to inspect a project for LLui rule violations without spinning up a full Vite build.',
       schema: z.object({
         rootDir: z.string().optional().describe('Directory to scan (defaults to workspace root)'),
         idFilter: z
@@ -111,6 +111,12 @@ export function registerSourceTools(registry: ToolRegistry): void {
         file: string
         line: number
         column: number
+        // Present for rename-style rules — a deterministic fix the agent can
+        // apply (offsets into the file, plus the old/new text for a string edit).
+        fix?: {
+          title: string
+          edits: Array<{ start: number; end: number; oldText: string; newText: string }>
+        }
       }> = []
       let scanned = 0
       let failed = 0
@@ -143,12 +149,27 @@ export function registerSourceTools(registry: ToolRegistry): void {
           if (idFilter && !m.rule.includes(idFilter)) continue
           diagnostics.push({
             id: m.rule,
-            severity: 'error',
+            // `convention` is auto-fixed by the build (runtime-neutral); surface
+            // it as a warning. Everything else halts the build → error.
+            severity: m.rule === 'convention' ? 'warning' : 'error',
             category: 'signal',
             message: m.message,
             file: relative(rootDir, file),
             line: m.line,
             column: m.column + 1,
+            ...(m.fix
+              ? {
+                  fix: {
+                    title: m.fix.title,
+                    edits: m.fix.edits.map((e) => ({
+                      start: e.start,
+                      end: e.end,
+                      oldText: source.slice(e.start, e.end),
+                      newText: e.newText,
+                    })),
+                  },
+                }
+              : {}),
           })
         }
       }

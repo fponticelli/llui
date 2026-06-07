@@ -278,7 +278,7 @@ export interface DayCellParts {
     role: 'gridcell'
     'aria-selected': boolean
     'aria-disabled': 'true' | undefined
-    tabIndex: number
+    tabindex: number
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
     'data-date': string
@@ -383,7 +383,7 @@ export function connect(
         role: 'gridcell',
         'aria-selected': cell.isSelected,
         'aria-disabled': cell.isDisabled ? 'true' : undefined,
-        tabIndex: cell.isFocused ? 0 : -1,
+        tabindex: cell.isFocused ? 0 : -1,
         'data-scope': 'date-picker',
         'data-part': 'day-cell',
         'data-date': cell.iso,

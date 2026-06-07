@@ -342,14 +342,14 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     {
       name: 'llui_get_rendered_html',
       description:
-        "Get the outerHTML of the mounted component or a specific element. Pass 'selector' for a specific node (defaults to the mount root). Pass 'maxLength' to truncate output.",
+        "Get the outerHTML of the mounted component or a specific element. Pass 'selector' for a specific node (defaults to the mount root). Pass 'maxlength' to truncate output.",
       schema: z.object({
         selector: z.string().optional(),
-        maxLength: z.number().optional(),
+        maxlength: z.number().optional(),
       }),
     },
     'debug-api',
-    async (args, ctx) => ctx.relay!.call('getRenderedHtml', [args.selector, args.maxLength]),
+    async (args, ctx) => ctx.relay!.call('getRenderedHtml', [args.selector, args.maxlength]),
   )
 
   registry.register(

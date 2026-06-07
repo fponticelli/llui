@@ -124,10 +124,10 @@ export interface PinInputParts {
   /** Props for the input at a given index. */
   input: (index: number) => {
     type: Signal<'text' | 'password'>
-    inputMode: Signal<'numeric' | 'text'>
+    inputmode: Signal<'numeric' | 'text'>
     pattern: Signal<string>
-    maxLength: 1
-    autoComplete: 'off'
+    maxlength: 1
+    autocomplete: 'off'
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -172,7 +172,7 @@ export function connect(
     },
     input: (index: number) => ({
       type: state.map((s) => (s.mask ? 'password' : 'text')),
-      inputMode: state.map((s) => (s.type === 'numeric' ? 'numeric' : 'text')),
+      inputmode: state.map((s) => (s.type === 'numeric' ? 'numeric' : 'text')),
       pattern: state.map((s) => {
         switch (s.type) {
           case 'numeric':
@@ -183,8 +183,8 @@ export function connect(
             return '[a-zA-Z0-9]*'
         }
       }),
-      maxLength: 1,
-      autoComplete: 'off',
+      maxlength: 1,
+      autocomplete: 'off',
       'aria-label': inputLabel(index),
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => s.values[index] ?? ''),

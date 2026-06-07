@@ -47,7 +47,7 @@ export interface EditorConfig {
   /** Debounced markdown-emission window (ms). Default 300. */
   changeDebounceMs?: number
   placeholder?: string
-  readOnly?: boolean
+  readonly?: boolean
   /** Lexical theme class map. */
   theme?: EditorThemeClasses
   /** Editor namespace (instance isolation). */
@@ -118,7 +118,7 @@ export function markdownEditor(
 
   // ── Composed TEA: core + plugin UI slices ──────────────────────────────────
   const composedInit = (): [EditorState, EditorEffect[]] => {
-    const [core, effects] = init({ value: seedValue, readOnly: config.readOnly ?? false })
+    const [core, effects] = init({ value: seedValue, readonly: config.readonly ?? false })
     const slices: Record<string, unknown> = {}
     for (const { name, ui } of pluginUIs) slices[name] = ui.init()
     return [{ ...core, plugins: slices }, effects]
@@ -176,7 +176,7 @@ export function markdownEditor(
       },
       defaultValue: config.value ? undefined : (config.defaultValue ?? ''),
       ...(config.value ? { value: config.value } : {}),
-      readOnly: state.at('readOnly'),
+      readonly: state.at('readonly'),
       ...(config.changeDebounceMs !== undefined
         ? { changeDebounceMs: config.changeDebounceMs }
         : {}),

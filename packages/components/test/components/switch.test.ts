@@ -49,10 +49,10 @@ describe('switch.connect', () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
-  it('tabIndex=-1 when disabled', () => {
+  it('tabindex=-1 when disabled', () => {
     const p = connect(rootSignal(), vi.fn())
-    expect(read(p.root.tabIndex, { checked: false, disabled: true })).toBe(-1)
-    expect(read(p.root.tabIndex, { checked: false, disabled: false })).toBe(0)
+    expect(read(p.root.tabindex, { checked: false, disabled: true })).toBe(-1)
+    expect(read(p.root.tabindex, { checked: false, disabled: false })).toBe(0)
   })
 
   it('hidden input mirrors checked and disabled', () => {

@@ -127,7 +127,7 @@ export interface SplitterParts {
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
     'data-orientation': Signal<Orientation>
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
@@ -169,7 +169,7 @@ export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): 
       'data-scope': 'splitter',
       'data-part': 'resize-trigger',
       'data-orientation': state.map((s) => s.orientation),
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         switch (key) {

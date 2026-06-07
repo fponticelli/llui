@@ -174,7 +174,7 @@ export interface TabsItemParts {
     'data-scope': 'tabs'
     'data-part': 'trigger'
     'data-value': string
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -183,7 +183,7 @@ export interface TabsItemParts {
     role: 'tabpanel'
     id: string
     'aria-labelledby': string
-    tabIndex: 0
+    tabindex: 0
     hidden: Signal<boolean>
     'data-state': Signal<'active' | 'inactive'>
     'data-scope': 'tabs'
@@ -269,7 +269,7 @@ export function connect(
         'data-scope': 'tabs',
         'data-part': 'trigger',
         'data-value': value,
-        tabIndex: state.map((s) => (s.value === value ? 0 : -1)),
+        tabindex: state.map((s) => (s.value === value ? 0 : -1)),
         onClick: tagSend(send, ['focusTab'], () => {
           send({ type: 'focusTab', value })
           opts.onNavigate?.(value)
@@ -324,7 +324,7 @@ export function connect(
         role: 'tabpanel',
         id: panelId(value),
         'aria-labelledby': triggerId(value),
-        tabIndex: 0,
+        tabindex: 0,
         hidden: state.map((s) => s.value !== value),
         'data-state': state.map((s) => (s.value === value ? 'active' : 'inactive')),
         'data-scope': 'tabs',

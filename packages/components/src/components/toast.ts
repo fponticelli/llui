@@ -160,7 +160,7 @@ export interface ToasterParts {
   region: {
     role: 'region'
     'aria-label': string
-    tabIndex: -1
+    tabindex: -1
     'data-scope': 'toast'
     'data-part': 'region'
     'data-placement': Signal<ToastPlacement>
@@ -195,7 +195,7 @@ export function connect(
     region: {
       role: 'region',
       'aria-label': regionLabel,
-      tabIndex: -1,
+      tabindex: -1,
       'data-scope': 'toast',
       'data-part': 'region',
       'data-placement': state.map((s) => s.placement),

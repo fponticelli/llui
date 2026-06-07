@@ -279,7 +279,7 @@ export interface SelectParts {
     id: string
     'aria-multiselectable': Signal<'true' | undefined>
     'aria-labelledby': string
-    tabIndex: -1
+    tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'content'
@@ -287,7 +287,7 @@ export interface SelectParts {
   }
   hiddenSelect: {
     'aria-hidden': 'true'
-    tabIndex: -1
+    tabindex: -1
     style: string
     disabled: Signal<boolean>
     multiple: Signal<boolean>
@@ -405,7 +405,7 @@ export function connect(
         s.selectionMode === 'multiple' ? 'true' : undefined,
       ),
       'aria-labelledby': triggerId,
-      tabIndex: -1,
+      tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'select',
       'data-part': 'content',
@@ -413,7 +413,7 @@ export function connect(
     },
     hiddenSelect: {
       'aria-hidden': 'true',
-      tabIndex: -1,
+      tabindex: -1,
       style: HIDDEN_STYLE,
       disabled: state.map((s) => s.disabled),
       multiple: state.map((s) => s.selectionMode === 'multiple'),

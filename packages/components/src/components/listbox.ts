@@ -196,7 +196,7 @@ export interface ListboxParts {
     'aria-multiselectable': Signal<'true' | undefined>
     'aria-disabled': Signal<'true' | undefined>
     'aria-activedescendant': Signal<string | undefined>
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     id: string
     'data-scope': 'listbox'
     'data-part': 'root'
@@ -234,7 +234,7 @@ export function connect(
         const idx = s.highlightedIndex
         return idx === null ? undefined : itemId(idx)
       }),
-      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       id: rootId,
       'data-scope': 'listbox',
       'data-part': 'root',

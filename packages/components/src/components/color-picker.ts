@@ -186,7 +186,7 @@ export interface ColorPickerParts {
   }
   hexInput: {
     type: 'text'
-    autoComplete: 'off'
+    autocomplete: 'off'
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -273,7 +273,7 @@ export function connect(
     },
     hexInput: {
       type: 'text',
-      autoComplete: 'off',
+      autocomplete: 'off',
       'aria-label': opts.hexLabel ?? locale.colorPicker.hex,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => toHex(s.hsl)),

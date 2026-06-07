@@ -16,6 +16,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformSignalComponentSource,
   lintSignalSource,
+  applyLintFixes,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
   COMPILER_RENAMEABLE_KEYS,
@@ -1341,22 +1342,39 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // never trip it.)
       if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom['"]/.test(code)) {
         sawSignalComponent = true
-        // Enforce signal lint rules as build errors (the only effective channel —
-        // see CLAUDE.md). Lint the AUTHORED source; `this.error` throws → halts.
+        // Enforce signal lint rules. Lint the AUTHORED source. Two channels:
+        //  - `convention` diagnostics carry a runtime-neutral rename fix (e.g.
+        //    `tabIndex` → `tabindex`); auto-apply them to the emitted code and
+        //    `this.warn` (the dev loop never blocks on a pure casing nit).
+        //  - everything else (correctness rules, incl. fixable ones like a
+        //    miscased handler that would silently not fire) stays a hard error —
+        //    the only effective channel for LLMs (see CLAUDE.md). `this.error`
+        //    throws → halts. We report blocking errors BEFORE applying any fix,
+        //    so their positions still match the unmodified `code`.
         const lintMsgs = lintSignalSource(code, id)
         if (lintMsgs.length > 0) {
           const rel = relative(crossFileRoot ?? process.cwd(), id)
           const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
-          const first = lintMsgs[0]!
-          const body = lintMsgs
-            .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
-            .join('\n')
-          this.error({
-            message: `[llui] signal lint failed (${lintMsgs.length} error${
-              lintMsgs.length > 1 ? 's' : ''
-            }):\n${body}`,
-            loc: { file: id, line: first.line, column: first.column },
-          })
+          const autoFixable = lintMsgs.filter((m) => m.rule === 'convention' && m.fix)
+          const blocking = lintMsgs.filter((m) => !(m.rule === 'convention' && m.fix))
+          if (blocking.length > 0) {
+            const first = blocking[0]!
+            const body = blocking
+              .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
+              .join('\n')
+            this.error({
+              message: `[llui] signal lint failed (${blocking.length} error${
+                blocking.length > 1 ? 's' : ''
+              }):\n${body}`,
+              loc: { file: id, line: first.line, column: first.column },
+            })
+          }
+          if (autoFixable.length > 0) {
+            for (const m of autoFixable) {
+              this.warn(`${display}:${m.line}:${m.column}  [${m.rule}] auto-fixed — ${m.message}`)
+            }
+            code = applyLintFixes(code, autoFixable).code
+          }
         }
         // Resolve cross-file Msg/State/Effect types (same machinery the legacy
         // path uses) so types in sibling files still produce full agent metadata.

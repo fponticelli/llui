@@ -70,10 +70,10 @@ describe('checkbox.connect', () => {
     expect(send).toHaveBeenCalledTimes(1) // enter does not toggle
   })
 
-  it('tabIndex=-1 when disabled', () => {
+  it('tabindex=-1 when disabled', () => {
     const p = connect(rootSignal(), vi.fn())
-    expect(read(p.root.tabIndex, init({ disabled: true }))).toBe(-1)
-    expect(read(p.root.tabIndex, init({ disabled: false }))).toBe(0)
+    expect(read(p.root.tabindex, init({ disabled: true }))).toBe(-1)
+    expect(read(p.root.tabindex, init({ disabled: false }))).toBe(0)
   })
 
   it('hiddenInput.checked is strictly true-only', () => {

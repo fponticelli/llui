@@ -13,7 +13,7 @@ export interface RatingGroupState {
   /** If true, allows values like 1.5 (half-stars). */
   allowHalf: boolean
   disabled: boolean
-  readOnly: boolean
+  readonly: boolean
   hoveredValue: number | null
 }
 
@@ -38,7 +38,7 @@ export interface RatingGroupInit {
   count?: number
   allowHalf?: boolean
   disabled?: boolean
-  readOnly?: boolean
+  readonly?: boolean
 }
 
 export function init(opts: RatingGroupInit = {}): RatingGroupState {
@@ -47,7 +47,7 @@ export function init(opts: RatingGroupInit = {}): RatingGroupState {
     count: opts.count ?? 5,
     allowHalf: opts.allowHalf ?? false,
     disabled: opts.disabled ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
     hoveredValue: null,
   }
 }
@@ -57,7 +57,7 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 export function update(state: RatingGroupState, msg: RatingGroupMsg): [RatingGroupState, never[]] {
-  if (state.disabled || state.readOnly) {
+  if (state.disabled || state.readonly) {
     if (msg.type === 'hover') return [{ ...state, hoveredValue: null }, []]
     return [state, []]
   }
@@ -108,7 +108,7 @@ export interface RatingItemParts {
     'data-part': 'item'
     'data-value': string
     'data-disabled': Signal<'' | undefined>
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
@@ -144,11 +144,11 @@ export function connect(
       role: 'radiogroup',
       'aria-label': opts.label,
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
-      'aria-readonly': state.map((s) => (s.readOnly ? 'true' : undefined)),
+      'aria-readonly': state.map((s) => (s.readonly ? 'true' : undefined)),
       'data-scope': 'rating-group',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
-      'data-readonly': state.map((s) => (s.readOnly ? '' : undefined)),
+      'data-readonly': state.map((s) => (s.readonly ? '' : undefined)),
     },
     item: (index: number): RatingItemParts => ({
       root: {
@@ -159,8 +159,8 @@ export function connect(
         'data-part': 'item',
         'data-value': String(index + 1),
         'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
-        tabIndex: state.map((st) => {
-          if (st.disabled || st.readOnly) return -1
+        tabindex: state.map((st) => {
+          if (st.disabled || st.readonly) return -1
           // Only current active item is tab stop
           const active = Math.ceil(st.value) || 1
           return active === index + 1 ? 0 : -1

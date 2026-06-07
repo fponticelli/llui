@@ -91,10 +91,10 @@ describe('tabs.connect', () => {
     expect(parts.item('a').panel['aria-labelledby']).toBe('tabs1:trigger:a')
   })
 
-  it('trigger tabIndex is 0 only for selected', () => {
+  it('trigger tabindex is 0 only for selected', () => {
     const t = parts.item('a').trigger
-    expect(read(t.tabIndex, init({ items: ['a', 'b'], value: 'a' }))).toBe(0)
-    expect(read(t.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
+    expect(read(t.tabindex, init({ items: ['a', 'b'], value: 'a' }))).toBe(0)
+    expect(read(t.tabindex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
   })
 
   it('panel.hidden reflects inactive', () => {

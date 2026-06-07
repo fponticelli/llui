@@ -182,7 +182,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                     'data-focused': state
                       .at('datePicker')
                       .map((s) => (s.focused === cell.iso ? '' : undefined)),
-                    tabIndex: state.at('datePicker').map((s) => (s.focused === cell.iso ? 0 : -1)),
+                    tabindex: state.at('datePicker').map((s) => (s.focused === cell.iso ? 0 : -1)),
                     onClick: () => {
                       send({ type: 'datePicker', msg: { type: 'setFocused', date: cell.iso } })
                       send({ type: 'datePicker', msg: { type: 'selectFocused' } })

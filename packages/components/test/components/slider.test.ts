@@ -156,9 +156,9 @@ describe('slider.connect', () => {
     expect(style).toContain('right:20%')
   })
 
-  it('tabIndex=-1 when disabled', () => {
+  it('tabindex=-1 when disabled', () => {
     const p = connect(rootSignal(), vi.fn())
-    expect(read(p.thumb(0).thumb.tabIndex, init({ disabled: true }))).toBe(-1)
-    expect(read(p.thumb(0).thumb.tabIndex, init({ disabled: false }))).toBe(0)
+    expect(read(p.thumb(0).thumb.tabindex, init({ disabled: true }))).toBe(-1)
+    expect(read(p.thumb(0).thumb.tabindex, init({ disabled: false }))).toBe(0)
   })
 })

@@ -84,13 +84,13 @@ describe('radio-group.connect', () => {
     expect(send).toHaveBeenNthCalledWith(2, { type: 'selectPrev', from: 'b' })
   })
 
-  it('tabIndex=0 only on selected, first when none', () => {
+  it('tabindex=0 only on selected, first when none', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     const a = p.item('a').root
     const b = p.item('b').root
-    expect(read(a.tabIndex, init({ items: ['a', 'b'], value: null }))).toBe(0)
-    expect(read(b.tabIndex, init({ items: ['a', 'b'], value: null }))).toBe(-1)
-    expect(read(a.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
-    expect(read(b.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(0)
+    expect(read(a.tabindex, init({ items: ['a', 'b'], value: null }))).toBe(0)
+    expect(read(b.tabindex, init({ items: ['a', 'b'], value: null }))).toBe(-1)
+    expect(read(a.tabindex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
+    expect(read(b.tabindex, init({ items: ['a', 'b'], value: 'b' }))).toBe(0)
   })
 })

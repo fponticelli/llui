@@ -58,7 +58,7 @@ export interface PasswordInputParts {
   }
   input: {
     type: Signal<'text' | 'password'>
-    autoComplete: string
+    autocomplete: string
     disabled: Signal<boolean>
     value: Signal<string>
     'data-scope': 'password-input'
@@ -70,7 +70,7 @@ export interface PasswordInputParts {
     'aria-label': Signal<string>
     'aria-pressed': Signal<boolean>
     disabled: Signal<boolean>
-    tabIndex: -1
+    tabindex: -1
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
     onClick: (e: MouseEvent) => void
@@ -78,7 +78,7 @@ export interface PasswordInputParts {
 }
 
 export interface ConnectOptions {
-  autoComplete?: string
+  autocomplete?: string
   showLabel?: string
   hideLabel?: string
 }
@@ -89,7 +89,7 @@ export function connect(
   opts: ConnectOptions = {},
 ): PasswordInputParts {
   const locale = useContext(LocaleContext)
-  const autoComplete = opts.autoComplete ?? 'current-password'
+  const autocomplete = opts.autocomplete ?? 'current-password'
   const showLabel = opts.showLabel
   const hideLabel = opts.hideLabel
 
@@ -102,7 +102,7 @@ export function connect(
     },
     input: {
       type: state.map((st) => (st.visible ? 'text' : 'password')),
-      autoComplete,
+      autocomplete,
       disabled: state.map((st) => st.disabled),
       value: state.map((st) => st.value),
       'data-scope': 'password-input',
@@ -120,7 +120,7 @@ export function connect(
       ),
       'aria-pressed': state.map((st) => st.visible),
       disabled: state.map((st) => st.disabled),
-      tabIndex: -1,
+      tabindex: -1,
       'data-scope': 'password-input',
       'data-part': 'visibility-trigger',
       onClick: tagSend(send, ['toggleVisibility'], () => send({ type: 'toggleVisibility' })),

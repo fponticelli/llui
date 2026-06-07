@@ -36,7 +36,7 @@ export interface SignaturePadState {
   current: Stroke | null
   drawing: boolean
   disabled: boolean
-  readOnly: boolean
+  readonly: boolean
 }
 
 export type SignaturePadMsg =
@@ -60,7 +60,7 @@ export type SignaturePadMsg =
 export interface SignaturePadInit {
   strokes?: Stroke[]
   disabled?: boolean
-  readOnly?: boolean
+  readonly?: boolean
 }
 
 export function init(opts: SignaturePadInit = {}): SignaturePadState {
@@ -69,7 +69,7 @@ export function init(opts: SignaturePadInit = {}): SignaturePadState {
     current: null,
     drawing: false,
     disabled: opts.disabled ?? false,
-    readOnly: opts.readOnly ?? false,
+    readonly: opts.readonly ?? false,
   }
 }
 
@@ -81,7 +81,7 @@ export function update(
   state: SignaturePadState,
   msg: SignaturePadMsg,
 ): [SignaturePadState, never[]] {
-  if (state.disabled || state.readOnly) {
+  if (state.disabled || state.readonly) {
     // Allow reads (undo/clear are still useful for clearing a disabled pad).
     if (msg.type === 'strokeStart' || msg.type === 'strokePoint' || msg.type === 'strokeEnd') {
       return [state, []]
@@ -217,7 +217,7 @@ export function connect(
       'data-scope': 'signature-pad',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
-      'data-readonly': state.map((s) => (s.readOnly ? '' : undefined)),
+      'data-readonly': state.map((s) => (s.readonly ? '' : undefined)),
       'data-drawing': state.map((s) => (s.drawing ? '' : undefined)),
     },
     control: {

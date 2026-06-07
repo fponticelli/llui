@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { init, update, EMPTY_FORMAT, type EditorState, type FormatState } from '../src/state.js'
 
 function state(overrides: Partial<EditorState> = {}): EditorState {
-  const [s] = init({ value: 'hello world', readOnly: false })
+  const [s] = init({ value: 'hello world', readonly: false })
   return { ...s, ...overrides }
 }
 
@@ -10,7 +10,7 @@ const fmt = (over: Partial<FormatState> = {}): FormatState => ({ ...EMPTY_FORMAT
 
 describe('init', () => {
   it('seeds value, word and char counts', () => {
-    const [s, fx] = init({ value: 'hello world', readOnly: false })
+    const [s, fx] = init({ value: 'hello world', readonly: false })
     expect(s.value).toBe('hello world')
     expect(s.wordCount).toBe(2)
     expect(s.charCount).toBe(11)
@@ -20,8 +20,8 @@ describe('init', () => {
   })
 
   it('counts zero words for empty/blank input', () => {
-    expect(init({ value: '', readOnly: false })[0].wordCount).toBe(0)
-    expect(init({ value: '   ', readOnly: false })[0].wordCount).toBe(0)
+    expect(init({ value: '', readonly: false })[0].wordCount).toBe(0)
+    expect(init({ value: '   ', readonly: false })[0].wordCount).toBe(0)
   })
 })
 
@@ -113,14 +113,14 @@ describe('update: overlays', () => {
 })
 
 describe('update: setReadOnly', () => {
-  it('flips readOnly', () => {
-    const [s] = update(state({ readOnly: false }), { type: 'setReadOnly', readOnly: true })
-    expect(s.readOnly).toBe(true)
+  it('flips readonly', () => {
+    const [s] = update(state({ readonly: false }), { type: 'setReadOnly', readonly: true })
+    expect(s.readonly).toBe(true)
   })
 
   it('is a no-op when unchanged', () => {
-    const s0 = state({ readOnly: true })
-    const [s, fx] = update(s0, { type: 'setReadOnly', readOnly: true })
+    const s0 = state({ readonly: true })
+    const [s, fx] = update(s0, { type: 'setReadOnly', readonly: true })
     expect(s).toBe(s0)
     expect(fx).toEqual([])
   })

@@ -83,7 +83,7 @@ export interface ClipboardParts {
   }
   input: {
     type: 'text'
-    readOnly: true
+    readonly: true
     value: Signal<string>
     'data-scope': 'clipboard'
     'data-part': 'input'
@@ -128,7 +128,7 @@ export function connect(
     },
     input: {
       type: 'text',
-      readOnly: true,
+      readonly: true,
       value: state.map((s) => s.value),
       'data-scope': 'clipboard',
       'data-part': 'input',

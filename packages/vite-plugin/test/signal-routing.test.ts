@@ -69,6 +69,55 @@ describe('vite-plugin — signal component routing', () => {
     expect(msg).toContain('operator-on-signal')
   })
 
+  it('auto-applies a `convention` fix (tabIndex → tabindex) + warns, build proceeds', async () => {
+    const src = [
+      "import { component, div, text } from '@llui/dom'",
+      'export const C = component({',
+      '  init: () => ({ n: 0 }),',
+      '  update: (s) => s,',
+      "  view: ({ state, send }) => [div({ role: 'button', tabIndex: 0, onClick: () => send({ type: 'x' }) }, [text('hi')])],",
+      '})',
+    ].join('\n')
+    const warn = vi.fn()
+    const error = vi.fn(() => {
+      throw new Error('this.error')
+    })
+    const ctx = { warn, error, resolve: vi.fn(async () => null) } as unknown as ThisParameterType<
+      Extract<Plugin['transform'], (...a: never) => unknown>
+    >
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    const out = (await transform.call(ctx, src, '/tmp/conv.ts')) as { code: string }
+    expect(error).not.toHaveBeenCalled() // convention does NOT halt
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn.mock.calls[0]![0] as string).toContain('auto-fixed')
+    expect(out.code).toContain('tabindex: 0')
+    expect(out.code).not.toContain('tabIndex')
+  })
+
+  it('STILL halts on a correctness casing bug (miscased handler), even though it has a fix', async () => {
+    const bad = [
+      "import { component, div, text } from '@llui/dom'",
+      'export const Bad = component({',
+      '  init: () => ({ n: 0 }),',
+      '  update: (s) => s,',
+      "  view: ({ state, send }) => [div({ onclick: () => send({ type: 'x' }) }, [text('hi')])],",
+      '})',
+    ].join('\n')
+    const errorMessages: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errorMessages.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, bad, '/tmp/handler.ts')).rejects.toThrow('this.error')
+    expect((errorMessages[0] as { message: string }).message).toContain('event-handler-casing')
+  })
+
   it('lowers a block-body signal view (returned array rewritten, statements preserved)', async () => {
     const blockBody = [
       "import { component, text } from '@llui/dom'",

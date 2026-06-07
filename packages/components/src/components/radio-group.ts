@@ -123,7 +123,7 @@ export interface RadioItemParts {
     'data-scope': 'radio-group'
     'data-part': 'item'
     'data-value': string
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -190,7 +190,7 @@ export function connect(
         'data-part': 'item',
         'data-value': value,
         // Only currently-selected (or first if none selected) is tab-stop
-        tabIndex: state.map((st) => {
+        tabindex: state.map((st) => {
           if (st.disabled || st.disabledItems.includes(value)) return -1
           if (st.value === value) return 0
           if (st.value === null) {

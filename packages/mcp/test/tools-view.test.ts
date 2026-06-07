@@ -124,7 +124,7 @@ describe('llui_get_rendered_html tool', () => {
     expect(result).toBe('<div id="root">Hello</div>')
   })
 
-  it('forwards selector and maxLength when both provided', async () => {
+  it('forwards selector and maxlength when both provided', async () => {
     const fn = vi.fn(() => '<section id="s">content</section>')
     const api = mkApi({ getRenderedHtml: fn })
     const server = new LluiMcpServer()
@@ -132,7 +132,7 @@ describe('llui_get_rendered_html tool', () => {
 
     const result = (await server.handleToolCall('llui_get_rendered_html', {
       selector: '#s',
-      maxLength: 100,
+      maxlength: 100,
     })) as string
 
     expect(fn).toHaveBeenCalledWith('#s', 100)

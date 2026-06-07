@@ -13,7 +13,14 @@ export * from './manifest-io.js'
 export * from './manifest-resolve.js'
 export * from './build-manifest.js'
 export { transformSignalComponentSource } from './signals/transform-component.js'
-export { lintSignalSource, type SignalLintMessage, type SignalDiagnostic } from './signals/rules.js'
+export {
+  lintSignalSource,
+  applyLintFixes,
+  type SignalLintMessage,
+  type SignalDiagnostic,
+  type LintFix,
+  type LintEdit,
+} from './signals/rules.js'
 export * from './module.js'
 export * from './version.js'
 export * from './introspection-factory.js'

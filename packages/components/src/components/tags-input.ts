@@ -104,7 +104,7 @@ export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputStat
 
 export interface TagItemParts {
   root: {
-    tabIndex: Signal<number>
+    tabindex: Signal<number>
     'data-scope': 'tags-input'
     'data-part': 'tag'
     'data-value': string
@@ -116,7 +116,7 @@ export interface TagItemParts {
   remove: {
     type: 'button'
     'aria-label': string
-    tabIndex: -1
+    tabindex: -1
     'data-scope': 'tags-input'
     'data-part': 'tag-remove'
     onClick: (e: MouseEvent) => void
@@ -133,7 +133,7 @@ export interface TagsInputParts {
   }
   input: {
     type: 'text'
-    autoComplete: 'off'
+    autocomplete: 'off'
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -198,7 +198,7 @@ export function connect(
     },
     input: {
       type: 'text',
-      autoComplete: 'off',
+      autocomplete: 'off',
       'aria-label': inputLabel,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => s.inputValue),
@@ -235,7 +235,7 @@ export function connect(
     },
     tag: (value: string, index: number): TagItemParts => ({
       root: {
-        tabIndex: state.map((s) => (s.focusedIndex === index ? 0 : -1)),
+        tabindex: state.map((s) => (s.focusedIndex === index ? 0 : -1)),
         'data-scope': 'tags-input',
         'data-part': 'tag',
         'data-value': value,
@@ -259,7 +259,7 @@ export function connect(
       remove: {
         type: 'button',
         'aria-label': removeLabel,
-        tabIndex: -1,
+        tabindex: -1,
         'data-scope': 'tags-input',
         'data-part': 'tag-remove',
         onClick: tagSend(send, ['removeTag'], () => send({ type: 'removeTag', index })),

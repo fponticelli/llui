@@ -49,8 +49,8 @@ describe('rating-group reducer', () => {
     expect(s.value).toBe(0)
   })
 
-  it('readOnly blocks mutations', () => {
-    const [s] = update(init({ value: 2, readOnly: true }), { type: 'incrementValue' })
+  it('readonly blocks mutations', () => {
+    const [s] = update(init({ value: 2, readonly: true }), { type: 'incrementValue' })
     expect(s.value).toBe(2)
   })
 })

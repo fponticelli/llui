@@ -46,8 +46,8 @@ describe('angle-slider reducer', () => {
     expect(s1.value).toBe(50)
   })
 
-  it('readOnly blocks value changes', () => {
-    const s0 = init({ readOnly: true, value: 50 })
+  it('readonly blocks value changes', () => {
+    const s0 = init({ readonly: true, value: 50 })
     const [s1] = update(s0, { type: 'increment' })
     expect(s1.value).toBe(50)
   })
