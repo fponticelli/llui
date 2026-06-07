@@ -278,7 +278,7 @@ export function markdownEditor(
     if (!config.toolbar) return [host, ...pluginViews]
     return [
       div({ 'data-scope': 'md-editor', 'data-part': 'root' }, [
-        renderToolbar({ format: state.at('format'), send, items }),
+        renderToolbar({ format: state.at('format'), send, items, collab: state.at('collab') }),
         div({ 'data-scope': 'md-editor', 'data-part': 'surface' }, [host]),
       ]),
       ...pluginViews,

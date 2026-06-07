@@ -13868,6 +13868,15 @@ export interface LexicalForeignOptions<Emit = unknown> {
   readonly: Signal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
+  /** Register the built-in `@lexical/history` undo stack. Default `true`.
+   * Set `false` when an external owner provides history (e.g. a CRDT undo
+   * manager in collab mode) — a local stack would shadow it and cross peers. */
+  history?: boolean
+  /** When the document is seeded. `'auto'` (default) seeds from
+   * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
+   * external owner controls it (e.g. collab seeds once, gated on provider sync,
+   * only if the shared doc is still empty). */
+  seedMode?: 'auto' | 'deferred'
   /** Outbound: serialized document changed (debounced, real edits only). */
   onChange?: (value: string) => void
   /** Outbound: selection / format / structure changed (every commit). */
@@ -14169,6 +14178,14 @@ function linkDialog(opts: LinkDialogOptions): Mountable
 
 ## Types
 
+### `CollabFactory`
+
+Builds the collab binding from the editor-supplied hooks.
+
+```typescript
+export type CollabFactory = (hooks: CollabHooks) => CollabBinding
+```
+
 ### `BlockType`
 
 The block kind at the selection — base rich-text kinds plus list/code,
@@ -14211,6 +14228,9 @@ export type EditorMsg =
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
   | { type: 'setReadOnly'; readonly: boolean }
+  | { type: 'collabStatus'; connected: boolean }
+  | { type: 'collabSync'; synced: boolean }
+  | { type: 'collabPeers'; peers: number }
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 ```
@@ -14290,6 +14310,40 @@ export interface EditorConfig {
   onReady?: (editor: LexicalEditor) => void
   /** Render the built-in toolbar above the editor. Default false (minimal). */
   toolbar?: boolean
+  /** Enable collaborative editing. The editor hands you a markdown `seed` and
+   * status sinks; return a binding (build it with `yjsCollab` from
+   * `@llui/lexical-collab`, wiring your own provider). Mutually exclusive with
+   * `value` — the shared CRDT document, not a markdown signal, owns the content.
+   * `defaultValue` becomes the seed the bootstrapping peer writes. */
+  collab?: CollabFactory
+}
+```
+
+### `CollabBinding`
+
+Disposer-returning binding the collab layer installs on the live editor.
+`@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
+`@llui/markdown-editor` needs no Yjs dependency of its own.
+
+```typescript
+export interface CollabBinding {
+  register: (editor: LexicalEditor) => () => void
+}
+```
+
+### `CollabHooks`
+
+Hooks the editor injects into the {@link CollabFactory}: a markdown `seed`
+(run once by the bootstrapping peer to fill an empty shared doc from
+`defaultValue`) plus status sinks the editor mirrors into `state.collab`.
+Spread straight into `yjsCollab({ id, provider, user, ...hooks })`.
+
+```typescript
+export interface CollabHooks {
+  seed: (editor: LexicalEditor) => void
+  onStatus: (connected: boolean) => void
+  onSync: (synced: boolean) => void
+  onPeers: (count: number) => void
 }
 ```
 
@@ -14324,6 +14378,21 @@ export interface FormatState {
 }
 ```
 
+### `CollabStatus`
+
+Live collaborative-session status (mirror of the CRDT provider state).
+`enabled` is false unless the editor was created with a `collab` factory.
+
+```typescript
+export interface CollabStatus {
+  enabled: boolean
+  connected: boolean
+  synced: boolean
+  /** Remote peers currently present (excludes this client). */
+  peers: number
+}
+```
+
 ### `EditorState`
 
 ```typescript
@@ -14342,6 +14411,8 @@ export interface EditorState {
   plugins: Record<string, unknown>
   dirty: boolean
   readonly: boolean
+  /** Collaborative-session status (always present; inert unless `collab` set). */
+  collab: CollabStatus
 }
 ```
 
@@ -14351,6 +14422,8 @@ export interface EditorState {
 export interface InitOptions {
   value: string
   readonly: boolean
+  /** Whether a collaborative session is wired (drives `collab.enabled`). */
+  collab?: boolean
 }
 ```
 

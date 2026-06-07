@@ -95,6 +95,28 @@ describe('markdownEditor — collab seam', () => {
     expect(collabState()).toMatchObject({ connected: false, synced: true, peers: 0 })
   })
 
+  it('renders a live presence indicator in the toolbar', () => {
+    const c = captureCollab()
+    app = mountApp(container, markdownEditor({ collab: c.factory, toolbar: true }))
+    const presence = container.querySelector('[data-part="presence"]')
+    expect(presence).not.toBeNull()
+    const status = container.querySelector('[data-part="presence-status"]')!
+    const peers = container.querySelector('[data-part="presence-peers"]')!
+    expect(status.getAttribute('data-status')).toBe('offline')
+    expect(peers.textContent).toBe('Only you')
+
+    c.hooks().onStatus(true)
+    c.hooks().onSync(true)
+    c.hooks().onPeers(2)
+    expect(status.getAttribute('data-status')).toBe('synced')
+    expect(peers.textContent).toBe('3 editing')
+  })
+
+  it('omits the presence indicator when collab is off', () => {
+    app = mountApp(container, markdownEditor({ toolbar: true }))
+    expect(container.querySelector('[data-part="presence"]')).toBeNull()
+  })
+
   it('disposes the binding when the editor unmounts', () => {
     const c = captureCollab()
     app = mountApp(container, markdownEditor({ collab: c.factory }))

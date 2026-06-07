@@ -170,6 +170,31 @@
   opacity: 0.4;
   cursor: default;
 }
+[data-scope='md-toolbar'][data-part='presence'] {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--md-text-soft, var(--md-text));
+}
+[data-scope='md-toolbar'] [data-part='presence-status'] {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--md-border);
+  flex: none;
+}
+[data-scope='md-toolbar'] [data-part='presence-status'][data-status='synced'] {
+  background: #16a34a;
+}
+[data-scope='md-toolbar'] [data-part='presence-status'][data-status='connecting'] {
+  background: #d97706;
+}
+[data-scope='md-toolbar'] [data-part='presence-status'][data-status='offline'] {
+  background: #9ca3af;
+}
 [data-scope='md-toolbar'] [data-part='block-select'] {
   font: inherit;
   font-size: 0.85rem;
