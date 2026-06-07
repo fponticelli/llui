@@ -318,6 +318,15 @@ export interface LexicalForeignOptions<Emit = unknown> {
   readonly: Signal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
+  /** Register the built-in `@lexical/history` undo stack. Default `true`.
+   * Set `false` when an external owner provides history (e.g. a CRDT undo
+   * manager in collab mode) — a local stack would shadow it and cross peers. */
+  history?: boolean
+  /** When the document is seeded. `'auto'` (default) seeds from
+   * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
+   * external owner controls it (e.g. collab seeds once, gated on provider sync,
+   * only if the shared doc is still empty). */
+  seedMode?: 'auto' | 'deferred'
   /** Outbound: serialized document changed (debounced, real edits only). */
   onChange?: (value: string) => void
   /** Outbound: selection / format / structure changed (every commit). */

@@ -60,7 +60,34 @@ export interface EditorConfig {
   onReady?: (editor: LexicalEditor) => void
   /** Render the built-in toolbar above the editor. Default false (minimal). */
   toolbar?: boolean
+  /** Enable collaborative editing. The editor hands you a markdown `seed` and
+   * status sinks; return a binding (build it with `yjsCollab` from
+   * `@llui/lexical-collab`, wiring your own provider). Mutually exclusive with
+   * `value` — the shared CRDT document, not a markdown signal, owns the content.
+   * `defaultValue` becomes the seed the bootstrapping peer writes. */
+  collab?: CollabFactory
 }
+
+/** Disposer-returning binding the collab layer installs on the live editor.
+ * `@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
+ * `@llui/markdown-editor` needs no Yjs dependency of its own. */
+export interface CollabBinding {
+  register: (editor: LexicalEditor) => () => void
+}
+
+/** Hooks the editor injects into the {@link CollabFactory}: a markdown `seed`
+ * (run once by the bootstrapping peer to fill an empty shared doc from
+ * `defaultValue`) plus status sinks the editor mirrors into `state.collab`.
+ * Spread straight into `yjsCollab({ id, provider, user, ...hooks })`. */
+export interface CollabHooks {
+  seed: (editor: LexicalEditor) => void
+  onStatus: (connected: boolean) => void
+  onSync: (synced: boolean) => void
+  onPeers: (count: number) => void
+}
+
+/** Builds the collab binding from the editor-supplied hooks. */
+export type CollabFactory = (hooks: CollabHooks) => CollabBinding
 
 /** Hooks the chrome layer (toolbar/menus) uses to compose around the editor. */
 export interface EditorParts {
@@ -114,11 +141,24 @@ export function markdownEditor(
       ),
   })
 
+  if (config.collab && config.value) {
+    throw new Error(
+      'markdownEditor: `collab` and `value` are mutually exclusive — in a collaborative ' +
+        'session the shared CRDT document owns the content, not a markdown signal. ' +
+        'Use `defaultValue` as the bootstrap seed instead.',
+    )
+  }
+
+  const collabEnabled = !!config.collab
   const seedValue = config.value ? config.value.peek() : (config.defaultValue ?? '')
 
   // ── Composed TEA: core + plugin UI slices ──────────────────────────────────
   const composedInit = (): [EditorState, EditorEffect[]] => {
-    const [core, effects] = init({ value: seedValue, readonly: config.readonly ?? false })
+    const [core, effects] = init({
+      value: seedValue,
+      readonly: config.readonly ?? false,
+      collab: collabEnabled,
+    })
     const slices: Record<string, unknown> = {}
     for (const { name, ui } of pluginUIs) slices[name] = ui.init()
     return [{ ...core, plugins: slices }, effects]
@@ -164,6 +204,20 @@ export function markdownEditor(
     state: Signal<EditorState>
     send: (msg: EditorMsg) => void
   }): Renderable => {
+    // Build the collab binding (once, at mount) from the consumer's factory,
+    // injecting the markdown seed + status sinks that mirror into `state.collab`.
+    const collabBinding: CollabBinding | null = config.collab
+      ? config.collab({
+          seed: () => {
+            $convertFromMarkdownString(seedValue, transformers)
+            $setSelection(null)
+          },
+          onStatus: (connected) => send({ type: 'collabStatus', connected }),
+          onSync: (synced) => send({ type: 'collabSync', synced }),
+          onPeers: (peers) => send({ type: 'collabPeers', peers }),
+        })
+      : null
+
     const host = lexicalForeign<EditorOutMsg>({
       namespace: config.namespace ?? 'llui-markdown',
       theme: config.theme,
@@ -174,8 +228,12 @@ export function markdownEditor(
         $convertFromMarkdownString(value, transformers)
         $setSelection(null)
       },
-      defaultValue: config.value ? undefined : (config.defaultValue ?? ''),
-      ...(config.value ? { value: config.value } : {}),
+      // In collab mode the shared CRDT owns the document: the local undo stack
+      // and the boot-time seed are disabled — the binding supplies a scoped undo
+      // manager and a sync-gated bootstrap instead.
+      ...(collabBinding ? { history: false, seedMode: 'deferred' as const } : {}),
+      defaultValue: collabBinding || config.value ? undefined : (config.defaultValue ?? ''),
+      ...(config.value && !collabBinding ? { value: config.value } : {}),
       readonly: state.at('readonly'),
       ...(config.changeDebounceMs !== undefined
         ? { changeDebounceMs: config.changeDebounceMs }
@@ -183,6 +241,7 @@ export function markdownEditor(
       register: (editor) => {
         const disposers = [registerMarkdownShortcuts(editor, transformers)]
         if (decorators.length > 0) disposers.push(registerDecoratorBridges(editor, decorators))
+        if (collabBinding) disposers.push(collabBinding.register(editor))
         return () => {
           for (const dispose of disposers) dispose()
         }
@@ -219,7 +278,7 @@ export function markdownEditor(
     if (!config.toolbar) return [host, ...pluginViews]
     return [
       div({ 'data-scope': 'md-editor', 'data-part': 'root' }, [
-        renderToolbar({ format: state.at('format'), send, items }),
+        renderToolbar({ format: state.at('format'), send, items, collab: state.at('collab') }),
         div({ 'data-scope': 'md-editor', 'data-part': 'surface' }, [host]),
       ]),
       ...pluginViews,

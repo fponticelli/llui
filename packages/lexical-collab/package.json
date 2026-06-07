@@ -1,0 +1,63 @@
+{
+  "name": "@llui/lexical-collab",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles/collab.css": "./dist/styles/collab.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/collab.css dist/styles/",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/dom": "^0.10.0",
+    "@llui/lexical": "^0.2.0",
+    "lexical": "^0.45.0",
+    "@lexical/yjs": "^0.45.0",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "@llui/lexical": "workspace:*",
+    "lexical": "^0.45.0",
+    "@lexical/rich-text": "^0.45.0",
+    "@lexical/yjs": "^0.45.0",
+    "yjs": "^13.6.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "sideEffects": [
+    "./dist/styles/collab.css"
+  ],
+  "description": "Opt-in collaborative editing for the LLui ↔ Lexical binding — Yjs CRDT sync, scoped undo, and presence cursors over an injected provider",
+  "keywords": [
+    "llui",
+    "lexical",
+    "collaboration",
+    "yjs",
+    "crdt",
+    "editor"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/lexical-collab"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/lexical-collab#readme",
+  "files": [
+    "dist"
+  ]
+}

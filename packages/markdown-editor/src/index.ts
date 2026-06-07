@@ -1,17 +1,26 @@
 // `@llui/markdown-editor` — WYSIWYG Markdown editor for LLui, built on Lexical.
 
-export { type EditorConfig, type EditorParts, markdownEditor } from './editor.js'
+export {
+  type EditorConfig,
+  type EditorParts,
+  type CollabBinding,
+  type CollabHooks,
+  type CollabFactory,
+  markdownEditor,
+} from './editor.js'
 
 export {
   type BlockType,
   type FormatState,
   type OverlayKind,
+  type CollabStatus,
   type EditorState,
   type EditorMsg,
   type EditorOutMsg,
   type EditorEffect,
   type InitOptions,
   EMPTY_FORMAT,
+  COLLAB_OFF,
   init,
   update,
   countWords,

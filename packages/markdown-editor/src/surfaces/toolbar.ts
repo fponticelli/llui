@@ -16,7 +16,7 @@ import {
   type Signal,
 } from '@llui/dom'
 import type { CommandItem } from '../plugins/types.js'
-import type { EditorMsg, FormatState } from '../state.js'
+import type { CollabStatus, EditorMsg, FormatState } from '../state.js'
 
 export interface ToolbarItemParts {
   type: 'button'
@@ -142,7 +142,32 @@ export interface ToolbarOptions {
   /** Render the `block` group as a `<select>` dropdown instead of buttons
    * (default true). */
   blockSelect?: boolean
+  /** Collaborative-session status. When supplied AND `enabled`, the toolbar
+   * appends a presence indicator (connection dot + live peer count). */
+  collab?: Signal<CollabStatus>
   'aria-label'?: string
+}
+
+/** Connection/presence indicator for a collaborative session. */
+function presenceIndicator(collab: Signal<CollabStatus>): Mountable {
+  const statusOf = (c: CollabStatus): string =>
+    c.connected ? (c.synced ? 'synced' : 'connecting') : 'offline'
+  return div({ 'data-scope': 'md-toolbar', 'data-part': 'presence' }, [
+    span({
+      'data-part': 'presence-status',
+      'data-status': collab.map(statusOf),
+      'aria-hidden': 'true',
+      title: collab.map(statusOf),
+    }),
+    span(
+      {
+        'data-part': 'presence-peers',
+        role: 'status',
+        'aria-live': 'polite',
+      },
+      [text(collab.map((c) => (c.peers === 0 ? 'Only you' : `${c.peers + 1} editing`)))],
+    ),
+  ])
 }
 
 /** Render the `block` group as a native `<select>` of block types. */
@@ -207,6 +232,11 @@ export function toolbar(opts: ToolbarOptions): Mountable {
         }),
       ),
     )
+  }
+
+  // Presence indicator (constant `enabled` after init, so a one-shot peek is safe).
+  if (opts.collab && opts.collab.peek().enabled) {
+    children.push(presenceIndicator(opts.collab))
   }
 
   return div(
