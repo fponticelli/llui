@@ -25,7 +25,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/agent": "workspace:*",
+    "@llui/agent": "workspace:^",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.0.0"
   },

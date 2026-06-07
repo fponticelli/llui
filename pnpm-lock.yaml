@@ -406,7 +406,7 @@ importers:
   packages/agent-bridge:
     dependencies:
       '@llui/agent':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../agent
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
@@ -466,10 +466,10 @@ importers:
   packages/compiler-devtools:
     dependencies:
       '@llui/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
       '@llui/compiler-introspection':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-introspection
       typescript:
         specifier: ^6.0.2
@@ -482,7 +482,7 @@ importers:
   packages/compiler-introspection:
     dependencies:
       '@llui/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
       typescript:
         specifier: ^6.0.2
@@ -495,7 +495,7 @@ importers:
   packages/compiler-ssr:
     dependencies:
       '@llui/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
       typescript:
         specifier: ^6.0.2
@@ -551,13 +551,13 @@ importers:
         specifier: ^0.45.0
         version: 0.45.0
       '@llui/components':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../components
       '@llui/lexical':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../lexical
       '@llui/markdown-editor':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../markdown-editor
       html-to-image:
         specifier: ^1.11.13
@@ -715,16 +715,16 @@ importers:
   packages/mcp:
     dependencies:
       '@llui/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
       '@llui/compiler-devtools':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-devtools
       '@llui/compiler-introspection':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-introspection
       '@llui/vite-plugin':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../vite-plugin
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
@@ -792,19 +792,19 @@ importers:
   packages/vite-plugin:
     dependencies:
       '@llui/compiler':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler
       '@llui/compiler-devtools':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-devtools
       '@llui/compiler-introspection':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-introspection
       '@llui/compiler-ssr':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../compiler-ssr
       '@llui/devmode-annotate':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../devmode-annotate
       magic-string:
         specifier: ^0.30.21

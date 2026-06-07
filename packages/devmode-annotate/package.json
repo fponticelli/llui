@@ -23,9 +23,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/components": "workspace:*",
-    "@llui/lexical": "workspace:*",
-    "@llui/markdown-editor": "workspace:*",
+    "@llui/components": "workspace:^",
+    "@llui/lexical": "workspace:^",
+    "@llui/markdown-editor": "workspace:^",
     "html-to-image": "^1.11.13",
     "lexical": "^0.45.0",
     "@lexical/markdown": "^0.45.0",

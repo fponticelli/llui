@@ -21,8 +21,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/compiler": "workspace:*",
-    "@llui/compiler-introspection": "workspace:*",
+    "@llui/compiler": "workspace:^",
+    "@llui/compiler-introspection": "workspace:^",
     "typescript": "^6.0.2"
   },
   "devDependencies": {
