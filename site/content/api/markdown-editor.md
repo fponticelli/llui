@@ -751,6 +751,9 @@ export interface ToolbarOptions {
   /** Render the `block` group as a `<select>` dropdown instead of buttons
    * (default true). */
   blockSelect?: boolean
+  /** Collaborative-session status. When supplied AND `enabled`, the toolbar
+   * appends a presence indicator (connection dot + live peer count). */
+  collab?: Signal<CollabStatus>
   'aria-label'?: string
 }
 ```
