@@ -11,6 +11,34 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-07 — 0.11.0 (head / metadata management)
+
+**Released:** `@llui/{dom,vike}@0.11.0`; `@llui/{agent,markdown,router,transitions}@0.10.1`; `@llui/{components,test}@0.11.1`; `@llui/mcp@0.12.1`; `@llui/{lexical,markdown-editor,devmode-annotate}@0.2.1`
+
+Helmet-style head/metadata management for the signal runtime: set the document title, `<meta>`/`<link>` tags, and `<html>`/`<body>` attributes reactively from page content, with full SSR collection and hydration adoption.
+
+### Breaking
+
+- **`@llui/vike@0.11.0`** — `DocumentContext` (the argument to a custom `document` template in `createOnRenderHtml`) gains two required fields, `htmlAttrs` and `bodyAttrs`, and the default template now interpolates them as `<html${htmlAttrs}>` / `<body${bodyAttrs}>`. Existing custom templates keep working (they consume a subset of the context), but to surface `htmlAttr(...)`/`bodyAttr(...)` in SSR output you must interpolate the two new fields into your `<html>`/`<body>` tags.
+
+### Migration
+
+- If you pass a custom `document` template to `createOnRenderHtml` and use `htmlAttr(...)`/`bodyAttr(...)`, add `${htmlAttrs}` / `${bodyAttrs}` to your `<html>` / `<body>` tags. Otherwise no action needed.
+
+### `@llui/dom@0.11.0`
+
+- **Added** head/metadata primitives: `title`, `titleTemplate`, `meta`, `link`, `htmlAttr`, `bodyAttr`, `base`, `style`, `script`, `noscript`. Each accepts a plain value or a `Signal` (`HeadValue<T>`), commits through the existing chunked-mask reconciler (reactive, mask-gated, `batch()`-coalesced), and dedups via a per-key last-writer-wins stack — a nested page's `title`/`meta` overrides its layout's and is restored on unmount. `titleTemplate('%s · Site')` composes with `title('Page')` → `Page · Site`.
+- **Added** the `HeadSink` coordination layer: `domHeadSink` (writes to a live `document.head`, adopting server-rendered `data-llui-head` tags on hydration so nothing duplicates or flashes), `collectHeadSink` (SSR collector → escaped head / html-attrs / body-attrs strings via the shared serializer), `mergeStaticHead`, and the `HEAD_SINK` context. Sink resolution is per-document (no cross-document global).
+- **Added** public extension points `registerBinding`, `onTeardown`, `currentDoc`, plus `SignalDoc.head`/`documentElement` — for sibling modules that build bindings with non-element commit targets.
+
+### `@llui/vike@0.11.0`
+
+- **Added** SSR head collection: `createOnRenderHtml` threads one collector through the whole layout→page chain, merges collected component head with the static `+Head.ts` head (component entries override colliding `<title>`/`<meta>`, so the document never carries two `<title>`s), and injects collected `<html>`/`<body>` attribute strings. See Breaking for the `DocumentContext` change.
+
+### Peer-range refresh
+
+- **Improved** `@llui/{agent,markdown,router,transitions}@0.10.1`, `@llui/{components,test}@0.11.1`, `@llui/mcp@0.12.1`, `@llui/{lexical,markdown-editor,devmode-annotate}@0.2.1` — re-released with `peerDependencies["@llui/dom"]` widened to `^0.11.0`. No code changes.
+
 ## 2026-06-07 — 0.10.0 (HTML-native attribute spelling + compiler autofix)
 
 **Released:** `@llui/dom@0.10.0`; `@llui/compiler@0.11.0`; `@llui/{vite-plugin,components,test,compiler-introspection,compiler-devtools,compiler-ssr}@0.11.0`; `@llui/{router,transitions,vike,agent,markdown}@0.10.0`; `llui-agent@0.10.0`; `@llui/{lexical,markdown-editor,devmode-annotate}@0.2.0`; `@llui/mcp@0.12.0`
