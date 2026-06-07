@@ -11,6 +11,47 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-07 — 0.10.0 (HTML-native attribute spelling + compiler autofix)
+
+**Released:** `@llui/dom@0.10.0`; `@llui/compiler@0.11.0`; `@llui/{vite-plugin,components,test,compiler-introspection,compiler-devtools,compiler-ssr}@0.11.0`; `@llui/{router,transitions,vike,agent,markdown}@0.10.0`; `llui-agent@0.10.0`; `@llui/{lexical,markdown-editor,devmode-annotate}@0.2.0`; `@llui/mcp@0.12.0`
+
+LLui now authors HTML attributes in their native lowercase form (`tabindex`, `readonly`, `class`/`for` — matching `aria-*`/`data-*`), enforced by a new compiler lint layer that ships deterministic, auto-applied fixes. Event handlers stay camelCase (`onClick`). Plus a runtime fix for `<select>` value resolution.
+
+### Breaking
+
+- **`@llui/compiler@0.11.0`** — three new always-on lint rules. `convention` flags a camelCase DOM attribute (`tabIndex`, `readOnly`, `maxLength`, …) and rewrites it to the HTML-native lowercase spelling. `attr-name` is a hard error on React-isms that silently never applied in LLui (`className → class`, `htmlFor → for`). `event-handler-casing` is a hard error on a miscased handler the runtime never binds (`onclick → onClick`).
+- **`@llui/components@0.11.0`** — part-bag and option fields that mirror HTML attributes were renamed to their lowercase spelling: `tabIndex → tabindex`, `readOnly → readonly`, `spellCheck → spellcheck`, `inputMode → inputmode`, `autoComplete → autocomplete`, `maxLength → maxlength`. Reading these off a part bag (e.g. `parts.root.tabIndex`) or passing them as `init` options now uses the lowercase name.
+- **`@llui/lexical@0.2.0`** — the `lexicalForeign` options field `readOnly` was renamed to `readonly`.
+- **`@llui/markdown-editor@0.2.0`** — the editor init option and state field `readOnly` were renamed to `readonly`.
+- **`@llui/dom@0.10.0` / `@llui/mcp@0.12.0`** — the `getRenderedHtml` debug-API / MCP-tool parameter `maxLength` was renamed to `maxlength`.
+
+### Migration
+
+- Rename camelCase HTML attributes in your views to lowercase (`tabIndex → tabindex`, etc.). `@llui/vite-plugin` auto-applies the `convention` fix and warns, so most call sites need no manual edit — run a build to see what it rewrites.
+- Replace `className → class` and `htmlFor → for` (these were dead attributes in LLui — they never applied at runtime).
+- Fix any miscased event handler the build flags (`onclick → onClick`); event handlers stay camelCase.
+- If you read attribute-shaped fields off a `@llui/components` part bag, or pass `readOnly` to `@llui/lexical`'s `lexicalForeign` or `@llui/markdown-editor`, switch to the lowercase name.
+
+### `@llui/dom@0.10.0`
+
+- **Fixed** form-control selection now resolves after the subtree is assembled, so a `<select>`'s reactive `value` binds the correct `<option>` even when options are appended after the select element.
+
+### `@llui/compiler@0.11.0`
+
+- **Added** the `convention`, `event-handler-casing`, and `attr-name` lint rules (see Breaking), plus a deterministic-fix layer: diagnostics now carry a `LintFix`, and `applyLintFixes()` + a shared offset-safe edit applier are exported for tooling.
+
+### `@llui/vite-plugin@0.11.0`
+
+- **Added** auto-applies `convention` fixes to the emitted code with a warning, so the dev loop never blocks on a pure casing nit; correctness rules still halt the build but now carry their fix data.
+
+### `@llui/mcp@0.12.0`
+
+- **Added** `llui_compiler_diagnostics` now emits a `fix` (title + edits with old/new text) for rename-style rules, so an agent can apply the correction deterministically.
+
+### All packages — version cascade
+
+- **Changed** the `@llui/dom` and `@llui/compiler` bumps cascade to their peer-holders and opt-in modules, which bump in lockstep to pick up the new peer ranges. The purely-cascaded packages have no source changes: `@llui/{router,transitions,vike,agent,markdown,test,devmode-annotate,compiler-introspection,compiler-devtools,compiler-ssr}` and `llui-agent`.
+
 ## 2026-06-06 — 0.9.0 (Markdown editor: @llui/lexical + @llui/markdown-editor)
 
 **Released:** **new** `@llui/lexical@0.1.0`, `@llui/markdown-editor@0.1.0`, `@llui/markdown@0.9.0`; `@llui/dom@0.9.0`; `@llui/compiler@0.10.0`; `@llui/{vite-plugin,test,components,compiler-introspection,compiler-devtools,compiler-ssr}@0.10.0`; `@llui/{router,transitions,vike,agent}@0.9.0`; `llui-agent@0.9.0`; `@llui/mcp@0.11.0`; `@llui/effects@0.1.0`; `@llui/devmode-annotate@0.1.0`
