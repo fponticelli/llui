@@ -540,6 +540,21 @@ errors. Call only on confirmed signal components.
 function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[]
 ```
 
+### `applyLintFixes()`
+
+Apply the fixes carried by `messages` to `source`, returning the rewritten
+code and how many fixes applied vs. were skipped (overlapping with one already
+applied). Messages without a `fix` are ignored, so a caller can pass a filtered
+subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
+not re-lint; the caller decides whether a second pass is warranted.
+
+```typescript
+function applyLintFixes(
+  source: string,
+  messages: ReadonlyArray<{ fix?: LintFix }>,
+): { code: string; applied: number; skipped: number }
+```
+
 ### `registerIntrospectionFactory()`
 
 Register the introspection module factory. Called once per process
@@ -1485,6 +1500,33 @@ export interface BuildManifestOptions {
 }
 ```
 
+### `LintEdit`
+
+A single text replacement, as absolute char offsets into the linted source.
+
+```typescript
+export interface LintEdit {
+  start: number
+  end: number
+  newText: string
+}
+```
+
+### `LintFix`
+
+A deterministic, mechanically-applicable fix for a diagnostic — the same
+shape an editor quick-fix or `applyLintFixes` consumes. A diagnostic carries
+at most one (the single obvious correction); multi-option fixes aren't needed
+for the rename-style rules that produce them.
+
+```typescript
+export interface LintFix {
+  /** Short label, e.g. "Rename to `tabindex`". */
+  title: string
+  edits: LintEdit[]
+}
+```
+
 ### `SignalDiagnostic`
 
 ```typescript
@@ -1493,6 +1535,8 @@ export interface SignalDiagnostic {
   message: string
   start: number
   length: number
+  /** Present iff the diagnostic is mechanically fixable (rename-style rules). */
+  fix?: LintFix
 }
 ```
 
@@ -1507,6 +1551,8 @@ export interface SignalLintMessage {
   start: number
   line: number
   column: number
+  /** Present iff the diagnostic is mechanically fixable (see {@link LintFix}). */
+  fix?: LintFix
 }
 ```
 

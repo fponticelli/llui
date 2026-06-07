@@ -293,7 +293,7 @@ export type EditorMsg =
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
-  | { type: 'setReadOnly'; readOnly: boolean }
+  | { type: 'setReadOnly'; readonly: boolean }
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 ```
@@ -360,7 +360,7 @@ export interface EditorConfig {
   /** Debounced markdown-emission window (ms). Default 300. */
   changeDebounceMs?: number
   placeholder?: string
-  readOnly?: boolean
+  readonly?: boolean
   /** Lexical theme class map. */
   theme?: EditorThemeClasses
   /** Editor namespace (instance isolation). */
@@ -424,7 +424,7 @@ export interface EditorState {
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
   dirty: boolean
-  readOnly: boolean
+  readonly: boolean
 }
 ```
 
@@ -433,7 +433,7 @@ export interface EditorState {
 ```typescript
 export interface InitOptions {
   value: string
-  readOnly: boolean
+  readonly: boolean
 }
 ```
 

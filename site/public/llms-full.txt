@@ -3289,7 +3289,7 @@ export interface LluiDebugAPI {
 
   // ── DOM inspection (legacy-only; optional) ─────────────────────
   inspectElement?(selector: string): ElementReport | null
-  getRenderedHtml?(selector?: string, maxLength?: number): string
+  getRenderedHtml?(selector?: string, maxlength?: number): string
   dispatchDomEvent?(
     selector: string,
     type: string,
@@ -4508,6 +4508,18 @@ errors. Call only on confirmed signal components.
 function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[]
 ```
 
+### `applyLintFixes()`
+
+Apply the fixes carried by `messages` to `source`, returning the rewritten
+code and how many fixes applied vs. were skipped (overlapping with one already
+applied). Messages without a `fix` are ignored, so a caller can pass a filtered
+subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
+not re-lint; the caller decides whether a second pass is warranted.
+
+```typescript
+function applyLintFixes(source: string, messages: ReadonlyArray<{ fix?: LintFix }>): { code: string; applied: number; skipped: number }
+```
+
 ### `registerIntrospectionFactory()`
 
 Register the introspection module factory. Called once per process
@@ -5438,6 +5450,33 @@ export interface BuildManifestOptions {
 }
 ```
 
+### `LintEdit`
+
+A single text replacement, as absolute char offsets into the linted source.
+
+```typescript
+export interface LintEdit {
+  start: number
+  end: number
+  newText: string
+}
+```
+
+### `LintFix`
+
+A deterministic, mechanically-applicable fix for a diagnostic — the same
+shape an editor quick-fix or `applyLintFixes` consumes. A diagnostic carries
+at most one (the single obvious correction); multi-option fixes aren't needed
+for the rename-style rules that produce them.
+
+```typescript
+export interface LintFix {
+  /** Short label, e.g. "Rename to `tabindex`". */
+  title: string
+  edits: LintEdit[]
+}
+```
+
 ### `SignalDiagnostic`
 
 ```typescript
@@ -5446,6 +5485,8 @@ export interface SignalDiagnostic {
   message: string
   start: number
   length: number
+  /** Present iff the diagnostic is mechanically fixable (rename-style rules). */
+  fix?: LintFix
 }
 ```
 
@@ -5460,6 +5501,8 @@ export interface SignalLintMessage {
   start: number
   line: number
   column: number
+  /** Present iff the diagnostic is mechanically fixable (see {@link LintFix}). */
+  fix?: LintFix
 }
 ```
 
@@ -7795,11 +7838,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `max` | `number` |
 | `step` | `number` |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 
 **Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`
 
-**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8032,12 +8075,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `max` | `Date \| null` |
 | `error` | `DateError` |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 | `required` | `boolean` |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
-**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readOnly?: boolean, required?: boolean`
+**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readonly?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8146,13 +8189,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `maxSize` | `number` |
 | `minFileSize` | `number` |
 | `required` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 | `invalid` | `boolean` |
 | `dragging` | `boolean` |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
-**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readOnly?: boolean, invalid?: boolean`
+**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8370,12 +8413,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `max` | `number` |
 | `step` | `number` |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 | `rawText` | `string` |
 
 **Messages:** `setValue`, `setRawText`, `commit`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
-**Init options:** `value?: number | null, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number | null, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8565,12 +8608,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `count` | `number` |
 | `allowHalf` | `boolean` |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 | `hoveredValue` | `number \| null` |
 
 **Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
 
-**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8637,11 +8680,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `current` | `Stroke \| null` |
 | `drawing` | `boolean` |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 
 **Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
 
-**Init options:** `strokes?: Stroke[], disabled?: boolean, readOnly?: boolean`
+**Init options:** `strokes?: Stroke[], disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -13822,7 +13865,7 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Controlled document signal; the editor follows it (echo-guarded). */
   value?: Signal<string>
   /** Reactive read-only flag (always supplied by the host's state). */
-  readOnly: Signal<boolean>
+  readonly: Signal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
   /** Outbound: serialized document changed (debounced, real edits only). */
@@ -14167,7 +14210,7 @@ export type EditorMsg =
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
-  | { type: 'setReadOnly'; readOnly: boolean }
+  | { type: 'setReadOnly'; readonly: boolean }
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 ```
@@ -14234,7 +14277,7 @@ export interface EditorConfig {
   /** Debounced markdown-emission window (ms). Default 300. */
   changeDebounceMs?: number
   placeholder?: string
-  readOnly?: boolean
+  readonly?: boolean
   /** Lexical theme class map. */
   theme?: EditorThemeClasses
   /** Editor namespace (instance isolation). */
@@ -14298,7 +14341,7 @@ export interface EditorState {
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
   dirty: boolean
-  readOnly: boolean
+  readonly: boolean
 }
 ```
 
@@ -14307,7 +14350,7 @@ export interface EditorState {
 ```typescript
 export interface InitOptions {
   value: string
-  readOnly: boolean
+  readonly: boolean
 }
 ```
 

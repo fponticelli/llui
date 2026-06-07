@@ -315,7 +315,7 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Controlled document signal; the editor follows it (echo-guarded). */
   value?: Signal<string>
   /** Reactive read-only flag (always supplied by the host's state). */
-  readOnly: Signal<boolean>
+  readonly: Signal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
   /** Outbound: serialized document changed (debounced, real edits only). */

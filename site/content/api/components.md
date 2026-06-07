@@ -294,11 +294,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `max`      | `number`  |
 | `step`     | `number`  |
 | `disabled` | `boolean` |
-| `readOnly` | `boolean` |
+| `readonly` | `boolean` |
 
 **Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`
 
-**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -531,12 +531,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `max`      | `Date \| null` |
 | `error`    | `DateError`    |
 | `disabled` | `boolean`      |
-| `readOnly` | `boolean`      |
+| `readonly` | `boolean`      |
 | `required` | `boolean`      |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
-**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readOnly?: boolean, required?: boolean`
+**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readonly?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -645,13 +645,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `maxSize`       | `number`         |
 | `minFileSize`   | `number`         |
 | `required`      | `boolean`        |
-| `readOnly`      | `boolean`        |
+| `readonly`      | `boolean`        |
 | `invalid`       | `boolean`        |
 | `dragging`      | `boolean`        |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
-**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readOnly?: boolean, invalid?: boolean`
+**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -869,12 +869,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `max`      | `number`         |
 | `step`     | `number`         |
 | `disabled` | `boolean`        |
-| `readOnly` | `boolean`        |
+| `readonly` | `boolean`        |
 | `rawText`  | `string`         |
 
 **Messages:** `setValue`, `setRawText`, `commit`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
-**Init options:** `value?: number | null, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number | null, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -1064,12 +1064,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `count`        | `number`         |
 | `allowHalf`    | `boolean`        |
 | `disabled`     | `boolean`        |
-| `readOnly`     | `boolean`        |
+| `readonly`     | `boolean`        |
 | `hoveredValue` | `number \| null` |
 
 **Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
 
-**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readOnly?: boolean`
+**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -1136,11 +1136,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `current`  | `Stroke \| null` |
 | `drawing`  | `boolean`        |
 | `disabled` | `boolean`        |
-| `readOnly` | `boolean`        |
+| `readonly` | `boolean`        |
 
 **Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
 
-**Init options:** `strokes?: Stroke[], disabled?: boolean, readOnly?: boolean`
+**Init options:** `strokes?: Stroke[], disabled?: boolean, readonly?: boolean`
 
 **Connect options:** `ConnectOptions`
 
