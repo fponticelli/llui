@@ -49,6 +49,23 @@ export const EMPTY_FORMAT: FormatState = {
 /** Which floating surface is currently open. */
 export type OverlayKind = 'none' | 'floating' | 'slash' | 'context' | 'link'
 
+/** Live collaborative-session status (mirror of the CRDT provider state).
+ * `enabled` is false unless the editor was created with a `collab` factory. */
+export interface CollabStatus {
+  enabled: boolean
+  connected: boolean
+  synced: boolean
+  /** Remote peers currently present (excludes this client). */
+  peers: number
+}
+
+export const COLLAB_OFF: CollabStatus = {
+  enabled: false,
+  connected: false,
+  synced: false,
+  peers: 0,
+}
+
 export interface EditorState {
   /** Last serialized markdown (mirror of the live document). */
   value: string
@@ -64,6 +81,8 @@ export interface EditorState {
   plugins: Record<string, unknown>
   dirty: boolean
   readonly: boolean
+  /** Collaborative-session status (always present; inert unless `collab` set). */
+  collab: CollabStatus
 }
 
 export type EditorMsg =
@@ -75,6 +94,9 @@ export type EditorMsg =
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
   | { type: 'setReadOnly'; readonly: boolean }
+  | { type: 'collabStatus'; connected: boolean }
+  | { type: 'collabSync'; synced: boolean }
+  | { type: 'collabPeers'; peers: number }
   /** Route a message to a plugin's UI reducer (see {@link PluginUI}). */
   | { type: 'plugin'; name: string; msg: unknown }
 
@@ -96,6 +118,8 @@ export type EditorEffect =
 export interface InitOptions {
   value: string
   readonly: boolean
+  /** Whether a collaborative session is wired (drives `collab.enabled`). */
+  collab?: boolean
 }
 
 export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
@@ -110,6 +134,7 @@ export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
       plugins: {},
       dirty: false,
       readonly: opts.readonly,
+      collab: { ...COLLAB_OFF, enabled: opts.collab ?? false },
     },
     [],
   ]
@@ -167,6 +192,18 @@ export function update(state: EditorState, msg: EditorMsg): [EditorState, Editor
     case 'setReadOnly': {
       if (state.readonly === msg.readonly) return [state, []]
       return [{ ...state, readonly: msg.readonly }, []]
+    }
+    case 'collabStatus': {
+      if (state.collab.connected === msg.connected) return [state, []]
+      return [{ ...state, collab: { ...state.collab, connected: msg.connected } }, []]
+    }
+    case 'collabSync': {
+      if (state.collab.synced === msg.synced) return [state, []]
+      return [{ ...state, collab: { ...state.collab, synced: msg.synced } }, []]
+    }
+    case 'collabPeers': {
+      if (state.collab.peers === msg.peers) return [state, []]
+      return [{ ...state, collab: { ...state.collab, peers: msg.peers } }, []]
     }
     case 'plugin': {
       // Plugin messages are routed by the host's composed reducer (it holds the

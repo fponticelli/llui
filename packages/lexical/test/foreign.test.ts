@@ -110,6 +110,105 @@ describe('lexicalForeign (uncontrolled)', () => {
   })
 })
 
+describe('lexicalForeign (seam options for external doc ownership)', () => {
+  it('history: false suppresses the built-in undo stack (canUndo stays false)', async () => {
+    let editor!: LexicalEditor
+    let lastCanUndo = false
+    const def = component<AppState, AppMsg, never>({
+      name: 'NoHistory',
+      init: () => ({ value: '', readonly: false }),
+      update: (s, m) =>
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'no-history',
+          readonly: state.at('readonly'),
+          serialize,
+          deserialize,
+          defaultValue: 'seed',
+          history: false,
+          onReady: (e) => {
+            editor = e
+          },
+          onSelectionChange: (ctx) => {
+            lastCanUndo = ctx.canUndo
+          },
+        }),
+      ],
+    })
+    app = mountApp(container, def)
+    // An edit that WOULD push an undo entry if history were registered.
+    editor.update(() => {
+      $getRoot()
+        .clear()
+        .append($createParagraphNode().append($createTextNode('edited')))
+    })
+    await wait(0)
+    expect(lastCanUndo).toBe(false)
+  })
+
+  it('default (history on) reports canUndo after an edit', async () => {
+    let editor!: LexicalEditor
+    let lastCanUndo = false
+    const def = component<AppState, AppMsg, never>({
+      name: 'History',
+      init: () => ({ value: '', readonly: false }),
+      update: (s, m) =>
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'with-history',
+          readonly: state.at('readonly'),
+          serialize,
+          deserialize,
+          defaultValue: 'seed',
+          onReady: (e) => {
+            editor = e
+          },
+          onSelectionChange: (ctx) => {
+            lastCanUndo = ctx.canUndo
+          },
+        }),
+      ],
+    })
+    app = mountApp(container, def)
+    editor.update(() => {
+      $getRoot()
+        .clear()
+        .append($createParagraphNode().append($createTextNode('edited')))
+    })
+    await wait(0)
+    expect(lastCanUndo).toBe(true)
+  })
+
+  it("seedMode: 'deferred' skips the boot-time seed (external owner controls it)", async () => {
+    let deserializeCalls = 0
+    const trackingDeserialize = (e: LexicalEditor, v: string): void => {
+      deserializeCalls++
+      deserialize(e, v)
+    }
+    const def = component<AppState, AppMsg, never>({
+      name: 'Deferred',
+      init: () => ({ value: '', readonly: false }),
+      update: (s, m) =>
+        m.type === 'set' ? { ...s, value: m.value } : { ...s, readonly: m.readonly },
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'deferred',
+          readonly: state.at('readonly'),
+          serialize,
+          deserialize: trackingDeserialize,
+          defaultValue: 'should-not-appear',
+          seedMode: 'deferred',
+        }),
+      ],
+    })
+    app = mountApp(container, def)
+    expect(deserializeCalls).toBe(0)
+    expect(container.textContent).not.toContain('should-not-appear')
+  })
+})
+
 describe('lexicalForeign (controlled)', () => {
   it('follows the value signal and suppresses echoes', async () => {
     let editor!: LexicalEditor

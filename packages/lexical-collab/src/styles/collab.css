@@ -1,0 +1,11 @@
+/* Remote-presence caret overlay. Lexical inline-styles the caret/name spans
+ * themselves (per-user colour), so this only positions the container so those
+ * absolutely-positioned carets land over the editor. The container's
+ * offsetParent must be a positioned ancestor — `yjsCollab` makes the editor's
+ * wrapper `position: relative` when it would otherwise be static. */
+.llui-collab-cursors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
