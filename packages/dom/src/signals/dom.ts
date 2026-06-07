@@ -40,6 +40,12 @@ export interface SignalDoc {
   /** Present on a real client `Document`; absent on a server `DomEnv` (portals
    * default to it, so a portal with no explicit target is client-only). */
   readonly body?: HTMLElement | null
+  /** Present on a real client `Document`; absent on a server `DomEnv`. The
+   * head-management primitives commit here on the client (and skip when absent,
+   * deferring to the SSR collector seeded via context). */
+  readonly head?: HTMLHeadElement | null
+  /** Present on a real client `Document`; the `<html>` root for `htmlAttr`. */
+  readonly documentElement?: HTMLElement | null
   /** Present on a server `DomEnv` (and `browserEnv`): parse an HTML string into a
    * fragment. Absent on a raw client `Document` (the runtime falls back to a
    * `<template>` parse there — see `parseFragment`). Used by `unsafeHtml`. */
@@ -531,6 +537,35 @@ export function onMount(cb: (root: Element) => void | (() => void)): Mountable {
     c.mounts.push(cb)
     return c.doc.createComment('onMount')
   })
+}
+
+/** Register a reactive binding into the ACTIVE build whose `commit` applies the
+ * value to a custom target (not an inline element). Public so sibling modules
+ * (e.g. head/metadata management) can build bindings with non-element commit
+ * targets that still ride the component's one chunked-mask reconciler — `produce`
+ * runs on mount and whenever `deps` chunks go dirty; `commit` gets the new value.
+ * Must be called during a build (inside a `mountable(...)` recipe). */
+export function registerBinding(
+  deps: readonly string[],
+  produce: (state: unknown) => unknown,
+  commit: (value: unknown) => void,
+): void {
+  requireCtx().specs.push({ deps, produce, commit })
+}
+
+/** Register a teardown to run when the owning scope is disposed (unmount). Public
+ * companion to {@link registerBinding} for sibling modules. Must be called during
+ * a build. */
+export function onTeardown(fn: () => void): void {
+  requireCtx().teardowns.push(fn)
+}
+
+/** The document of the ACTIVE build — a live client `Document` on the client, a
+ * server `DomEnv` under SSR. Public so sibling modules can create nodes / read
+ * `head`/`documentElement`/`body` in the same environment the runtime builds in.
+ * Must be called during a build. */
+export function currentDoc(): SignalDoc {
+  return requireCtx().doc
 }
 
 /** Render `content` into `target` (default `document.body`) instead of inline —

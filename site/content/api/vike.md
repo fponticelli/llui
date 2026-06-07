@@ -143,7 +143,7 @@ function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
   env: DomEnv,
-): { html: string; envelope: HydrationEnvelope }
+): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead }
 ```
 
 ### `pageSlot()`
@@ -354,8 +354,16 @@ export interface DocumentContext {
   html: string
   /** JSON-serialized hydration envelope (chain-aware when Layout is configured) */
   state: string
-  /** Head content from pageContext.head (e.g. from +Head.ts) */
+  /** Head content: static `pageContext.head` (e.g. from +Head.ts) merged with the
+   * head collected from `title`/`meta`/`link` primitives in the render tree
+   * (component entries override colliding static tags). */
   head: string
+  /** Attribute string for the `<html>` tag (leading space included), from
+   * `htmlAttr(...)` primitives. Interpolate as `<html${htmlAttrs}>`. */
+  htmlAttrs: string
+  /** Attribute string for the `<body>` tag (leading space included), from
+   * `bodyAttr(...)` primitives. Interpolate as `<body${bodyAttrs}>`. */
+  bodyAttrs: string
   /** Full page context for custom logic */
   pageContext: PageContext
 }

@@ -36,7 +36,10 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function escapeAttr(s: string): string {
+/** Escape a string for use inside a double-quoted HTML attribute. Exported so the
+ * head-management collector serializes html/body attribute strings through the
+ * same escaping as the node serializer (no second, divergent escaper). */
+export function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 }
 

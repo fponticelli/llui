@@ -326,6 +326,44 @@ teardown (run on unmount / dispose). Returns a marker node for the view array.
 function onMount(cb: (root: Element) => void | (() => void)): Mountable
 ```
 
+### `registerBinding()`
+
+Register a reactive binding into the ACTIVE build whose `commit` applies the
+value to a custom target (not an inline element). Public so sibling modules
+(e.g. head/metadata management) can build bindings with non-element commit
+targets that still ride the component's one chunked-mask reconciler — `produce`
+runs on mount and whenever `deps` chunks go dirty; `commit` gets the new value.
+Must be called during a build (inside a `mountable(...)` recipe).
+
+```typescript
+function registerBinding(
+  deps: readonly string[],
+  produce: (state: unknown) => unknown,
+  commit: (value: unknown) => void,
+): void
+```
+
+### `onTeardown()`
+
+Register a teardown to run when the owning scope is disposed (unmount). Public
+companion to {@link registerBinding} for sibling modules. Must be called during
+a build.
+
+```typescript
+function onTeardown(fn: () => void): void
+```
+
+### `currentDoc()`
+
+The document of the ACTIVE build — a live client `Document` on the client, a
+server `DomEnv` under SSR. Public so sibling modules can create nodes / read
+`head`/`documentElement`/`body` in the same environment the runtime builds in.
+Must be called during a build.
+
+```typescript
+function currentDoc(): SignalDoc
+```
+
 ### `portal()`
 
 Render `content` into `target` (default `document.body`) instead of inline —
@@ -576,6 +614,120 @@ function renderToString<S, M, E>(
   initialState: S | undefined,
   env: ServerDoc,
 ): string
+```
+
+### `domHeadSink()`
+
+Build a sink that writes to `doc`'s live `<head>` / `<html>` / `<body>`. Returns
+an inert sink when the document has no `<head>` (server `DomEnv` — those go
+through the collector instead).
+
+```typescript
+function domHeadSink(doc: SignalDoc): HeadSink
+```
+
+### `collectHeadSink()`
+
+```typescript
+function collectHeadSink(): CollectHeadSink
+```
+
+### `mergeStaticHead()`
+
+Merge a static `+Head.ts` head string with collected component head, letting
+component entries WIN: any `<title>` / `<meta name|property>` in `staticHead`
+whose key the component also set is stripped, so the document never carries two
+`<title>`s (the browser would silently use the first). Returns
+`strippedStatic + collected.head`.
+
+```typescript
+function mergeStaticHead(staticHead: string, collected: CollectedHead): string
+```
+
+### `title()`
+
+Set the document `<title>`. Reactive when given a signal. Last writer in the
+tree (deepest layout/page) wins; restored on unmount. Combine with
+{@link titleTemplate}.
+
+```typescript
+function title(value: HeadValue<string>): Mountable
+```
+
+### `titleTemplate()`
+
+A `%s` template the active {@link title} is interpolated into — e.g.
+`titleTemplate('%s · LLui')` + `title('Docs')` → `Docs · LLui`. Applies only
+while a title is set.
+
+```typescript
+function titleTemplate(value: HeadValue<string>): Mountable
+```
+
+### `meta()`
+
+Add a `<meta>` tag. Dedups by `name`/`property`/`httpEquiv`/`charset`.
+
+```typescript
+function meta(attrs: MetaAttrs): Mountable
+```
+
+### `link()`
+
+Add a `<link>` tag (canonical, preload, stylesheet, …). Dedups by `rel`+`href`.
+
+```typescript
+function link(attrs: LinkAttrs): Mountable
+```
+
+### `htmlAttr()`
+
+Set attribute(s) on `<html>` (e.g. `htmlAttr({ lang })`). Each attribute
+dedups independently and restores its pre-existing value on unmount.
+
+```typescript
+function htmlAttr(attrs: Record<string, HeadValue<string | boolean | null>>): Mountable
+```
+
+### `bodyAttr()`
+
+Set attribute(s) on `<body>` (e.g. `bodyAttr({ class: theme })`).
+
+```typescript
+function bodyAttr(attrs: Record<string, HeadValue<string | boolean | null>>): Mountable
+```
+
+### `base()`
+
+Set the document `<base>` (one per document — dedups to a single tag).
+
+```typescript
+function base(attrs: BaseAttrs): Mountable
+```
+
+### `style()`
+
+Add an inline `<style>` with `css` as its text content.
+
+```typescript
+function style(css: HeadValue<string>, attrs: StyleAttrs = {}): Mountable
+```
+
+### `script()`
+
+Add a `<script>` (external via `src`, or inline via `body`). Dedups by static
+`id` or `src`; otherwise anonymous (keyed by stable construction order).
+
+```typescript
+function script(attrs: ScriptAttrs = {}, body?: HeadValue<string>): Mountable
+```
+
+### `noscript()`
+
+Add a `<noscript>` with `body` as its text content.
+
+```typescript
+function noscript(body: HeadValue<string>): Mountable
 ```
 
 ### `installSignalDebug()`
@@ -882,6 +1034,28 @@ from `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom` satisfies it.
 
 ```typescript
 export type ServerDoc = SignalDoc
+```
+
+### `HeadValue`
+
+A head value: a plain value (committed once) or a `Signal` (committed on
+mount and on every change). Mirrors how `foreign` accepts handles-or-values.
+
+```typescript
+export type HeadValue<T> = T | Signal<T>
+```
+
+### `HeadTarget`
+
+Where a head entry lands: a `<head>` element, an attribute on `<html>`/`<body>`,
+or the (template-composed) `<title>`.
+
+```typescript
+export type HeadTarget =
+  | { kind: 'element'; tag: string }
+  | { kind: 'attr'; on: 'html' | 'body'; name: string }
+  | { kind: 'title' }
+  | { kind: 'titleTemplate' }
 ```
 
 ### `Send`
@@ -1345,6 +1519,126 @@ export interface BindingError {
   key?: string
   message: string
   stack?: string
+}
+```
+
+### `HeadController`
+
+A single registered writer's handle: the binding `set`s its value(s) here;
+teardown `release`s it.
+
+```typescript
+export interface HeadController {
+  set(attrs: Record<string, unknown>, text?: string): void
+  release(): void
+}
+```
+
+### `HeadSink`
+
+The coordinator a head primitive commits through. One per app document (client)
+or one per render (server collector).
+
+```typescript
+export interface HeadSink {
+  register(key: string, target: HeadTarget): HeadController
+}
+```
+
+### `CollectedHead`
+
+The serialized output of a server render's head collection.
+
+```typescript
+export interface CollectedHead {
+  /** `<head>` element markup (title/meta/link/…), each marked `data-llui-head`. */
+  head: string
+  /** Attribute string for `<html …>` (leading space included), already escaped. */
+  htmlAttrs: string
+  /** Attribute string for `<body …>` (leading space included), already escaped. */
+  bodyAttrs: string
+  /** Dedup keys present in `head` (e.g. `title`, `meta:name=description`). Used by
+   * {@link mergeStaticHead} to strip colliding tags from a static `+Head.ts`. */
+  keys: readonly string[]
+}
+```
+
+### `CollectHeadSink`
+
+A server-side {@link HeadSink} that collects entries and serializes them. Seed
+it via {@link HEAD_SINK} before rendering, then call `serialize(env)`.
+
+```typescript
+export interface CollectHeadSink extends HeadSink {
+  serialize(doc: SignalDoc): CollectedHead
+}
+```
+
+### `MetaAttrs`
+
+Attributes accepted by {@link meta}. Identity attrs (`name`/`property`/
+`httpEquiv`/`charset`) should be static so the entry can dedup.
+
+```typescript
+export interface MetaAttrs {
+  name?: string
+  property?: string
+  httpEquiv?: string
+  charset?: string
+  content?: HeadValue<string>
+  [attr: string]: HeadValue<string> | undefined
+}
+```
+
+### `LinkAttrs`
+
+Attributes accepted by {@link link}.
+
+```typescript
+export interface LinkAttrs {
+  rel?: string
+  href?: HeadValue<string>
+  [attr: string]: HeadValue<string> | undefined
+}
+```
+
+### `BaseAttrs`
+
+Attributes accepted by {@link base}.
+
+```typescript
+export interface BaseAttrs {
+  href?: HeadValue<string>
+  target?: HeadValue<string>
+}
+```
+
+### `StyleAttrs`
+
+Attributes accepted by {@link style} / {@link script}. A static `id` keys the
+tag for dedup + SSR-hydration adoption; without one the tag is anonymous (no
+dedup, keyed by stable construction order).
+
+```typescript
+export interface StyleAttrs {
+  id?: string
+  media?: HeadValue<string>
+  [attr: string]: HeadValue<string> | undefined
+}
+```
+
+### `ScriptAttrs`
+
+Attributes accepted by {@link script}.
+
+```typescript
+export interface ScriptAttrs {
+  src?: HeadValue<string>
+  type?: HeadValue<string>
+  async?: HeadValue<boolean>
+  defer?: HeadValue<boolean>
+  id?: string
+  [attr: string]: HeadValue<string | boolean> | undefined
 }
 ```
 
@@ -1879,6 +2173,15 @@ export interface DomEnv {
 ```
 
 ## Constants
+
+### `HEAD_SINK`
+
+Context carrying the active sink. Default `null` → the client per-document
+fallback; SSR / explicit coordination seed a sink here.
+
+```typescript
+const HEAD_SINK: Context<HeadSink | null>
+```
 
 ### `div`
 

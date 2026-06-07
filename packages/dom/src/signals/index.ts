@@ -41,6 +41,9 @@ export {
   createContext,
   provide,
   useContext,
+  registerBinding,
+  onTeardown,
+  currentDoc,
   isMountable,
   mountable,
   type Context,
@@ -78,6 +81,35 @@ export {
 export type { BindingError } from './runtime.js'
 // ── SSR (server render → string; client hydrates via hydrateSignalApp) ──
 export { renderToString, renderNodes, serializeNodes, type ServerDoc } from './ssr.js'
+
+// ── Head / metadata management ──────────────────────────────────────
+export {
+  title,
+  titleTemplate,
+  meta,
+  link,
+  htmlAttr,
+  bodyAttr,
+  base,
+  style,
+  script,
+  noscript,
+  domHeadSink,
+  collectHeadSink,
+  mergeStaticHead,
+  HEAD_SINK,
+  type HeadValue,
+  type HeadSink,
+  type HeadController,
+  type HeadTarget,
+  type CollectHeadSink,
+  type CollectedHead,
+  type MetaAttrs,
+  type LinkAttrs,
+  type BaseAttrs,
+  type StyleAttrs,
+  type ScriptAttrs,
+} from './head.js'
 
 // ── Debug API (relay/agent surface) ─────────────────────────────────
 // Canonical home of the MCP/agent-relay contract. Lives in the signal runtime

@@ -1,5 +1,5 @@
-import { renderNodes, serializeNodes } from '@llui/dom'
-import type { Renderable } from '@llui/dom'
+import { renderNodes, serializeNodes, collectHeadSink, mergeStaticHead, HEAD_SINK } from '@llui/dom'
+import type { Renderable, CollectedHead } from '@llui/dom'
 import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
@@ -58,8 +58,16 @@ export interface DocumentContext {
   html: string
   /** JSON-serialized hydration envelope (chain-aware when Layout is configured) */
   state: string
-  /** Head content from pageContext.head (e.g. from +Head.ts) */
+  /** Head content: static `pageContext.head` (e.g. from +Head.ts) merged with the
+   * head collected from `title`/`meta`/`link` primitives in the render tree
+   * (component entries override colliding static tags). */
   head: string
+  /** Attribute string for the `<html>` tag (leading space included), from
+   * `htmlAttr(...)` primitives. Interpolate as `<html${htmlAttrs}>`. */
+  htmlAttrs: string
+  /** Attribute string for the `<body>` tag (leading space included), from
+   * `bodyAttr(...)` primitives. Interpolate as `<body${bodyAttrs}>`. */
+  bodyAttrs: string
   /** Full page context for custom logic */
   pageContext: PageContext
 }
@@ -69,13 +77,19 @@ export interface RenderHtmlResult {
   pageContext: { lluiState: unknown }
 }
 
-const DEFAULT_DOCUMENT = ({ html, state, head }: DocumentContext): string => `<!DOCTYPE html>
-<html>
+const DEFAULT_DOCUMENT = ({
+  html,
+  state,
+  head,
+  htmlAttrs,
+  bodyAttrs,
+}: DocumentContext): string => `<!DOCTYPE html>
+<html${htmlAttrs}>
   <head>
     <meta charset="utf-8" />
     ${head}
   </head>
-  <body>
+  <body${bodyAttrs}>
     <div id="app">${html}</div>
     <script>window.__LLUI_STATE__ = ${state}</script>
   </body>
@@ -221,12 +235,21 @@ async function renderPage(
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
   const chainData: readonly unknown[] = [...layoutData, pageContext.data]
 
-  const { html, envelope } = _renderChain(chain, chainData, env)
+  const { html, envelope, collectedHead } = _renderChain(chain, chainData, env)
 
   const document = options.document ?? DEFAULT_DOCUMENT
-  const head = pageContext.head ?? ''
+  // Static +Head.ts head, with component head merged in (components override
+  // colliding title/meta so the document never carries two <title>s).
+  const head = mergeStaticHead(pageContext.head ?? '', collectedHead)
   const state = serializeStateForScript(envelope)
-  const documentHtml = document({ html, state, head, pageContext })
+  const documentHtml = document({
+    html,
+    state,
+    head,
+    htmlAttrs: collectedHead.htmlAttrs,
+    bodyAttrs: collectedHead.bodyAttrs,
+    pageContext,
+  })
 
   return {
     // Vike's dangerouslySkipEscape format — the document template is
@@ -257,7 +280,7 @@ export function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
   env: DomEnv,
-): { html: string; envelope: HydrationEnvelope } {
+): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead } {
   if (chain.length === 0) {
     throw new Error('[llui/vike] renderChain called with empty chain')
   }
@@ -265,13 +288,22 @@ export function _renderChain(
   // Defensive: ensure no stale slot leaks in from a prior failed render.
   _resetPendingSlot()
 
+  // One head collector for the whole chain. Seeded into the outermost layer's
+  // root contexts; pageSlot() captures it (it's in-scope), so it threads inward
+  // to every nested layer's separate build/mount pass. Each request gets a fresh
+  // collector — no cross-request shared state.
+  const headSink = collectHeadSink()
+  const rootContexts: ReadonlyMap<symbol, unknown> = new Map([[HEAD_SINK.id, headSink]])
+
   const envelopeLayouts: HydrationEnvelope['layouts'] = []
   let envelopePage: HydrationEnvelope['page'] | null = null
 
   let outermostNodes: readonly Node[] = []
   const disposers: Array<() => void> = []
   let currentSlotAnchor: Comment | null = null
-  let currentSlotContexts: ReadonlyMap<symbol, unknown> | undefined = undefined
+  // Seed the outermost layer with the head collector; subsequent layers inherit
+  // it via their parent's captured pageSlot() contexts.
+  let currentSlotContexts: ReadonlyMap<symbol, unknown> | undefined = rootContexts
 
   for (let i = 0; i < chain.length; i++) {
     const def = chain[i]!
@@ -338,6 +370,8 @@ export function _renderChain(
   }
 
   const html = serializeNodes(outermostNodes)
+  // Serialize collected head BEFORE disposing (dispose releases the writers).
+  const collectedHead = headSink.serialize(env)
 
   // Dispose every layer's build now that the composed tree is serialized.
   for (const d of disposers) d()
@@ -353,6 +387,7 @@ export function _renderChain(
       layouts: envelopeLayouts,
       page: envelopePage,
     },
+    collectedHead,
   }
 }
 
