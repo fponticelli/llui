@@ -11,6 +11,55 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-08 — devmode-annotate live apps
+
+**Released:** `@llui/devmode-annotate@0.2.4`; `@llui/vite-plugin@0.11.2`; `@llui/markdown-editor@0.2.3`
+
+The dev-mode HUD can now ship to production as a capture-only triage client; the
+Markdown editor gains a single-block (inline-only) mode.
+
+### `@llui/devmode-annotate@0.2.4`
+
+- **Added** capture-only support for live (production) apps behind one pluggable
+  `NotesStore` port. Three adapters: `devServerStore` (the existing dev path, now
+  on a shared HTTP core), `indexedDbStore` (browser-local; screenshots as blobs),
+  and `httpStore` (host backend + injected auth headers, never baked).
+- **Added** `installAnnotateHud` (new `@llui/devmode-annotate/install` subpath) — a
+  tiny lazy installer that code-splits the HUD behind an activation trigger, so an
+  app that wires but never opens it ships no HUD chunk. Production mounting is
+  opt-in via `allowProduction`.
+- **Added** `exportBundle` — exports the notebook as a standard `.zip` (canonical
+  `.md`+`.png`+`status.jsonl` layout) with a content-hashed `bundle.json` manifest;
+  surfaced as `handle.exportBundle()` and a store-gated download button in the
+  browse toolbar. New `@llui/devmode-annotate/note-format` + `/note-serialize`
+  subpaths expose the shared on-disk-format helpers.
+- **Added** open-shadow-root style isolation (opt-in `isolate`, on by default under
+  `installAnnotateHud`) via constructable `adoptedStyleSheets` (CSP-clean) with a
+  shadow-`<style>` fallback.
+- **Added** per-channel redaction hooks (`redact.state`/`.repro`/`.screenshot`) and
+  prod-safe capture defaults — the debug-telemetry body and interaction recording
+  default OFF in production.
+- **Improved** `EventSource` subscription no longer escalates benign auto-reconnect
+  errors to `onError`.
+
+### `@llui/vite-plugin@0.11.2`
+
+- **Added** `POST /_llui/import` — ingest an exported bundle into `~/.llui/notes`
+  (content-addressed, idempotent, atomic, path-traversal-safe); the existing
+  router/MCP solve flow then picks it up unchanged. Closes the capture → export →
+  import → solve loop.
+- **Improved** the on-disk note format (filename/slug/session-name/status-replay +
+  `.md` serialization) is now sourced from `@llui/devmode-annotate/note-format` +
+  `/note-serialize`; the server delegates so browser and dev server share one
+  contract (no drift).
+
+### `@llui/markdown-editor@0.2.3`
+
+- **Added** `singleBlockPlugin()` — constrains the editor to a single paragraph with
+  inline formatting only (bold/italic/strikethrough/code, optional links); no block
+  markdown, enforced against typing, the markdown seed, and paste. Options:
+  `formats`, `allowLineBreaks`, `link`.
+
 ## 2026-06-07 — 0.11.1
 
 **Released:** `@llui/dom@0.11.1`; `@llui/lexical@0.2.2`; `@llui/markdown-editor@0.2.2`; `@llui/lexical-collab@0.2.0` (new); `@llui/{agent@0.10.2,components@0.11.2,devmode-annotate@0.2.3,markdown@0.10.2,mcp@0.12.3,router@0.10.2,test@0.11.2,transitions@0.10.2,vike@0.11.1}`
