@@ -27,6 +27,7 @@ import {
 } from './store.js'
 import { rotateSession, resolveCurrentSession } from './session.js'
 import { serializeNote } from './frontmatter.js'
+import { importBundle } from './import.js'
 import { appendStatus, currentStatus, listQueue, readStatusHistory } from './status.js'
 import type {
   Author,
@@ -404,6 +405,24 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
 
     if (path === `${ROUTE_PREFIX}/sessions` && method === 'GET') {
       return sendJson(res, 200, { sessions: listSessions(notesRoot) })
+    }
+
+    // Ingest an export bundle (zip of the on-disk layout) from a browser
+    // capture-only HUD. Idempotent + namespaced; see notes/import.ts.
+    if (path === `${ROUTE_PREFIX}/import` && method === 'POST') {
+      const body = await readBody(req)
+      if (body.raw.length === 0) return sendError(res, 400, 'import: empty request body')
+      let result
+      try {
+        result = importBundle(notesRoot, new Uint8Array(body.raw))
+      } catch (err) {
+        return sendError(res, 400, err instanceof Error ? err.message : String(err))
+      }
+      // Imported sessions are new folders; nudge listeners to refresh.
+      for (const sessionId of result.importedSessions) {
+        bus.broadcast({ type: 'session-rotated', sessionId })
+      }
+      return sendJson(res, 200, result)
     }
 
     if (path === `${ROUTE_PREFIX}/session/current` && method === 'GET') {

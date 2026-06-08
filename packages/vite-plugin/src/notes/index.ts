@@ -31,6 +31,8 @@ export {
 
 export { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 
+export { importBundle, type ImportBundleResult } from './import.js'
+
 export { deriveFilename, deriveSlug, padId } from './slug.js'
 
 export {

@@ -12,7 +12,17 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import {
+  buildQueue,
+  currentStatusFromHistory,
+  type QueueEntry,
+} from '@llui/devmode-annotate/note-format'
+
 import type { NoteStatus, StatusTransition } from './types.js'
+
+// Re-exported for existing server call sites; canonical replay is shared
+// with browser stores.
+export type { QueueEntry }
 
 const STATUS_FILE = 'status.jsonl'
 
@@ -58,9 +68,7 @@ export function readStatusHistory(sessionDir: string, noteId: string): StatusTra
  * transitions exist (= the note hasn't entered the status machine).
  */
 export function currentStatus(sessionDir: string, noteId: string): NoteStatus | null {
-  const history = readStatusHistory(sessionDir, noteId)
-  if (history.length === 0) return null
-  return history[history.length - 1]!.to
+  return currentStatusFromHistory(readStatusHistory(sessionDir, noteId))
 }
 
 /**
@@ -83,12 +91,6 @@ export function readAllTransitions(sessionDir: string): StatusTransition[] {
   return out
 }
 
-export interface QueueEntry {
-  noteId: string
-  status: NoteStatus
-  transitions: StatusTransition[]
-}
-
 /**
  * Materialize per-note status by replaying every transition. Returns
  * one entry per noteId that has ever been touched; filter by status
@@ -98,27 +100,5 @@ export function listQueue(
   sessionDir: string,
   filter?: { status?: NoteStatus | NoteStatus[] },
 ): QueueEntry[] {
-  const transitions = readAllTransitions(sessionDir)
-  const byNote = new Map<string, StatusTransition[]>()
-  for (const t of transitions) {
-    const arr = byNote.get(t.noteId) ?? []
-    arr.push(t)
-    byNote.set(t.noteId, arr)
-  }
-  const filterSet = filter?.status
-    ? new Set(Array.isArray(filter.status) ? filter.status : [filter.status])
-    : null
-  const out: QueueEntry[] = []
-  for (const [noteId, txns] of byNote) {
-    const status = txns[txns.length - 1]!.to
-    if (filterSet && !filterSet.has(status)) continue
-    out.push({ noteId, status, transitions: txns })
-  }
-  // Newest-touched notes first
-  out.sort((a, b) => {
-    const aTs = a.transitions[a.transitions.length - 1]!.ts
-    const bTs = b.transitions[b.transitions.length - 1]!.ts
-    return aTs < bTs ? 1 : aTs > bTs ? -1 : 0
-  })
-  return out
+  return buildQueue(readAllTransitions(sessionDir), filter)
 }

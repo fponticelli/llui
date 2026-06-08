@@ -16,9 +16,15 @@ import {
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 
+import {
+  deriveFilename,
+  deriveSlug,
+  nextId,
+  parseFilename,
+} from '@llui/devmode-annotate/note-format'
+
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 import { resolveCurrentSession } from './session.js'
-import { deriveFilename, deriveSlug, padId } from './slug.js'
 
 /**
  * Customizable parts of the on-disk format. None of these affect read
@@ -46,31 +52,6 @@ import type {
   NoteSummary,
 } from './types.js'
 
-const NOTE_FILENAME_RE = /^(\d{3,})-(human|llm)-([a-z]+)-(.+)\.md$/
-
-interface ParsedFilename {
-  id: string
-  idNum: number
-  author: Author
-  kind: NoteKind
-  slug: string
-}
-
-function parseFilename(filename: string): ParsedFilename | null {
-  const m = NOTE_FILENAME_RE.exec(filename)
-  if (!m) return null
-  const idStr = m[1]!
-  const idNum = parseInt(idStr, 10)
-  if (Number.isNaN(idNum)) return null
-  return {
-    id: idStr,
-    idNum,
-    author: m[2] as Author,
-    kind: m[3] as NoteKind,
-    slug: m[4]!,
-  }
-}
-
 function listNoteFilenames(sessionDir: string): string[] {
   if (!existsSync(sessionDir)) return []
   return readdirSync(sessionDir).filter((f) => f.endsWith('.md'))
@@ -85,15 +66,9 @@ function nextIdAndFilename(
   const filenames = listNoteFilenames(sessionDir)
 
   // Scan existing ids; new id is max+1. We also check OTHER files
-  // (anything matching NOTE_FILENAME_RE) to skip past gaps caused by
-  // out-of-band file writes (e.g. a HUD that wrote a placeholder).
-  let maxId = 0
-  for (const f of filenames) {
-    const parsed = parseFilename(f)
-    if (parsed && parsed.idNum > maxId) maxId = parsed.idNum
-  }
-  const nextNum = maxId + 1
-  const id = padId(nextNum)
+  // (anything matching the canonical filename regex) to skip past gaps
+  // caused by out-of-band file writes (e.g. a HUD that wrote a placeholder).
+  const id = nextId(filenames.map((f) => parseFilename(f)?.idNum ?? 0))
 
   // Resolve collisions: if the natural filename is taken, suffix -2, -3,
   // … before the .md extension. Rare path (same id + same slug as an

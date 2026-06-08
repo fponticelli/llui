@@ -11,6 +11,18 @@
     "./note-types": {
       "types": "./dist/note-types.d.ts",
       "import": "./dist/note-types.js"
+    },
+    "./note-format": {
+      "types": "./dist/note-format.d.ts",
+      "import": "./dist/note-format.js"
+    },
+    "./note-serialize": {
+      "types": "./dist/note-serialize.d.ts",
+      "import": "./dist/note-serialize.js"
+    },
+    "./install": {
+      "types": "./dist/install.d.ts",
+      "import": "./dist/install.js"
     }
   },
   "files": [
@@ -23,19 +35,21 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lexical/code-core": "^0.45.0",
+    "@lexical/link": "^0.45.0",
+    "@lexical/list": "^0.45.0",
+    "@lexical/markdown": "^0.45.0",
+    "@lexical/rich-text": "^0.45.0",
+    "@lexical/selection": "^0.45.0",
+    "@lexical/table": "^0.45.0",
+    "@lexical/utils": "^0.45.0",
     "@llui/components": "workspace:*",
     "@llui/lexical": "workspace:*",
     "@llui/markdown-editor": "workspace:*",
+    "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "lexical": "^0.45.0",
-    "@lexical/markdown": "^0.45.0",
-    "@lexical/rich-text": "^0.45.0",
-    "@lexical/list": "^0.45.0",
-    "@lexical/link": "^0.45.0",
-    "@lexical/table": "^0.45.0",
-    "@lexical/selection": "^0.45.0",
-    "@lexical/utils": "^0.45.0",
-    "@lexical/code-core": "^0.45.0"
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@llui/dom": "^0.11.0"
@@ -43,6 +57,7 @@
   "devDependencies": {
     "@llui/dom": "workspace:*",
     "@llui/test": "workspace:*",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.0.1",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"
