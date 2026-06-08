@@ -45,6 +45,8 @@ jobs:
       - name: Build LLui packages
         # @llui/dom, vite-plugin, vike power the site; components/effects/router/agent
         # are needed to build the example mini-apps (transitive deps via ^build).
+        # markdown + markdown-editor back the two markdown examples (markdown-editor
+        # pulls @llui/lexical + @llui/dom via ^build).
         run: >-
           pnpm turbo build
           --filter=@llui/dom
@@ -54,6 +56,8 @@ jobs:
           --filter=@llui/effects
           --filter=@llui/router
           --filter=@llui/agent
+          --filter=@llui/markdown
+          --filter=@llui/markdown-editor
 
       - name: Generate benchmarks + API docs + LLM files + example pages
         run: cd site && npx tsx src/generate-benchmarks.ts && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts && npx tsx src/generate-examples.ts

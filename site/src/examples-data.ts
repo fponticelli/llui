@@ -84,6 +84,18 @@ export const EXAMPLES: ExampleMeta[] = [
     blurb: 'Persistent nested layouts with @llui/vike, prerendered to static HTML.',
     vike: true,
   },
+  {
+    slug: 'markdown-showcase',
+    pkg: '@llui/example-markdown-showcase',
+    title: 'Markdown Showcase',
+    blurb: 'A reactive markdown() renderer with streaming, custom node renderers, and themes.',
+  },
+  {
+    slug: 'markdown-editor',
+    pkg: '@llui/example-markdown-editor',
+    title: 'Markdown Editor',
+    blurb: 'A WYSIWYG Markdown editor on @llui/markdown-editor — toolbar, callouts, two-way source.',
+  },
 ]
 
 /** Just the URL segments — used by the dynamic route + prerender enumerator. */
