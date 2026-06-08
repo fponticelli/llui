@@ -64,6 +64,20 @@ import { tabs, type TabsMsg, type TabsState } from '@llui/components/tabs'
 import { menu, type MenuMsg, type MenuState } from '@llui/components/menu'
 import { bakeAnnotations } from './bake.js'
 import { createBrowseView } from './browse-view.js'
+import type { ExportableStore, NotesStore } from './notes-store.js'
+import { devServerStore } from './stores/dev-server-store.js'
+import {
+  exportBundle as buildExportBundle,
+  bundleFilename,
+  type BundleManifest,
+} from './export-bundle.js'
+import {
+  redactRepro,
+  redactScreenshot,
+  redactState,
+  resolveCaptureDefaults,
+  type RedactHooks,
+} from './redact.js'
 import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
 import { pickElement } from './element-picker.js'
 import { drawRect } from './overlay.js'
@@ -85,6 +99,7 @@ import {
   parseSavedPosition,
   queueCounts,
   reduceTask,
+  shouldMountHud,
   type SavedPosition,
   type TaskEffect,
   type TaskMsg,
@@ -94,14 +109,91 @@ import {
   type ToastAction,
 } from './hud-core.js'
 
+// The notes transport seam. Re-exported so consumers can supply their own
+// adapter (IndexedDB, HTTP, export bundle) via `mountAnnotateHud({ store })`.
+export type {
+  NotesStore,
+  SessionSummary,
+  NoteStatusResponse,
+  QueueEntry,
+  QueueResponse,
+  FullNote,
+  StatusUpdate,
+  NoteUpdate,
+  EventSubscription,
+} from './notes-store.js'
+export { devServerStore } from './stores/dev-server-store.js'
+export { httpStore, type HttpStoreOptions, type HeadersInput } from './stores/http-store.js'
+export { indexedDbStore, type IndexedDbStoreOptions } from './stores/indexed-db-store.js'
+export type { RawNote, RawSession, ExportableStore } from './notes-store.js'
+export {
+  exportBundle,
+  bundleFilename,
+  type BundleManifest,
+  type BundleIdentity,
+  type BundleAppProvenance,
+  type ExportBundleOptions,
+  type ExportBundleResult,
+} from './export-bundle.js'
+export { NOTE_SCHEMA_VERSION } from './note-format.js'
+export type { RedactHooks, CaptureDefaults } from './redact.js'
+
 export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
 
 function isAutomatedBrowser(): boolean {
   return typeof navigator !== 'undefined' && navigator.webdriver === true
 }
 
+/**
+ * Apply the HUD stylesheet to a shadow root. Prefers a constructable
+ * `adoptedStyleSheets` entry (programmatic — bypasses the `style-src
+ * 'unsafe-inline'` CSP rule); falls back to a `<style>` inside the shadow
+ * root (still fully style-isolated) where constructable sheets are
+ * unavailable (e.g. older engines, jsdom).
+ */
+function applyShadowStyles(shadow: ShadowRoot, css: string): void {
+  const ctor = typeof globalThis.CSSStyleSheet === 'function' ? globalThis.CSSStyleSheet : null
+  if (ctor && 'adoptedStyleSheets' in shadow) {
+    try {
+      const sheet = new ctor()
+      sheet.replaceSync(css)
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet]
+      return
+    } catch {
+      // fall through to a <style> element
+    }
+  }
+  const styleEl = document.createElement('style')
+  styleEl.textContent = css
+  shadow.appendChild(styleEl)
+}
+
+/** Trigger a browser download of a Blob via a transient anchor. No-op when
+ *  the DOM / object-URL APIs are unavailable (SSR, older test envs). */
+function triggerDownload(blob: Blob, filename: string): void {
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || !URL.createObjectURL) return
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  // Anchors download from the light DOM regardless of HUD isolation.
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export interface MountAnnotateOptions {
   origin?: string
+  /** The notes transport. Defaults to `devServerStore(origin)` — the Vite
+   *  dev-server endpoints. Inject a different adapter (IndexedDB, HTTP,
+   *  export bundle) to run the HUD without a dev server. */
+  store?: NotesStore
+  /** Mount in a production build. By default the HUD only mounts under the
+   *  dev server (`import.meta.env.DEV`); set this when a live app deliberately
+   *  ships it (typically via `installAnnotateHud`, behind the host's own
+   *  authorization). */
+  allowProduction?: boolean
   llui?: { runtime: string; compiler: string }
   hidden?: boolean
   capture?: CaptureFn
@@ -112,6 +204,19 @@ export interface MountAnnotateOptions {
   autoCaptureOnError?: boolean
   repro?: boolean
   elementPick?: boolean
+  /** Per-channel redaction hooks (state / repro / screenshot), run before a
+   *  capture is persisted. The host owns the privacy policy; these are the
+   *  seams to enforce it. */
+  redact?: RedactHooks
+  /** Collect the verbose debug-telemetry body (state/message/effect dump).
+   *  Defaults: on under the dev server, OFF in production. */
+  captureDebug?: boolean
+  /** Mount the HUD chrome inside an open shadow root with isolated styles
+   *  (constructable `adoptedStyleSheets`, falling back to a shadow `<style>`).
+   *  Gives bidirectional style isolation from the host app and avoids the
+   *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
+   *  default); `installAnnotateHud` turns it on for production. */
+  isolate?: boolean
 }
 
 export interface AnnotateHudHandle {
@@ -142,6 +247,10 @@ export interface AnnotateHudHandle {
     events: ReproEvent[],
     options?: { speed?: number; maxStepMs?: number; abortOnMissing?: boolean },
   ): Promise<{ applied: number; skipped: Array<{ event: ReproEvent; reason: string }> }>
+  /** Export the notebook as a downloadable `.zip` bundle and trigger a
+   *  browser download. Resolves to the bundle manifest, or `null` when the
+   *  active store can't export (e.g. the dev-server store). */
+  exportBundle(): Promise<BundleManifest | null>
 }
 
 interface LluiDevSurfaceLike {
@@ -208,8 +317,12 @@ function bboxOf(ann: Annotation): { x: number; y: number; w: number; h: number }
   if (ann.type === 'element') return ann.bbox
   return null
 }
-function buildNoteBody(annotations: Annotation[]): NoteBody {
-  const body = collectDebugSnapshot()
+function buildNoteBody(annotations: Annotation[], debug: boolean): NoteBody {
+  // The debug snapshot (per-component state, message/effect logs) is the
+  // sensitive channel — gated by `debug` (off in prod by default). The
+  // source-position map below is code structure, not user data, so it's kept
+  // regardless.
+  const body: NoteBody = debug ? collectDebugSnapshot() : {}
   const sourceMap: SourceMapEntry[] = []
   for (const ann of annotations) {
     const bb = bboxOf(ann)
@@ -372,7 +485,10 @@ function lineageText(tasks: TaskState): string {
 }
 
 export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle {
-  if (!import.meta.env?.DEV) return noopHandle()
+  if (
+    !shouldMountHud({ dev: import.meta.env?.DEV ?? false, allowProduction: opts.allowProduction })
+  )
+    return noopHandle()
   if (typeof document === 'undefined') return noopHandle()
 
   const existing = document.getElementById(HUD_ELEMENT_ID) as
@@ -381,13 +497,37 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   if (existing?._lluiHandle) return existing._lluiHandle
 
   const origin = opts.origin ?? (typeof location !== 'undefined' ? location.origin : '')
+  const store = opts.store ?? devServerStore(origin)
   const llui = opts.llui ?? {
     runtime: (typeof window !== 'undefined' && window.__llui?.runtime) || 'unknown',
     compiler: (typeof window !== 'undefined' && window.__llui?.compiler) || 'unknown',
   }
   const solveEnabled = opts.solveEnabled !== false
   const elementPickEnabled = opts.elementPick !== false
-  const reproEnabled = opts.repro !== false
+  // Prod-safe capture defaults: the debug-telemetry body and interaction
+  // recording default ON in dev and OFF in production (host opts in).
+  const isDev = import.meta.env?.DEV ?? false
+  const captureChannels = resolveCaptureDefaults(isDev, {
+    ...(opts.captureDebug !== undefined ? { captureDebug: opts.captureDebug } : {}),
+    ...(opts.repro !== undefined ? { repro: opts.repro } : {}),
+  })
+  const reproEnabled = captureChannels.repro
+  // Build the note body honoring the debug-capture default + the host's
+  // per-channel state redaction. The single place every capture routes
+  // through, so the seam can't be bypassed.
+  const collectBody = (annotations: Annotation[]): NoteBody =>
+    redactState(buildNoteBody(annotations, captureChannels.debug), opts.redact?.state)
+
+  // Export: only stores that can produce raw sessions (IndexedDB; not the
+  // dev-server store, whose notes already live on disk) support it.
+  const storeCanExport = (s: NotesStore): s is NotesStore & ExportableStore =>
+    typeof (s as Partial<ExportableStore>).exportSessions === 'function'
+  const exportNotesBundle = async (): Promise<BundleManifest | null> => {
+    if (!storeCanExport(store)) return null
+    const { blob, manifest } = await buildExportBundle(store)
+    triggerDownload(blob, bundleFilename(manifest))
+    return manifest
+  }
 
   // Imperative refs (the embedded markdown editor + DOM nodes used for measurement).
   // The prose field is a nested `markdownEditor()` app mounted into a `foreign`
@@ -401,9 +541,19 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // Browse view (its own LLui component) — hosted inside the modal.
   const browse = createBrowseView({
-    origin,
+    store,
     onError: (m) => handle.send({ type: 'status/set', text: m }),
     onReplayRepro: (events) => replayReproEvents(events as ReproEvent[]),
+    // Only surface the export button when the store can actually export.
+    ...(storeCanExport(store)
+      ? {
+          onExport: async () => {
+            const manifest = await exportNotesBundle()
+            if (manifest)
+              handle.send({ type: 'status/set', text: `✓ exported ${manifest.noteCount} note(s)` })
+          },
+        }
+      : {}),
   })
 
   // Root host — the floating-button container. Position lives here (imperative).
@@ -418,13 +568,33 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   toastContainer.id = 'llui-devmode-annotate-toasts'
   toastContainer.style.cssText = STYLES.toastContainer
 
-  document.body.appendChild(root)
-  document.body.appendChild(toastContainer)
-  if (!document.getElementById('llui-devmode-annotate-styles')) {
-    const styleEl = document.createElement('style')
-    styleEl.id = 'llui-devmode-annotate-styles'
-    styleEl.textContent = THEME_STYLESHEET
-    document.head.appendChild(styleEl)
+  // `idEl` is the element that lives in the document tree and carries the
+  // discoverable id / handle. In isolate mode that's the shadow host (the
+  // chrome lives inside its open shadow root); otherwise it's `root` itself.
+  // The stylesheet is keyed on `#llui-devmode-annotate-root`, so `root` keeps
+  // that id inside the shadow and the adopted sheet still matches.
+  const isolate = opts.isolate === true
+  let shadowHost: HTMLElement | null = null
+  let idEl: HTMLElement
+  if (isolate) {
+    shadowHost = document.createElement('div')
+    shadowHost.id = HUD_ELEMENT_ID
+    const shadow = shadowHost.attachShadow({ mode: 'open' })
+    shadow.appendChild(root)
+    shadow.appendChild(toastContainer)
+    applyShadowStyles(shadow, THEME_STYLESHEET)
+    document.body.appendChild(shadowHost)
+    idEl = shadowHost
+  } else {
+    document.body.appendChild(root)
+    document.body.appendChild(toastContainer)
+    if (!document.getElementById('llui-devmode-annotate-styles')) {
+      const styleEl = document.createElement('style')
+      styleEl.id = 'llui-devmode-annotate-styles'
+      styleEl.textContent = THEME_STYLESHEET
+      document.head.appendChild(styleEl)
+    }
+    idEl = root
   }
   if (opts.hidden) root.style.display = 'none'
 
@@ -547,6 +717,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       }
     }
 
+    // Host screenshot redaction (mask/drop) before persist.
+    if (screenshotBase64) {
+      screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
+    }
+
     const compInfo = collectComponentInfo()
     const intent: NoteIntent = submitOpts.intent ?? defaultIntentRef
     const resume: boolean | undefined = intent === 'task' ? (submitOpts.resume ?? true) : undefined
@@ -572,8 +747,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       agentSchemas: [],
       llui,
     }
-    const noteBody = buildNoteBody(annotations)
-    const reproEvents = reproRecorder.flush()
+    const noteBody = collectBody(annotations)
+    const reproEvents = redactRepro(reproRecorder.flush(), opts.redact?.repro)
     if (reproEvents.length > 0) noteBody.repro = reproEvents
     if (reproRecorder.isRecording()) {
       reproRecorder.stop()
@@ -585,14 +760,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       noteBody,
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
-    const url = `${origin}/_llui/notes`
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error(`devmode-annotate: POST ${url} → ${res.status}`)
-    return (await res.json()) as CreateNoteResponse
+    return store.createNote(body)
   }
 
   let chainNameSeq = 0
@@ -635,27 +803,19 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             },
           })
           try {
-            const res = await fetch(
-              `${origin}/_llui/notes/${result.id}/status?sessionId=${encodeURIComponent(result.sessionId)}`,
-            )
-            if (res.ok) {
-              const payload = (await res.json()) as {
-                current: string | null
-                history: Array<{ to: string; reason?: string }>
-              }
-              if (payload.current && payload.current !== 'open' && payload.current !== 'claimed') {
-                const last = payload.history[payload.history.length - 1]
-                handle.send({
-                  type: 'task',
-                  msg: {
-                    type: 'task/status',
-                    noteId: result.id,
-                    to: payload.current,
-                    reason: last?.reason,
-                    now: Date.now(),
-                  },
-                })
-              }
+            const payload = await store.getStatus(result.id, result.sessionId)
+            if (payload.current && payload.current !== 'open' && payload.current !== 'claimed') {
+              const last = payload.history[payload.history.length - 1]
+              handle.send({
+                type: 'task',
+                msg: {
+                  type: 'task/status',
+                  noteId: result.id,
+                  to: payload.current,
+                  reason: last?.reason,
+                  now: Date.now(),
+                },
+              })
             }
           } catch {
             // best-effort; SSE picks up future transitions.
@@ -710,32 +870,25 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       const failBody: CreateNoteRequest = {
         body: `[capture failed: ${message}]${prose ? `\n\n${prose}` : ''}`,
         frontmatter: baseFrontmatter(null),
-        noteBody: buildNoteBody(annotations),
+        noteBody: collectBody(annotations),
       }
-      const failRes = await fetch(`${origin}/_llui/notes`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(failBody),
-      })
-      if (!failRes.ok)
-        throw new Error(`devmode-annotate: POST /_llui/notes → ${failRes.status}`, { cause: err })
-      return (await failRes.json()) as CreateNoteResponse
+      try {
+        return await store.createNote(failBody)
+      } catch (postErr) {
+        throw new Error(`devmode-annotate: failed to record capture failure`, { cause: postErr })
+      }
     }
 
+    if (screenshotBase64) {
+      screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
+    }
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter: baseFrontmatter(screenshotBase64 ? 'placeholder.png' : null),
-      noteBody: buildNoteBody(annotations),
+      noteBody: collectBody(annotations),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
-    const url = `${origin}/_llui/notes`
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error(`devmode-annotate: POST ${url} → ${res.status}`)
-    return (await res.json()) as CreateNoteResponse
+    return store.createNote(body)
   }
 
   // ── The view ───────────────────────────────────────────────────────────
@@ -1503,16 +1656,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             schedulePersist()
             return
           case 'postStatus':
-            void fetch(
-              `${origin}/_llui/notes/${eff.noteId}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
-              {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ to: eff.to, by: 'human' }),
-              },
-            ).catch(() => {
-              handle.send({ type: 'status/set', text: `${eff.to} failed for ${eff.noteId}` })
-            })
+            void store
+              .postStatus(eff.noteId, eff.sessionId, { to: eff.to, by: 'human' })
+              .catch(() => {
+                handle.send({ type: 'status/set', text: `${eff.to} failed for ${eff.noteId}` })
+              })
             return
           case 'startTicker':
             if (!progressTickInterval)
@@ -1538,7 +1686,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }),
     { devtools: false },
   )
-  ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = undefined
+  ;(idEl as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = undefined
 
   // Now that the editor foreign has mounted, query the modal ref.
   modalEl = root.querySelector<HTMLElement>('[data-llui-modal]')
@@ -1614,29 +1762,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // ── Rehydrate ────────────────────────────────────────────────────────
   const rehydrateFromServer = async (): Promise<void> => {
     try {
-      const sessionRes = await fetch(`${origin}/_llui/session/current`)
-      if (!sessionRes.ok) return
-      const { sessionId } = (await sessionRes.json()) as { sessionId: string }
+      const { sessionId } = await store.currentSession()
       if (!sessionId) return
-      const [notesRes, queueRes] = await Promise.all([
-        fetch(`${origin}/_llui/notes?sessionId=${encodeURIComponent(sessionId)}`),
-        fetch(`${origin}/_llui/queue?sessionId=${encodeURIComponent(sessionId)}`),
+      const [notesData, queueData] = await Promise.all([
+        store.listNotes({ sessionId }),
+        store.getQueue(sessionId),
       ])
-      if (!notesRes.ok || !queueRes.ok) return
-      const notesData = (await notesRes.json()) as {
-        notes: Array<{
-          id: string
-          ts: string
-          kind: string
-          intent?: 'task' | 'note'
-          chainName?: string
-          replyTo?: string
-          proposedSummary?: string
-        }>
-      }
-      const queueData = (await queueRes.json()) as {
-        queue: Array<{ noteId: string; status: string }>
-      }
       const byId = new Map(notesData.notes.map((n) => [n.id, n]))
       const newestReplyByTaskId = new Map<string, (typeof notesData.notes)[number]>()
       for (const n of notesData.notes) {
@@ -1687,36 +1818,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   if (opts.rehydrate === true) void rehydrateFromServer()
 
-  // ── SSE ──────────────────────────────────────────────────────────────
+  // ── Live events ───────────────────────────────────────────────────────
   const subscribeEvents = opts.subscribeEvents ?? !isAutomatedBrowser()
-  let eventSource: EventSource | null = null
-  if (subscribeEvents && typeof EventSource !== 'undefined') {
-    try {
-      eventSource = new EventSource(`${origin}/_llui/events?role=hud`)
-      eventSource.addEventListener('message', (e: MessageEvent) => {
-        let parsed: {
-          type?: string
-          requestId?: string
-          payload?: CaptureRequestPayload
-          noteId?: string
-          to?: string
-          reason?: string
-          elapsedMs?: number
-          tokens?: { in: number; out: number }
-          toolSummary?: string
-        }
-        try {
-          parsed = JSON.parse(e.data as string)
-        } catch {
-          return
-        }
-        if (parsed.type === 'capture-request' && parsed.requestId) {
+  let unsubscribeEvents: (() => void) | null = null
+  if (subscribeEvents) {
+    unsubscribeEvents = store.subscribeEvents({
+      role: 'hud',
+      onError: (err) => console.warn('[llui:devmode-annotate] event subscription failed:', err),
+      onEvent: (parsed) => {
+        if (parsed.type === 'capture-request') {
           void handleCaptureRequest(parsed.requestId, parsed.payload ?? {}).catch((err) =>
             console.warn('[llui:devmode-annotate] capture-request failed:', err),
           )
           return
         }
-        if (parsed.type === 'status-changed' && parsed.noteId && parsed.to) {
+        if (parsed.type === 'status-changed') {
           handle.send({
             type: 'task',
             msg: {
@@ -1730,7 +1846,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           browse.refresh()
           return
         }
-        if (parsed.type === 'task-progress' && parsed.noteId) {
+        if (parsed.type === 'task-progress') {
           handle.send({
             type: 'task',
             msg: {
@@ -1751,10 +1867,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         ) {
           browse.refresh()
         }
-      })
-    } catch (err) {
-      console.warn('[llui:devmode-annotate] EventSource subscription failed:', err)
-    }
+      },
+    })
   }
 
   // ── Global keyboard + window listeners ────────────────────────────────
@@ -1831,11 +1945,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
     if (progressTickInterval) clearInterval(progressTickInterval)
-    eventSource?.close()
+    unsubscribeEvents?.()
     dismissActiveOverlay()
     handle.dispose()
-    root.remove()
-    toastContainer.remove()
+    if (shadowHost) {
+      // Removing the host tears down its shadow root (root + toasts).
+      shadowHost.remove()
+    } else {
+      root.remove()
+      toastContainer.remove()
+    }
   }
 
   const publicHandle: AnnotateHudHandle = {
@@ -1851,8 +1970,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       handle.send({ type: 'intent/set', intent: i })
     },
     replayRepro: replayReproEvents,
+    exportBundle: exportNotesBundle,
   }
-  ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = publicHandle
+  ;(idEl as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = publicHandle
   return publicHandle
 }
 
@@ -1870,5 +1990,6 @@ function noopHandle(): AnnotateHudHandle {
     handleCaptureRequest: rejectNotMounted,
     setIntent: noop,
     replayRepro: () => Promise.resolve({ applied: 0, skipped: [] }),
+    exportBundle: () => Promise.resolve(null),
   }
 }

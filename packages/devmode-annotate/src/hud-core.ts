@@ -5,6 +5,27 @@
 
 import type { NoteRect } from './note-types.js'
 
+// ── Mount gate ───────────────────────────────────────────────────────────
+
+export interface MountGateInput {
+  /** `import.meta.env.DEV` — true in the dev server. */
+  dev: boolean
+  /** Explicit production opt-in (`mountAnnotateHud({ allowProduction: true })`
+   *  or the lazy installer). Lets the HUD ship to a live app when the host
+   *  deliberately mounts it. */
+  allowProduction?: boolean
+}
+
+/**
+ * Whether the HUD should actually mount. Dev always mounts (the Vite plugin
+ * auto-injects there). In a production build it mounts ONLY when the host
+ * explicitly opted in — never by default, so an app that never calls the
+ * installer tree-shakes the HUD to nothing.
+ */
+export function shouldMountHud({ dev, allowProduction }: MountGateInput): boolean {
+  return dev || allowProduction === true
+}
+
 // ── Floating-button position math ────────────────────────────────────────
 
 export const DRAG_THRESHOLD_PX = 4

@@ -30,6 +30,8 @@ import {
 } from '@llui/dom'
 import { select, type SelectMsg, type SelectState } from '@llui/components/select'
 import { btnStyle, STYLES } from './styles.js'
+import type { NotesStore } from './notes-store.js'
+import type { CreateNoteRequest, NoteStatus } from './note-types.js'
 
 // ── Domain shapes (server payloads) ──────────────────────────────────────
 
@@ -77,13 +79,6 @@ interface NoteFrontmatterLite {
   replyTo?: string
 }
 
-/** Full note JSON fetched lazily on expand. */
-interface FullNote {
-  frontmatter: NoteFrontmatterLite
-  prose: string
-  body?: { repro?: unknown[] }
-}
-
 /** Filters applied client-side over the fetched notes list. */
 interface BrowseFilters {
   kind: 'all' | 'text' | 'rect' | 'capture' | 'reply'
@@ -104,11 +99,15 @@ export interface BrowseViewHandle {
 }
 
 export interface BrowseViewOptions {
-  origin: string
+  store: NotesStore
   /** Reports user actions back to the host modal (errors → status line). */
   onError?: (message: string) => void
   /** Replay a captured repro trace against the live DOM. */
   onReplayRepro?: (events: unknown[]) => Promise<{ applied: number; skipped: unknown[] }>
+  /** Export the notebook as a downloadable bundle. When provided, the browse
+   *  toolbar shows an export button. Omitted when the store can't export
+   *  (e.g. the dev-server store — its notes already live on disk). */
+  onExport?: () => Promise<void> | void
 }
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
@@ -219,6 +218,7 @@ export type BrowseMsg =
   | { type: 'edit/save' }
   | { type: 'reSolve'; prose: string }
   | { type: 'replay'; events: unknown[] }
+  | { type: 'export' }
   | { type: 'diff/accept'; taskId: string }
   | { type: 'diff/reject'; taskId: string }
   | { type: 'lightbox/open'; src: string }
@@ -230,11 +230,12 @@ export type BrowseEffect =
   | { type: 'fetchExpansion'; id: string; sessionId: string }
   | { type: 'deleteNote'; id: string; sessionId: string }
   | { type: 'bulkDelete'; ids: string[]; sessionId: string }
-  | { type: 'bulkStatus'; ids: string[]; to: string; sessionId: string }
+  | { type: 'bulkStatus'; ids: string[]; to: NoteStatus; sessionId: string }
   | { type: 'patchProse'; id: string; prose: string; sessionId: string }
   | { type: 'postStatus'; taskId: string; to: 'accepted' | 'rejected'; sessionId: string }
   | { type: 'reSolve'; prose: string }
   | { type: 'replay'; events: unknown[] }
+  | { type: 'export' }
   | { type: 'report'; message: string }
 
 // Static filter option lists: [value, label]. The select's `items` are the
@@ -457,6 +458,9 @@ export const browseReduce = (state: BrowseState, msg: BrowseMsg): [BrowseState, 
     case 'replay':
       return [state, [{ type: 'replay', events: msg.events }]]
 
+    case 'export':
+      return [state, [{ type: 'export' }]]
+
     case 'diff/accept':
       if (!sid) return [state, []]
       return [
@@ -650,7 +654,7 @@ function diffView(send: Send, exp: ExpansionData): Renderable {
 // ── View: expansion (loaded) ─────────────────────────────────────────────
 
 function loadedExpansion(
-  origin: string,
+  store: NotesStore,
   send: Send,
   onReplay: boolean,
   noteId: string,
@@ -664,12 +668,7 @@ function loadedExpansion(
       () => [
         div({ 'style.display': 'flex', 'style.justifyContent': 'center' }, [
           img({
-            src: data.map(
-              (d) =>
-                `${origin}/_llui/notes/${noteId}/screenshot?ts=${encodeURIComponent(
-                  d.frontmatter.screenshot ?? '',
-                )}`,
-            ),
+            src: data.map((d) => store.screenshotUrl(noteId, d.frontmatter.screenshot ?? '')),
             alt: 'screenshot',
             'style.maxWidth': '100%',
             'style.maxHeight': '200px',
@@ -857,7 +856,7 @@ function actionRow(
 }
 
 function expansionView(
-  origin: string,
+  store: NotesStore,
   send: Send,
   onReplay: boolean,
   item: Signal<RowVM>,
@@ -884,7 +883,7 @@ function expansionView(
         ),
         show(
           exp.map((e) => (e === 'loading' ? null : e)),
-          (data) => loadedExpansion(origin, send, onReplay, noteId, item, data),
+          (data) => loadedExpansion(store, send, onReplay, noteId, item, data),
         ),
       ],
     ),
@@ -893,7 +892,12 @@ function expansionView(
 
 // ── View: row ────────────────────────────────────────────────────────────
 
-function rowView(origin: string, onReplay: boolean, item: Signal<RowVM>, send: Send): Renderable {
+function rowView(
+  store: NotesStore,
+  onReplay: boolean,
+  item: Signal<RowVM>,
+  send: Send,
+): Renderable {
   return [
     div(
       {
@@ -937,7 +941,7 @@ function rowView(origin: string, onReplay: boolean, item: Signal<RowVM>, send: S
         ]),
         show(
           item.map((r) => r.expansion),
-          (exp) => expansionView(origin, send, onReplay, item, exp),
+          (exp) => expansionView(store, send, onReplay, item, exp),
         ),
       ],
     ),
@@ -946,7 +950,7 @@ function rowView(origin: string, onReplay: boolean, item: Signal<RowVM>, send: S
 
 // ── View: root ───────────────────────────────────────────────────────────
 
-function makeView(origin: string, onReplay: boolean) {
+function makeView(store: NotesStore, onReplay: boolean, canExport: boolean) {
   return ({ state, send }: SignalViewBag<BrowseState, BrowseMsg>): Renderable => [
     div(
       {
@@ -956,7 +960,7 @@ function makeView(origin: string, onReplay: boolean) {
         'style.gap': '8px',
       },
       [
-        // Header: session select + refresh.
+        // Header: session select + refresh (+ export when supported).
         div({ 'style.display': 'flex', 'style.gap': '8px', 'style.alignItems': 'center' }, [
           ...sessionSelectCmp(state, send),
           button(
@@ -968,6 +972,20 @@ function makeView(origin: string, onReplay: boolean) {
             },
             [text('↻')],
           ),
+          ...(canExport
+            ? [
+                button(
+                  {
+                    type: 'button',
+                    title: 'Export all notes as a downloadable bundle (.zip)',
+                    'data-llui-export': '',
+                    style: STYLES.toolbarBtn + '; padding: 4px 8px;',
+                    onClick: () => send({ type: 'export' }),
+                  },
+                  [text('⬇')],
+                ),
+              ]
+            : []),
         ]),
         // Filter row.
         div(
@@ -1058,7 +1076,7 @@ function makeView(origin: string, onReplay: boolean) {
           [
             each(state.map(projectRows), {
               key: (r) => r.id,
-              render: (item) => rowView(origin, onReplay, item, send),
+              render: (item) => rowView(store, onReplay, item, send),
             }),
           ],
         ),
@@ -1203,6 +1221,7 @@ export type BrowseSelectSlice = SliceKey
 export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   const reportError = opts.onError ?? ((m) => console.warn('[llui:browse]', m))
   const onReplay = !!opts.onReplayRepro
+  const canExport = !!opts.onExport
 
   const host = document.createElement('div')
   host.setAttribute('data-llui-browse-host', '')
@@ -1213,7 +1232,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
       name: 'llui-devmode-annotate:browse',
       init: browseInit,
       update: browseReduce,
-      view: makeView(opts.origin, onReplay),
+      view: makeView(opts.store, onReplay, canExport),
       onEffect: (eff, { send }) => runEffect(eff, send, opts, reportError),
     }),
     { devtools: false },
@@ -1238,7 +1257,7 @@ function runEffect(
   opts: BrowseViewOptions,
   reportError: (m: string) => void,
 ): void {
-  const { origin } = opts
+  const { store } = opts
   const fail = (label: string, err: unknown): void =>
     reportError(`${label}: ${err instanceof Error ? err.message : String(err)}`)
 
@@ -1250,10 +1269,7 @@ function runEffect(
     case 'fetchSessions':
       void (async () => {
         try {
-          const res = await fetch(`${origin}/_llui/sessions`)
-          if (!res.ok) throw new Error(`GET /_llui/sessions → ${res.status}`)
-          const payload = (await res.json()) as { sessions: SessionSummary[] }
-          send({ type: 'sessions/loaded', sessions: payload.sessions ?? [] })
+          send({ type: 'sessions/loaded', sessions: await store.listSessions() })
         } catch (err) {
           fail('failed to load sessions', err)
         }
@@ -1267,11 +1283,7 @@ function runEffect(
           return
         }
         try {
-          const res = await fetch(
-            `${origin}/_llui/notes?sessionId=${encodeURIComponent(eff.sessionId)}`,
-          )
-          if (!res.ok) throw new Error(`GET /_llui/notes → ${res.status}`)
-          const payload = (await res.json()) as { notes: NoteSummary[] }
+          const payload = await store.listNotes({ sessionId: eff.sessionId })
           send({ type: 'notes/loaded', notes: payload.notes ?? [] })
         } catch (err) {
           fail('failed to load notes', err)
@@ -1282,27 +1294,19 @@ function runEffect(
     case 'fetchExpansion':
       void (async () => {
         try {
-          const [full, history] = await Promise.all([
-            fetch(
-              `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}&format=json`,
-            )
-              .then((r) => (r.ok ? (r.json() as Promise<FullNote>) : null))
-              .catch(() => null),
-            fetch(
-              `${origin}/_llui/notes/${eff.id}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
-            )
-              .then((r) => (r.ok ? (r.json() as Promise<{ history?: StatusTransition[] }>) : null))
-              .catch(() => null),
+          const [full, status] = await Promise.all([
+            store.readNote(eff.id, eff.sessionId).catch(() => null),
+            store.getStatus(eff.id, eff.sessionId).catch(() => null),
           ])
           const fm: NoteFrontmatterLite = full?.frontmatter ?? { kind: 'text', author: 'human' }
-          const repro = Array.isArray(full?.body?.repro) ? full!.body!.repro! : []
+          const repro = Array.isArray(full?.body?.repro) ? full.body.repro : []
           send({
             type: 'expansion/loaded',
             id: eff.id,
             data: {
               prose: full?.prose ?? '',
               frontmatter: fm,
-              history: history?.history ?? [],
+              history: status?.history ?? [],
               repro,
             },
           })
@@ -1315,11 +1319,7 @@ function runEffect(
     case 'deleteNote':
       void (async () => {
         try {
-          const res = await fetch(
-            `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}`,
-            { method: 'DELETE' },
-          )
-          if (!res.ok) reportError(`delete failed (${res.status})`)
+          await store.deleteNote(eff.id, eff.sessionId)
           send({ type: 'refresh' })
         } catch (err) {
           fail('delete failed', err)
@@ -1331,10 +1331,9 @@ function runEffect(
       void (async () => {
         const results = await Promise.all(
           eff.ids.map((id) =>
-            fetch(`${origin}/_llui/notes/${id}?sessionId=${encodeURIComponent(eff.sessionId)}`, {
-              method: 'DELETE',
-            })
-              .then((r) => r.ok)
+            store
+              .deleteNote(id, eff.sessionId)
+              .then(() => true)
               .catch(() => false),
           ),
         )
@@ -1347,14 +1346,7 @@ function runEffect(
       void (async () => {
         await Promise.all(
           eff.ids.map((id) =>
-            fetch(
-              `${origin}/_llui/notes/${id}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
-              {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ to: eff.to, by: 'human' }),
-              },
-            ).catch(() => null),
+            store.postStatus(id, eff.sessionId, { to: eff.to, by: 'human' }).catch(() => null),
           ),
         )
         send({ type: 'refresh' })
@@ -1364,18 +1356,7 @@ function runEffect(
     case 'patchProse':
       void (async () => {
         try {
-          const res = await fetch(
-            `${origin}/_llui/notes/${eff.id}?sessionId=${encodeURIComponent(eff.sessionId)}`,
-            {
-              method: 'PATCH',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ prose: eff.prose }),
-            },
-          )
-          if (!res.ok) {
-            reportError(`save failed (${res.status})`)
-            return
-          }
+          await store.updateNote(eff.id, eff.sessionId, { prose: eff.prose })
           send({ type: 'refresh' })
         } catch (err) {
           fail('save failed', err)
@@ -1386,15 +1367,7 @@ function runEffect(
     case 'postStatus':
       void (async () => {
         try {
-          const res = await fetch(
-            `${origin}/_llui/notes/${eff.taskId}/status?sessionId=${encodeURIComponent(eff.sessionId)}`,
-            {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ to: eff.to, by: 'human' }),
-            },
-          )
-          if (!res.ok) reportError(`${eff.to} failed (${res.status})`)
+          await store.postStatus(eff.taskId, eff.sessionId, { to: eff.to, by: 'human' })
         } catch (err) {
           fail(`${eff.to} failed`, err)
         }
@@ -1408,7 +1381,7 @@ function runEffect(
           return
         }
         try {
-          const body = {
+          const req: CreateNoteRequest = {
             body: eff.prose,
             frontmatter: {
               author: 'human',
@@ -1433,15 +1406,7 @@ function runEffect(
             },
             noteBody: {},
           }
-          const res = await fetch(`${origin}/_llui/notes`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-          })
-          if (!res.ok) {
-            reportError(`re-solve failed (${res.status})`)
-            return
-          }
+          await store.createNote(req)
           send({ type: 'refresh' })
         } catch (err) {
           fail('re-solve failed', err)
@@ -1462,6 +1427,17 @@ function runEffect(
           )
         } catch (err) {
           fail('Replay failed', err)
+        }
+      })()
+      return
+
+    case 'export':
+      void (async () => {
+        if (!opts.onExport) return
+        try {
+          await opts.onExport()
+        } catch (err) {
+          fail('Export failed', err)
         }
       })()
       return

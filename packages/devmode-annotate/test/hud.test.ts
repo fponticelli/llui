@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mountAnnotateHud } from '../src/index.js'
+import { mountAnnotateHud, type NotesStore } from '../src/index.js'
+import type { CreateNoteRequest } from '../src/note-types.js'
 
 // jsdom doesn't define import.meta.env; vitest's vite plugin sets DEV
 // to true in the test environment, so the HUD mounts.
@@ -120,5 +121,78 @@ describe('mountAnnotateHud', () => {
     const handle = mountAnnotateHud()
     handle.destroy()
     expect(document.getElementById('llui-devmode-annotate-root')).toBeNull()
+  })
+
+  it('honors an injected store: submit() routes through it, not fetch', async () => {
+    let fetchHit = false
+    globalThis.fetch = (async () => {
+      fetchHit = true
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    const created: CreateNoteRequest[] = []
+    const noop = (): void => {}
+    const store: NotesStore = {
+      createNote: async (req) => {
+        created.push(req)
+        return { id: '001', filename: 'x.md', path: '/x', sessionId: 's1' }
+      },
+      listSessions: async () => [],
+      currentSession: async () => ({ sessionId: 's1', startedAt: '', notesDir: '' }),
+      listNotes: async () => ({ sessionId: 's1', notes: [], total: 0 }),
+      readNote: async () => null,
+      getStatus: async () => ({ current: null, history: [] }),
+      getQueue: async () => ({ queue: [] }),
+      deleteNote: async () => {},
+      updateNote: async () => {},
+      postStatus: async () => {},
+      screenshotUrl: () => '',
+      subscribeEvents: () => noop,
+    }
+
+    const handle = mountAnnotateHud({ store, subscribeEvents: false })
+    const res = await handle.submit('hello from a custom store')
+    expect(res.id).toBe('001')
+    expect(created).toHaveLength(1)
+    expect(created[0]!.body).toBe('hello from a custom store')
+    expect(fetchHit).toBe(false)
+  })
+
+  it('applies per-channel redaction before persisting', async () => {
+    const created: CreateNoteRequest[] = []
+    const noop = (): void => {}
+    const store: NotesStore = {
+      createNote: async (req) => {
+        created.push(req)
+        return { id: '001', filename: 'x.md', path: '/x', sessionId: 's1' }
+      },
+      listSessions: async () => [],
+      currentSession: async () => ({ sessionId: 's1', startedAt: '', notesDir: '' }),
+      listNotes: async () => ({ sessionId: 's1', notes: [], total: 0 }),
+      readNote: async () => null,
+      getStatus: async () => ({ current: null, history: [] }),
+      getQueue: async () => ({ queue: [] }),
+      deleteNote: async () => {},
+      updateNote: async () => {},
+      postStatus: async () => {},
+      screenshotUrl: () => '',
+      subscribeEvents: () => noop,
+    }
+
+    const handle = mountAnnotateHud({
+      store,
+      subscribeEvents: false,
+      redact: {
+        state: () => ({ stateSnapshot: { redacted: true } }),
+        screenshot: () => null, // drop screenshots entirely
+      },
+    })
+    // Provide a screenshot so the redaction path runs; it should be dropped.
+    await handle.submit('sensitive page', { screenshot: 'QUJD' })
+
+    expect(created).toHaveLength(1)
+    expect(created[0]!.noteBody).toEqual({ stateSnapshot: { redacted: true } })
+    expect(created[0]!.screenshot).toBeUndefined()
+    expect(created[0]!.frontmatter.screenshot).toBeNull()
   })
 })

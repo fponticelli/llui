@@ -6,6 +6,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { defaultSessionName } from '@llui/devmode-annotate/note-format'
+
+// Re-exported for existing server call sites; canonical impl is fs-free
+// and shared with browser stores.
+export { defaultSessionName }
+
 export interface ResolveSessionOptions {
   /** Override for tests / fixed-seed runs. Defaults to `new Date()`. */
   now?: () => Date
@@ -30,21 +36,6 @@ export interface RotatedSession extends SessionInfo {
 }
 
 const MARKER_FILE = 'current-session'
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n)
-}
-
-export function defaultSessionName(d: Date): string {
-  // UTC to keep sessions stable across timezones and DST shifts. Devs
-  // working across timezones see one consistent label.
-  const yyyy = d.getUTCFullYear()
-  const mm = pad2(d.getUTCMonth() + 1)
-  const dd = pad2(d.getUTCDate())
-  const hh = pad2(d.getUTCHours())
-  const mi = pad2(d.getUTCMinutes())
-  return `session-${yyyy}-${mm}-${dd}-${hh}${mi}`
-}
 
 export function readCurrentSessionFile(notesRoot: string): string | null {
   const p = join(notesRoot, MARKER_FILE)

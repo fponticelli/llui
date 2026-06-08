@@ -787,6 +787,16 @@ Node classes required to render the GFM superset.
 const GFM_NODES: ReadonlyArray<Klass<LexicalNode>>
 ```
 
+### `INLINE_TEXT_TRANSFORMERS`
+
+Inline text-format transformers (no block nodes, no node registration). These
+are the only transformers a single-block / inline-only editor needs; `LINK` is
+kept separate since it requires `LinkNode` to be registered.
+
+```typescript
+const INLINE_TEXT_TRANSFORMERS: readonly Transformer[]
+```
+
 ### `GFM_TRANSFORMERS`
 
 Markdown ↔ node transformers for the GFM superset.
