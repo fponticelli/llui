@@ -39,6 +39,21 @@ export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
   LinkNode,
 ]
 
+/** Inline text-format transformers (no block nodes, no node registration). These
+ * are the only transformers a single-block / inline-only editor needs; `LINK` is
+ * kept separate since it requires `LinkNode` to be registered. */
+export const INLINE_TEXT_TRANSFORMERS: readonly Transformer[] = [
+  BOLD_ITALIC_STAR,
+  BOLD_ITALIC_UNDERSCORE,
+  BOLD_STAR,
+  BOLD_UNDERSCORE,
+  ITALIC_STAR,
+  ITALIC_UNDERSCORE,
+  STRIKETHROUGH,
+  INLINE_CODE,
+  HIGHLIGHT,
+]
+
 /** Markdown ↔ node transformers for the GFM superset. */
 export const GFM_TRANSFORMERS: readonly Transformer[] = [
   HEADING,
@@ -49,14 +64,6 @@ export const GFM_TRANSFORMERS: readonly Transformer[] = [
   UNORDERED_LIST,
   ORDERED_LIST,
   CODE,
-  BOLD_ITALIC_STAR,
-  BOLD_ITALIC_UNDERSCORE,
-  BOLD_STAR,
-  BOLD_UNDERSCORE,
-  ITALIC_STAR,
-  ITALIC_UNDERSCORE,
-  STRIKETHROUGH,
-  INLINE_CODE,
-  HIGHLIGHT,
+  ...INLINE_TEXT_TRANSFORMERS,
   LINK,
 ]

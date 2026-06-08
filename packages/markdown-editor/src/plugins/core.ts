@@ -6,12 +6,10 @@ import {
   $createParagraphNode,
   $getSelection,
   $isRangeSelection,
-  FORMAT_TEXT_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
   type ElementNode,
   type LexicalEditor,
-  type TextFormatType,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
 import { $setBlocksType } from '@lexical/selection'
@@ -25,13 +23,10 @@ import {
   registerList,
 } from '@lexical/list'
 import type { CommandContext, CommandItem, MarkdownPlugin } from './types.js'
+import { inlineItems } from './inline.js'
 import { GFM_NODES, GFM_TRANSFORMERS } from '../transformers/gfm.js'
 
 const NOOP_CTX: CommandContext = { send: () => {} }
-
-function inline(format: TextFormatType): (editor: LexicalEditor) => void {
-  return (editor) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, format)
-}
 
 /** Wrap a node-factory into an editor action that converts the selected blocks. */
 function block(create: () => ElementNode): (editor: LexicalEditor) => void {
@@ -53,42 +48,7 @@ export interface CorePluginOptions {
 
 export function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin {
   const items: CommandItem[] = [
-    {
-      id: 'bold',
-      label: 'Bold',
-      icon: 'bold',
-      group: 'inline',
-      keywords: ['strong'],
-      run: inline('bold'),
-      isActive: (f) => f.bold,
-    },
-    {
-      id: 'italic',
-      label: 'Italic',
-      icon: 'italic',
-      group: 'inline',
-      keywords: ['emphasis'],
-      run: inline('italic'),
-      isActive: (f) => f.italic,
-    },
-    {
-      id: 'strikethrough',
-      label: 'Strikethrough',
-      icon: 'strikethrough',
-      group: 'inline',
-      keywords: ['strike', 'del'],
-      run: inline('strikethrough'),
-      isActive: (f) => f.strikethrough,
-    },
-    {
-      id: 'code',
-      label: 'Inline code',
-      icon: 'code',
-      group: 'inline',
-      keywords: ['mono'],
-      run: inline('code'),
-      isActive: (f) => f.code,
-    },
+    ...inlineItems(),
     {
       id: 'paragraph',
       label: 'Text',

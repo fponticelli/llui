@@ -58,6 +58,55 @@
 
       <section class="demo">
         <div class="demo-head">
+          <h2>Single block (inline-only)</h2>
+          <p>
+            The same component constrained to
+            <strong>one paragraph with inline styles only</strong> via
+            <code>singleBlockPlugin()</code> — no headings, lists, or block structure. Block
+            Markdown stays literal, and pasting multi-paragraph text collapses to a single line.
+          </p>
+        </div>
+        <div class="split">
+          <div class="stack">
+            <div>
+              <h3>Title field <span class="tag">strict single line</span></h3>
+              <p class="panel-note">
+                Enter is inert; paste a heading or several paragraphs — it flattens to one line.
+              </p>
+              <div id="single-title" class="editor editor-inline"></div>
+              <pre id="single-title-out" class="md-out"></pre>
+            </div>
+            <div>
+              <h3>Comment box <span class="tag">line breaks + links</span></h3>
+              <p class="panel-note">
+                <code>singleBlockPlugin({ allowLineBreaks: true, link: true })</code> + the
+                <code>linkPlugin()</code> dialog. Shift/Enter inserts a soft break, never a new
+                paragraph.
+              </p>
+              <div id="single-comment" class="editor editor-inline"></div>
+              <pre id="single-comment-out" class="md-out"></pre>
+            </div>
+          </div>
+          <aside class="panel">
+            <h3>Why a constraint, not a plugin add-on</h3>
+            <p class="panel-note">
+              <code>singleBlockPlugin()</code> <em>replaces</em> the default plugin set — it
+              contributes only inline transformers and a <code>RootNode</code> transform that
+              coalesces any stray blocks back into one paragraph. Compose it with
+              <code>linkPlugin()</code> for links; a dev-only guard warns if you accidentally pair
+              it with <code>corePlugin()</code>.
+            </p>
+            <p class="panel-note">Try pasting this into the title field:</p>
+            <pre class="md-out">
+# A heading
+followed by a second paragraph.</pre
+            >
+          </aside>
+        </div>
+      </section>
+
+      <section class="demo">
+        <div class="demo-head">
           <h2>Two-way Markdown source</h2>
           <p>
             The raw Markdown and the WYSIWYG view are bound through the handle — edit either side.

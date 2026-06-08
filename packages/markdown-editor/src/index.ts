@@ -42,6 +42,11 @@ export {
 } from './plugins/ui.js'
 
 export { type CorePluginOptions, corePlugin } from './plugins/core.js'
+export {
+  type InlineFormat,
+  type SingleBlockPluginOptions,
+  singleBlockPlugin,
+} from './plugins/single-block.js'
 export { type LinkPluginOptions, linkPlugin } from './plugins/link.js'
 export {
   type CalloutKind,

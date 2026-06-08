@@ -95,6 +95,30 @@ code {
   min-width: 0;
 }
 
+/* Two stacked inline editors sharing the wide column of a .split. */
+.stack {
+  background: var(--surface);
+  display: grid;
+  gap: 1.25rem;
+  padding: 1rem 1.1rem;
+  min-width: 0;
+}
+
+.stack h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* A single-block field reads as a compact input, not a document surface. */
+.editor-inline {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
 .panel {
   background: var(--surface-2);
   padding: 1rem 1.1rem;

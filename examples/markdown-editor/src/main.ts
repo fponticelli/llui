@@ -25,6 +25,7 @@ import {
   mentionPlugin,
   emojiPlugin,
   calloutPlugin,
+  singleBlockPlugin,
   type EditorState,
 } from '@llui/markdown-editor'
 import '@llui/markdown-editor/styles/editor.css'
@@ -165,7 +166,44 @@ mountApp(
   }),
 )
 
-// ── 3. Two-way Markdown source binding (textarea ⇄ editor via the handle) ─────
+// ── 3. Single block (inline-only) — a title field and a comment box ───────────
+// `singleBlockPlugin()` replaces the default plugin set: one paragraph, inline
+// styles only. Block Markdown stays literal and pasted blocks collapse to a line.
+const titleApp = mountApp(
+  byId('single-title'),
+  markdownEditor({
+    toolbar: true,
+    plugins: [singleBlockPlugin()],
+    defaultValue: 'A **bold** title — try pressing Enter or pasting a heading',
+    changeDebounceMs: 100,
+  }),
+)
+const titleOut = byId('single-title-out')
+const renderTitle = (s: EditorState): void => {
+  titleOut.textContent = s.value
+}
+renderTitle(titleApp.getState() as EditorState)
+titleApp.subscribe((s) => renderTitle(s as EditorState))
+
+const commentApp = mountApp(
+  byId('single-comment'),
+  markdownEditor({
+    toolbar: true,
+    // allowLineBreaks → Enter inserts a soft break (never a new paragraph);
+    // link:true registers the link node/transformer, linkPlugin() adds the dialog.
+    plugins: [singleBlockPlugin({ allowLineBreaks: true, link: true }), linkPlugin()],
+    defaultValue: 'Inline only — **bold**, *italic*, `code`, and [links](https://llui.dev).',
+    changeDebounceMs: 100,
+  }),
+)
+const commentOut = byId('single-comment-out')
+const renderComment = (s: EditorState): void => {
+  commentOut.textContent = s.value
+}
+renderComment(commentApp.getState() as EditorState)
+commentApp.subscribe((s) => renderComment(s as EditorState))
+
+// ── 4. Two-way Markdown source binding (textarea ⇄ editor via the handle) ─────
 const textarea = byId('source-textarea') as HTMLTextAreaElement
 const sourceApp = mountApp(
   byId('source-editor'),

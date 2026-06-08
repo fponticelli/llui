@@ -18,7 +18,12 @@ pnpm --filter @llui/example-markdown-editor dev
 2. **Minimal editor** — the _same_ component with no chrome: keyboard-only Markdown shortcuts
    (`**bold**`, `# heading`, `- list`). Demonstrates that one component scales from minimal to full.
 
-3. **Two-way Markdown source** — a raw `<textarea>` bound to the WYSIWYG view through the handle
+3. **Single block (inline-only)** — `singleBlockPlugin()` constrains the editor to one paragraph
+   with inline styles only (no headings/lists/blocks). A strict single-line **title field** (Enter
+   inert; pasted blocks collapse to a line) and a **comment box** with `allowLineBreaks: true` +
+   `link: true` composed with `linkPlugin()`. Each mirrors its live Markdown.
+
+4. **Two-way Markdown source** — a raw `<textarea>` bound to the WYSIWYG view through the handle
    (`setValue` in, `onChange` out, echo-suppressed). Edit either side; they stay in sync.
 
 ## Highlights
