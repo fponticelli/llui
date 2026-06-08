@@ -1,5 +1,6 @@
 import { div, nav, a, span, button, text, onMount } from '@llui/dom'
 import type { Signal, Send } from '@llui/dom'
+import { EXAMPLES } from '../examples-data'
 
 export type LayoutMsg = { type: 'toggleMenu' }
 
@@ -80,15 +81,11 @@ export function siteLayout({
           navLink('/agents', 'agents', 'Agents', slug),
           span({ class: 'nav-section' }, [text('Examples')]),
           navLink('/examples', 'examples', 'Overview', slug),
-          navLink('/examples/counter', 'examples/counter', 'Counter', slug),
-          navLink('/examples/todomvc', 'examples/todomvc', 'TodoMVC', slug),
-          navLink('/examples/form-validation', 'examples/form-validation', 'Form Validation', slug),
-          navLink('/examples/components-demo', 'examples/components-demo', 'Components Demo', slug),
-          navLink('/examples/dashboard', 'examples/dashboard', 'Dashboard', slug),
-          navLink('/examples/i18n-lazy', 'examples/i18n-lazy', 'i18n + Lazy', slug),
-          navLink('/examples/virtualization', 'examples/virtualization', 'Virtualization', slug),
-          navLink('/examples/github-explorer', 'examples/github-explorer', 'GitHub Explorer', slug),
-          navLink('/examples/vike-layout', 'examples/vike-layout', 'Vike Layout (SSR)', slug),
+          // Generated from EXAMPLES (single source of truth) so adding an example
+          // to examples-data.ts adds its sidebar link automatically.
+          ...EXAMPLES.map((ex) =>
+            navLink(`/examples/${ex.slug}`, `examples/${ex.slug}`, ex.title, slug),
+          ),
           span({ class: 'nav-section' }, [text('Packages')]),
           navLink('/api/dom', 'api/dom', 'dom', slug),
           navLink('/api/compiler', 'api/compiler', 'compiler', slug),
