@@ -31,6 +31,7 @@ import {
   type SignalLazyOptions,
   type SignalSpec,
   type RowFactory,
+  type RowCtx,
 } from './dom.js'
 import {
   mountSignalComponent,
@@ -245,6 +246,16 @@ export const ellipse = svgHelper('ellipse')
 export const svgText = svgHelper('text')
 
 // ── Structural primitives ───────────────────────────────────────────
+// The items handle's deps say nothing about what the ROWS read: a row can reach
+// component state through connect parts, nested arms, or handles closed over from
+// the view — none visible at runtime. `['']` (the whole-state path) makes the
+// structural binding fire on every state change so those reads stay live; the
+// reconcile's probe/gating (`templateReadsState`, same-structure fast path) keeps
+// the per-change cost proportional to the rows that actually changed. Compiled
+// tiers pass PRECISE deps instead (pass 1 merges them into the source; `eachDirect`
+// receives them as `stateDeps`).
+const WHOLE_STATE_DEPS: readonly string[] = ['']
+
 export function each<T>(
   items: Signal<readonly T[]>,
   opts: {
@@ -254,26 +265,71 @@ export function each<T>(
 ): Mountable {
   if (!isSignalHandle(items)) return compiledAway('each')
   const produce = items.produce as (s: unknown) => readonly T[]
-  return signalEach({ items: produce, deps: items.deps }, opts.key, (getCtx) => {
-    // item/index handles read the row's live combined ctx ({ item, state })
-    const itemH = pathHandle<T>(getCtx, 'item')
-    const indexH = pathHandle<number>(getCtx, 'index')
-    return opts.render(itemH, indexH)
-  })
+  return signalEach(
+    { items: produce, deps: items.deps },
+    opts.key,
+    (getCtx) => {
+      // item/index handles read the row's live combined ctx ({ item, state })
+      const itemH = pathHandle<T>(getCtx, 'item')
+      const indexH = pathHandle<number>(getCtx, 'index')
+      return opts.render(itemH, indexH)
+    },
+    WHOLE_STATE_DEPS,
+  )
+}
+
+/** Compiled render-arm keyed list — the MID-TIER between {@link eachDirect}
+ * (full direct construction) and the verbatim authoring {@link each}: the items
+ * source is a verbatim runtime handle (a view-helper's call-site-bound signal the
+ * compiler can't resolve), but the ROW is a compiled `() => [...]` arm whose
+ * binding producers read the combined row ctx (`ctx.item` / `ctx.index`) directly
+ * — no per-row item/index handle allocation. Un-lowerable children inside the arm
+ * (a nested `show` on a state handle, a helper call without the row param) stay
+ * verbatim and run via the authoring path within the row build. Emitted by the
+ * compiler's pass-2 helper-each lowering when the row factory bails on a
+ * structural child. */
+export function eachArm<T>(
+  items: Signal<readonly T[]>,
+  key: (item: T) => string | number,
+  // The compiled arm. Binding producers read the ctx passed to them; `getCtx`
+  // exposes the LIVE row ctx for event handlers (`getCtx().item.id` at event
+  // time — dispatch-by-id stays correct across keyed reorders).
+  render: (getCtx: () => RowCtx<T>) => Renderable,
+  stateDeps?: readonly string[],
+): Mountable {
+  if (!isSignalHandle(items)) return compiledAway('eachArm')
+  const produce = items.produce as (s: unknown) => readonly T[]
+  // Default to whole-state: this tier exists FOR rows with verbatim residue
+  // (structural children / helper calls), whose state reads are unknowable.
+  return signalEach(
+    { items: produce, deps: items.deps },
+    key,
+    render,
+    stateDeps ?? WHOLE_STATE_DEPS,
+  )
 }
 
 /** Direct-construction keyed list. Same keyed reconcile as {@link each}, but each
  * row is built by `row` (a {@link RowFactory}: direct DOM + binding specs wired by
  * node reference) instead of authoring helpers — the compiled fast path. The
- * factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`. */
+ * factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`.
+ * `stateDeps` names the component-state paths the factory's bindings read (the
+ * compiler passes the collected set, often empty); omitted (legacy emissions),
+ * it falls back to whole-state so `ctx.state` reads stay live. */
 export function eachDirect<T>(
   items: Signal<readonly T[]>,
   key: (item: T) => string | number,
   row: RowFactory,
+  stateDeps?: readonly string[],
 ): Mountable {
   if (!isSignalHandle(items)) return compiledAway('eachDirect')
   const produce = items.produce as (s: unknown) => readonly T[]
-  return signalEachDirect({ items: produce, deps: items.deps }, key, row)
+  return signalEachDirect(
+    { items: produce, deps: items.deps },
+    key,
+    row,
+    stateDeps ?? WHOLE_STATE_DEPS,
+  )
 }
 
 export function show<T>(

@@ -866,8 +866,9 @@ export function signalEach<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
   renderRow: (getCtx: () => RowCtx<T>) => Renderable,
+  extraDeps?: readonly string[],
 ): Mountable {
-  return mountable(() => buildSignalEach(source, key, renderRow))
+  return mountable(() => buildSignalEach(source, key, renderRow, undefined, extraDeps))
 }
 
 /** Direct-construction keyed list: same keyed reconcile as {@link signalEach},
@@ -878,8 +879,9 @@ export function signalEachDirect<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
   rowFactory: RowFactory,
+  extraDeps?: readonly string[],
 ): Mountable {
-  return mountable(() => buildSignalEach(source, key, undefined, rowFactory))
+  return mountable(() => buildSignalEach(source, key, undefined, rowFactory, extraDeps))
 }
 
 /** Shared, never-mutated empty descriptor registry for direct rows. A direct row
@@ -924,6 +926,16 @@ function buildSignalEach<T>(
   // Direct-construction row builder (compiled fast path); when set, rows are built
   // by this instead of running `renderRow` through the authoring helpers.
   rowFactory?: RowFactory,
+  // Additional COMPONENT-STATE dep paths the rows read, appended to the
+  // structural binding's deps ONLY (the items-source resolution is unaffected).
+  // The compiled pass-1 path merges its collected row state-deps into
+  // `source.deps` instead; this parameter serves the handle-sourced tiers, whose
+  // items deps say nothing about what the rows read: the authoring `each` and
+  // `eachArm` pass `['']` (any state change may matter — rows can read state
+  // through parts/arms invisible at runtime), and compiled `eachDirect` passes
+  // the precise collected paths. Without it, a row-nested arm reading an
+  // unrelated state path was frozen out of state-only changes (stale DOM).
+  extraDeps?: readonly string[],
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -1290,8 +1302,9 @@ function buildSignalEach<T>(
   // structural binding: fires when the list deps change; produce returns the
   // component state so reconcile can build each row's combined ctx. Nested in an
   // enclosing row, it reads `ctx.state` and its deps rebase onto that combined ctx.
+  const specDeps = extraDeps && extraDeps.length > 0 ? [...source.deps, ...extraDeps] : source.deps
   c.specs.push({
-    deps: inRow ? source.deps.map(rebaseRowDep) : source.deps,
+    deps: inRow ? specDeps.map(rebaseRowDep) : specDeps,
     // Pass the scope state straight through: the combined row ctx when nested in
     // a row, the component state at top level. `reconcile` derives the items
     // source's state (row-local vs component) and the rows' mount state from it.

@@ -417,6 +417,7 @@ function signalEach<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
   renderRow: (getCtx: () => RowCtx<T>) => Renderable,
+  extraDeps?: readonly string[],
 ): Mountable
 ```
 
@@ -432,6 +433,7 @@ function signalEachDirect<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
   rowFactory: RowFactory,
+  extraDeps?: readonly string[],
 ): Mountable
 ```
 
@@ -767,18 +769,44 @@ function each<T>(
 ): Mountable
 ```
 
+### `eachArm()`
+
+Compiled render-arm keyed list — the MID-TIER between {@link eachDirect}
+(full direct construction) and the verbatim authoring {@link each}: the items
+source is a verbatim runtime handle (a view-helper's call-site-bound signal the
+compiler can't resolve), but the ROW is a compiled `() => [...]` arm whose
+binding producers read the combined row ctx (`ctx.item` / `ctx.index`) directly
+— no per-row item/index handle allocation. Un-lowerable children inside the arm
+(a nested `show` on a state handle, a helper call without the row param) stay
+verbatim and run via the authoring path within the row build. Emitted by the
+compiler's pass-2 helper-each lowering when the row factory bails on a
+structural child.
+
+```typescript
+function eachArm<T>(
+  items: Signal<readonly T[]>,
+  key: (item: T) => string | number,
+  render: (getCtx: () => RowCtx<T>) => Renderable,
+  stateDeps?: readonly string[],
+): Mountable
+```
+
 ### `eachDirect()`
 
 Direct-construction keyed list. Same keyed reconcile as {@link each}, but each
 row is built by `row` (a {@link RowFactory}: direct DOM + binding specs wired by
 node reference) instead of authoring helpers — the compiled fast path. The
 factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`.
+`stateDeps` names the component-state paths the factory's bindings read (the
+compiler passes the collected set, often empty); omitted (legacy emissions),
+it falls back to whole-state so `ctx.state` reads stay live.
 
 ```typescript
 function eachDirect<T>(
   items: Signal<readonly T[]>,
   key: (item: T) => string | number,
   row: RowFactory,
+  stateDeps?: readonly string[],
 ): Mountable
 ```
 

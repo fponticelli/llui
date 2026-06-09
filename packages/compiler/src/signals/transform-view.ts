@@ -75,6 +75,15 @@ export function setEachLoweredHook(fn: ((pos: number) => void) | null): void {
   eachLoweredHook = fn
 }
 
+// Ambient handler-rewrite roots for the pass-2 ARM lowering (`eachArm`): while
+// set, `emitHandler` rewrites item/index/state `.peek()` reads in event handlers
+// to live-row-ctx reads (`getCtx().item.id`) — the same lowering the row FACTORY
+// applies — so the common dispatch-by-id handler doesn't leak the row param and
+// bail the arm. The emitted arm is `(getCtx) => [...]`, so `getCtx` is in scope
+// for the rewritten handlers (including inside nested verbatim arms). Scoped to
+// the pass-2 attempt only; pass-1 arm lowering is unchanged.
+let armHandlerRoots: Roots | null = null
+
 // ── Phase-2 helper-row inlining: same-file view-helper declarations ───────────
 // Set by the component transform (the whole file's top-level fn/arrow decls keyed
 // by name) before lowering; null otherwise. A row `render: (item) => [rowHelper(item,
@@ -301,8 +310,8 @@ function isStraightLineSends(block: ts.Block, sendName: string): boolean {
  * context is active and the handler is a straight-line multi-`send` block, wrap its
  * body in `batch(() => …)` and flag the context so the bag gains a `batch` binding. */
 function emitHandler(init: ts.Expression, sf: ts.SourceFile, rewriteRoots?: Roots): string {
-  const render = (n: ts.Node): string =>
-    rewriteRoots ? rewriteHandlerReads(n, sf, rewriteRoots) : n.getText(sf)
+  const roots = rewriteRoots ?? armHandlerRoots ?? undefined
+  const render = (n: ts.Node): string => (roots ? rewriteHandlerReads(n, sf, roots) : n.getText(sf))
   if (
     autoBatch &&
     (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) &&
@@ -574,20 +583,50 @@ function lowerArmArray(
   guardParams: readonly (string | null)[],
   collect?: Set<string>,
   onBail?: (reason: string) => void,
-): string | null {
-  const arr = arrowReturnArray(fn)
-  if (!arr) {
+  // When provided, a guard-param leak is RECORDED here instead of bailing — the
+  // `each` callers bind leaked params to real runtime handles in the emitted
+  // arm's prelude (`const item = rowHandle(getCtx, 'item')`), so the leak is
+  // legal. `show`/`branch` callers omit it (their narrowed params have no row
+  // ctx to rebuild a handle from) and keep the bail behavior.
+  leaked?: Set<string>,
+): { arr: string; decls: readonly string[] } | null {
+  // Accept the BLOCK-BODY shape too (`(p) => { const x = …; return [...] }`):
+  // the leading decls are kept VERBATIM in the emitted arm block — they run once
+  // per arm/row build (the same render-once semantics as the factory's wire
+  // decls and the authoring render). A param reference inside a decl counts as
+  // a leak via the same scan. A non-decl statement before the return bails.
+  const body = rowBody(fn)
+  if (!body) {
     onBail?.('arm-not-concise-array')
     return null
   }
-  const src = `[${arr.elements.map((e) => transformNodeExpr(e, sf, armRoots, collect)).join(', ')}]`
+  const decls = body.decls.map((d) => d.getText(sf).replace(/;\s*$/, ''))
+  const arr = `[${body.arr.elements.map((e) => transformNodeExpr(e, sf, armRoots, collect)).join(', ')}]`
+  const scanSrc = decls.length > 0 ? `${decls.join('; ')}; ${arr}` : arr
   for (const p of guardParams) {
-    if (p !== null && loweredLeaksIdent(src, p)) {
+    if (p !== null && loweredLeaksIdent(scanSrc, p)) {
+      if (leaked) {
+        leaked.add(p)
+        continue
+      }
       onBail?.(`arm-param-leak:${p}`)
       return null
     }
   }
-  return src
+  return { arr, decls }
+}
+
+/** Assemble a lowered arm's emission from its parts: a concise `() => [...]`
+ * when there's nothing to bind, else a block arm with the rowHandle prelude
+ * (for leaked each-row params) and the render-once decls ahead of the return. */
+function emitArm(
+  parts: { arr: string; decls: readonly string[] },
+  prelude: readonly string[],
+  param = '',
+): string {
+  const stmts = [...prelude, ...parts.decls]
+  if (stmts.length === 0) return `(${param}) => ${parts.arr}`
+  return `(${param}) => { ${stmts.join('; ')}; return ${parts.arr} }`
 }
 
 /** Rewrite a node-producing expression to its signal-runtime source. */
@@ -659,11 +698,15 @@ export function transformNodeExpr(
         // un-namespaced), and propagate those to an enclosing collector so a parent
         // `each` reconciles when any of them change. `renderDeps` is filled by
         // whichever lowering path runs (factory bindings or the render arm).
-        const emitSource = (renderDeps: ReadonlySet<string>): string => {
+        const emitSource = (renderDeps: ReadonlySet<string>, residue = false): string => {
           const itemsLowered = signalToProduce(items, sf, roots)
           const rowStateDeps = [...renderDeps]
             .filter((d) => d === 'state' || d.startsWith('state.'))
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
+          // Verbatim residue (a leaked row param bound to a runtime handle) may
+          // read state through code the collector can't see — degrade to the
+          // whole-state path so the reconcile fires on any state change.
+          if (residue) rowStateDeps.push('')
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
           if (collect) {
             for (const d of itemsLowered.deps) collect.add(d)
@@ -688,10 +731,13 @@ export function transformNodeExpr(
         if (!renderFn) reportBail('each-direct', 'missing-render', eachPos)
 
         // Render-callback path: lowerable rows the factory can't build directly
-        // (structural children, helper calls) but that DON'T leak the row param into
-        // a verbatim handler. `lowerArmArray` rewrites item reads to `ctx.item` and
-        // guards against either row param leaking and against a non-array body.
+        // (structural children, helper calls). `lowerArmArray` rewrites item reads
+        // to `ctx.item`; a row param that LEAKS into a verbatim helper call is
+        // bound to a real runtime handle in the arm's prelude (`const item =
+        // rowHandle(getCtx, 'item')`) — identical to the handle the authoring
+        // `each` would create — so the helper child still receives a Signal<T>.
         const renderDeps = new Set<string>()
+        const leaked = new Set<string>()
         const body =
           renderFn &&
           lowerArmArray(
@@ -701,10 +747,17 @@ export function transformNodeExpr(
             [itemParam, indexParam],
             renderDeps,
             (r) => reportBail('each-render', r, eachPos),
+            leaked,
           )
         if (body != null) {
           eachLoweredHook?.(eachPos)
-          return `signalEach(${emitSource(renderDeps)}, ${keySrc}, () => ${body})`
+          const prelude = [...leaked].map(
+            (p) => `const ${p} = rowHandle(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
+          )
+          // residue: leaked-handle code may read state invisibly → whole-state dep
+          const source = emitSource(renderDeps, leaked.size > 0)
+          const param = leaked.size > 0 ? 'getCtx' : ''
+          return `signalEach(${source}, ${keySrc}, ${emitArm(body, prelude, param)})`
         }
         // unlowerable render -> fall through to verbatim (runtime authoring each)
       }
@@ -750,8 +803,8 @@ export function transformNodeExpr(
           // `each` reconciles its rows when this nested show's condition changes
           // (its arms' value deps are collected by the lowerArmArray calls above).
           if (collect) for (const d of condLowered.deps) collect.add(d)
-          const elseSrc = orElse ? `, () => ${elseBody}` : ''
-          return `signalShow(${specSrc(cond, sf, roots)}, () => ${thenBody}${elseSrc})`
+          const elseSrc = orElse ? `, ${emitArm(elseBody!, [])}` : ''
+          return `signalShow(${specSrc(cond, sf, roots)}, ${emitArm(thenBody, [])}${elseSrc})`
         }
         // unlowerable arm -> fall through to verbatim (runtime authoring show)
       }
@@ -834,7 +887,7 @@ export function transformNodeExpr(
             armsOk = false
             break
           }
-          armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
+          armsSrc.push(`${p.name.getText(sf)}: ${emitArm(armBody, [])}`)
         }
         if (armsOk) {
           // Propagate the discriminant's deps so a parent `each` reconciles when it
@@ -868,7 +921,7 @@ export function transformNodeExpr(
             armsOk = false
             break
           }
-          armsSrc.push(`${p.name.getText(sf)}: () => ${armBody}`)
+          armsSrc.push(`${p.name.getText(sf)}: ${emitArm(armBody, [])}`)
         }
         if (armsOk) {
           if (collect) for (const d of signalToProduce(value, sf, roots).deps) collect.add(d)
@@ -1300,14 +1353,25 @@ function lowerRowFactory(
  * handles them. Mirrors the runtime's `DOM_PROPERTIES`. */
 const DIRECT_SKIP_ATTRS = new Set(['value', 'checked', 'selected', 'indeterminate'])
 
-/** Lower a view-HELPER-scoped `each(items, { key, render })` to `eachDirect(items,
- * key, factory)` — the handle-consuming authoring variant. Unlike the component-view
- * each (whose items root in the bag `state`, lowered to a `{ items, deps }` source),
- * a helper's items source roots in a CALL-SITE-bound signal param the compiler can't
- * statically resolve, so the items expression is kept VERBATIM (a runtime handle) and
- * only the ROW is compiled to a `RowFactory`. Returns null (→ leave the authoring
- * `each`) when the row isn't factory-lowerable — incl. when it reads a non-root
- * handle reactively (guarded inside `lowerRowFactory`). Used by the view-helper pass. */
+/** Lower a view-HELPER-scoped `each(items, { key, render })` to one of the two
+ * handle-consuming compiled tiers. Unlike the component-view each (whose items
+ * root in the bag `state`, lowered to a `{ items, deps }` source), a helper's
+ * items source roots in a CALL-SITE-bound signal param the compiler can't
+ * statically resolve, so the items expression is kept VERBATIM (a runtime handle)
+ * and only the ROW compiles:
+ *
+ *   1. `eachDirect(items, key, factory, stateDeps)` — full direct construction,
+ *      when the row factory lowers. `stateDeps` is the precise set of
+ *      component-state paths the factory's bindings read (factory rows have no
+ *      verbatim residue, so the set is complete).
+ *   2. `eachArm(items, key, () => [...])` — the MID-TIER, when the factory bails
+ *      (typically on a structural child): the row lowers as a render ARM whose
+ *      producers read the combined ctx; un-lowerable children stay verbatim
+ *      inside it. No stateDeps are passed — the runtime defaults to whole-state,
+ *      since the verbatim residue's state reads are unknowable.
+ *
+ * Returns null (→ leave the authoring `each`) when neither tier lowers — e.g. a
+ * row param leaking into a verbatim helper call. Used by the view-helper pass. */
 export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): string | null {
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'each') return null
   const pos = node.getStart(sf)
@@ -1339,10 +1403,51 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
     } else return bail(`unrecognized-opt:${name}`) // bail conservatively
   }
   if (keySrc === null || !renderFn) return bail('missing-key-or-render')
-  const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf)
-  if (!factory) return null // the factory reported its own bail reason
-  eachLoweredHook?.(pos)
-  return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory})`
+  const collected = new Set<string>()
+  const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf, collected)
+  if (factory) {
+    eachLoweredHook?.(pos)
+    // Precise component-state deps for the structural binding: the `state.*`
+    // reads the factory's bindings carry, un-namespaced to component paths
+    // (a whole-`state` read becomes '' — any state change matters).
+    const stateDeps = [...collected]
+      .filter((d) => d === 'state' || d.startsWith('state.'))
+      .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
+    return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory}, ${depsArr(stateDeps)})`
+  }
+  // Mid-tier: the factory bailed (its reason is reported) — try the render-arm
+  // lowering. Item reads compile to ctx producers; verbatim children survive
+  // inside the arm and run via the authoring path within the row build. Event
+  // handlers' `.peek()` reads rewrite to live-ctx reads (the ambient roots), so
+  // the arm is emitted as `(getCtx) => [...]` matching signalEach's render
+  // contract.
+  armHandlerRoots = handlerRoots(itemParam, indexParam)
+  let armBody: { arr: string; decls: readonly string[] } | null
+  const leaked = new Set<string>()
+  try {
+    armBody = lowerArmArray(
+      renderFn,
+      sf,
+      eachRoots(itemParam),
+      [itemParam, indexParam],
+      undefined,
+      (r) => reportBail('each-render', r, pos),
+      leaked,
+    )
+  } finally {
+    armHandlerRoots = null
+  }
+  if (armBody != null) {
+    eachLoweredHook?.(pos)
+    // A leaked row param is bound to a real runtime handle (same pathHandle the
+    // authoring each creates), so verbatim helper children receive a Signal<T>.
+    // The arm always takes `getCtx` here: rewritten handlers reference it.
+    const prelude = [...leaked].map(
+      (p) => `const ${p} = rowHandle(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
+    )
+    return `eachArm(${items.getText(sf)}, ${keySrc}, ${emitArm(armBody, prelude, 'getCtx')})`
+  }
+  return null
 }
 
 function transformProps(

@@ -169,12 +169,54 @@ Two more findings/fixes on top of the telemetry session:
   (toggle-time-only cost). Volume on the corpus: dicerun2 50, dungeonlogs 19, examples 6.
   Tests: `test/signals/perf-diagnostics.test.ts`, `vite-plugin test/signal-routing.test.ts`.
 
+## The `eachArm` mid-tier + leaked-handle prelude + each state-fanout fix — ✅ SHIPPED (2026-06-09)
+
+The pass-2 mid-tier from the corpus ranking, plus two lifts and a latent correctness bug
+the design work exposed:
+
+- **Staleness bug found & fixed (authoring `each`).** The structural each binding fired
+  only on the items handle's deps, so a row-nested arm reading an UNRELATED state path
+  (`show(state.at('flag'),…)` inside a row, connect parts, …) was silently frozen out of
+  state-only changes — the doc promise "a row reacts to its item AND component state" was
+  broken on the authoring path (probe: a row-nested show never toggled). Fix:
+  `signalEach`/`signalEachDirect` accept `extraDeps` appended to the structural spec ONLY
+  (items resolution unaffected); authoring `each` passes `['']` (whole state — rows can
+  read state through code invisible at runtime), compiled `eachDirect` passes the PRECISE
+  collected `stateDeps` (4th arg), legacy 3-arg emissions degrade to `['']`
+  (correct-but-conservative; old runtime ignores the new arg — compat both ways). The
+  reconcile's probe/gating keeps per-change cost proportional to changed rows; jfb/ticker
+  are fully compiled with precise deps — bench unaffected.
+- **`eachArm` (the mid-tier).** `eachArm(items, key, (getCtx) => [...], stateDeps?)` —
+  compiled render arm over a verbatim items handle: producers read the combined ctx (no
+  per-row handle allocation), un-lowerable children stay verbatim INSIDE the arm,
+  handlers' `.peek()` reads rewrite to `getCtx()` reads (dispatch-by-id, ambient
+  `armHandlerRoots`). Defaults to whole-state deps (its raison d'être is verbatim
+  residue).
+- **Leaked-handle prelude (the big coverage lift, pass 1 AND pass 2).** A row param
+  leaking into a verbatim helper call (`pill(item)` — the dominant post-arm blocker, 20
+  sites) no longer bails: the arm binds it to a REAL runtime handle
+  (`const item = rowHandle(getCtx, 'item')`, the same pathHandle authoring `each`
+  creates), so the helper receives a genuine `Signal<T>`. Pass-1 leaked rows add `''` to
+  source deps (residue may read state invisibly). `rowHandle` = `pathHandle` re-export.
+- **Block-body arms.** `lowerArmArray` accepts `decls + return [...]` (decls verbatim,
+  render-once per row — same semantics as factory wire decls); applies to each AND
+  show/branch arms. A signal-alias local (`const n = item.at('x')`) is now legal on the
+  arm path (the alias becomes a genuine sub-handle of the bound rowHandle).
+- **Measured corpus coverage (each sites, direct/arm/signalEach vs verbatim):**
+  examples **17/17 compiled (verbatim 0**, was 6); dungeonlogs **44/47 (94%**, was 60%);
+  dicerun2 **42/75 (56%**, was 20%). Remaining verbatim: imperative render bodies +
+  non-object opts shapes.
+- Tests: `each-state-fanout-deps.test.ts` (staleness fix + eachArm contract + eachDirect
+  stateDeps), `each-direct-codegen.test.ts` (arm e2e: structural child reacting to
+  state-only change + dispatch-by-id; leaked-handle e2e: live updates + reorder),
+  `transform-view/component/lower-bail/perf-diagnostics` compiler suites.
+
 ## Suggested order (remaining)
 
 1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.
 2. ~~**B** — `batch()` + drain-coalescing substrate + compiler auto-wrap.~~ ✅ shipped.
 3. ~~**C** — cross-function row lowering (block-body, view-helper coverage, same-file inlining).~~ ✅ shipped.
-4. **Pass-2 mid-tier** — a render-arm lowering for HELPER eaches whose rows have structural children (the `signalEach` equivalent for call-site-rooted items). Largest remaining coverage lever per the 2026-06-09 corpus ranking; needs a runtime-contract decision first.
+4. ~~**Pass-2 mid-tier**~~ ✅ shipped (`eachArm` + leaked-handle prelude + block-body arms, see above). Remaining verbatim is imperative render bodies — statement-level lowering territory, likely not worth it.
 5. ~~**Surface `onLowerBail` as `perf` diagnostics**~~ ✅ shipped (`llui/each-verbatim`, see above).
 6. **Phase 3 of C** — precompiled-library row-factory ABI. The corpus showed the trigger is real (dicerun2 consumes published `@llui/components`; `row-top-not-element` 14 ≈ cross-file delegation). See cross-function-row-lowering.md.
 7. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.

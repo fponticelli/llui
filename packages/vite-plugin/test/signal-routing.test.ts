@@ -173,7 +173,7 @@ describe('vite-plugin — signal component routing', () => {
     const verbatimEach = [
       "import { ul, li, text, each, type Signal } from '@llui/dom'",
       'export function rows(items: Signal<readonly { id: number }[]>) {',
-      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [importedRow(item)])] })])]',
+      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => { const el = buildRow(item); attach(el); return [el] } })])]',
       '}',
     ].join('\n')
     const warn = vi.fn()
@@ -187,7 +187,7 @@ describe('vite-plugin — signal component routing', () => {
     await transform.call(ctx, verbatimEach, '/tmp/rows.ts')
     const messages = warn.mock.calls.map((c) => String(c[0]))
     expect(messages.some((m) => m.includes('[llui/each-verbatim]'))).toBe(true)
-    expect(messages.some((m) => m.includes('row-child-unsupported'))).toBe(true)
+    expect(messages.some((m) => m.includes('row-body-not-array'))).toBe(true)
   })
 
   it('stays silent with perfDiagnostics: false', async () => {

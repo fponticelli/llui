@@ -28,9 +28,14 @@ function diagsOf(source: string, fileName = 'src/app.ts'): { out: string; diags:
 
 describe('onPerfDiagnostic — verbatim each sites', () => {
   it('emits llui/each-verbatim for an each whose row cannot compile', () => {
+    // an IMPERATIVE render body — neither the factory nor the render arm lowers
     const src = app(`each(state.at('todos'), {
       key: (t) => t.id,
-      render: (item) => [li({}, [unknownHelper(item)])],
+      render: (item) => {
+        const el = buildRow(item)
+        attachThings(el)
+        return [el]
+      },
     })`)
     const { out, diags } = diagsOf(src)
     expect(out).toContain('each(') // stayed verbatim
@@ -40,10 +45,21 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
     expect(d.category).toBe('perf')
     expect(d.severity).toBe('warning')
     expect(d.location.file).toBe('src/app.ts')
-    expect(d.message).toContain('row-child-unsupported')
+    expect(d.message).toContain('row-body-not-array')
     // position points at the each call site
     const line = src.split('\n')[d.location.range.start.line]!
     expect(line).toContain('each(')
+  })
+
+  it('emits NO diagnostic when a helper-call row lowers via the rowHandle prelude', () => {
+    const { out, diags } = diagsOf(
+      app(`each(state.at('todos'), {
+      key: (t) => t.id,
+      render: (item) => [li({}, [unknownHelper(item)])],
+    })`),
+    )
+    expect(out).toContain("rowHandle(getCtx, 'item')")
+    expect(diags).toEqual([])
   })
 
   it('emits NO diagnostic when the each lowers to the direct path', () => {
@@ -75,14 +91,14 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
       'export function rows(items, send) {',
       '  return [ul({}, [each(items, {',
       '    key: (r) => r.id,',
-      '    render: (item) => [li({}, [importedRow(item)])],',
+      '    render: (item) => { const el = buildRow(item); attach(el); return [el] },',
       '  })])]',
       '}',
     ].join('\n')
     const { diags } = diagsOf(src)
     expect(diags.length).toBe(1)
     expect(diags[0]!.id).toBe('llui/each-verbatim')
-    expect(diags[0]!.message).toContain('row-child-unsupported')
+    expect(diags[0]!.message).toContain('row-body-not-array')
   })
 
   it('one diagnostic per site with deduped reasons (pass 1 + pass 2 both attempt)', () => {
@@ -107,7 +123,7 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
     transformSignalComponentSource(
       app(`each(state.at('todos'), {
       key: (t) => t.id,
-      render: (item) => [li({}, [unknownHelper(item)])],
+      render: (item) => { const el = buildRow(item); attach(el); return [el] },
     })`),
       { onLowerBail: (b) => bails.push(b), onPerfDiagnostic: (d) => diags.push(d) },
     )

@@ -71,6 +71,8 @@ const RUNTIME_HELPERS = [
   'signalEach',
   'signalEachDirect',
   'eachDirect',
+  'eachArm',
+  'rowHandle',
   'applyAttr',
   'signalShow',
   'signalBranch',

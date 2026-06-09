@@ -108,20 +108,29 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(out).toContain("deps: ['state.mode']")
   })
 
-  it('leaves an each VERBATIM when the render passes the row param to a helper call', () => {
+  it('lowers an each whose render passes the row param to a helper call (rowHandle prelude)', () => {
     // `render: (item) => [activityItem(item, ...)]` — the row param leaks into a
-    // verbatim helper call the lowered `() => [...]` render can't bind, so lowering
-    // would emit a free `item` -> `item is not defined` at runtime. Stay verbatim:
-    // the runtime authoring `each` binds a real item handle. (dashboard demo bug.)
-    const src =
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [activityItem(item, state.at('locale'))] })"
-    expect(tx(src)).toBe(src)
+    // verbatim helper call. The arm binds it to a REAL runtime handle (the same
+    // pathHandle the authoring `each` creates), so the helper receives a genuine
+    // Signal<T> and the each still lowers. Whole-state residue dep added: the
+    // helper may read state invisibly.
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [activityItem(item, state.at('locale'))] })",
+    )
+    expect(out).toContain('signalEach(')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain("activityItem(item, state.at('locale'))")
+    expect(out).toContain("deps: ['rows', '']") // items dep + whole-state residue
   })
 
-  it('leaves an each VERBATIM when the render reads the index param in a helper call', () => {
-    const src =
-      "each(state.at('rows'), { key: (r) => r.id, render: (item, index) => [priorityItem(item, index, parts)] })"
-    expect(tx(src)).toBe(src)
+  it('lowers an each whose render reads the index param in a helper call (index handle)', () => {
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item, index) => [priorityItem(item, index, parts)] })",
+    )
+    expect(out).toContain('signalEach(')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain("const index = rowHandle(getCtx, 'index')")
+    expect(out).toContain('priorityItem(item, index, parts)')
   })
 
   it('lowers an each whose handler reads the row param to signalEachDirect (live ctx)', () => {
@@ -152,12 +161,16 @@ describe('transformNodeExpr — structural primitives', () => {
     )
   })
 
-  it('leaves an each VERBATIM when the row param leaks into a handler as a HANDLE (non-peek)', () => {
-    // `f(item)` passes the item handle itself — the factory can't rewrite that to a
-    // ctx read, so the leak guard bails to the runtime authoring each (real handle).
-    const src =
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => f(item) }, [text(item.at('name'))])] })"
-    expect(tx(src)).toBe(src)
+  it('lowers a handler passing the row param as a HANDLE (non-peek) via the prelude', () => {
+    // `f(item)` passes the item handle itself — the factory can't rewrite that to
+    // a ctx read, but the render arm binds `item` to a real runtime handle, so
+    // `f` receives a live Signal<T> at event time (authoring-identical semantics).
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [button({ onClick: () => f(item) }, [text(item.at('name'))])] })",
+    )
+    expect(out).toContain('signalEach(')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain('onClick: () => f(item)')
   })
 
   it('falls back to signalEach when a handler is a tagSend(...) call (needs authoring path)', () => {
@@ -171,12 +184,21 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(out).not.toContain('signalEachDirect(')
   })
 
-  it('leaves an each VERBATIM when the render is a block body (not a concise array)', () => {
-    // A block-body render `(item) => { return [...] }` used to be returned whole by
-    // renderArraySrc, producing the malformed `signalEach(..., () => (item) => {...})`
-    // — a render that yields the arrow instead of nodes. Stay verbatim.
+  it('lowers a BLOCK-BODY render on the arm path when the factory bails (decls kept)', () => {
+    // decls + return [...] — the factory bails (helper child), the arm keeps the
+    // decls verbatim; the decl's item read makes `item` leak → rowHandle prelude.
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const nm = item.peek().name; return [li({}, [badge(nm), text(item.at('name'))])] } })",
+    )
+    expect(out).toContain('signalEach(')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain('const nm = item.peek().name')
+    expect(out).toContain('badge(nm)')
+  })
+
+  it('leaves an each VERBATIM when the render block has a NON-decl statement', () => {
     const src =
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { return [text(item.at('name'))] } })"
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { doSideEffect(); return [text(item.at('name'))] } })"
     expect(tx(src)).toBe(src)
   })
 
@@ -187,8 +209,17 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(tx(src)).toBe(src)
   })
 
-  it('leaves a SHOW verbatim when an arm is a block body', () => {
-    const src = "show(state.at('open'), () => { return [text('x')] })"
+  it('lowers a SHOW arm with a block body (decls + return [...])', () => {
+    const out = tx(
+      "show(state.at('open'), () => { const cls = 'x'; return [div({ class: cls }, [])] })",
+    )
+    expect(out).toContain('signalShow(')
+    expect(out).toContain("const cls = 'x'")
+    expect(out).toContain('return [el("div", { class: cls }, [])]')
+  })
+
+  it('still leaves a SHOW verbatim when an arm block has a NON-decl statement', () => {
+    const src = "show(state.at('open'), () => { doSideEffect(); return [text('x')] })"
     expect(tx(src)).toBe(src)
   })
 
@@ -200,9 +231,10 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(tx(src)).toBe(src)
   })
 
-  it('leaves a BRANCH verbatim when an arm is a block body', () => {
-    const src = "branch(state.at('filter'), { all: () => { return [text('a')] } })"
-    expect(tx(src)).toBe(src)
+  it('lowers a BRANCH arm with a block body (decls + return)', () => {
+    const out = tx("branch(state.at('filter'), { all: () => { return [text('a')] } })")
+    expect(out).toContain('signalBranch(')
+    expect(out).toContain("all: () => [staticText('a')]")
   })
 
   it('lowers show to signalShow (cond spec, content under state root)', () => {
@@ -318,14 +350,16 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     expect(out).toContain('setAttribute("class", "activity-item")')
   })
 
-  it('bails to authoring when a local is SIGNAL-bound (opaque alias)', () => {
-    expect(
-      kind(
-        tx(
-          "each(state.at('r'), { key: (r) => r.id, render: (item) => { const n = item.at('x'); return [li([text(n)])] } })",
-        ),
-      ),
-    ).toBe('verbatim')
+  it('a SIGNAL-bound local (opaque alias) lowers via the arm + rowHandle prelude', () => {
+    // the factory bails (handle alias is opaque to the static tracer), but the
+    // arm keeps the decl verbatim and binds `item` to a real handle — the alias
+    // is then a genuine sub-handle the runtime `text` consumes reactively.
+    const out = tx(
+      "each(state.at('r'), { key: (r) => r.id, render: (item) => { const n = item.at('x'); return [li([text(n)])] } })",
+    )
+    expect(kind(out)).toBe('each')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain("const n = item.at('x')")
   })
 
   it('bails when a non-declaration statement precedes the return', () => {
@@ -348,13 +382,12 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     ).toBe('verbatim')
   })
 
-  it('bails when a decl leaks the row param as a handle', () => {
-    expect(
-      kind(
-        tx(
-          "each(state.at('r'), { key: (r) => r.id, render: (item) => { const x = item; return [li([text(x.at('n'))])] } })",
-        ),
-      ),
-    ).toBe('verbatim')
+  it('a decl aliasing the row param lowers via the arm + rowHandle prelude', () => {
+    const out = tx(
+      "each(state.at('r'), { key: (r) => r.id, render: (item) => { const x = item; return [li([text(x.at('n'))])] } })",
+    )
+    expect(kind(out)).toBe('each')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain('const x = item')
   })
 })

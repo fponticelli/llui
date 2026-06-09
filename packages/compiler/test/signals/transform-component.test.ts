@@ -368,9 +368,11 @@ describe('transformSignalComponentSource', () => {
       expect(out).toMatch(/import \{[^}]*\beachDirect\b[^}]*\} from '@llui\/dom'/)
     })
 
-    it('leaves a helper each VERBATIM when the row reads a non-root signal handle reactively', () => {
-      // `mode` is another helper signal param — reading it reactively in a row can't be
-      // ctx-rooted, so the row bails and the each stays the authoring (handle) form.
+    it('lowers a row reading a non-root signal handle to the eachArm MID-TIER (factory bails)', () => {
+      // `mode` is another helper signal param — reading it reactively can't be
+      // ctx-rooted, so the FACTORY bails; the render ARM still lowers, leaving
+      // the handle verbatim in the prop slot, where the compiled `el` binds raw
+      // signal handles reactively (applyProp's isSignalHandle branch).
       const src = [
         "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
         'function rowsView(items: Signal<readonly { id: number }[]>, mode: Signal<string>): Renderable {',
@@ -380,7 +382,9 @@ describe('transformSignalComponentSource', () => {
       ].join('\n')
       const out = transformSignalComponentSource(src)
       expect(out).not.toContain('eachDirect(')
-      expect(out).toContain('each(items, {') // authoring each, unchanged
+      expect(out).toContain('eachArm(items')
+      expect(out).toContain('class: mode.at("x")') // handle stays verbatim; el binds it
+      expect(out).toContain("signalText((ctx) => ctx.item.y, ['item.y'])")
     })
 
     it('does not turn a COMPONENT-view each into eachDirect (keeps the rooted signalEachDirect)', () => {
@@ -420,7 +424,13 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain('ctx.state.locale')
     })
 
-    it('bails when a row helper uses spread props (e.g. sortable parts)', () => {
+    it('a row helper with spread props lowers via the render arm + rowHandle prelude', () => {
+      // spread props bail the FACTORY (after inlining), but the render arm keeps
+      // the inlined-helper call... no — inlining happens only in the factory; the
+      // ARM keeps `row(item, …)` verbatim, binds `item` to a real handle, and the
+      // compiled `el`/applyProp machinery is never involved (the helper runs on
+      // the authoring path inside the row build). Strictly better than verbatim:
+      // the each itself is compiled (no per-row authoring each machinery).
       const src = [
         "import { component, ul, li, text, each } from '@llui/dom'",
         'function row(item, parts) {',
@@ -429,9 +439,11 @@ describe('transformSignalComponentSource', () => {
         'const C = component({ init: () => ({ items: [], parts: {} }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("parts"))] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
-      // spread → row factory bails → the each stays authoring (item leaks into row(...))
+      assertParses(out)
       expect(out).not.toContain('signalEachDirect(')
-      expect(out).toContain('each(state.at("items")')
+      expect(out).toContain('signalEach(')
+      expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+      expect(out).toContain('row(item, state.at("parts"))')
     })
 
     it('a component-view each is lowered ONCE (no pass-2 double-lowering) and the output parses', () => {
@@ -530,6 +542,95 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain('signalEachDirect(')
       expect(out).toContain('const userId = getCtx().item.userId') // helper's peek local inlined
       expect(out).toContain('ctx.state.flags') // state arg substituted into a rooted binding
+    })
+
+    it('helper each with a STRUCTURAL child row lowers to the eachArm mid-tier', () => {
+      // The row factory bails on the nested show; the render arm still lowers —
+      // item reads compile to ctx producers, the verbatim show survives inside.
+      const src = [
+        "import { ul, li, text, each, show, type Signal } from '@llui/dom'",
+        'export function rows(items: Signal<readonly { id: number; label: string }[]>, flag: Signal<boolean>) {',
+        '  return [ul({}, [each(items, {',
+        '    key: (r) => r.id,',
+        '    render: (item) => [li({ class: "r" }, [text(item.at("label")), show(flag, () => [text("on")])])],',
+        '  })])]',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('eachArm(items')
+      expect(out).toContain("signalText((ctx) => ctx.item.label, ['item.label'])")
+      expect(out).toContain('show(flag') // the un-lowerable child stays verbatim
+      expect(out).not.toMatch(/(?<![A-Za-z])eachDirect\(/)
+      expect(out).toContain("import { signalText, el, eachArm } from '@llui/dom'")
+    })
+
+    it('helper each leaking the row param into a helper call arm-lowers WITH a rowHandle prelude', () => {
+      // The leaked `item` is bound to a real runtime handle (the same pathHandle
+      // the authoring each would create), so the verbatim helper child receives
+      // a genuine Signal<T> while the rest of the row stays compiled.
+      const src = [
+        "import { ul, li, text, each, type Signal } from '@llui/dom'",
+        "import { pill } from './pill'",
+        'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label")), pill(item)])] })])]',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('eachArm(items')
+      expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+      expect(out).toContain('pill(item)') // helper child receives the bound handle
+      expect(out).toContain("signalText((ctx) => ctx.item.label, ['item.label'])")
+      expect(out).toContain('rowHandle') // import injected
+    })
+
+    it('a COMPONENT-view each leaking the row param arm-lowers with the prelude + whole-state dep', () => {
+      // Pass-1 equivalent (the dashboard shape with a CROSS-FILE row helper):
+      // the leaked-handle row may read state through the helper invisibly, so
+      // the each's source deps gain '' (any state change reconciles).
+      const src = [
+        "import { component, div, each, type Signal } from '@llui/dom'",
+        "import { activityItem } from './activity'",
+        'const C = component({',
+        '  init: () => ({ items: [], locale: "en" }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [div({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [activityItem(item, state.at("locale"))] })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEach(')
+      expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+      expect(out).toContain('activityItem(item, state.at("locale"))')
+      expect(out).toMatch(/deps: \[.*''.*\]/) // whole-state residue dep
+    })
+
+    it('helper eachDirect emission carries its collected state deps (4th arg)', () => {
+      const src = [
+        "import { ul, li, text, each, type Signal } from '@llui/dom'",
+        'export function rows(items: Signal<readonly { id: number; label: string }[]>, state: Signal<{ mode: string }>) {',
+        '  return [ul({}, [each(items, {',
+        '    key: (r) => r.id,',
+        '    render: (item) => [li({}, [text(item.at("label")), text(state.at("mode"))])],',
+        '  })])]',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toMatch(/eachDirect\(items, .*, \['mode'\]\)/s)
+    })
+
+    it('helper eachDirect with NO state reads passes an empty deps array (precise)', () => {
+      const src = [
+        "import { ul, li, text, each, type Signal } from '@llui/dom'",
+        'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
+        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label"))])] })])]',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toMatch(/eachDirect\(items, .*, \[\]\)/s)
     })
 
     it('bails inlining a RECURSIVE helper (its nested each is a structural child)', () => {

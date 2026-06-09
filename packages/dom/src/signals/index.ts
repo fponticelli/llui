@@ -14,6 +14,12 @@ export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 // advanced foreign/composition cases that build signals outside a component bag.
 // `derived` (combine N signals) is a handle constructor, so it lives here too.
 export { derived, pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
+// `rowHandle` — the compiled each-arm prelude helper: when a row param leaks into
+// a verbatim helper call inside an otherwise-compiled arm, the emission binds it
+// to a REAL runtime handle (`const item = rowHandle(getCtx, 'item')`) — the same
+// pathHandle the authoring `each` creates — so the helper receives a genuine
+// Signal<T> reading the live row ctx.
+export { pathHandle as rowHandle } from './handle.js'
 // Shared, runtime-agnostic type used by transition/animation helpers.
 export type { TransitionOptions } from '../types.js'
 // Agent-handler introspection (runtime-agnostic — tags a handler with the msg
@@ -215,6 +221,7 @@ export {
   svgText,
   each,
   eachDirect,
+  eachArm,
   show,
   branch,
   foreign,

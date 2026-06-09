@@ -13,8 +13,8 @@ import {
   signalBranch,
   applyAttr,
 } from '../../src/signals/dom'
-import { ul, li, button, text, eachDirect } from '../../src/signals/authoring'
-import { derived } from '../../src/signals/handle'
+import { ul, li, button, span, text, show, eachDirect, eachArm } from '../../src/signals/authoring'
+import { derived, pathHandle } from '../../src/signals/handle'
 
 /** Compile + load a source that uses view-HELPER functions (authoring ul/li/text +
  * the handle-consuming eachDirect), for the cross-function transform-coverage tests.
@@ -30,7 +30,7 @@ function compileAndLoadWithHelpers(
     .filter((l) => !l.trimStart().startsWith('import '))
     .join('\n')
     .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalEachDirect, eachDirect, applyAttr, ul, li, button, text, component){
+  const wrapped = `(function(signalText, staticText, el, react, signalEachDirect, eachDirect, eachArm, rowHandle, applyAttr, ul, li, button, span, text, show, component){
     ${body}
     return { ${name} }
   })`
@@ -45,11 +45,15 @@ function compileAndLoadWithHelpers(
     react,
     signalEachDirect,
     eachDirect,
+    eachArm,
+    pathHandle,
     applyAttr,
     ul,
     li,
     button,
+    span,
     text,
+    show,
     (s: unknown) => s,
   )[name] as Parameters<typeof mountSignalComponent>[1]
 }
@@ -479,6 +483,123 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect((h.getState() as { picked?: number }).picked).toBe(20)
     container.querySelectorAll('button')[0]!.dispatchEvent(new Event('click'))
     expect((h.getState() as { picked?: number }).picked).toBe(10)
+  })
+
+  it('lowers + runs a helper each with a STRUCTURAL-child row via the eachArm MID-TIER', () => {
+    // The corpus-dominant un-lowerable shape: the row nests a `show` on a
+    // helper-param handle, so the factory bails — the render arm still compiles
+    // (item reads → ctx producers) and the verbatim show runs inside the row.
+    // Verify: compiled item bindings live, the nested show reacts to a
+    // STATE-ONLY change (items ref unchanged — the staleness case), and a
+    // dispatch-by-id handler works.
+    const ARM = `
+      import { component, ul, li, span, button, text, each, show } from '@llui/dom'
+      function rowsView(items, flag, send) {
+        return [
+          ul({}, [
+            each(items, {
+              key: (r) => r.id,
+              render: (item) => [
+                li({ class: 'arow' }, [
+                  span({ class: 'lbl' }, [text(item.at('label'))]),
+                  show(flag, () => [span({ class: 'hot' }, [text('!')])]),
+                  button({ class: 'rm', onClick: () => send({ type: 'rm', id: item.at('id').peek() }) }, [text('x')]),
+                ]),
+              ],
+            }),
+          ]),
+        ]
+      }
+      export const App = component({
+        init: () => [{ rows: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }], flag: false }, []],
+        update: (s, m) => {
+          if (m.type === 'rm') return [{ ...s, rows: s.rows.filter((r) => r.id !== m.id) }, []]
+          if (m.type === 'flip') return [{ ...s, flag: !s.flag }, []]
+          return [s, []]
+        },
+        view: ({ state, send }) => rowsView(state.at('rows'), state.at('flag'), send),
+      })
+    `
+    const out = transformSignalComponentSource(ARM)
+    expect(out).toContain('eachArm(items, (r) => r.id,') // mid-tier, items verbatim
+    expect(out).toContain("signalText((ctx) => ctx.item.label, ['item.label'])")
+    expect(out).toContain('show(flag') // structural child stays verbatim inside the arm
+    expect(out).not.toMatch(/(?<![A-Za-z])eachDirect\(/)
+
+    const def = compileAndLoadWithHelpers(ARM, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const txt = (sel: string): string[] =>
+      [...container.querySelectorAll(sel)].map((e) => e.textContent ?? '')
+    expect(txt('.lbl')).toEqual(['a', 'b'])
+    expect(container.querySelectorAll('.hot').length).toBe(0)
+
+    // nested verbatim show reacts to a state-only change (items ref unchanged)
+    h.send({ type: 'flip' })
+    expect(container.querySelectorAll('.hot').length).toBe(2)
+    h.send({ type: 'flip' })
+    expect(container.querySelectorAll('.hot').length).toBe(0)
+
+    // dispatch-by-id removes the row (handler peeks the live row ctx)
+    container.querySelectorAll('.rm')[0]!.dispatchEvent(new Event('click'))
+    expect(txt('.lbl')).toEqual(['b'])
+  })
+
+  it('binds a LEAKED row param to a rowHandle and runs the verbatim helper child live', () => {
+    // The delegation the factory can't reach (imperative helper body): the arm
+    // lowers, `item` is bound to a real runtime handle in the prelude, and the
+    // helper child runs on the authoring path INSIDE the compiled row — its
+    // reactive read updates when the item changes.
+    const LEAK = `
+      import { component, ul, li, span, text, each } from '@llui/dom'
+      function badge(item) {
+        const parts = []
+        parts.push(span({ class: 'b' }, [text(item.at('label'))]))
+        return parts[0]
+      }
+      function rowsView(items) {
+        return [ul({}, [each(items, {
+          key: (r) => r.id,
+          render: (item) => [li({ class: 'lrow' }, [badge(item)])],
+        })])]
+      }
+      export const App = component({
+        init: () => [{ rows: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }] }, []],
+        update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
+        view: ({ state }) => rowsView(state.at('rows')),
+      })
+    `
+    const out = transformSignalComponentSource(LEAK)
+    expect(out).toContain('eachArm(items')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
+    expect(out).toContain('badge(item)')
+
+    const def = compileAndLoadWithHelpers(LEAK, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const badges = (): string[] =>
+      [...container.querySelectorAll('.b')].map((e) => e.textContent ?? '')
+    expect(badges()).toEqual(['a', 'b'])
+
+    // in-place item update flows through the bound handle's reactive read
+    h.send({
+      type: 'set',
+      rows: [
+        { id: 1, label: 'A!' },
+        { id: 2, label: 'b' },
+      ],
+    })
+    expect(badges()).toEqual(['A!', 'b'])
+
+    // keyed reorder keeps each badge with its row (live ctx, not stale closure)
+    h.send({
+      type: 'set',
+      rows: [
+        { id: 2, label: 'b' },
+        { id: 1, label: 'A!' },
+      ],
+    })
+    expect(badges()).toEqual(['b', 'A!'])
   })
 
   it('inlines a same-file row HELPER and runs it (peek value + reactive item/state reads)', () => {

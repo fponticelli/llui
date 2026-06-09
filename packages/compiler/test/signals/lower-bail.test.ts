@@ -38,9 +38,10 @@ describe('onLowerBail — row-factory bail reasons', () => {
       })`),
     )
     expect(reasons(bails, 'each-direct')).toContain('row-local-signal-alias')
-    // block-body render also can't lower as a render arm
-    expect(reasons(bails, 'each-render')).toContain('arm-not-concise-array')
-    expect(out).toContain('each(') // stays verbatim
+    // the render ARM picks it up: the decl stays verbatim, `item` is bound to a
+    // real handle, and the alias becomes a genuine sub-handle at runtime.
+    expect(out).toContain('signalEach(')
+    expect(out).toContain("const item = rowHandle(getCtx, 'item')")
   })
 
   it('spread prop bails with row-prop-spread-or-shorthand', () => {
