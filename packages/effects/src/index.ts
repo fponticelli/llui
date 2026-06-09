@@ -509,28 +509,43 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
  *
  * The signal component's `onEffect` takes the effect + a `{ send }` api and may
  * return a cleanup (run on unmount) — there is no ambient `AbortSignal` like the
- * legacy runtime passed. This adapter owns one component-lifetime
- * `AbortController`: every effect is dispatched through the chain with its
- * `signal`, and the returned cleanup aborts it, so in-flight http / debounce /
- * interval / websocket effects tear down when the component unmounts (the chain's
- * own abort listener clears its pending registries).
+ * legacy runtime passed. This adapter owns one AbortController per MOUNT: every
+ * effect dispatched during a mount shares that mount's `signal`, and the returned
+ * cleanup aborts it, so in-flight http / debounce / interval / websocket effects
+ * tear down when the component unmounts (the chain's own abort listener clears its
+ * pending registries).
+ *
+ * Lifetime is per-mount, not per-definition. `asOnEffect(chain)` is evaluated once
+ * at the component literal, so the returned `onEffect` is reused across every mount
+ * of that definition (the runtime reads `def.onEffect`). A client-side re-mount
+ * (e.g. @llui/vike disposing + re-mounting a page on SPA navigation) must therefore
+ * get a FRESH, non-aborted controller — otherwise the previous unmount's abort
+ * leaks into the next mount and any async effect that guards on `signal.aborted`
+ * before its `send` silently drops its result, leaving state stuck mid-transition.
  *
  * Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
  */
 export function asOnEffect<E extends { type: string }, M>(
   chain: (ctx: EffectCtx<E, M>) => void,
 ): (effect: E, api: { send: (msg: M) => void }) => () => void {
-  // Lazily create the AbortController on first dispatch, NOT at factory-call time.
-  // `asOnEffect(chain)` is typically called at component-literal (module top-level)
-  // scope; constructing an AbortController there throws on Cloudflare Workers
-  // ("Disallowed operation called within global scope"). Deferring it to the first
-  // effect — which only runs inside the update cycle / a handler — keeps this a
-  // pure factory that's safe to call during module evaluation.
+  // Lazily (re)create the AbortController, NOT at factory-call time. `asOnEffect`
+  // typically runs at component-literal (module top-level) scope; constructing an
+  // AbortController there throws on Cloudflare Workers ("Disallowed operation called
+  // within global scope"). Deferring it to the first effect — which only runs inside
+  // the update cycle / a handler — keeps this a pure factory safe to call during
+  // module evaluation.
   let controller: AbortController | null = null
   return (effect, { send }) => {
-    if (controller === null) controller = new AbortController()
-    chain({ effect, send, signal: controller.signal })
-    return () => controller?.abort()
+    // A fresh controller for a fresh mount: recreate once the current one has been
+    // aborted by a prior unmount's cleanup, so a re-mount never inherits a dead
+    // signal. Effects within the same mount keep sharing the live controller.
+    if (controller === null || controller.signal.aborted) controller = new AbortController()
+    // Capture THIS dispatch's controller in the cleanup so a stale cleanup (e.g. a
+    // delayed unmount of a prior mount) aborts only the controller that was live at
+    // its dispatch — never a successor mount's live signal.
+    const active = controller
+    chain({ effect, send, signal: active.signal })
+    return () => active.abort()
   }
 }
 
