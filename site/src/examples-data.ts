@@ -94,7 +94,8 @@ export const EXAMPLES: ExampleMeta[] = [
     slug: 'markdown-editor',
     pkg: '@llui/example-markdown-editor',
     title: 'Markdown Editor',
-    blurb: 'A WYSIWYG Markdown editor on @llui/markdown-editor — toolbar, callouts, two-way source.',
+    blurb:
+      'A WYSIWYG Markdown editor on @llui/markdown-editor — toolbar, callouts, two-way source.',
   },
 ]
 
