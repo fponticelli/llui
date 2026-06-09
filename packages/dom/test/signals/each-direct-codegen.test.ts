@@ -525,4 +525,60 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     h.send({ type: 'mode', v: 'y' })
     expect(txt('.md')).toEqual(['y!', 'y!']) // component-state fan-out to all rows
   })
+
+  it('inlines a BARE-call delegation (render decl + multi-root ARRAY helper) and runs it', () => {
+    // The corpus-dominant real-world shape (dicerun2 grantRow): the render is a
+    // bare call `(grant) => grantRow(state, grant, send)` — no array wrap — with
+    // a leading peeked decl inside the HELPER, and the helper returns the
+    // documented Renderable ARRAY with TWO root elements. Verify the inlined row
+    // mounts both roots per row, binds reactive item/state reads, and that the
+    // handler's peeked id dispatches by row (both roots removed on revoke).
+    const BARE = `
+      import { component, div, span, button, text, each } from '@llui/dom'
+      function grantRow(st, grant, send) {
+        const uid = grant.peek().id
+        return [
+          div({ class: 'g-main' }, [
+            span({ class: 'em' }, [text(grant.at('email'))]),
+            span({ class: 'fl' }, [text(st.at('flag').map((f) => f + '?'))]),
+          ]),
+          div({ class: 'g-detail' }, [
+            button({ class: 'rv', onClick: () => send({ type: 'revoke', id: uid }) }, [text('revoke')]),
+          ]),
+        ]
+      }
+      export const App = component({
+        init: () => [{ grants: [{ id: 1, email: 'a@x' }, { id: 2, email: 'b@x' }], flag: 'beta' }, []],
+        update: (s, m) => {
+          if (m.type === 'revoke') return [{ ...s, grants: s.grants.filter((g) => g.id !== m.id) }, []]
+          if (m.type === 'flag') return [{ ...s, flag: m.v }, []]
+          return [s, []]
+        },
+        view: ({ state, send }) => [div({}, [each(state.at('grants'), { key: (g) => g.id, render: (grant) => grantRow(state, grant, send) })])],
+      })
+    `
+    const out = transformSignalComponentSource(BARE)
+    expect(out).toContain('signalEachDirect(') // bare-call delegation inlined → direct row
+    expect(out).toContain('const uid = getCtx().item.id') // helper's peek local inlined
+    expect(out).toContain('_sk[1]') // two skeleton roots cloned per row
+
+    const def = compileAndLoad(BARE, 'App')
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, def)
+    const txt = (sel: string): string[] =>
+      [...container.querySelectorAll(sel)].map((e) => e.textContent ?? '')
+    expect(container.querySelectorAll('.g-main').length).toBe(2)
+    expect(container.querySelectorAll('.g-detail').length).toBe(2)
+    expect(txt('.em')).toEqual(['a@x', 'b@x'])
+    expect(txt('.fl')).toEqual(['beta?', 'beta?'])
+
+    h.send({ type: 'flag', v: 'ga' })
+    expect(txt('.fl')).toEqual(['ga?', 'ga?']) // component-state fan-out
+
+    // dispatch-by-id via the helper's peeked local: revoke row 1 → BOTH its roots go
+    ;(container.querySelectorAll('.rv')[0] as HTMLButtonElement).click()
+    expect(txt('.em')).toEqual(['b@x'])
+    expect(container.querySelectorAll('.g-main').length).toBe(1)
+    expect(container.querySelectorAll('.g-detail').length).toBe(1)
+  })
 })

@@ -1500,6 +1500,31 @@ export interface BuildManifestOptions {
 }
 ```
 
+### `LowerBail`
+
+A lowering attempt that gave up and fell back to a slower path. Events are
+facts about ATTEMPTS, not final outcomes: an `each` whose row factory bails
+(`each-direct`) may still lower on the render-callback path (`signalEach`),
+and a pass-1 shape bail may be picked up by the pass-2 helper lowering —
+correlate with the transformed output to classify final tiers. Reason tokens
+are short, stable kebab-case strings meant to feed coverage telemetry and,
+later, user-facing `perf` diagnostics.
+
+```typescript
+export interface LowerBail {
+  /** which lowering gave up: the each row factory (`each-direct`), the each
+   * render-callback arm (`each-render`), a `show`/`branch` arm, the view-helper
+   * pass-2 `each` (`helper-each`), or same-file helper-row inlining
+   * (`inline-helper`, reported only once a same-file delegation target was
+   * actually identified). */
+  kind: 'each-direct' | 'each-render' | 'show' | 'branch' | 'helper-each' | 'inline-helper'
+  /** short stable reason token, e.g. 'row-local-signal-alias' */
+  reason: string
+  /** start offset of the bailing call / row render in the original source file */
+  pos: number
+}
+```
+
 ### `LintEdit`
 
 A single text replacement, as absolute char offsets into the linted source.

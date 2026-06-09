@@ -35,6 +35,37 @@ export function setAutoBatchContext(ctx: { sendName: string; used: boolean } | n
   autoBatch = ctx
 }
 
+// ── Lowering-bail telemetry ───────────────────────────────────────────────────
+/** A lowering attempt that gave up and fell back to a slower path. Events are
+ * facts about ATTEMPTS, not final outcomes: an `each` whose row factory bails
+ * (`each-direct`) may still lower on the render-callback path (`signalEach`),
+ * and a pass-1 shape bail may be picked up by the pass-2 helper lowering —
+ * correlate with the transformed output to classify final tiers. Reason tokens
+ * are short, stable kebab-case strings meant to feed coverage telemetry and,
+ * later, user-facing `perf` diagnostics. */
+export interface LowerBail {
+  /** which lowering gave up: the each row factory (`each-direct`), the each
+   * render-callback arm (`each-render`), a `show`/`branch` arm, the view-helper
+   * pass-2 `each` (`helper-each`), or same-file helper-row inlining
+   * (`inline-helper`, reported only once a same-file delegation target was
+   * actually identified). */
+  kind: 'each-direct' | 'each-render' | 'show' | 'branch' | 'helper-each' | 'inline-helper'
+  /** short stable reason token, e.g. 'row-local-signal-alias' */
+  reason: string
+  /** start offset of the bailing call / row render in the original source file */
+  pos: number
+}
+let bailHook: ((bail: LowerBail) => void) | null = null
+/** Set (or clear) the ambient bail-telemetry hook for the file being lowered.
+ * Module-level like the auto-batch/helper-decl contexts; the component transform
+ * sets it from `SignalTransformOptions.onLowerBail` and clears it in `finally`. */
+export function setLowerBailHook(fn: ((bail: LowerBail) => void) | null): void {
+  bailHook = fn
+}
+function reportBail(kind: LowerBail['kind'], reason: string, pos: number): void {
+  bailHook?.({ kind, reason, pos })
+}
+
 // ── Phase-2 helper-row inlining: same-file view-helper declarations ───────────
 // Set by the component transform (the whole file's top-level fn/arrow decls keyed
 // by name) before lowering; null otherwise. A row `render: (item) => [rowHelper(item,
@@ -108,52 +139,115 @@ function helperReturn(
   return null
 }
 
-/** If `fn` is a row render of the form `(params) => [helper(args)]` where `helper`
- * is a same-file view helper returning a SINGLE element, inline the helper's body
- * (params → args) and return the synthetic inlined render arrow + its source file.
+/** True when any identifier in `node` (excluding property-access names `obj.NAME`
+ * and object keys `{ NAME: … }`, but INCLUDING binding names — a duplicate `const`
+ * is a collision too) matches one of `names`. Used as the capture guard when
+ * prepending render-side decls to an inlined helper body: a helper that mentions
+ * a render-decl name was referring to its own module scope, and inlining the decl
+ * above it would capture the reference. */
+function referencesIdent(node: ts.Node, names: ReadonlySet<string>): boolean {
+  let found = false
+  const visit = (n: ts.Node): void => {
+    if (found) return
+    if (ts.isIdentifier(n) && names.has(n.text)) {
+      const p = n.parent
+      if (ts.isPropertyAccessExpression(p) && p.name === n) return // obj.NAME
+      if (ts.isPropertyAssignment(p) && p.name === n) return // { NAME: ... } key
+      found = true
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(node)
+  return found
+}
+
+/** If `fn` is a row render delegating to a same-file view helper — a bare call
+ * `(params) => helper(args)`, an array-wrapped `(params) => [helper(args)]`, or
+ * either with leading const/let decls in a block body — inline the helper's body
+ * (params → args, render decls prepended) and return the synthetic inlined render
+ * arrow + its source file. The helper may return a single element OR an array
+ * (the documented `Renderable` shape — its elements become the row's roots).
  * Reduces a helper row to a normal inline row that {@link lowerRowFactory} lowers.
  * Returns null when not inlinable (unknown/cross-file helper, arg/param mismatch,
- * hygiene failure, non-single-element render) — the row then stays on its path. */
+ * hygiene failure, multi-element render array) — the row then stays on its path. */
 function inlineHelperRender(
   fn: ts.Expression,
   sf: ts.SourceFile,
 ): { fn: ts.Expression; sf: ts.SourceFile } | null {
   if (!helperDecls) return null
-  const rb = rowBody(fn)
-  if (!rb || rb.decls.length > 0 || rb.arr.elements.length !== 1) return null
-  const callEl = rb.arr.elements[0]!
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  const rr = helperReturn(fn) // render's leading decls + returned expression
+  if (!rr) return null
+  let renderRet: ts.Expression = rr.ret
+  while (ts.isParenthesizedExpression(renderRet)) renderRet = renderRet.expression
+  let callEl: ts.Expression
+  if (ts.isArrayLiteralExpression(renderRet)) {
+    if (renderRet.elements.length !== 1) return null
+    callEl = renderRet.elements[0]!
+  } else {
+    callEl = renderRet // bare-call delegation `(item) => helper(args)`
+  }
   if (!ts.isCallExpression(callEl) || !ts.isIdentifier(callEl.expression)) return null
   const decl = helperDecls.get(callEl.expression.text)
   if (!decl) return null
+  // From here on the render IS a delegation to a known same-file helper — every
+  // failure below is a reportable inlining miss.
+  const bail = (reason: string): null => {
+    reportBail('inline-helper', reason, fn.getStart(sf))
+    return null
+  }
   const params = decl.parameters
-  if (params.length !== callEl.arguments.length) return null
+  if (params.length !== callEl.arguments.length) return bail('arg-count-mismatch')
   const subst = new Map<string, string>()
   for (let i = 0; i < params.length; i++) {
     const pn = params[i]!.name
-    if (!ts.isIdentifier(pn)) return null // destructured param — bail
+    if (!ts.isIdentifier(pn)) return bail('destructured-param')
     subst.set(pn.text, callEl.arguments[i]!.getText(sf))
   }
   const hr = helperReturn(decl)
-  if (!hr) return null
-  const retSub = substituteParams(hr.ret, sf, subst)
-  if (retSub === null) return null
-  // the helper returns a single element; the render array wraps it (`[E]`). If the
-  // helper itself returned an array, that's a nested-array shape we don't inline.
-  if (ts.isArrayLiteralExpression(hr.ret)) return null
-  const declSubs: string[] = []
+  if (!hr) return bail('helper-body-not-inlinable')
+  let helperRet: ts.Expression = hr.ret
+  while (ts.isParenthesizedExpression(helperRet)) helperRet = helperRet.expression
+  // Render-side decls are prepended to the inlined body — guard against capture:
+  // any render-decl name the (pre-substitution) helper body mentions referred to
+  // the helper's module scope, and a duplicate decl name is a syntax collision.
+  // Helper PARAM names are excluded: inside the helper a param shadows module
+  // scope, so a matching identifier is a param reference — substituted away, not
+  // captured. (A param can't also be redeclared by a helper-local `const`, so the
+  // single scan covers the duplicate-decl collision too.)
+  if (rr.declStmts.length > 0) {
+    const renderDeclNames = new Set<string>()
+    for (const ds of rr.declStmts) {
+      for (const d of ds.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name)) return bail('render-decl-destructured')
+        renderDeclNames.add(d.name.text)
+      }
+    }
+    const scanNames = new Set(renderDeclNames)
+    for (const p of params) {
+      if (ts.isIdentifier(p.name)) scanNames.delete(p.name.text)
+    }
+    const helperParts: ts.Node[] = [...hr.declStmts, helperRet]
+    if (scanNames.size > 0 && helperParts.some((p) => referencesIdent(p, scanNames))) {
+      return bail('decl-capture-risk')
+    }
+  }
+  const retSub = substituteParams(helperRet, sf, subst)
+  if (retSub === null) return bail('param-substitution-hygiene')
+  const declSubs: string[] = rr.declStmts.map((d) => d.getText(sf).replace(/;\s*$/, ''))
   for (const d of hr.declStmts) {
     const s = substituteParams(d, sf, subst)
-    if (s === null) return null
+    if (s === null) return bail('param-substitution-hygiene')
     declSubs.push(s.replace(/;\s*$/, ''))
   }
-  const renderParams =
-    ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)
-      ? fn.parameters.map((p) => p.getText(sf)).join(', ')
-      : ''
+  // An array-returning helper IS the row's node array; a single element is wrapped.
+  const retArr = ts.isArrayLiteralExpression(helperRet) ? retSub : `[${retSub}]`
+  const renderParams = fn.parameters.map((p) => p.getText(sf)).join(', ')
   const inlinedSrc =
     declSubs.length > 0
-      ? `(${renderParams}) => { ${declSubs.join('; ')}; return [${retSub}] }`
-      : `(${renderParams}) => [${retSub}]`
+      ? `(${renderParams}) => { ${declSubs.join('; ')}; return ${retArr} }`
+      : `(${renderParams}) => ${retArr}`
   const newSf = ts.createSourceFile(
     '__inl.ts',
     `const __r = ${inlinedSrc}`,
@@ -170,7 +264,7 @@ function inlineHelperRender(
     n.forEachChild(find)
   }
   find(newSf)
-  return arrow ? { fn: arrow, sf: newSf } : null
+  return arrow ? { fn: arrow, sf: newSf } : bail('internal-reparse')
 }
 
 /** True if `block` is a straight-line sequence of two-or-more bare `send(...)`
@@ -470,11 +564,20 @@ function lowerArmArray(
   armRoots: Roots,
   guardParams: readonly (string | null)[],
   collect?: Set<string>,
+  onBail?: (reason: string) => void,
 ): string | null {
   const arr = arrowReturnArray(fn)
-  if (!arr) return null
+  if (!arr) {
+    onBail?.('arm-not-concise-array')
+    return null
+  }
   const src = `[${arr.elements.map((e) => transformNodeExpr(e, sf, armRoots, collect)).join(', ')}]`
-  for (const p of guardParams) if (p !== null && loweredLeaksIdent(src, p)) return null
+  for (const p of guardParams) {
+    if (p !== null && loweredLeaksIdent(src, p)) {
+      onBail?.(`arm-param-leak:${p}`)
+      return null
+    }
+  }
   return src
 }
 
@@ -510,6 +613,19 @@ export function transformNodeExpr(
       // each(items, { key, render: (item, index) => [...] }) -> combined-ctx rows.
       const items = node.arguments[0]
       const opts = node.arguments[1]
+      const eachPos = node.getStart(sf)
+      if (items && opts && !(ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots))) {
+        // shape guard failed — neither lowering path runs from pass 1. (A
+        // non-rooted items source may still be picked up by the pass-2 helper
+        // lowering, which keeps the items handle verbatim.)
+        reportBail(
+          'each-direct',
+          ts.isObjectLiteralExpression(opts)
+            ? 'items-not-rooted-signal'
+            : 'opts-not-object-literal',
+          eachPos,
+        )
+      }
       if (items && opts && ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots)) {
         let keySrc = '(x) => x'
         let renderFn: ts.Expression | null = null
@@ -557,6 +673,7 @@ export function transformNodeExpr(
         const factory =
           renderFn && lowerRowFactory(renderFn, itemParam, indexParam, sf, factoryDeps)
         if (factory) return `signalEachDirect(${emitSource(factoryDeps)}, ${keySrc}, ${factory})`
+        if (!renderFn) reportBail('each-direct', 'missing-render', eachPos)
 
         // Render-callback path: lowerable rows the factory can't build directly
         // (structural children, helper calls) but that DON'T leak the row param into
@@ -565,7 +682,14 @@ export function transformNodeExpr(
         const renderDeps = new Set<string>()
         const body =
           renderFn &&
-          lowerArmArray(renderFn, sf, eachRoots(itemParam), [itemParam, indexParam], renderDeps)
+          lowerArmArray(
+            renderFn,
+            sf,
+            eachRoots(itemParam),
+            [itemParam, indexParam],
+            renderDeps,
+            (r) => reportBail('each-render', r, eachPos),
+          )
         if (body != null) return `signalEach(${emitSource(renderDeps)}, ${keySrc}, () => ${body})`
         // unlowerable render -> fall through to verbatim (runtime authoring each)
       }
@@ -578,6 +702,10 @@ export function transformNodeExpr(
       const cond = node.arguments[0]
       const render = node.arguments[1]
       const orElse = node.arguments[2]
+      const showPos = node.getStart(sf)
+      if (cond && render && !isSignalExpr(cond, roots)) {
+        reportBail('show', 'cond-not-rooted-signal', showPos)
+      }
       if (cond && render && isSignalExpr(cond, roots)) {
         const condLowered = signalToProduce(cond, sf, roots)
         const condPath = signalPathOf(cond, roots)
@@ -594,9 +722,13 @@ export function transformNodeExpr(
         // the cond isn't a simple path, so it isn't rebased at all), or either arm
         // is a non-array body, the lowered `() => [...]` arm can't bind it. Fall
         // back to the runtime authoring `show`, which binds a real narrowed handle.
-        const thenBody = lowerArmArray(render, sf, thenRoots, [narrowed], collect)
+        const thenBody = lowerArmArray(render, sf, thenRoots, [narrowed], collect, (r) =>
+          reportBail('show', r, showPos),
+        )
         const elseBody = orElse
-          ? lowerArmArray(orElse, sf, roots, [firstParam(orElse)], collect)
+          ? lowerArmArray(orElse, sf, roots, [firstParam(orElse)], collect, (r) =>
+              reportBail('show', r, showPos),
+            )
           : null
         if (thenBody != null && (!orElse || elseBody != null)) {
           // Propagate the condition's deps to the enclosing collector so a parent
@@ -618,6 +750,25 @@ export function transformNodeExpr(
       const discArg = node.arguments[1]
       const arms = node.arguments[2]
       const disc = discArg ? discriminantProp(discArg) : null
+      const branchPos = node.getStart(sf)
+      const matches3 =
+        Boolean(value) &&
+        disc !== null &&
+        Boolean(arms) &&
+        ts.isObjectLiteralExpression(arms!) &&
+        isSignalExpr(value!, roots)
+      const matches2 =
+        Boolean(value) &&
+        Boolean(discArg) &&
+        ts.isObjectLiteralExpression(discArg!) &&
+        isSignalExpr(value!, roots)
+      if (value && discArg && !matches3 && !matches2) {
+        reportBail(
+          'branch',
+          isSignalExpr(value, roots) ? 'shape-not-lowerable' : 'value-not-rooted-signal',
+          branchPos,
+        )
+      }
       if (
         value &&
         disc !== null &&
@@ -641,6 +792,7 @@ export function transformNodeExpr(
         let armsOk = true
         for (const p of arms.properties) {
           if (!ts.isPropertyAssignment(p)) {
+            reportBail('branch', 'arm-spread-or-accessor', branchPos)
             armsOk = false
             break
           }
@@ -660,7 +812,9 @@ export function transformNodeExpr(
                   [vParam, { value: valueLowered.produce, dep: valuePath }],
                 ]) as Roots)
               : roots
-          const armBody = lowerArmArray(fn, sf, armRoots, [vParam], collect)
+          const armBody = lowerArmArray(fn, sf, armRoots, [vParam], collect, (r) =>
+            reportBail('branch', r, branchPos),
+          )
           if (armBody == null) {
             armsOk = false
             break
@@ -683,6 +837,7 @@ export function transformNodeExpr(
         let armsOk = true
         for (const p of discArg.properties) {
           if (!ts.isPropertyAssignment(p)) {
+            reportBail('branch', 'arm-spread-or-accessor', branchPos)
             armsOk = false
             break
           }
@@ -692,6 +847,7 @@ export function transformNodeExpr(
             roots,
             [firstParam(p.initializer)],
             collect,
+            (r) => reportBail('branch', r, branchPos),
           )
           if (armBody == null) {
             armsOk = false
@@ -854,8 +1010,21 @@ function lowerRowFactory(
   const inlined = inlineHelperRender(fnIn, sfIn)
   const fn = inlined ? inlined.fn : fnIn
   const sf = inlined ? inlined.sf : sfIn
+  // Bail telemetry: every leaf failure below reports once against the ORIGINAL
+  // render's position (the inlined synthetic file has no meaningful offsets).
+  // Propagation sites (a child's failure bubbling up) stay silent so a single
+  // factory bail produces a single event.
+  const bailPos = fnIn.getStart(sfIn)
+  const bail = (reason: string): null => {
+    reportBail('each-direct', reason, bailPos)
+    return null
+  }
+  const bailF = (reason: string): false => {
+    reportBail('each-direct', reason, bailPos)
+    return false
+  }
   const body = rowBody(fn)
-  if (!body || body.arr.elements.length === 0) return null
+  if (!body || body.arr.elements.length === 0) return bail('row-body-not-array')
   const { decls, arr } = body
   const roots = eachRoots(itemParam)
   const hRoots = handlerRoots(itemParam, indexParam)
@@ -901,8 +1070,10 @@ function lowerRowFactory(
   // the path) → bail to the authoring path.
   for (const ds of decls) {
     for (const d of ds.declarationList.declarations) {
-      if (!ts.isIdentifier(d.name) || !d.initializer) return null
-      if (isSignalHandleExpr(d.initializer, roots)) return null // handle alias — opaque
+      if (!ts.isIdentifier(d.name) || !d.initializer) {
+        return bail('row-local-destructured-or-uninitialized')
+      }
+      if (isSignalHandleExpr(d.initializer, roots)) return bail('row-local-signal-alias') // handle alias — opaque
       wire.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
     }
   }
@@ -923,11 +1094,11 @@ function lowerRowFactory(
       skel.push(`${parentVar}.appendChild(doc.createTextNode(${JSON.stringify(child.text)}))`)
       return true
     }
-    if (!ts.isCallExpression(child)) return false
+    if (!ts.isCallExpression(child)) return bailF('row-child-unsupported')
     const callee = calleeName(child)
     if (callee === 'text') {
       const arg = child.arguments[0]
-      if (!arg) return false
+      if (!arg) return bailF('row-text-empty')
       if (ts.isStringLiteralLike(arg)) {
         skel.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
         return true
@@ -939,7 +1110,7 @@ function lowerRowFactory(
         // ctx, a leaked item/index handle is caught by the final guard. (A `.map`/`.at`
         // arg is a signal → the reactive path below.) Bail if it reads a non-root
         // signal handle (e.g. a helper param) reactively — that must stay reactive.
-        if (referencesNonRootSignal(arg, roots)) return false
+        if (referencesNonRootSignal(arg, roots)) return bailF('row-text-reads-nonroot-signal')
         const id = freshId()
         nodePath.set(id, { root, path })
         skel.push(`const _n${id} = doc.createTextNode('')`)
@@ -964,7 +1135,7 @@ function lowerRowFactory(
       skel.push(`${parentVar}.appendChild(_n${cid})`)
       return true
     }
-    return false // structural / helper / unknown -> bail
+    return bailF('row-child-unsupported') // structural / helper / unknown -> bail
   }
 
   // Emit skeleton construction for an element-helper call at child-index `path` under
@@ -990,17 +1161,17 @@ function lowerRowFactory(
       propsExpr = a0
       if (a1) {
         if (ts.isArrayLiteralExpression(a1)) childrenExpr = a1
-        else return null // dynamic children
+        else return bail('row-elem-dynamic-children')
       }
     } else {
-      return null // dynamic args
+      return bail('row-elem-dynamic-args')
     }
     const id = freshId()
     nodePath.set(id, { root, path })
     skel.push(`const _n${id} = doc.createElement(${JSON.stringify(callee)})`)
     if (propsExpr) {
       for (const p of propsExpr.properties) {
-        if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
+        if (!ts.isPropertyAssignment(p)) return bail('row-prop-spread-or-shorthand')
         // The UNQUOTED property name. `p.name.getText()` keeps the source quotes
         // for a string-literal key (`'aria-hidden'` → emits `setAttribute("'aria-
         // hidden'", …)`, a literally-misnamed attribute) — use `.text`, and bail
@@ -1010,7 +1181,7 @@ function lowerRowFactory(
           !ts.isStringLiteralLike(p.name) &&
           !ts.isNumericLiteral(p.name)
         )
-          return null
+          return bail('row-prop-computed-key')
         const name = p.name.text
         if (/^on[A-Z]/.test(name)) {
           // Event handler. Only a plain function expression is bound directly — its
@@ -1021,7 +1192,9 @@ function lowerRowFactory(
           // guard below, which bails the whole factory to the render path. Attached
           // per clone to the located node.
           const init = p.initializer
-          if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) return null
+          if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) {
+            return bail('row-handler-not-inline-fn')
+          }
           const handlerSrc = emitHandler(init, sf, hRoots)
           wire.push(
             `${locate(id)}.addEventListener(${JSON.stringify(eventName(name))}, ${handlerSrc})`,
@@ -1041,7 +1214,9 @@ function lowerRowFactory(
           )
           continue
         }
-        if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) return null // static IDL/style
+        if (name.startsWith('style.') || DIRECT_SKIP_ATTRS.has(name)) {
+          return bail('row-prop-static-idl-or-style')
+        }
         const init = p.initializer
         if (ts.isStringLiteralLike(init) || ts.isNumericLiteral(init)) {
           skel.push(`_n${id}.setAttribute(${JSON.stringify(name)}, ${JSON.stringify(init.text)})`)
@@ -1050,7 +1225,7 @@ function lowerRowFactory(
         } else if (init.kind === ts.SyntaxKind.FalseKeyword) {
           // falsy boolean attr -> absent; nothing to emit
         } else if (referencesNonRootSignal(init, roots)) {
-          return null // a non-root signal handle (e.g. helper param) read reactively
+          return bail('row-prop-reads-nonroot-signal') // a non-root handle read reactively
         } else {
           // Static (non-signal) value computed from row locals / view scope — apply
           // once PER CLONE via `applyAttr` on the located node (`.peek()` reads → live
@@ -1075,9 +1250,9 @@ function lowerRowFactory(
   for (const el of arr.elements) {
     // A keyed row's top-level node must be a stable ELEMENT (buildSignalEach
     // rejects a bare structural fragment as a row root).
-    if (!ts.isCallExpression(el)) return null
+    if (!ts.isCallExpression(el)) return bail('row-top-not-element')
     const callee = calleeName(el)
-    if (!callee || !ELEMENT_HELPERS.has(callee)) return null
+    if (!callee || !ELEMENT_HELPERS.has(callee)) return bail('row-top-not-element')
     const id = buildElement(el, topIds.length, [])
     if (id === null) return null
     topIds.push(id)
@@ -1098,8 +1273,10 @@ function lowerRowFactory(
   // the handle) would be `item is not defined` at runtime. Bail so the render path
   // (real item/index handles) takes it instead. (`getCtx().item`/`ctx.item` reads
   // are `.`-prefixed, so they don't trip this — see `loweredLeaksIdent`.)
-  if (loweredLeaksIdent(src, itemParam)) return null
-  if (indexParam !== null && loweredLeaksIdent(src, indexParam)) return null
+  if (loweredLeaksIdent(src, itemParam)) return bail(`row-param-leak:${itemParam}`)
+  if (indexParam !== null && loweredLeaksIdent(src, indexParam)) {
+    return bail(`row-param-leak:${indexParam}`)
+  }
   return src
 }
 
@@ -1118,15 +1295,22 @@ const DIRECT_SKIP_ATTRS = new Set(['value', 'checked', 'selected', 'indeterminat
  * handle reactively (guarded inside `lowerRowFactory`). Used by the view-helper pass. */
 export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): string | null {
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'each') return null
+  const pos = node.getStart(sf)
+  const bail = (reason: string): null => {
+    reportBail('helper-each', reason, pos)
+    return null
+  }
   const items = node.arguments[0]
   const opts = node.arguments[1]
-  if (!items || !opts || !ts.isObjectLiteralExpression(opts)) return null
+  if (!items || !opts || !ts.isObjectLiteralExpression(opts)) {
+    return bail('opts-missing-or-not-object')
+  }
   let keySrc: string | null = null
   let renderFn: ts.Expression | null = null
   let itemParam = 'item'
   let indexParam: string | null = null
   for (const p of opts.properties) {
-    if (!ts.isPropertyAssignment(p)) return null // spread / shorthand / method
+    if (!ts.isPropertyAssignment(p)) return bail('opt-spread-or-shorthand')
     const name = p.name.getText(sf)
     if (name === 'key') keySrc = p.initializer.getText(sf)
     else if (name === 'render') {
@@ -1137,11 +1321,11 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
         if (renderFn.parameters[1] && ts.isIdentifier(renderFn.parameters[1].name))
           indexParam = renderFn.parameters[1].name.text
       }
-    } else return null // an unrecognized opt — bail conservatively
+    } else return bail(`unrecognized-opt:${name}`) // bail conservatively
   }
-  if (keySrc === null || !renderFn) return null
+  if (keySrc === null || !renderFn) return bail('missing-key-or-render')
   const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf)
-  if (!factory) return null
+  if (!factory) return null // the factory reported its own bail reason
   return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory})`
 }
 

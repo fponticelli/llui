@@ -42,4 +42,12 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <h3>Vike Layout (SSR)</h3>
     <p>Persistent nested layouts with @llui/vike, prerendered to static HTML.</p>
   </a>
+  <a class="example-card" href="/examples/markdown-showcase">
+    <h3>Markdown Showcase</h3>
+    <p>A reactive markdown() renderer with streaming, custom node renderers, and themes.</p>
+  </a>
+  <a class="example-card" href="/examples/markdown-editor">
+    <h3>Markdown Editor</h3>
+    <p>A WYSIWYG Markdown editor on @llui/markdown-editor — toolbar, callouts, two-way source.</p>
+  </a>
 </div>

@@ -17,6 +17,8 @@ import {
   setAutoBatchContext,
   lowerHelperEach,
   setHelperDecls,
+  setLowerBailHook,
+  type LowerBail,
 } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { applyTextEdits, type TextEdit } from './apply-edits.js'
@@ -46,6 +48,10 @@ export interface SignalTransformOptions {
   typeSources?: {
     state?: { source: string; typeName: string }
   }
+  /** Lowering-bail telemetry: called for every lowering ATTEMPT that gave up and
+   * fell back to a slower path (see {@link LowerBail}). Coverage tooling and the
+   * future `perf` diagnostics channel consume this; it does not affect output. */
+  onLowerBail?: (bail: LowerBail) => void
 }
 
 const RUNTIME_HELPERS = [
@@ -212,6 +218,7 @@ export function transformSignalComponentSource(
     }
   }
   setHelperDecls(helpers)
+  setLowerBailHook(opts.onLowerBail ?? null)
 
   const visit = (node: ts.Node): void => {
     if (
@@ -300,6 +307,7 @@ export function transformSignalComponentSource(
   } finally {
     setHelperDecls(null)
     setAutoBatchContext(null)
+    setLowerBailHook(null)
   }
 
   if (!transformedAny) return source

@@ -13,6 +13,7 @@ export * from './manifest-io.js'
 export * from './manifest-resolve.js'
 export * from './build-manifest.js'
 export { transformSignalComponentSource } from './signals/transform-component.js'
+export { type LowerBail } from './signals/transform-view.js'
 export {
   lintSignalSource,
   applyLintFixes,

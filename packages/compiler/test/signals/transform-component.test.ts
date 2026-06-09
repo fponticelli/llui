@@ -484,7 +484,7 @@ describe('transformSignalComponentSource', () => {
       expect((out.match(/(?<![A-Za-z])eachDirect\(/g) ?? []).length).toBe(1)
     })
 
-    it('bails inlining when the helper returns an ARRAY (nested-array shape)', () => {
+    it('inlines a helper returning an ARRAY (the documented Renderable shape)', () => {
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
         'function row(item) { return [div({}, [text(item.at("x"))])] }',
@@ -492,7 +492,44 @@ describe('transformSignalComponentSource', () => {
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
-      expect(out).not.toContain('signalEachDirect(')
+      expect(out).toContain('signalEachDirect(')
+    })
+
+    it('inlines a MULTI-element array helper (row with two root nodes)', () => {
+      const src = [
+        "import { component, ul, li, text, each } from '@llui/dom'",
+        'function row(item) { return [li({}, [text(item.at("x"))]), li({}, [text("detail")])] }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEachDirect(')
+      // both top roots are cloned per row
+      expect(out).toContain('_sk[1]')
+    })
+
+    it('inlines a BARE-call delegation to a multi-arg array-returning helper (grantRow shape)', () => {
+      const src = [
+        "import { component, table, tr, td, text, each } from '@llui/dom'",
+        'function grantRow(state, grant, flagKey, send) {',
+        '  const userId = grant.peek().userId',
+        '  return [tr({ class: "r" }, [',
+        '    td({}, [text(grant.at("email"))]),',
+        '    td({}, [text(state.at("flags").map((f) => f[flagKey] ?? "—"))]),',
+        '    td({ onClick: () => send({ type: "revoke", userId }) }, [text("revoke")]),',
+        '  ])]',
+        '}',
+        'const C = component({',
+        '  init: () => ({ grants: [], flags: {} }),',
+        '  update: (s) => s,',
+        '  view: ({ state, send }) => [table({}, [each(state.at("grants"), { key: (g) => g.userId, render: (grant) => grantRow(state, grant, "beta", send) })])],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEachDirect(')
+      expect(out).toContain('const userId = getCtx().item.userId') // helper's peek local inlined
+      expect(out).toContain('ctx.state.flags') // state arg substituted into a rooted binding
     })
 
     it('bails inlining a RECURSIVE helper (its nested each is a structural child)', () => {

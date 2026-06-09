@@ -108,11 +108,44 @@ The old framing ("jfb create-ops are layout-bound; don't micro-opt JS there") co
 - **Default microtask/rAF auto-batching** — rejected (see Opportunity B): breaks the synchronous contract for no paint saving; only viable as an opt-in mode (option 4).
 - **Element-level dirty tracking** — see Opportunity D: measured net-negative (Solid slower; gap is reducer allocs, not scan; large lists use `virtualEach`).
 
+## Lowering-coverage telemetry + inlining lifts — ✅ SHIPPED (2026-06-09)
+
+Real-app coverage measurement (dicerun2 ~0.11, dungeonlogs ~0.10, llui examples) found the
+fast path reaches a minority of real `each` sites (dicerun2: 15/75 direct), and that the
+dominant verbatim cause is the **documented helper-composition style**, not exotic bails.
+
+- **`onLowerBail` hook** (`SignalTransformOptions.onLowerBail`, `LowerBail` in
+  `transform-view.ts`): every lowering ATTEMPT that gives up reports a stable kebab-case
+  reason + position. Events are attempt-facts (a factory bail may still lower via
+  `signalEach`); they feed coverage tooling and are the seed of the reserved `perf`
+  diagnostics channel. Tests: `test/signals/lower-bail.test.ts`.
+- **Three inlining lifts** (`inlineHelperRender`): bare-call delegation
+  `(item) => helper(args)` (no array wrap needed), helpers returning the documented
+  `Renderable` ARRAY (elements become the row's roots — multi-root rows clone `_sk[1]`),
+  and leading render-side decls (capture-guarded: a render-decl name the pre-substitution
+  helper body mentions → `decl-capture-risk` bail; helper params excluded since they
+  shadow module scope). E2E: `each-direct-codegen.test.ts` (grantRow shape: bare call +
+  peeked local + 2-root array + dispatch-by-id).
+- **Measured corpus result after the lifts:** +1 direct site (the canonical grantRow). The
+  remaining mass is behind harder walls, exact post-lift ranking: `row-child-unsupported`
+  27 (rows with structural/helper children), `row-body-not-array` 20 (imperative render
+  bodies), `row-top-not-element` 14 (cross-file delegation targets), `helper-body-not-
+inlinable` 11 (imperative helper bodies — `children.push` style), spread-props 6
+  (connect-part bags).
+- **Key structural finding — pass 2 has NO mid-tier.** A component-view `each` whose row
+  has a structural child falls back to `signalEach` (compiled render arm); a HELPER each
+  has only factory-or-verbatim, so `signalEach` is 0 across the entire corpus. A pass-2
+  render-arm equivalent (authoring `each` with a compiled row) is the single biggest
+  remaining coverage lever short of the cross-file ABI; it needs a runtime contract
+  decision (the helper row's reads root in call-site handles, not component state).
+
 ## Suggested order (remaining)
 
 1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.
 2. ~~**B** — `batch()` + drain-coalescing substrate + compiler auto-wrap.~~ ✅ shipped.
 3. ~~**C** — cross-function row lowering (block-body, view-helper coverage, same-file inlining).~~ ✅ shipped.
-4. **Phase 3 of C** — precompiled-library row-factory ABI. Only if shipping precompiled component packages. See cross-function-row-lowering.md.
-5. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.
-6. ~~Element-level dirty tracking~~ — analyzed, **not recommended** (Opportunity D).
+4. **Pass-2 mid-tier** — a render-arm lowering for HELPER eaches whose rows have structural children (the `signalEach` equivalent for call-site-rooted items). Largest remaining coverage lever per the 2026-06-09 corpus ranking; needs a runtime-contract decision first.
+5. **Surface `onLowerBail` as `perf` diagnostics** — the reason tokens are stable; wire them into the reserved `'perf'` diagnostic category so authors (LLMs) see "this each didn't lower because X" at build time.
+6. **Phase 3 of C** — precompiled-library row-factory ABI. The corpus showed the trigger is real (dicerun2 consumes published `@llui/components`; `row-top-not-element` 14 ≈ cross-file delegation). See cross-function-row-lowering.md.
+7. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.
+8. ~~Element-level dirty tracking~~ — analyzed, **not recommended** (Opportunity D).

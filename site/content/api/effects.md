@@ -409,11 +409,18 @@ Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
 the signal-runtime `onEffect` shape: `(effect, { send }) => cleanup`.
 The signal component's `onEffect` takes the effect + a `{ send }` api and may
 return a cleanup (run on unmount) — there is no ambient `AbortSignal` like the
-legacy runtime passed. This adapter owns one component-lifetime
-`AbortController`: every effect is dispatched through the chain with its
-`signal`, and the returned cleanup aborts it, so in-flight http / debounce /
-interval / websocket effects tear down when the component unmounts (the chain's
-own abort listener clears its pending registries).
+legacy runtime passed. This adapter owns one AbortController per MOUNT: every
+effect dispatched during a mount shares that mount's `signal`, and the returned
+cleanup aborts it, so in-flight http / debounce / interval / websocket effects
+tear down when the component unmounts (the chain's own abort listener clears its
+pending registries).
+Lifetime is per-mount, not per-definition. `asOnEffect(chain)` is evaluated once
+at the component literal, so the returned `onEffect` is reused across every mount
+of that definition (the runtime reads `def.onEffect`). A client-side re-mount
+(e.g. @llui/vike disposing + re-mounting a page on SPA navigation) must therefore
+get a FRESH, non-aborted controller — otherwise the previous unmount's abort
+leaks into the next mount and any async effect that guards on `signal.aborted`
+before its `send` silently drops its result, leaving state stuck mid-transition.
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
 
 ```typescript
