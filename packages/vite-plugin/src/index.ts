@@ -311,6 +311,21 @@ export interface LluiPluginOptions {
   transitions?: boolean
 
   /**
+   * Surface compiler `perf` diagnostics as Vite warnings. Currently one
+   * diagnostic exists: `llui/each-verbatim` — an `each` whose rows did not
+   * compile to the cloneNode RowFactory (nor the render-callback lowering)
+   * and render via the runtime authoring path instead, paying per-row
+   * construction overhead. The message names the bail reason(s) with an
+   * actionable hint (e.g. a row delegating to an imported helper, spread
+   * connect-part props, an imperative render body).
+   *
+   * Advisory only — never blocks the build (a verbatim `each` is fully
+   * correct, just slower per row). **Default: on in dev mode, off in
+   * build.** Pass `false` to silence, `true` to also warn during builds.
+   */
+  perfDiagnostics?: boolean
+
+  /**
    * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
    * cross-file walker). When enabled, the plugin builds a `ts.Program`
    * over the project at `configResolved` and feeds each `transform` call
@@ -810,6 +825,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let mcpChild: ChildProcess | null = null
   const agent = options.agent ?? false
   const transitions = options.transitions ?? false
+  const perfDiagnosticsOpt = options.perfDiagnostics
   // Set in `configResolved` to the Vite project root. Stays null when
   // `transform` is invoked outside the normal plugin lifecycle (e.g.
   // unit tests that call the hook directly) — those callers don't get
@@ -1331,17 +1347,26 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       }
 
       // A SIGNAL FILE: imports the `@llui/dom` runtime surface and has a
-      // `component(`. That pair is unambiguous — `@llui/dom` IS the signal runtime
-      // (the legacy runtime is gone), and a file may use `.at()`, only `.map()`, or
-      // a fully static view. The transform LOWERS the direct view (an
-      // optimization); anything it can't lower (view-helper functions, block
-      // bodies) runs via the runtime authoring helpers (text/el/each/… consume
-      // runtime signal handles). A cheap string pre-check avoids the extra parse on
-      // non-component files. (`@llui/dom/internal`, `/ssr/*`, `/devtools` don't
-      // match the closing-quote-anchored pattern, so type-only or SSR-env imports
-      // never trip it.)
-      if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom['"]/.test(code)) {
-        sawSignalComponent = true
+      // `component(` — OR an `each(` in a helper-only module. `@llui/dom` IS the
+      // signal runtime (the legacy runtime is gone). The transform LOWERS the
+      // direct view (an optimization); anything it can't lower (view-helper
+      // functions, block bodies) runs via the runtime authoring helpers
+      // (text/el/each/… consume runtime signal handles). Helper-only modules
+      // (no `component(`) are routed for their `each(` sites: pass 2 lowers
+      // those rows to `eachDirect` factories — without routing they'd run
+      // verbatim in production regardless of lowerability (real apps keep most
+      // eaches in helper modules). A cheap string pre-check avoids the extra
+      // parse on irrelevant files. (`@llui/dom/internal`, `/ssr/*`, `/devtools`
+      // don't match the closing-quote-anchored pattern, so type-only or SSR-env
+      // imports never trip it.)
+      const hasComponentCall = /component\s*[<(]/.test(code)
+      if (
+        (hasComponentCall || /\beach\s*\(/.test(code)) &&
+        /from\s*['"]@llui\/dom['"]/.test(code)
+      ) {
+        // The build-integrity scan ("did anything compile?") keys off real
+        // component files only — a helper-only match must not arm it.
+        if (hasComponentCall) sawSignalComponent = true
         // Enforce signal lint rules. Lint the AUTHORED source. Two channels:
         //  - `convention` diagnostics carry a runtime-neutral rename fix (e.g.
         //    `tabIndex` → `tabindex`); auto-apply them to the emitted code and
@@ -1378,7 +1403,8 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
         // Resolve cross-file Msg/State/Effect types (same machinery the legacy
         // path uses) so types in sibling files still produce full agent metadata.
-        const wantMeta = Boolean(agent) || devMode
+        // Helper-only files have no component to annotate — skip the resolution.
+        const wantMeta = hasComponentCall && (Boolean(agent) || devMode)
         let signalTypeSources: ExternalTypeSources | undefined
         let signalPreExtracted: PreExtractedSchemas | undefined
         if (wantMeta && typeof this.resolve === 'function') {
@@ -1388,10 +1414,22 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             preExtractCompositional(code, id, rr),
           ])
         }
+        // Perf diagnostics (llui/each-verbatim): advisory warnings for each
+        // sites that render via the authoring path. Default on in dev only.
+        const perfDiagnosticsOn = perfDiagnosticsOpt ?? devMode
+        const perfWarn = perfDiagnosticsOn
+          ? (d: import('@llui/compiler').Diagnostic): void => {
+              const rel = relative(crossFileRoot ?? process.cwd(), id)
+              const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
+              const { line, column } = d.location.range.start
+              this.warn(`${display}:${line + 1}:${column + 1}  [${d.id}] ${d.message}`)
+            }
+          : undefined
         let out = transformSignalComponentSource(code, {
           emitAgentMetadata: Boolean(agent),
           devMode,
           fileName: id,
+          onPerfDiagnostic: perfWarn,
           preExtracted: signalPreExtracted,
           typeSources: signalTypeSources?.state ? { state: signalTypeSources.state } : undefined,
         })

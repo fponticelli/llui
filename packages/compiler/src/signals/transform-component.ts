@@ -18,10 +18,13 @@ import {
   lowerHelperEach,
   setHelperDecls,
   setLowerBailHook,
+  setEachLoweredHook,
   type LowerBail,
 } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { applyTextEdits, type TextEdit } from './apply-edits.js'
+import { perfDiagnosticsForFile } from './perf-diagnostics.js'
+import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
 import { extractMsgAnnotations } from '../msg-annotations.js'
@@ -52,6 +55,12 @@ export interface SignalTransformOptions {
    * fell back to a slower path (see {@link LowerBail}). Coverage tooling and the
    * future `perf` diagnostics channel consume this; it does not affect output. */
   onLowerBail?: (bail: LowerBail) => void
+  /** Perf diagnostics: called with one `llui/each-verbatim` Diagnostic
+   * (category `perf`, severity `warning`) per `each` site that ends FULLY
+   * verbatim — its rows render via the runtime authoring path instead of the
+   * compiled factory. Advisory only; never affects output. Verbatim `show`/
+   * `branch` are intentionally not surfaced (they only pay at toggle time). */
+  onPerfDiagnostic?: (diagnostic: Diagnostic) => void
 }
 
 const RUNTIME_HELPERS = [
@@ -218,7 +227,20 @@ export function transformSignalComponentSource(
     }
   }
   setHelperDecls(helpers)
-  setLowerBailHook(opts.onLowerBail ?? null)
+  // Perf diagnostics need the full event stream to attribute reasons to the
+  // each sites that end verbatim — record while forwarding to the user hook.
+  const recordedBails: LowerBail[] | null = opts.onPerfDiagnostic ? [] : null
+  const loweredEachStarts: Set<number> | null = opts.onPerfDiagnostic ? new Set() : null
+  const userBailHook = opts.onLowerBail ?? null
+  if (recordedBails) {
+    setLowerBailHook((b) => {
+      recordedBails.push(b)
+      userBailHook?.(b)
+    })
+    setEachLoweredHook((pos) => loweredEachStarts!.add(pos))
+  } else {
+    setLowerBailHook(userBailHook)
+  }
 
   const visit = (node: ts.Node): void => {
     if (
@@ -304,10 +326,24 @@ export function transformSignalComponentSource(
       node.forEachChild(visitHelpers)
     }
     visitHelpers(sf)
+
+    // Perf diagnostics: one `llui/each-verbatim` per each site that did NOT lower.
+    if (recordedBails && loweredEachStarts && opts.onPerfDiagnostic) {
+      const diags = perfDiagnosticsForFile(
+        sf,
+        source,
+        opts.fileName ?? 'm.tsx',
+        edits,
+        loweredEachStarts,
+        recordedBails,
+      )
+      for (const d of diags) opts.onPerfDiagnostic(d)
+    }
   } finally {
     setHelperDecls(null)
     setAutoBatchContext(null)
     setLowerBailHook(null)
+    setEachLoweredHook(null)
   }
 
   if (!transformedAny) return source

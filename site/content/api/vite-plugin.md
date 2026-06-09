@@ -144,6 +144,21 @@ export interface LluiPluginOptions {
   transitions?: boolean
 
   /**
+   * Surface compiler `perf` diagnostics as Vite warnings. Currently one
+   * diagnostic exists: `llui/each-verbatim` — an `each` whose rows did not
+   * compile to the cloneNode RowFactory (nor the render-callback lowering)
+   * and render via the runtime authoring path instead, paying per-row
+   * construction overhead. The message names the bail reason(s) with an
+   * actionable hint (e.g. a row delegating to an imported helper, spread
+   * connect-part props, an imperative render body).
+   *
+   * Advisory only — never blocks the build (a verbatim `each` is fully
+   * correct, just slower per row). **Default: on in dev mode, off in
+   * build.** Pass `false` to silence, `true` to also warn during builds.
+   */
+  perfDiagnostics?: boolean
+
+  /**
    * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
    * cross-file walker). When enabled, the plugin builds a `ts.Program`
    * over the project at `configResolved` and feeds each `transform` call

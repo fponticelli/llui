@@ -65,6 +65,15 @@ export function setLowerBailHook(fn: ((bail: LowerBail) => void) | null): void {
 function reportBail(kind: LowerBail['kind'], reason: string, pos: number): void {
   bailHook?.({ kind, reason, pos })
 }
+/** Success counterpart for perf diagnostics: records the source position of an
+ * `each` whose lowering SUCCEEDED. A success can come from a lowering pass whose
+ * surrounding arm is later discarded (the parent falls back verbatim), so a site
+ * counts as lowered only when a success event AND a covering text edit agree —
+ * the consumer (perf-diagnostics) checks both. */
+let eachLoweredHook: ((pos: number) => void) | null = null
+export function setEachLoweredHook(fn: ((pos: number) => void) | null): void {
+  eachLoweredHook = fn
+}
 
 // ── Phase-2 helper-row inlining: same-file view-helper declarations ───────────
 // Set by the component transform (the whole file's top-level fn/arrow decls keyed
@@ -672,7 +681,10 @@ export function transformNodeExpr(
         const factoryDeps = new Set<string>()
         const factory =
           renderFn && lowerRowFactory(renderFn, itemParam, indexParam, sf, factoryDeps)
-        if (factory) return `signalEachDirect(${emitSource(factoryDeps)}, ${keySrc}, ${factory})`
+        if (factory) {
+          eachLoweredHook?.(eachPos)
+          return `signalEachDirect(${emitSource(factoryDeps)}, ${keySrc}, ${factory})`
+        }
         if (!renderFn) reportBail('each-direct', 'missing-render', eachPos)
 
         // Render-callback path: lowerable rows the factory can't build directly
@@ -690,7 +702,10 @@ export function transformNodeExpr(
             renderDeps,
             (r) => reportBail('each-render', r, eachPos),
           )
-        if (body != null) return `signalEach(${emitSource(renderDeps)}, ${keySrc}, () => ${body})`
+        if (body != null) {
+          eachLoweredHook?.(eachPos)
+          return `signalEach(${emitSource(renderDeps)}, ${keySrc}, () => ${body})`
+        }
         // unlowerable render -> fall through to verbatim (runtime authoring each)
       }
     }
@@ -1326,6 +1341,7 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
   if (keySrc === null || !renderFn) return bail('missing-key-or-render')
   const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf)
   if (!factory) return null // the factory reported its own bail reason
+  eachLoweredHook?.(pos)
   return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory})`
 }
 

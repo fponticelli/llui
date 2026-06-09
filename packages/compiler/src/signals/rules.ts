@@ -520,7 +520,12 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
 
   // Walk a render callback's body under augmented roots; fall back to walking the
   // whole node if it isn't a function (defensive). Render bodies are reactive
-  // slots, so `peekOk` carries through (handlers within flip it true).
+  // slots, so `peekOk` carries through (handlers within flip it true) — EXCEPT
+  // block-body variable declarations: `const isDir = item.peek().type === 'dir'`
+  // is the documented render-once row-local idiom, with identical semantics on
+  // the authoring path and the compiled factory (wire decls run once per row
+  // build), so flagging it would contradict the compiler. Peeks in the returned
+  // array's slots stay flagged.
   const visitRender = (
     fn: ts.Node,
     roots: Roots,
@@ -528,8 +533,18 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     peekOk: boolean,
   ): void => {
     const body = fnBody(fn)
-    if (body) visit(body, withParams(roots, params), peekOk)
-    else visit(fn, roots, peekOk)
+    if (!body) {
+      visit(fn, roots, peekOk)
+      return
+    }
+    const augmented = withParams(roots, params)
+    if (ts.isBlock(body)) {
+      for (const stmt of body.statements) {
+        visit(stmt, augmented, ts.isVariableStatement(stmt) ? true : peekOk)
+      }
+      return
+    }
+    visit(body, augmented, peekOk)
   }
 
   const visitEach = (node: ts.CallExpression, roots: Roots, peekOk: boolean): void => {

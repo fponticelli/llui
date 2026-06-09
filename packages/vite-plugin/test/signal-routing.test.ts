@@ -136,6 +136,84 @@ describe('vite-plugin — signal component routing', () => {
     expect(out!.code).toContain('@llui/dom')
   })
 
+  it('routes a HELPER-ONLY file (each, no component) so pass-2 lowers its rows', async () => {
+    // Real apps put most eaches in view-helper modules with no component( call.
+    // The old pre-check skipped them entirely, so their rows ran verbatim in
+    // production regardless of lowerability.
+    const helperOnly = [
+      "import { ul, li, text, each, type Signal } from '@llui/dom'",
+      'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
+      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label"))])] })])]',
+      '}',
+    ].join('\n')
+    const out = await runTransform(llui(), helperOnly, '/tmp/rows-helper.ts')
+    expect(out).toBeDefined()
+    expect(out!.code).toMatch(/(?<![A-Za-z])eachDirect\(/) // helper each lowered
+    expect(out!.code).toContain("import { eachDirect } from '@llui/dom'")
+  })
+
+  it('still skips files with no @llui/dom import and dom files with neither component nor each', async () => {
+    const noImport =
+      'export function rows() { return each([], { key: (r) => r, render: () => [] }) }'
+    expect(await runTransform(llui(), noImport, '/tmp/no-import.ts')).toBeUndefined()
+    const domNoPrimitives = [
+      "import { div, text } from '@llui/dom'",
+      "export const banner = () => div({}, [text('hi')])",
+    ].join('\n')
+    expect(await runTransform(llui(), domNoPrimitives, '/tmp/banner.ts')).toBeUndefined()
+  })
+
+  it('warns llui/each-verbatim in dev for an each that cannot lower', async () => {
+    const plugin = llui()
+    await (plugin.configResolved as (c: unknown) => unknown).call(plugin, {
+      command: 'serve',
+      mode: 'development',
+      root: '/tmp',
+    })
+    const verbatimEach = [
+      "import { ul, li, text, each, type Signal } from '@llui/dom'",
+      'export function rows(items: Signal<readonly { id: number }[]>) {',
+      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [importedRow(item)])] })])]',
+      '}',
+    ].join('\n')
+    const warn = vi.fn()
+    const error = vi.fn(() => {
+      throw new Error('this.error')
+    })
+    const ctx = { warn, error, resolve: vi.fn(async () => null) } as unknown as ThisParameterType<
+      Extract<Plugin['transform'], (...a: never) => unknown>
+    >
+    const transform = plugin.transform as (this: unknown, c: string, i: string) => unknown
+    await transform.call(ctx, verbatimEach, '/tmp/rows.ts')
+    const messages = warn.mock.calls.map((c) => String(c[0]))
+    expect(messages.some((m) => m.includes('[llui/each-verbatim]'))).toBe(true)
+    expect(messages.some((m) => m.includes('row-child-unsupported'))).toBe(true)
+  })
+
+  it('stays silent with perfDiagnostics: false', async () => {
+    const plugin = llui({ perfDiagnostics: false })
+    await (plugin.configResolved as (c: unknown) => unknown).call(plugin, {
+      command: 'serve',
+      mode: 'development',
+      root: '/tmp',
+    })
+    const verbatimEach = [
+      "import { ul, li, text, each } from '@llui/dom'",
+      'export function rows(items) {',
+      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [importedRow(item)])] })])]',
+      '}',
+    ].join('\n')
+    const warn = vi.fn()
+    const ctx = {
+      warn,
+      error: vi.fn(),
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = plugin.transform as (this: unknown, c: string, i: string) => unknown
+    await transform.call(ctx, verbatimEach, '/tmp/rows.ts')
+    expect(warn.mock.calls.every((c) => !String(c[0]).includes('each-verbatim'))).toBe(true)
+  })
+
   it('injects the MCP relay startup into signal files in dev (guarded once)', async () => {
     const plugin = llui({ mcpPort: 5200 })
     // simulate Vite dev resolution so devMode + mcpPort are set

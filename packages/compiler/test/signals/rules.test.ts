@@ -232,6 +232,25 @@ describe('peek-in-slot', () => {
     expect(r).not.toContain('peek-in-slot')
     expect(r).toContain('pure-derive-body')
   })
+
+  it('does NOT flag a .peek() initializing a block-body render LOCAL (the render-once row idiom)', () => {
+    // `const isDir = item.peek().type === 'dir'` is the documented row-local
+    // shape — it runs once per ROW on both the authoring path and the compiled
+    // factory (wire decls), so flagging it would contradict the compiler.
+    expect(
+      rules(
+        "each(state.at('entries'), { key: (e) => e.sha, render: (item) => { const isDir = item.peek().type === 'dir'; return [text(isDir ? 'd' : 'f')] } })",
+      ),
+    ).not.toContain('peek-in-slot')
+  })
+
+  it('still flags a .peek() in a reactive SLOT inside a block-body render', () => {
+    expect(
+      rules(
+        "each(state.at('entries'), { key: (e) => e.sha, render: (item) => { const x = 1; return [text(item.peek().name)] } })",
+      ),
+    ).toContain('peek-in-slot')
+  })
 })
 
 describe('at-after-map', () => {

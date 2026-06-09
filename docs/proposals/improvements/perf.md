@@ -139,13 +139,43 @@ inlinable` 11 (imperative helper bodies — `children.push` style), spread-props
   remaining coverage lever short of the cross-file ABI; it needs a runtime contract
   decision (the helper row's reads root in call-site handles, not component state).
 
+## Plugin routing fix + `perf` diagnostics — ✅ SHIPPED (2026-06-09, follow-up session)
+
+Two more findings/fixes on top of the telemetry session:
+
+- **Routing fix (the big production win).** The vite-plugin pre-check required `component(`
+  in the file, so HELPER-ONLY modules (no component call) never entered the transform at
+  all — pass-2 helper-each lowering was unreachable for them in real builds. Real apps
+  keep most eaches there: **29 of 50** each-bearing files in dicerun2 and **4 of 5** in
+  dungeonlogs were skipped entirely; all corpus coverage numbers measured by calling the
+  transform directly OVERSTATED production. The pre-check now routes dom-importing files
+  with `each(` too (`hasComponentCall` still solely arms the build-integrity scan).
+  **Measured production impact: dicerun2 +9, dungeonlogs +7, examples +5 each sites now
+  compile to the direct factory in real builds** (previously verbatim regardless of
+  lowerability). Routing widened LINT to helper files too, exposing a rule-vs-compiler
+  contradiction: `peek-in-slot` flagged the documented render-once row-local idiom
+  (`const isDir = item.peek().type === 'dir'` in a block-body render) that the factory
+  itself compiles as per-row wire decls (it broke `examples/github-explorer`). The rule
+  was refined (`rules.ts` `visitRender`): block-body render DECLARATIONS allow peek;
+  peeks in returned-array SLOTS stay errors.
+- **`llui/each-verbatim` perf diagnostics.** `SignalTransformOptions.onPerfDiagnostic`
+  emits one canonical `perf`-category warning Diagnostic per `each` site that ends fully
+  verbatim, naming the deduped bail reason(s) with actionable hints
+  (`packages/compiler/src/signals/perf-diagnostics.ts`). Verbatim-ness is decided by
+  "success event AND covering edit" — neither alone suffices (pass 1 rewrites the view
+  array as ONE edit embedding verbatim survivors; a success can come from a discarded
+  arm). The vite-plugin surfaces them via `this.warn` — `perfDiagnostics` option,
+  default ON in dev / OFF in build. Verbatim `show`/`branch` intentionally not surfaced
+  (toggle-time-only cost). Volume on the corpus: dicerun2 50, dungeonlogs 19, examples 6.
+  Tests: `test/signals/perf-diagnostics.test.ts`, `vite-plugin test/signal-routing.test.ts`.
+
 ## Suggested order (remaining)
 
 1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.
 2. ~~**B** — `batch()` + drain-coalescing substrate + compiler auto-wrap.~~ ✅ shipped.
 3. ~~**C** — cross-function row lowering (block-body, view-helper coverage, same-file inlining).~~ ✅ shipped.
 4. **Pass-2 mid-tier** — a render-arm lowering for HELPER eaches whose rows have structural children (the `signalEach` equivalent for call-site-rooted items). Largest remaining coverage lever per the 2026-06-09 corpus ranking; needs a runtime-contract decision first.
-5. **Surface `onLowerBail` as `perf` diagnostics** — the reason tokens are stable; wire them into the reserved `'perf'` diagnostic category so authors (LLMs) see "this each didn't lower because X" at build time.
+5. ~~**Surface `onLowerBail` as `perf` diagnostics**~~ ✅ shipped (`llui/each-verbatim`, see above).
 6. **Phase 3 of C** — precompiled-library row-factory ABI. The corpus showed the trigger is real (dicerun2 consumes published `@llui/components`; `row-top-not-element` 14 ≈ cross-file delegation). See cross-function-row-lowering.md.
 7. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.
 8. ~~Element-level dirty tracking~~ — analyzed, **not recommended** (Opportunity D).
