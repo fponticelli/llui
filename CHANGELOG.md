@@ -11,6 +11,25 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-09 — @llui/effects@0.1.1
+
+**Released:** `@llui/effects@0.1.1`
+
+### `@llui/effects@0.1.1`
+
+- **Fixed** `asOnEffect` now gives each mount a fresh `AbortController` instead of
+  reusing one held in a definition-scope closure. Because `asOnEffect(chain)` is
+  evaluated once at the component literal, the returned `onEffect` (and its
+  controller) was a per-definition singleton; after an unmount's cleanup aborted it,
+  the `=== null` guard never recreated it, so every re-mount of the same definition —
+  e.g. `@llui/vike` disposing + re-mounting a page on client-side navigation —
+  inherited the already-aborted signal. Any async effect that guards on
+  `signal.aborted` before its `send` then silently dropped its result, leaving state
+  stuck mid-transition with no error. The controller is now recreated once aborted
+  (effects within a single mount still share it), and each dispatch's cleanup
+  captures its own controller so a stale unmount can't abort a successor mount's live
+  signal. Lazy creation is preserved (Cloudflare Workers global-scope safety).
+
 ## 2026-06-08 — devmode-annotate live apps
 
 **Released:** `@llui/devmode-annotate@0.2.4`; `@llui/vite-plugin@0.11.2`; `@llui/markdown-editor@0.2.3`
