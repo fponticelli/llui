@@ -1998,6 +1998,7 @@ Library helper for `*.connect` implementations: tags an event
 handler with the variants it dispatches at runtime, so the binding
 registers them when the user spreads the bag onto an element.
 Resolution rules — choose whichever is defined and non-empty:
+
 1. **`send.__lluiVariants`** (translator pattern). When the user
    passed a compiler-tagged dispatch translator like
    `(m) => dispatch({type: 'Auth/UserMenu'})`, `send` itself
@@ -2008,10 +2009,11 @@ Resolution rules — choose whichever is defined and non-empty:
    component send (no translator), the library's internal Msgs flow
    directly into `update()`, so the library's own variants ARE the
    user variants. Library author hand-lists them once per handler.
-Returns `fn` mutated (via `Object.assign`) so the same reference
-remains identity-equal — important for downstream code that diffs
-handlers across re-bindings.
-@example
+   Returns `fn` mutated (via `Object.assign`) so the same reference
+   remains identity-equal — important for downstream code that diffs
+   handlers across re-bindings.
+   @example
+
 ```ts
 import { tagSend } from '@llui/dom'
 export function connect<S>(get, send, opts) {
@@ -2024,7 +2026,11 @@ export function connect<S>(get, send, opts) {
 ```
 
 ```typescript
-function tagSend<F extends (...args: never[]) => unknown>(send: unknown, libraryVariants: readonly string[], fn: F): F
+function tagSend<F extends (...args: never[]) => unknown>(
+  send: unknown,
+  libraryVariants: readonly string[],
+  fn: F,
+): F
 ```
 
 ### `react()`
@@ -2105,7 +2111,11 @@ props become reactive bindings; everything else is a static attribute. Returns a
 `Mountable` that creates the element and materializes its children when placed.
 
 ```typescript
-function el(tag: string, props: Readonly<Record<string, PropValue>> = {}, children: readonly ChildNode[] = []): Mountable
+function el(
+  tag: string,
+  props: Readonly<Record<string, PropValue>> = {},
+  children: readonly ChildNode[] = [],
+): Mountable
 ```
 
 ### `elNS()`
@@ -2114,7 +2124,11 @@ Build an SVG-namespaced element (svg/path/g/circle/…). Same prop/child
 semantics as `el`, via createElementNS.
 
 ```typescript
-function elNS(tag: string, props: Readonly<Record<string, PropValue>> = {}, children: readonly ChildNode[] = []): Mountable
+function elNS(
+  tag: string,
+  props: Readonly<Record<string, PropValue>> = {},
+  children: readonly ChildNode[] = [],
+): Mountable
 ```
 
 ### `__registerScopeVariants()`
@@ -2146,7 +2160,11 @@ runs on mount and whenever `deps` chunks go dirty; `commit` gets the new value.
 Must be called during a build (inside a `mountable(...)` recipe).
 
 ```typescript
-function registerBinding(deps: readonly string[], produce: (state: unknown) => unknown, commit: (value: unknown) => void): void
+function registerBinding(
+  deps: readonly string[],
+  produce: (state: unknown) => unknown,
+  commit: (value: unknown) => void,
+): void
 ```
 
 ### `onTeardown()`
@@ -2219,7 +2237,11 @@ DOM moves and a single removal is 0 — not the O(n) re-insert the naive cursor
 walk degraded to (swap/remove were ~6×/4× slower than peer frameworks).
 
 ```typescript
-function signalEach<T>(source: EachSource<T>, key: (item: T) => string | number, renderRow: (getCtx: () => RowCtx<T>) => Renderable): Mountable
+function signalEach<T>(
+  source: EachSource<T>,
+  key: (item: T) => string | number,
+  renderRow: (getCtx: () => RowCtx<T>) => Renderable,
+): Mountable
 ```
 
 ### `signalEachDirect()`
@@ -2230,7 +2252,11 @@ wiring) instead of running authoring helpers per row. The compiler-emitted fast
 path for lowerable rows; also usable hand-written.
 
 ```typescript
-function signalEachDirect<T>(source: EachSource<T>, key: (item: T) => string | number, rowFactory: RowFactory): Mountable
+function signalEachDirect<T>(
+  source: EachSource<T>,
+  key: (item: T) => string | number,
+  rowFactory: RowFactory,
+): Mountable
 ```
 
 ### `signalShow()`
@@ -2279,7 +2305,9 @@ owning component's dispose. Communicate OUT via `send` (closed over from the
 view bag). The analyzer sees the declared deps; the imperative body is opaque.
 
 ```typescript
-function signalForeign<Inst, State extends Record<string, SignalSpec<unknown>>>(spec: ForeignSpec<Inst, State>): Mountable
+function signalForeign<Inst, State extends Record<string, SignalSpec<unknown>>>(
+  spec: ForeignSpec<Inst, State>,
+): Mountable
 ```
 
 ### `mountSignal()`
@@ -2294,7 +2322,13 @@ synthesized end sentinel — `dispose()` removes that bracketed region.
 adapters mounting a nested build whose providers live in a different pass.
 
 ```typescript
-function mountSignal(target: Element | MountTarget, initial: unknown, build: () => Renderable, modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>, seedContexts?: ReadonlyMap<symbol, unknown>): SignalMount
+function mountSignal(
+  target: Element | MountTarget,
+  initial: unknown,
+  build: () => Renderable,
+  modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
+  seedContexts?: ReadonlyMap<symbol, unknown>,
+): SignalMount
 ```
 
 ### `signalLazy()`
@@ -2310,7 +2344,9 @@ If the surrounding build is torn down before the loader settles, a cancelled
 flag skips the deferred mount; any already-mounted child handle is disposed.
 
 ```typescript
-function signalLazy<LS = unknown, LM = unknown, LE = unknown>(opts: SignalLazyOptions<LS, LM, LE>): Mountable
+function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
+  opts: SignalLazyOptions<LS, LM, LE>,
+): Mountable
 ```
 
 ### `signalVirtualEach()`
@@ -2339,7 +2375,11 @@ siblings of a slot anchor. With `opts.hydrate`, takes over server-rendered
 HTML (see MountSignalOptions).
 
 ```typescript
-function mountSignalComponent<S, M, E = never>(target: Element | MountTarget, def: SignalComponentDef<S, M, E>, opts?: MountSignalOptions<S>): SignalComponentHandle<S, M>
+function mountSignalComponent<S, M, E = never>(
+  target: Element | MountTarget,
+  def: SignalComponentDef<S, M, E>,
+  opts?: MountSignalOptions<S>,
+): SignalComponentHandle<S, M>
 ```
 
 ### `hydrateSignalApp()`
@@ -2351,7 +2391,12 @@ effects are skipped by default (already run on the server); pass
 `runInitEffects: true` for init()s that no-op on the server.
 
 ```typescript
-function hydrateSignalApp<S, M, E = never>(target: Element | MountTarget, def: SignalComponentDef<S, M, E>, serverState: S, options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> }): SignalComponentHandle<S, M>
+function hydrateSignalApp<S, M, E = never>(
+  target: Element | MountTarget,
+  def: SignalComponentDef<S, M, E>,
+  serverState: S,
+  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
+): SignalComponentHandle<S, M>
 ```
 
 ### `serializeNodes()`
@@ -2373,7 +2418,12 @@ For persistent layouts, compose multiple `renderNodes` results before
 `serializeNodes` so the layout/page trees are stitched at the slot position.
 
 ```typescript
-function renderNodes<S, M, E>(def: SignalComponentDef<S, M, E>, initialState: S | undefined, env: ServerDoc, contexts?: ReadonlyMap<symbol, unknown>): { nodes: readonly Node[]; dispose: () => void }
+function renderNodes<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  initialState: S | undefined,
+  env: ServerDoc,
+  contexts?: ReadonlyMap<symbol, unknown>,
+): { nodes: readonly Node[]; dispose: () => void }
 ```
 
 ### `renderToString()`
@@ -2383,7 +2433,11 @@ provided override). `env` is a server `DomEnv` from `@llui/dom/ssr/jsdom` or
 `@llui/dom/ssr/linkedom`.
 
 ```typescript
-function renderToString<S, M, E>(def: SignalComponentDef<S, M, E>, initialState: S | undefined, env: ServerDoc): string
+function renderToString<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  initialState: S | undefined,
+  env: ServerDoc,
+): string
 ```
 
 ### `domHeadSink()`
@@ -2528,10 +2582,13 @@ function unsafeHtml(value: Reactive<string>): Mountable
 ### `each()`
 
 ```typescript
-function each<T>(items: Signal<readonly T[]>, opts: {
+function each<T>(
+  items: Signal<readonly T[]>,
+  opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
-  }): Mountable
+  },
+): Mountable
 ```
 
 ### `eachDirect()`
@@ -2542,13 +2599,21 @@ node reference) instead of authoring helpers — the compiled fast path. The
 factory's spec `produce(ctx)` reads the row ctx `{ item, state, index }`.
 
 ```typescript
-function eachDirect<T>(items: Signal<readonly T[]>, key: (item: T) => string | number, row: RowFactory): Mountable
+function eachDirect<T>(
+  items: Signal<readonly T[]>,
+  key: (item: T) => string | number,
+  row: RowFactory,
+): Mountable
 ```
 
 ### `show()`
 
 ```typescript
-function show<T>(cond: Signal<T>, render: (narrowed: Signal<NonNullable<T>>) => Renderable, orElse?: () => Renderable): Mountable
+function show<T>(
+  cond: Signal<T>,
+  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
+  orElse?: () => Renderable,
+): Mountable
 ```
 
 ### `branch()`
@@ -2575,7 +2640,9 @@ reject). Identity at runtime — a real runtime helper (not compiled away), so
 view-helper composition and uncompiled tests can call it directly.
 
 ```typescript
-function lazy<LS = unknown, LM = unknown, LE = unknown>(opts: SignalLazyOptions<LS, LM, LE>): Mountable
+function lazy<LS = unknown, LM = unknown, LE = unknown>(
+  opts: SignalLazyOptions<LS, LM, LE>,
+): Mountable
 ```
 
 ### `virtualEach()`
@@ -2621,6 +2688,7 @@ function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
 Define a signal component. Identity at runtime — the view has been lowered by
 the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>).
 The three type parameters:
+
 - **`S` — State.** The component's state shape. Must be JSON-serializable
   (plain objects/arrays/primitives — no class instances, functions, Maps, or
   Dates) so it can be snapshotted, time-travelled, and sent over the agent
@@ -2628,16 +2696,18 @@ The three type parameters:
   `state.at('field')`, `state.map(fn)`, or `state.peek()` (handlers/effects).
 - **`M` — Msg.** The message/action union the reducer handles. A
   **discriminated union with a `type` field** (`{ type: 'inc' } | { type:
-  'set'; value: number }`); the `type` discriminant is what the compiler,
+'set'; value: number }`); the `type` discriminant is what the compiler,
   devtools, and agent surface key off. Enforced by `M extends { type: string }`.
 - **`E` — Effect.** The effect union returned from `init`/`update`, also a
   **discriminated union with a `type` field**. Defaults to `never` (a pure
   component with no effects). Handled in `onEffect` (or by `@llui/effects`).
-Spelling these out (and the `{ type: string }` constraint) catches a malformed
-Msg/Effect union at the call site instead of at the first failed dispatch.
+  Spelling these out (and the `{ type: string }` constraint) catches a malformed
+  Msg/Effect union at the call site instead of at the first failed dispatch.
 
 ```typescript
-function component<S, M extends { type: string }, E extends { type: string } = never>(spec: SignalComponentSpec<S, M, E>): SignalComponentDef<S, M, E>
+function component<S, M extends { type: string }, E extends { type: string } = never>(
+  spec: SignalComponentSpec<S, M, E>,
+): SignalComponentDef<S, M, E>
 ```
 
 ### `mountApp()`
@@ -2645,7 +2715,10 @@ function component<S, M extends { type: string }, E extends { type: string } = n
 Mount a signal component into a container.
 
 ```typescript
-function mountApp<S, M, E = never>(container: Element, def: SignalComponentDef<S, M, E>): SignalComponentHandle<S, M>
+function mountApp<S, M, E = never>(
+  container: Element,
+  def: SignalComponentDef<S, M, E>,
+): SignalComponentHandle<S, M>
 ```
 
 ### `browserEnv()`
@@ -2857,6 +2930,7 @@ export type ElProps = {
 
 A reactive view of a value of type `T`. Three methods, the entire reactive
 vocabulary alongside `derived`:
+
 - `at(path)` — slice into a sub-signal via a statically-typed dot path.
 - `map(fn)` — transform into a derived signal (single source).
 - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
@@ -2889,11 +2963,12 @@ export interface Signal<T> {
 A materialized signal handed to imperative code at the `foreign` boundary.
 Minimal on purpose — all derivation stays in the declarative `state:`
 declaration, so this is a read+subscribe handle only.
+
 - `peek()` — one-shot, non-reactive read (same verb as {@link Signal}).
 - `bind(cb)` — fires `cb` synchronously with the current value, then on every
   change; returns an unsubscribe. Mount-time `bind`s auto-dispose on unmount.
-Deliberately no `on` (event-listener vocabulary trains a redundant
-peek-then-subscribe), no change-only mode, and no `at`/`map`/`derived`.
+  Deliberately no `on` (event-listener vocabulary trains a redundant
+  peek-then-subscribe), no change-only mode, and no `at`/`map`/`derived`.
 
 ```typescript
 export interface LiveSignal<T> {
@@ -3791,13 +3866,14 @@ export interface PendingEffect {
 
 Match predicate for the mock registry. All provided fields must
 match for the mock to fire:
+
 - `type`: exact-match against the effect's `type` discriminant.
 - `payloadPath`: dotted path into the effect object (e.g. `'url'` or
   `'body.key'`). When present without `payloadEquals`, presence of
   the path is sufficient.
 - `payloadEquals`: strict (`===`) equality check at `payloadPath`.
-An empty match (no fields) matches every effect — callers should
-set at least `type` to avoid accidental catch-all.
+  An empty match (no fields) matches every effect — callers should
+  set at least `type` to avoid accidental catch-all.
 
 ```typescript
 export interface EffectMatch {
@@ -3840,6 +3916,7 @@ Minimal DOM surface that `@llui/dom`'s internals depend on. Passed to
 `mountApp` / `hydrateSignalApp` / `renderToString` as a context object so
 the runtime never reaches for `globalThis.document` directly.
 Why an injected shape instead of a global shim:
+
 1. **Bundler-friendly.** A Cloudflare Worker that imports
    `@llui/dom/ssr/linkedom` reaches only linkedom via its module
    graph. No `await import('jsdom')` appears in reachable source,
@@ -3848,10 +3925,10 @@ Why an injected shape instead of a global shim:
    different envs; no process-level singleton to collide on.
 3. **Strict-isolate safe.** No `globalThis[key] = ...` mutation —
    Cloudflare workerd and Deno strict modes forbid it.
-The surface is deliberately narrow: exactly the methods and
-constructors the runtime touches. Grep `document\.` /
-`instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
-the exhaustive set.
+   The surface is deliberately narrow: exactly the methods and
+   constructors the runtime touches. Grep `document\.` /
+   `instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
+   the exhaustive set.
 
 ```typescript
 export interface DomEnv {
@@ -4378,13 +4455,16 @@ Walk parent chains to find a `const X = ...` declaration matching
 resolved declaration or `null` for unresolvable references (imports,
 parameters, this-bindings, etc.).
 Limitations:
-  - Only `const`. `let` resolution is unsafe — we can't track later
-    reassignments without a type checker.
-  - Only single-binding declarations (`const a = …`, not `const a = …, b = …`).
-  - The declaration must dominate the use (lexical scope).
+
+- Only `const`. `let` resolution is unsafe — we can't track later
+  reassignments without a type checker.
+- Only single-binding declarations (`const a = …`, not `const a = …, b = …`).
+- The declaration must dominate the use (lexical scope).
 
 ```typescript
-function resolveLocalConstInitializer(use: ts.Identifier): ts.Expression | ts.FunctionDeclaration | null
+function resolveLocalConstInitializer(
+  use: ts.Identifier,
+): ts.Expression | ts.FunctionDeclaration | null
 ```
 
 ### `isMemoCallWithArrowArg()`
@@ -4407,21 +4487,25 @@ AST node we can mask-analyze. Returns `null` when the value isn't a
 recognized accessor shape — caller leaves the call unchanged (runtime
 falls back to FULL_MASK, which is correct just slower).
 Recognized shapes:
-  - `(s) => …` (ArrowFunction)
-  - `function (s) { … }` (FunctionExpression)
-  - `memo((s) => …)` — returns the inner arrow
-  - `someIdentifier` resolving to any of the above (or to a hoisted
-    `function X(s) { … }` declaration)
-When `checker` is supplied, identifier resolution follows alias chains
-across files: `import { matrixOrEmpty } from '../state'` becomes
-resolvable. Without a checker the resolver falls back to file-local
-`const`/`function` lookup. The cross-file path requires the
-identifier's AST node to be bound to the checker's Program — pass
-nodes obtained via `program.getSourceFile(...)`, not from a freshly
-`ts.createSourceFile`'d copy. (See AnalysisContext.program.)
+
+- `(s) => …` (ArrowFunction)
+- `function (s) { … }` (FunctionExpression)
+- `memo((s) => …)` — returns the inner arrow
+- `someIdentifier` resolving to any of the above (or to a hoisted
+  `function X(s) { … }` declaration)
+  When `checker` is supplied, identifier resolution follows alias chains
+  across files: `import { matrixOrEmpty } from '../state'` becomes
+  resolvable. Without a checker the resolver falls back to file-local
+  `const`/`function` lookup. The cross-file path requires the
+  identifier's AST node to be bound to the checker's Program — pass
+  nodes obtained via `program.getSourceFile(...)`, not from a freshly
+  `ts.createSourceFile`'d copy. (See AnalysisContext.program.)
 
 ```typescript
-function resolveAccessorBody(value: ts.Expression, checker?: ts.TypeChecker): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null
+function resolveAccessorBody(
+  value: ts.Expression,
+  checker?: ts.TypeChecker,
+): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null
 ```
 
 ### `tagDispatchHandlers()`
@@ -4437,6 +4521,7 @@ body has nested handlers with dispatches) are runtime-inert. The
 compiler tags generously; the runtime registers selectively.
 Universal scope means three concrete patterns all surface their
 variants without the app author having to think about it:
+
 1. **Inline event-handler arrows** —
    `onClick: () => send({type:'X'})` (the original Pass 1 case).
 2. **Const-bound translator functions** —
@@ -4451,19 +4536,19 @@ variants without the app author having to think about it:
    eventually binds the function as an event listener. The arrow
    is still tagged at its declaration site, and the runtime reads
    the tag when the wrapper binds it.
-False positives are deliberate. The alternative — proving that a
-tagged arrow actually reaches an event-handler binding — would
-require cross-function, cross-file flow analysis the compiler
-doesn't do. In practice the cost of an over-tagged arrow is bytes,
-not behavior: the runtime never reads the tag from non-handler
-bindings.
-Pass 2's `collectLocalFns` resolves identifiers to their original
-arrow/function initializers; this pass replaces those initializers
-with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
-so the resolver still sees raw arrows.
-Already-wrapped functions (CallExpressions, including user-applied
-`tagSend(...)` or this pass's own prior output) are skipped — the
-pass only fires on bare arrow/function expressions.
+   False positives are deliberate. The alternative — proving that a
+   tagged arrow actually reaches an event-handler binding — would
+   require cross-function, cross-file flow analysis the compiler
+   doesn't do. In practice the cost of an over-tagged arrow is bytes,
+   not behavior: the runtime never reads the tag from non-handler
+   bindings.
+   Pass 2's `collectLocalFns` resolves identifiers to their original
+   arrow/function initializers; this pass replaces those initializers
+   with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
+   so the resolver still sees raw arrows.
+   Already-wrapped functions (CallExpressions, including user-applied
+   `tagSend(...)` or this pass's own prior output) are skipped — the
+   pass only fires on bare arrow/function expressions.
 
 ```typescript
 function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile
@@ -4487,7 +4572,10 @@ to the outer accessor's state parameter — most notably bites the
 accessor is also `(s) => …`.
 
 ```typescript
-function shadowsStateParam(parameters: ts.NodeArray<ts.ParameterDeclaration>, stateParam: string): boolean
+function shadowsStateParam(
+  parameters: ts.NodeArray<ts.ParameterDeclaration>,
+  stateParam: string,
+): boolean
 ```
 
 ### `detectOpaqueStateFlow()`
@@ -4500,20 +4588,21 @@ function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut
 
 Walk the AST and collect every unique state access path referenced by
 a reactive accessor. A reactive accessor is one of:
-  - An inline arrow / function expression at a reactive position
-    (`text(s => s.count)`, `div({ title: s => s.title })`,
-    `show({ when: s => s.gated })`, etc.).
-  - An Identifier at a reactive position that resolves to a callable
-    in this file — a const-bound arrow / function expression,
-    a hoisted function declaration, or `const x = memo(arrow)`.
-The second case lets authors refactor a literal arrow into a named
-helper without the analyzer losing its dependency paths. When a reactive
-accessor can't be resolved, the file is marked opaque and the runtime
-coarsens those bindings to the whole-state sentinel (correct, but every
-such binding fires on every state change).
-The emitted dependency paths feed the runtime's chunked-mask reconciler
-(each binding's `deps` array). `collectDeps` (below) is the string-input
-convenience wrapper.
+
+- An inline arrow / function expression at a reactive position
+  (`text(s => s.count)`, `div({ title: s => s.title })`,
+  `show({ when: s => s.gated })`, etc.).
+- An Identifier at a reactive position that resolves to a callable
+  in this file — a const-bound arrow / function expression,
+  a hoisted function declaration, or `const x = memo(arrow)`.
+  The second case lets authors refactor a literal arrow into a named
+  helper without the analyzer losing its dependency paths. When a reactive
+  accessor can't be resolved, the file is marked opaque and the runtime
+  coarsens those bindings to the whole-state sentinel (correct, but every
+  such binding fires on every state change).
+  The emitted dependency paths feed the runtime's chunked-mask reconciler
+  (each binding's `deps` array). `collectDeps` (below) is the string-input
+  convenience wrapper.
 
 ```typescript
 function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
@@ -4531,12 +4620,15 @@ source file and return the sorted set of unique state dependency paths read
 by its reactive accessors, plus the opaque-flow flag. These are the paths
 the runtime's chunked-mask reconciler gates each binding on.
 Files that don't import from `@llui/dom` return an empty set. `extraPaths`
-(paths discovered through in-repo view-helpers in *other* files, via the
+(paths discovered through in-repo view-helpers in _other_ files, via the
 cross-file walker) are unioned in so cross-file helpers contribute to the
 consumer's dependency set.
 
 ```typescript
-function collectDeps(source: string, extraPaths?: ReadonlySet<string>): {
+function collectDeps(
+  source: string,
+  extraPaths?: ReadonlySet<string>,
+): {
   paths: string[]
   opaque: boolean
   /** AST node that first triggered the opaque-flow flag (if any). */
@@ -4565,6 +4657,7 @@ function isReactiveAccessor(node: ts.Node): boolean
 
 Extract state access paths from an expression body.
 Handles:
+
 - Direct property access: param.field, param.field.subfield
 - Bracket notation with string literal: param['field']
 
@@ -4581,7 +4674,13 @@ module, a re-export through `export *`, a namespace import, or a
 dead-end (alias not declared anywhere we can see).
 
 ```typescript
-function findTypeSource(typeName: string, source: string, filePath: string, ctx: ResolveContext, visited: Set<string> = new Set()): Promise<ResolvedTypeSource | null>
+function findTypeSource(
+  typeName: string,
+  source: string,
+  filePath: string,
+  ctx: ResolveContext,
+  visited: Set<string> = new Set(),
+): Promise<ResolvedTypeSource | null>
 ```
 
 ### `extractMsgAnnotationsCrossFile()`
@@ -4603,7 +4702,12 @@ fires before this point on most pathological cases; ESLint's
 type-checker would flag the duplicate independently.
 
 ```typescript
-function extractMsgAnnotationsCrossFile(source: string, typeName: string, filePath: string, ctx: ResolveContext): Promise<Record<string, MessageAnnotations> | null>
+function extractMsgAnnotationsCrossFile(
+  source: string,
+  typeName: string,
+  filePath: string,
+  ctx: ResolveContext,
+): Promise<Record<string, MessageAnnotations> | null>
 ```
 
 ### `extractDiscriminatedUnionSchemaCrossFile()`
@@ -4615,7 +4719,12 @@ TypeReferences through the resolver. Same recursion shape as
 instead of JSDoc annotations.
 
 ```typescript
-function extractDiscriminatedUnionSchemaCrossFile(source: string, typeName: string, filePath: string, ctx: ResolveContext): Promise<MsgSchema | null>
+function extractDiscriminatedUnionSchemaCrossFile(
+  source: string,
+  typeName: string,
+  filePath: string,
+  ctx: ResolveContext,
+): Promise<MsgSchema | null>
 ```
 
 ### `readComponentTypeArgNames()`
@@ -4639,7 +4748,7 @@ function readComponentTypeArgNames(call: ts.CallExpression): {
 ### `classifyViewHelper()`
 
 Classify the symbol's declaration against the §2.1 rule.
-Operates on the *declared* type (`getTypeOfSymbolAtLocation(symbol,
+Operates on the _declared_ type (`getTypeOfSymbolAtLocation(symbol,
 symbol.declarations[0])`), not the inferred-at-call-site type. This is
 load-bearing: TypeScript inference at call sites widens to union
 shapes (`Node[] | undefined`, `JSX.Element | string`) that miss
@@ -4658,7 +4767,10 @@ by the §2.1 rule. Restricts the walk to files matching `filter` so
 tests can scope to a subdirectory.
 
 ```typescript
-function walkProgram(program: ts.Program, options: { filter?: (sourceFile: ts.SourceFile) => boolean } = {}): WalkerResult
+function walkProgram(
+  program: ts.Program,
+  options: { filter?: (sourceFile: ts.SourceFile) => boolean } = {},
+): WalkerResult
 ```
 
 ### `toCanonicalDiagnostic()`
@@ -4668,7 +4780,11 @@ shape. Reads the source text (for line/column resolution) and a
 project root (for path relativization).
 
 ```typescript
-function toCanonicalDiagnostic(d: WalkerDiagnostic, sourceText: string, projectRoot: string): Diagnostic
+function toCanonicalDiagnostic(
+  d: WalkerDiagnostic,
+  sourceText: string,
+  projectRoot: string,
+): Diagnostic
 ```
 
 ### `crossFileAccessorPaths()`
@@ -4677,7 +4793,7 @@ Collect the cross-file union of accessor paths read from a focal file.
 Returns the union over every reactive accessor in `focalFile`, with
 cross-file view-helper descents merged in.
 Reactive-accessor entry is gated by `isReactiveAccessor` (the same
-predicate the file-local `collect-deps` walker uses) *plus* a
+predicate the file-local `collect-deps` walker uses) _plus_ a
 cross-file extension: an arrow at the first-arg position of a call
 to a §2.1 view-helper also counts as reactive, because that's the
 lift the helper applies to our state.
@@ -4686,7 +4802,10 @@ including `onEffect: (bag) => bag.send(...)`, where `bag.send` ends
 up in the path set as a phantom "send" prefix. Issue #5, bug 3.
 
 ```typescript
-function crossFileAccessorPaths(program: ts.Program, focalFile: ts.SourceFile): { paths: Set<string>; opaque: boolean; opaqueNode?: ts.Node }
+function crossFileAccessorPaths(
+  program: ts.Program,
+  focalFile: ts.SourceFile,
+): { paths: Set<string>; opaque: boolean; opaqueNode?: ts.Node }
 ```
 
 ### `rangeFromOffsets()`
@@ -4716,25 +4835,33 @@ function relativizeFile(absoluteFile: string, root: string): string
 Substitute a manifest helper call against its call-site arguments.
 Given a helper's manifest entry and the argument expressions at one call
 site, returns the set of host-state paths the call contributes to the
-consumer's __prefixes table.
+consumer's \_\_prefixes table.
 §4.4 substitution rules:
-  1. For each ViaParams entry, resolve the call-site argument.
-  2. `shape: 'accessor'` parameters are walked via `extractPaths`.
-  3. `shape: 'options-bag'` parameters are unpacked field-by-field
-     against the call site's object-literal argument.
-  4. `innerReads` are composed against the resolved accessors:
-     - rooted: helper-local, contributed verbatim
-     - param-result: paths from param N's body
-     - param-result-path: lift + sub-path composition
-  5. `readsThroughResultOf: N` — param's body operates on param N's
-     result; substitution composes through N's accessor.
-  6. `contextReads` — resolved against `providers`; provider.accessor +
-     subPaths compose to host-state paths.
-  7. Depth bounded at 8; cycles caught by `(helper-symbol, param-index)`
-     visited set.
+
+1. For each ViaParams entry, resolve the call-site argument.
+2. `shape: 'accessor'` parameters are walked via `extractPaths`.
+3. `shape: 'options-bag'` parameters are unpacked field-by-field
+   against the call site's object-literal argument.
+4. `innerReads` are composed against the resolved accessors:
+   - rooted: helper-local, contributed verbatim
+   - param-result: paths from param N's body
+   - param-result-path: lift + sub-path composition
+5. `readsThroughResultOf: N` — param's body operates on param N's
+   result; substitution composes through N's accessor.
+6. `contextReads` — resolved against `providers`; provider.accessor +
+   subPaths compose to host-state paths.
+7. Depth bounded at 8; cycles caught by `(helper-symbol, param-index)`
+   visited set.
 
 ```typescript
-function substituteHelperCall(entry: HelperEntry, callArgs: ReadonlyArray<ts.Expression>, ctx: SubstitutionContext, helperKey = 'anonymous', visited = new Set<string>(), depth = 0): SubstitutionResult
+function substituteHelperCall(
+  entry: HelperEntry,
+  callArgs: ReadonlyArray<ts.Expression>,
+  ctx: SubstitutionContext,
+  helperKey = 'anonymous',
+  visited = new Set<string>(),
+  depth = 0,
+): SubstitutionResult
 ```
 
 ### `serializeManifest()`
@@ -4742,7 +4869,8 @@ function substituteHelperCall(entry: HelperEntry, callArgs: ReadonlyArray<ts.Exp
 Serialize a manifest to stable, diff-friendly JSON: object keys sorted
 (so re-emits are byte-identical regardless of insertion order), arrays left
 in their meaningful order (e.g. `viaParams` is index-ordered). 2-space indent
-+ trailing newline to match the repo's prettier output.
+
+- trailing newline to match the repo's prettier output.
 
 ```typescript
 function serializeManifest(manifest: Manifest): string
@@ -4770,7 +4898,7 @@ function clearManifestCache(): void
 ### `lookupHelperFromSymbol()`
 
 Resolve the manifest helper entry for a call-site callee symbol.
-@param sym   the (possibly aliased) symbol of the call target
+@param sym the (possibly aliased) symbol of the call target
 @param checker the program's type checker
 
 ```typescript
@@ -4816,7 +4944,10 @@ subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
 not re-lint; the caller decides whether a second pass is warranted.
 
 ```typescript
-function applyLintFixes(source: string, messages: ReadonlyArray<{ fix?: LintFix }>): { code: string; applied: number; skipped: number }
+function applyLintFixes(
+  source: string,
+  messages: ReadonlyArray<{ fix?: LintFix }>,
+): { code: string; applied: number; skipped: number }
 ```
 
 ### `registerIntrospectionFactory()`
@@ -4833,7 +4964,7 @@ function registerIntrospectionFactory(factory: IntrospectionFactory | null): voi
 ### `getIntrospectionFactory()`
 
 Used by transformLlui to retrieve the registered factory. Returns
- `null` when no factory is registered (introspection disabled).
+`null` when no factory is registered (introspection disabled).
 
 ```typescript
 function getIntrospectionFactory(): IntrospectionFactory | null
@@ -4889,7 +5020,9 @@ discriminants containing `/`, `-`, reserved words, etc. produce
 valid JS.
 
 ```typescript
-function annotationsToObjectLiteral(a: Record<string, MessageAnnotations>): ts.ObjectLiteralExpression
+function annotationsToObjectLiteral(
+  a: Record<string, MessageAnnotations>,
+): ts.ObjectLiteralExpression
 ```
 
 ### `extractMsgAnnotations()`
@@ -4898,11 +5031,11 @@ Walk a Msg-like discriminated-union type alias and extract JSDoc
 annotations attached to each union member. Returns null if no
 recognizable union is found so callers can skip emission cleanly.
 Expected JSDoc grammar (order-independent):
-  @intent("human readable")
-  @alwaysAffordable
-  @requiresConfirm
-  @humanOnly       — sugar for dispatchMode: 'human-only'
-  @agentOnly       — sugar for dispatchMode: 'agent-only'
+@intent("human readable")
+@alwaysAffordable
+@requiresConfirm
+@humanOnly — sugar for dispatchMode: 'human-only'
+@agentOnly — sugar for dispatchMode: 'agent-only'
 Unknown tags are ignored; malformed @intent (no quoted string) is
 treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
 exclusive — if both are present (which the ESLint rule
@@ -4911,7 +5044,10 @@ falls back to `'shared'` so a misconfigured Msg variant doesn't
 silently lock out one audience.
 
 ```typescript
-function extractMsgAnnotations(source: string, typeName: string = 'Msg'): Record<string, MessageAnnotations> | null
+function extractMsgAnnotations(
+  source: string,
+  typeName: string = 'Msg',
+): Record<string, MessageAnnotations> | null
 ```
 
 ### `parseAnnotations()`
@@ -4988,13 +5124,21 @@ sharing this helper, JSDoc hints would silently disappear whenever
 a Msg union got resolved across module boundaries.
 
 ```typescript
-function buildFieldDescriptor(member: ts.PropertySignature, source: string, typeIndex: TypeIndex = new Map()): MsgField
+function buildFieldDescriptor(
+  member: ts.PropertySignature,
+  source: string,
+  typeIndex: TypeIndex = new Map(),
+): MsgField
 ```
 
 ### `resolveFieldType()`
 
 ```typescript
-function resolveFieldType(type: ts.TypeNode, typeIndex: TypeIndex = new Map(), depth = MAX_FIELD_DEPTH): MsgFieldType
+function resolveFieldType(
+  type: ts.TypeNode,
+  typeIndex: TypeIndex = new Map(),
+  depth = MAX_FIELD_DEPTH,
+): MsgFieldType
 ```
 
 ### `computeSchemaHash()`
@@ -5255,23 +5399,24 @@ export type MessageAnnotations = {
 ### `MsgFieldType`
 
 The "bare type" of a field. Covers five cases:
-  - primitive keyword as a string: `'string'`, `'number'`, `'boolean'`, `'unknown'`
-  - literal union: `{enum: ['a', 'b']}` for strings, `{enum: [1, 2, 3]}`
-    for numbers, `{enum: [true]}` for booleans. Mixed-type literal
-    unions stay `'unknown'`.
-  - nested object shape: `{kind: 'object', shape: {...}}` — emitted when
-    a field's type is a local interface/type alias the extractor could
-    follow (depth-limited; cross-file references stay `'unknown'`).
-  - array of element type: `{kind: 'array', element: <bare type>}`.
-  - discriminated union of objects:
-    `{kind: 'discriminated-union', discriminant: 'kind', variants: {a: {...}, b: {...}}}`.
-    Emitted when every member of a union is an object literal sharing one
-    literal-string property name with distinct values. Symmetric with
-    how the top-level Msg union itself is encoded — same shape, recursed.
-The synthesizer in `@llui/agent`'s `list_actions` walks these to build
-copy-paste-ready payload examples; the validator in `send_message`
-walks them too (treating object/array as "any" since deep validation
-is the reducer's job).
+
+- primitive keyword as a string: `'string'`, `'number'`, `'boolean'`, `'unknown'`
+- literal union: `{enum: ['a', 'b']}` for strings, `{enum: [1, 2, 3]}`
+  for numbers, `{enum: [true]}` for booleans. Mixed-type literal
+  unions stay `'unknown'`.
+- nested object shape: `{kind: 'object', shape: {...}}` — emitted when
+  a field's type is a local interface/type alias the extractor could
+  follow (depth-limited; cross-file references stay `'unknown'`).
+- array of element type: `{kind: 'array', element: <bare type>}`.
+- discriminated union of objects:
+  `{kind: 'discriminated-union', discriminant: 'kind', variants: {a: {...}, b: {...}}}`.
+  Emitted when every member of a union is an object literal sharing one
+  literal-string property name with distinct values. Symmetric with
+  how the top-level Msg union itself is encoded — same shape, recursed.
+  The synthesizer in `@llui/agent`'s `list_actions` walks these to build
+  copy-paste-ready payload examples; the validator in `send_message`
+  walks them too (treating object/array as "any" since deep validation
+  is the reducer's job).
 
 ```typescript
 export type MsgFieldType =
@@ -5348,7 +5493,7 @@ export interface InjectResult {
 
 ### `OpaqueOut`
 
-Mutable collector for "the file's __prefixes must degrade to the
+Mutable collector for "the file's \_\_prefixes must degrade to the
 whole-state sentinel" — written by every accessor walker that sees
 an opaque shape (unresolvable delegation, dynamic `s[expr]`, state
 in a spread, etc.). The first triggering site is captured so a
@@ -5443,14 +5588,15 @@ string + the local name of the alias there. Extractors then run
 against that source and produce the same output they would have for
 a co-located declaration.
 Limitations:
- - Composition (`type Msg = ImportedA | { type: 'b' }`): only the
-   locally-declared variants are extracted; the imported half isn't
-   walked recursively into. The lint rule `agent-msg-resolvable`
-   catches this case at lint time.
- - Namespace imports (`import * as ns from './msg'`) and `export *`:
-   not followed. Same lint coverage.
- - Generic types: not parameterized resolution; the type argument
-   must resolve to a concrete type alias.
+
+- Composition (`type Msg = ImportedA | { type: 'b' }`): only the
+  locally-declared variants are extracted; the imported half isn't
+  walked recursively into. The lint rule `agent-msg-resolvable`
+  catches this case at lint time.
+- Namespace imports (`import * as ns from './msg'`) and `export *`:
+  not followed. Same lint coverage.
+- Generic types: not parameterized resolution; the type argument
+  must resolve to a concrete type alias.
 
 ```typescript
 export interface ResolveContext {
@@ -5933,14 +6079,15 @@ export interface EmissionContext {
 ### `CompilerModule`
 
 A compiler module declares:
-  - identification (name, compilerVersion semver against the umbrella);
-  - the diagnostics it can emit (stable IDs);
-  - per-`SyntaxKind` visitor handlers (the walker dispatches each AST
-    node once; every module with a handler for its kind sees it);
-  - optionally, an `emit` function that contributes ComponentDef fields
-    after the walk completes;
-  - optionally, `runtimeImports` declaring which `@llui/dom` symbols
-    its emissions reference.
+
+- identification (name, compilerVersion semver against the umbrella);
+- the diagnostics it can emit (stable IDs);
+- per-`SyntaxKind` visitor handlers (the walker dispatches each AST
+  node once; every module with a handler for its kind sees it);
+- optionally, an `emit` function that contributes ComponentDef fields
+  after the walk completes;
+- optionally, `runtimeImports` declaring which `@llui/dom` symbols
+  its emissions reference.
 
 ```typescript
 export interface CompilerModule {
@@ -6193,7 +6340,12 @@ class ModuleRegistry {
   constructor(modules: ReadonlyArray<CompilerModule>)
   verifyDependencies(): void
   buildVisitorIndex(): Map<ts.SyntaxKind, Array<CompilerModule>>
-  run(sourceFile: ts.SourceFile, checker?: ts.TypeChecker, externalTypes?: ModuleExternalTypes, program?: ts.Program): RegistryRunResult
+  run(
+    sourceFile: ts.SourceFile,
+    checker?: ts.TypeChecker,
+    externalTypes?: ModuleExternalTypes,
+    program?: ts.Program,
+  ): RegistryRunResult
   listModules(): string[]
   listDiagnostics(): DiagnosticDefinition[]
 }
@@ -6205,32 +6357,33 @@ class ModuleRegistry {
 
 Single source of truth for the compiler's emission name registry.
 Two disjoint sets:
-  - `COMPILER_RENAMEABLE_KEYS` — property keys the compiler synthesizes
-    onto `component({...})` literals. The runtime reads these via
-    property access (`def.__view`, `def.__prefixes`, etc.) inside the
-    same bundle that the compiler emitted them into. Their producer and
-    consumer are colocated in the bundle, so the vite-plugin's post-
-    bundle property-rename pass can shorten them to `$a`/`$b`/… without
-    breaking the contract.
-  - `COMPILER_DOM_INTERNAL_IMPORTS` — runtime helpers the compiler
-    references by NAME (not by property key) via an
-    `import { __cloneStaticTemplate } from '@llui/dom/internal'`
-    declaration. These cross a module boundary at consumer build time.
-    Anything the rename pass touches that ends up in an import specifier
-    would be rewritten to `$X`, which the source package never exports,
-    and rolldown fails the build with `MISSING_EXPORT`. **These names
-    must NEVER be renamed.**
-The two sets are disjoint by construction — the type-level
-`Extract<...>` assertion below fails compilation if any name appears
-in both lists. New compiler-emitted names land in whichever list
-matches their lifetime; if you accidentally add one to both, `tsc`
-tells you before the bug ships.
-Subpath choice matters: the helpers live at `@llui/dom/internal`, not
-at the root `@llui/dom`, because the rename regex matches any
-`__`-prefixed identifier in the bundle. By hosting the helpers on a
-subpath whose import specifier never gets touched by the rename, we
-keep both the regex and the runtime export surface internally
-consistent without needing an AST-aware rename pass.
+
+- `COMPILER_RENAMEABLE_KEYS` — property keys the compiler synthesizes
+  onto `component({...})` literals. The runtime reads these via
+  property access (`def.__view`, `def.__prefixes`, etc.) inside the
+  same bundle that the compiler emitted them into. Their producer and
+  consumer are colocated in the bundle, so the vite-plugin's post-
+  bundle property-rename pass can shorten them to `$a`/`$b`/… without
+  breaking the contract.
+- `COMPILER_DOM_INTERNAL_IMPORTS` — runtime helpers the compiler
+  references by NAME (not by property key) via an
+  `import { __cloneStaticTemplate } from '@llui/dom/internal'`
+  declaration. These cross a module boundary at consumer build time.
+  Anything the rename pass touches that ends up in an import specifier
+  would be rewritten to `$X`, which the source package never exports,
+  and rolldown fails the build with `MISSING_EXPORT`. **These names
+  must NEVER be renamed.**
+  The two sets are disjoint by construction — the type-level
+  `Extract<...>` assertion below fails compilation if any name appears
+  in both lists. New compiler-emitted names land in whichever list
+  matches their lifetime; if you accidentally add one to both, `tsc`
+  tells you before the bug ships.
+  Subpath choice matters: the helpers live at `@llui/dom/internal`, not
+  at the root `@llui/dom`, because the rename regex matches any
+  `__`-prefixed identifier in the bundle. By hosting the helpers on a
+  subpath whose import specifier never gets touched by the rename, we
+  keep both the regex and the runtime export surface internally
+  consistent without needing an AST-aware rename pass.
 
 ```typescript
 const COMPILER_RENAMEABLE_KEYS
@@ -6259,9 +6412,9 @@ const compilerCache
 ### `MANIFEST_SCHEMA_VERSION`
 
 Current manifest schema version. Bumped 1→2 to add the `state-value`
- param/field shape (helpers called as `helper(s)` with the state value passed
- directly, e.g. `state.map(s => itemFill(s, i))`), which v1's accessor-function
- shapes could not express. Consumers reject other majors via `compilerVersion`.
+param/field shape (helpers called as `helper(s)` with the state value passed
+directly, e.g. `state.map(s => itemFill(s, i))`), which v1's accessor-function
+shapes could not express. Consumers reject other majors via `compilerVersion`.
 
 ```typescript
 const MANIFEST_SCHEMA_VERSION
@@ -6518,7 +6671,7 @@ export interface LluiPluginOptions {
 
 ### `DevmodeAnnotateConfig`
 
-```typescript
+````typescript
 export interface DevmodeAnnotateConfig {
   /** Override the on-disk notes root. Relative paths resolve against
    *  the Vite project root. Default: `.llui/notes`. The
@@ -6587,7 +6740,7 @@ export interface DevmodeAnnotateConfig {
    */
   hud?: boolean | HudInjectionConfig
 }
-```
+````
 
 ### `HudInjectionConfig`
 
@@ -6640,21 +6793,23 @@ These payloads add bundle weight that production apps without agent/MCP integrat
 
 Builds the introspection module set for a single source file.
 Activation order matches the v2c/decomp-7 design:
-  1. `bindingDescriptorsModule`  — preTransform fires first so the
-     universal handler-tagger + scope-variant-registration runs
-     before any visitor or emit phase sees the file.
-  2. `msgSchemaModule`, `stateSchemaModule`, `msgAnnotationsModule`
-     — producer modules populate the schema-hash inputs slot.
-  3. `schemaHashModule` — emit reads the populated slot.
-Per-module activation gates mirror what `transformLlui` did inline
-before decomp-26:
-  - `msgSchemaModule`     when at least one of Msg / Effect schemas extracted
-  - `stateSchemaModule`   when State schema extracted
-  - `msgAnnotationsModule` when annotation map non-null (includes empty)
-  - `schemaHashModule`    always (well-defined hash over null inputs)
-  - `bindingDescriptorsModule` always when introspection is on
-The "always-on schemaHash" comes from spec §7.4: the hash ships in
-prod too, used by HMR re-send gating regardless of agent mode.
+
+1. `bindingDescriptorsModule` — preTransform fires first so the
+   universal handler-tagger + scope-variant-registration runs
+   before any visitor or emit phase sees the file.
+2. `msgSchemaModule`, `stateSchemaModule`, `msgAnnotationsModule`
+   — producer modules populate the schema-hash inputs slot.
+3. `schemaHashModule` — emit reads the populated slot.
+   Per-module activation gates mirror what `transformLlui` did inline
+   before decomp-26:
+
+- `msgSchemaModule` when at least one of Msg / Effect schemas extracted
+- `stateSchemaModule` when State schema extracted
+- `msgAnnotationsModule` when annotation map non-null (includes empty)
+- `schemaHashModule` always (well-defined hash over null inputs)
+- `bindingDescriptorsModule` always when introspection is on
+  The "always-on schemaHash" comes from spec §7.4: the hash ships in
+  prod too, used by HMR re-send gating regardless of agent mode.
 
 ```typescript
 const introspectionFactory: IntrospectionFactory
@@ -6678,10 +6833,11 @@ Depends on [`@llui/compiler-introspection`](/api/compiler-introspection).
 Builds the devtools module set for a single source file.
 Activation gates mirror what `transformLlui` did inline before
 decomp-27:
-  - `componentMetaModule`    when `devMode` is true
-Future devtools modules (trace instrumentation) would gate on a
-separate `enableTraceInstrumentation` flag the host passes via
-the factory input.
+
+- `componentMetaModule` when `devMode` is true
+  Future devtools modules (trace instrumentation) would gate on a
+  separate `enableTraceInstrumentation` flag the host passes via
+  the factory input.
 
 ```typescript
 const devtoolsFactory: DevtoolsFactory
@@ -6711,15 +6867,16 @@ The client build is expected to skip this path entirely — Vite passes
 this function.
 Shapes this v1 does NOT handle (emits a warning + leaves them out of
 the stub output):
-  - `export function foo() {}` and `export class Foo {}` — rewritten
-    as stubs but the caller may be surprised that `foo` and `Foo` are
-    ComponentDef-shaped objects during SSR.
-  - `export { a, b } from './other.js'` — re-export forms are not
-    detected; they pass through and will still pull `./other` into
-    the SSR graph.
-  - `export * from './other.js'` — same as above.
-  - `export type ...` — type exports are erased by TS so nothing to
-    stub; left untouched.
+
+- `export function foo() {}` and `export class Foo {}` — rewritten
+  as stubs but the caller may be surprised that `foo` and `Foo` are
+  ComponentDef-shaped objects during SSR.
+- `export { a, b } from './other.js'` — re-export forms are not
+  detected; they pass through and will still pull `./other` into
+  the SSR graph.
+- `export * from './other.js'` — same as above.
+- `export type ...` — type exports are erased by TS so nothing to
+  stub; left untouched.
 
 ```typescript
 function transformUseClientSsr(source: string, _filename: string): UseClientTransformResult | null
@@ -6911,7 +7068,12 @@ Execute all HTTP effects from the effect list, apply responses
 to state via update(), return the final loaded state.
 
 ```typescript
-function resolveEffects<S, M extends { type: string }, E extends { type: string }>(state: S, effects: E[], update: UpdateFn<S, M, E>, maxDepth = 3): Promise<S>
+function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
+  state: S,
+  effects: E[],
+  update: UpdateFn<S, M, E>,
+  maxDepth = 3,
+): Promise<S>
 ```
 
 ### `_setEffectInterceptor()`
@@ -7011,13 +7173,21 @@ function storageRemove(key: string, scope: StorageScope = 'local'): StorageRemov
 ### `storageGet()`
 
 ```typescript
-function storageGet<M>(key: string, onLoad: (value: unknown) => M, scope: StorageScope = 'local'): StorageGetEffect<M>
+function storageGet<M>(
+  key: string,
+  onLoad: (value: unknown) => M,
+  scope: StorageScope = 'local',
+): StorageGetEffect<M>
 ```
 
 ### `storageWatch()`
 
 ```typescript
-function storageWatch<M>(key: string, onChange: (value: unknown) => M, scope: StorageScope = 'local'): StorageWatchEffect<M>
+function storageWatch<M>(
+  key: string,
+  onChange: (value: unknown) => M,
+  scope: StorageScope = 'local',
+): StorageWatchEffect<M>
 ```
 
 ### `broadcast()`
@@ -7029,7 +7199,10 @@ function broadcast(channel: string, data: unknown): BroadcastEffect
 ### `broadcastListen()`
 
 ```typescript
-function broadcastListen<M>(channel: string, onMessage: (data: unknown) => M): BroadcastListenEffect<M>
+function broadcastListen<M>(
+  channel: string,
+  onMessage: (data: unknown) => M,
+): BroadcastListenEffect<M>
 ```
 
 ### `websocket()`
@@ -7090,14 +7263,17 @@ function clipboardWrite(text: string): ClipboardWriteEffect
 ### `notification()`
 
 ```typescript
-function notification<M>(title: string, opts?: {
+function notification<M>(
+  title: string,
+  opts?: {
     body?: string
     icon?: string
     tag?: string
     onClick?: () => M
     onClose?: () => M
     onError?: () => M
-  }): NotificationEffect<M>
+  },
+): NotificationEffect<M>
 ```
 
 ### `geolocation()`
@@ -7142,7 +7318,9 @@ own abort listener clears its pending registries).
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
 
 ```typescript
-function asOnEffect<E extends { type: string }, M>(chain: (ctx: EffectCtx<E, M>) => void): (effect: E, api: { send: (msg: M) => void }) => () => void
+function asOnEffect<E extends { type: string }, M>(
+  chain: (ctx: EffectCtx<E, M>) => void,
+): (effect: E, api: { send: (msg: M) => void }) => () => void
 ```
 
 ## Types
@@ -7152,14 +7330,15 @@ function asOnEffect<E extends { type: string }, M>(chain: (ctx: EffectCtx<E, M>)
 Dev-only effect interceptor hook — consumed by `@llui/mcp` (via
 `@llui/dom`'s devtools wiring) to implement effect mocking.
 Contract:
+
 - Default state is `null` — zero overhead when no interceptor is set.
 - Calling `_setEffectInterceptor(null)` clears the hook.
 - The hook receives the raw effect object and an opaque dispatch ID;
   it returns either `{ mocked: true, response }` to short-circuit the
   real effect dispatch, or `{ mocked: false }` to pass through.
-Phase 1 consumers rely on the pass-through path; the short-circuit
-path is exercised end-to-end through `@llui/dom`'s effect-dispatch
-wrapper. This module only owns the null-safe set/get contract.
+  Phase 1 consumers rely on the pass-through path; the short-circuit
+  path is exercised end-to-end through `@llui/dom`'s effect-dispatch
+  wrapper. This module only owns the null-safe set/get contract.
 
 ```typescript
 export type EffectInterceptorResult = { mocked: true; response: unknown } | { mocked: false }
@@ -7623,7 +7802,9 @@ function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarn
 ### `defineTestComponent()`
 
 ```typescript
-function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(input: DefineTestComponentInput<S, M, E>): SignalComponentDef<S, M, E>
+function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(
+  input: DefineTestComponentInput<S, M, E>,
+): SignalComponentDef<S, M, E>
 ```
 
 ### `assertEffects()`
@@ -7635,7 +7816,10 @@ function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
 ### `propertyTest()`
 
 ```typescript
-function propertyTest<S, M, E>(def: SignalComponentDef<S, M, E>, config: PropertyTestConfig<S, M, E>): void
+function propertyTest<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  config: PropertyTestConfig<S, M, E>,
+): void
 ```
 
 ### `replayTrace()`
@@ -7656,7 +7840,9 @@ mount, flagging the mistake. Override via `name` when you want the
 history trail to match your module.
 
 ```typescript
-function reducer<S, M extends { type: string }, E extends { type: string } = never>(opts: ReducerOptions<S, M, E>): SignalComponentDef<S, M, E>
+function reducer<S, M extends { type: string }, E extends { type: string } = never>(
+  opts: ReducerOptions<S, M, E>,
+): SignalComponentDef<S, M, E>
 ```
 
 ### `emulateBlurOnRemoval()`
@@ -7677,8 +7863,8 @@ events synchronously, in browser order (`blur`, then the bubbling `focusout`).
 Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
 or use {@link withBlurOnRemoval} for automatic scoping.
 @param doc - document whose `activeElement` is consulted (defaults to the
-  ambient `document`). The patch is applied to the shared `Node`/`Element`
-  prototypes, matching the single jsdom document under test.
+ambient `document`). The patch is applied to the shared `Node`/`Element`
+prototypes, matching the single jsdom document under test.
 @returns an idempotent uninstall function restoring the native methods.
 
 ```typescript
@@ -7700,6 +7886,7 @@ Begin recording an agent session. Returns a recorder whose `send`
 forwards to the handle and captures the message; `stop()` finalizes
 the trace into a JSON-serializable fixture.
 Typical usage:
+
 ```ts
 const handle = mountApp(root, App)
 const r = recordAgentSession(handle)
@@ -7710,6 +7897,7 @@ const fixture = r.stop()
 // Persist `fixture` as JSON; replay in CI to assert the same
 // sequence still produces the same final state.
 ```
+
 The recorder relies on the handle's `flush()` after every send so
 the snapshot in `stop()` reflects the drained-message-queue state.
 For long-running async effects, snapshot only fires after the
@@ -7726,7 +7914,11 @@ function recordAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>): A
 ### `replayAgentSession()`
 
 ```typescript
-function replayAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>, fixture: AgentSessionFixture, options: ReplayOptions = {}): ReplayResult
+function replayAgentSession(
+  handle: SignalComponentHandle<unknown, AgentMsg>,
+  fixture: AgentSessionFixture,
+  options: ReplayOptions = {},
+): ReplayResult
 ```
 
 ## Interfaces
@@ -7808,17 +8000,18 @@ export interface AgentSessionRecorder {
 Replay a previously-recorded session against a fresh `handle`.
 Dispatches each msg in order, snapshots state after the last one,
 and compares to `fixture.finalState`. Returns:
-  - `matches: true`           — bit-exact replay; nothing changed.
-  - `matches: false, diff`   — final state differs; `diff` lists the
-    paths that diverged in the same JSON-Patch shape as
-    `send_message`'s `stateDiff`. Use it in test assertions:
-    `expect(result.diff).toEqual([])`.
-The harness deliberately ignores the `initialState` half of the
-fixture by default — replay starts from whatever the new handle's
-`init()` produced, so apps with deterministic init don't need to
-carry their initial state around in source control. Pass
-`assertInitial: true` to also enforce that the initial states
-match; useful when a test wants to catch init-effect drift.
+
+- `matches: true` — bit-exact replay; nothing changed.
+- `matches: false, diff` — final state differs; `diff` lists the
+  paths that diverged in the same JSON-Patch shape as
+  `send_message`'s `stateDiff`. Use it in test assertions:
+  `expect(result.diff).toEqual([])`.
+  The harness deliberately ignores the `initialState` half of the
+  fixture by default — replay starts from whatever the new handle's
+  `init()` produced, so apps with deterministic init don't need to
+  carry their initial state around in source control. Pass
+  `assertInitial: true` to also enforce that the initial states
+  match; useful when a test wants to catch init-effect drift.
 
 ```typescript
 export interface ReplayResult {
@@ -8084,11 +8277,13 @@ All 58 components follow the same pattern:
 import { componentName } from '@llui/components/component-name'
 
 // State machine
-const state = componentName.init({ /* options */ })
+const state = componentName.init({
+  /* options */
+})
 const [newState, effects] = componentName.update(state, msg)
 
 // Connect to DOM
-const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
+const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 // Use parts: div({ ...parts.root }, [button({ ...parts.trigger }, [...])])
 ```
 
@@ -8098,13 +8293,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`AccordionState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string[]` |
-| `multiple` | `boolean` |
-| `collapsible` | `boolean` |
-| `disabled` | `boolean` |
-| `items` | `string[]` |
+| Field         | Type       |
+| ------------- | ---------- |
+| `value`       | `string[]` |
+| `multiple`    | `boolean`  |
+| `collapsible` | `boolean`  |
+| `disabled`    | `boolean`  |
+| `items`       | `string[]` |
 
 **Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
 
@@ -8130,12 +8325,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`AngleSliderState`):
 
-| Field | Type |
-|---|---|
-| `value` | `number` |
-| `min` | `number` |
-| `max` | `number` |
-| `step` | `number` |
+| Field      | Type      |
+| ---------- | --------- |
+| `value`    | `number`  |
+| `min`      | `number`  |
+| `max`      | `number`  |
+| `step`     | `number`  |
 | `disabled` | `boolean` |
 | `readonly` | `boolean` |
 
@@ -8153,13 +8348,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`AsyncListState`):
 
-| Field | Type |
-|---|---|
-| `items` | `T[]` |
-| `page` | `number` |
-| `hasMore` | `boolean` |
-| `status` | `AsyncStatus` |
-| `error` | `string \| null` |
+| Field     | Type             |
+| --------- | ---------------- |
+| `items`   | `T[]`            |
+| `page`    | `number`         |
+| `hasMore` | `boolean`        |
+| `status`  | `AsyncStatus`    |
+| `error`   | `string \| null` |
 
 **Messages:** `loadMore`, `pageLoaded`, `pageFailed`, `reset`, `setItems`, `retry`
 
@@ -8173,8 +8368,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`AvatarState`):
 
-| Field | Type |
-|---|---|
+| Field    | Type          |
+| -------- | ------------- |
 | `status` | `ImageStatus` |
 
 **Messages:** `loadStart`, `loaded`, `error`, `reset`
@@ -8191,14 +8386,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`CarouselState`):
 
-| Field | Type |
-|---|---|
-| `current` | `number` |
-| `count` | `number` |
-| `loop` | `boolean` |
-| `autoplay` | `boolean` |
-| `interval` | `number` |
-| `paused` | `boolean` |
+| Field       | Type                      |
+| ----------- | ------------------------- |
+| `current`   | `number`                  |
+| `count`     | `number`                  |
+| `loop`      | `boolean`                 |
+| `autoplay`  | `boolean`                 |
+| `interval`  | `number`                  |
+| `paused`    | `boolean`                 |
 | `direction` | `'forward' \| 'backward'` |
 
 **Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`
@@ -8217,11 +8412,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`CascadeSelectState`):
 
-| Field | Type |
-|---|---|
-| `levels` | `CascadeLevel[]` |
-| `values` | `(string \| null)[]` |
-| `disabled` | `boolean` |
+| Field      | Type                 |
+| ---------- | -------------------- |
+| `levels`   | `CascadeLevel[]`     |
+| `values`   | `(string \| null)[]` |
+| `disabled` | `boolean`            |
 
 **Messages:** `setLevels`, `setValue`, `clear`
 
@@ -8237,11 +8432,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`CheckboxState`):
 
-| Field | Type |
-|---|---|
-| `checked` | `CheckedState` |
-| `disabled` | `boolean` |
-| `required` | `boolean` |
+| Field      | Type           |
+| ---------- | -------------- |
+| `checked`  | `CheckedState` |
+| `disabled` | `boolean`      |
+| `required` | `boolean`      |
 
 **Messages:** `toggle`, `setChecked`, `setDisabled`
 
@@ -8255,9 +8450,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ClipboardState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string` |
+| Field    | Type      |
+| -------- | --------- |
+| `value`  | `string`  |
 | `copied` | `boolean` |
 
 **Messages:** `setValue`, `copy`, `copied`, `reset`
@@ -8276,9 +8471,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`CollapsibleState`):
 
-| Field | Type |
-|---|---|
-| `open` | `boolean` |
+| Field      | Type      |
+| ---------- | --------- |
+| `open`     | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `open`, `close`, `setOpen`
@@ -8295,10 +8490,10 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ColorPickerState`):
 
-| Field | Type |
-|---|---|
-| `hsl` | `Hsl` |
-| `alpha` | `number` |
+| Field      | Type      |
+| ---------- | --------- |
+| `hsl`      | `Hsl`     |
+| `alpha`    | `number`  |
 | `disabled` | `boolean` |
 
 **Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`
@@ -8315,17 +8510,17 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ComboboxState`):
 
-| Field | Type |
-|---|---|
-| `open` | `boolean` |
-| `value` | `string[]` |
-| `inputValue` | `string` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `filteredItems` | `string[]` |
+| Field              | Type             |
+| ------------------ | ---------------- |
+| `open`             | `boolean`        |
+| `value`            | `string[]`       |
+| `inputValue`       | `string`         |
+| `items`            | `string[]`       |
+| `disabledItems`    | `string[]`       |
+| `filteredItems`    | `string[]`       |
 | `highlightedIndex` | `number \| null` |
-| `selectionMode` | `SelectionMode` |
-| `disabled` | `boolean` |
+| `selectionMode`    | `SelectionMode`  |
+| `disabled`         | `boolean`        |
 
 **Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`
 
@@ -8343,14 +8538,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ContextMenuState`):
 
-| Field | Type |
-|---|---|
-| `open` | `boolean` |
-| `x` | `number` |
-| `y` | `number` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `highlighted` | `string \| null` |
+| Field           | Type             |
+| --------------- | ---------------- |
+| `open`          | `boolean`        |
+| `x`             | `number`         |
+| `y`             | `number`         |
+| `items`         | `string[]`       |
+| `disabledItems` | `string[]`       |
+| `highlighted`   | `string \| null` |
 
 **Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `selectHighlighted`, `select`, `setItems`
 
@@ -8366,16 +8561,16 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`DateInputState`):
 
-| Field | Type |
-|---|---|
-| `input` | `string` |
-| `value` | `Date \| null` |
-| `min` | `Date \| null` |
-| `max` | `Date \| null` |
-| `error` | `DateError` |
-| `disabled` | `boolean` |
-| `readonly` | `boolean` |
-| `required` | `boolean` |
+| Field      | Type           |
+| ---------- | -------------- |
+| `input`    | `string`       |
+| `value`    | `Date \| null` |
+| `min`      | `Date \| null` |
+| `max`      | `Date \| null` |
+| `error`    | `DateError`    |
+| `disabled` | `boolean`      |
+| `readonly` | `boolean`      |
+| `required` | `boolean`      |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
@@ -8391,16 +8586,16 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`DatePickerState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string \| null` |
-| `visibleMonth` | `number` |
-| `visibleYear` | `number` |
-| `focused` | `string` |
-| `min` | `string \| null` |
-| `max` | `string \| null` |
-| `weekStartsOn` | `0 \| 1` |
-| `disabled` | `boolean` |
+| Field          | Type             |
+| -------------- | ---------------- |
+| `value`        | `string \| null` |
+| `visibleMonth` | `number`         |
+| `visibleYear`  | `number`         |
+| `focused`      | `string`         |
+| `min`          | `string \| null` |
+| `max`          | `string \| null` |
+| `weekStartsOn` | `0 \| 1`         |
+| `disabled`     | `boolean`        |
 
 **Messages:** `setValue`, `setFocused`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
 
@@ -8416,8 +8611,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`DialogState`):
 
-| Field | Type |
-|---|---|
+| Field  | Type      |
+| ------ | --------- |
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -8436,8 +8631,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`DrawerState`):
 
-| Field | Type |
-|---|---|
+| Field  | Type      |
+| ------ | --------- |
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -8456,11 +8651,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`EditableState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string` |
-| `editing` | `boolean` |
-| `draft` | `string` |
+| Field      | Type      |
+| ---------- | --------- |
+| `value`    | `string`  |
+| `editing`  | `boolean` |
+| `draft`    | `string`  |
 | `disabled` | `boolean` |
 
 **Messages:** `edit`, `setDraft`, `submit`, `cancel`, `setValue`
@@ -8477,20 +8672,20 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`FileUploadState`):
 
-| Field | Type |
-|---|---|
-| `files` | `File[]` |
+| Field           | Type             |
+| --------------- | ---------------- |
+| `files`         | `File[]`         |
 | `rejectedFiles` | `RejectedFile[]` |
-| `disabled` | `boolean` |
-| `multiple` | `boolean` |
-| `accept` | `AcceptValue` |
-| `maxFiles` | `number` |
-| `maxSize` | `number` |
-| `minFileSize` | `number` |
-| `required` | `boolean` |
-| `readonly` | `boolean` |
-| `invalid` | `boolean` |
-| `dragging` | `boolean` |
+| `disabled`      | `boolean`        |
+| `multiple`      | `boolean`        |
+| `accept`        | `AcceptValue`    |
+| `maxFiles`      | `number`         |
+| `maxSize`       | `number`         |
+| `minFileSize`   | `number`         |
+| `required`      | `boolean`        |
+| `readonly`      | `boolean`        |
+| `invalid`       | `boolean`        |
+| `dragging`      | `boolean`        |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
@@ -8506,19 +8701,19 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`FloatingPanelState`):
 
-| Field | Type |
-|---|---|
-| `position` | `{ x: number; y: number }` |
-| `size` | `{ width: number; height: number }` |
-| `minSize` | `{ width: number; height: number }` |
-| `maxSize` | `{ width: number; height: number } \| null` |
-| `open` | `boolean` |
-| `minimized` | `boolean` |
-| `maximized` | `boolean` |
-| `dragging` | `boolean` |
-| `resizing` | `ResizeHandle \| null` |
+| Field           | Type                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| `position`      | `{ x: number; y: number }`                                        |
+| `size`          | `{ width: number; height: number }`                               |
+| `minSize`       | `{ width: number; height: number }`                               |
+| `maxSize`       | `{ width: number; height: number } \| null`                       |
+| `open`          | `boolean`                                                         |
+| `minimized`     | `boolean`                                                         |
+| `maximized`     | `boolean`                                                         |
+| `dragging`      | `boolean`                                                         |
+| `resizing`      | `ResizeHandle \| null`                                            |
 | `restoreBounds` | `{ x: number; y: number; width: number; height: number } \| null` |
-| `disabled` | `boolean` |
+| `disabled`      | `boolean`                                                         |
 
 **Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`
 
@@ -8534,11 +8729,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`FormState`):
 
-| Field | Type |
-|---|---|
-| `status` | `FormStatus` |
-| `touched` | `Record<string, boolean>` |
-| `submitError` | `string \| null` |
+| Field         | Type                      |
+| ------------- | ------------------------- |
+| `status`      | `FormStatus`              |
+| `touched`     | `Record<string, boolean>` |
+| `submitError` | `string \| null`          |
 
 **Messages:** `touch`, `touchAll`, `submit`, `submitSuccess`, `submitError`, `reset`
 
@@ -8554,8 +8749,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`HoverCardState`):
 
-| Field | Type |
-|---|---|
+| Field  | Type      |
+| ------ | --------- |
 | `open` | `boolean` |
 
 **Messages:** `show`, `hide`, `setOpen`
@@ -8572,15 +8767,15 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ImageCropperState`):
 
-| Field | Type |
-|---|---|
-| `image` | `{ width: number; height: number }` |
-| `crop` | `CropRect` |
-| `aspectRatio` | `number \| null` |
-| `minSize` | `number` |
-| `dragging` | `boolean` |
-| `resizing` | `ResizeHandle \| null` |
-| `disabled` | `boolean` |
+| Field         | Type                                |
+| ------------- | ----------------------------------- |
+| `image`       | `{ width: number; height: number }` |
+| `crop`        | `CropRect`                          |
+| `aspectRatio` | `number \| null`                    |
+| `minSize`     | `number`                            |
+| `dragging`    | `boolean`                           |
+| `resizing`    | `ResizeHandle \| null`              |
+| `disabled`    | `boolean`                           |
 
 **Messages:** `setImage`, `setCrop`, `setAspectRatio`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `reset`, `centerFill`
 
@@ -8596,8 +8791,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`InViewState`):
 
-| Field | Type |
-|---|---|
+| Field     | Type      |
+| --------- | --------- |
 | `visible` | `boolean` |
 
 **Messages:** `enter`, `leave`
@@ -8612,16 +8807,16 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ListboxState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string[]` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `disabled` | `boolean` |
-| `selectionMode` | `SelectionMode` |
-| `highlightedIndex` | `number \| null` |
-| `typeahead` | `string` |
-| `typeaheadExpiresAt` | `number` |
+| Field                | Type             |
+| -------------------- | ---------------- |
+| `value`              | `string[]`       |
+| `items`              | `string[]`       |
+| `disabledItems`      | `string[]`       |
+| `disabled`           | `boolean`        |
+| `selectionMode`      | `SelectionMode`  |
+| `highlightedIndex`   | `number \| null` |
+| `typeahead`          | `string`         |
+| `typeaheadExpiresAt` | `number`         |
 
 **Messages:** `select`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
@@ -8637,14 +8832,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`MarqueeState`):
 
-| Field | Type |
-|---|---|
-| `running` | `boolean` |
-| `direction` | `MarqueeDirection` |
-| `durationSec` | `number` |
-| `pauseOnHover` | `boolean` |
-| `hovered` | `boolean` |
-| `disabled` | `boolean` |
+| Field          | Type               |
+| -------------- | ------------------ |
+| `running`      | `boolean`          |
+| `direction`    | `MarqueeDirection` |
+| `durationSec`  | `number`           |
+| `pauseOnHover` | `boolean`          |
+| `hovered`      | `boolean`          |
+| `disabled`     | `boolean`          |
 
 **Messages:** `play`, `pause`, `toggle`, `hoverPause`, `hoverResume`, `setDirection`, `setDuration`
 
@@ -8660,14 +8855,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`MenuState`):
 
-| Field | Type |
-|---|---|
-| `open` | `boolean` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `highlighted` | `string \| null` |
-| `typeahead` | `string` |
-| `typeaheadExpiresAt` | `number` |
+| Field                | Type             |
+| -------------------- | ---------------- |
+| `open`               | `boolean`        |
+| `items`              | `string[]`       |
+| `disabledItems`      | `string[]`       |
+| `highlighted`        | `string \| null` |
+| `typeahead`          | `string`         |
+| `typeaheadExpiresAt` | `number`         |
 
 **Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `setItems`, `typeahead`
 
@@ -8685,11 +8880,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`NavMenuState`):
 
-| Field | Type |
-|---|---|
-| `open` | `string[]` |
-| `focused` | `string \| null` |
-| `disabled` | `boolean` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `open`     | `string[]`       |
+| `focused`  | `string \| null` |
+| `disabled` | `boolean`        |
 
 **Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`
 
@@ -8705,15 +8900,15 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`NumberInputState`):
 
-| Field | Type |
-|---|---|
-| `value` | `number \| null` |
-| `min` | `number` |
-| `max` | `number` |
-| `step` | `number` |
-| `disabled` | `boolean` |
-| `readonly` | `boolean` |
-| `rawText` | `string` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `value`    | `number \| null` |
+| `min`      | `number`         |
+| `max`      | `number`         |
+| `step`     | `number`         |
+| `disabled` | `boolean`        |
+| `readonly` | `boolean`        |
+| `rawText`  | `string`         |
 
 **Messages:** `setValue`, `setRawText`, `commit`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
@@ -8729,14 +8924,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`PaginationState`):
 
-| Field | Type |
-|---|---|
-| `page` | `number` |
-| `pageSize` | `number` |
-| `total` | `number` |
-| `siblings` | `number` |
-| `boundaries` | `number` |
-| `disabled` | `boolean` |
+| Field        | Type      |
+| ------------ | --------- |
+| `page`       | `number`  |
+| `pageSize`   | `number`  |
+| `total`      | `number`  |
+| `siblings`   | `number`  |
+| `boundaries` | `number`  |
+| `disabled`   | `boolean` |
 
 **Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`
 
@@ -8754,10 +8949,10 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`PasswordInputState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string` |
-| `visible` | `boolean` |
+| Field      | Type      |
+| ---------- | --------- |
+| `value`    | `string`  |
+| `visible`  | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `setValue`, `toggleVisibility`, `setVisible`
@@ -8774,14 +8969,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`PinInputState`):
 
-| Field | Type |
-|---|---|
-| `values` | `string[]` |
-| `length` | `number` |
-| `type` | `PinType` |
-| `mask` | `boolean` |
-| `disabled` | `boolean` |
-| `focusedIndex` | `number` |
+| Field          | Type       |
+| -------------- | ---------- |
+| `values`       | `string[]` |
+| `length`       | `number`   |
+| `type`         | `PinType`  |
+| `mask`         | `boolean`  |
+| `disabled`     | `boolean`  |
+| `focusedIndex` | `number`   |
 
 **Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`
 
@@ -8797,8 +8992,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`PopoverState`):
 
-| Field | Type |
-|---|---|
+| Field  | Type      |
+| ------ | --------- |
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -8817,10 +9012,10 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`PresenceState`):
 
-| Field | Type |
-|---|---|
-| `status` | `PresenceStatus` |
-| `unmountOnExit` | `boolean` |
+| Field           | Type             |
+| --------------- | ---------------- |
+| `status`        | `PresenceStatus` |
+| `unmountOnExit` | `boolean`        |
 
 **Messages:** `open`, `close`, `toggle`, `animationEnd`, `setPresent`
 
@@ -8836,11 +9031,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ProgressState`):
 
-| Field | Type |
-|---|---|
-| `value` | `number \| null` |
-| `min` | `number` |
-| `max` | `number` |
+| Field         | Type                  |
+| ------------- | --------------------- |
+| `value`       | `number \| null`      |
+| `min`         | `number`              |
+| `max`         | `number`              |
 | `orientation` | `ProgressOrientation` |
 
 **Messages:** `setValue`, `setMax`
@@ -8859,10 +9054,10 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`QrCodeState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string` |
-| `matrix` | `boolean[][]` |
+| Field             | Type                   |
+| ----------------- | ---------------------- |
+| `value`           | `string`               |
+| `matrix`          | `boolean[][]`          |
 | `errorCorrection` | `ErrorCorrectionLevel` |
 
 **Messages:** `setValue`, `setMatrix`, `setErrorCorrection`
@@ -8879,13 +9074,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`RadioGroupState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string \| null` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `disabled` | `boolean` |
-| `orientation` | `Orientation` |
+| Field           | Type             |
+| --------------- | ---------------- |
+| `value`         | `string \| null` |
+| `items`         | `string[]`       |
+| `disabledItems` | `string[]`       |
+| `disabled`      | `boolean`        |
+| `orientation`   | `Orientation`    |
 
 **Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`
 
@@ -8901,13 +9096,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`RatingGroupState`):
 
-| Field | Type |
-|---|---|
-| `value` | `number` |
-| `count` | `number` |
-| `allowHalf` | `boolean` |
-| `disabled` | `boolean` |
-| `readonly` | `boolean` |
+| Field          | Type             |
+| -------------- | ---------------- |
+| `value`        | `number`         |
+| `count`        | `number`         |
+| `allowHalf`    | `boolean`        |
+| `disabled`     | `boolean`        |
+| `readonly`     | `boolean`        |
 | `hoveredValue` | `number \| null` |
 
 **Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
@@ -8924,12 +9119,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ScrollAreaState`):
 
-| Field | Type |
-|---|---|
-| `overflowX` | `boolean` |
-| `overflowY` | `boolean` |
-| `scrolling` | `boolean` |
-| `hovered` | `boolean` |
+| Field        | Type                  |
+| ------------ | --------------------- |
+| `overflowX`  | `boolean`             |
+| `overflowY`  | `boolean`             |
+| `scrolling`  | `boolean`             |
+| `hovered`    | `boolean`             |
 | `visibility` | `ScrollbarVisibility` |
 
 **Messages:** `setScroll`, `setScrolling`, `setHovered`
@@ -8944,18 +9139,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SelectState`):
 
-| Field | Type |
-|---|---|
-| `open` | `boolean` |
-| `value` | `string[]` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `selectionMode` | `SelectionMode` |
-| `highlightedIndex` | `number \| null` |
-| `disabled` | `boolean` |
-| `required` | `boolean` |
-| `typeahead` | `string` |
-| `typeaheadExpiresAt` | `number` |
+| Field                | Type             |
+| -------------------- | ---------------- |
+| `open`               | `boolean`        |
+| `value`              | `string[]`       |
+| `items`              | `string[]`       |
+| `disabledItems`      | `string[]`       |
+| `selectionMode`      | `SelectionMode`  |
+| `highlightedIndex`   | `number \| null` |
+| `disabled`           | `boolean`        |
+| `required`           | `boolean`        |
+| `typeahead`          | `string`         |
+| `typeaheadExpiresAt` | `number`         |
 
 **Messages:** `open`, `close`, `toggle`, `selectOption`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
@@ -8973,13 +9168,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SignaturePadState`):
 
-| Field | Type |
-|---|---|
-| `strokes` | `Stroke[]` |
-| `current` | `Stroke \| null` |
-| `drawing` | `boolean` |
-| `disabled` | `boolean` |
-| `readonly` | `boolean` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `strokes`  | `Stroke[]`       |
+| `current`  | `Stroke \| null` |
+| `drawing`  | `boolean`        |
+| `disabled` | `boolean`        |
+| `readonly` | `boolean`        |
 
 **Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
 
@@ -8995,15 +9190,15 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SliderState`):
 
-| Field | Type |
-|---|---|
-| `value` | `number[]` |
-| `min` | `number` |
-| `max` | `number` |
-| `step` | `number` |
-| `disabled` | `boolean` |
-| `orientation` | `Orientation` |
-| `minStepsBetweenThumbs` | `number` |
+| Field                   | Type          |
+| ----------------------- | ------------- |
+| `value`                 | `number[]`    |
+| `min`                   | `number`      |
+| `max`                   | `number`      |
+| `step`                  | `number`      |
+| `disabled`              | `boolean`     |
+| `orientation`           | `Orientation` |
+| `minStepsBetweenThumbs` | `number`      |
 
 **Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
@@ -9019,18 +9214,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SortableState`):
 
-| Field | Type |
-|---|---|
-| `id` | `string` |
-| `startIndex` | `number` |
-| `currentIndex` | `number` |
-| `fromContainer` | `string` |
-| `toContainer` | `string` |
-| `startX` | `number` |
-| `startY` | `number` |
-| `currentX` | `number` |
-| `currentY` | `number` |
-| `dragging` | `DragState \| null` |
+| Field           | Type                |
+| --------------- | ------------------- |
+| `id`            | `string`            |
+| `startIndex`    | `number`            |
+| `currentIndex`  | `number`            |
+| `fromContainer` | `string`            |
+| `toContainer`   | `string`            |
+| `startX`        | `number`            |
+| `startY`        | `number`            |
+| `currentX`      | `number`            |
+| `currentY`      | `number`            |
+| `dragging`      | `DragState \| null` |
 
 **Messages:** `start`, `move`, `drop`, `cancel`, `toggleGrab`, `moveBy`
 
@@ -9046,15 +9241,15 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SplitterState`):
 
-| Field | Type |
-|---|---|
-| `position` | `number` |
-| `min` | `number` |
-| `max` | `number` |
-| `step` | `number` |
+| Field         | Type          |
+| ------------- | ------------- |
+| `position`    | `number`      |
+| `min`         | `number`      |
+| `max`         | `number`      |
+| `step`        | `number`      |
 | `orientation` | `Orientation` |
-| `disabled` | `boolean` |
-| `dragging` | `boolean` |
+| `disabled`    | `boolean`     |
+| `dragging`    | `boolean`     |
 
 **Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`
 
@@ -9070,14 +9265,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`StepsState`):
 
-| Field | Type |
-|---|---|
-| `current` | `number` |
+| Field       | Type       |
+| ----------- | ---------- |
+| `current`   | `number`   |
 | `completed` | `number[]` |
-| `errors` | `number[]` |
-| `steps` | `string[]` |
-| `linear` | `boolean` |
-| `disabled` | `boolean` |
+| `errors`    | `number[]` |
+| `steps`     | `string[]` |
+| `linear`    | `boolean`  |
+| `disabled`  | `boolean`  |
 
 **Messages:** `goTo`, `next`, `prev`, `complete`, `markError`, `clearError`, `reset`
 
@@ -9095,9 +9290,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`SwitchState`):
 
-| Field | Type |
-|---|---|
-| `checked` | `boolean` |
+| Field      | Type      |
+| ---------- | --------- |
+| `checked`  | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `setChecked`, `setDisabled`
@@ -9112,16 +9307,16 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TabsState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `orientation` | `Orientation` |
-| `activation` | `Activation` |
-| `focused` | `string \| null` |
-| `loopFocus` | `boolean` |
-| `deselectable` | `boolean` |
+| Field           | Type             |
+| --------------- | ---------------- |
+| `value`         | `string`         |
+| `items`         | `string[]`       |
+| `disabledItems` | `string[]`       |
+| `orientation`   | `Orientation`    |
+| `activation`    | `Activation`     |
+| `focused`       | `string \| null` |
+| `loopFocus`     | `boolean`        |
+| `deselectable`  | `boolean`        |
 
 **Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`
 
@@ -9139,13 +9334,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TagsInputState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string[]` |
-| `inputValue` | `string` |
-| `disabled` | `boolean` |
-| `max` | `number` |
-| `unique` | `boolean` |
+| Field          | Type             |
+| -------------- | ---------------- |
+| `value`        | `string[]`       |
+| `inputValue`   | `string`         |
+| `disabled`     | `boolean`        |
+| `max`          | `number`         |
+| `unique`       | `boolean`        |
 | `focusedIndex` | `number \| null` |
 
 **Messages:** `setInput`, `addTag`, `removeTag`, `removeLast`, `setValue`, `focusTag`, `focusTagNext`, `focusTagPrev`, `clearAll`
@@ -9162,8 +9357,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ThemeSwitchState`):
 
-| Field | Type |
-|---|---|
+| Field   | Type    |
+| ------- | ------- |
 | `theme` | `Theme` |
 
 **Messages:** `setTheme`, `toggle`
@@ -9178,14 +9373,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TimePickerState`):
 
-| Field | Type |
-|---|---|
-| `value` | `TimeValue` |
-| `format` | `TimeFormat` |
-| `minuteStep` | `number` |
-| `secondStep` | `number` |
-| `showSeconds` | `boolean` |
-| `disabled` | `boolean` |
+| Field         | Type         |
+| ------------- | ------------ |
+| `value`       | `TimeValue`  |
+| `format`      | `TimeFormat` |
+| `minuteStep`  | `number`     |
+| `secondStep`  | `number`     |
+| `showSeconds` | `boolean`    |
+| `disabled`    | `boolean`    |
 
 **Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`
 
@@ -9201,12 +9396,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TimerState`):
 
-| Field | Type |
-|---|---|
-| `running` | `boolean` |
-| `direction` | `Direction` |
-| `targetMs` | `number` |
-| `elapsedMs` | `number` |
+| Field       | Type             |
+| ----------- | ---------------- |
+| `running`   | `boolean`        |
+| `direction` | `Direction`      |
+| `targetMs`  | `number`         |
+| `elapsedMs` | `number`         |
 | `startedAt` | `number \| null` |
 
 **Messages:** `start`, `pause`, `reset`, `tick`, `setTarget`
@@ -9225,10 +9420,10 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ToasterState`):
 
-| Field | Type |
-|---|---|
-| `toasts` | `Toast[]` |
-| `max` | `number` |
+| Field       | Type             |
+| ----------- | ---------------- |
+| `toasts`    | `Toast[]`        |
+| `max`       | `number`         |
 | `placement` | `ToastPlacement` |
 
 **Messages:** `create`, `dismiss`, `dismissAll`, `update`, `pause`, `resume`, `pauseAll`, `resumeAll`
@@ -9247,11 +9442,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TocState`):
 
-| Field | Type |
-|---|---|
-| `items` | `TocEntry[]` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `items`    | `TocEntry[]`     |
 | `activeId` | `string \| null` |
-| `expanded` | `string[]` |
+| `expanded` | `string[]`       |
 
 **Messages:** `setItems`, `setActive`, `toggleExpanded`, `expandAll`, `collapseAll`
 
@@ -9269,15 +9464,15 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ToggleGroupState`):
 
-| Field | Type |
-|---|---|
-| `value` | `string[]` |
-| `type` | `'single' \| 'multiple'` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `disabled` | `boolean` |
-| `orientation` | `Orientation` |
-| `deselectable` | `boolean` |
+| Field           | Type                     |
+| --------------- | ------------------------ |
+| `value`         | `string[]`               |
+| `type`          | `'single' \| 'multiple'` |
+| `items`         | `string[]`               |
+| `disabledItems` | `string[]`               |
+| `disabled`      | `boolean`                |
+| `orientation`   | `Orientation`            |
+| `deselectable`  | `boolean`                |
 
 **Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`
 
@@ -9291,9 +9486,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`ToggleState`):
 
-| Field | Type |
-|---|---|
-| `pressed` | `boolean` |
+| Field      | Type      |
+| ---------- | --------- |
+| `pressed`  | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `setPressed`, `setDisabled`
@@ -9308,8 +9503,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TooltipState`):
 
-| Field | Type |
-|---|---|
+| Field  | Type      |
+| ------ | --------- |
 | `open` | `boolean` |
 
 **Messages:** `show`, `hide`, `toggle`, `setOpen`
@@ -9328,12 +9523,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TourState`):
 
-| Field | Type |
-|---|---|
-| `steps` | `TourStep[]` |
-| `open` | `boolean` |
-| `index` | `number` |
-| `visited` | `string[]` |
+| Field     | Type         |
+| --------- | ------------ |
+| `steps`   | `TourStep[]` |
+| `open`    | `boolean`    |
+| `index`   | `number`     |
+| `visited` | `string[]`   |
 
 **Messages:** `start`, `stop`, `next`, `prev`, `goto`, `setSteps`
 
@@ -9351,22 +9546,22 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **State** (`TreeViewState`):
 
-| Field | Type |
-|---|---|
-| `expanded` | `string[]` |
-| `selected` | `string[]` |
-| `checked` | `string[]` |
-| `indeterminate` | `string[]` |
-| `focused` | `string \| null` |
-| `selectionMode` | `SelectionMode` |
-| `visibleItems` | `string[]` |
-| `visibleLabels` | `string[]` |
-| `disabled` | `boolean` |
-| `typeahead` | `string` |
-| `typeaheadExpiresAt` | `number` |
-| `renaming` | `string \| null` |
-| `renameDraft` | `string` |
-| `loading` | `string[]` |
+| Field                | Type             |
+| -------------------- | ---------------- |
+| `expanded`           | `string[]`       |
+| `selected`           | `string[]`       |
+| `checked`            | `string[]`       |
+| `indeterminate`      | `string[]`       |
+| `focused`            | `string \| null` |
+| `selectionMode`      | `SelectionMode`  |
+| `visibleItems`       | `string[]`       |
+| `visibleLabels`      | `string[]`       |
+| `disabled`           | `boolean`        |
+| `typeahead`          | `string`         |
+| `typeaheadExpiresAt` | `number`         |
+| `renaming`           | `string \| null` |
+| `renameDraft`        | `string`         |
+| `loading`            | `string[]`       |
 
 **Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`
 
@@ -9511,7 +9706,11 @@ route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
 route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
 
 ```typescript
-function route<R = any>(segments: Segment[], buildOrOpts: ((params: Record<string, string>) => R) | RouteDefOptions, buildOrToPath?: ((params: Record<string, string>) => R) | { toPath: (route: R) => string }): RouteDef<R>
+function route<R = any>(
+  segments: Segment[],
+  buildOrOpts: ((params: Record<string, string>) => R) | RouteDefOptions,
+  buildOrToPath?: ((params: Record<string, string>) => R) | { toPath: (route: R) => string },
+): RouteDef<R>
 ```
 
 ### `createRouter()`
@@ -9864,14 +10063,15 @@ Build a `TransitionOptions` bundle ({ enter, leave }) from a spec.
 Pass the result into `branch`, `show`, or `each` to animate the enter/leave
 of that structural block.
 Lifecycle:
- - **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
-   → wait for duration → remove all transient values (element rests on its base styles).
- - **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
-   → wait for duration (Promise-resolved so DOM removal is deferred).
-Duration:
- - If `duration` is given, it is used verbatim.
- - Otherwise, computed `transition-duration + transition-delay` is read after
-   the active/from classes are applied, taking the max across properties.
+
+- **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
+  → wait for duration → remove all transient values (element rests on its base styles).
+- **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
+  → wait for duration (Promise-resolved so DOM removal is deferred).
+  Duration:
+- If `duration` is given, it is used verbatim.
+- Otherwise, computed `transition-duration + transition-delay` is read after
+  the active/from classes are applied, taking the max across properties.
 
 ```typescript
 function transition(spec: TransitionSpec): TransitionOptions
@@ -9910,6 +10110,7 @@ function collapse(opts: CollapseOptions = {}): TransitionOptions
 
 Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
 property using a damped spring simulation driven by `requestAnimationFrame`.
+
 ```ts
 show({ when: (s) => s.open, render: () => content(), ...spring() })
 show({ ...spring({ property: 'transform', from: 0, to: 1 }) })
@@ -9925,15 +10126,17 @@ FLIP (First-Last-Invert-Play) reorder animation for `each()` lists.
 Attach to an `each()` alongside item enter/leave transitions. After each
 reconcile, items whose positions changed animate smoothly from their
 previous position to the new one.
+
 ```ts
 each({
-  items: s => s.items,
-  key: i => i.id,
+  items: (s) => s.items,
+  key: (i) => i.id,
   render,
-  ...fade(),         // animates appear/disappear
-  ...flip(),         // animates reorders
+  ...fade(), // animates appear/disappear
+  ...flip(), // animates reorders
 })
 ```
+
 Spreading two transition helpers merges their hooks: `fade()` provides
 `enter`/`leave`, `flip()` provides `enter` (position capture) and
 `onTransition` (apply inverse + play). The `enter` from `flip()` overrides
@@ -9952,6 +10155,7 @@ function flip(opts: FlipOptions = {}): TransitionOptions
 Merge multiple TransitionOptions into one, chaining their `enter`,
 `leave`, and `onTransition` handlers in order.
 Useful for combining an item-level animation (fade/slide/...) with flip():
+
 ```ts
 each({ items, key, render, ...mergeTransitions(fade(), flip()) })
 ```
@@ -9967,6 +10171,7 @@ animating page-to-page transitions. Used in two ways:
 **Manual branch-based routing:** spread the result into a `branch()`
 call that switches on the current route key. The runtime invokes
 `enter` / `leave` as the branch swaps cases.
+
 ```ts
 branch({
   on: (s) => s.route,
@@ -9974,11 +10179,13 @@ branch({
   ...routeTransition({ duration: 200 }),
 })
 ```
+
 **Vike filesystem routing (`@llui/vike`):** Vike's `onRenderClient`
 doesn't consume `{ enter, leave }` directly because each page is its
 own component and the swap goes through dispose + clear + mount. Use
 `fromTransition` from `@llui/vike/client` to adapt the transition to
 the `onLeave` / `onEnter` hook shape:
+
 ```ts
 // pages/+onRenderClient.ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
@@ -9987,6 +10194,7 @@ export const onRenderClient = createOnRenderClient({
   ...fromTransition(routeTransition({ duration: 200 })),
 })
 ```
+
 The vike variant operates on the container element itself (the `#app`
 div) — its opacity / transform fades out the whole page, then the new
 page fades in when it mounts.
@@ -10004,6 +10212,7 @@ Wrap any transition preset so that batch-entered items get staggered delays.
 Items entering within the same microtask are considered a "batch" and get
 sequential delays (`index * delayPerItem`). The counter resets after the
 microtask, so the next batch starts from 0.
+
 ```ts
 each({
   items: s => s.items,
@@ -10038,6 +10247,7 @@ export type Styles = Record<string, string | number>
 ### `TransitionValue`
 
 One "state" in a transition.
+
 - `string` — space-separated class names (applied via classList)
 - `Styles` — inline style object (applied via element.style)
 - `Array<string | Styles>` — mix both (useful for utility classes + dynamic styles)
@@ -10292,6 +10502,7 @@ for its own framework-adapter config (`vike-react` / `vike-vue` /
 `vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
 Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
 `/pages` that Vike won't scan, and import it here by path.
+
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
@@ -10306,7 +10517,9 @@ export const onRenderHtml = createOnRenderHtml({
 ```
 
 ```typescript
-function createOnRenderHtml(options: RenderHtmlOptions): (pageContext: PageContext) => Promise<RenderHtmlResult>
+function createOnRenderHtml(
+  options: RenderHtmlOptions,
+): (pageContext: PageContext) => Promise<RenderHtmlResult>
 ```
 
 ### `_renderChain()`
@@ -10320,7 +10533,11 @@ build so they reach the nested page.
 @internal — exported for unit testing only (`_renderChain`).
 
 ```typescript
-function _renderChain(chain: LayoutChain, chainData: readonly unknown[], env: DomEnv): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead }
+function _renderChain(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+  env: DomEnv,
+): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead }
 ```
 
 ### `pageSlot()`
@@ -10342,6 +10559,7 @@ the value the layout provided above the slot.
 Do NOT name the file `+Layout.ts` — Vike reserves the `+` prefix for
 its own framework config conventions. Use `Layout.ts`, `app-layout.ts`,
 or anywhere outside `/pages` that Vike won't scan.
+
 ```ts
 // pages/Layout.ts    ← not +Layout.ts
 import { component, div, main, header } from '@llui/dom'
@@ -10358,6 +10576,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   ],
 })
 ```
+
 Returns a `Mountable` (the slot's anchor comment) — drop it straight into
 a children array (`main([pageSlot()])`); no spread needed.
 Call exactly once per layout. Calling more than once in a single
@@ -10371,6 +10590,7 @@ function pageSlot(): Mountable
 
 Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
 expected by `createOnRenderClient`.
+
 ```ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
@@ -10379,6 +10599,7 @@ export const onRenderClient = createOnRenderClient({
   ...fromTransition(routeTransition({ duration: 200 })),
 })
 ```
+
 The transition operates on the slot element — in a no-layout setup,
 the root container; in a layout setup, the innermost surviving layer's
 `pageSlot()` element.
@@ -10425,7 +10646,9 @@ prefix for its own framework config conventions. Name the file
 won't scan, and import it here by path.
 
 ```typescript
-function createOnRenderClient(options: RenderClientOptions): (pageContext: ClientPageContext) => Promise<void>
+function createOnRenderClient(
+  options: RenderClientOptions,
+): (pageContext: ClientPageContext) => Promise<void>
 ```
 
 ### `getLayoutChain()`
@@ -10451,7 +10674,14 @@ innermost layer called `pageSlot()` unnecessarily.
 anchor-mount/dispose contracts directly with hand-built DOM.
 
 ```typescript
-function _mountChainSuffix(chain: LayoutChain, chainData: readonly unknown[], startAt: number, initialTarget: HTMLElement | Comment, initialContexts: ReadonlyMap<symbol, unknown> | undefined, opts: MountOpts): void
+function _mountChainSuffix(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+  startAt: number,
+  initialTarget: HTMLElement | Comment,
+  initialContexts: ReadonlyMap<symbol, unknown> | undefined,
+  opts: MountOpts,
+): void
 ```
 
 ## Types
@@ -10548,7 +10778,7 @@ Options for the customized `createOnRenderHtml` factory. Mirrors
 `@llui/vike/client`'s `RenderClientOptions.Layout` — the same chain
 shape is accepted for consistency between server and client render.
 
-```typescript
+````typescript
 export interface RenderHtmlOptions {
   /** Custom HTML document template. Defaults to a minimal layout. */
   document?: (ctx: DocumentContext) => string
@@ -10586,7 +10816,7 @@ export interface RenderHtmlOptions {
    */
   domEnv: () => DomEnv | Promise<DomEnv>
 }
-```
+````
 
 ### `ClientPageContext`
 
@@ -10617,7 +10847,7 @@ export interface ClientPageContext {
 
 Page-lifecycle hooks that fire around the dispose → mount cycle on
 client navigation. With persistent layouts in play the cycle only
-tears down the *divergent* suffix of the layout chain — any layers
+tears down the _divergent_ suffix of the layout chain — any layers
 shared between the old and new routes stay mounted.
 On the initial hydration render, `onLeave` and `onEnter` are NOT
 called — there's no outgoing page to leave and no animation to enter.
@@ -11417,7 +11647,13 @@ Rejects with `{code: 'paused'}` when the pairing is absent,
 or whatever the browser sent in its `rpc-error` frame otherwise.
 
 ```typescript
-function rpc(registry: PairingRegistry, tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown>
+function rpc(
+  registry: PairingRegistry,
+  tid: string,
+  tool: string,
+  args: unknown,
+  opts: RpcOptions = {},
+): Promise<unknown>
 ```
 
 ### `waitForConfirm()`
@@ -11427,7 +11663,12 @@ Resolves with `{outcome: 'user-cancelled'}` on timeout or pairing
 drop (approvals lapse when the user isn't present to act on them).
 
 ```typescript
-function waitForConfirm(registry: PairingRegistry, tid: string, confirmId: string, timeoutMs: number): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+function waitForConfirm(
+  registry: PairingRegistry,
+  tid: string,
+  confirmId: string,
+  timeoutMs: number,
+): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
 ```
 
 ### `waitForChange()`
@@ -11437,7 +11678,12 @@ Used by the long-poll `/lap/v1/wait` endpoint for external state
 pushes (WebSocket messages, timers) arriving while the LLM is idle.
 
 ```typescript
-function waitForChange(registry: PairingRegistry, tid: string, path: string | undefined, timeoutMs: number): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+function waitForChange(
+  registry: PairingRegistry,
+  tid: string,
+  path: string | undefined,
+  timeoutMs: number,
+): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
 ```
 
 ### `createWHATWGPairingConnection()`
@@ -11448,7 +11694,7 @@ server half), Deno (`Deno.upgradeWebSocket().socket`), Bun's
 upgraded socket, and any other runtime that exposes a
 standards-compliant WebSocket object.
 The input type is intentionally the browser/global `WebSocket`
-interface — *not* the Node `ws` library's variant, which uses an
+interface — _not_ the Node `ws` library's variant, which uses an
 EventEmitter API (`on('message', ...)`) rather than
 `addEventListener('message', ...)`. Use `./node/upgrade.ts` for
 the `ws` library path.
@@ -11474,6 +11720,7 @@ Cloudflare Workers handler. Accepts a WebSocket upgrade using
 `WebSocketPair`, validates the token via
 `agent.acceptConnection`, and returns the 101 upgrade Response.
 Usage:
+
 ```ts
 const agent = createLluiAgentCore()
 export default {
@@ -11494,6 +11741,7 @@ function handleCloudflareUpgrade(req: Request, agent: AgentCoreHandle): Promise<
 Deno handler. Uses `Deno.upgradeWebSocket(req)` to produce the
 response + socket pair, then plugs the socket into the registry.
 Usage:
+
 ```ts
 Deno.serve(async (req) => {
   const url = new URL(req.url)
@@ -11511,28 +11759,34 @@ function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Respon
 Route an incoming Worker `fetch` request to the Durable Object
 that owns its `tid`.
 The token travels in three places depending on the route:
-  - LAP HTTP calls: `Authorization: Bearer <token>` header
-  - Mint / resume HTTP calls: no token (identity resolver runs
-    inside the DO via the LAP router; we route by origin or a
-    special `/agent/mint` path — see below)
-  - WebSocket upgrade: `?token=<token>` in the URL
-Requests that don't carry a tid (mint, resume-list, sessions) are
-routed to a "root" DO named `__root`, which handles identity /
-token store operations centrally. LAP and WS calls route to the
-per-tid DO so the pairing state stays local.
-This is the recommended entry for Cloudflare Workers deployments;
-users who need custom routing can write their own and call the
-underlying primitives directly.
-As of 0.0.35 the token format is opaque (random, not signed), so we
-can't recover `tid` from the token alone. The caller passes a
-`resolveTid` callback — typically `(token) => stub.fetch(...)` to
-the root DO's token-resolution endpoint — that turns a bearer into
-its tid via the shared token store. Callers that don't shard by
-tid can pass `() => Promise.resolve(rootName)` to route everything
-through the root DO.
+
+- LAP HTTP calls: `Authorization: Bearer <token>` header
+- Mint / resume HTTP calls: no token (identity resolver runs
+  inside the DO via the LAP router; we route by origin or a
+  special `/agent/mint` path — see below)
+- WebSocket upgrade: `?token=<token>` in the URL
+  Requests that don't carry a tid (mint, resume-list, sessions) are
+  routed to a "root" DO named `__root`, which handles identity /
+  token store operations centrally. LAP and WS calls route to the
+  per-tid DO so the pairing state stays local.
+  This is the recommended entry for Cloudflare Workers deployments;
+  users who need custom routing can write their own and call the
+  underlying primitives directly.
+  As of 0.0.35 the token format is opaque (random, not signed), so we
+  can't recover `tid` from the token alone. The caller passes a
+  `resolveTid` callback — typically `(token) => stub.fetch(...)` to
+  the root DO's token-resolution endpoint — that turns a bearer into
+  its tid via the shared token store. Callers that don't shard by
+  tid can pass `() => Promise.resolve(rootName)` to route everything
+  through the root DO.
 
 ```typescript
-function routeToAgentDO(req: Request, namespace: MinimalDurableObjectNamespace, resolveTid: (token: string) => Promise<string | null>, opts: { rootName?: string; mcpPath?: string } = {}): Promise<Response>
+function routeToAgentDO(
+  req: Request,
+  namespace: MinimalDurableObjectNamespace,
+  resolveTid: (token: string) => Promise<string | null>,
+  opts: { rootName?: string; mcpPath?: string } = {},
+): Promise<Response>
 ```
 
 ### `defaultSessionStorage()`
@@ -11544,7 +11798,9 @@ undefined (SSR/tests), so calling code never has to feature-detect
 the browser environment itself.
 
 ```typescript
-function defaultSessionStorage(storageKey: string = 'llui-agent:session'): AgentSessionStorage | null
+function defaultSessionStorage(
+  storageKey: string = 'llui-agent:session',
+): AgentSessionStorage | null
 ```
 
 ### `createAgentClient()`
@@ -11564,7 +11820,11 @@ function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]]
 ### `update()`
 
 ```typescript
-function update(state: AgentConnectState, msg: AgentConnectMsg, opts: AgentConnectInitOpts = {}): [AgentConnectState, AgentEffect[]]
+function update(
+  state: AgentConnectState,
+  msg: AgentConnectMsg,
+  opts: AgentConnectInitOpts = {},
+): [AgentConnectState, AgentEffect[]]
 ```
 
 ### `connect()`
@@ -11574,7 +11834,11 @@ Builds prop bags for the view. Static-bag-with-Signal-handles shape
 element helpers.
 
 ```typescript
-function connect(state: Signal<AgentConnectState>, send: Send<AgentConnectMsg>, _opts: AgentConnectConnectOptions = {}): ConnectBag
+function connect(
+  state: Signal<AgentConnectState>,
+  send: Send<AgentConnectMsg>,
+  _opts: AgentConnectConnectOptions = {},
+): ConnectBag
 ```
 
 ### `makeDefaultCodecs()`
@@ -11866,19 +12130,20 @@ export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
 
 The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
 from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
-  1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
-     and bare enum: `{enum: [...]}` (values may be string, number,
-     or boolean — the compiler preserves the literal kind so JSON
-     round-trips don't lose type info).
-  2. Bare nested types: `{kind: 'object', shape}` for inline /
-     followed-via-typeIndex shapes; `{kind: 'array', element}` for
-     `T[]` / `readonly T[]` / `Array<T>`; `{kind: 'discriminated-
-     union', discriminant, variants}` for tagged unions of objects
-     (e.g. `Format = {kind:'exact'} | {kind:'range', min, max}`).
-     The synthesizer recurses to build copy-paste-ready nested
-     examples; the validator walks the same tree.
-  3. Rich descriptor: wraps any of the above with `{optional?,
-     priority?, hint?}` carrying TS optionality and `@should` hints.
+
+1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
+   and bare enum: `{enum: [...]}` (values may be string, number,
+   or boolean — the compiler preserves the literal kind so JSON
+   round-trips don't lose type info).
+2. Bare nested types: `{kind: 'object', shape}` for inline /
+   followed-via-typeIndex shapes; `{kind: 'array', element}` for
+   `T[]` / `readonly T[]` / `Array<T>`; `{kind: 'discriminated-
+union', discriminant, variants}` for tagged unions of objects
+   (e.g. `Format = {kind:'exact'} | {kind:'range', min, max}`).
+   The synthesizer recurses to build copy-paste-ready nested
+   examples; the validator walks the same tree.
+3. Rich descriptor: wraps any of the above with `{optional?,
+priority?, hint?}` carrying TS optionality and `@should` hints.
 
 ```typescript
 export type MsgSchemaBareType =
@@ -12439,6 +12704,7 @@ export type LapError = {
 ### `DispatchMode`
 
 Who can dispatch a Msg variant.
+
 - `'shared'` (default) — both UI bindings and the agent can dispatch.
 - `'human-only'` — UI-only. Agent calls to `/message` for these variants
   are rejected with `LapMessageRejectReason: 'human-only'`. Use for
@@ -12447,9 +12713,9 @@ Who can dispatch a Msg variant.
 - `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
   like batch operations or "explain this state" introspection variants.
   Lint warns if a view references one via `send({ type: 'X' })`.
-JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
-Absence of either tag → `'shared'`. The two tags are mutually exclusive
-(enforced by `llui/agent-exclusive-annotations` ESLint rule).
+  JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
+  Absence of either tag → `'shared'`. The two tags are mutually exclusive
+  (enforced by `llui/agent-exclusive-annotations` ESLint rule).
 
 ```typescript
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
@@ -13308,12 +13574,13 @@ Registry of live browser pairings. Pure routing + hello cache —
 request-lifecycle state (in-flight RPC promises, confirm waits,
 long-polls) lives in the LAP handlers that need it, not here.
 Two implementations ship today:
-  - `InMemoryPairingRegistry` for long-lived server processes
-    (Node, Bun, Deno, Deno Deploy).
-  - A Cloudflare Durable Object implementation (see
-    `server/cloudflare`) for stateless Worker runtimes.
-Other runtimes can implement this interface the same way; the
-contract is intentionally small.
+
+- `InMemoryPairingRegistry` for long-lived server processes
+  (Node, Bun, Deno, Deno Deploy).
+- A Cloudflare Durable Object implementation (see
+  `server/cloudflare`) for stateless Worker runtimes.
+  Other runtimes can implement this interface the same way; the
+  contract is intentionally small.
 
 ```typescript
 export interface PairingRegistry {
@@ -13454,9 +13721,11 @@ class InMemoryPairingRegistry implements PairingRegistry {
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
   recentLog
-  constructor(opts: {
+  constructor(
+    opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
-    } = {})
+    } = {},
+  )
   getRecentLog(tid: string, n: number): LogEntry[]
   register(tid: string, conn: PairingConnection): void
   unregister(tid: string): void
@@ -13467,8 +13736,16 @@ class InMemoryPairingRegistry implements PairingRegistry {
   onClose(tid: string, handler: () => void): () => void
   dispatch(tid: string, frame: ClientFrame): void
   rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown>
-  waitForConfirm(tid: string, confirmId: string, timeoutMs: number): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
-  waitForChange(tid: string, path: string | undefined, timeoutMs: number): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+  waitForConfirm(
+    tid: string,
+    confirmId: string,
+    timeoutMs: number,
+  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+  waitForChange(
+    tid: string,
+    path: string | undefined,
+    timeoutMs: number,
+  ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
   notify(tid: string, frame: ServerFrame): void
   handleClose(tid: string): void
 }
@@ -13531,40 +13808,41 @@ cross the wire without forcing every component author to invent
 their own envelope.
 **Wire convention.** A non-JSON-safe runtime value travels as a
 tagged object:
-  { __codec: '<name>', wire: <encoded form> }
+{ \_\_codec: '<name>', wire: <encoded form> }
 The runtime walks every value crossing the LAP boundary and applies
 the codec registry symmetrically:
-  - **Outgoing** (component → agent, e.g. `stateAfter`): the encoder
-    looks up a codec whose `matchesRuntime` returns true and replaces
-    the value with its tagged shape.
-  - **Incoming** (agent → component, e.g. dispatched `msg`): the
-    decoder detects the tagged shape, calls the codec's `decode`,
-    and substitutes the runtime value before `update()` runs.
-Component code never observes the tagged form. By the time a
-reducer sees `msg.value`, a real `Date` (or whatever) is in place;
-by the time the agent reads `stateAfter`, every `Date` has been
-encoded.
-**Authoring.** When a Msg variant carries a non-JSON-safe field,
-tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
-For example, a date-input message:
-    @intent("Set the parsed date")
-    @codec("iso-date")
-    | { type: 'setValue'; value: Date | null }
-The `@codec` tag is documentation for human readers and the
-eventual schema generator that publishes the message catalogue to
-the agent client. The runtime encode/decode is registry-driven and
-doesn't need per-field metadata.
-**Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
-ISO 8601 string) and `epoch-millis` (Date ↔ number). The
-`epoch-millis` codec is registered but its `matchesRuntime` returns
-`false` by default — it's available for explicit decode but doesn't
-shadow `iso-date` on the encode side. Consumers who prefer epoch
-millis can construct a registry that lists `epoch-millis` first.
-**File / Blob.** Not in the default registry. File/Blob handling is
-environment-specific (browser File API vs. Node Buffer vs. workers)
-and the encoded form is large enough that consumers should opt in
-deliberately. Provide your own codec via `registry.register({...})`
-when a component needs it.
+
+- **Outgoing** (component → agent, e.g. `stateAfter`): the encoder
+  looks up a codec whose `matchesRuntime` returns true and replaces
+  the value with its tagged shape.
+- **Incoming** (agent → component, e.g. dispatched `msg`): the
+  decoder detects the tagged shape, calls the codec's `decode`,
+  and substitutes the runtime value before `update()` runs.
+  Component code never observes the tagged form. By the time a
+  reducer sees `msg.value`, a real `Date` (or whatever) is in place;
+  by the time the agent reads `stateAfter`, every `Date` has been
+  encoded.
+  **Authoring.** When a Msg variant carries a non-JSON-safe field,
+  tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
+  For example, a date-input message:
+  @intent("Set the parsed date")
+  @codec("iso-date")
+  | { type: 'setValue'; value: Date | null }
+  The `@codec` tag is documentation for human readers and the
+  eventual schema generator that publishes the message catalogue to
+  the agent client. The runtime encode/decode is registry-driven and
+  doesn't need per-field metadata.
+  **Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
+  ISO 8601 string) and `epoch-millis` (Date ↔ number). The
+  `epoch-millis` codec is registered but its `matchesRuntime` returns
+  `false` by default — it's available for explicit decode but doesn't
+  shadow `iso-date` on the encode side. Consumers who prefer epoch
+  millis can construct a registry that lists `epoch-millis` first.
+  **File / Blob.** Not in the default registry. File/Blob handling is
+  environment-specific (browser File API vs. Node Buffer vs. workers)
+  and the encoded form is large enough that consumers should opt in
+  deliberately. Provide your own codec via `registry.register({...})`
+  when a component needs it.
 
 ```typescript
 const WIRE_TAG
@@ -13824,7 +14102,10 @@ Returns the zip as a Blob (for download), the parsed manifest, and the
 raw bytes.
 
 ```typescript
-function exportBundle(store: ExportableStore, opts: ExportBundleOptions = {}): Promise<ExportBundleResult>
+function exportBundle(
+  store: ExportableStore,
+  opts: ExportBundleOptions = {},
+): Promise<ExportBundleResult>
 ```
 
 ### `bundleFilename()`
@@ -13846,7 +14127,7 @@ function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle
 ### `HeadersInput`
 
 Static headers, or a (sync/async) function called per request so tokens
- can refresh.
+can refresh.
 
 ```typescript
 export type HeadersInput =
@@ -13907,9 +14188,9 @@ export interface QueueResponse {
 ### `FullNote`
 
 A note fetched in full (the `format=json` shape). Frontmatter/body are
- intentionally loose — consumers narrow what they read. Concrete
- `NoteFrontmatter`/`NoteBody` values assign here (they carry these fields
- and more); the dev-server adapter also fills it from raw server JSON.
+intentionally loose — consumers narrow what they read. Concrete
+`NoteFrontmatter`/`NoteBody` values assign here (they carry these fields
+and more); the dev-server adapter also fills it from raw server JSON.
 
 ```typescript
 export interface FullNote {
@@ -14267,12 +14548,293 @@ const NOTE_SCHEMA_VERSION
 ```
 
 
-
 ## Related
 
 - [`@llui/vite-plugin`](/api/vite-plugin) — the dev-server middleware that backs every HUD HTTP call. See `devmodeAnnotate` config.
 - [`@llui/mcp`](/api/mcp) — the LLM-facing side of the same notebook.
 - Proposal: [`docs/proposals/devmode-annotate/`](https://github.com/fponticelli/llui/tree/main/docs/proposals/devmode-annotate) — full on-disk format spec, middleware contract, MCP surface, runtime-hook plan, and task-mode design.
+
+---
+
+# @llui/markdown
+
+Turns a Markdown string into real LLui DOM. `markdown(source)` parses to an [mdast](https://github.com/syntax-tree/mdast) AST and renders it through LLui's authoring helpers as live reactive nodes — there is no virtual DOM and no `dangerouslySetInnerHTML`. Bind it to a reactive `source` signal and the preview re-renders as the string changes; top-level blocks are content-hash-keyed, so a growing or streaming document reuses the DOM of unchanged blocks instead of rebuilding.
+
+This is the render-only counterpart to [`@llui/markdown-editor`](/api/markdown-editor). Reach for `@llui/markdown` when you want to _display_ Markdown (docs, previews, chat transcripts, streamed model output); reach for the editor when you want a WYSIWYG editing surface.
+
+```bash
+pnpm add @llui/markdown @llui/dom
+```
+
+`@llui/dom` is a peer dependency.
+
+## What it gives you
+
+- **Markdown in, LLui DOM out.** `markdown(source, options?)` builds real reactive nodes; `renderMarkdown` and `parseMarkdown` expose the lower-level render/parse steps.
+- **Pluggable rendering.** A `Renderers` map lets you override any mdast node type (headings, blockquotes, code, …) while inheriting `defaultRenderers` for everything else; `mergeRenderers` composes a partial override set over the built-ins.
+- **Safe by default.** `sanitizeUrl` / `resolveUrl` guard `href`/`src` values; raw HTML handling is opt-in.
+- **Streaming-friendly.** `toKeyedBlocks` / `blockSource` key top-level blocks by content hash so incremental updates reconcile rather than rebuild.
+
+## API
+
+
+## Functions
+
+### `renderMarkdown()`
+
+Render an already-parsed mdast {@link Root} to LLui DOM (no wrapper element).
+Returns the rendered top-level blocks.
+
+```typescript
+function renderMarkdown(root: Root, opts: MarkdownOptions = {}): Renderable
+```
+
+### `markdown()`
+
+Reactive Markdown view. Composes like `text()`/`unsafeHtml()` — returns a
+`Mountable` placed in a view.
+
+- Plain `string` source → parsed once, rendered statically.
+- `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
+  content hash and rendered through `each`, so unchanged earlier blocks keep their
+  DOM and only the changing tail (and appended blocks) rebuild. This makes
+  streaming / growing Markdown (e.g. LLM output) cheap to render.
+
+```typescript
+function markdown(source: Reactive<string>, opts: MarkdownOptions = {}): Mountable
+```
+
+### `parseMarkdown()`
+
+Parse Markdown source into an mdast {@link Root}. GFM is on unless
+`opts.gfm === false`. Extra `extensions`/`mdastExtensions` are appended.
+
+```typescript
+function parseMarkdown(src: string, opts: MarkdownOptions = {}): Root
+```
+
+### `mergeRenderers()`
+
+Merge user overrides over the built-in defaults into a uniform registry.
+
+```typescript
+function mergeRenderers(user?: Renderers): ResolvedRenderers
+```
+
+### `sanitizeUrl()`
+
+Returns the URL unchanged if its scheme is allowed (or it is relative),
+otherwise `null`.
+
+```typescript
+function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null
+```
+
+### `resolveUrl()`
+
+Resolve a link/image URL through `transformLink` (if any) then sanitize it.
+Returns the final URL, or `null` if the link/image should be dropped.
+
+```typescript
+function resolveUrl(
+  url: string,
+  node: Link | Image | LinkReference | ImageReference,
+  options: ResolvedOptions,
+): string | null
+```
+
+### `collectDefinitions()`
+
+Walk the tree and collect every link/image reference definition, keyed by
+lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
+
+```typescript
+function collectDefinitions(root: Root): Map<string, Definition>
+```
+
+### `makeContext()`
+
+Build the context renderers receive: `render` dispatches one node through the
+merged registry, `renderChildren` recurses, `definitions` resolves references.
+
+```typescript
+function makeContext(
+  options: ResolvedOptions,
+  definitions: ReadonlyMap<string, Definition>,
+): RenderContext
+```
+
+### `blockSource()`
+
+The block's source text (via mdast position offsets), or a structural fallback.
+
+```typescript
+function blockSource(node: RootContent, source: string): string
+```
+
+### `toKeyedBlocks()`
+
+Derive a stable, unique-per-render key for each top-level block. Identical block
+source ⇒ identical base key; duplicates get a `#n` suffix to stay unique.
+
+```typescript
+function toKeyedBlocks(root: Root, source: string, options: ResolvedOptions): KeyedBlock[]
+```
+
+### `resolveOptions()`
+
+```typescript
+function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions
+```
+
+## Types
+
+### `BuiltinRenderers`
+
+The built-in registry: every built-in node type, uniformly callable. Its keys
+are statically known, so `defaultRenderers.heading(node, ctx)` (delegating from a
+custom override) type-checks without an undefined guard.
+
+```typescript
+export type BuiltinRenderers = { [K in keyof typeof builtins]: NodeRenderer<Node> }
+```
+
+### `NodeRenderer`
+
+A node renderer turns one mdast node into Renderable LLui DOM. It receives the
+node and a {@link RenderContext} for recursing into children / sibling nodes.
+
+```typescript
+export type NodeRenderer<N extends Node = Node> = (node: N, ctx: RenderContext) => Renderable
+```
+
+### `Renderers`
+
+Per-node-type render overrides, merged OVER the built-in {@link defaultRenderers}.
+Known mdast types are precisely typed; the string index admits custom node types.
+The index value is typed `NodeRenderer<never>` on purpose: a `(node: Heading) => …`
+renderer is assignable to `(node: never) => …` (parameters are contravariant, and
+`never` is a subtype of every type), so the precise per-type renderers and custom
+renderers coexist without the variance conflict a `NodeRenderer<Node>` index would
+cause. Author custom renderers with an explicit param type (`(node: MyNode) => …`).
+
+```typescript
+export type Renderers = {
+  [K in Nodes['type']]?: NodeRenderer<Extract<Nodes, { type: K }>>
+} & {
+  [type: string]: NodeRenderer<never> | undefined
+}
+```
+
+### `ResolvedRenderers`
+
+Internal: the merged registry after defaults are applied. Every renderer is
+uniformly callable with a base `Node` (dispatch only ever calls the renderer
+whose key matches `node.type`, so the widening is sound).
+
+```typescript
+export type ResolvedRenderers = Record<string, NodeRenderer<Node>>
+```
+
+### `TransformLink`
+
+A URL the renderer is about to emit (link href / image src), with the source
+node. Return a rewritten URL, or `null` to drop the link/image entirely.
+
+```typescript
+export type TransformLink = (
+  href: string,
+  node: Link | Image | LinkReference | ImageReference,
+) => string | null
+```
+
+## Interfaces
+
+### `KeyedBlock`
+
+```typescript
+export interface KeyedBlock {
+  /** Reconcile identity for the outer keyed list (from `keyOf`, else content-based). */
+  key: string | number
+  /** Content identity — changes iff the block's source changes. Drives in-place
+   * row rebuilds when a custom `keyOf` gives blocks stable identity. */
+  hash: string
+  node: Nodes
+}
+```
+
+### `MarkdownOptions`
+
+```typescript
+export interface MarkdownOptions {
+  /** Enable GitHub Flavored Markdown (tables, strikethrough, task lists,
+   * autolinks, footnotes). Default `true`. */
+  gfm?: boolean
+  /** Per-node-type render overrides, merged over the built-in defaults. */
+  renderers?: Renderers
+  /** Extra micromark syntax extensions (custom block/inline syntax). */
+  extensions?: FromMarkdownOptions['extensions']
+  /** Extra mdast extensions matching the syntax extensions above. */
+  mdastExtensions?: FromMarkdownOptions['mdastExtensions']
+  /** Render raw HTML nodes via `unsafeHtml` instead of dropping them.
+   * Default `false` (raw HTML is dropped — safe for untrusted/LLM content). */
+  allowDangerousHtml?: boolean
+  /** URL schemes permitted in links/images. A URL with no scheme (relative,
+   * anchor, query) is always allowed. Default `['http','https','mailto','tel']`. */
+  allowedProtocols?: string[]
+  /** Rewrite or drop link/image URLs before sanitization. */
+  transformLink?: TransformLink
+  /** Class applied to the root wrapper element. Default `'markdown-body'`. */
+  class?: string
+  /** Override the key derived for each top-level block (controls reuse during
+   * reactive/streaming updates). Default: a content hash of the block's source. */
+  keyOf?: (node: Nodes, index: number) => string | number
+}
+```
+
+### `ResolvedOptions`
+
+Fully-resolved options with defaults applied — what renderers see on `ctx`.
+
+```typescript
+export interface ResolvedOptions {
+  gfm: boolean
+  renderers: ResolvedRenderers
+  extensions: FromMarkdownOptions['extensions']
+  mdastExtensions: FromMarkdownOptions['mdastExtensions']
+  allowDangerousHtml: boolean
+  allowedProtocols: string[]
+  transformLink: TransformLink | undefined
+  class: string
+  keyOf: ((node: Nodes, index: number) => string | number) | undefined
+}
+```
+
+### `RenderContext`
+
+Passed to every {@link NodeRenderer}: recurse, resolve references, read options.
+
+```typescript
+export interface RenderContext {
+  /** Render a single node via the registry (unknown types render nothing). */
+  render: (node: Node) => Renderable
+  /** Render all children of a parent node, flattened. */
+  renderChildren: (parent: { children: readonly Node[] }) => Renderable
+  /** Link/image reference definitions collected from the whole document, keyed
+   * by lowercased identifier. */
+  definitions: ReadonlyMap<string, Definition>
+  /** The resolved options. */
+  options: ResolvedOptions
+}
+```
+
+## Constants
+
+### `defaultRenderers`
+
+```typescript
+const defaultRenderers: BuiltinRenderers
+```
 
 ---
 
@@ -14312,7 +14874,10 @@ definition site; only the node's serialized payload is narrowed back to
 `JSON.parse` returning a declared type).
 
 ```typescript
-function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(type: string, factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>): DecoratorBridge
+function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(
+  type: string,
+  factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>,
+): DecoratorBridge
 ```
 
 ### `parseCombo()`
@@ -14399,7 +14964,10 @@ nodes are destroyed. Returns a disposer that tears down all live sub-apps.
 Typically called from a plugin's `register`.
 
 ```typescript
-function registerDecoratorBridges(editor: LexicalEditor, bridges: readonly DecoratorBridge[]): () => void
+function registerDecoratorBridges(
+  editor: LexicalEditor,
+  bridges: readonly DecoratorBridge[],
+): () => void
 ```
 
 ## Types
@@ -14646,12 +15214,133 @@ const PROGRAMMATIC_TAG
 ```
 
 
-
 ## Related
 
 - [`@llui/markdown-editor`](/api/markdown-editor) — the WYSIWYG editor built on this seam.
 - [`@llui/dom`](/api/dom) — `foreign()`, the imperative-library mounting primitive this package builds on.
 - [Lexical documentation](https://lexical.dev) — the underlying editor framework.
+
+---
+
+# @llui/lexical-collab
+
+Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `register` hook you wire into `lexicalForeign({ history: false, seedMode: 'deferred', register })` — or you pass it through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
+
+```bash
+pnpm add @llui/lexical-collab @llui/lexical @lexical/yjs yjs
+```
+
+`@lexical/yjs` and `yjs` are peer dependencies.
+
+## What it gives you
+
+- **CRDT sync** — document state converges across clients through the injected `CollabProvider`.
+- **Scoped undo** — undo/redo is bound to each client's own edits rather than the shared global stream.
+- **Presence cursors** — remote users (`CollabUser`) surface as live selection/cursor decorations.
+
+## API
+
+
+## Functions
+
+### `yjsCollab()`
+
+Build (but do not yet bind) a collaborative editing handle.
+
+```typescript
+function yjsCollab(config: YjsCollabConfig): YjsCollab
+```
+
+## Types
+
+### `CollabProvider`
+
+A Yjs network/transport provider. Structurally identical to `@lexical/yjs`'s
+`Provider`; re-exported so consumers type their factory without reaching into
+`@lexical/yjs` directly. `y-websocket` / `y-webrtc` / `@hocuspocus/provider`
+all satisfy it.
+
+```typescript
+export type CollabProvider = Provider
+```
+
+## Interfaces
+
+### `CollabUser`
+
+Local presence identity broadcast to peers (name + caret colour).
+
+```typescript
+export interface CollabUser {
+  /** Display name shown on the remote caret. */
+  name: string
+  /** Caret / selection colour (any CSS colour). */
+  color: string
+  /** Arbitrary extra data merged into this client's awareness state. */
+  awarenessData?: Record<string, unknown>
+}
+```
+
+### `YjsCollabConfig`
+
+```typescript
+export interface YjsCollabConfig {
+  /** Shared document id (room name). Must match across peers. */
+  id: string
+  /** The shared Yjs document. Created if omitted (and registered in `docMap`). */
+  doc?: YDoc
+  /** Doc registry shared with the provider factory. Created if omitted. */
+  docMap?: Map<string, YDoc>
+  /** A ready provider. Mutually exclusive with `providerFactory`. */
+  provider?: CollabProvider
+  /** Factory building the provider from the (id, docMap). Preferred — it lets
+   * this module own doc creation/registration before the provider binds. */
+  providerFactory?: (id: string, docMap: Map<string, YDoc>) => CollabProvider
+  /** Local presence identity. Presence is disabled when omitted. */
+  user?: CollabUser
+  /** Whether THIS peer may seed an empty shared document. Default `true`.
+   * In a multi-peer app exactly one peer should bootstrap (e.g. the creator);
+   * the seed only runs if the shared doc is still empty after first sync. */
+  shouldBootstrap?: boolean
+  /** Seed an empty shared document (runs once, inside an editor update, only on
+   * the bootstrapping peer). Without it an empty paragraph is inserted. */
+  seed?: (editor: LexicalEditor) => void
+  /** Overlay element that hosts remote carets. Created over the editor when
+   * omitted; its offsetParent is made `position: relative` if it is static. */
+  cursorsContainer?: HTMLElement
+  /** Per-node properties excluded from CRDT sync (advanced). */
+  excludedProperties?: ExcludedProperties
+  /** Connect the provider at mount. Default `true`. */
+  autoConnect?: boolean
+  /** Connection status changed (`'connected'` ⇄ disconnected). */
+  onStatus?: (connected: boolean) => void
+  /** Provider sync state changed (initial document handshake complete). */
+  onSync?: (synced: boolean) => void
+  /** Remote peer count changed (distinct awareness states, excluding self). */
+  onPeers?: (count: number) => void
+}
+```
+
+### `YjsCollab`
+
+Live handle returned by {@link yjsCollab}.
+
+```typescript
+export interface YjsCollab {
+  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
+   * Returns a disposer that tears down every listener, the provider connection,
+   * and the cursors overlay. */
+  register: (editor: LexicalEditor) => () => void
+  /** The shared Yjs document. */
+  readonly doc: YDoc
+  /** The network provider. */
+  readonly provider: CollabProvider
+  /** Connect the provider (no-op if `autoConnect` already connected). */
+  connect: () => void
+  /** Disconnect the provider. */
+  disconnect: () => void
+}
+```
 
 ---
 
@@ -14714,7 +15403,9 @@ Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(
 or compose it inside a larger component.
 
 ```typescript
-function markdownEditor(config: EditorConfig = {}): SignalComponentDef<EditorState, EditorMsg, EditorEffect>
+function markdownEditor(
+  config: EditorConfig = {},
+): SignalComponentDef<EditorState, EditorMsg, EditorEffect>
 ```
 
 ### `init()`
@@ -14742,7 +15433,10 @@ function countWords(text: string): number
 Read the full format surface at the current selection (opens a read ctx).
 
 ```typescript
-function computeFormatState(editor: LexicalEditor, history: Pick<SelectionContext, 'canUndo' | 'canRedo'>): FormatState
+function computeFormatState(
+  editor: LexicalEditor,
+  history: Pick<SelectionContext, 'canUndo' | 'canRedo'>,
+): FormatState
 ```
 
 ### `definePluginUI()`
@@ -14873,7 +15567,11 @@ Build reactive toolbar parts from the format signal. Spread `item(id)` onto a
 `<button>`; `aria-pressed` / `data-active` / `disabled` track the format.
 
 ```typescript
-function connectToolbar(format: Signal<FormatState>, send: Send<EditorMsg>, items: readonly CommandItem[]): ToolbarParts
+function connectToolbar(
+  format: Signal<FormatState>,
+  send: Send<EditorMsg>,
+  items: readonly CommandItem[],
+): ToolbarParts
 ```
 
 ### `toolbar()`
@@ -15446,7 +16144,6 @@ Markdown ↔ node transformers for the GFM superset.
 ```typescript
 const GFM_TRANSFORMERS: readonly Transformer[]
 ```
-
 
 
 ## Related

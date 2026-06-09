@@ -596,9 +596,23 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   // `index.ts` re-exports `from './x.js'` chains the extractor doesn't follow —
   // scan the concrete public ABI source files directly.
   {
+    name: 'markdown',
+    sourceFiles: [
+      'render.ts',
+      'parse.ts',
+      'renderers/index.ts',
+      'security.ts',
+      'context.ts',
+      'keying.ts',
+      'options.ts',
+      'types.ts',
+    ],
+  },
+  {
     name: 'lexical',
     sourceFiles: ['plugin.ts', 'register.ts', 'selection.ts', 'foreign.ts', 'decorator.ts'],
   },
+  { name: 'lexical-collab', sourceFiles: ['collab.ts'] },
   {
     name: 'markdown-editor',
     sourceFiles: [

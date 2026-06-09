@@ -18,6 +18,8 @@ export const PACKAGES = [
   'agent',
   'agent-bridge',
   'devmode-annotate',
+  'markdown',
   'lexical',
+  'lexical-collab',
   'markdown-editor',
 ]

@@ -51,7 +51,7 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 ## Monorepo Structure
 
-Nineteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
+Twenty-one packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
 | Package                        | Purpose                                                                                                                          | Dependencies                              |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
@@ -71,6 +71,8 @@ Nineteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | `llui-agent`                   | Agent runtime / SDK for programmatic control                                                                                     | @llui/dom                                 |
 | `@llui/agent-bridge`           | Browser bridge that connects a running app to the agent host                                                                     | @llui/dom                                 |
 | `@llui/agent-e2e`              | End-to-end fixtures and tests for the agent surface                                                                              | @llui/dom                                 |
+| `@llui/devmode-annotate`       | Dev-mode HUD: capture-only overlay that drops annotated notes from the running app into the shared notebook for the LLM         | @llui/dom (peer)                          |
+| `@llui/markdown`               | Reactive Markdown rendering: `markdown()` parses to mdast and builds live reactive DOM (no HTML string), per-node renderer overrides, streaming-friendly keyed blocks, bundled light/dark themes | @llui/dom (peer)            |
 | `@llui/lexical`                | Low-level Lexical ↔ signal-runtime binding: `lexicalForeign` seam, plugin contract, DecoratorNode↔LLui sub-view bridge           | @llui/dom + lexical (peer)                |
 | `@llui/lexical-collab`         | Opt-in collaborative editing: `yjsCollab` binding over an injected Yjs provider — CRDT sync, scoped undo, presence cursors       | @llui/lexical + @lexical/yjs + yjs (peer) |
 | `@llui/markdown-editor`        | WYSIWYG Markdown editor: `markdownEditor()` component, transformer registry, GFM/callout plugins, toolbar surface, `collab` seam | @llui/lexical, @llui/dom                  |

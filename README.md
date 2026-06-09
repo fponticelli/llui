@@ -59,6 +59,11 @@ mountApp(document.getElementById('app')!, Counter)
 | [`@llui/mcp`](packages/mcp)                                       | MCP server — LLM debug tools via Model Context Protocol                                             |
 | [`@llui/agent`](packages/agent)                                   | LAP server + browser client runtime for driving LLui apps from LLM clients                          |
 | [`llui-agent`](packages/agent-bridge)                             | MCP CLI bridging Claude / other LLM clients to a running `@llui/agent` server                       |
+| [`@llui/devmode-annotate`](packages/devmode-annotate)             | Dev-mode HUD — capture annotated notes from a running app into the shared notebook for the LLM      |
+| [`@llui/markdown`](packages/markdown)                             | Reactive Markdown rendering — `markdown()` parses to mdast and builds live reactive DOM (no HTML string), per-node renderer overrides, streaming-friendly keyed blocks |
+| [`@llui/lexical`](packages/lexical)                               | Low-level Lexical ↔ signal-runtime binding — `lexicalForeign` seam, plugin contract, decorator bridge |
+| [`@llui/lexical-collab`](packages/lexical-collab)                 | Opt-in collaborative editing — `yjsCollab` over an injected Yjs provider: CRDT sync, scoped undo, presence |
+| [`@llui/markdown-editor`](packages/markdown-editor)               | WYSIWYG Markdown editor — `markdownEditor()` component, transformer registry, GFM/callout plugins, toolbar |
 
 ## Quick Start
 
