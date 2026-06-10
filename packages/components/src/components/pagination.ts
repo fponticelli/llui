@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext, en } from '../locale.js'
-import { flipArrow } from '../utils/direction.js'
+import { flipArrow, type TextDirection } from '../utils/direction.js'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -16,6 +16,7 @@ export interface PaginationState {
   siblings: number
   boundaries: number
   disabled: boolean
+  dir: TextDirection
 }
 
 export type PaginationMsg =
@@ -33,6 +34,8 @@ export type PaginationMsg =
   | { type: 'setPageSize'; pageSize: number }
   /** @humanOnly */
   | { type: 'setTotal'; total: number }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: TextDirection }
 
 export interface PaginationInit {
   page?: number
@@ -41,6 +44,7 @@ export interface PaginationInit {
   siblings?: number
   boundaries?: number
   disabled?: boolean
+  dir?: TextDirection
 }
 
 export function init(opts: PaginationInit = {}): PaginationState {
@@ -51,6 +55,7 @@ export function init(opts: PaginationInit = {}): PaginationState {
     siblings: opts.siblings ?? 1,
     boundaries: opts.boundaries ?? 1,
     disabled: opts.disabled ?? false,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -65,6 +70,8 @@ function clampPage(page: number, total: number): number {
 }
 
 export function update(state: PaginationState, msg: PaginationMsg): [PaginationState, never[]] {
+  // `setDir` is a config change, not navigation — apply it even when disabled.
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled) return [state, []]
   const pages = totalPages(state)
   switch (msg.type) {
@@ -149,12 +156,14 @@ function focusableControls(root: Element): HTMLButtonElement[] {
 }
 
 /**
- * Roving keyboard move resolved against the live controls. Pure structure so a
- * future RTL flip (#18) only needs `flipArrow` to swap Left/Right — the index
- * math here stays the same. Returns the control to focus, or `null` for a
- * no-op (key isn't a navigation key, or no movable target).
+ * Roving keyboard move resolved against the live controls. The index math is
+ * orientation-agnostic; RTL only changes which key counts as "forward", routed
+ * through the single source of truth `flipArrow`. `dir` is the explicit reading
+ * direction from State; when omitted, direction is resolved from the DOM
+ * (`dir="rtl"` ancestor). Returns the control to focus, or `null` for a no-op
+ * (key isn't a navigation key, or no movable target).
  */
-function resolveControlFocus(e: KeyboardEvent): HTMLElement | null {
+function resolveControlFocus(e: KeyboardEvent, dir?: TextDirection): HTMLElement | null {
   const target = e.currentTarget
   if (!(target instanceof HTMLElement)) return null
   const root = target.closest('[data-scope="pagination"][data-part="root"]')
@@ -164,9 +173,8 @@ function resolveControlFocus(e: KeyboardEvent): HTMLElement | null {
   const idx = controls.indexOf(target as HTMLButtonElement)
   if (idx === -1) return null
 
-  // LTR for now: ArrowRight → next control, ArrowLeft → previous. `flipArrow`
-  // is a no-op until a `dir="rtl"` ancestor exists (#18 wires that up).
-  const key = flipArrow(e.key, target)
+  // Under rtl, ArrowLeft/ArrowRight swap (`flipArrow`); Home/End are unchanged.
+  const key = flipArrow(e.key, dir ?? target)
   switch (key) {
     case 'ArrowRight':
       return idx < controls.length - 1 ? controls[idx + 1]! : null
@@ -186,9 +194,12 @@ function resolveControlFocus(e: KeyboardEvent): HTMLElement | null {
  * the controls (ArrowLeft/ArrowRight, Home/End), skipping ellipsis + disabled
  * prev/next. Page triggers stay real `<button>`s, so Enter/Space activate
  * natively — this handler deliberately ignores them.
+ *
+ * `dir` is the explicit reading direction (from State); omit it to resolve the
+ * direction from the DOM instead.
  */
-export function onControlKeyDown(e: KeyboardEvent): void {
-  const next = resolveControlFocus(e)
+export function onControlKeyDown(e: KeyboardEvent, dir?: TextDirection): void {
+  const next = resolveControlFocus(e, dir)
   if (next === null) return
   e.preventDefault()
   next.focus()
@@ -262,6 +273,10 @@ export function connect(
   const nextLabel = opts.nextLabel ?? locale.pagination.next
   const pageLabel = opts.pageLabel ?? en.pagination.page
 
+  // Route roving focus through the direction stored in State (the source of
+  // truth `flipArrow` consumes), read one-shot at keydown time.
+  const onKeyDown = (e: KeyboardEvent): void => onControlKeyDown(e, state.peek().dir)
+
   return {
     root: {
       role: 'navigation',
@@ -281,7 +296,7 @@ export function connect(
       // so prev/next are only ever reached via the arrow keys (tabindex -1).
       tabindex: state.map(() => -1),
       onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
-      onKeyDown: onControlKeyDown,
+      onKeyDown,
     },
     nextTrigger: {
       type: 'button',
@@ -294,7 +309,7 @@ export function connect(
       'data-part': 'next-trigger',
       tabindex: state.map(() => -1),
       onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
-      onKeyDown: onControlKeyDown,
+      onKeyDown,
     },
     item: (page: number) => ({
       type: 'button',
@@ -307,7 +322,7 @@ export function connect(
       // Roving tabindex: exactly one tab stop — the current page's button.
       tabindex: state.map((st) => (st.page === page ? 0 : -1)),
       onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', page })),
-      onKeyDown: onControlKeyDown,
+      onKeyDown,
     }),
     ellipsis: (position: 'start' | 'end') => ({
       'aria-hidden': 'true',

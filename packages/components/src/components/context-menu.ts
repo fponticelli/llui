@@ -1,6 +1,7 @@
 import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
+import { flipArrow } from '../utils/direction.js'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
@@ -45,6 +46,8 @@ export interface ContextMenuState {
   closeOnSelect: boolean
   typeahead: string
   typeaheadExpiresAt: number
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type ContextMenuMsg =
@@ -74,11 +77,14 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: ContextMenuInit = {}): ContextMenuState {
@@ -93,6 +99,7 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -280,6 +287,8 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         [],
       ]
     }
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -661,7 +670,8 @@ export function connect(
       onPointerEnter: () => scheduleOpenSub(value),
       onPointerLeave: () => scheduleCloseSub(value),
       onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        switch (e.key) {
+        const key = flipArrow(e.key, state.peek().dir)
+        switch (key) {
           case 'ArrowRight':
           case 'Enter':
           case ' ':
@@ -710,7 +720,8 @@ export function connect(
           'typeahead',
         ],
         (e: KeyboardEvent): void => {
-          switch (e.key) {
+          const key = flipArrow(e.key, state.peek().dir)
+          switch (key) {
             case 'ArrowDown':
               e.preventDefault()
               send({ type: 'highlightNext', level: value })

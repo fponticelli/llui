@@ -2,6 +2,7 @@ import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@ll
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { flipArrow } from '../utils/direction.js'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
@@ -50,6 +51,8 @@ export interface MenuState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type MenuMsg =
@@ -81,6 +84,8 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface MenuInit {
   open?: boolean
@@ -88,6 +93,7 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: MenuInit = {}): MenuState {
@@ -100,6 +106,7 @@ export function init(opts: MenuInit = {}): MenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -307,6 +314,8 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         [],
       ]
     }
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -728,7 +737,8 @@ export function connect(
       onPointerEnter: () => scheduleOpenSub(value),
       onPointerLeave: () => scheduleCloseSub(value),
       onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        switch (e.key) {
+        const key = flipArrow(e.key, state.peek().dir)
+        switch (key) {
           case 'ArrowRight':
           case 'Enter':
           case ' ':
@@ -777,7 +787,8 @@ export function connect(
           'typeahead',
         ],
         (e: KeyboardEvent): void => {
-          switch (e.key) {
+          const key = flipArrow(e.key, state.peek().dir)
+          switch (key) {
             case 'ArrowDown':
               e.preventDefault()
               send({ type: 'highlightNext', level: value })
@@ -881,6 +892,7 @@ export function overlay(opts: OverlayOptions): Mountable {
                 offset,
                 flip,
                 shift,
+                dir: opts.state.peek().dir,
               }),
             )
 

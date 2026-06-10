@@ -6,11 +6,19 @@ import {
   angleFromPoint,
   pointFromAngle,
 } from '../../src/components/angle-slider'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('angle-slider reducer', () => {
   it('initializes at 0 by default', () => {
     expect(init().value).toBe(0)
+  })
+
+  it('defaults dir to ltr; setDir updates it (even while disabled)', () => {
+    expect(init().dir).toBe('ltr')
+    const [s1] = update(init(), { type: 'setDir', dir: 'rtl' })
+    expect(s1.dir).toBe('rtl')
+    const [s2] = update(init({ disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s2.dir).toBe('rtl')
   })
 
   it('clamps initial value to range', () => {
@@ -104,6 +112,31 @@ describe('angle-slider.connect', () => {
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.root.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'increment' })
+  })
+
+  it('ltr (default): ArrowLeft decrements', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrement' })
+  })
+
+  it('rtl: ArrowRight decrements, ArrowLeft increments', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
+    p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'decrement' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'increment' })
+  })
+
+  it('rtl: vertical arrows NOT flipped (ArrowUp increments, ArrowDown decrements)', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
+    p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'increment' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'decrement' })
   })
 
   it('PageUp increments by 10 steps', () => {

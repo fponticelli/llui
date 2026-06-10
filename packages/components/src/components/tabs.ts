@@ -27,6 +27,8 @@ export interface TabsState {
   loopFocus: boolean
   /** Whether clicking the active tab deselects it (empty value). Default: false. */
   deselectable: boolean
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type TabsMsg =
@@ -46,6 +48,8 @@ export type TabsMsg =
   | { type: 'focusLast' }
   /** @intent("Activate the currently-focused tab (for manual activation mode)") */
   | { type: 'activateFocused' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface TabsInit {
   value?: string
@@ -55,6 +59,7 @@ export interface TabsInit {
   activation?: Activation
   loopFocus?: boolean
   deselectable?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: TabsInit = {}): TabsState {
@@ -68,6 +73,7 @@ export function init(opts: TabsInit = {}): TabsState {
     focused: null,
     loopFocus: opts.loopFocus ?? true,
     deselectable: opts.deselectable ?? false,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -126,6 +132,8 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
       if (state.focused === null) return [state, []]
       return [{ ...state, value: state.focused }, []]
     }
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -259,7 +267,7 @@ export function connect(
             ) as HTMLElement | null
             const orientation =
               (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
-            const key = flipArrow(e.key, e.currentTarget as Element)
+            const key = flipArrow(e.key, state.peek().dir)
             const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
             const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
             switch (key) {

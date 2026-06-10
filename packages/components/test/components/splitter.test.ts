@@ -1,10 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, positionFromPoint } from '../../src/components/splitter'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('splitter reducer', () => {
   it('initializes at 50%', () => {
-    expect(init()).toMatchObject({ position: 50, orientation: 'horizontal' })
+    expect(init()).toMatchObject({ position: 50, orientation: 'horizontal', dir: 'ltr' })
+  })
+
+  it('setDir updates direction (even while disabled)', () => {
+    const [s1] = update(init(), { type: 'setDir', dir: 'rtl' })
+    expect(s1.dir).toBe('rtl')
+    const [s2] = update(init({ disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s2.dir).toBe('rtl')
   })
 
   it('setPosition clamps to min/max', () => {
@@ -70,6 +77,42 @@ describe('splitter.connect', () => {
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
     expect(send).toHaveBeenCalledWith({ type: 'increment' })
+  })
+
+  it('ltr (default): ArrowLeft sends decrement', () => {
+    const send = vi.fn()
+    const pc = connect(rootSignal(), send)
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrement' })
+  })
+
+  it('rtl: ArrowRight sends decrement, ArrowLeft sends increment', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ dir: 'rtl' })), send)
+    pc.resizeTrigger.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'decrement' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'increment' })
+  })
+
+  it('rtl + vertical orientation: vertical arrows are unaffected (Down increments, Up decrements)', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ dir: 'rtl', orientation: 'vertical' })), send)
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'increment' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'decrement' })
+  })
+
+  it('rtl: Home/End are NOT flipped', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ dir: 'rtl' })), send)
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
+    pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'toMin' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'toMax' })
   })
 
   it('primaryPanel style uses position', () => {

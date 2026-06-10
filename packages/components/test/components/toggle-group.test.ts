@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/toggle-group'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('toggle-group reducer', () => {
   it('defaults to single mode', () => {
@@ -39,6 +39,15 @@ describe('toggle-group reducer', () => {
     const s0 = init({ items: ['a', 'b'], disabledItems: ['b'] })
     const [s] = update(s0, { type: 'toggle', value: 'b' })
     expect(s.value).toEqual([])
+  })
+
+  it('init defaults dir to ltr', () => {
+    expect(init({ items: ['a'] }).dir).toBe('ltr')
+  })
+
+  it('setDir updates direction even when group is disabled', () => {
+    const [s] = update(init({ items: ['a'], disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
   })
 })
 
@@ -122,7 +131,7 @@ describe('toggle-group.connect', () => {
 
   it('horizontal: ArrowRight/Left send focusNext/Prev', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send)
     pc.item('a').root.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -133,9 +142,22 @@ describe('toggle-group.connect', () => {
     expect(send).toHaveBeenNthCalledWith(2, { type: 'focusPrev', from: 'b' })
   })
 
+  it('horizontal rtl: ArrowLeft/Right flip to focusNext/Prev', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: ['a', 'b', 'c'], dir: 'rtl' })), send)
+    pc.item('a').root.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
+    )
+    pc.item('b').root.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'focusNext', from: 'a' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'focusPrev', from: 'b' })
+  })
+
   it('horizontal: ArrowUp/Down do nothing', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send)
     pc.item('a').root.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }),
     )
@@ -145,8 +167,8 @@ describe('toggle-group.connect', () => {
 
   it('vertical: ArrowDown/Up send focusNext/Prev', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
-    // jsdom: orientation is read from state, so reset state shape via a vertical signal
+    const pc = connect(signalOf(init({ items: ['a', 'b', 'c'], orientation: 'vertical' })), send)
+    // jsdom: orientation is read from the DOM root's data-orientation
     const item = pc.item('a').root
     // build a vertical event target so the closest() lookup resolves
     const root = document.createElement('div')
@@ -170,7 +192,7 @@ describe('toggle-group.connect', () => {
 
   it('vertical: ArrowRight/Left do nothing', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init({ items: ['a', 'b', 'c'], orientation: 'vertical' })), send)
     const item = pc.item('a').root
     const root = document.createElement('div')
     root.setAttribute('data-scope', 'toggle-group')
@@ -186,9 +208,35 @@ describe('toggle-group.connect', () => {
     document.body.removeChild(root)
   })
 
+  it('vertical rtl: vertical arrows are NOT flipped', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalOf(init({ items: ['a', 'b', 'c'], orientation: 'vertical', dir: 'rtl' })),
+      send,
+    )
+    const item = pc.item('a').root
+    const root = document.createElement('div')
+    root.setAttribute('data-scope', 'toggle-group')
+    root.setAttribute('data-part', 'root')
+    root.setAttribute('data-orientation', 'vertical')
+    const btn = document.createElement('button')
+    btn.setAttribute('data-value', 'a')
+    root.appendChild(btn)
+    document.body.appendChild(root)
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
+    Object.defineProperty(down, 'currentTarget', { value: btn })
+    item.onKeyDown(down)
+    const up = new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true })
+    Object.defineProperty(up, 'currentTarget', { value: btn })
+    item.onKeyDown(up)
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'focusNext', from: 'a' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'focusPrev', from: 'a' })
+    document.body.removeChild(root)
+  })
+
   it('Space/Enter send toggle', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init({ items: ['a', 'b'] })), send)
     pc.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     pc.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'toggle', value: 'a' })

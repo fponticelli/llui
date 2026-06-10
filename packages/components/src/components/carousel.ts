@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext, en } from '../locale.js'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide
@@ -39,6 +40,8 @@ export interface CarouselState {
   swipeThreshold: number
   /** Active pointer swipe, or null when idle. */
   dragging: CarouselDrag | null
+  /** Reading direction. Under 'rtl' indicator horizontal arrow keys are flipped. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type CarouselMsg =
@@ -62,6 +65,8 @@ export type CarouselMsg =
   | { type: 'dragMove'; x: number }
   /** @humanOnly */
   | { type: 'dragEnd' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface CarouselInit {
   current?: number
@@ -70,6 +75,7 @@ export interface CarouselInit {
   autoplay?: boolean
   interval?: number
   swipeThreshold?: number
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: CarouselInit = {}): CarouselState {
@@ -83,6 +89,7 @@ export function init(opts: CarouselInit = {}): CarouselState {
     direction: 'forward',
     swipeThreshold: opts.swipeThreshold ?? 50,
     dragging: null,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -158,6 +165,8 @@ export function update(state: CarouselState, msg: CarouselMsg): [CarouselState, 
       }
       return [{ ...state, dragging: null }, []]
     }
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -370,14 +379,15 @@ export function connect(
         'data-index': String(index),
         'data-active': state.map((s) => (s.current === index ? '' : undefined)),
         onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', index })),
-        // APG tabs keyboard model on the indicator tablist. LTR only for now
-        // (RTL arrow flip is tracked separately): ArrowRight/ArrowLeft move to
-        // the adjacent indicator (wrapping when loop is enabled, clamped
-        // otherwise); Home/End jump to the first/last slide.
+        // APG tabs keyboard model on the indicator tablist. ArrowRight/ArrowLeft
+        // move to the adjacent indicator (wrapping when loop is enabled, clamped
+        // otherwise); Home/End jump to the first/last slide. Horizontal arrows
+        // flip under rtl via `flipArrow`; Home/End are never flipped.
         onKeyDown: tagSend(send, ['goTo'], (e: KeyboardEvent) => {
           const s = state.peek()
           if (s.count === 0) return
-          switch (e.key) {
+          const key = flipArrow(e.key, s.dir)
+          switch (key) {
             case 'ArrowRight': {
               e.preventDefault()
               send({ type: 'goTo', index: clampIndex(s, index + 1) })

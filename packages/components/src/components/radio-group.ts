@@ -15,6 +15,8 @@ export interface RadioGroupState {
   disabledItems: string[]
   disabled: boolean
   orientation: Orientation
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type RadioGroupMsg =
@@ -30,6 +32,8 @@ export type RadioGroupMsg =
   | { type: 'selectFirst' }
   /** @intent("Select the last enabled option") */
   | { type: 'selectLast' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface RadioGroupInit {
   value?: string | null
@@ -37,6 +41,7 @@ export interface RadioGroupInit {
   disabledItems?: string[]
   disabled?: boolean
   orientation?: Orientation
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: RadioGroupInit = {}): RadioGroupState {
@@ -46,6 +51,7 @@ export function init(opts: RadioGroupInit = {}): RadioGroupState {
     disabledItems: opts.disabledItems ?? [],
     disabled: opts.disabled ?? false,
     orientation: opts.orientation ?? 'vertical',
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -80,6 +86,7 @@ function lastEnabled(items: string[], disabled: string[]): string | null {
 }
 
 export function update(state: RadioGroupState, msg: RadioGroupMsg): [RadioGroupState, never[]] {
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'setValue':
@@ -204,7 +211,7 @@ export function connect(
           send,
           ['selectNext', 'selectPrev', 'selectFirst', 'selectLast', 'setValue'],
           (e) => {
-            const key = flipArrow(e.key, e.currentTarget as Element)
+            const key = flipArrow(e.key, state.peek().dir)
             const isVertical =
               (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
               null

@@ -6,12 +6,19 @@ import {
   valueFromPoint,
   closestThumbIndex,
 } from '../../src/components/slider'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('slider reducer', () => {
   it('initializes with defaults', () => {
     const s = init()
-    expect(s).toMatchObject({ value: [0], min: 0, max: 100, step: 1 })
+    expect(s).toMatchObject({ value: [0], min: 0, max: 100, step: 1, dir: 'ltr' })
+  })
+
+  it('setDir updates direction (even while disabled)', () => {
+    const [s1] = update(init(), { type: 'setDir', dir: 'rtl' })
+    expect(s1.dir).toBe('rtl')
+    const [s2] = update(init({ disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s2.dir).toBe('rtl')
   })
 
   it('setValue replaces full value array', () => {
@@ -137,6 +144,49 @@ describe('slider.connect', () => {
   it('Home/End jump to min/max', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send)
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'toMin', index: 0 })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'toMax', index: 0 })
+  })
+
+  it('ltr (default): ArrowLeft sends decrement', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.thumb(0).thumb.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'decrement', index: 0 })
+  })
+
+  it('rtl: ArrowRight DECREASES (visual right is the low end)', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    p.thumb(0).thumb.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'decrement', index: 0 })
+  })
+
+  it('rtl: ArrowLeft INCREASES', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'increment', index: 0 })
+  })
+
+  it('rtl: vertical arrows are NOT flipped (ArrowUp increments, ArrowDown decrements)', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'increment', index: 0 })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'decrement', index: 0 })
+  })
+
+  it('rtl: Home/End are NOT flipped', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'toMin', index: 0 })

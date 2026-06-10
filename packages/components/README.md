@@ -75,6 +75,8 @@ const update = mergeHandlers<State, Msg, never>(
 
 ## Components (66)
 
+> **RTL / direction.** Direction-sensitive components (tabs, radio-group, toggle-group, rating-group, slider, angle-slider, splitter, carousel, menu, context-menu, navigation-menu, pagination, …) accept an optional `dir` (`'ltr' | 'rtl'`, default `'ltr'`) on `init` and a `setDir` message to change it at runtime. Under `'rtl'` they swap horizontal-arrow keyboard semantics (ArrowLeft ↔ ArrowRight; vertical arrows and Home/End are never flipped) and flip logical floating placement (`*-start`/`*-end`). This covers keyboard and placement only — visual mirroring via CSS logical properties (or `dir`/`direction`) remains the consumer's responsibility.
+
 ### Form controls
 
 accordion, checkbox, collapsible, editable, field, fieldset, number-input, password-input, pin-input, radio-group, rating-group, search-field, slider, switch, tabs, tags-input, toggle, toggle-group, toolbar
@@ -138,7 +140,8 @@ Shared helpers used internally and exported for advanced use:
 | ---------------- | ------------------------------------------------------------------------ |
 | `typeahead`      | First-letter search across menu, select, listbox, tree-view              |
 | `TreeCollection` | Indexed tree traversal — visibleItems, labels, indeterminate computation |
-| `floating`       | `@floating-ui/dom` wrapper for popover/menu positioning                  |
+| `floating`       | `@floating-ui/dom` wrapper for popover/menu positioning (dir-aware)      |
+| `direction`      | RTL helpers — `flipArrow`, `resolveDir`/`resolveTextDirection`           |
 | `focus-trap`     | Stack-based focus containment for modals                                 |
 | `dismissable`    | Esc / outside-click dismiss layer stack                                  |
 | `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                  |

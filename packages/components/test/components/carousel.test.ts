@@ -11,7 +11,12 @@ import { rootSignal, signalOf, read } from '../_signal'
 
 describe('carousel reducer', () => {
   it('initializes at index 0', () => {
-    expect(init({ count: 3 })).toMatchObject({ current: 0, count: 3, loop: true })
+    expect(init({ count: 3 })).toMatchObject({ current: 0, count: 3, loop: true, dir: 'ltr' })
+  })
+
+  it('setDir updates direction', () => {
+    const [s] = update(init(), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
   })
 
   it('next increments', () => {
@@ -291,5 +296,28 @@ describe('carousel.connect', () => {
     const pc = connect(signalOf(init({ count: 3, current: 0 })), send, { id: 'x' })
     pc.slide(0).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'End' }))
     expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 2 })
+  })
+
+  it('rtl: indicator ArrowRight focuses PREVIOUS slide', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ count: 3, current: 1, dir: 'rtl' })), send, { id: 'x' })
+    pc.slide(1).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 0 })
+  })
+
+  it('rtl: indicator ArrowLeft focuses NEXT slide', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ count: 3, current: 0, dir: 'rtl' })), send, { id: 'x' })
+    pc.slide(0).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 1 })
+  })
+
+  it('rtl: Home/End are NOT flipped (Home → first, End → last)', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ count: 3, current: 1, dir: 'rtl' })), send, { id: 'x' })
+    pc.slide(1).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'Home' }))
+    pc.slide(1).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'End' }))
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'goTo', index: 0 })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'goTo', index: 2 })
   })
 })

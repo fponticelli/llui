@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, type ContextMenuItem } from '../../src/components/context-menu'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 const flat: ContextMenuItem[] = [
   { value: 'a', kind: 'action' },
@@ -186,7 +186,7 @@ describe('context-menu.connect', () => {
 
   it('subTrigger ArrowRight opens, subContent ArrowLeft/Escape closes', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init({ items: flat })), send, { id: 'x' })
     pc.subTrigger('more').onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -195,5 +195,54 @@ describe('context-menu.connect', () => {
       new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
     )
     expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+})
+
+describe('context-menu RTL', () => {
+  it('init defaults dir to ltr; respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBe('ltr')
+    expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+  })
+
+  it('setDir updates the reading direction', () => {
+    const [s] = update(init({ items: flat }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('ltr: subTrigger ArrowRight opens, ArrowLeft is inert', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat })), send, { id: 'x' })
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'more' })
+    send.mockClear()
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('rtl: arrows swap — ArrowLeft opens the submenu, ArrowRight is inert', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'more' })
+    send.mockClear()
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('rtl: subContent ArrowRight closes the submenu; ArrowLeft does not', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+    send.mockClear()
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('vertical arrows are never flipped under rtl', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: 'more' })
   })
 })

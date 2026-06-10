@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/radio-group'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('radio-group reducer', () => {
   it('initializes with no value', () => {
@@ -75,13 +75,57 @@ describe('radio-group.connect', () => {
 
   it('ArrowRight/Left sends selectNext/Prev', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
     p.item('a').root.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
     p.item('b').root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'selectNext', from: 'a' })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'selectPrev', from: 'b' })
+  })
+
+  it('rtl: ArrowLeft/Right flip to selectNext/Prev', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'], dir: 'rtl' })), send, { id: 'x' })
+    p.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    p.item('b').root.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
+    expect(send).toHaveBeenNthCalledWith(1, { type: 'selectNext', from: 'a' })
+    expect(send).toHaveBeenNthCalledWith(2, { type: 'selectPrev', from: 'b' })
+  })
+
+  it('rtl: vertical arrows are NOT flipped (vertical orientation)', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `<div data-orientation="vertical"><button id="t"></button></div>`
+    document.body.appendChild(root)
+    const send = vi.fn()
+    const p = connect(
+      signalOf(init({ items: ['a', 'b'], orientation: 'vertical', dir: 'rtl' })),
+      send,
+      { id: 'x' },
+    )
+    const trigger = root.querySelector('#t') as HTMLButtonElement
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
+    Object.defineProperty(down, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').root.onKeyDown(down)
+    expect(send).toHaveBeenCalledWith({ type: 'selectNext', from: 'a' })
+
+    send.mockClear()
+    const up = new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true })
+    Object.defineProperty(up, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').root.onKeyDown(up)
+    expect(send).toHaveBeenCalledWith({ type: 'selectPrev', from: 'a' })
+    document.body.removeChild(root)
+  })
+
+  it('setDir updates direction even when group is disabled', () => {
+    const [s] = update(init({ items: ['a'], disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('init defaults dir to ltr', () => {
+    expect(init({ items: ['a'] }).dir).toBe('ltr')
   })
 
   it('tabindex=0 only on selected, first when none', () => {

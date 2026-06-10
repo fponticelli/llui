@@ -20,6 +20,25 @@ import {
 
 export type { Placement }
 
+import type { TextDirection } from './direction.js'
+
+/**
+ * Flip the logical `-start`/`-end` suffix of a placement under rtl so that
+ * `*-start` resolves to the inline-start (visually right) edge and `*-end` to
+ * the inline-end (visually left) edge. Physical placements (no suffix, or the
+ * `left`/`right` sides) and ltr are returned unchanged.
+ */
+export function flipPlacement(placement: Placement, dir: TextDirection): Placement {
+  if (dir !== 'rtl') return placement
+  if (placement.endsWith('-start')) {
+    return `${placement.slice(0, -'-start'.length)}-end` as Placement
+  }
+  if (placement.endsWith('-end')) {
+    return `${placement.slice(0, -'-end'.length)}-start` as Placement
+  }
+  return placement
+}
+
 export interface FloatingOptions {
   /** The reference element (trigger/anchor). */
   anchor: Element
@@ -33,6 +52,12 @@ export interface FloatingOptions {
   flip?: boolean
   /** Shift along axis to stay in view (default: padding 8 unless false). */
   shift?: boolean | { padding?: number }
+  /**
+   * Reading direction. Under `'rtl'`, logical `*-start`/`*-end` placements flip
+   * so they track the inline-start/inline-end edges. Default `'ltr'` — callers
+   * that omit it behave exactly as before.
+   */
+  dir?: TextDirection
   /** Optional arrow element to position. */
   arrow?: HTMLElement
   /** Notify after each position computation. */
@@ -56,9 +81,12 @@ export function attachFloating(opts: FloatingOptions): () => void {
     offset = 0,
     flip = true,
     shift = true,
+    dir = 'ltr',
     arrow,
     onUpdate,
   } = opts
+
+  const resolvedPlacement = flipPlacement(placement, dir)
 
   const middleware: Middleware[] = []
   if (offset > 0) middleware.push(offsetMw(offset))
@@ -74,7 +102,7 @@ export function attachFloating(opts: FloatingOptions): () => void {
   floating.style.left = '0'
 
   const update = (): void => {
-    void computePosition(anchor, floating, { placement, middleware }).then(
+    void computePosition(anchor, floating, { placement: resolvedPlacement, middleware }).then(
       ({ x, y, placement: actual, middlewareData }) => {
         floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
         floating.dataset.placement = actual

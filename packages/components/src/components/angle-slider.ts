@@ -23,6 +23,8 @@ export interface AngleSliderState {
   step: number
   disabled: boolean
   readonly: boolean
+  /** Reading direction. Under 'rtl' horizontal arrow keys are flipped. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type AngleSliderMsg =
@@ -36,6 +38,8 @@ export type AngleSliderMsg =
   | { type: 'setMin'; min: number }
   /** @humanOnly */
   | { type: 'setMax'; max: number }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface AngleSliderInit {
   value?: number
@@ -44,6 +48,7 @@ export interface AngleSliderInit {
   step?: number
   disabled?: boolean
   readonly?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -66,6 +71,7 @@ export function init(opts: AngleSliderInit = {}): AngleSliderState {
     step,
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -94,6 +100,8 @@ export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSlid
       return [{ ...state, min: msg.min, value: clamp(state.value, msg.min, state.max) }, []]
     case 'setMax':
       return [{ ...state, max: msg.max, value: clamp(state.value, state.min, msg.max) }, []]
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -198,7 +206,7 @@ export function connect(
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'setValue'], (e) => {
-        const key = flipArrow(e.key, e.currentTarget as Element)
+        const key = flipArrow(e.key, state.peek()?.dir ?? 'ltr')
         switch (key) {
           case 'ArrowRight':
           case 'ArrowUp':

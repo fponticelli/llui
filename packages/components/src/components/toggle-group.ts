@@ -24,6 +24,8 @@ export interface ToggleGroupState {
   focused: string | null
   /** Whether Arrow navigation wraps at the ends of the group. Default: true. */
   loopFocus: boolean
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type ToggleGroupMsg =
@@ -39,6 +41,8 @@ export type ToggleGroupMsg =
   | { type: 'focusPrev'; from: string }
   /** @humanOnly */
   | { type: 'focusItem'; value: string }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface ToggleGroupInit {
   value?: string[]
@@ -50,6 +54,7 @@ export interface ToggleGroupInit {
   deselectable?: boolean
   focused?: string | null
   loopFocus?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: ToggleGroupInit = {}): ToggleGroupState {
@@ -63,10 +68,12 @@ export function init(opts: ToggleGroupInit = {}): ToggleGroupState {
     deselectable: opts.deselectable ?? true,
     focused: opts.focused ?? null,
     loopFocus: opts.loopFocus ?? true,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
 export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGroupState, never[]] {
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle': {
@@ -187,7 +194,7 @@ export function connect(
           ) as HTMLElement | null
           const orientation =
             (root?.getAttribute('data-orientation') as Orientation | null) ?? 'horizontal'
-          const key = flipArrow(e.key, e.currentTarget as Element)
+          const key = flipArrow(e.key, state.peek().dir)
           const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
           const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
           switch (key) {

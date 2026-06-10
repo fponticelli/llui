@@ -7,7 +7,7 @@ import {
   pageItems,
   onControlKeyDown,
 } from '../../src/components/pagination'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('pagination reducer', () => {
   it('initializes on page 1', () => {
@@ -51,6 +51,25 @@ describe('pagination reducer', () => {
     const s0 = init({ total: 50, pageSize: 10, page: 3, disabled: true })
     const [s] = update(s0, { type: 'next' })
     expect(s.page).toBe(3)
+  })
+
+  it('defaults dir to ltr', () => {
+    expect(init().dir).toBe('ltr')
+  })
+
+  it('init accepts an explicit dir', () => {
+    expect(init({ dir: 'rtl' }).dir).toBe('rtl')
+  })
+
+  it('setDir updates the reading direction', () => {
+    const [s] = update(init(), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('setDir applies even when disabled', () => {
+    const s0 = init({ disabled: true })
+    const [s] = update(s0, { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
   })
 })
 
@@ -259,6 +278,92 @@ describe('pagination roving focus', () => {
     expect(space.defaultPrevented).toBe(false)
     // Focus did not move.
     expect(document.activeElement?.getAttribute('data-value')).toBe('2')
+    document.body.removeChild(root)
+  })
+})
+
+describe('pagination roving focus (RTL)', () => {
+  // Same markup as the LTR roving block, but focus is driven through the
+  // `connect()`-produced `onKeyDown`, which routes the flip through the `dir`
+  // stored in State (the single source of truth `flipArrow` consumes).
+  function buildPagination(pages: number[]): {
+    root: HTMLElement
+    controls: HTMLButtonElement[]
+  } {
+    const root = document.createElement('nav')
+    root.setAttribute('data-scope', 'pagination')
+    root.setAttribute('data-part', 'root')
+    const prev = document.createElement('button')
+    prev.setAttribute('data-scope', 'pagination')
+    prev.setAttribute('data-part', 'prev-trigger')
+    root.appendChild(prev)
+    for (const page of pages) {
+      const btn = document.createElement('button')
+      btn.setAttribute('data-scope', 'pagination')
+      btn.setAttribute('data-part', 'item')
+      btn.setAttribute('data-value', String(page))
+      root.appendChild(btn)
+    }
+    const next = document.createElement('button')
+    next.setAttribute('data-scope', 'pagination')
+    next.setAttribute('data-part', 'next-trigger')
+    root.appendChild(next)
+    document.body.appendChild(root)
+    const controls = Array.from(root.querySelectorAll<HTMLButtonElement>('button:not([disabled])'))
+    return { root, controls }
+  }
+
+  function pressVia(
+    onKeyDown: (e: KeyboardEvent) => void,
+    el: HTMLElement,
+    key: string,
+  ): KeyboardEvent {
+    const ev = new KeyboardEvent('keydown', { key, cancelable: true })
+    Object.defineProperty(ev, 'currentTarget', { value: el, writable: false })
+    onKeyDown(ev)
+    return ev
+  }
+
+  it('ltr: ArrowRight moves to the next control (unchanged)', () => {
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'ltr' })), vi.fn())
+    const { root, controls } = buildPagination([1, 2, 3])
+    const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
+    page2.focus()
+    pressVia(p.item(2).onKeyDown, page2, 'ArrowRight')
+    expect(document.activeElement?.getAttribute('data-value')).toBe('3')
+    document.body.removeChild(root)
+  })
+
+  it('rtl: ArrowRight moves to the PREVIOUS control (flipped)', () => {
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const { root, controls } = buildPagination([1, 2, 3])
+    const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
+    page2.focus()
+    const ev = pressVia(p.item(2).onKeyDown, page2, 'ArrowRight')
+    expect(ev.defaultPrevented).toBe(true)
+    expect(document.activeElement?.getAttribute('data-value')).toBe('1')
+    document.body.removeChild(root)
+  })
+
+  it('rtl: ArrowLeft moves to the NEXT control (flipped)', () => {
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const { root, controls } = buildPagination([1, 2, 3])
+    const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
+    page2.focus()
+    pressVia(p.item(2).onKeyDown, page2, 'ArrowLeft')
+    expect(document.activeElement?.getAttribute('data-value')).toBe('3')
+    document.body.removeChild(root)
+  })
+
+  it('rtl: Home/End are NOT flipped', () => {
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const { root, controls } = buildPagination([1, 2, 3])
+    const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
+    page2.focus()
+    pressVia(p.item(2).onKeyDown, page2, 'Home')
+    expect(document.activeElement?.getAttribute('data-part')).toBe('prev-trigger')
+    pressVia(p.nextTrigger.onKeyDown, document.activeElement as HTMLElement, 'End')
+    expect(document.activeElement?.getAttribute('data-part')).toBe('next-trigger')
     document.body.removeChild(root)
   })
 })

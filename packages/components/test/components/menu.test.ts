@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, type MenuItem } from '../../src/components/menu'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 const flat: MenuItem[] = [
   { value: 'a', kind: 'action' },
@@ -391,7 +391,7 @@ describe('menu.connect submenu parts', () => {
 
   it('subTrigger ArrowRight opens the submenu', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: flat })), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.subTrigger('share').onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -400,7 +400,7 @@ describe('menu.connect submenu parts', () => {
 
   it('subContent ArrowLeft closes the deepest submenu', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: flat })), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
     p.subContent('share').onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
@@ -408,7 +408,7 @@ describe('menu.connect submenu parts', () => {
 
   it('subContent Escape closes the deepest submenu (unwinds one level)', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: flat })), send, { id: 'x' })
     p.subContent('share').onKeyDown(
       new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
     )
@@ -426,5 +426,65 @@ describe('menu.connect submenu parts', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     const sp = p.subPositioner('share')
     expect(sp['data-part']).toBe('subpositioner')
+  })
+})
+
+describe('menu RTL', () => {
+  it('init defaults dir to ltr; respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBe('ltr')
+    expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+  })
+
+  it('setDir updates the reading direction', () => {
+    const [s] = update(init({ items: flat }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('ltr: subTrigger ArrowRight opens, ArrowLeft is inert', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: flat })), send, { id: 'x' })
+    p.subTrigger('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'share' })
+    send.mockClear()
+    p.subTrigger('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('rtl: arrows swap — ArrowLeft opens the submenu, ArrowRight is inert', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    p.subTrigger('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'share' })
+    send.mockClear()
+    p.subTrigger('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('ltr: subContent ArrowLeft closes the submenu', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: flat })), send, { id: 'x' })
+    p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('rtl: subContent ArrowRight closes the submenu (ArrowLeft does not)', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+    send.mockClear()
+    // ArrowLeft now means "open/forward", so it must NOT close the submenu.
+    p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('vertical arrows are never flipped under rtl', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: 'share' })
+    send.mockClear()
+    p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightPrev', level: 'share' })
   })
 })

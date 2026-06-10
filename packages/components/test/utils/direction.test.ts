@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { resolveDir, flipArrow } from '../../src/utils/direction'
+import { resolveDir, flipArrow, resolveTextDirection } from '../../src/utils/direction'
 
 describe('resolveDir', () => {
   afterEach(() => {
@@ -82,5 +82,64 @@ describe('flipArrow', () => {
     expect(flipArrow('Enter', el)).toBe('Enter')
     expect(flipArrow('Tab', el)).toBe('Tab')
     el.remove()
+  })
+
+  describe('explicit direction (overrides DOM)', () => {
+    it('returns arrow unchanged for explicit ltr', () => {
+      expect(flipArrow('ArrowLeft', 'ltr')).toBe('ArrowLeft')
+      expect(flipArrow('ArrowRight', 'ltr')).toBe('ArrowRight')
+    })
+
+    it('swaps horizontal arrows for explicit rtl', () => {
+      expect(flipArrow('ArrowLeft', 'rtl')).toBe('ArrowRight')
+      expect(flipArrow('ArrowRight', 'rtl')).toBe('ArrowLeft')
+    })
+
+    it('does not flip vertical/Home/End/PageUp/PageDown under explicit rtl', () => {
+      expect(flipArrow('ArrowUp', 'rtl')).toBe('ArrowUp')
+      expect(flipArrow('ArrowDown', 'rtl')).toBe('ArrowDown')
+      expect(flipArrow('Home', 'rtl')).toBe('Home')
+      expect(flipArrow('End', 'rtl')).toBe('End')
+      expect(flipArrow('PageUp', 'rtl')).toBe('PageUp')
+      expect(flipArrow('PageDown', 'rtl')).toBe('PageDown')
+    })
+
+    it('explicit rtl wins over an ltr DOM context', () => {
+      // Element is ltr by default; explicit rtl still flips.
+      const el = document.createElement('div')
+      document.body.appendChild(el)
+      expect(flipArrow('ArrowLeft', 'rtl')).toBe('ArrowRight')
+      el.remove()
+    })
+
+    it('null source is treated as ltr', () => {
+      expect(flipArrow('ArrowLeft', null)).toBe('ArrowLeft')
+    })
+  })
+})
+
+describe('resolveTextDirection', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('dir')
+  })
+
+  it('returns explicit ltr/rtl directly', () => {
+    expect(resolveTextDirection('ltr')).toBe('ltr')
+    expect(resolveTextDirection('rtl')).toBe('rtl')
+  })
+
+  it('defaults null/undefined to ltr', () => {
+    expect(resolveTextDirection(null)).toBe('ltr')
+    expect(resolveTextDirection(undefined)).toBe('ltr')
+  })
+
+  it('resolves an element from the DOM', () => {
+    const container = document.createElement('div')
+    container.setAttribute('dir', 'rtl')
+    const el = document.createElement('div')
+    container.appendChild(el)
+    document.body.appendChild(container)
+    expect(resolveTextDirection(el)).toBe('rtl')
+    container.remove()
   })
 })
