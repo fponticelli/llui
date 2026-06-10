@@ -62,11 +62,13 @@ export * as toolbar from './toolbar.js'
 export * as meter from './meter.js'
 export * as breadcrumbs from './breadcrumbs.js'
 export * as searchField from './search-field.js'
+export * as table from './table.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
 export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
 export { visibleItems } from './breadcrumbs.js'
+export { isRowSelected, isAllSelected, isSomeSelected, sortDirectionFor } from './table.js'
 
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
@@ -222,6 +224,14 @@ export type {
   MenuInit,
   MenuParts,
   MenuItemParts,
+  MenuItemKind,
+  MenuItem,
+  MenuCheckItemParts,
+  MenuGroupParts,
+  MenuSeparatorParts,
+  MenuSubTriggerParts,
+  MenuSubPositionerParts,
+  MenuSubContentParts,
   OverlayOptions as MenuOverlayOptions,
 } from './menu.js'
 export type { SwitchState, SwitchMsg, SwitchInit, SwitchParts } from './switch.js'
@@ -325,6 +335,10 @@ export type {
   ComboboxInit,
   ComboboxParts,
   ComboboxItemParts,
+  AsyncStatus as ComboboxAsyncStatus,
+  ComboboxGroup,
+  ComboboxEffect,
+  ComboboxGroupParts,
   OverlayOptions as ComboboxOverlayOptions,
 } from './combobox.js'
 export type {
@@ -358,6 +372,9 @@ export type {
   TreeViewInit,
   TreeViewParts,
   TreeItemParts,
+  TreeViewEffect,
+  TreeNodeMeta,
+  TreeNodeInput,
 } from './tree-view.js'
 export type {
   ContextMenuState,
@@ -365,6 +382,14 @@ export type {
   ContextMenuInit,
   ContextMenuParts,
   ContextMenuItemParts,
+  ContextMenuItemKind,
+  ContextMenuItem,
+  ContextMenuCheckItemParts,
+  ContextMenuGroupParts,
+  ContextMenuSeparatorParts,
+  ContextMenuSubTriggerParts,
+  ContextMenuSubPositionerParts,
+  ContextMenuSubContentParts,
   OverlayOptions as ContextMenuOverlayOptions,
 } from './context-menu.js'
 export type {
@@ -395,6 +420,7 @@ export type {
   CarouselInit,
   CarouselParts,
   CarouselSlideParts,
+  CarouselDrag,
 } from './carousel.js'
 export type {
   DatePickerState,
@@ -403,6 +429,9 @@ export type {
   DatePickerParts,
   DayCellParts,
   DayCell,
+  DatePickerMode,
+  PresetRange,
+  PresetParts,
 } from './date-picker.js'
 export type {
   ColorPickerState,
@@ -444,3 +473,19 @@ export type {
   SearchFieldInit,
   SearchFieldParts,
 } from './search-field.js'
+export type {
+  SortDirection,
+  TableSelectionMode,
+  TableColumn,
+  TableSort,
+  TableCellCoord,
+  TableState,
+  TableMsg,
+  TableInit,
+  TableParts,
+  TableColumnHeaderParts,
+  TableRowParts,
+  TableCellParts,
+  TableCheckboxParts,
+  ConnectOptions as TableConnectOptions,
+} from './table.js'

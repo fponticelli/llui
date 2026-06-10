@@ -23,18 +23,31 @@ describe('menu.overlay integration', () => {
     let sendRef!: (m: MenuMsg) => void
     const def = component<Ctx, MenuMsg, never>({
       name: 'T',
-      init: () => [{ m: init({ items: ['a', 'b', 'c'], open: initialOpen }) }, []],
+      init: () => [
+        {
+          m: init({
+            items: [
+              { value: 'a', kind: 'action' },
+              { value: 'b', kind: 'action' },
+              { value: 'c', kind: 'action' },
+            ],
+            open: initialOpen,
+          }),
+        },
+        [],
+      ],
       update: (state, msg) => {
         const [next] = update(state.m, msg)
         return [{ m: next }, []]
       },
       view: ({ state, send }) => {
         sendRef = send
-        const parts = connect(state.at('m'), send, { id: 'mn' })
+        const m = state.map((s) => s.m)
+        const parts = connect(m, send, { id: 'mn' })
         return [
           button({ ...parts.trigger }, [text('Menu')]),
           overlay({
-            state: state.at('m'),
+            state: m,
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],

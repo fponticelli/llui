@@ -1,6 +1,6 @@
 # @llui/components
 
-64 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
+65 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -73,7 +73,7 @@ const update = mergeHandlers<State, Msg, never>(
 )
 ```
 
-## Components (64)
+## Components (65)
 
 ### Form controls
 
@@ -90,7 +90,12 @@ alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigati
 
 ### Data display
 
-async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagination, progress, qr-code, scroll-area, steps, toc, tree-view
+async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagination, progress, qr-code, scroll-area, steps, table, toc, tree-view
+
+- **table** — Headless table / data-grid machine: sortable columns, row selection, and WAI-ARIA grid keyboard navigation — row DATA stays in the consumer (the machine tracks row IDs, sort, selection, and the focused cell only).
+- Sorting cycles asc→desc→none (configurable via descFirst); the machine stores and emits sort state while the consumer performs the actual sort, so server-side sort works by feeding pre-sorted rows back in.
+- Single/multiple row selection with tri-state select-all checkbox and Shift+click range selection.
+- APG grid keyboard nav (arrows, Home/End, Ctrl+Home/End, PageUp/Down, Space to select, Enter to activate) with a single roving tab stop; works with rows rendered via each or virtualEach.
 
 - **Breadcrumbs** — hierarchical navigation trail with WAI-ARIA landmark/list semantics, `aria-current="page"` on the active (last) item, and automatic middle-collapse to `first … last N items` (with an expandable ellipsis trigger) when `maxVisible` is exceeded.
 - meter — role="meter" gauge for a scalar measurement within a known range (disk usage, battery, etc.), distinct from progressbar. Reports aria-valuemin/max/now plus a formatted aria-valuetext, and derives a `low`/`optimal`/`high` threshold band (native <meter> semantics) exposed via data-state for threshold styling. Read-only (no keyboard).

@@ -253,6 +253,10 @@
       "import": "./dist/components/search-field.js",
       "types": "./dist/components/search-field.d.ts"
     },
+    "./table": {
+      "import": "./dist/components/table.js",
+      "types": "./dist/components/table.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
@@ -510,6 +514,10 @@
     "./styles/tree-view": {
       "import": "./dist/styles/classes/tree-view.js",
       "types": "./dist/styles/classes/tree-view.d.ts"
+    },
+    "./styles/table": {
+      "import": "./dist/styles/classes/table.js",
+      "types": "./dist/styles/classes/table.d.ts"
     }
   },
   "scripts": {
@@ -534,7 +542,7 @@
     "@floating-ui/dom": "^1.7.6",
     "@standard-schema/spec": "^1.0.0"
   },
-  "description": "64 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "description": "65 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [
     "llui",
     "components",

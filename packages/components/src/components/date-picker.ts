@@ -1,24 +1,44 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { LocaleContext, en } from '../locale.js'
+import { LocaleContext } from '../locale.js'
+import { formatDate } from '../format/format-date.js'
+import { defaultLocale } from '../format/defaults.js'
 
 /**
  * Date picker — calendar with month navigation and date selection. Works
  * with plain Date objects internally but exposes ISO strings (YYYY-MM-DD)
  * for serialization-friendly state.
  *
+ * Supports single-date (`mode: 'single'`, default) and range (`mode: 'range'`)
+ * selection, a multi-month view (`months`), preset ranges, and locale-aware
+ * month/weekday rendering via `@llui/components`' Intl wrappers.
+ *
  * Keyboard navigation: arrow keys move by day, PageUp/Down by month,
- * Home/End to start/end of week, Enter to select.
+ * Home/End to start/end of week, Enter to select. Because cells are
+ * date-addressed, keyboard focus crosses month (and year) boundaries.
  */
 
+/** Selection mode: a single date or a start/end range. */
+export type DatePickerMode = 'single' | 'range'
+
 export interface DatePickerState {
-  /** Selected date as YYYY-MM-DD, or null. */
+  /** Selection mode. Defaults to 'single'. */
+  mode: DatePickerMode
+  /** Selected date as YYYY-MM-DD, or null. Used in 'single' mode. */
   value: string | null
-  /** The month currently visible (1-indexed, 1-12). */
+  /** Range start as YYYY-MM-DD, or null. Used in 'range' mode. */
+  start: string | null
+  /** Range end as YYYY-MM-DD, or null. Used in 'range' mode. */
+  end: string | null
+  /** Date currently hovered/previewed while a range is being completed. */
+  hoverDate: string | null
+  /** The month currently visible (1-indexed, 1-12) — the first/leftmost month. */
   visibleMonth: number
   /** The year currently visible. */
   visibleYear: number
+  /** Number of months rendered side-by-side. Defaults to 1. */
+  months: number
   /** The date currently focused by the keyboard (YYYY-MM-DD). */
   focused: string
   /** Minimum selectable date, inclusive. */
@@ -33,8 +53,14 @@ export interface DatePickerState {
 export type DatePickerMsg =
   /** @intent("Set the selected date (YYYY-MM-DD), or null to clear") */
   | { type: 'setValue'; value: string | null }
+  /** @intent("Set the selected date range (YYYY-MM-DD start/end); endpoints are normalized so start <= end") */
+  | { type: 'setRange'; start: string | null; end: string | null }
   /** @humanOnly */
   | { type: 'setFocused'; date: string }
+  /** @humanOnly */
+  | { type: 'setHover'; date: string }
+  /** @humanOnly */
+  | { type: 'clearHover' }
   /** @intent("Show the previous month in the calendar") */
   | { type: 'prevMonth' }
   /** @intent("Show the next month in the calendar") */
@@ -43,7 +69,7 @@ export type DatePickerMsg =
   | { type: 'prevYear' }
   /** @intent("Show the next year (same month)") */
   | { type: 'nextYear' }
-  /** @intent("Select the currently-focused date") */
+  /** @intent("Select the currently-focused date (anchors or completes a range in range mode)") */
   | { type: 'selectFocused' }
   /** @humanOnly */
   | { type: 'moveFocus'; days: number }
@@ -53,13 +79,17 @@ export type DatePickerMsg =
   | { type: 'focusEndOfWeek' }
   /** @humanOnly */
   | { type: 'focusToday' }
-  /** @intent("Clear the selected date") */
+  /** @intent("Clear the current selection") */
   | { type: 'clear' }
 
 export interface DatePickerInit {
+  mode?: DatePickerMode
   value?: string | null
+  start?: string | null
+  end?: string | null
   visibleMonth?: number
   visibleYear?: number
+  months?: number
   min?: string | null
   max?: string | null
   weekStartsOn?: 0 | 1
@@ -97,25 +127,82 @@ function addDays(iso: string, days: number): string {
   return toIso(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
-function isInRange(iso: string, min: string | null, max: string | null): boolean {
+function withinBounds(iso: string, min: string | null, max: string | null): boolean {
   if (min && iso < min) return false
   if (max && iso > max) return false
   return true
 }
 
+/**
+ * Resolve the locale's first day of the week (0=Sunday … 6=Saturday), narrowed
+ * to the `0 | 1` the grid math supports (Sunday-start vs Monday-start). Uses
+ * `Intl.Locale#getWeekInfo()` where available; falls back to Sunday.
+ */
+function localeWeekStart(locale: string): 0 | 1 {
+  try {
+    const loc = new Intl.Locale(locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number }
+      weekInfo?: { firstDay: number }
+    }
+    const info = loc.getWeekInfo ? loc.getWeekInfo() : loc.weekInfo
+    // Intl reports Monday=1 … Sunday=7. Map to our 0=Sunday / 1=Monday scheme.
+    if (info && info.firstDay === 7) return 0
+    if (info && info.firstDay === 1) return 1
+  } catch {
+    // Older runtimes: no Intl.Locale weekInfo support.
+  }
+  return 0
+}
+
+/**
+ * Localized "Month YYYY" label for a calendar header, backed by
+ * `Intl.DateTimeFormat` via the package's `formatDate` wrapper.
+ */
+export function monthLabel(year: number, month: number, locale?: string): string {
+  return formatDate(new Date(year, month - 1, 1), {
+    locale: locale ?? defaultLocale(),
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+/**
+ * Localized weekday header labels (length 7), rotated so the array begins on
+ * `weekStartsOn` (0=Sunday, 1=Monday). Uses a known reference week so the Intl
+ * formatter yields the correct day names.
+ */
+export function weekdayLabels(weekStartsOn: 0 | 1, locale?: string): string[] {
+  const loc = locale ?? defaultLocale()
+  // 2024-01-07 is a Sunday — anchor the reference week there.
+  const labels: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const dow = (weekStartsOn + i) % 7
+    labels.push(formatDate(new Date(2024, 0, 7 + dow), { locale: loc, weekday: 'short' }))
+  }
+  return labels
+}
+
 export function init(opts: DatePickerInit = {}): DatePickerState {
   const today = todayIso()
-  const parsed = opts.value ? parseIso(opts.value) : null
+  const mode = opts.mode ?? 'single'
+  const anchorIso = opts.value ?? opts.start ?? null
+  const parsed = anchorIso ? parseIso(anchorIso) : null
   const visibleMonth = opts.visibleMonth ?? parsed?.m ?? new Date().getMonth() + 1
   const visibleYear = opts.visibleYear ?? parsed?.y ?? new Date().getFullYear()
+  const weekStartsOn = opts.weekStartsOn ?? localeWeekStart(defaultLocale())
   return {
+    mode,
     value: opts.value ?? null,
+    start: opts.start ?? null,
+    end: opts.end ?? null,
+    hoverDate: null,
     visibleMonth,
     visibleYear,
-    focused: opts.value ?? today,
+    months: opts.months ?? 1,
+    focused: anchorIso ?? today,
     min: opts.min ?? null,
     max: opts.max ?? null,
-    weekStartsOn: opts.weekStartsOn ?? 0,
+    weekStartsOn,
     disabled: opts.disabled ?? false,
   }
 }
@@ -141,13 +228,39 @@ function syncVisibleMonth(state: DatePickerState, date: string): DatePickerState
   return { ...state, visibleYear: p.y, visibleMonth: p.m }
 }
 
+function normalizeRange(
+  a: string | null,
+  b: string | null,
+): { start: string | null; end: string | null } {
+  if (a && b) return a <= b ? { start: a, end: b } : { start: b, end: a }
+  return { start: a, end: b }
+}
+
 export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerState, never[]] {
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value, focused: msg.value ?? state.focused }, []]
+    case 'setRange': {
+      const norm = normalizeRange(msg.start, msg.end)
+      const next = norm.start ?? norm.end
+      return [
+        {
+          ...state,
+          start: norm.start,
+          end: norm.end,
+          hoverDate: null,
+          focused: next ?? state.focused,
+        },
+        [],
+      ]
+    }
     case 'setFocused':
       return [syncVisibleMonth({ ...state, focused: msg.date }, msg.date), []]
+    case 'setHover':
+      return [{ ...state, hoverDate: msg.date }, []]
+    case 'clearHover':
+      return [{ ...state, hoverDate: null }, []]
     case 'prevMonth': {
       const n = normalizeMonth(state.visibleYear, state.visibleMonth - 1)
       return [{ ...state, visibleYear: n.year, visibleMonth: n.month }, []]
@@ -160,9 +273,19 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
       return [{ ...state, visibleYear: state.visibleYear - 1 }, []]
     case 'nextYear':
       return [{ ...state, visibleYear: state.visibleYear + 1 }, []]
-    case 'selectFocused':
-      if (!isInRange(state.focused, state.min, state.max)) return [state, []]
+    case 'selectFocused': {
+      if (!withinBounds(state.focused, state.min, state.max)) return [state, []]
+      if (state.mode === 'range') {
+        // No anchor yet, or a complete range already exists → start fresh.
+        if (state.start === null || state.end !== null) {
+          return [{ ...state, start: state.focused, end: null, hoverDate: null }, []]
+        }
+        // Anchor set, no end → complete the range (swap if before the anchor).
+        const norm = normalizeRange(state.start, state.focused)
+        return [{ ...state, start: norm.start, end: norm.end, hoverDate: null }, []]
+      }
       return [{ ...state, value: state.focused }, []]
+    }
     case 'moveFocus': {
       const next = addDays(state.focused, msg.days)
       return [syncVisibleMonth({ ...state, focused: next }, next), []]
@@ -186,7 +309,7 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
       return [syncVisibleMonth({ ...state, focused: today }, today), []]
     }
     case 'clear':
-      return [{ ...state, value: null }, []]
+      return [{ ...state, value: null, start: null, end: null, hoverDate: null }, []]
   }
 }
 
@@ -198,64 +321,91 @@ export interface DayCell {
   isSelected: boolean
   isFocused: boolean
   isDisabled: boolean
+  /** True for the start endpoint of a (committed or previewed) range. */
+  isRangeStart: boolean
+  /** True for the end endpoint of a (committed or previewed) range. */
+  isRangeEnd: boolean
+  /** True for dates strictly between the range endpoints. */
+  isInRange: boolean
 }
 
 /**
- * Compute the grid of days visible in the current month view. Always returns
- * full weeks: leading days from previous month and trailing from next month
- * to fill the grid.
+ * Resolve the effective range endpoints for a given state, including the live
+ * hover preview when an anchor is set but the range is not yet complete.
  */
-export function monthGrid(state: DatePickerState): DayCell[] {
-  const y = state.visibleYear
-  const m = state.visibleMonth
+function effectiveRange(state: DatePickerState): { start: string | null; end: string | null } {
+  if (state.mode !== 'range') return { start: null, end: null }
+  if (state.start !== null && state.end !== null) {
+    return { start: state.start, end: state.end }
+  }
+  if (state.start !== null && state.hoverDate !== null) {
+    return normalizeRange(state.start, state.hoverDate)
+  }
+  return { start: state.start, end: state.end }
+}
+
+function makeCell(
+  iso: string,
+  day: number,
+  inMonth: boolean,
+  state: DatePickerState,
+  today: string,
+  range: { start: string | null; end: string | null },
+): DayCell {
+  const isRangeStart = range.start !== null && iso === range.start
+  const isRangeEnd = range.end !== null && iso === range.end
+  const isInRange =
+    range.start !== null && range.end !== null && iso > range.start && iso < range.end
+  const isSelected =
+    state.mode === 'range' ? isRangeStart || isRangeEnd || isInRange : iso === state.value
+  return {
+    iso,
+    day,
+    inMonth,
+    isToday: iso === today,
+    isSelected,
+    isFocused: iso === state.focused,
+    isDisabled: !withinBounds(iso, state.min, state.max),
+    isRangeStart,
+    isRangeEnd,
+    isInRange,
+  }
+}
+
+/**
+ * Compute the grid of days for a visible month. Always returns full weeks:
+ * leading days from the previous month and trailing from the next month fill
+ * the grid. `offset` shifts the rendered month forward by N months from the
+ * state's `visibleMonth`/`visibleYear` (used by the multi-month view).
+ */
+export function monthGrid(state: DatePickerState, offset = 0): DayCell[] {
+  const norm = normalizeMonth(state.visibleYear, state.visibleMonth + offset)
+  const y = norm.year
+  const m = norm.month
   const first = new Date(y, m - 1, 1)
   const firstDay = first.getDay()
   const leadDays = (firstDay - state.weekStartsOn + 7) % 7
   const totalDays = daysInMonth(y, m)
   const today = todayIso()
+  const range = effectiveRange(state)
 
   const cells: DayCell[] = []
   // Leading: previous month's trailing days
   for (let i = leadDays; i > 0; i--) {
     const d = new Date(y, m - 1, 1 - i)
     const iso = toIso(d.getFullYear(), d.getMonth() + 1, d.getDate())
-    cells.push({
-      iso,
-      day: d.getDate(),
-      inMonth: false,
-      isToday: iso === today,
-      isSelected: iso === state.value,
-      isFocused: iso === state.focused,
-      isDisabled: !isInRange(iso, state.min, state.max),
-    })
+    cells.push(makeCell(iso, d.getDate(), false, state, today, range))
   }
   // Current month
   for (let d = 1; d <= totalDays; d++) {
-    const iso = toIso(y, m, d)
-    cells.push({
-      iso,
-      day: d,
-      inMonth: true,
-      isToday: iso === today,
-      isSelected: iso === state.value,
-      isFocused: iso === state.focused,
-      isDisabled: !isInRange(iso, state.min, state.max),
-    })
+    cells.push(makeCell(toIso(y, m, d), d, true, state, today, range))
   }
   // Trailing: next month's leading days to fill to multiple of 7
   const remaining = (7 - (cells.length % 7)) % 7
   for (let d = 1; d <= remaining; d++) {
     const next = new Date(y, m, d)
     const iso = toIso(next.getFullYear(), next.getMonth() + 1, next.getDate())
-    cells.push({
-      iso,
-      day: d,
-      inMonth: false,
-      isToday: iso === today,
-      isSelected: iso === state.value,
-      isFocused: iso === state.focused,
-      isDisabled: !isInRange(iso, state.min, state.max),
-    })
+    cells.push(makeCell(iso, d, false, state, today, range))
   }
   return cells
 }
@@ -287,10 +437,28 @@ export interface DayCellParts {
     'data-selected': '' | undefined
     'data-focused': '' | undefined
     'data-disabled': '' | undefined
+    'data-range-start': '' | undefined
+    'data-range-end': '' | undefined
+    'data-in-range': '' | undefined
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
+    onPointerEnter: (e: PointerEvent) => void
+    onPointerLeave: (e: PointerEvent) => void
   }
+}
+
+/** A named preset range a consumer can render as a quick-select button. */
+export interface PresetRange {
+  start: string | null
+  end: string | null
+}
+
+export interface PresetParts {
+  type: 'button'
+  'data-scope': 'date-picker'
+  'data-part': 'preset'
+  onClick: (e: MouseEvent) => void
 }
 
 export interface DatePickerParts {
@@ -299,11 +467,17 @@ export interface DatePickerParts {
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
   }
-  grid: {
+  /**
+   * Grid part factory. `offset` (default 0) selects which month this grid
+   * renders in a multi-month view — the `aria-label` is the localized
+   * "Month YYYY" of `visibleMonth + offset`.
+   */
+  grid: (offset?: number) => {
     role: 'grid'
     'aria-label': Signal<string>
     'data-scope': 'date-picker'
     'data-part': 'grid'
+    'data-month-offset': number
   }
   row: {
     role: 'row'
@@ -327,9 +501,15 @@ export interface DatePickerParts {
     onClick: (e: MouseEvent) => void
   }
   dayCell: (cell: DayCell) => DayCellParts
+  /** Preset part factory — clicking dispatches a single `setRange`. */
+  preset: (range: PresetRange) => PresetParts
 }
 
 export interface ConnectOptions {
+  /** Selection mode — affects pointer-hover preview wiring. Defaults to 'single'. */
+  mode?: DatePickerMode
+  /** BCP-47 locale tag for month/grid labels. Defaults to the runtime default. */
+  locale?: string
   prevLabel?: string
   nextLabel?: string
   gridLabel?: (year: number, month: number) => string
@@ -340,10 +520,12 @@ export function connect(
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
 ): DatePickerParts {
-  const locale = useContext(LocaleContext)
-  const prevLabel = opts.prevLabel ?? locale.datePicker.prev
-  const nextLabel = opts.nextLabel ?? locale.datePicker.next
-  const gridLabel = opts.gridLabel ?? en.datePicker.grid
+  const localeStrings = useContext(LocaleContext)
+  const prevLabel = opts.prevLabel ?? localeStrings.datePicker.prev
+  const nextLabel = opts.nextLabel ?? localeStrings.datePicker.next
+  const localeTag = opts.locale ?? defaultLocale()
+  const gridLabel = opts.gridLabel ?? ((y: number, m: number) => monthLabel(y, m, localeTag))
+  const isRange = opts.mode === 'range'
 
   return {
     root: {
@@ -351,12 +533,16 @@ export function connect(
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
-    grid: {
+    grid: (offset = 0) => ({
       role: 'grid',
-      'aria-label': state.map((s) => gridLabel(s.visibleYear, s.visibleMonth)),
+      'aria-label': state.map((s) => {
+        const n = normalizeMonth(s.visibleYear, s.visibleMonth + offset)
+        return gridLabel(n.year, n.month)
+      }),
       'data-scope': 'date-picker',
       'data-part': 'grid',
-    },
+      'data-month-offset': offset,
+    }),
     row: {
       role: 'row',
       'data-scope': 'date-picker',
@@ -392,6 +578,9 @@ export function connect(
         'data-selected': cell.isSelected ? '' : undefined,
         'data-focused': cell.isFocused ? '' : undefined,
         'data-disabled': cell.isDisabled ? '' : undefined,
+        'data-range-start': cell.isRangeStart ? '' : undefined,
+        'data-range-end': cell.isRangeEnd ? '' : undefined,
+        'data-in-range': cell.isInRange ? '' : undefined,
         onClick: tagSend(send, ['setFocused', 'selectFocused'], () => {
           if (cell.isDisabled) return
           send({ type: 'setFocused', date: cell.iso })
@@ -451,9 +640,33 @@ export function connect(
             }
           },
         ),
+        onPointerEnter: tagSend(send, ['setHover'], () => {
+          if (!isRange || cell.isDisabled) return
+          send({ type: 'setHover', date: cell.iso })
+        }),
+        onPointerLeave: tagSend(send, ['clearHover'], () => {
+          if (!isRange) return
+          send({ type: 'clearHover' })
+        }),
       },
+    }),
+    preset: (range: PresetRange): PresetParts => ({
+      type: 'button',
+      'data-scope': 'date-picker',
+      'data-part': 'preset',
+      onClick: tagSend(send, ['setRange'], () =>
+        send({ type: 'setRange', start: range.start, end: range.end }),
+      ),
     }),
   }
 }
 
-export const datePicker = { init, update, connect, monthGrid, weekRows }
+export const datePicker = {
+  init,
+  update,
+  connect,
+  monthGrid,
+  weekRows,
+  monthLabel,
+  weekdayLabels,
+}

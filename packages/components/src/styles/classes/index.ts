@@ -141,6 +141,7 @@ export { sliderClasses, type SliderClasses, type SliderStyleVariants } from './s
 export { splitterClasses, type SplitterClasses, type SplitterStyleVariants } from './splitter.js'
 export { stepsClasses, type StepsClasses, type StepsStyleVariants } from './steps.js'
 export { switchClasses, type SwitchClasses, type SwitchStyleVariants } from './switch.js'
+export { tableClasses, type TableClasses, type TableStyleVariants } from './table.js'
 export { tabsClasses, type TabsClasses, type TabsStyleVariants } from './tabs.js'
 export {
   tagsInputClasses,
