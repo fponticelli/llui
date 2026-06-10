@@ -1,6 +1,6 @@
 # Proposal: cross-function `each`-row lowering (helper / block-body rows)
 
-**Status:** **phases 1–2 + transform-coverage SHIPPED**; phase 3 (cross-file) deferred · **Owner:** perf/compiler
+**Status:** **phases 1–2 + transform-coverage SHIPPED**; phase 3 (cross-file) **evidence-closed 2026-06-10** — a tier-coverage scan of both real consumers (dicerun2, dungeonlogs) post-0.11.x-migration found zero rows delegating to a precompiled package (full data in [[../improvements/perf.md]] "Suggested order" item 6); do not build without a new trigger · **Owner:** perf/compiler
 
 ## Shipped
 
@@ -9,7 +9,7 @@
 - **Phase 2 — same-file helper rows** (`(item) => [rowHelper(item, …)]`): `rowHelper`'s body is inlined (params → call args, conservative hygiene) → a normal row the factory lowers. Bails on cross-file/unknown helpers, arg/param mismatch, spread props, or any hygiene risk.
 - **Two bugs fixed while validating:** peeked-value locals (`const v = item.peek()`) were wrongly bailed (now only handle aliases bail); `loweredLeaksIdent` false-positived on string literals containing the param name (`class: 'activity-item'`) — rewritten as an AST walk (this also fixed the already-shipped item-handler lowering).
 
-Validated on real examples: `examples/github-explorer` (file-row via transform coverage) and `examples/dashboard` (`activityItem` via phase-2 inlining; `priorityItem` stays authoring — spread props). **Phase 3 (cross-file/cross-package helpers) remains deferred** — see below.
+Validated on real examples: `examples/github-explorer` (file-row via transform coverage) and `examples/dashboard` (`activityItem` via phase-2 inlining; `priorityItem` stays authoring — spread props). **Phase 3 (cross-file/cross-package helpers): evidence-closed** — the only sound design (precompiled-library row-factory ABI, see below) has no qualifying call site in either real consumer app: dicerun2 has zero cross-package row delegation (`@llui/components` appears once, as a connect-part), and dungeonlogs' cross-package rows come from `@dl/ui`, which ships TS source (compiled in the consumer's own pipeline — not the precompiled-dist shape). The scoping below is retained should a precompiled-component consumer with large create-hot lists ever appear.
 
 ---
 
