@@ -31,14 +31,15 @@ to that root.
 Two deterministic helpers do the mechanical work; agents do the judgement; a
 schema keeps the judgement verifiable:
 
-| Step            | Tool                          | What it does                                                  |
-| --------------- | ----------------------------- | ------------------------------------------------------------- |
-| 1. Discover     | `discover.mjs`                | Find consumer projects + version gap vs npm-latest            |
-| 2. Delta        | `changelog.mjs`               | Exact commit log for a package since the pinned version       |
-| 3. Audit + plan | **Explore agent per project** | Map usage, find lib-duplication → `plan.schema.json` artifact |
-| 4. Gate         | **you + the user**            | Review plan artifacts, wait for go-ahead                      |
-| 5. Implement    | **subagent per project**      | Apply plan; success = the verify oracles go green             |
-| 6. Upstream     | **subagent in llui**          | Real llui bug → fix on a branch, report                       |
+| Step             | Tool                          | What it does                                                  |
+| ---------------- | ----------------------------- | ------------------------------------------------------------- |
+| 1. Discover      | `discover.mjs`                | Find consumer projects + version gap vs npm-latest            |
+| 1b. Git precheck | **git per repo**              | Pull origin; skip repos not on a clean default branch         |
+| 2. Delta         | `changelog.mjs`               | Exact commit log for a package since the pinned version       |
+| 3. Audit + plan  | **Explore agent per project** | Map usage, find lib-duplication → `plan.schema.json` artifact |
+| 4. Gate          | **you + the user**            | Review plan artifacts, wait for go-ahead                      |
+| 5. Implement     | **subagent per project**      | Apply plan; success = the verify oracles go green             |
+| 6. Upstream      | **subagent in llui**          | Real llui bug → fix on a branch, report                       |
 
 ## Prerequisites
 
@@ -70,6 +71,42 @@ llui repo itself is excluded from the scan.
   fix the consumer needs may require cutting a release first.
 - `workspace:`/`link:`/`file:` deps show as `local-link` — they track local
   source; no bump, but still audit for breaking-change exposure + lib-duplication.
+
+## Step 1b — Git-state precheck (pull + branch gate)
+
+A migration writes to the consumer's working tree, so it must start from a
+clean, up-to-date checkout — **never** on top of unrelated in-flight work. Do
+this before investing in deltas/audit, and **after** discovery (which gives you
+the dirs).
+
+The git state is **per repo, not per project** — `discover.mjs` can return
+several projects in one repo (e.g. dungeonlogs has `apps/client` _and_
+`packages/ui`). Collapse the discovered `dir`s to their unique repo roots first:
+
+```bash
+git -C "<project dir>" rev-parse --show-toplevel   # → the repo root
+```
+
+For each unique repo root:
+
+1. **Fetch:** `git -C <repo> fetch --quiet origin`.
+2. **Read state:** current branch (`git -C <repo> symbolic-ref --quiet --short HEAD`)
+   and dirtiness (`git -C <repo> status --porcelain`). Find the repo's default
+   branch — `git -C <repo> symbolic-ref --quiet --short refs/remotes/origin/HEAD`
+   (strip the `origin/` prefix), falling back to `main` then `master`.
+3. **Gate:**
+   - On the default branch **and** clean working tree → `git -C <repo> pull --ff-only`
+     and proceed. (If `--ff-only` fails — diverged history — treat it as a skip
+     and call it out; don't force.)
+   - **Not** on the default branch, **or** a dirty working tree → **SKIP every
+     consumer project under that repo.** Do not stash, switch, or commit on the
+     user's behalf.
+
+**Call out the skips explicitly** before moving on — name each skipped repo, the
+branch it's actually on (or "uncommitted changes"), and the consumer projects
+that were dropped as a result — so the user can park that work and re-run later.
+A repo shared by an approved project and a skipped reason doesn't get split: if
+the repo isn't clean-on-default, all its projects are skipped together.
 
 ## Step 2 — Per-package change delta
 
@@ -173,6 +210,11 @@ When a subagent reports a genuine llui bug/gap (per the user's decision: report
   (`~/projects`) to find real consumers.
 - **Hidden dirs and `node_modules`/`dist`/`build`/`.turbo`/`coverage`/`.next`
   are skipped** during the walk. Verify the consumer count looks right.
+- **Git state is per repo, not per project (Step 1b).** A repo with several
+  consumer projects passes or fails the precheck as a unit — if it isn't on a
+  clean default branch, every project under it is skipped together. Never stash,
+  switch branches, or commit on the user's behalf to make a dirty repo eligible;
+  call it out and let the user park it.
 - **Library-replacement refactors are folded into the migration** (user
   decision), so a bump may also delete hand-rolled code and wire in
   `@llui/components`. Keep these as clearly-labeled commits — reviewable apart
