@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { firstEnabled, lastEnabled, nextEnabled } from '../utils/roving.js'
 
 /**
  * Tabs — tabbed interface with keyboard navigation. Each tab has a value
@@ -68,39 +69,6 @@ export function init(opts: TabsInit = {}): TabsState {
     loopFocus: opts.loopFocus ?? true,
     deselectable: opts.deselectable ?? false,
   }
-}
-
-function firstEnabled(items: string[], disabled: string[]): string | null {
-  for (const v of items) if (!disabled.includes(v)) return v
-  return null
-}
-
-function lastEnabled(items: string[], disabled: string[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (!disabled.includes(v)) return v
-  }
-  return null
-}
-
-function nextEnabled(
-  items: string[],
-  disabled: string[],
-  from: string,
-  delta: 1 | -1,
-  loop: boolean,
-): string | null {
-  if (items.length === 0) return null
-  const idx = items.indexOf(from)
-  if (idx === -1) return firstEnabled(items, disabled)
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const rawIdx = idx + delta * i
-    if (!loop && (rawIdx < 0 || rawIdx >= n)) return null
-    const next = items[(rawIdx + n * n) % n]!
-    if (!disabled.includes(next)) return next
-  }
-  return null
 }
 
 export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {

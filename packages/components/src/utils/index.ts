@@ -31,3 +31,12 @@ export { TreeCollection } from './tree-collection.js'
 export type { TreeNode } from './tree-collection.js'
 
 export { resolveDir, flipArrow } from './direction.js'
+
+export {
+  firstEnabled,
+  lastEnabled,
+  nextEnabled,
+  resolveRovingMove,
+  focusRovingTab,
+} from './roving.js'
+export type { RovingItem, RovingMove, RovingOptions, RovingOrientation } from './roving.js'
