@@ -6,6 +6,7 @@ import { resolvePortalTarget } from '../utils/portal-target.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
 import { lockBodyScroll } from '../utils/remove-scroll.js'
+import type { PresenceStatus } from './presence.js'
 
 /**
  * Drawer — a panel that slides in from a screen edge. Structurally
@@ -17,6 +18,10 @@ export type DrawerSide = 'left' | 'right' | 'top' | 'bottom'
 
 export interface DrawerState {
   open: boolean
+  /** Presence lifecycle — drives data-state and keeps the node mounted through exit animations. */
+  status: PresenceStatus
+  /** When true, close transitions go straight to 'closed' (no exit-animation wait). */
+  skipAnimations: boolean
 }
 
 export type DrawerMsg =
@@ -28,26 +33,77 @@ export type DrawerMsg =
   | { type: 'toggle' }
   /** @intent("Set the drawer's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
+  /** @humanOnly */
+  | { type: 'transitionEnd' }
 
 export interface DrawerInit {
   open?: boolean
+  /** Skip enter/exit animations — close unmounts synchronously (default: true). */
+  skipAnimations?: boolean
 }
 
 export function init(opts: DrawerInit = {}): DrawerState {
-  return { open: opts.open ?? false }
+  const open = opts.open ?? false
+  return {
+    open,
+    status: open ? 'open' : 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
+  }
+}
+
+function openTo(state: DrawerState): DrawerState {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
+}
+
+function closeTo(state: DrawerState): DrawerState {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
 }
 
 export function update(state: DrawerState, msg: DrawerMsg): [DrawerState, never[]] {
   switch (msg.type) {
     case 'open':
-      return [{ ...state, open: true }, []]
+      return [openTo(state), []]
     case 'close':
-      return [{ ...state, open: false }, []]
+      return [closeTo(state), []]
     case 'toggle':
-      return [{ ...state, open: !state.open }, []]
+      return [state.open ? closeTo(state) : openTo(state), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [msg.open ? openTo(state) : closeTo(state), []]
+    case 'animationEnd':
+    case 'transitionEnd':
+      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
+      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
+      return [state, []]
   }
+}
+
+/** Whether the drawer node should be in the DOM — true through the exit animation.
+ * Tolerates a partial slice without `status` by falling back to `open` (instant unmount). */
+export function isMounted(state: DrawerState): boolean {
+  return state.status === undefined ? state.open : state.status !== 'closed'
+}
+
+/** Alias of {@link isMounted} — whether the drawer is currently present in the DOM. */
+export function isPresent(state: DrawerState): boolean {
+  return isMounted(state)
+}
+
+/** Whether the drawer is in its visible phase (open/opening) vs leaving (closing/closed).
+ * Falls back to `open` when a partial slice has no `status`. */
+function isVisible(state: DrawerState): boolean {
+  return state.status === undefined
+    ? state.open
+    : state.status === 'open' || state.status === 'opening'
+}
+
+/** Resolve the presence status for `data-state`, falling back to open/closed when a
+ * partial state (no `status`) is supplied (e.g. in unit tests). */
+function statusOf(state: DrawerState): PresenceStatus {
+  return state.status ?? (state.open ? 'open' : 'closed')
 }
 
 export interface DrawerParts {
@@ -63,7 +119,7 @@ export interface DrawerParts {
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -79,10 +135,12 @@ export interface DrawerParts {
     'aria-modal': 'true'
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'content'
     'data-side': DrawerSide
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   title: {
     id: string
@@ -136,7 +194,7 @@ export function connect(
       onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     backdrop: {
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map(statusOf),
       'data-scope': 'drawer',
       'data-part': 'backdrop',
       'aria-hidden': 'true',
@@ -152,10 +210,12 @@ export function connect(
       'aria-modal': 'true',
       'aria-labelledby': titleId,
       tabindex: -1,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map(statusOf),
       'data-scope': 'drawer',
       'data-part': 'content',
       'data-side': side,
+      onAnimationEnd: () => send({ type: 'animationEnd' }),
+      onTransitionEnd: () => send({ type: 'transitionEnd' }),
     },
     title: {
       id: titleId,
@@ -206,16 +266,22 @@ export function overlay(opts: OverlayOptions): Mountable {
   const triggerId = parts.trigger.id
   const host = resolvePortalTarget(targetOpt)
 
-  return show(
-    opts.state.map((s) => s.open),
-    () => [
-      portal(() => {
-        const dismissable = onMount(() => {
+  // Outer block stays mounted through the exit animation (isMounted, status !==
+  // 'closed'); the inner block tracks the VISIBLE phase (isVisible, open/opening)
+  // so interaction wiring — focus trap, scroll lock, aria-hidden, dismissable —
+  // tears down at the close REQUEST while the node lingers for the exit
+  // animation. With `skipAnimations` (the default) both flip together, so close
+  // unmounts and tears down synchronously (no hang waiting on animationEnd).
+  return show(opts.state.map(isMounted), () => [
+    portal(() => {
+      const interaction = show(opts.state.map(isVisible), () => [
+        onMount(() => {
           const contentEl = document.getElementById(contentId)
           if (!contentEl) return
           const triggerEl = document.getElementById(triggerId)
 
           const cleanups: Array<() => void> = []
+
           if (lockScroll) cleanups.push(lockBodyScroll())
           if (hideSiblings) cleanups.push(setAriaHiddenOutside(contentEl))
           if (trapFocus) {
@@ -242,11 +308,12 @@ export function overlay(opts: OverlayOptions): Mountable {
           return () => {
             for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
           }
-        })
-        return [dismissable, div(parts.positioner, opts.content())]
-      }, host),
-    ],
-  )
+        }),
+      ])
+
+      return [interaction, div(parts.positioner, opts.content())]
+    }, host),
+  ])
 }
 
-export const drawer = { init, update, connect, overlay }
+export const drawer = { init, update, connect, overlay, isMounted, isPresent }

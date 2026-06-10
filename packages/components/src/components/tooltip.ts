@@ -2,6 +2,8 @@ import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@ll
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import { pushDismissable } from '../utils/dismissable.js'
+import type { PresenceStatus } from './presence.js'
+import { isMounted as presenceIsMounted } from './presence.js'
 
 /**
  * Tooltip — hover / focus-triggered, positioned. Opens after a short delay
@@ -14,7 +16,25 @@ import { pushDismissable } from '../utils/dismissable.js'
  */
 
 export interface TooltipState {
+  /**
+   * Whether the tooltip is intended to be visible (true while `opening`/`open`,
+   * false once a close is requested). Flips to false at close-request time —
+   * exactly as today — so existing consumers reading `open` are unaffected.
+   * The DOM node is kept mounted through an exit animation via `status`, not
+   * `open`. Backed by the presence lifecycle in `status`.
+   */
   open: boolean
+  /**
+   * Full presence lifecycle. `closed → opening → open → closing → closed`.
+   * When `animated` is false (the default) a close skips `closing` and lands
+   * on `closed` synchronously, matching today's instant unmount.
+   */
+  status: PresenceStatus
+  /**
+   * Whether an exit animation is configured. When false, closing is
+   * synchronous (no `closing` state, no waiting for `animationEnd`).
+   */
+  animated: boolean
 }
 
 export type TooltipMsg =
@@ -26,26 +46,63 @@ export type TooltipMsg =
   | { type: 'toggle' }
   /** @intent("Set the tooltip's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
 
 export interface TooltipInit {
   open?: boolean
+  /**
+   * Enable the exit-animation lifecycle: a close enters `closing` and stays
+   * mounted until `animationEnd`. Default false (instant unmount). The
+   * `overlay()` helper turns this on automatically when given a `transition`.
+   */
+  animated?: boolean
 }
 
 export function init(opts: TooltipInit = {}): TooltipState {
-  return { open: opts.open ?? false }
+  const open = opts.open ?? false
+  return { open, status: open ? 'open' : 'closed', animated: opts.animated ?? false }
+}
+
+/** Move `status` toward visible, mirroring presence's open transition. */
+function toOpen(state: TooltipState): TooltipState {
+  if (state.status === 'open' || state.status === 'opening') {
+    return { ...state, open: true }
+  }
+  return { ...state, open: true, status: state.animated ? 'opening' : 'open' }
+}
+
+/**
+ * Move `status` toward hidden. When animated, enter `closing` and wait for
+ * `animationEnd`; otherwise land on `closed` synchronously (no-hang rule).
+ */
+function toClose(state: TooltipState): TooltipState {
+  if (state.status === 'closed' || state.status === 'closing') {
+    return { ...state, open: false }
+  }
+  return { ...state, open: false, status: state.animated ? 'closing' : 'closed' }
 }
 
 export function update(state: TooltipState, msg: TooltipMsg): [TooltipState, never[]] {
   switch (msg.type) {
     case 'show':
-      return [{ ...state, open: true }, []]
+      return [toOpen(state), []]
     case 'hide':
-      return [{ ...state, open: false }, []]
+      return [toClose(state), []]
     case 'toggle':
-      return [{ ...state, open: !state.open }, []]
+      return [state.open ? toClose(state) : toOpen(state), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [msg.open ? toOpen(state) : toClose(state), []]
+    case 'animationEnd':
+      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
+      if (state.status === 'closing') return [{ ...state, status: 'closed', open: false }, []]
+      return [state, []]
   }
+}
+
+/** Whether the tooltip should be in the DOM (mounted through the exit animation). */
+export function isMounted(state: TooltipState): boolean {
+  return presenceIsMounted({ status: state.status, unmountOnExit: true })
 }
 
 export interface TooltipParts {
@@ -69,12 +126,14 @@ export interface TooltipParts {
   content: {
     role: 'tooltip'
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'tooltip'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   arrow: {
     'data-scope': 'tooltip'
@@ -129,6 +188,8 @@ export function connect(
     }
   }
 
+  const onEnd = (): void => send({ type: 'animationEnd' })
+
   const scheduleShow = (delay: number): void => {
     clearTimers()
     if (delay <= 0) {
@@ -176,7 +237,7 @@ export function connect(
     content: {
       role: 'tooltip',
       id: contentId,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map((s) => s.status),
       'data-scope': 'tooltip',
       'data-part': 'content',
       // Allow pointer to enter content without closing (for interactive tooltips):
@@ -188,6 +249,10 @@ export function connect(
       onPointerLeave: () => scheduleHide(delayClose),
       // Escape dismisses even when focus is inside the content.
       onKeyDown: tagSend(send, ['hide'], dismissOnEscape),
+      // Drive the presence lifecycle past `closing`/`opening` once the exit /
+      // enter animation finishes, so an animated tooltip stays mounted until done.
+      onAnimationEnd: onEnd,
+      onTransitionEnd: onEnd,
     },
     arrow: {
       'data-scope': 'tooltip',
@@ -223,62 +288,63 @@ export function overlay(opts: OverlayOptions): Mountable {
   const triggerId = parts.trigger.id
   const closeOnEscape = opts.closeOnEscape !== false
 
-  return show(
-    opts.state.map((s) => s.open),
-    () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
-      return [
-        portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
-            if (!contentEl || !triggerEl) return
+  // Mount through the exit animation: when `animated`, the node stays mounted
+  // while `status === 'closing'` and is removed only once `animationEnd` lands
+  // it on `closed`. When not animated, `closing` is skipped so this collapses
+  // to today's instant unmount (no hang waiting for an animation that never fires).
+  return show(opts.state.map(isMounted), () => {
+    const targetEl =
+      typeof rawTarget === 'string'
+        ? (document.querySelector(rawTarget) ?? document.body)
+        : rawTarget
+    return [
+      portal(() => {
+        const dismissable = onMount(() => {
+          const contentEl = document.getElementById(contentId)
+          const triggerEl = document.getElementById(triggerId)
+          if (!contentEl || !triggerEl) return
 
-            const cleanups: Array<() => void> = []
+          const cleanups: Array<() => void> = []
 
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            const arrow = opts.arrowSelector
-              ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
-              : null
+          const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
+          const floatingEl = positioner ?? contentEl
+          const arrow = opts.arrowSelector
+            ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
+            : null
+          cleanups.push(
+            attachFloating({
+              anchor: triggerEl,
+              floating: floatingEl,
+              placement,
+              offset,
+              flip,
+              shift,
+              arrow: arrow ?? undefined,
+            }),
+          )
+
+          // Escape dismisses regardless of where focus sits (trigger, content,
+          // or elsewhere). Outside-click is intentionally disabled — tooltips
+          // dismiss on blur / pointer-leave, not on clicks elsewhere.
+          if (closeOnEscape) {
             cleanups.push(
-              attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-                arrow: arrow ?? undefined,
+              pushDismissable({
+                element: contentEl,
+                ignore: () => [triggerEl],
+                disableOutside: true,
+                onDismiss: () => opts.send({ type: 'hide' }),
               }),
             )
+          }
 
-            // Escape dismisses regardless of where focus sits (trigger, content,
-            // or elsewhere). Outside-click is intentionally disabled — tooltips
-            // dismiss on blur / pointer-leave, not on clicks elsewhere.
-            if (closeOnEscape) {
-              cleanups.push(
-                pushDismissable({
-                  element: contentEl,
-                  ignore: () => [triggerEl],
-                  disableOutside: true,
-                  onDismiss: () => opts.send({ type: 'hide' }),
-                }),
-              )
-            }
-
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
-        }, targetEl),
-      ]
-    },
-  )
+          return () => {
+            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+          }
+        })
+        return [dismissable, div(parts.positioner, opts.content())]
+      }, targetEl),
+    ]
+  })
 }
 
-export const tooltip = { init, update, connect, overlay }
+export const tooltip = { init, update, connect, overlay, isMounted }

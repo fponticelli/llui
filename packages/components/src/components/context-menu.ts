@@ -2,6 +2,7 @@ import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@ll
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { flipArrow } from '../utils/direction.js'
+import { presence, type PresenceStatus } from './presence.js'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
@@ -33,6 +34,17 @@ export interface ContextMenuItem {
 
 export interface ContextMenuState {
   open: boolean
+  /**
+   * Presence lifecycle of the root content, layered over `open` for exit
+   * animations. `open` stays the logical "should be visible/interactive" flag;
+   * `status` tracks 'opening'/'open'/'closing'/'closed' so the content can stay
+   * mounted while its exit animation runs (status 'closing'). When
+   * `skipAnimations` is true (the default) a close jumps straight to 'closed'.
+   */
+  status: PresenceStatus
+  /** When true (default), a close goes straight to 'closed' synchronously — no
+   * exit animation, no waiting for an `animationEnd` that may never fire. */
+  skipAnimations: boolean
   x: number
   y: number
   items: ContextMenuItem[]
@@ -79,17 +91,24 @@ export type ContextMenuMsg =
   | { type: 'typeahead'; level: string; char: string; now: number }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
 
 export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
   dir?: 'ltr' | 'rtl'
+  /** When false, closing the menu plays an exit animation and the content stays
+   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  skipAnimations?: boolean
 }
 
 export function init(opts: ContextMenuInit = {}): ContextMenuState {
   return {
     open: false,
+    status: 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
     x: 0,
     y: 0,
     items: opts.items ?? [],
@@ -102,6 +121,37 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
     dir: opts.dir ?? 'ltr',
   }
 }
+
+// ---- presence lifecycle (composes presence.update; never reinvents it) ----
+
+/** Advance the root content's presence status on an OPEN. Reuses presence's
+ * reducer; with no enter animation wired, opening resolves directly to 'open'. */
+function statusOnOpen(status: PresenceStatus): PresenceStatus {
+  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
+  return next.status === 'opening' ? 'open' : next.status
+}
+
+/** Advance the root content's presence status on a CLOSE REQUEST. With
+ * skipAnimations the node unmounts synchronously ('closed'); otherwise it
+ * enters 'closing' and stays mounted until `animationEnd`. */
+function statusOnClose(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
+  if (skipAnimations) return 'closed'
+  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'close' })
+  return next.status
+}
+
+/** Whether the root content should be in the DOM. True for every status except
+ * 'closed' — so the content stays mounted through the exit animation. Falls back
+ * to `open` when a consumer drives `open` directly without advancing `status`
+ * (backward-compatible with open-driven callers that predate the presence
+ * lifecycle): an `open` menu is present even if `status` still reads 'closed'. */
+export function isPresent(state: ContextMenuState): boolean {
+  if (state.open) return true
+  return presence.isMounted({ status: state.status, unmountOnExit: true })
+}
+
+/** Alias of {@link isPresent} for parity with the presence-convention naming. */
+export const isMounted = isPresent
 
 // ---- item-tree helpers (pure) ----
 
@@ -193,6 +243,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         {
           ...state,
           open: true,
+          status: statusOnOpen(state.status),
           x: msg.x,
           y: msg.y,
           openPath: [],
@@ -201,7 +252,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         [],
       ]
     case 'close':
-      return [{ ...state, open: false, highlights: { '': null }, openPath: [], typeahead: '' }, []]
+      return [{ ...state, ...closedPatch(state) }, []]
     case 'highlight':
       if (msg.value !== null && isDisabled(state.items, msg.value)) return [state, []]
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, msg.value) }, []]
@@ -289,6 +340,28 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
     }
     case 'setDir':
       return [{ ...state, dir: msg.dir }, []]
+    case 'animationEnd': {
+      const [next] = presence.update(
+        { status: state.status, unmountOnExit: true },
+        { type: 'animationEnd' },
+      )
+      if (next.status === state.status) return [state, []]
+      return [{ ...state, status: next.status }, []]
+    }
+  }
+}
+
+/** The state patch applied when a close request unmounts the menu. Routes the
+ * presence status through `statusOnClose` so animations are honored. */
+function closedPatch(
+  state: ContextMenuState,
+): Pick<ContextMenuState, 'open' | 'status' | 'highlights' | 'openPath' | 'typeahead'> {
+  return {
+    open: false,
+    status: statusOnClose(state.status, state.skipAnimations),
+    highlights: { '': null },
+    openPath: [],
+    typeahead: '',
   }
 }
 
@@ -311,10 +384,7 @@ function applySelect(state: ContextMenuState, value: string): [ContextMenuState,
   if (item.kind === 'checkbox') {
     const checked = toggleChecked(state.checked, value)
     if (state.closeOnSelect) {
-      return [
-        { ...state, checked, open: false, highlights: { '': null }, openPath: [], typeahead: '' },
-        [],
-      ]
+      return [{ ...state, checked, ...closedPatch(state) }, []]
     }
     return [{ ...state, checked }, []]
   }
@@ -322,15 +392,12 @@ function applySelect(state: ContextMenuState, value: string): [ContextMenuState,
   if (item.kind === 'radio') {
     const checked = selectRadio(state.items, state.checked, item)
     if (state.closeOnSelect) {
-      return [
-        { ...state, checked, open: false, highlights: { '': null }, openPath: [], typeahead: '' },
-        [],
-      ]
+      return [{ ...state, checked, ...closedPatch(state) }, []]
     }
     return [{ ...state, checked }, []]
   }
 
-  return [{ ...state, open: false, highlights: { '': null }, openPath: [], typeahead: '' }, []]
+  return [{ ...state, ...closedPatch(state) }, []]
 }
 
 // ---- connect ----
@@ -434,10 +501,14 @@ export interface ContextMenuParts {
     role: 'menu'
     id: string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
+     * Stays mounted while 'closing' so the exit animation can run. */
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'context-menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   item: (value: string) => ContextMenuItemParts
   checkboxItem: (value: string) => ContextMenuCheckItemParts
@@ -570,9 +641,11 @@ export function connect(
       role: 'menu',
       id: contentId,
       tabindex: -1,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map((s) => (s.status === 'closed' && s.open ? 'open' : s.status)),
       'data-scope': 'context-menu',
       'data-part': 'content',
+      onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
+      onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
       onKeyDown: tagSend(
         send,
         [
@@ -774,7 +847,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   const contentId = parts.content.id
 
   return show(
-    opts.state.map((s) => s.open),
+    opts.state.map((s) => isPresent(s)),
     () => {
       const targetEl =
         typeof rawTarget === 'string'
@@ -799,4 +872,4 @@ export function overlay(opts: OverlayOptions): Mountable {
   )
 }
 
-export const contextMenu = { init, update, connect, overlay }
+export const contextMenu = { init, update, connect, overlay, isPresent, isMounted }

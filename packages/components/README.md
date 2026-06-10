@@ -90,6 +90,7 @@ accordion, checkbox, collapsible, editable, field, fieldset, number-input, passw
 
 alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, menubar, navigation-menu, popover, select, toast, tooltip, tour
 
+- **Exit animations (presence lifecycle).** Overlay components (dialog, drawer, alert-dialog, popover, hover-card, tooltip, menu, context-menu, toast, …) support exit animations via a shared presence lifecycle. A closing overlay exposes `data-state="closing"` on its content and stays mounted until `animationend`/`transitionend`, then unmounts; when no animation is configured (the default), close unmounts synchronously with no hang. Use the exposed `isPresent` helper to gate the structural block so the node stays mounted through its exit transition.
 - menubar — desktop-style application menu bar (File/Edit/View) that composes N menu machines with WAI-ARIA APG keyboard: ArrowLeft/Right move between top-level triggers, open-mode arrow/hover switching, roving tabindex (single tab stop), ArrowDown/Enter/Space open-and-focus-first-item, Escape closes and restores trigger focus.
 - Delegates per-menu content/item/checkbox/radio/group/submenu parts to the menu machine via menubar.menu(id); render each dropdown with menubar.overlay({ menuId }).
 

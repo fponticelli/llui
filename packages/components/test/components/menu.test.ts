@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, type MenuItem } from '../../src/components/menu'
+import { init, update, connect, isPresent, type MenuItem } from '../../src/components/menu'
 import { rootSignal, signalOf, read } from '../_signal'
 
 const flat: MenuItem[] = [
@@ -153,6 +153,87 @@ describe('menu reducer', () => {
     }
     const [s] = update(s0, { type: 'select', value: 'b' })
     expect(s.open).toBe(true)
+  })
+})
+
+describe('menu presence lifecycle', () => {
+  it('init defaults to skipAnimations + status closed', () => {
+    const s = init({ items: flat })
+    expect(s.skipAnimations).toBe(true)
+    expect(s.status).toBe('closed')
+  })
+
+  it('init({ open: true }) starts at status open', () => {
+    expect(init({ items: flat, open: true }).status).toBe('open')
+  })
+
+  it('opening moves status to open (no enter animation wired)', () => {
+    const [s] = update(init({ items: flat }), { type: 'open' })
+    expect(s.status).toBe('open')
+  })
+
+  it('non-animated close (default) jumps straight to closed — no hang', () => {
+    const s0 = { ...init({ items: flat }), open: true, status: 'open' as const }
+    const [s] = update(s0, { type: 'close' })
+    expect(s.open).toBe(false)
+    expect(s.status).toBe('closed')
+  })
+
+  it('animated close goes to closing, stays mounted, then animationEnd → closed', () => {
+    const s0 = {
+      ...init({ items: flat, skipAnimations: false }),
+      open: true,
+      status: 'open' as const,
+    }
+    const [closing] = update(s0, { type: 'close' })
+    expect(closing.open).toBe(false)
+    expect(closing.status).toBe('closing')
+    expect(isPresent(closing)).toBe(true) // still mounted during the exit animation
+
+    const [closed] = update(closing, { type: 'animationEnd' })
+    expect(closed.status).toBe('closed')
+    expect(isPresent(closed)).toBe(false)
+  })
+
+  it('animationEnd is inert outside a transition', () => {
+    const s0 = { ...init({ items: flat }), open: true, status: 'open' as const }
+    const [s] = update(s0, { type: 'animationEnd' })
+    expect(s).toBe(s0)
+  })
+
+  it('selecting an action leaf routes the close through presence (animated)', () => {
+    const s0 = {
+      ...init({ items: flat, skipAnimations: false }),
+      open: true,
+      status: 'open' as const,
+    }
+    s0.highlights[''] = 'a'
+    const [s] = update(s0, { type: 'select', value: 'a' })
+    expect(s.open).toBe(false)
+    expect(s.status).toBe('closing')
+  })
+
+  it('isPresent is true for opening/open/closing, false for closed', () => {
+    const base = init({ items: flat })
+    expect(isPresent({ ...base, status: 'opening' })).toBe(true)
+    expect(isPresent({ ...base, status: 'open' })).toBe(true)
+    expect(isPresent({ ...base, status: 'closing' })).toBe(true)
+    expect(isPresent({ ...base, status: 'closed' })).toBe(false)
+  })
+
+  it('connect content data-state reflects the presence status incl. closing', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const ds = p.content['data-state']
+    expect(read(ds, { ...init({ items: flat }), status: 'open' })).toBe('open')
+    expect(read(ds, { ...init({ items: flat }), status: 'closing' })).toBe('closing')
+    expect(read(ds, { ...init({ items: flat }), status: 'closed' })).toBe('closed')
+  })
+
+  it('connect content onAnimationEnd sends animationEnd', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    p.content.onAnimationEnd({} as AnimationEvent)
+    expect(send).toHaveBeenCalledWith({ type: 'animationEnd' })
   })
 })
 

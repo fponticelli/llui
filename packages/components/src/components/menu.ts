@@ -3,6 +3,7 @@ import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import { flipArrow } from '../utils/direction.js'
+import { presence, type PresenceStatus } from './presence.js'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
@@ -39,6 +40,17 @@ export interface MenuItem {
 
 export interface MenuState {
   open: boolean
+  /**
+   * Presence lifecycle of the root content, layered over `open` for exit
+   * animations. `open` stays the logical "should be visible/interactive" flag;
+   * `status` tracks 'opening'/'open'/'closing'/'closed' so the content can stay
+   * mounted while its exit animation runs (status 'closing'). When
+   * `skipAnimations` is true (the default) a close jumps straight to 'closed'.
+   */
+  status: PresenceStatus
+  /** When true (default), a close goes straight to 'closed' synchronously — no
+   * exit animation, no waiting for an `animationEnd` that may never fire. */
+  skipAnimations: boolean
   items: MenuItem[]
   /** Highlighted value per open level. Key `''` is the root; otherwise the parent subTrigger value. */
   highlights: Record<string, string | null>
@@ -86,6 +98,8 @@ export type MenuMsg =
   | { type: 'typeahead'; level: string; char: string; now: number }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
 
 export interface MenuInit {
   open?: boolean
@@ -94,11 +108,17 @@ export interface MenuInit {
   checked?: string[]
   closeOnSelect?: boolean
   dir?: 'ltr' | 'rtl'
+  /** When false, closing the menu plays an exit animation and the content stays
+   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  skipAnimations?: boolean
 }
 
 export function init(opts: MenuInit = {}): MenuState {
+  const open = opts.open ?? false
   return {
-    open: opts.open ?? false,
+    open,
+    status: open ? 'open' : 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
     items: opts.items ?? [],
     highlights: { '': opts.highlighted ?? null },
     openPath: [],
@@ -109,6 +129,34 @@ export function init(opts: MenuInit = {}): MenuState {
     dir: opts.dir ?? 'ltr',
   }
 }
+
+// ---- presence lifecycle (composes presence.update; never reinvents it) ----
+
+/** Advance the root content's presence status on an OPEN. Reuses presence's
+ * reducer; with skipAnimations we land directly on 'open'. */
+function statusOnOpen(status: PresenceStatus): PresenceStatus {
+  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
+  // No enter animation is wired for menus today, so opening resolves immediately.
+  return next.status === 'opening' ? 'open' : next.status
+}
+
+/** Advance the root content's presence status on a CLOSE REQUEST. With
+ * skipAnimations the node unmounts synchronously ('closed'); otherwise it
+ * enters 'closing' and stays mounted until `animationEnd`. */
+function statusOnClose(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
+  if (skipAnimations) return 'closed'
+  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'close' })
+  return next.status
+}
+
+/** Whether the root menu content should be in the DOM. True for every status
+ * except 'closed' — so the content stays mounted through the exit animation. */
+export function isPresent(state: MenuState): boolean {
+  return presence.isMounted({ status: state.status, unmountOnExit: true })
+}
+
+/** Alias of {@link isPresent} for parity with the presence-convention naming. */
+export const isMounted = isPresent
 
 // ---- item-tree helpers (pure) ----
 
@@ -203,16 +251,38 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
     case 'open': {
       const highlighted = state.highlights[''] ?? firstNav(state.items)
       return [
-        { ...state, open: true, highlights: setHighlight(state.highlights, '', highlighted) },
+        {
+          ...state,
+          open: true,
+          status: statusOnOpen(state.status),
+          highlights: setHighlight(state.highlights, '', highlighted),
+        },
         [],
       ]
     }
     case 'close':
-      return [{ ...state, open: false, highlights: { '': null }, openPath: [], typeahead: '' }, []]
+      return [
+        {
+          ...state,
+          open: false,
+          status: statusOnClose(state.status, state.skipAnimations),
+          highlights: { '': null },
+          openPath: [],
+          typeahead: '',
+        },
+        [],
+      ]
     case 'toggle':
       if (state.open) {
         return [
-          { ...state, open: false, highlights: { '': null }, openPath: [], typeahead: '' },
+          {
+            ...state,
+            open: false,
+            status: statusOnClose(state.status, state.skipAnimations),
+            highlights: { '': null },
+            openPath: [],
+            typeahead: '',
+          },
           [],
         ]
       }
@@ -220,6 +290,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         {
           ...state,
           open: true,
+          status: statusOnOpen(state.status),
           highlights: setHighlight(
             state.highlights,
             '',
@@ -316,6 +387,28 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
     }
     case 'setDir':
       return [{ ...state, dir: msg.dir }, []]
+    case 'animationEnd': {
+      const [next] = presence.update(
+        { status: state.status, unmountOnExit: true },
+        { type: 'animationEnd' },
+      )
+      if (next.status === state.status) return [state, []]
+      return [{ ...state, status: next.status }, []]
+    }
+  }
+}
+
+/** The state patch applied when a selection closes the whole menu. Routes the
+ * presence status through `statusOnClose` so animations are honored. */
+function closedPatch(
+  state: MenuState,
+): Pick<MenuState, 'open' | 'status' | 'highlights' | 'openPath' | 'typeahead'> {
+  return {
+    open: false,
+    status: statusOnClose(state.status, state.skipAnimations),
+    highlights: { '': null },
+    openPath: [],
+    typeahead: '',
   }
 }
 
@@ -340,10 +433,7 @@ function applySelect(state: MenuState, value: string): [MenuState, never[]] {
   if (item.kind === 'checkbox') {
     const checked = toggleChecked(state.checked, value)
     if (state.closeOnSelect) {
-      return [
-        { ...state, checked, open: false, highlights: { '': null }, openPath: [], typeahead: '' },
-        [],
-      ]
+      return [{ ...state, checked, ...closedPatch(state) }, []]
     }
     return [{ ...state, checked }, []]
   }
@@ -351,16 +441,13 @@ function applySelect(state: MenuState, value: string): [MenuState, never[]] {
   if (item.kind === 'radio') {
     const checked = selectRadio(state.items, state.checked, item)
     if (state.closeOnSelect) {
-      return [
-        { ...state, checked, open: false, highlights: { '': null }, openPath: [], typeahead: '' },
-        [],
-      ]
+      return [{ ...state, checked, ...closedPatch(state) }, []]
     }
     return [{ ...state, checked }, []]
   }
 
   // action leaf: close the whole menu.
-  return [{ ...state, open: false, highlights: { '': null }, openPath: [], typeahead: '' }, []]
+  return [{ ...state, ...closedPatch(state) }, []]
 }
 
 // ---- connect ----
@@ -471,10 +558,14 @@ export interface MenuParts {
     id: string
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
+     * Stays mounted while 'closing' so the exit animation can run. */
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   item: (value: string) => MenuItemParts
   checkboxItem: (value: string) => MenuCheckItemParts
@@ -628,10 +719,12 @@ export function connect(
       id: contentId,
       'aria-labelledby': triggerId,
       tabindex: -1,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map((s) => s.status),
       'data-scope': 'menu',
       'data-part': 'content',
       onKeyDown: keyNav(''),
+      onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
+      onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
     },
     item: (value: string): MenuItemParts => ({
       item: {
@@ -867,7 +960,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   const triggerId = parts.trigger.id
 
   return show(
-    opts.state.map((s) => s.open),
+    opts.state.map((s) => isPresent(s)),
     () => {
       const targetEl =
         typeof rawTarget === 'string'
@@ -920,4 +1013,4 @@ export function overlay(opts: OverlayOptions): Mountable {
   )
 }
 
-export const menu = { init, update, connect, overlay }
+export const menu = { init, update, connect, overlay, isPresent, isMounted }

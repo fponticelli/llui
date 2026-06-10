@@ -8,11 +8,13 @@ type Ctx = { dlg: DialogState }
 
 describe('dialog reducer', () => {
   it('initializes closed by default', () => {
-    expect(init()).toEqual({ open: false })
+    expect(init().open).toBe(false)
+    expect(init().status).toBe('closed')
   })
 
   it('initializes open=true when given', () => {
-    expect(init({ open: true })).toEqual({ open: true })
+    expect(init({ open: true }).open).toBe(true)
+    expect(init({ open: true }).status).toBe('open')
   })
 
   it('open/close/toggle/setOpen', () => {
@@ -21,6 +23,35 @@ describe('dialog reducer', () => {
     expect(update(init(), { type: 'toggle' })[0].open).toBe(true)
     expect(update(init({ open: true }), { type: 'toggle' })[0].open).toBe(false)
     expect(update(init(), { type: 'setOpen', open: true })[0].open).toBe(true)
+  })
+
+  it('skipAnimations (default) closes straight to closed', () => {
+    const [s] = update(init({ open: true }), { type: 'close' })
+    expect(s.status).toBe('closed')
+    expect(s.open).toBe(false)
+  })
+
+  it('animated close goes open → closing, then animationEnd → closed', () => {
+    const opened = init({ open: true, skipAnimations: false })
+    const [closing] = update(opened, { type: 'close' })
+    expect(closing.status).toBe('closing')
+    expect(closing.open).toBe(false)
+    const [closed] = update(closing, { type: 'animationEnd' })
+    expect(closed.status).toBe('closed')
+  })
+
+  it('animated open goes closed → opening, then transitionEnd → open', () => {
+    const start = init({ skipAnimations: false })
+    const [opening] = update(start, { type: 'open' })
+    expect(opening.status).toBe('opening')
+    expect(opening.open).toBe(true)
+    const [open] = update(opening, { type: 'transitionEnd' })
+    expect(open.status).toBe('open')
+  })
+
+  it('animationEnd is a no-op when not animating', () => {
+    const open = init({ open: true })
+    expect(update(open, { type: 'animationEnd' })[0].status).toBe('open')
   })
 })
 
@@ -100,7 +131,10 @@ describe('dialog.overlay integration', () => {
     document.body.style.paddingRight = ''
   })
 
-  function makeApp(initialOpen = false): {
+  function makeApp(
+    initialOpen = false,
+    skipAnimations = true,
+  ): {
     container: HTMLElement
     send: (m: DialogMsg) => void
     app: ReturnType<typeof mountApp>
@@ -108,7 +142,7 @@ describe('dialog.overlay integration', () => {
     let sendRef!: (m: DialogMsg) => void
     const def = component<Ctx, DialogMsg, never>({
       name: 'Test',
-      init: () => [{ dlg: init({ open: initialOpen }) }, []],
+      init: () => [{ dlg: init({ open: initialOpen, skipAnimations }) }, []],
       update: (state, msg) => {
         const [next] = update(state.dlg, msg)
         return [{ dlg: next }, []]
@@ -220,6 +254,49 @@ describe('dialog.overlay integration', () => {
     const content = document.querySelector('[data-part="content"]') as HTMLElement
     content.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).not.toBeNull()
+  })
+
+  it('non-animated close unmounts synchronously (no hang)', async () => {
+    const { send } = makeApp(true, true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).not.toBeNull()
+    send({ type: 'close' })
+    // No animationend fired, yet the node is gone immediately.
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('animated close keeps the node mounted as data-state=closing until animationEnd', async () => {
+    const { send } = makeApp(true, false)
+    await new Promise((r) => setTimeout(r, 0))
+    const content = document.querySelector('[data-part="content"]') as HTMLElement
+    expect(content).not.toBeNull()
+    expect(content.getAttribute('data-state')).toBe('open')
+
+    send({ type: 'close' })
+    // Still mounted, now in the closing phase.
+    const closing = document.querySelector('[data-part="content"]') as HTMLElement
+    expect(closing).not.toBeNull()
+    expect(closing.getAttribute('data-state')).toBe('closing')
+
+    // Exit animation ends → DOM removal.
+    closing.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('animated close runs scroll unlock + aria-hidden restore at close-request time', async () => {
+    const { send } = makeApp(true, false)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.body.style.overflow).toBe('hidden')
+    const sibling = document.getElementById('sibling')!
+    expect(sibling.getAttribute('aria-hidden')).toBe('true')
+
+    send({ type: 'close' })
+    // Interaction is over: scroll unlocked and siblings restored even though the
+    // content node is still mounted for the exit animation.
+    expect(document.body.style.overflow).toBe('')
+    expect(sibling.hasAttribute('aria-hidden')).toBe(false)
     expect(document.querySelector('[data-part="content"]')).not.toBeNull()
   })
 })

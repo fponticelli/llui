@@ -2,6 +2,8 @@ import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@ll
 import {
   init,
   update,
+  isMounted,
+  isPresent,
   connect as dialogConnect,
   overlay as dialogOverlay,
   type DialogState,
@@ -22,7 +24,7 @@ import {
 
 export type { DialogState as AlertDialogState, DialogMsg as AlertDialogMsg }
 
-export { init, update }
+export { init, update, isMounted, isPresent }
 
 export interface AlertDialogConnectOptions extends Omit<DialogConnectOptions, 'role'> {
   /** Accessible label for the cancel button (default: 'Cancel'). */
@@ -65,4 +67,4 @@ export function overlay(opts: AlertDialogOverlayOptions): Mountable {
   })
 }
 
-export const alertDialog = { init, update, connect, overlay }
+export const alertDialog = { init, update, connect, overlay, isMounted, isPresent }

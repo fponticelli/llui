@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import type { PresenceStatus } from './presence.js'
 
 /**
  * Toast — ephemeral non-modal notifications rendered in a fixed region.
@@ -17,6 +18,16 @@ import { LocaleContext } from '../locale.js'
  *     freezes its `remainingMs` (ticks are ignored).
  *   - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
  *     there is no consumer/runtime race over who removes it.
+ *
+ * Presence (exit animation) — additive, opt-in via `init({ animated: true })`:
+ *   - Each toast carries a presence `status` (closed/opening/open/closing).
+ *     A freshly created toast is born `'open'` (no enter-animation gate — toasts
+ *     appear immediately).
+ *   - Dismissing a toast (manually or when its countdown reaches 0) moves it to
+ *     `'closing'` and KEEPS IT MOUNTED so it can play an exit animation; an
+ *     `animationEnd(id)` message then removes it from the queue.
+ *   - When the toaster is NOT animated, dismiss removes the toast SYNCHRONOUSLY
+ *     (today's behavior) — never waiting for an animationend that won't fire.
  */
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'loading' | 'custom'
@@ -46,19 +57,33 @@ export interface Toast {
   paused: boolean
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
+  /**
+   * Presence lifecycle for this toast (closed/opening/open/closing). Born
+   * `'open'`; a dismiss moves it to `'closing'` (when the toaster is animated)
+   * so it can play an exit animation before `animationEnd` removes it.
+   */
+  status: PresenceStatus
 }
 
 export interface ToasterState {
   toasts: Toast[]
   max: number
   placement: ToastPlacement
+  /**
+   * Whether dismissed toasts play an exit animation. When true a dismiss moves
+   * the toast to `'closing'` (kept mounted) until `animationEnd` removes it;
+   * when false (default) dismiss removes synchronously — today's behavior, no
+   * wait for an animationend that won't fire.
+   */
+  animated: boolean
 }
 
-/** A new toast as supplied to `create`. `remainingMs`/`paused` are optional —
- * seeded from `duration`/`false` when omitted. */
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused'> & {
+/** A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
+ * optional — seeded from `duration`/`false`/`'open'` when omitted. */
+export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
   remainingMs?: number
   paused?: boolean
+  status?: PresenceStatus
 }
 
 export type ToasterMsg =
@@ -80,10 +105,15 @@ export type ToasterMsg =
   | { type: 'pauseAll' }
   /** @intent("Resume auto-dismiss for every visible toast") */
   | { type: 'resumeAll' }
+  /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
+  | { type: 'animationEnd'; id: string }
 
 export interface ToasterInit {
   max?: number
   placement?: ToastPlacement
+  /** Play an exit animation on dismiss (toasts go to `'closing'` and stay
+   * mounted until `animationEnd`). Default false — instant removal. */
+  animated?: boolean
 }
 
 export function init(opts: ToasterInit = {}): ToasterState {
@@ -91,6 +121,7 @@ export function init(opts: ToasterInit = {}): ToasterState {
     toasts: [],
     max: opts.max ?? 5,
     placement: opts.placement ?? 'bottom-end',
+    animated: opts.animated ?? false,
   }
 }
 
@@ -99,14 +130,34 @@ function isCountingDown(t: Toast): boolean {
   return t.duration !== null
 }
 
+/**
+ * Close the toasts whose id matches `match`. When the toaster is animated this
+ * moves them to `'closing'` (kept mounted, exit animation plays, removed later
+ * by `animationEnd`); when not animated they are filtered out synchronously —
+ * today's instant unmount, never waiting for an animationend that won't fire.
+ * Already-`'closing'` toasts are left untouched so re-dismissing is idempotent.
+ */
+function closeToasts(state: ToasterState, match: (t: Toast) => boolean): ToasterState {
+  if (!state.animated) {
+    return { ...state, toasts: state.toasts.filter((t) => !match(t)) }
+  }
+  return {
+    ...state,
+    toasts: state.toasts.map((t) =>
+      match(t) && t.status !== 'closing' ? { ...t, status: 'closing' } : t,
+    ),
+  }
+}
+
 export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, never[]] {
   switch (msg.type) {
     case 'create': {
-      const { remainingMs, paused, ...rest } = msg.toast
+      const { remainingMs, paused, status, ...rest } = msg.toast
       const toast: Toast = {
         ...rest,
         paused: paused ?? false,
         remainingMs: remainingMs ?? rest.duration ?? 0,
+        status: status ?? 'open',
       }
       const toasts = [...state.toasts, toast]
       // Enforce max — drop oldest
@@ -114,9 +165,18 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
       return [{ ...state, toasts: trimmed }, []]
     }
     case 'dismiss':
-      return [{ ...state, toasts: state.toasts.filter((t) => t.id !== msg.id) }, []]
+      return [closeToasts(state, (t) => t.id === msg.id), []]
     case 'dismissAll':
-      return [{ ...state, toasts: [] }, []]
+      return [closeToasts(state, () => true), []]
+    case 'animationEnd':
+      // Exit animation done — remove the now-`'closing'` toast from the queue.
+      return [
+        {
+          ...state,
+          toasts: state.toasts.filter((t) => !(t.id === msg.id && t.status === 'closing')),
+        },
+        [],
+      ]
     case 'update':
       return [
         {
@@ -128,12 +188,15 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
     case 'tick': {
       const target = state.toasts.find((t) => t.id === msg.id)
       if (!target) return [state, []]
-      // Sticky or paused toasts freeze their countdown.
-      if (!isCountingDown(target) || target.paused) return [state, []]
+      // Sticky, paused, or already-closing toasts freeze their countdown.
+      if (!isCountingDown(target) || target.paused || target.status === 'closing') {
+        return [state, []]
+      }
       const remainingMs = target.remainingMs - msg.elapsedMs
-      // Reducer owns expiry: dismiss self once the countdown is spent.
+      // Reducer owns expiry: dismiss self once the countdown is spent (moves to
+      // `'closing'` when animated, removes synchronously otherwise).
       if (remainingMs <= 0) {
-        return [{ ...state, toasts: state.toasts.filter((t) => t.id !== msg.id) }, []]
+        return [closeToasts(state, (t) => t.id === msg.id), []]
       }
       return [
         {
@@ -198,10 +261,17 @@ export interface ToastItemParts {
     'data-part': 'root'
     'data-type': ToastType
     'data-id': string
+    /** Reactive presence status (closed/opening/open/closing) for CSS-driven
+     * enter/exit animations. */
+    'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
     onBlur: (e: FocusEvent) => void
+    /** Advance past the exit animation: a `'closing'` toast is removed from the
+     * queue once its animation/transition ends. */
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   title: {
     id: string
@@ -247,6 +317,14 @@ export interface ToasterParts {
    * missing toast reports 0.
    */
   progress: (id: string) => Signal<number>
+  /**
+   * Reactive presence: whether the toast with `id` is still in the queue (i.e.
+   * should be mounted). Stays true through `'closing'` so the exit animation can
+   * play; flips false once `animationEnd` removes it. The keyed `each` over
+   * `toasts` already handles the actual mount/unmount — this is for consumers
+   * coordinating other elements off a single toast's lifecycle.
+   */
+  isPresent: (id: string) => Signal<boolean>
 }
 
 export interface ConnectOptions {
@@ -279,6 +357,7 @@ export function connect(
       // rebuilds this row if `id` changes.
       const toast = toastSig.peek()
       const live = politeness(toast)
+      const onEnd = (): void => send({ type: 'animationEnd', id: toast.id })
       return {
         root: {
           role: live === 'assertive' ? 'alert' : 'status',
@@ -289,10 +368,13 @@ export function connect(
           'data-part': 'root',
           'data-type': toast.type,
           'data-id': toast.id,
+          'data-state': toastSig.map((t) => t.status),
           onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
           onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
           onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
           onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
+          onAnimationEnd: onEnd,
+          onTransitionEnd: onEnd,
         },
         title: {
           id: `${toast.id}:title`,
@@ -314,7 +396,14 @@ export function connect(
       }
     },
     progress: (id: string): Signal<number> => state.map((s) => progress(s, id)),
+    isPresent: (id: string): Signal<boolean> => state.map((s) => s.toasts.some((t) => t.id === id)),
   }
+}
+
+/** Whether a toast with the given id is in the queue (mounted). Stays true
+ * through `'closing'`; false once `animationEnd` removes it. */
+export function isPresent(state: ToasterState, id: string): boolean {
+  return state.toasts.some((t) => t.id === id)
 }
 
 export const toast = {
@@ -324,4 +413,5 @@ export const toast = {
   nextToastId,
   politeness,
   progress,
+  isPresent,
 }
