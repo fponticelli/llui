@@ -922,6 +922,7 @@ Mount a signal component into a container.
 function mountApp<S, M, E = never>(
   container: Element,
   def: SignalComponentDef<S, M, E>,
+  opts?: MountSignalOptions<S>,
 ): SignalComponentHandle<S, M>
 ```
 
@@ -1527,6 +1528,18 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
+   * subscribers inside every top-level `send` — the synchronous contract.
+   * `'raf'` is the OPT-IN streaming/burst fast path: reducers and effects
+   * still run synchronously per send (state and `getState()` advance
+   * immediately — the data contract holds), but the DOM commit + subscriber
+   * notification coalesce to ONE reconcile per animation frame (microtask
+   * fallback where rAF doesn't exist: SSR, plain jsdom, the headless agent).
+   * The DOM therefore lags state by up to a frame; `handle.flush()` forces
+   * the pending commit synchronously (tests, the agent protocol, a
+   * read-after-write). Measured on the ticker suite's 1k-send burst:
+   * 14.1ms per-send vs 5.9ms coalesced (hand-written-vanilla parity). */
+  scheduler?: 'sync' | 'raf'
   /** Register this component in the global devtools registry
    * (`__lluiComponents` / `__lluiDebug`). Default `true` in dev. Set `false`
    * for self-introspecting dev tooling (e.g. an in-app debug HUD authored with
