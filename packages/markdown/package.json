@@ -13,6 +13,7 @@
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css"
   },
   "scripts": {
+    "prepack": "pnpm run build",
     "build": "tsc -p tsconfig.build.json && pnpm copy:css",
     "copy:css": "node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/styles',{recursive:true});cpSync('src/styles','dist/styles',{recursive:true})\"",
     "check": "tsc --noEmit -p tsconfig.check.json",

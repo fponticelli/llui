@@ -29,6 +29,7 @@
     "dist"
   ],
   "scripts": {
+    "prepack": "pnpm run build",
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
     "lint": "eslint src",

@@ -24,6 +24,7 @@
     "./styles/editor.css": "./dist/styles/editor.css"
   },
   "scripts": {
+    "prepack": "pnpm run build",
     "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/editor.css dist/styles/",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
