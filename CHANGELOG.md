@@ -11,6 +11,18 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-10 — @llui/components@0.11.4, @llui/markdown-editor@0.2.5
+
+**Released:** `@llui/components@0.11.4`; `@llui/markdown-editor@0.2.5`
+
+### `@llui/components@0.11.4`
+
+- **Added** `utils/roving` — a DOM-agnostic headless roving-tablist primitive. `resolveRovingMove(key, current, items, opts)` maps a keypress + current value to a move (arrows/Home/End → `{ type: 'focus', value }`, Enter/Space → `{ type: 'activate' }`), honouring orientation, RTL (via `flipArrow`), looping, and disabled-skip; `firstEnabled`/`lastEnabled`/`nextEnabled` are the pure nav core; `focusRovingTab(container, value)` moves DOM focus via the shared `[role="tab"][data-value]` contract. This lets a consumer keep its own tablist markup (custom classes/ids — no `data-scope`/`data-part` requirement) while delegating WAI-ARIA keyboard behaviour to the library. `tabs` now sources its nav core from the same primitive — behaviour unchanged, covered by the existing reducer/connect suite.
+
+### `@llui/markdown-editor@0.2.5`
+
+- **Improved** Cascade release — peer range for `@llui/components` bumped to `^0.11.4`. No functional change.
+
 ## 2026-06-10 — 0.11.2
 
 **Released:** `@llui/dom@0.11.2`; `@llui/compiler@0.11.1`; `@llui/vite-plugin@0.11.3`; `@llui/compiler-{introspection,devtools,ssr}@0.11.2`; `@llui/components@0.11.3`; `@llui/test@0.11.3`; `@llui/vike@0.11.2`; `@llui/router@0.10.3`; `@llui/transitions@0.10.3`; `@llui/markdown@0.10.3`; `@llui/agent@0.10.3`; `@llui/mcp@0.12.4`; `@llui/lexical@0.2.3`; `@llui/lexical-collab@0.2.1`; `@llui/markdown-editor@0.2.4`; `@llui/devmode-annotate@0.2.5`
