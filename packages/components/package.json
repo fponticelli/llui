@@ -249,6 +249,10 @@
       "import": "./dist/components/breadcrumbs.js",
       "types": "./dist/components/breadcrumbs.d.ts"
     },
+    "./search-field": {
+      "import": "./dist/components/search-field.js",
+      "types": "./dist/components/search-field.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
@@ -256,6 +260,14 @@
     "./patterns/confirm-dialog": {
       "import": "./dist/patterns/confirm-dialog.js",
       "types": "./dist/patterns/confirm-dialog.d.ts"
+    },
+    "./patterns/form-field": {
+      "import": "./dist/patterns/form-field.js",
+      "types": "./dist/patterns/form-field.d.ts"
+    },
+    "./patterns/wizard": {
+      "import": "./dist/patterns/wizard.js",
+      "types": "./dist/patterns/wizard.d.ts"
     },
     "./styles/theme.css": "./dist/styles/theme.css",
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css",
@@ -435,6 +447,10 @@
       "import": "./dist/styles/classes/scroll-area.js",
       "types": "./dist/styles/classes/scroll-area.d.ts"
     },
+    "./styles/search-field": {
+      "import": "./dist/styles/classes/search-field.js",
+      "types": "./dist/styles/classes/search-field.d.ts"
+    },
     "./styles/select": {
       "import": "./dist/styles/classes/select.js",
       "types": "./dist/styles/classes/select.d.ts"
@@ -518,7 +534,7 @@
     "@floating-ui/dom": "^1.7.6",
     "@standard-schema/spec": "^1.0.0"
   },
-  "description": "63 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "description": "64 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [
     "llui",
     "components",

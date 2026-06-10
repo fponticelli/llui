@@ -5,13 +5,18 @@ import { LocaleContext } from '../locale.js'
 /**
  * Toast — ephemeral non-modal notifications rendered in a fixed region.
  * Multiple toasts can be active at once. Each has a duration after which
- * it auto-dismisses (unless paused or persistent).
+ * it auto-dismisses (unless paused or sticky).
  *
- * Architecture:
- *   - `toast.toaster` state manages a collection of toasts.
- *   - Duration countdown is handled externally — the consumer schedules
- *     a `dismiss` message via setTimeout (or uses the `scheduleDismiss`
- *     effect-style helper in your onEffect handler).
+ * Architecture (timer-free, tick-driven — same division of labor as timer.ts):
+ *   - `toast.toaster` state manages a collection of toasts. Each toast carries
+ *     its own countdown in state: `duration` (null = sticky), `remainingMs`,
+ *     and `paused`.
+ *   - The machine owns NO interval. The consumer drives the countdown with a
+ *     `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
+ *     subtracting the elapsed wall time since the last tick. A `paused` toast
+ *     freezes its `remainingMs` (ticks are ignored).
+ *   - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
+ *     there is no consumer/runtime race over who removes it.
  */
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'loading' | 'custom'
@@ -23,17 +28,24 @@ export type ToastPlacement =
   | 'bottom-start'
   | 'bottom-end'
 
+/** aria-live politeness for a toast's announcement region. */
+export type ToastPoliteness = 'polite' | 'assertive'
+
 export interface Toast {
   id: string
   type: ToastType
   title?: string
   description?: string
-  /** ms until auto-dismiss. Use Infinity for persistent. */
-  duration: number
+  /** ms until auto-dismiss. `null` = sticky (never auto-dismisses). */
+  duration: number | null
+  /** ms left before auto-dismiss. Counts down via `tick`. */
+  remainingMs: number
   /** Whether the toast can be manually dismissed. */
   dismissable: boolean
-  /** Optional pause flag — consumer sets while user hovers. */
+  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
   paused: boolean
+  /** Optional per-toast politeness override; otherwise derived from `type`. */
+  ariaLive?: ToastPoliteness
 }
 
 export interface ToasterState {
@@ -42,15 +54,24 @@ export interface ToasterState {
   placement: ToastPlacement
 }
 
+/** A new toast as supplied to `create`. `remainingMs`/`paused` are optional —
+ * seeded from `duration`/`false` when omitted. */
+export type ToastInput = Omit<Toast, 'remainingMs' | 'paused'> & {
+  remainingMs?: number
+  paused?: boolean
+}
+
 export type ToasterMsg =
   /** @intent("Show a new toast notification") */
-  | { type: 'create'; toast: Omit<Toast, 'paused'> & { paused?: boolean } }
+  | { type: 'create'; toast: ToastInput }
   /** @intent("Dismiss the toast with the given id") */
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
   /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
   | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
+  | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
   | { type: 'pause'; id: string }
   /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
@@ -73,10 +94,20 @@ export function init(opts: ToasterInit = {}): ToasterState {
   }
 }
 
+/** Whether a toast auto-dismisses (has a finite, non-null duration). */
+function isCountingDown(t: Toast): boolean {
+  return t.duration !== null
+}
+
 export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, never[]] {
   switch (msg.type) {
     case 'create': {
-      const toast: Toast = { paused: false, ...msg.toast }
+      const { remainingMs, paused, ...rest } = msg.toast
+      const toast: Toast = {
+        ...rest,
+        paused: paused ?? false,
+        remainingMs: remainingMs ?? rest.duration ?? 0,
+      }
       const toasts = [...state.toasts, toast]
       // Enforce max — drop oldest
       const trimmed = toasts.length > state.max ? toasts.slice(-state.max) : toasts
@@ -94,6 +125,24 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
         },
         [],
       ]
+    case 'tick': {
+      const target = state.toasts.find((t) => t.id === msg.id)
+      if (!target) return [state, []]
+      // Sticky or paused toasts freeze their countdown.
+      if (!isCountingDown(target) || target.paused) return [state, []]
+      const remainingMs = target.remainingMs - msg.elapsedMs
+      // Reducer owns expiry: dismiss self once the countdown is spent.
+      if (remainingMs <= 0) {
+        return [{ ...state, toasts: state.toasts.filter((t) => t.id !== msg.id) }, []]
+      }
+      return [
+        {
+          ...state,
+          toasts: state.toasts.map((t) => (t.id === msg.id ? { ...t, remainingMs } : t)),
+        },
+        [],
+      ]
+    }
     case 'pause':
       return [
         {
@@ -122,11 +171,28 @@ export function nextToastId(): string {
   return `toast-${++toastIdCounter}`
 }
 
+/** Resolve the announcement politeness for a toast: explicit override, else
+ * `error` → assertive, everything else → polite. */
+export function politeness(toast: Pick<Toast, 'type' | 'ariaLive'>): ToastPoliteness {
+  if (toast.ariaLive) return toast.ariaLive
+  return toast.type === 'error' ? 'assertive' : 'polite'
+}
+
+/** Fraction of the countdown remaining for a given toast, in [0,1]. Sticky
+ * toasts report 1; a missing toast reports 0. */
+export function progress(state: ToasterState, id: string): number {
+  const t = state.toasts.find((x) => x.id === id)
+  if (!t) return 0
+  if (t.duration === null || t.duration <= 0) return 1
+  const frac = t.remainingMs / t.duration
+  return frac < 0 ? 0 : frac > 1 ? 1 : frac
+}
+
 export interface ToastItemParts {
   root: {
-    role: 'status'
+    role: 'status' | 'alert'
     'aria-atomic': 'true'
-    'aria-live': 'polite' | 'assertive'
+    'aria-live': ToastPoliteness
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
@@ -169,12 +235,18 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast is immutable for its `id`'s lifetime — created then
-   * dismissed, never mutated in place — so this reads the value once internally
-   * to build the id-derived wiring; the keyed `each` rebuilds the row if `id`
-   * changes.
+   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
+   * created then dismissed, never structurally replaced — so this reads the
+   * value once internally to build the id/role wiring; the keyed `each`
+   * rebuilds the row if `id` changes.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
+  /**
+   * Reactive fraction (in [0,1]) of the countdown remaining for the toast with
+   * `id` — for a countdown progress bar. Sticky toasts report 1; a dismissed /
+   * missing toast reports 0.
+   */
+  progress: (id: string) => Signal<number>
 }
 
 export interface ConnectOptions {
@@ -201,15 +273,17 @@ export function connect(
       'data-placement': state.map((s) => s.placement),
     },
     toast: (toastSig: Signal<Toast>): ToastItemParts => {
-      // A toast is immutable for its id's lifetime (created → dismissed, never
-      // mutated), so read it once to build the id-derived descriptors. The keyed
-      // `each` rebuilds this row if `id` changes.
+      // A toast's identity-bearing fields (id, type, ariaLive) are immutable for
+      // its id's lifetime (created → dismissed, never structurally replaced), so
+      // read it once to build the id/role-derived descriptors. The keyed `each`
+      // rebuilds this row if `id` changes.
       const toast = toastSig.peek()
+      const live = politeness(toast)
       return {
         root: {
-          role: 'status',
+          role: live === 'assertive' ? 'alert' : 'status',
           'aria-atomic': 'true',
-          'aria-live': toast.type === 'error' ? 'assertive' : 'polite',
+          'aria-live': live,
           id: `${toast.id}:root`,
           'data-scope': 'toast',
           'data-part': 'root',
@@ -239,7 +313,15 @@ export function connect(
         },
       }
     },
+    progress: (id: string): Signal<number> => state.map((s) => progress(s, id)),
   }
 }
 
-export const toast = { init, update, connect, nextToastId }
+export const toast = {
+  init,
+  update,
+  connect,
+  nextToastId,
+  politeness,
+  progress,
+}

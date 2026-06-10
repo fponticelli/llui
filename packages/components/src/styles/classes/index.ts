@@ -126,6 +126,11 @@ export {
   type ScrollAreaClasses,
   type ScrollAreaStyleVariants,
 } from './scroll-area.js'
+export {
+  searchFieldClasses,
+  type SearchFieldClasses,
+  type SearchFieldStyleVariants,
+} from './search-field.js'
 export { selectClasses, type SelectClasses, type SelectStyleVariants } from './select.js'
 export {
   signaturePadClasses,

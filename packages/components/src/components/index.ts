@@ -61,6 +61,7 @@ export * as fieldset from './fieldset.js'
 export * as toolbar from './toolbar.js'
 export * as meter from './meter.js'
 export * as breadcrumbs from './breadcrumbs.js'
+export * as searchField from './search-field.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
@@ -297,6 +298,8 @@ export type {
   ToastItemParts,
   ToastType,
   ToastPlacement,
+  ToastPoliteness,
+  ToastInput,
 } from './toast.js'
 export type {
   ListboxState,
@@ -312,6 +315,8 @@ export type {
   SelectInit,
   SelectParts,
   SelectItemParts,
+  SelectGroup,
+  SelectGroupParts,
   OverlayOptions as SelectOverlayOptions,
 } from './select.js'
 export type {
@@ -405,6 +410,8 @@ export type {
   ColorPickerInit,
   ColorPickerParts,
   Hsl,
+  Hsv,
+  SwatchParts,
 } from './color-picker.js'
 export type { FieldState, FieldMsg, FieldInit, FieldParts, FieldConnectOptions } from './field.js'
 export type {
@@ -431,3 +438,9 @@ export type {
   BreadcrumbItem,
   VisibleBreadcrumb,
 } from './breadcrumbs.js'
+export type {
+  SearchFieldState,
+  SearchFieldMsg,
+  SearchFieldInit,
+  SearchFieldParts,
+} from './search-field.js'

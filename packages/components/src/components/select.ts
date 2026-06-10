@@ -17,10 +17,27 @@ import {
 
 export type SelectionMode = 'single' | 'multiple'
 
+/**
+ * A labelled section of options (rendered like `<optgroup>`). `items` are the
+ * option VALUES belonging to the group, in visual order. Groups are an
+ * additive, parallel structure: the flat `items` list always remains the
+ * source of truth for navigation/highlight indices and item ids — when
+ * `groups` is provided without an explicit `items` list, `init` derives the
+ * flat list by concatenating each group's `items` in order. A plain flat
+ * `string[]` (no groups) keeps working unchanged. Group LABELS are never
+ * options, so highlight/typeahead/arrow navigation skips over them for free.
+ */
+export interface SelectGroup {
+  id: string
+  label: string
+  items: string[]
+}
+
 export interface SelectState {
   open: boolean
   value: string[]
   items: string[]
+  groups: SelectGroup[]
   disabledItems: string[]
   selectionMode: SelectionMode
   highlightedIndex: number | null
@@ -63,6 +80,9 @@ export type SelectMsg =
 export interface SelectInit {
   value?: string[]
   items?: string[]
+  /** Optional labelled sections. When provided without `items`, the flat
+   * `items` list is derived by concatenating each group's `items` in order. */
+  groups?: SelectGroup[]
   disabledItems?: string[]
   selectionMode?: SelectionMode
   disabled?: boolean
@@ -70,10 +90,13 @@ export interface SelectInit {
 }
 
 export function init(opts: SelectInit = {}): SelectState {
+  const groups = opts.groups ?? []
+  const items = opts.items ?? groups.flatMap((g) => g.items)
   return {
     open: false,
     value: opts.value ?? [],
-    items: opts.items ?? [],
+    items,
+    groups,
     disabledItems: opts.disabledItems ?? [],
     selectionMode: opts.selectionMode ?? 'single',
     highlightedIndex: null,
@@ -251,6 +274,23 @@ export interface SelectItemParts {
   }
 }
 
+export interface SelectGroupParts {
+  group: {
+    role: 'group'
+    'aria-labelledby': string
+    'data-scope': 'select'
+    'data-part': 'group'
+    'data-group': string
+  }
+  groupLabel: {
+    id: string
+    'aria-hidden': 'true'
+    'data-scope': 'select'
+    'data-part': 'group-label'
+    'data-group': string
+  }
+}
+
 export interface SelectParts {
   trigger: {
     type: 'button'
@@ -296,6 +336,11 @@ export interface SelectParts {
     'data-part': 'hidden-select'
   }
   item: (value: string, index: number) => SelectItemParts
+  /** Parts for a labelled option group (`<optgroup>`-style section). Pass the
+   * group id; render the section element with `group` and its label element
+   * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
+   * options, so navigation skips them automatically. */
+  group: (id: string) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
   valueText: Signal<string>
 }
@@ -320,6 +365,7 @@ export function connect(
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
   const itemId = (index: number): string => `${base}:item:${index}`
+  const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const placeholder = opts.placeholder ?? ''
   const separator = opts.separator ?? ', '
 
@@ -436,6 +482,22 @@ export function connect(
         'data-index': String(index),
         onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
         onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
+      },
+    }),
+    group: (id: string): SelectGroupParts => ({
+      group: {
+        role: 'group',
+        'aria-labelledby': groupLabelId(id),
+        'data-scope': 'select',
+        'data-part': 'group',
+        'data-group': id,
+      },
+      groupLabel: {
+        id: groupLabelId(id),
+        'aria-hidden': 'true',
+        'data-scope': 'select',
+        'data-part': 'group-label',
+        'data-group': id,
       },
     }),
     valueText: state.map((s) => {

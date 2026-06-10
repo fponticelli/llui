@@ -1,6 +1,6 @@
 # @llui/components
 
-63 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
+64 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -73,15 +73,16 @@ const update = mergeHandlers<State, Msg, never>(
 )
 ```
 
-## Components (63)
+## Components (64)
 
 ### Form controls
 
-accordion, checkbox, collapsible, editable, field, fieldset, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, toggle, toggle-group, toolbar
+accordion, checkbox, collapsible, editable, field, fieldset, number-input, password-input, pin-input, radio-group, rating-group, search-field, slider, switch, tabs, tags-input, toggle, toggle-group, toolbar
 
 - **field** — label/description/error ARIA wiring for a single control: derives stable control/label/description/error ids from one base id, exposes a `control` bag (id, `htmlFor`, `aria-labelledby`, reactive `aria-describedby`/`aria-invalid`/`aria-required`, `disabled`, `readOnly`) plus a `description` hint and a polite `errorText` live region — zero manual ids.
 - **fieldset** — group wiring: native `<fieldset>`/`<legend>` (role group, `aria-labelledby`), group-level `disabled` propagation (mirrored to `aria-disabled`), and an optional polite group error region for cross-field validation.
 - **toolbar** — roving-tabindex container for grouping buttons, toggles, and menu triggers. Single tab stop with arrow-key roving (orientation-aware), Home/End, separator/disabled skipping, optional focus wrap, and labelled groups. Interaction-agnostic: it only manages focus, items supply their own behavior.
+- search-field — role="search" landmark with a type="search" input and clear button; Escape clears (when non-empty), Enter submits the current value; debounce live search consumer-side with @llui/effects
 
 ### Overlays
 
@@ -105,6 +106,10 @@ file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, ti
 ### Patterns
 
 `@llui/components/patterns/confirm-dialog` — pre-wired alert-dialog for destructive confirmations.
+
+- formField — field ARIA wiring + form touched-tracking + Standard Schema error display, pre-wired: one composed slice, one `formField(name)` spread per input, with touch-gated error visibility (touched || submitted) and sync/async validation built in
+- `wizard` — multi-step flow combining the `steps` component with per-step validation gating. `next` validates the current step (sync predicate / Standard Schema, or async via the `validateStep` effect → `stepValid`/`stepInvalid`) before advancing; pass marks completed + advances, fail marks errored + stays.
+- `prev` is never gated; `goTo`/`stepTrigger` jumps respect linear-mode + completion gating. `nextTrigger` is disabled and aria-busy while an async validation is pending, guarding against double-advance.
 
 ## Utilities
 
