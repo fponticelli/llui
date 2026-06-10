@@ -2055,15 +2055,17 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   spacer.style.setProperty('width', '100%')
   scroll.appendChild(spacer)
 
+  // Same slimming as signalEach's Row: the row object IS the live-ctx box
+  // (no separate `holder` allocation/write), and `spare` is allocated lazily
+  // on the row's first update.
   interface Row {
-    scope: SignalScope
+    scope: SignalScope | null // null only between creation and the build below
     nodes: readonly Node[]
     wrapper: HTMLElement
     ctx: RowCtx<T>
-    spare: RowCtx<T>
+    spare: RowCtx<T> | null
     index: number
     teardowns: Array<() => void>
-    holder: { ctx: RowCtx<T> }
   }
   const rows = new Map<string, Row>()
 
@@ -2113,37 +2115,42 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         wrapper.setAttribute('data-virtual-key', k)
         positionWrapper(wrapper, index)
         const rowCtx: RowCtx<T> = { item, state, index }
-        const holder = { ctx: rowCtx }
+        // The row record is created first so the render closure can capture it
+        // as the live-ctx box (same pattern as signalEach).
+        const created: Row = {
+          scope: null,
+          nodes: EMPTY_ROW_NODES,
+          wrapper,
+          ctx: rowCtx,
+          spare: null,
+          index,
+          teardowns: EMPTY_ROW_TEARDOWNS,
+        }
         // forceInRow + rebase the row's value specs to read ctx.state (same as
         // signalEach), so component-state reads in a virtual row resolve correctly.
-        const built = runBuild(doc, () => spec.renderRow(() => holder.ctx), c, undefined, true)
+        const built = runBuild(doc, () => spec.renderRow(() => created.ctx), c, undefined, true)
         built.specs = rebaseRowSpecs(built.specs)
         const scope = buildAndPublishScope(built)
         scope.mount(rowCtx)
         for (const n of built.nodes) wrapper.appendChild(n)
         spacer.appendChild(wrapper)
         runMounts(built.mounts, wrapper, built.teardowns)
-        rows.set(k, {
-          scope,
-          nodes: built.nodes,
-          wrapper,
-          ctx: rowCtx,
-          spare: { item, state, index },
-          index,
-          teardowns: built.teardowns,
-          holder,
-        })
+        created.scope = scope
+        created.nodes = built.nodes
+        created.teardowns = built.teardowns
+        rows.set(k, created)
         continue
       }
       // existing row: re-run only the bindings whose part of the ctx changed.
-      const next = row.spare
+      // lazy spare (first update allocates; reused after); the row is the
+      // live-ctx box, so swapping row.ctx keeps handles' .peek() current.
+      const next = row.spare ?? { item, state, index }
       next.item = item
       next.state = state
       next.index = index
-      row.scope.update(row.ctx, next)
+      row.scope!.update(row.ctx, next)
       row.spare = row.ctx
       row.ctx = next
-      row.holder.ctx = next
       if (row.index !== index) {
         row.index = index
         positionWrapper(row.wrapper, index)
