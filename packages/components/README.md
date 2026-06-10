@@ -1,6 +1,6 @@
 # @llui/components
 
-58 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
+63 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -73,11 +73,15 @@ const update = mergeHandlers<State, Msg, never>(
 )
 ```
 
-## Components (54)
+## Components (63)
 
 ### Form controls
 
-accordion, checkbox, collapsible, editable, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, toggle, toggle-group
+accordion, checkbox, collapsible, editable, field, fieldset, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, toggle, toggle-group, toolbar
+
+- **field** — label/description/error ARIA wiring for a single control: derives stable control/label/description/error ids from one base id, exposes a `control` bag (id, `htmlFor`, `aria-labelledby`, reactive `aria-describedby`/`aria-invalid`/`aria-required`, `disabled`, `readOnly`) plus a `description` hint and a polite `errorText` live region — zero manual ids.
+- **fieldset** — group wiring: native `<fieldset>`/`<legend>` (role group, `aria-labelledby`), group-level `disabled` propagation (mirrored to `aria-disabled`), and an optional polite group error region for cross-field validation.
+- **toolbar** — roving-tabindex container for grouping buttons, toggles, and menu triggers. Single tab stop with arrow-key roving (orientation-aware), Home/End, separator/disabled skipping, optional focus wrap, and labelled groups. Interaction-agnostic: it only manages focus, items supply their own behavior.
 
 ### Overlays
 
@@ -85,7 +89,10 @@ alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigati
 
 ### Data display
 
-async-list, avatar, carousel, cascade-select, listbox, pagination, progress, qr-code, scroll-area, steps, toc, tree-view
+async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagination, progress, qr-code, scroll-area, steps, toc, tree-view
+
+- **Breadcrumbs** — hierarchical navigation trail with WAI-ARIA landmark/list semantics, `aria-current="page"` on the active (last) item, and automatic middle-collapse to `first … last N items` (with an expandable ellipsis trigger) when `maxVisible` is exceeded.
+- meter — role="meter" gauge for a scalar measurement within a known range (disk usage, battery, etc.), distinct from progressbar. Reports aria-valuemin/max/now plus a formatted aria-valuetext, and derives a `low`/`optimal`/`high` threshold band (native <meter> semantics) exposed via data-state for threshold styling. Read-only (no keyboard).
 
 ### Pickers
 

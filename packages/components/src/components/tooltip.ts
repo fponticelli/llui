@@ -1,6 +1,7 @@
 import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { pushDismissable } from '../utils/dismissable.js'
 
 /**
  * Tooltip — hover / focus-triggered, positioned. Opens after a short delay
@@ -73,6 +74,7 @@ export interface TooltipParts {
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   arrow: {
     'data-scope': 'tooltip'
@@ -105,14 +107,25 @@ export function connect(
   let openTimer: ReturnType<typeof setTimeout> | null = null
   let closeTimer: ReturnType<typeof setTimeout> | null = null
 
+  const cancelClose = (): void => {
+    if (closeTimer) {
+      clearTimeout(closeTimer)
+      closeTimer = null
+    }
+  }
+
   const clearTimers = (): void => {
     if (openTimer) {
       clearTimeout(openTimer)
       openTimer = null
     }
-    if (closeTimer) {
-      clearTimeout(closeTimer)
-      closeTimer = null
+    cancelClose()
+  }
+
+  const dismissOnEscape = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      clearTimers()
+      send({ type: 'hide' })
     }
   }
 
@@ -153,12 +166,7 @@ export function connect(
         if (openOnFocus) scheduleShow(0)
       },
       onBlur: () => scheduleHide(0),
-      onKeyDown: tagSend(send, ['hide'], (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          clearTimers()
-          send({ type: 'hide' })
-        }
-      }),
+      onKeyDown: tagSend(send, ['hide'], dismissOnEscape),
     },
     positioner: {
       'data-scope': 'tooltip',
@@ -171,14 +179,15 @@ export function connect(
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'tooltip',
       'data-part': 'content',
-      // Allow pointer to enter content without closing (for interactive tooltips)
-      onPointerEnter: () => {
-        if (closeTimer) {
-          clearTimeout(closeTimer)
-          closeTimer = null
-        }
-      },
+      // Allow pointer to enter content without closing (for interactive tooltips):
+      // entering the content cancels the close scheduled when the pointer left
+      // the trigger, so trigger→content travel keeps the tooltip open (WCAG 1.4.13).
+      onPointerEnter: () => cancelClose(),
+      // Leaving the content schedules a close after the grace period, symmetric
+      // with the trigger handlers.
       onPointerLeave: () => scheduleHide(delayClose),
+      // Escape dismisses even when focus is inside the content.
+      onKeyDown: tagSend(send, ['hide'], dismissOnEscape),
     },
     arrow: {
       'data-scope': 'tooltip',
@@ -199,6 +208,8 @@ export interface OverlayOptions {
   transition?: TransitionOptions
   target?: string | HTMLElement
   arrowSelector?: string
+  /** Dismiss on Escape regardless of where focus is (default: true). */
+  closeOnEscape?: boolean
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
@@ -210,6 +221,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   const parts = opts.parts
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
+  const closeOnEscape = opts.closeOnEscape !== false
 
   return show(
     opts.state.map((s) => s.open),
@@ -225,20 +237,42 @@ export function overlay(opts: OverlayOptions): Mountable {
             const triggerEl = document.getElementById(triggerId)
             if (!contentEl || !triggerEl) return
 
+            const cleanups: Array<() => void> = []
+
             const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
             const floatingEl = positioner ?? contentEl
             const arrow = opts.arrowSelector
               ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
               : null
-            return attachFloating({
-              anchor: triggerEl,
-              floating: floatingEl,
-              placement,
-              offset,
-              flip,
-              shift,
-              arrow: arrow ?? undefined,
-            })
+            cleanups.push(
+              attachFloating({
+                anchor: triggerEl,
+                floating: floatingEl,
+                placement,
+                offset,
+                flip,
+                shift,
+                arrow: arrow ?? undefined,
+              }),
+            )
+
+            // Escape dismisses regardless of where focus sits (trigger, content,
+            // or elsewhere). Outside-click is intentionally disabled — tooltips
+            // dismiss on blur / pointer-leave, not on clicks elsewhere.
+            if (closeOnEscape) {
+              cleanups.push(
+                pushDismissable({
+                  element: contentEl,
+                  ignore: () => [triggerEl],
+                  disableOutside: true,
+                  onDismiss: () => opts.send({ type: 'hide' }),
+                }),
+              )
+            }
+
+            return () => {
+              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+            }
           })
           return [dismissable, div(parts.positioner, opts.content())]
         }, targetEl),

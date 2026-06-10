@@ -229,6 +229,26 @@
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"
     },
+    "./field": {
+      "import": "./dist/components/field.js",
+      "types": "./dist/components/field.d.ts"
+    },
+    "./fieldset": {
+      "import": "./dist/components/fieldset.js",
+      "types": "./dist/components/fieldset.d.ts"
+    },
+    "./toolbar": {
+      "import": "./dist/components/toolbar.js",
+      "types": "./dist/components/toolbar.d.ts"
+    },
+    "./meter": {
+      "import": "./dist/components/meter.js",
+      "types": "./dist/components/meter.d.ts"
+    },
+    "./breadcrumbs": {
+      "import": "./dist/components/breadcrumbs.js",
+      "types": "./dist/components/breadcrumbs.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
@@ -283,6 +303,10 @@
       "import": "./dist/styles/classes/avatar.js",
       "types": "./dist/styles/classes/avatar.d.ts"
     },
+    "./styles/breadcrumbs": {
+      "import": "./dist/styles/classes/breadcrumbs.js",
+      "types": "./dist/styles/classes/breadcrumbs.d.ts"
+    },
     "./styles/carousel": {
       "import": "./dist/styles/classes/carousel.js",
       "types": "./dist/styles/classes/carousel.d.ts"
@@ -327,6 +351,14 @@
       "import": "./dist/styles/classes/editable.js",
       "types": "./dist/styles/classes/editable.d.ts"
     },
+    "./styles/field": {
+      "import": "./dist/styles/classes/field.js",
+      "types": "./dist/styles/classes/field.d.ts"
+    },
+    "./styles/fieldset": {
+      "import": "./dist/styles/classes/fieldset.js",
+      "types": "./dist/styles/classes/fieldset.d.ts"
+    },
     "./styles/file-upload": {
       "import": "./dist/styles/classes/file-upload.js",
       "types": "./dist/styles/classes/file-upload.d.ts"
@@ -354,6 +386,10 @@
     "./styles/menu": {
       "import": "./dist/styles/classes/menu.js",
       "types": "./dist/styles/classes/menu.d.ts"
+    },
+    "./styles/meter": {
+      "import": "./dist/styles/classes/meter.js",
+      "types": "./dist/styles/classes/meter.d.ts"
     },
     "./styles/navigation-menu": {
       "import": "./dist/styles/classes/navigation-menu.js",
@@ -443,6 +479,10 @@
       "import": "./dist/styles/classes/toggle-group.js",
       "types": "./dist/styles/classes/toggle-group.d.ts"
     },
+    "./styles/toolbar": {
+      "import": "./dist/styles/classes/toolbar.js",
+      "types": "./dist/styles/classes/toolbar.d.ts"
+    },
     "./styles/tooltip": {
       "import": "./dist/styles/classes/tooltip.js",
       "types": "./dist/styles/classes/tooltip.d.ts"
@@ -478,7 +518,7 @@
     "@floating-ui/dom": "^1.7.6",
     "@standard-schema/spec": "^1.0.0"
   },
-  "description": "58 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "description": "63 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [
     "llui",
     "components",

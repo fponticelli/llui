@@ -61,6 +61,34 @@ describe('tabs reducer', () => {
     expect(s2.focused).toBe('c')
   })
 
+  it('focusFirst/focusLast activate the focused tab (automatic)', () => {
+    const s0 = init({ items: ['a', 'b', 'c'], value: 'b' })
+    const [s1] = update(s0, { type: 'focusLast' })
+    expect(s1.focused).toBe('c')
+    expect(s1.value).toBe('c') // automatic activation
+    const [s2] = update(s1, { type: 'focusFirst' })
+    expect(s2.focused).toBe('a')
+    expect(s2.value).toBe('a')
+  })
+
+  it('focusFirst/focusLast move focus only (manual)', () => {
+    const s0 = init({ items: ['a', 'b', 'c'], value: 'b', activation: 'manual' })
+    const [s1] = update(s0, { type: 'focusLast' })
+    expect(s1.focused).toBe('c')
+    expect(s1.value).toBe('b') // unchanged in manual mode
+    const [s2] = update(s1, { type: 'focusFirst' })
+    expect(s2.focused).toBe('a')
+    expect(s2.value).toBe('b')
+  })
+
+  it('focusFirst/focusLast are no-ops when every item is disabled', () => {
+    const s0 = init({ items: ['a', 'b'], disabledItems: ['a', 'b'], value: '' })
+    const [s1] = update(s0, { type: 'focusFirst' })
+    expect(s1).toEqual(s0)
+    const [s2] = update(s0, { type: 'focusLast' })
+    expect(s2).toEqual(s0)
+  })
+
   it('setItems reassigns value if current value was removed', () => {
     const s0 = init({ items: ['a', 'b'], value: 'a' })
     const [s1] = update(s0, { type: 'setItems', items: ['b', 'c'] })
@@ -118,6 +146,52 @@ describe('tabs.connect', () => {
     const ev = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
     p.item('a').trigger.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'activateFocused' })
+  })
+
+  it('Home dispatches focusFirst', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    const ev = new KeyboardEvent('keydown', { key: 'Home', cancelable: true })
+    p.item('b').trigger.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusFirst' })
+  })
+
+  it('End dispatches focusLast', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    const ev = new KeyboardEvent('keydown', { key: 'End', cancelable: true })
+    p.item('b').trigger.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusLast' })
+  })
+
+  it('Home/End work in vertical orientation', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <div role="tablist" aria-orientation="vertical" data-scope="tabs" data-part="list">
+        <button id="t">Tab A</button>
+      </div>
+    `
+    document.body.appendChild(root)
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    const trigger = root.querySelector('#t') as HTMLButtonElement
+
+    const home = new KeyboardEvent('keydown', { key: 'Home', cancelable: true })
+    Object.defineProperty(home, 'currentTarget', { value: trigger, writable: false })
+    p.item('b').trigger.onKeyDown(home)
+    expect(home.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusFirst' })
+
+    send.mockClear()
+    const end = new KeyboardEvent('keydown', { key: 'End', cancelable: true })
+    Object.defineProperty(end, 'currentTarget', { value: trigger, writable: false })
+    p.item('b').trigger.onKeyDown(end)
+    expect(end.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusLast' })
+
+    document.body.removeChild(root)
   })
 
   it('vertical orientation: ArrowDown navigates, ArrowRight ignored', () => {

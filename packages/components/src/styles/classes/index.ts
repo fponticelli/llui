@@ -14,6 +14,11 @@ export {
   type AsyncListStyleVariants,
 } from './async-list.js'
 export { avatarClasses, type AvatarClasses, type AvatarStyleVariants } from './avatar.js'
+export {
+  breadcrumbsClasses,
+  type BreadcrumbsClasses,
+  type BreadcrumbsStyleVariants,
+} from './breadcrumbs.js'
 export { carouselClasses, type CarouselClasses, type CarouselStyleVariants } from './carousel.js'
 export {
   cascadeSelectClasses,
@@ -55,6 +60,8 @@ export {
 export { dialogClasses, type DialogClasses, type DialogStyleVariants } from './dialog.js'
 export { drawerClasses, type DrawerClasses, type DrawerStyleVariants } from './drawer.js'
 export { editableClasses, type EditableClasses, type EditableStyleVariants } from './editable.js'
+export { fieldClasses, type FieldClasses, type FieldStyleVariants } from './field.js'
+export { fieldsetClasses, type FieldsetClasses, type FieldsetStyleVariants } from './fieldset.js'
 export {
   fileUploadClasses,
   type FileUploadClasses,
@@ -78,6 +85,7 @@ export {
 export { listboxClasses, type ListboxClasses, type ListboxStyleVariants } from './listbox.js'
 export { marqueeClasses, type MarqueeClasses, type MarqueeStyleVariants } from './marquee.js'
 export { menuClasses, type MenuClasses, type MenuStyleVariants } from './menu.js'
+export { meterClasses, type MeterClasses, type MeterStyleVariants } from './meter.js'
 export {
   navigationMenuClasses,
   type NavigationMenuClasses,
@@ -148,6 +156,7 @@ export {
   type ToggleGroupClasses,
   type ToggleGroupStyleVariants,
 } from './toggle-group.js'
+export { toolbarClasses, type ToolbarClasses, type ToolbarStyleVariants } from './toolbar.js'
 export { tooltipClasses, type TooltipClasses, type TooltipStyleVariants } from './tooltip.js'
 export { tourClasses, type TourClasses, type TourStyleVariants } from './tour.js'
 export { treeViewClasses, type TreeViewClasses, type TreeViewStyleVariants } from './tree-view.js'

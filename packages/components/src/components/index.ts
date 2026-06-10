@@ -56,10 +56,16 @@ export * as inView from './in-view.js'
 export * as form from './form.js'
 export * as sortable from './sortable.js'
 export * as themeSwitch from './theme-switch.js'
+export * as field from './field.js'
+export * as fieldset from './fieldset.js'
+export * as toolbar from './toolbar.js'
+export * as meter from './meter.js'
+export * as breadcrumbs from './breadcrumbs.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
 export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
+export { visibleItems } from './breadcrumbs.js'
 
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
@@ -400,3 +406,28 @@ export type {
   ColorPickerParts,
   Hsl,
 } from './color-picker.js'
+export type { FieldState, FieldMsg, FieldInit, FieldParts, FieldConnectOptions } from './field.js'
+export type {
+  FieldsetState,
+  FieldsetMsg,
+  FieldsetInit,
+  FieldsetParts,
+  FieldsetConnectOptions,
+} from './fieldset.js'
+export type {
+  ToolbarState,
+  ToolbarMsg,
+  ToolbarInit,
+  ToolbarParts,
+  ToolbarItemParts,
+  ToolbarGroupParts,
+} from './toolbar.js'
+export type { MeterState, MeterMsg, MeterInit, MeterParts } from './meter.js'
+export type {
+  BreadcrumbsState,
+  BreadcrumbsMsg,
+  BreadcrumbsInit,
+  BreadcrumbsParts,
+  BreadcrumbItem,
+  VisibleBreadcrumb,
+} from './breadcrumbs.js'
