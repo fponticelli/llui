@@ -2,6 +2,26 @@
 
 66 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
 
+## Scope & philosophy
+
+Each component is a pure state machine: `init` / `update(state, msg) → [state, effects]` / `connect(state, send) → parts`. The machine owns **behavior** — keyboard interaction, ARIA semantics, selection/focus/validation logic, lifecycle — and nothing else.
+
+What lives in the **machine**:
+
+- Discriminated-union messages and JSON-serializable state (no DOM nodes, timers, or class instances in state).
+- ARIA roles/attributes and WAI-ARIA APG keyboard patterns, exposed as reactive `parts` you spread onto your elements.
+- Direction-aware keyboard semantics: direction-sensitive components take an optional `dir` (`'ltr' | 'rtl'`) and flip horizontal-arrow keys + logical floating placement accordingly.
+- Side effects as **data** — anything async (HTTP, lazy loading, debounce) is returned as an effect for your `onEffect` handler; the machine never performs I/O.
+
+What stays the **consumer's** responsibility (deliberately not shipped):
+
+- Markup and CSS. Components emit `data-scope` / `data-part` / `data-state` hooks; visual styling — including CSS logical-property mirroring for RTL — is yours (an opt-in theme + Tailwind class helpers are available under `@llui/components/styles/*`).
+- Driving time and observers: `setInterval`/`requestAnimationFrame` ticks (timer, toast countdown), `IntersectionObserver` (in-view, async-list sentinel, toc scroll-spy), and pointer-event wiring for drag (sortable, slider, carousel swipe, image-cropper) — the machine exposes pure helpers and tick/drag messages; you own the listeners.
+- Bring-your-own heavy deps: a QR encoder (qr-code), canvas rendering (signature-pad), and the actual data fetch behind every `load*` effect.
+- Exit-animation timing: overlays expose a `'closing'` `data-state` + `isPresent` and wait for an `animationend`; the CSS transition itself is yours (and unmount is synchronous when no animation is configured).
+
+**Roadmap.** There's no frozen set — planned enhancements and new components are tracked as GitHub issues under the [`components`](https://github.com/fponticelli/llui/labels/components) label.
+
 ## Install
 
 ```bash
@@ -237,9 +257,8 @@ import { dialog } from '@llui/components/dialog'
 import { dialog } from '@llui/components'
 
 // ✗ bad — namespace import. Defeats tree-shaking: drags every
-//          component's state machine into the bundle. The
-//          @llui/eslint-plugin `llui/namespace-import` rule
-//          flags this at error level (autofixable).
+//          component's state machine into the bundle. Avoid it —
+//          prefer a sub-path or named import.
 import * as C from '@llui/components'
 ```
 
