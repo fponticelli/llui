@@ -21,7 +21,7 @@ function spyBinding(
   produce: (s: State) => unknown,
   log: string[],
   id: string,
-): SignalBinding & { produced: number; committed: number } {
+): SignalBinding & { mask: SparseMask; produced: number; committed: number } {
   const mask: SparseMask = bindingMask(deps, table)
   const b = {
     mask,
@@ -47,7 +47,12 @@ function setup() {
   const bCount = spyBinding(table, ['count'], (s) => s.count, log, 'count')
   const bName = spyBinding(table, ['user.name'], (s) => s.user.name, log, 'name')
   const bNameLen = spyBinding(table, ['user.name'], (s) => s.user.name.length, log, 'len')
-  const scope = createSignalScope(table, [bCount, bName, bNameLen])
+  const bindings = [bCount, bName, bNameLen]
+  const scope = createSignalScope(
+    table,
+    bindings,
+    bindings.map((b) => b.mask),
+  )
   return { table, log, bCount, bName, bNameLen, scope }
 }
 

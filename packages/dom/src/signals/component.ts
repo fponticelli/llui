@@ -240,8 +240,16 @@ export function mountSignalComponent<S, M, E = never>(
     if (!pendingCommit) return
     pendingCommit = false
     const next = state
-    withBindingErrors(onBindingError, () => mount?.update(next))
-    for (const listener of subscribers) listener(next)
+    // Hot per-send path: skip the withBindingErrors wrapper (and its per-commit
+    // closure) when no error handler is installed — the common case; a 1k-send
+    // burst was allocating 1k closures here. Same for the subscriber sweep: a
+    // Set iterator per commit is waste when nobody subscribed.
+    if (onBindingError) {
+      withBindingErrors(onBindingError, () => mount?.update(next))
+    } else {
+      mount?.update(next)
+    }
+    if (subscribers.size > 0) for (const listener of subscribers) listener(next)
   }
 
   // Process the queue to quiescence: run all queued reducers (collecting their
@@ -251,7 +259,9 @@ export function mountSignalComponent<S, M, E = never>(
   // effect that sends), so loop until the queue drains.
   function drain(): void {
     do {
-      const pendingEffects: E[] = []
+      // Lazy: most messages emit no effects, and a 1k-send burst drains 1k
+      // times — don't allocate an empty array per drain.
+      let pendingEffects: E[] | null = null
       while (queue.length > 0) {
         const m = queue.shift() as M
         const before = state
@@ -271,10 +281,13 @@ export function mountSignalComponent<S, M, E = never>(
           })
           if (history.length > 1000) history.shift()
         }
-        for (const e of effects) pendingEffects.push(e)
+        if (effects.length > 0) {
+          if (pendingEffects === null) pendingEffects = []
+          for (const e of effects) pendingEffects.push(e)
+        }
       }
       if (batchDepth === 0) commitPending()
-      for (const e of pendingEffects) runEffect(e)
+      if (pendingEffects !== null) for (const e of pendingEffects) runEffect(e)
     } while (queue.length > 0)
   }
 

@@ -60,9 +60,14 @@ function reportBindingError(err: unknown): void {
   })
 }
 
+/** The behavioral half of a binding: the accessor + the DOM write. The scope
+ * holds these alongside a PARALLEL `masks` array (one {@link SparseMask} per
+ * binding, lockstep by index) instead of wrapping each pair into a
+ * `{ mask, produce, commit }` object — `each` builds one scope per ROW, so the
+ * per-binding wrapper was an allocation per binding per row (2 extra objects
+ * per jfb row, 20k on a create-10k). The caller's spec objects (compiler
+ * `BindingSpec`s / `DirectRow.bindings`) are stored as-is. */
 export interface SignalBinding<V = unknown> {
-  /** the chunks/bits this binding depends on */
-  readonly mask: SparseMask
   /** evaluate the compiled accessor expression against the current state */
   produce(state: unknown): V
   /** apply the produced value (DOM mutation) — called only when it changed */
@@ -105,6 +110,9 @@ class SignalScopeImpl implements SignalScope {
   constructor(
     private readonly table: PathTable,
     private readonly bindings: readonly SignalBinding[],
+    // Lockstep with `bindings`: masks[i] gates bindings[i]. Shared across rows
+    // of the same template (the each-site ScopeShape memo), so no per-row copy.
+    private readonly masks: readonly SparseMask[],
   ) {
     this.last = new Array<unknown>(bindings.length)
   }
@@ -140,7 +148,7 @@ class SignalScopeImpl implements SignalScope {
   }
 
   update(oldState: unknown, newState: unknown): void {
-    const { bindings, last, table } = this
+    const { bindings, last, table, masks } = this
     // Skip the whole binding sweep when nothing this scope tracks changed — the
     // common case for an unchanged `each` row whose item ref is identical.
     const d = this.dirty ?? (this.dirty = new Uint32Array(table.chunkCount))
@@ -149,8 +157,8 @@ class SignalScopeImpl implements SignalScope {
       // Fast path mirrors mount(): try/catch-free hot loop unless a hook is active.
       if (errorHandlers.length === 0) {
         for (let i = 0; i < n; i++) {
+          if (!intersects(masks[i]!, d)) continue // gate: irrelevant binding
           const b = bindings[i]!
-          if (!intersects(b.mask, d)) continue // gate: irrelevant binding
           const v = b.produce(newState)
           if (!Object.is(v, last[i])) {
             b.commit(v) // output-equality: only commit real changes
@@ -159,8 +167,8 @@ class SignalScopeImpl implements SignalScope {
         }
       } else {
         for (let i = 0; i < n; i++) {
+          if (!intersects(masks[i]!, d)) continue // gate: irrelevant binding
           const b = bindings[i]!
-          if (!intersects(b.mask, d)) continue // gate: irrelevant binding
           try {
             const v = b.produce(newState)
             if (!Object.is(v, last[i])) {
@@ -190,10 +198,13 @@ class SignalScopeImpl implements SignalScope {
 /**
  * Create a Phase-2 reconciler over a flat binding array gated by a chunked-mask
  * path table, plus a set of child scopes that receive propagated updates.
+ * `masks` is lockstep with `bindings` (masks[i] gates bindings[i]) and is
+ * typically a shared per-template array (the each-site ScopeShape memo).
  */
 export function createSignalScope(
   table: PathTable,
   bindings: readonly SignalBinding[],
+  masks: readonly SparseMask[],
 ): SignalScope {
-  return new SignalScopeImpl(table, bindings)
+  return new SignalScopeImpl(table, bindings, masks)
 }

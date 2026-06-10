@@ -1,13 +1,14 @@
 {
   "llui-ticker": {
-    "50_ticker_mount": 5.6,
-    "51_ticker_tick-1": 1.3,
-    "52_ticker_tick-100": 4.6,
-    "53_ticker_burst-1k": 14.8,
+    "50_ticker_mount": 5.5,
+    "51_ticker_tick-1": 1.4,
+    "52_ticker_tick-100": 4.5,
+    "53_ticker_burst-1k": 14.3,
     "54_ticker_narrow-100": 1.4,
     "55_ticker_wide-toggle": 3.2,
     "56_ticker_churn-50": 4.3,
-    "57_ticker_clear": 1.1
+    "57_ticker_clear": 1.1,
+    "58_ticker_batch-1k": 6.0
   },
   "vanillajs-ticker": {
     "50_ticker_mount": 5.7,

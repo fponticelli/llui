@@ -10,7 +10,7 @@
 // (`text(state.at('count'))`) is rewritten into these calls. Built ALONGSIDE the
 // legacy element helpers (per-file-flip migration).
 
-import { createSignalScope, type SignalBinding, type SignalScope } from './runtime.js'
+import { createSignalScope, type SignalScope } from './runtime.js'
 import {
   buildPathTable,
   bindingMask,
@@ -746,12 +746,11 @@ function scopeFromSpecs(
 ): { scope: SignalScope; shape: ScopeShape } {
   const table = pre ? pre.table : buildPathTable(specs.flatMap((s) => [...s.deps]))
   const masks = pre ? pre.masks : specs.map((s) => bindingMask(s.deps, table))
-  const bindings: SignalBinding[] = specs.map((s, i) => ({
-    mask: masks[i]!,
-    produce: s.produce,
-    commit: s.commit,
-  }))
-  return { scope: createSignalScope(table, bindings), shape: pre ?? { table, masks } }
+  // The specs ARE the bindings (produce/commit) — the scope takes them as-is
+  // with the parallel masks array, so no per-binding wrapper object is
+  // allocated (`each` builds one scope per ROW; the wrappers were 2 extra
+  // objects per jfb row, 20k on a create-10k).
+  return { scope: createSignalScope(table, specs, masks), shape: pre ?? { table, masks } }
 }
 
 /** Build a chunked-mask reconciler scope over a set of collected bindings. */
@@ -884,36 +883,16 @@ export function signalEachDirect<T>(
   return mountable(() => buildSignalEach(source, key, undefined, rowFactory, extraDeps))
 }
 
-/** Shared, never-mutated empty descriptor registry for direct rows. A direct row
- * (built by a `RowFactory` straight to DOM, not via `runBuild`/`populate`) never
- * registers tagSend agent variants, so its `descriptors` is write-once-never-read
- * dead data that only exists to satisfy the shared `built` shape. Sharing one
- * frozen-empty instance avoids a `new Map()` per row (10k rows = 10k Maps on a
- * create-10k). Do NOT write to it. */
-const EMPTY_DESCRIPTORS: ReadonlyMap<string, number> = new Map<string, number>()
-
-/** Wrap a {@link DirectRow} into the `built` shape `buildSignalEach` expects.
- * Direct rows carry no teardowns/mounts/descriptors and own no nested scope; the
- * keyed reconcile, scope-build, and mount are shared with the render path.
- * `specs` is `dr.bindings` directly (no per-row copy) — direct rows are never
- * rebased (their deps are all row-local), so `built.specs` is never reassigned. */
-function buildDirectRow(dr: DirectRow): {
-  nodes: readonly Node[]
-  specs: readonly BindingSpec[]
-  host: { scope: SignalScope | null }
-  teardowns: Array<() => void>
-  mounts: Array<(root: Element) => void | (() => void)>
-  descriptors: ReadonlyMap<string, number>
-} {
-  return {
-    nodes: dr.nodes,
-    specs: dr.bindings,
-    host: { scope: null },
-    teardowns: [],
-    mounts: [],
-    descriptors: EMPTY_DESCRIPTORS,
-  }
-}
+// Shared build-pending / direct-row placeholders. A DIRECT row (RowFactory)
+// never registers teardowns or onMount callbacks, so every direct row shares
+// these empties instead of allocating two arrays per row (20k on a create-10k;
+// the old buildDirectRow wrapper added an object + host box on top). They are
+// never mutated: nothing pushes into an empty mounts list's teardowns, and
+// splicing an empty array is a no-op. Render-path rows get the real arrays
+// from runBuild.
+const EMPTY_ROW_NODES: readonly Node[] = []
+const EMPTY_ROW_TEARDOWNS: Array<() => void> = []
+const EMPTY_ROW_MOUNTS: ReadonlyArray<(root: Element) => void | (() => void)> = []
 
 function buildSignalEach<T>(
   source: EachSource<T>,
@@ -949,13 +928,21 @@ function buildSignalEach<T>(
   frag.appendChild(start)
   frag.appendChild(end)
 
+  // The Row IS the live-ctx box: factories/render closures capture the row and
+  // read `row.ctx` (`getCtx = () => row.ctx`) — the former separate `holder`
+  // wrapper was one extra allocation per row plus a duplicate pointer write on
+  // every row update. Fields are assigned in two steps (the row must exist
+  // before its build runs so closures can capture it): `scope` is null only
+  // during that build, `spare` is allocated lazily on the row's FIRST update
+  // (a created-and-never-updated row — the whole create-10k — never pays it),
+  // and direct rows share frozen empty teardowns/mounts (they never register
+  // any; mutation sites are length-guarded).
   interface Row {
-    scope: SignalScope
+    scope: SignalScope | null
     nodes: readonly Node[]
     ctx: RowCtx<T> // current ctx (holds the last-applied item + state)
-    spare: RowCtx<T> // scratch ctx, swapped in on the next update (no per-tick alloc)
+    spare: RowCtx<T> | null // scratch ctx, swapped in on updates (no per-tick alloc)
     teardowns: Array<() => void> // onMount cleanups + foreign unmount for this row
-    holder: { ctx: RowCtx<T> } // live-ctx box for runtime item handles (.peek)
     // onMount callbacks, run once after the row's nodes are first inserted (phase 3).
     mounts: ReadonlyArray<(root: Element) => void | (() => void)>
     mounted: boolean
@@ -964,6 +951,10 @@ function buildSignalEach<T>(
   // Keys in current DOM order — the previous reconcile's desired order. Drives the
   // LIS move-minimization (old position of each surviving key).
   let order: string[] = []
+  // Rows in current DOM order, lockstep with `order` — so the same-structure
+  // fast path indexes rows directly instead of a Map.get per row per send
+  // (200k map lookups on a 1k-send burst against a 200-row table).
+  let rowsInOrder: Row[] = []
   // The previous reconcile's items array — for the same-structure fast path: when
   // the new array has the same length and every CHANGED position keeps its key
   // (the streaming in-place update case), only the changed rows need updating and
@@ -1062,16 +1053,16 @@ function buildSignalEach<T>(
       if (!structural) {
         for (let i = 0; i < n; i++) {
           const item = items[i]!
-          const row = rows.get(order[i]!)!
+          const row = rowsInOrder[i]!
           if (sweepAll || item !== row.ctx.item || i !== row.ctx.index) {
-            const next = row.spare
+            // lazy spare: allocated on the row's first update, reused after
+            const next = row.spare ?? { item, state: rowState, index: i }
             next.item = item
             next.state = rowState
             next.index = i
-            row.scope.update(row.ctx, next)
+            row.scope!.update(row.ctx, next)
             row.spare = row.ctx
             row.ctx = next
-            row.holder.ctx = next
           }
         }
         return
@@ -1096,13 +1087,36 @@ function buildSignalEach<T>(
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
-        const ctx: RowCtx<T> = { item, state: rowState, index }
-        const holder = { ctx }
+        // Create the row FIRST so the factory/render closures can capture it as
+        // the live-ctx box (`getCtx = () => created.ctx`); build-pending fields
+        // are assigned right below. Direct rows keep the shared empty
+        // teardowns/mounts (they never register any — and splicing an empty
+        // array is harmless, so sharing is safe).
+        const created: Row = {
+          scope: null,
+          nodes: EMPTY_ROW_NODES,
+          ctx: { item, state: rowState, index },
+          spare: null,
+          teardowns: EMPTY_ROW_TEARDOWNS,
+          mounts: EMPTY_ROW_MOUNTS,
+          mounted: false,
+        }
         // forceInRow: the row build (and every nested arm/row build) operates on
         // the combined ctx, so structural primitives inside it become row-aware.
-        const built = rowFactory
-          ? buildDirectRow(rowFactory(doc, () => holder.ctx))
-          : runBuild(doc, () => renderRow!(() => holder.ctx), c, undefined, true)
+        let builtSpecs: readonly BindingSpec[]
+        let renderHost: { scope: SignalScope | null } | null = null
+        if (rowFactory) {
+          const dr = rowFactory(doc, () => created.ctx)
+          created.nodes = dr.nodes
+          builtSpecs = dr.bindings
+        } else {
+          const b = runBuild(doc, () => renderRow!(() => created.ctx), c, undefined, true)
+          created.nodes = b.nodes
+          builtSpecs = b.specs
+          created.teardowns = b.teardowns
+          created.mounts = b.mounts
+          renderHost = b.host
+        }
         // Probe the template once (all rows share it): does any VALUE spec need
         // rebasing (non-row-local dep), and does any binding read component state?
         // Structural specs make themselves row-aware, so they're excluded here.
@@ -1113,7 +1127,7 @@ function buildSignalEach<T>(
           // — as a bare row root it leaves the row with no stable handle to move or
           // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it
           // to be wrapped in an element, which becomes the row's stable boundary.
-          if (built.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
+          if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
             throw new Error(
               'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
                 'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
@@ -1121,7 +1135,7 @@ function buildSignalEach<T>(
                 `(each items deps: ${JSON.stringify(source.deps)})`,
             )
           }
-          needsRebase = built.specs.some(
+          needsRebase = builtSpecs.some(
             (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
           )
           // A row reads component state if any binding has a `state.*`/`state` dep,
@@ -1132,18 +1146,17 @@ function buildSignalEach<T>(
           // re-evaluation — which propagates the update down to the arm scopes.
           templateReadsState =
             needsRebase ||
-            built.specs.some(
+            builtSpecs.some(
               (s) => s.structural || s.deps.some((d) => d === 'state' || d.startsWith('state.')),
             )
           // State-fanout gating (B): capture the component-state value paths the
           // row reads, but only when templateReadsState is true SOLELY because of
           // them — a structural child (lazy arm state reads we can't see), a
           // rebased connect-part, or a whole-`state` read can't be gated cheaply.
-          stateGatable =
-            templateReadsState && !needsRebase && !built.specs.some((s) => s.structural)
+          stateGatable = templateReadsState && !needsRebase && !builtSpecs.some((s) => s.structural)
           if (stateGatable) {
             const paths = new Set<string>()
-            for (const s of built.specs) {
+            for (const s of builtSpecs) {
               for (const d of s.deps) {
                 if (d === 'state') {
                   stateGatable = false // whole-state read → any change matters
@@ -1159,32 +1172,30 @@ function buildSignalEach<T>(
         }
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
         // in the row by an uncompiled each) to read ctx.state — only when needed.
-        // Local (not a reassignment of `built.specs`) so the direct-row `built`
-        // can hand `specs` through as the shared readonly `dr.bindings` (no copy).
+        // Local so the direct row hands `dr.bindings` through as-is (no copy).
         const rowSpecs: readonly BindingSpec[] = needsRebase
-          ? rebaseRowSpecs(built.specs)
-          : built.specs
-        let scope: SignalScope
+          ? rebaseRowSpecs(builtSpecs)
+          : builtSpecs
         if (rowFactory) {
           // Direct path: reuse the shared per-each-site shape (built once).
+          // Direct rows own no nested scope, so there is no host to wire.
           const r = scopeFromSpecs(rowSpecs, directShape ?? undefined)
           directShape ??= r.shape
-          built.host.scope = r.scope
-          scope = r.scope
+          created.scope = r.scope
         } else if (authorShape && depsSignatureMatches(rowSpecs, authorDeps!)) {
           // Authoring row whose spec structure matches the cached template: reuse
           // the shared shape, skipping per-row buildPathTable + bindingMask.
           const r = scopeFromSpecs(rowSpecs, authorShape)
-          built.host.scope = r.scope
-          scope = r.scope
+          renderHost!.scope = r.scope
+          created.scope = r.scope
         } else {
           // First authoring row, or a data-conditional row that diverged: build a
           // fresh shape and (re)seed the cache for subsequent matching rows.
           const r = scopeFromSpecs(rowSpecs)
           authorShape = r.shape
           authorDeps = rowSpecs.map((s) => s.deps)
-          built.host.scope = r.scope
-          scope = r.scope
+          renderHost!.scope = r.scope
+          created.scope = r.scope
         }
         // NOTE: the row scope is NOT mounted here. Its bindings commit in phase 3,
         // AFTER the row's nodes are inserted into the parent (see the `mounted`
@@ -1196,30 +1207,23 @@ function buildSignalEach<T>(
         // silently dropped, with no re-commit (output-equality). This mirrors the
         // top-level mount contract ("insert FIRST, then mount") that `each` is the
         // last structural primitive to honor.
-        row = {
-          scope,
-          nodes: built.nodes,
-          ctx,
-          spare: { item, state: rowState, index },
-          teardowns: built.teardowns,
-          holder,
-          mounts: built.mounts,
-          mounted: false,
-        }
+        row = created
         rows.set(k, row)
       } else if (sweepAll || item !== row.ctx.item || index !== row.ctx.index) {
         // existing row that may have changed: re-run only the bindings whose part
         // of the ctx changed. Reuse the spare ctx buffer (no allocation); swap it
         // in as the new current. old (row.ctx) and new (next) stay distinct refs,
         // so the diff sees item/state changes correctly.
-        const next = row.spare
+        // lazy spare: allocated on the row's first update, reused after. The
+        // row itself is the live-ctx box, so swapping row.ctx keeps runtime
+        // item handles' .peek() current — no separate holder write.
+        const next = row.spare ?? { item, state: rowState, index }
         next.item = item
         next.state = rowState
         next.index = index
-        row.scope.update(row.ctx, next)
+        row.scope!.update(row.ctx, next)
         row.spare = row.ctx
         row.ctx = next
-        row.holder.ctx = next // keep runtime item handles' .peek() current
         // No else: item + index unchanged and no binding reads component state, so
         // the row's output can't have changed — skip the diff + binding re-eval.
       }
@@ -1230,6 +1234,7 @@ function buildSignalEach<T>(
     // is already in the right order; rows were updated in place above.
     if (sameOrder) {
       order = newKeys
+      rowsInOrder = newRows
       return
     }
 
@@ -1249,6 +1254,7 @@ function buildSignalEach<T>(
       }
       rows.clear()
       order = newKeys // empty
+      rowsInOrder = newRows // empty
       return
     }
 
@@ -1286,7 +1292,7 @@ function buildSignalEach<T>(
           // Commit the row's bindings now that its nodes are connected to the
           // parent (e.g. options to their <select>); then run onMount. Both fire
           // exactly once, on first insertion.
-          row.scope.mount(row.ctx)
+          row.scope!.mount(row.ctx)
           runMounts(row.mounts, parent as Element, row.teardowns)
         }
       } else if (!keep.has(i)) {
@@ -1297,6 +1303,7 @@ function buildSignalEach<T>(
     }
 
     order = newKeys
+    rowsInOrder = newRows
   }
 
   // structural binding: fires when the list deps change; produce returns the

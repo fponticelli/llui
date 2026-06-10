@@ -179,6 +179,30 @@ if (!existsSync(resolve(jfbLluiDir, 'package.json'))) {
   )
 }
 
+// jfb HEAD's server `/ls` only lists frameworks that have a package-lock.json
+// (it derives installed versions from the lockfile). Without it the framework
+// is silently absent from discovery, `--framework keyed/llui` matches nothing,
+// and every benchmark "succeeds" in 0.00 ms with no results — the comparison
+// then echoes the baseline back as Current (all +0%). Write a minimal lockfile.
+if (!existsSync(resolve(jfbLluiDir, 'package-lock.json'))) {
+  writeFileSync(
+    resolve(jfbLluiDir, 'package-lock.json'),
+    JSON.stringify(
+      {
+        name: 'js-framework-benchmark-keyed-llui',
+        version: '1.0.0',
+        lockfileVersion: 3,
+        requires: true,
+        packages: {
+          '': { name: 'js-framework-benchmark-keyed-llui', version: '1.0.0' },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  )
+}
+
 // ── Start server if not running ──
 
 let serverStarted = false

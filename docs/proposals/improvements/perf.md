@@ -211,6 +211,41 @@ the design work exposed:
   state-only change + dispatch-by-id; leaked-handle e2e: live updates + reorder),
   `transform-view/component/lower-bail/perf-diagnostics` compiler suites.
 
+## Row-machinery allocation cuts + per-send fixed-cost cuts — ✅ SHIPPED (2026-06-10)
+
+Two micro-measured runtime optimizations targeting the memory / create-JS / burst axes,
+validated by an isolated jsdom A/B (3 runs/leg, old-vs-new dist) AND a same-environment
+real-Chromium A/B (see methodology note below):
+
+- **~8 fewer machinery allocations per each-row** (`dom.ts` `buildSignalEach`,
+  `runtime.ts`): the `holder` live-ctx box is gone (the Row IS the box; closures read
+  `row.ctx` — also removes a duplicate pointer write per row update); `spare` is lazy
+  (first update, not create — a create-10k never pays it); the direct-row `buildDirectRow`
+  wrapper (+host box + 2 always-empty arrays) is inlined away with shared empties; and
+  `SignalScopeImpl` takes the specs as-is with a PARALLEL `masks` array instead of
+  per-binding `{mask, produce, commit}` wrappers.
+- **Per-send fixed costs** (`component.ts`, `dom.ts`): the drain's effects buffer is lazy
+  (no empty array per send), `commitPending` skips the `withBindingErrors` closure when no
+  handler is installed and the subscriber sweep when empty, and the same-structure fast
+  path indexes rows via a `rowsInOrder` array maintained lockstep with `order` instead of
+  a `Map.get` per row per send (200k lookups on a 1k-burst × 200 rows).
+- **Isolated jsdom A/B:** burst-1k @200 rows 4.2 → 3.2 ms (**−24% JS**); create-10k
+  80.1 → 78.1 ms (−2.5%); heap after create-10k −0.69 MB (~−70 bytes/row).
+- **Real-Chromium same-env A/B (3-run medians):** every jfb op improved old→new —
+  Update −9%, Swap −9%, Clear −10%, Append/Remove/Select −5-6%, Create10k/Replace −3%,
+  Run-1k memory 2.5 → 2.4 MB. Ticker burst-1k 14.8 → 14.3 (paint dilutes the JS win).
+
+**Methodology addendum (2026-06-10) — the environment moved; baselines re-saved.**
+A fresh `bench:setup` clone (jfb HEAD) + Chrome 149 + headless shifted several ops vs the
+June-7 baselines (Select +26%, Remove/Clear +12-13% ON UNCHANGED CODE — measured via an
+old-code A-leg). Conclusions: (1) compare against a same-environment anchor leg, never a
+baseline from another harness/Chrome; (2) jfb HEAD's server silently EXCLUDES frameworks
+without a `package-lock.json` — every benchmark then "succeeds" in 0.00 ms with no
+results and the comparison echoes the baseline back as Current (all +0%); `run-jfb.ts`
+now writes the lockfile. Baselines now hold the 2026-06-10 environment (Chrome 149,
+headless, jfb HEAD); the competitor entries are still June-7 — refresh with
+`pnpm bench --all --save` (~15 min) before making cross-framework claims.
+
 ## Suggested order (remaining)
 
 1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.
