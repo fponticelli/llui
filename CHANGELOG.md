@@ -11,6 +11,99 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-10 — 0.11.2
+
+**Released:** `@llui/dom@0.11.2`; `@llui/compiler@0.11.1`; `@llui/vite-plugin@0.11.3`; `@llui/compiler-{introspection,devtools,ssr}@0.11.2`; `@llui/components@0.11.3`; `@llui/test@0.11.3`; `@llui/vike@0.11.2`; `@llui/router@0.10.3`; `@llui/transitions@0.10.3`; `@llui/markdown@0.10.3`; `@llui/agent@0.10.3`; `@llui/mcp@0.12.4`; `@llui/lexical@0.2.3`; `@llui/lexical-collab@0.2.1`; `@llui/markdown-editor@0.2.4`; `@llui/devmode-annotate@0.2.5`
+
+An opt-in frame-scheduled commit mode for `@llui/dom`, a latent `each` reactivity
+fix, broader `each` lowering across the compiler/plugin (helper-only files now
+compile; mid-tier `eachArm` codegen), and a batch of per-row / per-send allocation
+cuts. No breaking changes.
+
+### `@llui/dom@0.11.2`
+
+- **Added** opt-in frame-scheduled commits: `mountApp(container, def, { scheduler: 'raf' })`.
+  Reducers and effects still run synchronously per `send` — state and `getState()`
+  advance immediately, so the data contract is untouched — but the DOM commit +
+  subscriber notification coalesce to one reconcile per animation frame. It's the
+  streaming/burst fast path for consumers that accept DOM-lags-state-by-a-frame
+  (game loops, high-frequency feeds). `handle.flush()` forces the pending commit
+  synchronously (tests, agent protocol, read-after-write); microtask fallback where
+  rAF is absent (SSR, plain jsdom, headless agent); `dispose` cancels the pending
+  frame. Measured at hand-written-vanilla parity on the ticker batch-1k op
+  (5.9ms coalesced vs 14.1ms per-send). NOT a default — the synchronous contract
+  holds unless opted in.
+- **Fixed** `each` state-fanout staleness: the authoring `each`'s structural binding
+  fired only on the items handle's deps, so a row-nested arm reading an unrelated
+  state path (a `show` on `state.at('flag')`, `connect` parts) was silently frozen
+  out of state-only changes — breaking the documented "a row reacts to its item AND
+  component state" contract. Structural specs now take `extraDeps`; the authoring
+  `each` passes `['']` (rows can read state through code invisible at runtime),
+  compiled `eachDirect` passes the precise collected `stateDeps`, and legacy 3-arg
+  emissions degrade conservative-correct. jfb/ticker paths are fully compiled with
+  precise deps — bench unaffected.
+- **Improved** per-row machinery: ~8 fewer allocations/row (the Row is now the
+  live-ctx box — the separate `holder` wrapper and its per-update pointer write are
+  gone; `spare` scratch ctx allocates lazily on first update; `buildDirectRow`
+  inlined away; `SignalScopeImpl` takes specs as-is with a parallel `masks` array
+  instead of per-binding wrappers). Same Row slimming applied to `virtualEach`'s
+  window rows. Send path: lazy effects buffer, closure-free commit when no
+  binding-error handler is installed, empty-subscriber guard, and a same-structure
+  fast path that indexes rows via `rowsInOrder` instead of a per-row `Map.get`.
+  Isolated jsdom A/B: burst-1k @200rows 4.2→3.2ms (−24% JS), create-10k −2.5%,
+  heap −0.69MB/10k rows; real-Chromium same-env: every jfb op improved (Update −9%,
+  Swap −9%, Clear −10%).
+
+### `@llui/compiler@0.11.1`
+
+- **Added** mid-tier `eachArm` codegen for helper `each`es whose rows have structural
+  children (the corpus-dominant shape `signalEach` never reached): producers read the
+  row ctx directly, un-lowerable children stay verbatim inside the arm, and handler
+  `.peek()` reads rewrite to live `getCtx()` reads. Plus a leaked-handle prelude — a
+  row param leaking into a verbatim helper call no longer bails; the arm binds it to a
+  real runtime handle. Block-body arms (decls + return) lower too, for `each`,
+  `show`, and `branch`.
+- **Added** three `inlineHelperRender` lifts for the corpus-dominant delegation shapes
+  (bare-call renders, helpers returning the documented `Renderable` array, leading
+  render-side decls) — lifting helper-composition `each` sites onto the direct row
+  fast path.
+- **Added** lowering telemetry: `SignalTransformOptions.onLowerBail` (with the
+  `LowerBail` type) reports a stable reason token + position for every lowering attempt
+  that gives up, and `onPerfDiagnostic` emits one `llui/each-verbatim` warning per
+  `each` site that ends fully verbatim, naming deduped bail reasons with actionable
+  hints.
+- **Fixed** `peek-in-slot` no longer flags the documented render-once row-local idiom
+  (`const isDir = item.peek().type === 'dir'` in a block-body render) that the factory
+  itself compiles as per-row wire decls: block-body render declarations now allow
+  `peek`; peeks in returned-array slots stay errors.
+- **Improved** the per-row factory hoists row-invariant `deps` arrays and `produce`
+  closures to per-each-site consts next to the cached skeleton (deduped by source);
+  only the node-capturing `commit` stays per-row. Isolated jsdom A/B: create-10k
+  71.6→67.9ms (~−5% JS).
+
+### `@llui/vite-plugin@0.11.3`
+
+- **Fixed** helper-only modules now enter the transform: the pre-check required
+  `component(` in a file, so helper-only files — where real apps keep most of their
+  `each` sites (29/50 each-bearing files in one measured app) — never reached
+  pass-2 helper-`each` lowering. The pre-check now also routes dom-importing files
+  containing `each(`. Measured: +21 each sites compile to the direct `cloneNode`
+  factory across three real apps (`hasComponentCall` still solely arms the
+  build-integrity scan).
+- **Added** surfacing of the compiler's `llui/each-verbatim` perf diagnostics via
+  `this.warn`, behind a `perfDiagnostics` option (default on in dev, off in build,
+  advisory only).
+
+### `@llui/compiler-introspection@0.11.2`, `@llui/compiler-devtools@0.11.2`, `@llui/compiler-ssr@0.11.2`
+
+- **Improved** rebuilt against `@llui/compiler@0.11.1` (cascade — no functional change).
+
+### `@llui/components@0.11.3`, `@llui/test@0.11.3`, `@llui/vike@0.11.2`, `@llui/router@0.10.3`, `@llui/transitions@0.10.3`, `@llui/markdown@0.10.3`, `@llui/agent@0.10.3`, `@llui/mcp@0.12.4`, `@llui/lexical@0.2.3`, `@llui/lexical-collab@0.2.1`, `@llui/markdown-editor@0.2.4`, `@llui/devmode-annotate@0.2.5`
+
+- **Improved** peer range bumped to `@llui/dom@^0.11.2` (cascade — no functional
+  change). `@llui/markdown-editor` also tracks `@llui/lexical@^0.2.3` and
+  `@llui/components@^0.11.3`.
+
 ## 2026-06-09 — @llui/effects@0.1.1
 
 **Released:** `@llui/effects@0.1.1`
