@@ -125,7 +125,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('signalEachDirect(')
     expect(out).not.toContain('signalEach(') // the slow form is not emitted here
     expect(out).toContain('doc.createElement("li")')
-    expect(out).toContain("deps: ['item.label']")
+    expect(out).toContain("= ['item.label']") // hoisted per-each-site deps const
   })
 
   it('renders, updates, reorders (node reuse), and removes correctly', () => {

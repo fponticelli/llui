@@ -1096,6 +1096,38 @@ function lowerRowFactory(
   const { decls, arr } = body
   const roots = eachRoots(itemParam)
   const hRoots = handlerRoots(itemParam, indexParam)
+  // Row-INVARIANT binding parts hoist to per-each-site consts (next to the
+  // cached skeleton): the `deps` array literal is always invariant, and a
+  // `produce` is invariant unless it reads a per-row block-body local. They
+  // were allocated per ROW before (2 extra objects per binding per row — 40k
+  // allocations on a jfb create-10k); only the node-capturing `commit` closure
+  // is inherently per-row. Identical sources share one const.
+  const hoistedConsts: string[] = []
+  const depsConstBySrc = new Map<string, string>()
+  const produceConstBySrc = new Map<string, string>()
+  const rowLocalNames: string[] = []
+  const hoistDeps = (deps: readonly string[]): string => {
+    const src = depsArr(deps)
+    let name = depsConstBySrc.get(src)
+    if (name === undefined) {
+      name = `_bd${depsConstBySrc.size}`
+      depsConstBySrc.set(src, name)
+      hoistedConsts.push(`const ${name} = ${src}`)
+    }
+    return name
+  }
+  const hoistProduce = (produceSrc: string): string => {
+    const fnSrc = `(ctx) => ${produceSrc}`
+    // a produce reading a row local is pinned to the row — keep it inline
+    if (rowLocalNames.some((n) => loweredLeaksIdent(produceSrc, n))) return fnSrc
+    let name = produceConstBySrc.get(fnSrc)
+    if (name === undefined) {
+      name = `_bp${produceConstBySrc.size}`
+      produceConstBySrc.set(fnSrc, name)
+      hoistedConsts.push(`const ${name} = ${fnSrc}`)
+    }
+    return name
+  }
   // The row is built by CLONING a per-each-site template (Solid/vanilla's strategy,
   // and what the keyed bench's faster competitors do): the static skeleton (elements,
   // static attrs, literal text) is created ONCE via `createElement` and cached, then
@@ -1142,6 +1174,7 @@ function lowerRowFactory(
         return bail('row-local-destructured-or-uninitialized')
       }
       if (isSignalHandleExpr(d.initializer, roots)) return bail('row-local-signal-alias') // handle alias — opaque
+      rowLocalNames.push(d.name.text)
       wire.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
     }
   }
@@ -1193,7 +1226,7 @@ function lowerRowFactory(
       skel.push(`const _n${id} = doc.createTextNode('')`)
       skel.push(`${parentVar}.appendChild(_n${id})`)
       bindings.push(
-        `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => { ${locate(id)}.data = v == null ? '' : String(v) } }`,
+        `{ deps: ${hoistDeps(deps)}, produce: ${hoistProduce(produce)}, commit: (v) => { ${locate(id)}.data = v == null ? '' : String(v) } }`,
       )
       return true
     }
@@ -1278,7 +1311,7 @@ function lowerRowFactory(
           const { produce, deps } = signalToProduce(p.initializer, sf, roots)
           if (collect) for (const d of deps) collect.add(d)
           bindings.push(
-            `{ deps: ${depsArr(deps)}, produce: (ctx) => ${produce}, commit: (v) => applyAttr(${locate(id)}, ${JSON.stringify(name)}, v) }`,
+            `{ deps: ${hoistDeps(deps)}, produce: ${hoistProduce(produce)}, commit: (v) => applyAttr(${locate(id)}, ${JSON.stringify(name)}, v) }`,
           )
           continue
         }
@@ -1332,8 +1365,10 @@ function lowerRowFactory(
   const rootClones = topIds.map((_, r) => `const _r${r} = _sk[${r}].cloneNode(true)`).join('; ')
   const nodesArr = topIds.map((_, r) => `_r${r}`).join(', ')
   const wirePart = wire.length ? `${wire.join('; ')}; ` : ''
+  const hoistPart = hoistedConsts.length > 0 ? `${hoistedConsts.join('; ')}; ` : ''
   const src =
     `(() => { let _sk; const _build = (doc) => { ${skel.join('; ')}; return ${skelReturn} }; ` +
+    hoistPart +
     `return (doc, getCtx) => { if (_sk === undefined) _sk = _build(doc); ${rootClones}; ${wirePart}` +
     `return { nodes: [${nodesArr}], bindings: [${bindings.join(', ')}] } } })()`
   // Safety net: a row param that survived as a FREE identifier (a non-peek row-param

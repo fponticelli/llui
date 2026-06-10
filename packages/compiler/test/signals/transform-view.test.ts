@@ -102,10 +102,50 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(out).toContain("items: (s) => s.rows, deps: ['rows', 'mode']")
     // item read -> ctx.item (text binding); component-state read -> ctx.state
     // (reactive-attr binding); both wired by direct node reference
-    expect(out).toContain('produce: (ctx) => ctx.item.name')
-    expect(out).toContain("deps: ['item.name']")
-    expect(out).toContain('produce: (ctx) => ctx.state.mode')
-    expect(out).toContain("deps: ['state.mode']")
+    expect(out).toContain('= (ctx) => ctx.item.name')
+    expect(out).toContain("= ['item.name']")
+    expect(out).toContain('= (ctx) => ctx.state.mode')
+    expect(out).toContain("= ['state.mode']")
+  })
+
+  it('hoists row-invariant deps arrays + produce closures out of the per-row factory', () => {
+    // `deps: ['item.label']` and `produce: (ctx) => ctx.item.label` are
+    // row-INDEPENDENT — allocating them per row was 2 extra objects per binding
+    // per row (40k allocations on a jfb create-10k). They hoist to per-each-site
+    // consts next to the cached skeleton; only the node-capturing `commit` stays
+    // per row.
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [li({ class: item.at('cls') }, [text(item.at('label'))])] })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    expect(out).toContain("const _bd0 = ['item.cls']")
+    expect(out).toContain("const _bd1 = ['item.label']")
+    expect(out).toContain('const _bp0 = (ctx) => ctx.item.cls')
+    expect(out).toContain('const _bp1 = (ctx) => ctx.item.label')
+    expect(out).toContain('deps: _bd0, produce: _bp0,')
+    expect(out).toContain('deps: _bd1, produce: _bp1,')
+    // nothing per-row but the commit closure
+    expect(out).not.toContain("deps: ['item.label'], produce:")
+  })
+
+  it('dedupes identical hoisted deps arrays across bindings', () => {
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [li({}, [text(item.at('label')), text(item.at('label').map((l) => l + '!'))])] })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    // both bindings read ['item.label'] — one shared const
+    expect((out.match(/const _bd\d+ = \['item\.label'\]/g) ?? []).length).toBe(1)
+  })
+
+  it('keeps a produce INLINE when it reads a per-row block-body local', () => {
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const base = item.peek().base; return [li({}, [text(item.at('count').map((c) => c + base))])] } })",
+    )
+    expect(out).toContain('signalEachDirect(')
+    // deps still hoist; the produce closes over the row local `base` -> per-row
+    expect(out).toContain("const _bd0 = ['item.count']")
+    expect(out).toMatch(/produce: \(ctx\) => .*base/)
+    expect(out).not.toMatch(/const _bp\d+ = .*base/)
   })
 
   it('lowers an each whose render passes the row param to a helper call (rowHandle prelude)', () => {
@@ -147,8 +187,8 @@ describe('transformNodeExpr — structural primitives', () => {
     expect(out).toContain(
       'addEventListener("click", () => send({ type: \'rm\', id: getCtx().item.id }))',
     )
-    // the reactive text child still lowers to a ctx-read binding
-    expect(out).toContain('produce: (ctx) => ctx.item.name')
+    // the reactive text child still lowers to a ctx-read binding (hoisted const)
+    expect(out).toContain('= (ctx) => ctx.item.name')
   })
 
   it('lowers a handler reading index + state via .peek() to live-ctx reads', () => {
@@ -327,8 +367,8 @@ describe('transformNodeExpr — block-body each rows (cross-function lowering, p
     expect(out).toContain("data = String(isDir ? '📁' : '📄')")
     // per-row static attr on the top root (located as the clone root `_r0`)
     expect(out).toContain("applyAttr(_r0, \"class\", isDir ? 'd' : 'f')")
-    // the reactive read stays a binding
-    expect(out).toContain('produce: (ctx) => ctx.item.name')
+    // the reactive read stays a binding (hoisted produce const)
+    expect(out).toContain('= (ctx) => ctx.item.name')
   })
 
   it('lowers a PEEKED-VALUE local (const v = item.peek()) — a value, not a handle alias', () => {

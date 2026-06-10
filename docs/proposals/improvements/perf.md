@@ -246,6 +246,26 @@ now writes the lockfile. Baselines now hold the 2026-06-10 environment (Chrome 1
 headless, jfb HEAD); the competitor entries are still June-7 — refresh with
 `pnpm bench --all --save` (~15 min) before making cross-framework claims.
 
+## RowFactory codegen: hoist row-invariant deps + produce — ✅ SHIPPED (2026-06-10)
+
+The factory emitted `{ deps: ['item.label'], produce: (ctx) => ctx.item.label, commit: … }`
+INSIDE the per-clone section — the deps array literal and the produce closure are
+row-INDEPENDENT, so that was 2 extra allocations per binding per row (40k on a jfb
+create-10k). They now hoist to per-each-site consts next to the cached skeleton
+(`const _bd0 = […]; const _bp0 = (ctx) => …`), deduped by source; a produce that reads a
+per-row block-body local stays inline (pinned to the row); only the node-capturing
+`commit` is inherently per-row. **Isolated jsdom A/B (mechanism, 3 runs/leg): create-10k
+71.6 → 67.9 ms (~−5% JS).** Retained heap unchanged — the old allocations died young; the
+win is allocation/GC churn. Same lever still open for the ARM tier (signalText/react args
+re-created per row build inside the arm closure — hoistable via an IIFE around the arm).
+
+**Baseline provenance (2026-06-10, current files):** both baselines were re-saved from a
+SINGLE-pass all-frameworks run (Chrome 149, headless, jfb HEAD) so every column is
+same-environment-comparable. Single-pass medians carry ±10-15% drift on the volatile ops —
+LLui's more reliable 3-run same-env values from the same day: Create1k 21.1, Replace 23.2,
+Update 11.7, Select 3.0, Swap 14.2, Remove 11.0, Create10k 219.6, Append 24.6, Clear 10.1.
+Judge LLui-change deltas against a fresh anchor leg, not these point estimates.
+
 ## Suggested order (remaining)
 
 1. ~~**A** — item-handler + reactive-IDL row lowering.~~ ✅ shipped.

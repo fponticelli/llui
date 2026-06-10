@@ -361,7 +361,7 @@ describe('transformSignalComponentSource', () => {
       // the helper's each becomes eachDirect, keeping the items handle VERBATIM
       expect(out).toContain('eachDirect(items, (r) => r.id,')
       expect(out).toContain('(doc, getCtx) =>')
-      expect(out).toContain('produce: (ctx) => ctx.item.label')
+      expect(out).toContain('= (ctx) => ctx.item.label')
       // NOT the component-rooted source form (helper params can't be statically rooted)
       expect(out).not.toContain('signalEachDirect(')
       // eachDirect import injected
@@ -678,7 +678,7 @@ describe('transformSignalComponentSource', () => {
       const out = transformSignalComponentSource(src)
       assertParses(out)
       expect(out).toContain('signalEachDirect(')
-      expect(out).toContain("deps: ['state.mode']")
+      expect(out).toContain("= ['state.mode']")
       expect(out).toContain('ctx.state.mode')
     })
   })
