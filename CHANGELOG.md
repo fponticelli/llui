@@ -11,11 +11,13 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
-## 2026-06-10 — @llui/components@0.11.4, @llui/markdown-editor@0.2.5
+## 2026-06-10 — @llui/components@0.11.5, @llui/markdown-editor@0.2.5
 
-**Released:** `@llui/components@0.11.4`; `@llui/markdown-editor@0.2.5`
+**Released:** `@llui/components@0.11.5`; `@llui/markdown-editor@0.2.5`
 
-### `@llui/components@0.11.4`
+> **Note:** `@llui/components@0.11.4` was an incomplete publish — the new `utils/roving` module was missing from the packed `dist/` (a stale build artifact at pack time, since `publish.sh` packs `dist/` without rebuilding). `0.11.5` is the corrected republish with `utils/roving` included. Use `0.11.5`; do not use `0.11.4`.
+
+### `@llui/components@0.11.5`
 
 - **Added** `utils/roving` — a DOM-agnostic headless roving-tablist primitive. `resolveRovingMove(key, current, items, opts)` maps a keypress + current value to a move (arrows/Home/End → `{ type: 'focus', value }`, Enter/Space → `{ type: 'activate' }`), honouring orientation, RTL (via `flipArrow`), looping, and disabled-skip; `firstEnabled`/`lastEnabled`/`nextEnabled` are the pure nav core; `focusRovingTab(container, value)` moves DOM focus via the shared `[role="tab"][data-value]` contract. This lets a consumer keep its own tablist markup (custom classes/ids — no `data-scope`/`data-part` requirement) while delegating WAI-ARIA keyboard behaviour to the library. `tabs` now sources its nav core from the same primitive — behaviour unchanged, covered by the existing reducer/connect suite.
 
