@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { waitFor } from './wait-for'
 import { createHeadlessEditor } from '@lexical/headless'
 import { $convertFromMarkdownString, $convertToMarkdownString } from '@lexical/markdown'
 import { $getRoot, type LexicalEditor } from 'lexical'
@@ -147,7 +148,8 @@ describe('image plugin (jsdom)', () => {
     app.send({ type: 'plugin', name: 'image', msg: { type: 'setSrc', src: 'https://img/p.png' } })
     app.send({ type: 'plugin', name: 'image', msg: { type: 'setAlt', alt: 'pic' } })
     app.send({ type: 'plugin', name: 'image', msg: { type: 'submit' } })
-    await wait(20)
+    // wait for the debounced onChange itself, not a fixed delay (load-proof)
+    await waitFor(() => changes.some((m) => m.includes('![pic](https://img/p.png)')))
 
     const image = container.querySelector('[data-scope="md-image"] img') as HTMLImageElement | null
     expect(image).not.toBeNull()

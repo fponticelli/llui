@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { waitFor } from './wait-for'
 import { createHeadlessEditor } from '@lexical/headless'
 import { $convertFromMarkdownString, $convertToMarkdownString } from '@lexical/markdown'
 import { $getRoot, type LexicalEditor } from 'lexical'
@@ -98,10 +99,12 @@ describe('callout decorator (jsdom)', () => {
       { discrete: true },
     )
     app.send({ type: 'runCommand', id: 'callout' })
-    await wait(20)
+    // Wait for the CONDITIONS (DOM + debounced onChange), not a fixed delay —
+    // a fixed wait races the debounce timer under parallel-suite CPU load.
+    await waitFor(() => container.querySelector('[data-scope="md-callout"]') !== null)
+    await waitFor(() => changes.some((m) => m.includes(':::note New callout')))
 
     const callout = container.querySelector('[data-scope="md-callout"]')
-    expect(callout).not.toBeNull()
     expect(callout?.getAttribute('data-kind')).toBe('note')
     expect(container.querySelector('[data-part="badge"]')?.textContent).toBe('Note')
     expect(changes.at(-1)).toContain(':::note New callout')
@@ -109,7 +112,7 @@ describe('callout decorator (jsdom)', () => {
     // Clicking the badge cycles the kind and updates the markdown.
     const badge = container.querySelector<HTMLButtonElement>('[data-part="badge"]')!
     badge.click()
-    await wait(20)
+    await waitFor(() => changes.some((m) => m.includes(':::tip New callout')))
     const cycledCallout = container.querySelector('[data-scope="md-callout"]')
     expect(cycledCallout?.getAttribute('data-kind')).toBe('tip')
     expect(changes.at(-1)).toContain(':::tip New callout')

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { waitFor } from './wait-for'
 import { mountApp } from '@llui/dom'
 import {
   $getRoot,
@@ -50,7 +51,8 @@ describe('markdownEditor', () => {
         .clear()
         .append($createParagraphNode().append($createTextNode('hello world')))
     })
-    await wait(30)
+    // wait for the debounced onChange itself, not a fixed delay (load-proof)
+    await waitFor(() => changes.at(-1) === 'hello world')
     expect(changes.at(-1)).toBe('hello world')
   })
 
