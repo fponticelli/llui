@@ -257,6 +257,10 @@
       "import": "./dist/components/table.js",
       "types": "./dist/components/table.d.ts"
     },
+    "./menubar": {
+      "import": "./dist/components/menubar.js",
+      "types": "./dist/components/menubar.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
@@ -272,6 +276,18 @@
     "./patterns/wizard": {
       "import": "./dist/patterns/wizard.js",
       "types": "./dist/patterns/wizard.d.ts"
+    },
+    "./patterns/command-menu": {
+      "import": "./dist/patterns/command-menu.js",
+      "types": "./dist/patterns/command-menu.d.ts"
+    },
+    "./patterns/data-table": {
+      "import": "./dist/patterns/data-table.js",
+      "types": "./dist/patterns/data-table.d.ts"
+    },
+    "./patterns/searchable-select": {
+      "import": "./dist/patterns/searchable-select.js",
+      "types": "./dist/patterns/searchable-select.d.ts"
     },
     "./styles/theme.css": "./dist/styles/theme.css",
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css",
@@ -402,6 +418,10 @@
     "./styles/menu": {
       "import": "./dist/styles/classes/menu.js",
       "types": "./dist/styles/classes/menu.d.ts"
+    },
+    "./styles/menubar": {
+      "import": "./dist/styles/classes/menubar.js",
+      "types": "./dist/styles/classes/menubar.d.ts"
     },
     "./styles/meter": {
       "import": "./dist/styles/classes/meter.js",
@@ -542,7 +562,7 @@
     "@floating-ui/dom": "^1.7.6",
     "@standard-schema/spec": "^1.0.0"
   },
-  "description": "65 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "description": "66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [
     "llui",
     "components",

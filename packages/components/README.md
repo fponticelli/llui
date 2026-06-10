@@ -1,6 +1,6 @@
 # @llui/components
 
-65 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
+66 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions — you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -73,7 +73,7 @@ const update = mergeHandlers<State, Msg, never>(
 )
 ```
 
-## Components (65)
+## Components (66)
 
 ### Form controls
 
@@ -86,7 +86,10 @@ accordion, checkbox, collapsible, editable, field, fieldset, number-input, passw
 
 ### Overlays
 
-alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigation-menu, popover, select, toast, tooltip, tour
+alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, menubar, navigation-menu, popover, select, toast, tooltip, tour
+
+- menubar — desktop-style application menu bar (File/Edit/View) that composes N menu machines with WAI-ARIA APG keyboard: ArrowLeft/Right move between top-level triggers, open-mode arrow/hover switching, roving tabindex (single tab stop), ArrowDown/Enter/Space open-and-focus-first-item, Escape closes and restores trigger focus.
+- Delegates per-menu content/item/checkbox/radio/group/submenu parts to the menu machine via menubar.menu(id); render each dropdown with menubar.overlay({ menuId }).
 
 ### Data display
 
@@ -115,6 +118,17 @@ file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, ti
 - formField — field ARIA wiring + form touched-tracking + Standard Schema error display, pre-wired: one composed slice, one `formField(name)` spread per input, with touch-gated error visibility (touched || submitted) and sync/async validation built in
 - `wizard` — multi-step flow combining the `steps` component with per-step validation gating. `next` validates the current step (sync predicate / Standard Schema, or async via the `validateStep` effect → `stepValid`/`stepInvalid`) before advancing; pass marks completed + advances, fail marks errored + stays.
 - `prev` is never gated; `goTo`/`stepTrigger` jumps respect linear-mode + completion gating. `nextTrigger` is disabled and aria-busy while an async validation is pending, guarding against double-advance.
+- command-menu — a ⌘K command palette composing dialog + combobox (grouped, filtered listbox)
+- Filters by label and keywords, maintains a most-recent-first recents ranking in the reducer
+- execute{commandId} is the single @intent surface, so agents drive the palette without keyboard simulation
+- watchHotkey(send, combo?) mount helper binds a global hotkey (default mod+k) and returns a cleanup fn
+- Double-Escape behavior (clear query, then close) and an empty-state part for no-match rendering
+- **dataTable** — server-paginated, sortable, selectable data table composing the `table`, `pagination`, and async-list-status machines.
+- Sort/page/pageSize changes emit a `data-table:loadPage` effect ({ page, pageSize, sort, queryId }); the consumer fetches and replies `pageLoaded { queryId, rows, total }`.
+- A `queryId` version counter gives stale-response protection: a slow response for an older request is dropped, so it can never clobber a newer page.
+- Selection policy `clearOnPageChange` (default true) scopes select-all to the current page and clears on page/sort change; set false for cross-page persistent selection.
+- `connect()` re-exports wired table + pagination parts plus `loadingOverlay` (aria-busy), `emptyState` (role=status), and `errorState` (role=alert) live regions.
+- **searchableSelect** — a select with a filter input ("a select, but searchable"), preset over `combobox`. Filter-only input (typed text never becomes the committed value), shadcn-style anatomy (trigger button shows the selection; search input inside the popup above the listbox), single/multiple modes, clearable, empty-state live region, plus combobox async/groups passthrough.
 
 ## Utilities
 

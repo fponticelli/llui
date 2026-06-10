@@ -63,12 +63,20 @@ export * as meter from './meter.js'
 export * as breadcrumbs from './breadcrumbs.js'
 export * as searchField from './search-field.js'
 export * as table from './table.js'
+export * as menubar from './menubar.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
 export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
 export { visibleItems } from './breadcrumbs.js'
 export { isRowSelected, isAllSelected, isSomeSelected, sortDirectionFor } from './table.js'
+export {
+  init as menubarInit,
+  update as menubarUpdate,
+  connect as menubarConnect,
+  overlay as menubarOverlay,
+  menubar as menubarMachine,
+} from './menubar.js'
 
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
@@ -489,3 +497,12 @@ export type {
   TableCheckboxParts,
   ConnectOptions as TableConnectOptions,
 } from './table.js'
+export type {
+  MenubarState,
+  MenubarMsg,
+  MenubarInit,
+  MenubarMenu,
+  MenubarParts,
+  MenubarTriggerParts,
+  MenubarOverlayOptions,
+} from './menubar.js'

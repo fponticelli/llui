@@ -84,6 +84,7 @@ export {
 } from './image-cropper.js'
 export { listboxClasses, type ListboxClasses, type ListboxStyleVariants } from './listbox.js'
 export { marqueeClasses, type MarqueeClasses, type MarqueeStyleVariants } from './marquee.js'
+export { menubarClasses, type MenubarClasses, type MenubarStyleVariants } from './menubar.js'
 export { menuClasses, type MenuClasses, type MenuStyleVariants } from './menu.js'
 export { meterClasses, type MeterClasses, type MeterStyleVariants } from './meter.js'
 export {
