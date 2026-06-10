@@ -97,6 +97,14 @@ The old framing ("jfb create-ops are layout-bound; don't micro-opt JS there") co
 
 ## Verified dead-ends — do NOT re-chase (measured)
 
+- **ARM-tier deps/produce hoisting** (2026-06-10) — the factory's \_bd/\_bp hoist applied to
+  `signalEach`/`eachArm` render arms (ambient sink in `transformNodeExpr`, per-each-site
+  IIFE around the arm). Implemented, all tests green, **measured non-win**: 10k arm-rows
+  52.7 → 52.4 ms (~0.5%, within noise) in the SAME jsdom harness where the factory hoist
+  showed a clear −5% — the arm path's per-row cost is the authoring build machinery
+  (Mountable + populate + runBuild ctx), not the two arg allocations. Reverted per the
+  Tier-2.1 precedent (correct but unprofitable complexity). The factory-tier hoist stays.
+
 - ~~**`cloneNode` templating** — clone == `createElement`.~~ **REFUTED + SHIPPED** — `cloneNode(deep)` of a hoisted template is 38% faster than per-node createElement for a real multi-node row. See "Create-ops" above.
 - ~~**Lean per-row scope** — sub-noise.~~ **REFUTED + SHIPPED** (jsdom had masked the JS delta). See "Create-ops" above.
 - **Fragment-batched row insertion** (one `DocumentFragment` insert vs N `insertBefore`) — **measured non-win** (3-8% SLOWER): the browser coalesces layout for consecutive inserts; the fragment adds extra node-moving. (2026-06-07)
@@ -256,8 +264,7 @@ create-10k). They now hoist to per-each-site consts next to the cached skeleton
 per-row block-body local stays inline (pinned to the row); only the node-capturing
 `commit` is inherently per-row. **Isolated jsdom A/B (mechanism, 3 runs/leg): create-10k
 71.6 → 67.9 ms (~−5% JS).** Retained heap unchanged — the old allocations died young; the
-win is allocation/GC churn. Same lever still open for the ARM tier (signalText/react args
-re-created per row build inside the arm closure — hoistable via an IIFE around the arm).
+win is allocation/GC churn. The ARM-tier sibling was tried next and measured a NON-WIN — see the dead-ends list.
 
 **Baseline provenance (2026-06-10, current files):** both baselines were re-saved from a
 SINGLE-pass all-frameworks run (Chrome 149, headless, jfb HEAD) so every column is
