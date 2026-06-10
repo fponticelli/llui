@@ -35,6 +35,7 @@ import {
 } from './dom.js'
 import {
   mountSignalComponent,
+  type MountSignalOptions,
   type SignalComponentDef,
   type SignalComponentHandle,
 } from './component.js'
@@ -503,6 +504,7 @@ export function component<S, M extends { type: string }, E extends { type: strin
 export function mountApp<S, M, E = never>(
   container: Element,
   def: SignalComponentDef<S, M, E>,
+  opts?: MountSignalOptions<S>,
 ): SignalComponentHandle<S, M> {
-  return mountSignalComponent(container, def)
+  return mountSignalComponent(container, def, opts)
 }

@@ -150,6 +150,18 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
+   * subscribers inside every top-level `send` — the synchronous contract.
+   * `'raf'` is the OPT-IN streaming/burst fast path: reducers and effects
+   * still run synchronously per send (state and `getState()` advance
+   * immediately — the data contract holds), but the DOM commit + subscriber
+   * notification coalesce to ONE reconcile per animation frame (microtask
+   * fallback where rAF doesn't exist: SSR, plain jsdom, the headless agent).
+   * The DOM therefore lags state by up to a frame; `handle.flush()` forces
+   * the pending commit synchronously (tests, the agent protocol, a
+   * read-after-write). Measured on the ticker suite's 1k-send burst:
+   * 14.1ms per-send vs 5.9ms coalesced (hand-written-vanilla parity). */
+  scheduler?: 'sync' | 'raf'
   /** Register this component in the global devtools registry
    * (`__lluiComponents` / `__lluiDebug`). Default `true` in dev. Set `false`
    * for self-introspecting dev tooling (e.g. an in-app debug HUD authored with
@@ -232,6 +244,43 @@ export function mountSignalComponent<S, M, E = never>(
   // since the last reconcile, gating the commit.
   let batchDepth = 0
   let pendingCommit = false
+  // Frame-scheduled mode (`scheduler: 'raf'`): a drain that would commit
+  // schedules ONE flush at the next animation frame instead; every send until
+  // then coalesces into it. `flushing` makes the nested drain inside that
+  // flush (commit-induced sends — a blur from a node removal, a subscriber
+  // dispatch) commit synchronously, so a frame settles fully with no cascade.
+  const scheduler = opts?.scheduler ?? 'sync'
+  let frameScheduled = false
+  let rafId: number | null = null
+  let flushing = false
+
+  function flushFrame(): void {
+    frameScheduled = false
+    rafId = null
+    if (disposed) return
+    flushing = true
+    draining = true
+    try {
+      commitPending()
+      if (queue.length > 0) drain() // commit-induced messages settle synchronously
+    } finally {
+      draining = false
+      flushing = false
+    }
+  }
+
+  function scheduleCommit(): void {
+    if (frameScheduled || disposed) return
+    frameScheduled = true
+    if (typeof requestAnimationFrame === 'function') {
+      rafId = requestAnimationFrame(flushFrame)
+    } else {
+      // Non-browser fallback (SSR / plain jsdom / headless agent): a microtask.
+      // It can't be cancelled — flushFrame/commitPending no-op once nothing is
+      // pending, so an already-flushed task is harmless.
+      queueMicrotask(flushFrame)
+    }
+  }
 
   // Reconcile + notify ONCE against the current state, if it moved since the last
   // commit. The commit can re-enter `send` (a `blur` fired by a node removal), so
@@ -286,7 +335,10 @@ export function mountSignalComponent<S, M, E = never>(
           for (const e of effects) pendingEffects.push(e)
         }
       }
-      if (batchDepth === 0) commitPending()
+      if (batchDepth === 0) {
+        if (scheduler === 'sync' || flushing) commitPending()
+        else scheduleCommit()
+      }
       if (pendingEffects !== null) for (const e of pendingEffects) runEffect(e)
     } while (queue.length > 0)
   }
@@ -365,9 +417,20 @@ export function mountSignalComponent<S, M, E = never>(
     send,
     batch,
     getState: () => state,
-    flush: () => {}, // send is synchronous — nothing to flush
+    flush: () => {
+      // sync mode: send already committed — nothing to flush.
+      if (scheduler === 'sync' || disposed) return
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId)
+      }
+      flushFrame()
+    },
     dispose: () => {
       disposed = true
+      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       subscribers.clear()
       mount?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()

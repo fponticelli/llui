@@ -73,7 +73,7 @@ Brought the direct-construction path to the common list row by emitting handlers
 
 **Decision recorded — NO default microtask/rAF auto-batching.** Considered and rejected as a _default_: it would redefine `send` from synchronous to deferred, breaking the agent protocol's synchronous state frames, the test/`flush` ergonomics, the `send(a); el.offsetHeight` read-after-write guarantee, and — most importantly — LLui's synchronous **predictability** (a core LLM-friendliness value). It also buys no paint saving over synchronous writes (see the insight above).
 
-### Option 4 (future, opt-in only) — a frame-scheduled mode
+### Option 4 — a frame-scheduled mode — ✅ SHIPPED (2026-06-10, opt-in only)
 
 If a genuinely high-frequency consumer appears (a game loop, a 144 Hz feed) that _wants_ DOM-lags-state-by-a-frame for max throughput, add an **opt-in** scheduler — e.g. `mountSignalComponent(…, { scheduler: 'raf' })` or a `sendAsync` that coalesces all sends in a frame and reconciles at the next `requestAnimationFrame`. Requirements if pursued: a non-browser fallback (SSR/jsdom/headless agent have no rAF → microtask or synchronous), a real `flush()` to force a synchronous commit (tests/agent), and explicit docs that `getState()` and the DOM diverge between frames. **Not a default**; only build it when a real workload needs it.
 
@@ -274,5 +274,5 @@ Judge LLui-change deltas against a fresh anchor leg, not these point estimates.
 4. ~~**Pass-2 mid-tier**~~ ✅ shipped (`eachArm` + leaked-handle prelude + block-body arms, see above). Remaining verbatim is imperative render bodies — statement-level lowering territory, likely not worth it.
 5. ~~**Surface `onLowerBail` as `perf` diagnostics**~~ ✅ shipped (`llui/each-verbatim`, see above).
 6. **Phase 3 of C** — precompiled-library row-factory ABI. The corpus showed the trigger is real (dicerun2 consumes published `@llui/components`; `row-top-not-element` 14 ≈ cross-file delegation). See cross-function-row-lowering.md.
-7. **Option 4** — opt-in frame-scheduled (`scheduler:'raf'`/`sendAsync`) mode, only if a high-frequency consumer needs it.
+7. ~~**Option 4** — opt-in frame-scheduled mode~~ ✅ shipped: `mountApp(c, def, { scheduler: 'raf' })` / `MountSignalOptions.scheduler`. Reducers+effects stay synchronous; commit+notify coalesce per frame; real `flush()`; microtask fallback off-browser; dispose cancels. The batch-1k measurement (5.9ms ≈ vanilla 5.8) is its endpoint. Tests: `scheduler-raf.test.ts`.
 8. ~~Element-level dirty tracking~~ — analyzed, **not recommended** (Opportunity D).
