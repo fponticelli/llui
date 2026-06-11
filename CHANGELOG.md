@@ -11,6 +11,52 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-11 — 0.11.3
+
+**Released:** `@llui/dom@0.11.3`; `@llui/components@0.11.7`; `@llui/vike@0.11.3`; `@llui/test@0.11.4`; `@llui/router@0.10.4`; `@llui/transitions@0.10.4`; `@llui/markdown@0.10.4`; `@llui/lexical@0.2.4`; `@llui/lexical-collab@0.2.2`; `@llui/markdown-editor@0.2.6`; `@llui/devmode-annotate@0.2.6`; `@llui/agent@0.10.4`; `llui-agent@0.10.2`; `@llui/mcp@0.12.5`
+
+A large `@llui/components` batch — many new components and patterns, an accessibility sweep, RTL support, and overlay exit animations — plus a `@llui/dom` type fix that lets recursive state shapes work with `.at()`. The dom change cascades a peer-range bump (`^0.11.3`) to every dom consumer.
+
+### Breaking
+
+- **`@llui/components@0.11.7`** — the `menu` / `menubar` item model is now an object tree (`MenuItem[]` — `{ value, kind, group?, children?, disabled? }`) rather than `string[]`, enabling submenus and `menuitemcheckbox`/`menuitemradio` items. `select` and `combobox` keep accepting flat `string[]`. TypeScript consumers passing `string[]` to `menu`/`menubar` (incl. `setItems`) must wrap each entry as `{ value, kind: 'action' }`.
+
+### Migration
+
+- If you build a `menu`/`menubar` from a `string[]`, map it to items: `items.map((value) => ({ value, kind: 'action' as const }))`.
+
+### `@llui/dom@0.11.3`
+
+- **Fixed** `ValidPath<T>` (the `.at()` path type) now terminates on **recursive** state shapes — e.g. a tree/menu node whose field references the node type — instead of expanding forever (`TS2615` / `TS2589`). A generous depth budget (8 path segments) bounds the union; deeper paths still fall back to `.map(s => s.deep.path)`. Type-only change; runtime behaviour is unchanged.
+
+### `@llui/components@0.11.7`
+
+- **Added** new components: `field`, `fieldset`, `form`, `meter`, `search-field`, `breadcrumbs`, `menubar`, `toolbar`, `table` (sortable/selectable data grid), `sortable`, `in-view`, `theme-switch`.
+- **Added** new patterns: `command-menu` (⌘K palette + `watchHotkey`), `data-table`, `form-field`, `searchable-select`, `wizard`.
+- **Added** RTL support across direction-sensitive components — an optional `dir` init/state field + `setDir`, a shared `flipArrow` (horizontal arrows flip under `rtl`; vertical + Home/End never do), and RTL-aware floating placement.
+- **Added** presence lifecycle / exit animations for overlays — a `status` (`'closed' | 'opening' | 'open' | 'closing'`) layered on `open`, with reactive `data-state` and an `isPresent` signal; synchronous no-animation default (`skipAnimations`) so close never hangs waiting on an `animationend` that won't fire.
+- **Improved** accessibility sweep: roving focus for `toggle-group`/`pagination`/`tabs` (Home/End), tooltip hover-grace + escape-from-content (WCAG 1.4.13), `menu`/`context-menu` submenus + checkbox/radio items + groups, `select`/`combobox` option groups, async `combobox` loading (stale-request guard, `aria-busy`, live region) + creatable mode, `date-picker` range selection, `toast` tick-driven auto-dismiss + `aria-live` by type, 2D `color-picker` (saturation/value area, alpha, presets).
+- **Fixed** `searchable-select` was unusable — the overlay self-dismissed on open because the dismiss boundary was the listbox, not the whole popup, so focusing the filter input counted as an outside interaction. The dismiss boundary is now the floating popup.
+- **Fixed** `combobox`/`searchable-select` arrow-key navigation no longer sticks at the first option: the `open` reducer reset the highlight on every keypress (the input sends `open` then `highlightNext`); it now seeds the highlight only on the closed→open transition. `setItems` also clamps `highlightedIndex` to the new list so a shrinking list can't dangle `aria-activedescendant`.
+- **Fixed** the `searchable-select` option highlight stays correct after filtering (it tracks the live position / highlighted value rather than a frozen build-time index).
+- **Fixed** `menu`/`context-menu` interaction teardown (floating, dismissable, focus) now runs at close-request instead of animation-end, so listeners don't linger during the closing phase.
+
+### `@llui/vike@0.11.3`
+
+- **Added** typed Vike route fields on the Layout-resolver `pageContext` (`LayoutResolverContext` / `ServerLayoutResolverContext`).
+
+### `@llui/devmode-annotate@0.2.6`
+
+- **Fixed** migrated the HUD solve-menu from `string[]` to the menu component's `MenuItem[]` API so it builds against the newer `@llui/components` menu (see Breaking).
+
+### `@llui/markdown-editor@0.2.6`
+
+- **Fixed** the image/link plugins' `dialogOpen` switches are now exhaustive (handle the dialog's `animationEnd` / `transitionEnd` messages), so they build against the newer `@llui/components` dialog.
+
+### Cascade — peer-range bump only
+
+- **Improved** `@llui/test@0.11.4`, `@llui/router@0.10.4`, `@llui/transitions@0.10.4`, `@llui/markdown@0.10.4`, `@llui/lexical@0.2.4`, `@llui/lexical-collab@0.2.2`, `@llui/agent@0.10.4`, `llui-agent@0.10.2`, `@llui/mcp@0.12.5` — republished with `peerDependencies["@llui/dom"]` advanced to `^0.11.3` (and `@llui/lexical` / `@llui/components` peers bumped on the lexical / markdown-editor packages). No runtime changes.
+
 ## 2026-06-10 — @llui/components@0.11.6, @llui/markdown-editor@0.2.5
 
 **Released:** `@llui/components@0.11.6`; `@llui/markdown-editor@0.2.5`
