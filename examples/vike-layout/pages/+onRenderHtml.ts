@@ -1,5 +1,4 @@
 import { createOnRenderHtml } from '@llui/vike/server'
-import type { PageContext } from '@llui/vike/server'
 import { AppLayout } from './Layout'
 import { DashboardLayout } from './dashboard/Layout'
 
@@ -10,9 +9,10 @@ import { DashboardLayout } from './dashboard/Layout'
  */
 export const onRenderHtml = createOnRenderHtml({
   domEnv: async () => (await import('@llui/dom/ssr/jsdom')).jsdomEnv(),
-  Layout: (pageContext: PageContext) => {
-    const path = (pageContext as unknown as { urlPathname?: string }).urlPathname ?? '/'
-    if (path.startsWith('/dashboard')) return [AppLayout, DashboardLayout]
+  // `pageContext` is inferred as `ServerLayoutResolverContext` — Vike's route
+  // fields are typed and guaranteed present, so no cast.
+  Layout: (pageContext) => {
+    if (pageContext.urlPathname.startsWith('/dashboard')) return [AppLayout, DashboardLayout]
     return [AppLayout]
   },
   document: ({ html, state, head }) => `<!DOCTYPE html>

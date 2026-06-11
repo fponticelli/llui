@@ -1,5 +1,4 @@
 import { createOnRenderClient } from '@llui/vike/client'
-import type { ClientPageContext } from '@llui/vike/client'
 import { AppLayout } from './Layout'
 import { DashboardLayout } from './dashboard/Layout'
 
@@ -22,9 +21,10 @@ import { DashboardLayout } from './dashboard/Layout'
  *     inside the existing AppLayout slot; the home page is disposed.
  */
 export const onRenderClient = createOnRenderClient({
-  Layout: (pageContext: ClientPageContext) => {
-    const path = (pageContext as unknown as { urlPathname?: string }).urlPathname ?? '/'
-    if (path.startsWith('/dashboard')) return [AppLayout, DashboardLayout]
+  // `pageContext` is inferred as `LayoutResolverContext` — Vike's route fields
+  // (`urlPathname`, `routeParams`) are typed and guaranteed present, so no cast.
+  Layout: (pageContext) => {
+    if (pageContext.urlPathname.startsWith('/dashboard')) return [AppLayout, DashboardLayout]
     return [AppLayout]
   },
   onMount: () => {
