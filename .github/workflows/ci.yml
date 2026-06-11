@@ -18,9 +18,16 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # Backstop against a hung step (e.g. a stalled Playwright CDN download —
-    # observed once as a 3h+ runner-killed job). Bounds the whole job to a
-    # sane window so a hang fails fast instead of burning CI minutes.
+    # Run inside the official Playwright image: Chromium + its OS deps are baked
+    # in, so CI never touches cdn.playwright.dev — which was deterministically
+    # hanging at 100% on the chromium download and taking the job down (a 3h+
+    # runner-killed job, then every retry stalling at the same point). The tag
+    # MUST match the playwright version in pnpm-lock.yaml (1.59.1) so the bundled
+    # browser revision matches what `playwright` expects — bump both together.
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-noble
+    # Backstop against any hung step so a hang fails fast instead of burning CI
+    # minutes.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -33,38 +40,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-
-      # Cache Playwright's downloaded browser binaries keyed on the
-      # playwright version in pnpm-lock.yaml. Keeps CI fast — the
-      # chromium install is ~250 MB and takes ~30s cold.
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        # The CDN download occasionally stalls at 100% and hangs indefinitely
-        # (observed: a job killed only by the 3h+ runner shutdown). Bound each
-        # attempt with `timeout` and retry so a transient stall self-heals
-        # instead of taking the whole run down. timeout-minutes is the backstop
-        # in case the inner `timeout` itself wedges.
-        timeout-minutes: 15
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 300 pnpm exec playwright install chromium --with-deps; then
-              exit 0
-            fi
-            echo "::warning::Playwright install attempt $attempt stalled or failed; retrying…"
-          done
-          echo "::error::Playwright install failed after 3 attempts"
-          exit 1
-
-      - name: Install Playwright system deps
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
 
       - name: Format check
         run: pnpm format:check
@@ -85,6 +60,7 @@ jobs:
       # console.error / page error. Catches issue-#5-class bugs where
       # the bundle compiles cleanly but crashes on first paint
       # (missing __view, broken __prefixes, etc.) — the kind of fault
-      # type-checks and unit tests can't surface.
+      # type-checks and unit tests can't surface. Uses the browser
+      # pre-installed in the container image (PLAYWRIGHT_BROWSERS_PATH).
       - name: Smoke-test example bundles
         run: pnpm smoke:examples
