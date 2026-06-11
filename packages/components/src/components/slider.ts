@@ -20,6 +20,8 @@ export interface SliderState {
   orientation: Orientation
   /** Minimum gap enforced between adjacent thumbs (range slider). */
   minStepsBetweenThumbs: number
+  /** Reading direction. Under 'rtl' horizontal arrow keys are flipped. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type SliderMsg =
@@ -37,6 +39,8 @@ export type SliderMsg =
   | { type: 'toMax'; index: number }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface SliderInit {
   value?: number[]
@@ -46,6 +50,7 @@ export interface SliderInit {
   disabled?: boolean
   orientation?: Orientation
   minStepsBetweenThumbs?: number
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: SliderInit = {}): SliderState {
@@ -57,6 +62,7 @@ export function init(opts: SliderInit = {}): SliderState {
     disabled: opts.disabled ?? false,
     orientation: opts.orientation ?? 'horizontal',
     minStepsBetweenThumbs: opts.minStepsBetweenThumbs ?? 0,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -94,7 +100,7 @@ function setThumbValue(state: SliderState, index: number, rawValue: number): num
 }
 
 export function update(state: SliderState, msg: SliderMsg): [SliderState, never[]] {
-  if (state.disabled && msg.type !== 'setDisabled') return [state, []]
+  if (state.disabled && msg.type !== 'setDisabled' && msg.type !== 'setDir') return [state, []]
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
@@ -116,6 +122,8 @@ export function update(state: SliderState, msg: SliderMsg): [SliderState, never[
       return [{ ...state, value: setThumbValue(state, msg.index, state.max) }, []]
     case 'setDisabled':
       return [{ ...state, disabled: msg.disabled }, []]
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -217,15 +225,20 @@ export function connect(state: Signal<SliderState>, send: Send<SliderMsg>): Slid
         'data-index': String(index),
         tabindex: state.map((s) => (s.disabled ? -1 : 0)),
         style: state.map((s) => thumbStyle(s, index)),
-        onKeyDown: (e: KeyboardEvent) => handleThumbKey(e, index, send),
+        onKeyDown: (e: KeyboardEvent) => handleThumbKey(e, index, send, state.peek()?.dir ?? 'ltr'),
       },
     }),
     value: state.map((s) => s.value),
   }
 }
 
-function handleThumbKey(e: KeyboardEvent, index: number, send: Send<SliderMsg>): void {
-  const key = flipArrow(e.key, e.currentTarget as Element)
+function handleThumbKey(
+  e: KeyboardEvent,
+  index: number,
+  send: Send<SliderMsg>,
+  dir: 'ltr' | 'rtl',
+): void {
+  const key = flipArrow(e.key, dir)
   switch (key) {
     case 'ArrowRight':
     case 'ArrowUp':

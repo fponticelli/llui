@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { firstEnabled, nextEnabled } from '../utils/roving.js'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces
@@ -19,6 +20,12 @@ export interface ToggleGroupState {
   orientation: Orientation
   /** In single mode, whether the active item can be deselected. */
   deselectable: boolean
+  /** The currently roving-focused item (independent of the pressed value). */
+  focused: string | null
+  /** Whether Arrow navigation wraps at the ends of the group. Default: true. */
+  loopFocus: boolean
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type ToggleGroupMsg =
@@ -32,6 +39,10 @@ export type ToggleGroupMsg =
   | { type: 'focusNext'; from: string }
   /** @humanOnly */
   | { type: 'focusPrev'; from: string }
+  /** @humanOnly */
+  | { type: 'focusItem'; value: string }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface ToggleGroupInit {
   value?: string[]
@@ -41,6 +52,9 @@ export interface ToggleGroupInit {
   disabled?: boolean
   orientation?: Orientation
   deselectable?: boolean
+  focused?: string | null
+  loopFocus?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: ToggleGroupInit = {}): ToggleGroupState {
@@ -52,10 +66,14 @@ export function init(opts: ToggleGroupInit = {}): ToggleGroupState {
     disabled: opts.disabled ?? false,
     orientation: opts.orientation ?? 'horizontal',
     deselectable: opts.deselectable ?? true,
+    focused: opts.focused ?? null,
+    loopFocus: opts.loopFocus ?? true,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
 export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGroupState, never[]] {
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle': {
@@ -81,9 +99,18 @@ export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGro
         { ...state, items: msg.items, disabledItems: msg.disabled ?? state.disabledItems },
         [],
       ]
-    case 'focusNext':
-    case 'focusPrev':
-      return [state, []]
+    case 'focusItem': {
+      if (state.disabledItems.includes(msg.value)) return [state, []]
+      return [{ ...state, focused: msg.value }, []]
+    }
+    case 'focusNext': {
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, 1, state.loopFocus)
+      return to === null ? [state, []] : [{ ...state, focused: to }, []]
+    }
+    case 'focusPrev': {
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, -1, state.loopFocus)
+      return to === null ? [state, []] : [{ ...state, focused: to }, []]
+    }
   }
 }
 
@@ -99,8 +126,10 @@ export interface ToggleGroupItemParts {
     'data-scope': 'toggle-group'
     'data-part': 'item'
     'data-value': string
+    tabindex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
+    onFocus: (e: FocusEvent) => void
   }
 }
 
@@ -145,17 +174,35 @@ export function connect(
         'data-scope': 'toggle-group',
         'data-part': 'item',
         'data-value': value,
+        // Roving tabindex: exactly one tab stop. Prefer the focused item;
+        // else the first selected item; else the first enabled item.
+        tabindex: state.map((s) => {
+          if (s.disabled || s.disabledItems.includes(value)) return -1
+          if (s.focused !== null) return s.focused === value ? 0 : -1
+          const selected = s.items.find((v) => s.value.includes(v) && !s.disabledItems.includes(v))
+          if (selected != null) return selected === value ? 0 : -1
+          return firstEnabled(s.items, s.disabledItems) === value ? 0 : -1
+        }),
         onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
+        onFocus: tagSend(send, ['focusItem'], () => send({ type: 'focusItem', value })),
         onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'toggle'], (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
+          // Read orientation from the ancestor root so arrow keys map per
+          // WAI-ARIA: horizontal → ArrowLeft/Right, vertical → ArrowUp/Down.
+          const target = e.currentTarget as HTMLElement | null
+          const root = target?.closest(
+            '[data-scope="toggle-group"][data-part="root"]',
+          ) as HTMLElement | null
+          const orientation =
+            (root?.getAttribute('data-orientation') as Orientation | null) ?? 'horizontal'
+          const key = flipArrow(e.key, state.peek().dir)
+          const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
+          const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
           switch (key) {
-            case 'ArrowRight':
-            case 'ArrowDown':
+            case nextKey:
               e.preventDefault()
               send({ type: 'focusNext', from: value })
               return
-            case 'ArrowLeft':
-            case 'ArrowUp':
+            case prevKey:
               e.preventDefault()
               send({ type: 'focusPrev', from: value })
               return

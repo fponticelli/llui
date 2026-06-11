@@ -6,6 +6,7 @@ import { pushDismissable } from '../utils/dismissable.js'
 import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
 import { lockBodyScroll } from '../utils/remove-scroll.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
+import type { PresenceStatus } from './presence.js'
 
 /**
  * Dialog — modal / non-modal overlay. Ties together focus-trap, dismissable,
@@ -41,6 +42,14 @@ import { resolvePortalTarget } from '../utils/portal-target.js'
 
 export interface DialogState {
   open: boolean
+  /** Presence lifecycle — drives data-state and keeps the node mounted through exit
+   * animations. Optional: a partial `{ open }` bridge (e.g. a pattern passing a
+   * slice to `overlay`) omits it, and the runtime falls back to `open` for instant,
+   * backward-compatible mount/visibility. `init` always sets it. */
+  status?: PresenceStatus
+  /** When true, close transitions go straight to 'closed' (no exit-animation wait).
+   * Optional for the same partial-slice reason as `status`; `init` always sets it. */
+  skipAnimations?: boolean
 }
 
 export type DialogMsg =
@@ -52,26 +61,78 @@ export type DialogMsg =
   | { type: 'toggle' }
   /** @intent("Set the dialog's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
+  /** @humanOnly */
+  | { type: 'transitionEnd' }
 
 export interface DialogInit {
   open?: boolean
+  /** Skip enter/exit animations — close unmounts synchronously (default: true). */
+  skipAnimations?: boolean
 }
 
 export function init(opts: DialogInit = {}): DialogState {
-  return { open: opts.open ?? false }
+  const open = opts.open ?? false
+  return {
+    open,
+    status: open ? 'open' : 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
+  }
+}
+
+function openTo(state: DialogState): DialogState {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
+}
+
+function closeTo(state: DialogState): DialogState {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
 }
 
 export function update(state: DialogState, msg: DialogMsg): [DialogState, never[]] {
   switch (msg.type) {
     case 'open':
-      return [{ ...state, open: true }, []]
+      return [openTo(state), []]
     case 'close':
-      return [{ ...state, open: false }, []]
+      return [closeTo(state), []]
     case 'toggle':
-      return [{ ...state, open: !state.open }, []]
+      return [state.open ? closeTo(state) : openTo(state), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [msg.open ? openTo(state) : closeTo(state), []]
+    case 'animationEnd':
+    case 'transitionEnd':
+      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
+      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
+      return [state, []]
   }
+}
+
+/** Whether the dialog node should be in the DOM — true through the exit animation.
+ * Tolerates a partial slice without `status` (e.g. the `{ open }` bridge a pattern
+ * passes to `overlay`): it falls back to `open` for instant, backward-compatible unmount. */
+export function isMounted(state: DialogState): boolean {
+  return state.status === undefined ? state.open : state.status !== 'closed'
+}
+
+/** Alias of {@link isMounted} — whether the dialog is currently present in the DOM. */
+export function isPresent(state: DialogState): boolean {
+  return isMounted(state)
+}
+
+/** Whether the dialog is in its visible phase (open/opening) vs leaving (closing/closed).
+ * Falls back to `open` when a partial slice has no `status`. */
+function isVisible(state: DialogState): boolean {
+  return state.status === undefined
+    ? state.open
+    : state.status === 'open' || state.status === 'opening'
+}
+
+/** Resolve the presence status for `data-state`, falling back to open/closed when a
+ * partial state (no `status`) is supplied (e.g. a pattern bridge or a unit test). */
+function statusOf(state: DialogState): PresenceStatus {
+  return state.status ?? (state.open ? 'open' : 'closed')
 }
 
 export interface DialogParts {
@@ -87,7 +148,7 @@ export interface DialogParts {
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -103,9 +164,11 @@ export interface DialogParts {
     'aria-labelledby': string
     'aria-describedby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'content'
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   title: {
     id: string
@@ -165,7 +228,7 @@ export function connect(
       onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     backdrop: {
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map(statusOf),
       'data-scope': 'dialog',
       'data-part': 'backdrop',
       'aria-hidden': 'true',
@@ -181,9 +244,11 @@ export function connect(
       'aria-labelledby': titleId,
       'aria-describedby': descId,
       tabindex: -1,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map(statusOf),
       'data-scope': 'dialog',
       'data-part': 'content',
+      onAnimationEnd: () => send({ type: 'animationEnd' }),
+      onTransitionEnd: () => send({ type: 'transitionEnd' }),
     },
     title: {
       id: titleId,
@@ -236,7 +301,9 @@ export interface OverlayOptions {
 
 /**
  * Build the dialog's DOM tree and wire up all accessibility utilities.
- * Returns a `show()` structural block that tracks `state.open`.
+ * Returns a `show()` structural block gated on `isMounted(state)` so the node
+ * stays mounted through an exit animation (status 'closing') and is removed at
+ * animation end; with `skipAnimations` (the default) close unmounts synchronously.
  */
 export function overlay(opts: OverlayOptions): Mountable {
   const targetOpt = opts.target ?? 'body'
@@ -251,11 +318,16 @@ export function overlay(opts: OverlayOptions): Mountable {
   const triggerId = parts.trigger.id
   const host = resolvePortalTarget(targetOpt)
 
-  return show(
-    opts.state.map((s) => s.open),
-    () => [
-      portal(() => {
-        const dismissable = onMount(() => {
+  // Outer block stays mounted through the exit animation (isMounted, status !==
+  // 'closed'); the inner block tracks the VISIBLE phase (isVisible, open/opening)
+  // so interaction wiring — focus trap, scroll lock, aria-hidden, dismissable —
+  // tears down at the close REQUEST while the node lingers for the exit
+  // animation. With `skipAnimations` (the default) both flip together, so close
+  // unmounts and tears down synchronously (no hang waiting on animationEnd).
+  return show(opts.state.map(isMounted), () => [
+    portal(() => {
+      const interaction = show(opts.state.map(isVisible), () => [
+        onMount(() => {
           const contentEl = document.getElementById(contentId)
           if (!contentEl) return
           const triggerEl = document.getElementById(triggerId)
@@ -288,11 +360,12 @@ export function overlay(opts: OverlayOptions): Mountable {
           return () => {
             for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
           }
-        })
-        return [dismissable, div(parts.positioner, opts.content())]
-      }, host),
-    ],
-  )
+        }),
+      ])
+
+      return [interaction, div(parts.positioner, opts.content())]
+    }, host),
+  ])
 }
 
-export const dialog = { init, update, connect, overlay }
+export const dialog = { init, update, connect, overlay, isMounted, isPresent }

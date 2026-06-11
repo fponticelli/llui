@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, watchTabIndicator } from '../../src/components/tabs'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('tabs reducer', () => {
   it('init picks first item as default value', () => {
@@ -61,6 +61,34 @@ describe('tabs reducer', () => {
     expect(s2.focused).toBe('c')
   })
 
+  it('focusFirst/focusLast activate the focused tab (automatic)', () => {
+    const s0 = init({ items: ['a', 'b', 'c'], value: 'b' })
+    const [s1] = update(s0, { type: 'focusLast' })
+    expect(s1.focused).toBe('c')
+    expect(s1.value).toBe('c') // automatic activation
+    const [s2] = update(s1, { type: 'focusFirst' })
+    expect(s2.focused).toBe('a')
+    expect(s2.value).toBe('a')
+  })
+
+  it('focusFirst/focusLast move focus only (manual)', () => {
+    const s0 = init({ items: ['a', 'b', 'c'], value: 'b', activation: 'manual' })
+    const [s1] = update(s0, { type: 'focusLast' })
+    expect(s1.focused).toBe('c')
+    expect(s1.value).toBe('b') // unchanged in manual mode
+    const [s2] = update(s1, { type: 'focusFirst' })
+    expect(s2.focused).toBe('a')
+    expect(s2.value).toBe('b')
+  })
+
+  it('focusFirst/focusLast are no-ops when every item is disabled', () => {
+    const s0 = init({ items: ['a', 'b'], disabledItems: ['a', 'b'], value: '' })
+    const [s1] = update(s0, { type: 'focusFirst' })
+    expect(s1).toEqual(s0)
+    const [s2] = update(s0, { type: 'focusLast' })
+    expect(s2).toEqual(s0)
+  })
+
   it('setItems reassigns value if current value was removed', () => {
     const s0 = init({ items: ['a', 'b'], value: 'a' })
     const [s1] = update(s0, { type: 'setItems', items: ['b', 'c'] })
@@ -105,7 +133,7 @@ describe('tabs.connect', () => {
 
   it('ArrowRight dispatches focusNext', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.item('a').trigger.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -114,10 +142,95 @@ describe('tabs.connect', () => {
 
   it('Enter activates focused', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
     p.item('a').trigger.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'activateFocused' })
+  })
+
+  it('Home dispatches focusFirst', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
+    const ev = new KeyboardEvent('keydown', { key: 'Home', cancelable: true })
+    p.item('b').trigger.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusFirst' })
+  })
+
+  it('End dispatches focusLast', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
+    const ev = new KeyboardEvent('keydown', { key: 'End', cancelable: true })
+    p.item('b').trigger.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusLast' })
+  })
+
+  it('rtl: ArrowLeft dispatches focusNext, ArrowRight dispatches focusPrev', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'], dir: 'rtl' })), send, { id: 'x' })
+    const left = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.item('a').trigger.onKeyDown(left)
+    expect(left.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusNext', from: 'a' })
+
+    send.mockClear()
+    const right = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    p.item('a').trigger.onKeyDown(right)
+    expect(right.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusPrev', from: 'a' })
+  })
+
+  it('ltr (default): ArrowLeft dispatches focusPrev, ArrowRight dispatches focusNext', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b', 'c'] })), send, { id: 'x' })
+    const left = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.item('a').trigger.onKeyDown(left)
+    expect(send).toHaveBeenCalledWith({ type: 'focusPrev', from: 'a' })
+
+    send.mockClear()
+    const right = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    p.item('a').trigger.onKeyDown(right)
+    expect(send).toHaveBeenCalledWith({ type: 'focusNext', from: 'a' })
+  })
+
+  it('setDir updates the reading direction', () => {
+    const [s] = update(init({ items: ['a', 'b'] }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('init defaults dir to ltr', () => {
+    expect(init({ items: ['a'] }).dir).toBe('ltr')
+  })
+
+  it('Home/End work in vertical orientation', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <div role="tablist" aria-orientation="vertical" data-scope="tabs" data-part="list">
+        <button id="t">Tab A</button>
+      </div>
+    `
+    document.body.appendChild(root)
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: ['a', 'b'], orientation: 'vertical' })), send, {
+      id: 'x',
+    })
+    const trigger = root.querySelector('#t') as HTMLButtonElement
+
+    const home = new KeyboardEvent('keydown', { key: 'Home', cancelable: true })
+    Object.defineProperty(home, 'currentTarget', { value: trigger, writable: false })
+    p.item('b').trigger.onKeyDown(home)
+    expect(home.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusFirst' })
+
+    send.mockClear()
+    const end = new KeyboardEvent('keydown', { key: 'End', cancelable: true })
+    Object.defineProperty(end, 'currentTarget', { value: trigger, writable: false })
+    p.item('b').trigger.onKeyDown(end)
+    expect(end.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusLast' })
+
+    document.body.removeChild(root)
   })
 
   it('vertical orientation: ArrowDown navigates, ArrowRight ignored', () => {
@@ -130,7 +243,9 @@ describe('tabs.connect', () => {
     `
     document.body.appendChild(root)
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init({ items: ['a', 'b'], orientation: 'vertical' })), send, {
+      id: 'x',
+    })
     const trigger = root.querySelector('#t') as HTMLButtonElement
     // ArrowDown should navigate, ArrowRight should not.
     const ev1 = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
@@ -143,6 +258,34 @@ describe('tabs.connect', () => {
     Object.defineProperty(ev2, 'currentTarget', { value: trigger, writable: false })
     p.item('a').trigger.onKeyDown(ev2)
     expect(send).not.toHaveBeenCalled()
+    document.body.removeChild(root)
+  })
+
+  it('rtl + vertical orientation: vertical arrows are NOT flipped', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <div role="tablist" aria-orientation="vertical" data-scope="tabs" data-part="list">
+        <button id="t">Tab A</button>
+      </div>
+    `
+    document.body.appendChild(root)
+    const send = vi.fn()
+    const p = connect(
+      signalOf(init({ items: ['a', 'b'], orientation: 'vertical', dir: 'rtl' })),
+      send,
+      { id: 'x' },
+    )
+    const trigger = root.querySelector('#t') as HTMLButtonElement
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
+    Object.defineProperty(down, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').trigger.onKeyDown(down)
+    expect(send).toHaveBeenCalledWith({ type: 'focusNext', from: 'a' })
+
+    send.mockClear()
+    const up = new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true })
+    Object.defineProperty(up, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').trigger.onKeyDown(up)
+    expect(send).toHaveBeenCalledWith({ type: 'focusPrev', from: 'a' })
     document.body.removeChild(root)
   })
 

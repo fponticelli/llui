@@ -18,6 +18,8 @@ export interface SplitterState {
   orientation: Orientation
   disabled: boolean
   dragging: boolean
+  /** Reading direction. Under 'rtl' horizontal arrow keys are flipped. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type SplitterMsg =
@@ -35,6 +37,8 @@ export type SplitterMsg =
   | { type: 'startDrag' }
   /** @humanOnly */
   | { type: 'endDrag' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface SplitterInit {
   position?: number
@@ -43,6 +47,7 @@ export interface SplitterInit {
   step?: number
   orientation?: Orientation
   disabled?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: SplitterInit = {}): SplitterState {
@@ -54,6 +59,7 @@ export function init(opts: SplitterInit = {}): SplitterState {
     orientation: opts.orientation ?? 'horizontal',
     disabled: opts.disabled ?? false,
     dragging: false,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -62,7 +68,7 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 export function update(state: SplitterState, msg: SplitterMsg): [SplitterState, never[]] {
-  if (state.disabled && msg.type !== 'endDrag') return [state, []]
+  if (state.disabled && msg.type !== 'endDrag' && msg.type !== 'setDir') return [state, []]
   switch (msg.type) {
     case 'setPosition':
       return [{ ...state, position: clamp(msg.position, state.min, state.max) }, []]
@@ -82,6 +88,8 @@ export function update(state: SplitterState, msg: SplitterMsg): [SplitterState, 
       return [{ ...state, dragging: true }, []]
     case 'endDrag':
       return [{ ...state, dragging: false }, []]
+    case 'setDir':
+      return [{ ...state, dir: msg.dir }, []]
   }
 }
 
@@ -171,7 +179,7 @@ export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): 
       'data-orientation': state.map((s) => s.orientation),
       tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax'], (e) => {
-        const key = flipArrow(e.key, e.currentTarget as Element)
+        const key = flipArrow(e.key, state.peek()?.dir ?? 'ltr')
         switch (key) {
           case 'ArrowRight':
           case 'ArrowDown':

@@ -56,10 +56,27 @@ export * as inView from './in-view.js'
 export * as form from './form.js'
 export * as sortable from './sortable.js'
 export * as themeSwitch from './theme-switch.js'
+export * as field from './field.js'
+export * as fieldset from './fieldset.js'
+export * as toolbar from './toolbar.js'
+export * as meter from './meter.js'
+export * as breadcrumbs from './breadcrumbs.js'
+export * as searchField from './search-field.js'
+export * as table from './table.js'
+export * as menubar from './menubar.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
 export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
+export { visibleItems } from './breadcrumbs.js'
+export { isRowSelected, isAllSelected, isSomeSelected, sortDirectionFor } from './table.js'
+export {
+  init as menubarInit,
+  update as menubarUpdate,
+  connect as menubarConnect,
+  overlay as menubarOverlay,
+  menubar as menubarMachine,
+} from './menubar.js'
 
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
@@ -215,6 +232,14 @@ export type {
   MenuInit,
   MenuParts,
   MenuItemParts,
+  MenuItemKind,
+  MenuItem,
+  MenuCheckItemParts,
+  MenuGroupParts,
+  MenuSeparatorParts,
+  MenuSubTriggerParts,
+  MenuSubPositionerParts,
+  MenuSubContentParts,
   OverlayOptions as MenuOverlayOptions,
 } from './menu.js'
 export type { SwitchState, SwitchMsg, SwitchInit, SwitchParts } from './switch.js'
@@ -291,6 +316,8 @@ export type {
   ToastItemParts,
   ToastType,
   ToastPlacement,
+  ToastPoliteness,
+  ToastInput,
 } from './toast.js'
 export type {
   ListboxState,
@@ -306,6 +333,8 @@ export type {
   SelectInit,
   SelectParts,
   SelectItemParts,
+  SelectGroup,
+  SelectGroupParts,
   OverlayOptions as SelectOverlayOptions,
 } from './select.js'
 export type {
@@ -314,6 +343,10 @@ export type {
   ComboboxInit,
   ComboboxParts,
   ComboboxItemParts,
+  AsyncStatus as ComboboxAsyncStatus,
+  ComboboxGroup,
+  ComboboxEffect,
+  ComboboxGroupParts,
   OverlayOptions as ComboboxOverlayOptions,
 } from './combobox.js'
 export type {
@@ -347,6 +380,9 @@ export type {
   TreeViewInit,
   TreeViewParts,
   TreeItemParts,
+  TreeViewEffect,
+  TreeNodeMeta,
+  TreeNodeInput,
 } from './tree-view.js'
 export type {
   ContextMenuState,
@@ -354,6 +390,14 @@ export type {
   ContextMenuInit,
   ContextMenuParts,
   ContextMenuItemParts,
+  ContextMenuItemKind,
+  ContextMenuItem,
+  ContextMenuCheckItemParts,
+  ContextMenuGroupParts,
+  ContextMenuSeparatorParts,
+  ContextMenuSubTriggerParts,
+  ContextMenuSubPositionerParts,
+  ContextMenuSubContentParts,
   OverlayOptions as ContextMenuOverlayOptions,
 } from './context-menu.js'
 export type {
@@ -384,6 +428,7 @@ export type {
   CarouselInit,
   CarouselParts,
   CarouselSlideParts,
+  CarouselDrag,
 } from './carousel.js'
 export type {
   DatePickerState,
@@ -392,6 +437,9 @@ export type {
   DatePickerParts,
   DayCellParts,
   DayCell,
+  DatePickerMode,
+  PresetRange,
+  PresetParts,
 } from './date-picker.js'
 export type {
   ColorPickerState,
@@ -399,4 +447,62 @@ export type {
   ColorPickerInit,
   ColorPickerParts,
   Hsl,
+  Hsv,
+  SwatchParts,
 } from './color-picker.js'
+export type { FieldState, FieldMsg, FieldInit, FieldParts, FieldConnectOptions } from './field.js'
+export type {
+  FieldsetState,
+  FieldsetMsg,
+  FieldsetInit,
+  FieldsetParts,
+  FieldsetConnectOptions,
+} from './fieldset.js'
+export type {
+  ToolbarState,
+  ToolbarMsg,
+  ToolbarInit,
+  ToolbarParts,
+  ToolbarItemParts,
+  ToolbarGroupParts,
+} from './toolbar.js'
+export type { MeterState, MeterMsg, MeterInit, MeterParts } from './meter.js'
+export type {
+  BreadcrumbsState,
+  BreadcrumbsMsg,
+  BreadcrumbsInit,
+  BreadcrumbsParts,
+  BreadcrumbItem,
+  VisibleBreadcrumb,
+} from './breadcrumbs.js'
+export type {
+  SearchFieldState,
+  SearchFieldMsg,
+  SearchFieldInit,
+  SearchFieldParts,
+} from './search-field.js'
+export type {
+  SortDirection,
+  TableSelectionMode,
+  TableColumn,
+  TableSort,
+  TableCellCoord,
+  TableState,
+  TableMsg,
+  TableInit,
+  TableParts,
+  TableColumnHeaderParts,
+  TableRowParts,
+  TableCellParts,
+  TableCheckboxParts,
+  ConnectOptions as TableConnectOptions,
+} from './table.js'
+export type {
+  MenubarState,
+  MenubarMsg,
+  MenubarInit,
+  MenubarMenu,
+  MenubarParts,
+  MenubarTriggerParts,
+  MenubarOverlayOptions,
+} from './menubar.js'

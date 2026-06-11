@@ -1,7 +1,15 @@
 import { createContext } from '@llui/dom'
+import type { TextDirection } from './utils/direction.js'
 
 /** Per-component locale strings. Only components with user-facing text have entries. */
 export interface Locale {
+  /**
+   * App-wide reading direction. Optional and backward-compatible: when unset,
+   * components fall back to their own `dir` (default 'ltr') or DOM resolution.
+   * Lets an app set direction once via a `LocaleContext` provider; an explicit
+   * `dir` passed to a component always overrides this.
+   */
+  direction?: TextDirection
   carousel: {
     label: string
     indicators: string
@@ -61,6 +69,7 @@ const MONTH_NAMES = [
 
 /** English locale — used as the default when no provider is in the tree. */
 export const en: Locale = {
+  direction: 'ltr',
   carousel: {
     label: 'Carousel',
     indicators: 'Slide indicators',

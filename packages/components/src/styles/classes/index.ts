@@ -14,6 +14,11 @@ export {
   type AsyncListStyleVariants,
 } from './async-list.js'
 export { avatarClasses, type AvatarClasses, type AvatarStyleVariants } from './avatar.js'
+export {
+  breadcrumbsClasses,
+  type BreadcrumbsClasses,
+  type BreadcrumbsStyleVariants,
+} from './breadcrumbs.js'
 export { carouselClasses, type CarouselClasses, type CarouselStyleVariants } from './carousel.js'
 export {
   cascadeSelectClasses,
@@ -55,6 +60,8 @@ export {
 export { dialogClasses, type DialogClasses, type DialogStyleVariants } from './dialog.js'
 export { drawerClasses, type DrawerClasses, type DrawerStyleVariants } from './drawer.js'
 export { editableClasses, type EditableClasses, type EditableStyleVariants } from './editable.js'
+export { fieldClasses, type FieldClasses, type FieldStyleVariants } from './field.js'
+export { fieldsetClasses, type FieldsetClasses, type FieldsetStyleVariants } from './fieldset.js'
 export {
   fileUploadClasses,
   type FileUploadClasses,
@@ -77,7 +84,9 @@ export {
 } from './image-cropper.js'
 export { listboxClasses, type ListboxClasses, type ListboxStyleVariants } from './listbox.js'
 export { marqueeClasses, type MarqueeClasses, type MarqueeStyleVariants } from './marquee.js'
+export { menubarClasses, type MenubarClasses, type MenubarStyleVariants } from './menubar.js'
 export { menuClasses, type MenuClasses, type MenuStyleVariants } from './menu.js'
+export { meterClasses, type MeterClasses, type MeterStyleVariants } from './meter.js'
 export {
   navigationMenuClasses,
   type NavigationMenuClasses,
@@ -118,6 +127,11 @@ export {
   type ScrollAreaClasses,
   type ScrollAreaStyleVariants,
 } from './scroll-area.js'
+export {
+  searchFieldClasses,
+  type SearchFieldClasses,
+  type SearchFieldStyleVariants,
+} from './search-field.js'
 export { selectClasses, type SelectClasses, type SelectStyleVariants } from './select.js'
 export {
   signaturePadClasses,
@@ -128,6 +142,7 @@ export { sliderClasses, type SliderClasses, type SliderStyleVariants } from './s
 export { splitterClasses, type SplitterClasses, type SplitterStyleVariants } from './splitter.js'
 export { stepsClasses, type StepsClasses, type StepsStyleVariants } from './steps.js'
 export { switchClasses, type SwitchClasses, type SwitchStyleVariants } from './switch.js'
+export { tableClasses, type TableClasses, type TableStyleVariants } from './table.js'
 export { tabsClasses, type TabsClasses, type TabsStyleVariants } from './tabs.js'
 export {
   tagsInputClasses,
@@ -148,6 +163,7 @@ export {
   type ToggleGroupClasses,
   type ToggleGroupStyleVariants,
 } from './toggle-group.js'
+export { toolbarClasses, type ToolbarClasses, type ToolbarStyleVariants } from './toolbar.js'
 export { tooltipClasses, type TooltipClasses, type TooltipStyleVariants } from './tooltip.js'
 export { tourClasses, type TourClasses, type TourStyleVariants } from './tour.js'
 export { treeViewClasses, type TreeViewClasses, type TreeViewStyleVariants } from './tree-view.js'
