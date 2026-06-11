@@ -151,7 +151,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // Wire drag-move/resize-move to the document so the panel keeps
   // following the pointer even when it leaves the handle (dragMove
   // sends deltas, so we track last position).
-  onMount(() => {
+  const panelDragMount = onMount(() => {
     let last: { x: number; y: number } | null = null
     let mode: 'drag' | 'resize' | null = null
     const down = (e: PointerEvent): void => {
@@ -289,6 +289,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     )
 
   return [
+    // Placed so the onMount drag-wiring callback registers (a discarded
+    // onMount() is inert — its lazy Mountable never materializes).
+    panelDragMount,
     sectionGroup('Surfaces + navigation', [
       card('Tour', [
         div({ id: 'tour-target', class: 'p-4 bg-surface-muted rounded mb-3' }, [

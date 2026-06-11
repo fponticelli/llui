@@ -101,7 +101,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   }
 
   // Splitter drag
-  onMount(() => {
+  const splitterMount = onMount(() => {
     const root = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="root"]')
     const handle = document.querySelector<HTMLElement>(
       '[data-scope="splitter"][data-part="resize-trigger"]',
@@ -215,6 +215,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   ]
 
   return [
+    // Placed so the splitter drag onMount registers (a discarded onMount() is inert).
+    splitterMount,
     sectionGroup('Pickers', [
       card('Date Picker', [
         div({ ...dp.root }, [

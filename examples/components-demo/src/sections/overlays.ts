@@ -260,7 +260,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   )
 
   // Global ⌘K / Ctrl+K hotkey opens the command palette.
-  onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
+  const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
 
   const selectItems = (): Node[] =>
     ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
@@ -492,6 +492,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   })
 
   return [
+    // Placed so the ⌘K hotkey onMount registers (a discarded onMount() is inert).
+    hotkeyMount,
     sectionGroup('Overlays', [
       card('Popover', [
         button({ ...po.trigger, class: 'btn btn-primary' }, [text('Show info')]),

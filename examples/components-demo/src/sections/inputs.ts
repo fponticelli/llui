@@ -243,7 +243,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   })
 
   // Pin input focus advance
-  onMount(() => {
+  const pinFocusMount = onMount(() => {
     const inputs = document.querySelectorAll<HTMLInputElement>(
       '[data-scope="pin-input"][data-part="input"]',
     )
@@ -259,7 +259,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   })
 
   // Slider pointer drag
-  onMount(() => {
+  const sliderDragMount = onMount(() => {
     const control = document.querySelector<HTMLElement>(
       '[data-scope="slider"][data-part="control"]',
     )
@@ -341,6 +341,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     ])
 
   return [
+    // Placed so the pin-focus and slider-drag onMount callbacks register
+    // (a discarded onMount() is inert — its Mountable never materializes).
+    pinFocusMount,
+    sliderDragMount,
     sectionGroup('Form controls', [
       card('Switch', [
         label({ class: 'flex items-center gap-3' }, [

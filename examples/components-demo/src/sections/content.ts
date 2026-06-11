@@ -147,7 +147,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // `onMount` hands us the section's root element; we find the tracked box by
   // its data-scope/data-part (set by `iv.root`) and observe it. The reducer
   // flips visible on enter/leave as the box scrolls past the threshold.
-  onMount((root) => {
+  const inViewMount = onMount((root) => {
     const box = root.querySelector<HTMLElement>('[data-scope="in-view"][data-part="root"]')
     if (!box) return
     return inView.createObserver(box, (m) => send({ type: 'inView', msg: m }), { threshold: 0.6 })
@@ -157,7 +157,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // following the OS when the preference is 'system'. Clicks also apply
   // immediately (see the option buttons below) so the data-theme on <html>
   // tracks the control without needing a state subscription in the view.
-  onMount(() => {
+  const themeMount = onMount(() => {
     const themeSig = state.at('themeSwitch').at('theme')
     themeSwitch.applyTheme(themeSwitch.resolveTheme(themeSig.peek()))
     return themeSwitch.watchSystemTheme((resolved) => {
@@ -204,6 +204,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     )
 
   return [
+    // Placed (not discarded) so their onMount callbacks actually register —
+    // a bare onMount() returns a lazy Mountable that only wires up when mounted.
+    inViewMount,
+    themeMount,
     sectionGroup('Content + data', [
       card('Table of Contents', [
         div({ ...tc.root }, [

@@ -401,7 +401,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
 
   // ── Sortable: wire pointermove/up at the root + pointerdown on handles ──
   const sortableSig = state.at('sortable')
-  onMount(() => {
+  const sortableMount = onMount(() => {
     const root = document.querySelector<HTMLElement>(
       '[data-scope="sortable"][data-part="root"][data-container-id="sortable-demo"]',
     )
@@ -469,12 +469,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             class: 'cursor-grab select-none text-text-muted',
             onPointerDown: (e: PointerEvent) => {
               e.preventDefault()
+              // Resolve the row's CURRENT position from the live order — the
+              // build-time `idx` goes stale once rows have been reordered (the
+              // each() is keyed by label, so a moved row keeps its original idx).
+              const currentIndex = state.peek().order.indexOf(label)
               send({
                 type: 'sortable',
                 msg: {
                   type: 'start',
                   id: label,
-                  index: idx,
+                  index: currentIndex,
                   container: 'sortable-demo',
                   x: e.clientX,
                   y: e.clientY,
@@ -547,6 +551,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   }
 
   return [
+    // Placed so the sortable pointer-wiring onMount registers (discarded
+    // onMount() is inert).
+    sortableMount,
     sectionGroup('Navigation & display', [
       card('Tabs', [
         div({ ...ta.root }, [
