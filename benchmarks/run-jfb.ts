@@ -90,7 +90,9 @@ const SIZE_BENCHMARKS = [
 
 const ALL_BENCHMARKS = [...BENCHMARKS, ...MEMORY_BENCHMARKS, ...SIZE_BENCHMARKS]
 
-const COMPETITORS = ['vanillajs', 'solid', 'svelte', 'react', 'elm']
+// jfb has no plain `keyed/react` framework — the canonical React entry is
+// `react-hooks`. Use the real dir name so `--all` doesn't 404 on a phantom.
+const COMPETITORS = ['vanillajs', 'solid', 'svelte', 'react-hooks', 'elm']
 
 function run(cmd: string, cwd?: string) {
   execSync(cmd, { cwd, stdio: 'inherit' })

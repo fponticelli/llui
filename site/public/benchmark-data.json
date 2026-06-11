@@ -63,7 +63,7 @@
     "41_size-uncompressed": 34.3,
     "42_size-compressed": 12.2
   },
-  "react": {
+  "react-hooks": {
     "01_run1k": 26.7,
     "02_replace1k": 32.2,
     "03_update10th1k_x16": 16.7,
