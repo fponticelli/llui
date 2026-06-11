@@ -339,12 +339,20 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
+      const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
+      // Clamp the highlight to the new list: a shrinking setItems can leave the
+      // previous index out of bounds, which would dangle aria-activedescendant.
+      const highlightedIndex =
+        state.highlightedIndex !== null && state.highlightedIndex < filteredItems.length
+          ? state.highlightedIndex
+          : null
       return [
         {
           ...state,
           items: msg.items,
           disabledItems: disabled,
-          filteredItems: computeFiltered(msg.items, state.inputValue, state.allowCreate),
+          filteredItems,
+          highlightedIndex,
           value,
         },
         [],
