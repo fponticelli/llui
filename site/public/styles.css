@@ -162,17 +162,50 @@ body {
   margin-top: 12px;
 }
 
-/* Family sub-header inside the Packages section (Core, Compiler, …). Lighter
-   than the top-level .nav-section so the hierarchy reads as section > family. */
-.nav-subsection {
+/* A collapsible package family (Core, Compiler, …) — a native <details>. */
+.nav-group {
   display: block;
-  padding: 10px 12px 3px;
+}
+
+/* Family sub-header — the <summary> of each .nav-group. Lighter than the
+   top-level .nav-section so the hierarchy reads as section > family, and
+   clickable with a chevron that rotates as the group opens. */
+.nav-subsection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
   font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--c-text-muted);
-  opacity: 0.7;
+  opacity: 0.75;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+/* Hide the native disclosure triangle (Safari/Chrome + standards). */
+.nav-subsection::-webkit-details-marker {
+  display: none;
+}
+
+/* Custom chevron — points right when collapsed, rotates down when open. */
+.nav-subsection::before {
+  content: '▸';
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.nav-group[open] > .nav-subsection::before {
+  transform: rotate(90deg);
+}
+
+.nav-subsection:hover {
+  opacity: 1;
+  color: var(--c-text);
 }
 
 .nav-link {

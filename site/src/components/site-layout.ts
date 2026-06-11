@@ -1,4 +1,4 @@
-import { div, nav, a, span, button, text, onMount } from '@llui/dom'
+import { div, nav, a, span, button, text, details, summary, onMount } from '@llui/dom'
 import type { Signal, Send } from '@llui/dom'
 import { EXAMPLES } from '../examples-data'
 import { PACKAGES, PACKAGE_CATEGORIES } from '../../pages/api/@pkg/packages'
@@ -92,14 +92,25 @@ export function siteLayout({
           // Generated from PACKAGES (the same single source of truth that drives
           // the `/api/<pkg>` routes) so a new package page gets its sidebar link
           // automatically and the two can never drift apart. Chunked into the
-          // families declared by PACKAGE_CATEGORIES so the 20-package list reads
-          // as a handful of scannable groups rather than one long run.
+          // families declared by PACKAGE_CATEGORIES, each a collapsible <details>
+          // (zero JS) so the 20-package list reads as a handful of scannable
+          // groups. Collapsed by default; the family containing the current page
+          // is expanded so the active link is always visible.
           ...PACKAGE_CATEGORIES.flatMap((cat) => {
             const pkgs = PACKAGES.filter((p) => p.category === cat.id)
             if (pkgs.length === 0) return []
+            const memberSlugs = pkgs.map((p) => `api/${p.slug}`)
             return [
-              span({ class: 'nav-subsection' }, [text(cat.label)]),
-              ...pkgs.map((pkg) => pkgNavLink(pkg, slug)),
+              details(
+                {
+                  class: 'nav-group',
+                  open: slug.map((current) => memberSlugs.includes(current)),
+                },
+                [
+                  summary({ class: 'nav-subsection' }, [text(cat.label)]),
+                  ...pkgs.map((pkg) => pkgNavLink(pkg, slug)),
+                ],
+              ),
             ]
           }),
         ],
