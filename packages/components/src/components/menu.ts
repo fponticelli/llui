@@ -158,6 +158,16 @@ export function isPresent(state: MenuState): boolean {
 /** Alias of {@link isPresent} for parity with the presence-convention naming. */
 export const isMounted = isPresent
 
+/** Whether the menu is in its VISIBLE phase (open/opening) — as opposed to merely
+ * still mounted for an exit animation ('closing'). Interaction wiring (floating,
+ * dismissable, focus) is gated on this so it tears down at the close REQUEST, not
+ * at animation end. Tolerates a partial slice without `status` (falls back to open). */
+function isVisible(state: MenuState): boolean {
+  return state.status === undefined
+    ? state.open
+    : state.status === 'open' || state.status === 'opening'
+}
+
 // ---- item-tree helpers (pure) ----
 
 /** Find an item by value anywhere in the tree, returning it (or null). */
@@ -959,6 +969,12 @@ export function overlay(opts: OverlayOptions): Mountable {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
+  // Outer block stays mounted through the exit animation (isPresent, status !==
+  // 'closed'); the inner block tracks the VISIBLE phase (isVisible, open/opening)
+  // so interaction wiring — floating positioning, dismissable, content focus —
+  // tears down at the close REQUEST while the node lingers for its exit animation.
+  // With `skipAnimations` (the default) both flip together, so close unmounts and
+  // tears down synchronously (no hang waiting on an animationEnd that never fires).
   return show(
     opts.state.map((s) => isPresent(s)),
     () => {
@@ -968,45 +984,47 @@ export function overlay(opts: OverlayOptions): Mountable {
           : rawTarget
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
-            if (!contentEl || !triggerEl) return
+          const interaction = show(opts.state.map(isVisible), () => [
+            onMount(() => {
+              const contentEl = document.getElementById(contentId)
+              const triggerEl = document.getElementById(triggerId)
+              if (!contentEl || !triggerEl) return
 
-            const cleanups: Array<() => void> = []
+              const cleanups: Array<() => void> = []
 
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            cleanups.push(
-              attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-                dir: opts.state.peek().dir,
-              }),
-            )
+              const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
+              const floatingEl = positioner ?? contentEl
+              cleanups.push(
+                attachFloating({
+                  anchor: triggerEl,
+                  floating: floatingEl,
+                  placement,
+                  offset,
+                  flip,
+                  shift,
+                  dir: opts.state.peek().dir,
+                }),
+              )
 
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => [triggerEl],
-                onDismiss: () => {
-                  opts.send({ type: 'close' })
-                  triggerEl.focus()
-                },
-              }),
-            )
+              cleanups.push(
+                pushDismissable({
+                  element: contentEl,
+                  ignore: () => [triggerEl],
+                  onDismiss: () => {
+                    opts.send({ type: 'close' })
+                    triggerEl.focus()
+                  },
+                }),
+              )
 
-            contentEl.focus({ preventScroll: true })
+              contentEl.focus({ preventScroll: true })
 
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
+              return () => {
+                for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+              }
+            }),
+          ])
+          return [interaction, div(parts.positioner, opts.content())]
         }, targetEl),
       ]
     },

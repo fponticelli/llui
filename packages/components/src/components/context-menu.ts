@@ -153,6 +153,17 @@ export function isPresent(state: ContextMenuState): boolean {
 /** Alias of {@link isPresent} for parity with the presence-convention naming. */
 export const isMounted = isPresent
 
+/** Whether the menu is in its VISIBLE phase (open/opening) vs merely still mounted
+ * for an exit animation ('closing'). Interaction wiring (dismissable, focus) is
+ * gated on this so it tears down at the close REQUEST, not at animation end.
+ * Mirrors {@link isPresent}'s open-driven backward-compat: a caller that drives
+ * `open` directly without advancing `status` is still treated as visible. */
+function isVisible(state: ContextMenuState): boolean {
+  if (state.status === 'closing') return false
+  if (state.status === 'open' || state.status === 'opening') return true
+  return state.open
+}
+
 // ---- item-tree helpers (pure) ----
 
 function findItem(items: ContextMenuItem[], value: string): ContextMenuItem | null {
@@ -846,6 +857,11 @@ export function overlay(opts: OverlayOptions): Mountable {
   const parts = opts.parts
   const contentId = parts.content.id
 
+  // Outer block stays mounted through the exit animation (isPresent); the inner
+  // block tracks the VISIBLE phase (isVisible, open/opening) so dismissable + focus
+  // tear down at the close REQUEST while the node lingers for its exit animation.
+  // With `skipAnimations` (the default) both flip together — synchronous unmount,
+  // no hang waiting on an animationEnd that never fires.
   return show(
     opts.state.map((s) => isPresent(s)),
     () => {
@@ -855,17 +871,18 @@ export function overlay(opts: OverlayOptions): Mountable {
           : rawTarget
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            if (!contentEl) return
-            contentEl.focus({ preventScroll: true })
-            const cleanup = pushDismissable({
-              element: contentEl,
-              onDismiss: () => opts.send({ type: 'close' }),
-            })
-            return cleanup
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
+          const interaction = show(opts.state.map(isVisible), () => [
+            onMount(() => {
+              const contentEl = document.getElementById(contentId)
+              if (!contentEl) return
+              contentEl.focus({ preventScroll: true })
+              return pushDismissable({
+                element: contentEl,
+                onDismiss: () => opts.send({ type: 'close' }),
+              })
+            }),
+          ])
+          return [interaction, div(parts.positioner, opts.content())]
         }, targetEl),
       ]
     },
