@@ -1,4 +1,5 @@
 import { component, div, h1, h2, article, text, onMount } from '@llui/dom'
+import type { Mountable } from '@llui/dom'
 import type { BenchmarksPageData } from '../../pages/benchmarks/+data'
 import { siteLayout, type LayoutMsg } from './site-layout'
 import { rawHtml } from './raw-html'
@@ -122,6 +123,55 @@ function allChartsHtml(data: Record<string, Record<string, number>>): string {
   return html
 }
 
+/**
+ * Reveal each chart's bars (a CSS grow animation gated on `data-visible='true'`)
+ * as the chart scrolls into view. Returns the `onMount` Mountable — the caller
+ * MUST place it in the view array; calling onMount for its side effect alone is
+ * inert in the signal runtime (the recipe never materializes, so the mount
+ * callback is never registered).
+ *
+ * The charts are injected by a `rawHtml` innerHTML binding, so we defer the
+ * query to a `requestAnimationFrame` (after the binding commit). If
+ * IntersectionObserver is unavailable we reveal every chart immediately, so the
+ * bars are never left invisible.
+ */
+function revealBarsOnScroll(): Mountable {
+  return onMount((container) => {
+    let observer: IntersectionObserver | null = null
+
+    const reveal = (el: Element) => {
+      ;(el as HTMLElement).dataset.visible = 'true'
+    }
+
+    const setup = () => {
+      const wrappers = container.querySelectorAll('.bench-chart-wrapper')
+      if (wrappers.length === 0) return
+
+      if (typeof IntersectionObserver !== 'function') {
+        wrappers.forEach(reveal)
+        return
+      }
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              reveal(entry.target)
+              observer!.unobserve(entry.target)
+            }
+          }
+        },
+        { threshold: 0.2 },
+      )
+
+      for (const wrapper of wrappers) observer.observe(wrapper)
+    }
+
+    requestAnimationFrame(setup)
+    return () => observer?.disconnect()
+  })
+}
+
 export const BenchmarksPage = component<State, Msg, never>({
   name: 'BenchmarksPage',
   // Seeded from Vike's +data (BenchmarksPageData) plus menuOpen; see +data.ts.
@@ -143,36 +193,6 @@ export const BenchmarksPage = component<State, Msg, never>({
     }
   },
   view: ({ state, send }) => {
-    // IntersectionObserver sets data-visible directly on chart wrappers.
-    // Use requestAnimationFrame to ensure innerHTML bindings have been applied.
-    onMount((container) => {
-      let observer: IntersectionObserver | null = null
-
-      const setup = () => {
-        const wrappers = container.querySelectorAll('.bench-chart-wrapper')
-        if (wrappers.length === 0) return
-
-        observer = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                ;(entry.target as HTMLElement).dataset.visible = 'true'
-                observer!.unobserve(entry.target)
-              }
-            }
-          },
-          { threshold: 0.2 },
-        )
-
-        for (const wrapper of wrappers) {
-          observer.observe(wrapper)
-        }
-      }
-
-      requestAnimationFrame(setup)
-      return () => observer?.disconnect()
-    })
-
     return [
       siteLayout({
         slug: state.at('slug'),
@@ -193,6 +213,10 @@ export const BenchmarksPage = component<State, Msg, never>({
                 state.map((s) => allChartsHtml(s.benchmarks)),
                 'bench-charts-section',
               ),
+              // Reveal each chart's bars as it scrolls into view. The onMount
+              // Mountable MUST be placed in the view array to register — calling
+              // it for side effect alone is inert in the signal runtime.
+              revealBarsOnScroll(),
               // Raw data tables and methodology from markdown prose
               div({ class: 'bench-raw-data' }, [
                 h2([text('Raw Data & Methodology')]),

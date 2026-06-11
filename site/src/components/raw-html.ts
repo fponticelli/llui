@@ -1,5 +1,5 @@
 import { signalForeign, isSignalHandle } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Mountable, Signal } from '@llui/dom'
 
 interface RawHtmlInstance {
   el: Element
@@ -21,7 +21,7 @@ interface RawHtmlInstance {
  * static HTML; on the client the same binding runs against the live element. The
  * declared `html` signal keeps it reactive across state changes.
  */
-export function rawHtml(html: Signal<string>, className?: string): Node {
+export function rawHtml(html: Signal<string>, className?: string): Mountable {
   if (!isSignalHandle(html)) {
     throw new Error('rawHtml() expects a runtime signal handle (state.map(...) / state.at(...))')
   }
