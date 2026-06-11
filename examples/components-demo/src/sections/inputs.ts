@@ -690,73 +690,64 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
         ]),
       ]),
       card('Wizard (pattern)', [
-        div({ ...wz.root }, [
-          div(
-            { class: 'flex items-center gap-2 mb-3' },
-            ['Account', 'Profile', 'Review'].map((stepName, i) =>
-              div({ ...wz.item(i).item, class: 'flex items-center gap-2' }, [
-                span(
-                  {
-                    ...wz.stepTrigger(i),
-                    class: 'flex items-center gap-1 text-sm',
-                  },
-                  [
-                    span(
-                      {
-                        class:
-                          'inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs',
-                      },
-                      [text(String(i + 1))],
-                    ),
-                    span({}, [text(stepName)]),
-                  ],
-                ),
-              ]),
-            ),
-          ),
-          branch(state.at('wizard').at('steps').at('current'), {
-            0: () => [
-              div({ class: 'flex flex-col gap-1' }, [
-                label({ class: 'text-sm font-medium', for: 'wizard-name-input' }, [
-                  text('Account name'),
-                ]),
-                input({
-                  id: 'wizard-name-input',
-                  placeholder: 'Required to continue',
-                  class: 'input',
-                  value: '',
-                  onInput: (e: Event) => {
-                    wizardName = (e.target as HTMLInputElement).value
-                  },
-                }),
-                p({ class: 'text-xs text-text-muted' }, [
-                  text('Next is blocked until this is filled in.'),
-                ]),
-              ]),
-            ],
-            1: () => [
-              p({ class: 'text-sm' }, [
-                text('Step 2 — tell us about your profile (no validation).'),
-              ]),
-            ],
-            2: () => [p({ class: 'text-sm' }, [text('Step 3 — review and finish.')])],
+        // `wz.root` carries the baked steps-strip styling (a horizontal flex
+        // row). It must wrap ONLY the step indicator — the panels and nav are
+        // siblings in the card body (which stacks block children vertically).
+        // Nesting everything inside `wz.root` collapsed the whole wizard into
+        // one cramped flex row. The numbered circle uses the baked
+        // `stepTrigger` part (current → primary, completed → green); the step
+        // name sits beside it, with separators connecting the steps.
+        div(
+          { ...wz.root, 'aria-label': 'Account setup', class: 'mb-4' },
+          ['Account', 'Profile', 'Review'].flatMap((stepName, i, all) => {
+            const it = wz.item(i)
+            const step = div({ ...it.item, class: 'flex items-center gap-2' }, [
+              button({ ...wz.stepTrigger(i) }, [text(String(i + 1))]),
+              span({ class: 'text-sm whitespace-nowrap' }, [text(stepName)]),
+            ])
+            return i < all.length - 1 ? [step, span({ ...it.separator })] : [step]
           }),
-          div({ class: 'mt-3 flex gap-2' }, [
-            button({ ...wz.prevTrigger, class: 'btn btn-secondary text-sm' }, [text('Back')]),
-            button({ ...wz.nextTrigger, class: 'btn btn-primary text-sm' }, [text('Next')]),
-          ]),
-          div({ class: 'mt-2 text-sm text-text-muted' }, [
-            text(
-              state
-                .at('wizard')
-                .at('steps')
-                .map((s) =>
-                  s.errors.includes(s.current)
-                    ? 'This step is invalid — enter a name to continue.'
-                    : `Step ${s.current + 1} of ${s.steps.length}`,
-                ),
-            ),
-          ]),
+        ),
+        branch(state.at('wizard').at('steps').at('current'), {
+          0: () => [
+            div({ class: 'flex flex-col gap-1' }, [
+              label({ class: 'text-sm font-medium', for: 'wizard-name-input' }, [
+                text('Account name'),
+              ]),
+              input({
+                id: 'wizard-name-input',
+                placeholder: 'Required to continue',
+                class: 'input',
+                value: '',
+                onInput: (e: Event) => {
+                  wizardName = (e.target as HTMLInputElement).value
+                },
+              }),
+              p({ class: 'text-xs text-text-muted' }, [
+                text('Next is blocked until this is filled in.'),
+              ]),
+            ]),
+          ],
+          1: () => [
+            p({ class: 'text-sm' }, [text('Step 2 — tell us about your profile (no validation).')]),
+          ],
+          2: () => [p({ class: 'text-sm' }, [text('Step 3 — review and finish.')])],
+        }),
+        div({ class: 'mt-3 flex gap-2' }, [
+          button({ ...wz.prevTrigger, class: 'btn btn-secondary text-sm' }, [text('Back')]),
+          button({ ...wz.nextTrigger, class: 'btn btn-primary text-sm' }, [text('Next')]),
+        ]),
+        div({ class: 'mt-2 text-sm text-text-muted' }, [
+          text(
+            state
+              .at('wizard')
+              .at('steps')
+              .map((s) =>
+                s.errors.includes(s.current)
+                  ? 'This step is invalid — enter a name to continue.'
+                  : `Step ${s.current + 1} of ${s.steps.length}`,
+              ),
+          ),
         ]),
       ]),
     ]),

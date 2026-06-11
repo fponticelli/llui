@@ -229,7 +229,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             ]),
             button({ ...dp.nextMonthTrigger }, [text('›')]),
           ]),
-          div({ ...dp.grid }, dpGrid()),
+          // dp.grid is a factory (offset → parts); it must be CALLED. Spreading
+          // the bare function copies no own-enumerable props, so the grid div
+          // would render attribute-less and lose `display: grid` — collapsing
+          // the weekday header into a left-packed run instead of 7 columns.
+          div({ ...dp.grid() }, dpGrid()),
         ]),
         div({ class: 'mt-3 text-sm text-text-muted' }, [
           text('Selected: '),

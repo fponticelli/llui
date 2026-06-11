@@ -64,6 +64,20 @@
   --z-tooltip: 150;
 }
 
+/*
+ * Foreground for primary-tinted "soft" surfaces — selected/highlighted list
+ * items, tags, etc. (paired with a `color-mix(primary 15%, transparent)`
+ * background). Mixed toward `--color-text` so it stays legible against the tint
+ * in BOTH themes: `--color-text` is near-black in light mode and near-white in
+ * dark mode, so the same expression yields a dark blue on a pale tint and a
+ * light blue on a dark tint — no explicit dark override needed. Replaces the
+ * former `--color-primary-active` text, which stayed dark in dark mode and so
+ * vanished against the dark tint.
+ */
+:root {
+  --color-primary-soft-fg: color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
+}
+
 /* ─── Accordion ─── */
 
 [data-scope='accordion'][data-part='root'] {
@@ -581,7 +595,7 @@
   padding: 0.125rem var(--space-2);
   border-radius: 9999px;
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
   font-size: 0.75rem;
 }
 
@@ -839,7 +853,7 @@
 
 [data-scope='tree-view'][data-part='item'][data-selected=''] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 [data-scope='tree-view'][data-part='branch-trigger'] {
@@ -988,7 +1002,7 @@
 
 [data-scope='select'][data-part='item'][data-highlighted=''] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 [data-scope='select'][data-part='item'][data-state='selected'] {
@@ -1020,7 +1034,7 @@
 
 [data-scope='menu'][data-part='item'][data-state='highlighted'] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 /* ─── Context Menu ─── */
@@ -1048,7 +1062,7 @@
 
 [data-scope='context-menu'][data-part='item'][data-state='highlighted'] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 /* ─── Combobox ─── */
@@ -1090,7 +1104,7 @@
 
 [data-scope='combobox'][data-part='item'][data-highlighted=''] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 /* ─── Popover ─── */
@@ -1192,13 +1206,15 @@
 }
 
 [data-scope='toast'][data-part='root'][data-type='success'] {
-  background: rgb(240 253 244);
-  border-color: rgb(187 247 208);
+  /* Tint the current surface rather than hardcoding a light green, so the
+     accent reads in both themes (subtle green wash on white / on dark navy). */
+  background: color-mix(in srgb, rgb(34 197 94) 14%, var(--color-surface));
+  border-color: color-mix(in srgb, rgb(34 197 94) 40%, var(--color-surface));
 }
 
 [data-scope='toast'][data-part='root'][data-type='error'] {
-  background: rgb(254 242 242);
-  border-color: rgb(254 202 202);
+  background: color-mix(in srgb, var(--color-destructive) 14%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-destructive) 40%, var(--color-surface));
 }
 
 [data-scope='toast'][data-part='title'] {
@@ -1534,7 +1550,7 @@
 
 [data-scope='listbox'][data-part='item'][data-state='selected'] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary-active);
+  color: var(--color-primary-soft-fg);
 }
 
 /* ─── Buttons ─── */
