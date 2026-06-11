@@ -23,6 +23,7 @@ import { toolbar as renderToolbar } from './surfaces/toolbar.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
 import type { PluginUI } from './plugins/ui.js'
 import { buildTransformers } from './transformers/registry.js'
+import { mergeTheme } from './theme.js'
 import { computeFormatState } from './format.js'
 import { makeOnEffect } from './effects.js'
 import {
@@ -220,7 +221,7 @@ export function markdownEditor(
 
     const host = lexicalForeign<EditorOutMsg>({
       namespace: config.namespace ?? 'llui-markdown',
-      theme: config.theme,
+      theme: mergeTheme(config.theme),
       plugins,
       serialize: (editor) =>
         editor.getEditorState().read(() => $convertToMarkdownString(transformers)),

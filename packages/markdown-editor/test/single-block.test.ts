@@ -22,6 +22,7 @@ import { linkPlugin } from '../src/plugins/link.js'
 import type { CommandItem } from '../src/plugins/types.js'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { markdownEditor } from '../src/editor.js'
+import { STRIKETHROUGH_CLASS } from '../src/theme.js'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -270,5 +271,38 @@ describe('singleBlockPlugin — in markdownEditor (jsdom)', () => {
     expect(container.querySelector('[data-part="block-select"]')).toBeNull()
     expect(container.querySelector('[data-id="bold"]')).not.toBeNull()
     expect(container.querySelector('[data-id="h1"]')).toBeNull()
+  })
+
+  it('gives strikethrough text a default theme class so the line-through can render', async () => {
+    // Lexical renders strikethrough as a bare <span> (unlike bold→<strong> /
+    // italic→<em> which carry browser-default styling). The only hook for the
+    // line-through is `theme.text.strikethrough`, so the editor must supply a
+    // default theme — otherwise the format applies but is visually invisible.
+    app = mountApp(
+      container,
+      markdownEditor({
+        plugins: [singleBlockPlugin()],
+        defaultValue: 'plain ~~struck~~ text',
+      }),
+    )
+    await wait(0)
+    const struck = container.querySelector(`.${STRIKETHROUGH_CLASS}`)
+    expect(struck).not.toBeNull()
+    expect(struck?.textContent).toBe('struck')
+  })
+
+  it('still applies a consumer-supplied strikethrough class (theme override)', async () => {
+    app = mountApp(
+      container,
+      markdownEditor({
+        plugins: [singleBlockPlugin()],
+        defaultValue: 'plain ~~struck~~ text',
+        // A prior editor in this suite already used the default theme; the
+        // override must still win (no stale class-name cache bleed-through).
+        theme: { text: { strikethrough: 'my-strike' } },
+      }),
+    )
+    await wait(0)
+    expect(container.querySelector('.my-strike')?.textContent).toBe('struck')
   })
 })

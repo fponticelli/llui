@@ -78,6 +78,18 @@
   overflow: auto;
 }
 
+/* Text-decoration formats Lexical renders as a bare <span> (no semantic tag):
+ * the runtime tags them with the default theme classes — see src/theme.ts. */
+[data-lexical-editor] .md-strikethrough {
+  text-decoration: line-through;
+}
+[data-lexical-editor] .md-underline {
+  text-decoration: underline;
+}
+[data-lexical-editor] .md-underline-strikethrough {
+  text-decoration: underline line-through;
+}
+
 /* Task-list items (li[role="checkbox"]) with a clickable checkbox. */
 [data-lexical-editor] li[role='checkbox'] {
   position: relative;
