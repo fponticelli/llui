@@ -72,6 +72,14 @@ export { buildTransformers, orderTransformers } from './transformers/registry.js
 export { computeFormatState } from './format.js'
 
 export {
+  STRIKETHROUGH_CLASS,
+  UNDERLINE_CLASS,
+  UNDERLINE_STRIKETHROUGH_CLASS,
+  defaultTheme,
+  mergeTheme,
+} from './theme.js'
+
+export {
   type ToolbarItemParts,
   type ToolbarParts,
   type ToolbarOptions,
