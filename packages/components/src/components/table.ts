@@ -515,7 +515,12 @@ export function connect(
         if (isSomeSelected(s)) return 'indeterminate'
         return 'unchecked'
       }),
-      onClick: tagSend(send, ['toggleAll'], () => send({ type: 'toggleAll' })),
+      // The checkbox is a self-contained control; stop the click from bubbling
+      // to an enclosing clickable header cell (which would also toggle sort).
+      onClick: tagSend(send, ['toggleAll'], (e) => {
+        e.stopPropagation()
+        send({ type: 'toggleAll' })
+      }),
     },
     rowCheckbox: (id: string, index: number): TableCheckboxParts => ({
       role: 'checkbox',
@@ -523,7 +528,12 @@ export function connect(
       'data-scope': 'table',
       'data-part': 'row-checkbox',
       'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
+      // The checkbox lives INSIDE the clickable row, which also toggles the row
+      // on click. Without stopping propagation the click would fire twice
+      // (checkbox + row), cancelling out to a no-op. Stop it here so a click on
+      // the checkbox toggles exactly once.
       onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+        e.stopPropagation()
         if (e.shiftKey) send({ type: 'selectRange', index })
         else send({ type: 'toggleRow', id, index })
       }),

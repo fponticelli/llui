@@ -387,7 +387,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             {
               ...tbl.rowCheckbox(person.id, index),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center text-xs leading-4',
+                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
             [text(state.at('table.selection').map((sel) => (sel.includes(person.id) ? '✓' : '')))],
           ),
@@ -532,7 +532,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             {
               ...dt.table.rowCheckbox(rowId, idx),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center text-xs leading-4',
+                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
             [
               text(

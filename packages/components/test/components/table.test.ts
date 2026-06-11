@@ -386,6 +386,32 @@ describe('table.connect — parts', () => {
     expect(send).toHaveBeenCalledWith({ type: 'toggleRow', id: 'r2', index: 1 })
   })
 
+  it('rowCheckbox onClick stops propagation (avoids double-toggle via the row)', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalState(init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })),
+      send,
+      { id: 't' },
+    )
+    const e = clickEvent(false)
+    const stop = vi.spyOn(e, 'stopPropagation')
+    pc.rowCheckbox('r2', 1).onClick(e)
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('selectAllCheckbox onClick stops propagation', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalState(init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })),
+      send,
+      { id: 't' },
+    )
+    const e = clickEvent(false)
+    const stop = vi.spyOn(e, 'stopPropagation')
+    pc.selectAllCheckbox.onClick(e)
+    expect(stop).toHaveBeenCalled()
+  })
+
   it('rowCheckbox shift-click sends selectRange', () => {
     const send = vi.fn()
     const pc = connect(
