@@ -54,7 +54,14 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        run: pnpm turbo test
+        # Run one package's test suite at a time. Each vitest suite already
+        # forks ~ncpu workers, so turbo's default of many suites in parallel
+        # oversubscribes the 4-core runner ~10x — starving timers and CPU so
+        # tests with short fixed waits (async round-trips) or heavy work (the
+        # compiler's TS programs) flake. One suite at a time keeps total
+        # workers ≈ cores, matching the local timing the tests were written
+        # against. Build/check/lint (separate steps) keep full parallelism.
+        run: pnpm turbo test --concurrency=1
 
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
