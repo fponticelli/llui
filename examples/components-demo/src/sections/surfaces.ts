@@ -1,9 +1,27 @@
-import { div, button, span, h3, p, onMount, text } from '@llui/dom'
+import {
+  div,
+  button,
+  span,
+  a,
+  nav,
+  ol,
+  li,
+  h3,
+  p,
+  show,
+  each,
+  branch,
+  onMount,
+  text,
+} from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { tour, type TourStep } from '@llui/components/tour'
 import { floatingPanel } from '@llui/components/floating-panel'
 import { navigationMenu } from '@llui/components/navigation-menu'
 import { scrollArea } from '@llui/components/scroll-area'
+import { breadcrumbs } from '@llui/components/breadcrumbs'
+import { menubar } from '@llui/components/menubar'
+import { toolbar } from '@llui/components/toolbar'
 import { sectionGroup, card } from '../shared/ui'
 import {
   composeModules,
@@ -33,7 +51,15 @@ const tourSteps: TourStep[] = [
   },
 ]
 
-const children = { tour, panel: floatingPanel, nav: navigationMenu, scroll: scrollArea } as const
+const children = {
+  tour,
+  panel: floatingPanel,
+  nav: navigationMenu,
+  scroll: scrollArea,
+  breadcrumbs,
+  menubar,
+  toolbar,
+} as const
 
 export type State = ModulesState<typeof children>
 export type Msg = ModulesMsg<typeof children>
@@ -48,6 +74,49 @@ export const init = (): [State, never[]] => [
     }),
     nav: navigationMenu.init(),
     scroll: scrollArea.init({ visibility: 'hover' }),
+    breadcrumbs: breadcrumbs.init({
+      maxVisible: 3,
+      items: [
+        { id: 'home', label: 'Home' },
+        { id: 'docs', label: 'Docs' },
+        { id: 'components', label: 'Components' },
+        { id: 'surfaces', label: 'Surfaces' },
+        { id: 'breadcrumbs', label: 'Breadcrumbs' },
+      ],
+    }),
+    menubar: menubar.init({
+      menus: [
+        {
+          id: 'file',
+          items: [
+            { value: 'new', kind: 'action' },
+            { value: 'open', kind: 'action' },
+            { value: 'sep1', kind: 'separator' },
+            { value: 'save', kind: 'action' },
+          ],
+        },
+        {
+          id: 'edit',
+          items: [
+            { value: 'undo', kind: 'action' },
+            { value: 'redo', kind: 'action' },
+            { value: 'sep2', kind: 'separator' },
+            { value: 'find', kind: 'action' },
+          ],
+        },
+        {
+          id: 'view',
+          items: [
+            { value: 'zoom-in', kind: 'action' },
+            { value: 'zoom-out', kind: 'action' },
+          ],
+        },
+      ],
+    }),
+    toolbar: toolbar.init({
+      items: ['bold', 'italic', 'underline', 'sep', 'left', 'center', 'right'],
+      disabledItems: ['sep'],
+    }),
   },
   [],
 ]
@@ -65,6 +134,19 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     id: 'nav-demo',
   })
   const sa = scrollArea.connect(state.at('scroll'), (m) => send({ type: 'scroll', msg: m }))
+  const bc = breadcrumbs.connect(
+    state.at('breadcrumbs'),
+    (m) => send({ type: 'breadcrumbs', msg: m }),
+    { label: 'Page trail' },
+  )
+  const mb = menubar.connect(state.at('menubar'), (m) => send({ type: 'menubar', msg: m }), {
+    id: 'menubar-demo',
+    label: 'Application menu',
+  })
+  const tb = toolbar.connect(state.at('toolbar'), (m) => send({ type: 'toolbar', msg: m }), {
+    id: 'toolbar-demo',
+    label: 'Formatting',
+  })
 
   // Wire drag-move/resize-move to the document so the panel keeps
   // following the pointer even when it leaves the handle (dragMove
@@ -109,6 +191,102 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       document.removeEventListener('pointercancel', up)
     }
   })
+
+  // ---- Menubar: label lookups + a per-menu trigger/dropdown renderer ----
+  const menuLabels: Record<string, string> = {
+    file: 'File',
+    edit: 'Edit',
+    view: 'View',
+  }
+  const itemLabels: Record<string, string> = {
+    new: 'New File',
+    open: 'Open…',
+    save: 'Save',
+    undo: 'Undo',
+    redo: 'Redo',
+    find: 'Find & Replace',
+    'zoom-in': 'Zoom In',
+    'zoom-out': 'Zoom Out',
+  }
+
+  // Render one top-level menu: its trigger plus a dropdown gated on
+  // `state.open === id`, using the delegated `menu(id)` part bag.
+  const renderMenu = (id: string, items: Array<{ value: string; kind: string }>): Node => {
+    const menuParts = mb.menu(id)
+    return div({ class: 'relative' }, [
+      button(
+        {
+          ...mb.menuTrigger(id),
+          class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-surface-hover',
+        },
+        [text(menuLabels[id] ?? id)],
+      ),
+      show(
+        state.at('menubar').map((s) => s.open === id),
+        () => [
+          div(
+            {
+              ...menuParts.content,
+              class:
+                'absolute top-full left-0 mt-1 min-w-44 bg-surface border border-border rounded-md shadow-lg p-1 z-50 outline-none',
+            },
+            items.map((it) =>
+              it.kind === 'separator'
+                ? div({ ...menuParts.separator(), class: 'my-1 border-t border-border' }, [])
+                : div(
+                    {
+                      ...menuParts.item(it.value).item,
+                      class:
+                        'px-2 py-1.5 rounded text-sm cursor-pointer data-[state=highlighted]:bg-surface-hover',
+                    },
+                    [text(itemLabels[it.value] ?? it.value)],
+                  ),
+            ),
+          ),
+        ],
+      ),
+    ])
+  }
+
+  const menuDefs: Array<{ id: string; items: Array<{ value: string; kind: string }> }> = [
+    {
+      id: 'file',
+      items: [
+        { value: 'new', kind: 'action' },
+        { value: 'open', kind: 'action' },
+        { value: 'sep1', kind: 'separator' },
+        { value: 'save', kind: 'action' },
+      ],
+    },
+    {
+      id: 'edit',
+      items: [
+        { value: 'undo', kind: 'action' },
+        { value: 'redo', kind: 'action' },
+        { value: 'sep2', kind: 'separator' },
+        { value: 'find', kind: 'action' },
+      ],
+    },
+    {
+      id: 'view',
+      items: [
+        { value: 'zoom-in', kind: 'action' },
+        { value: 'zoom-out', kind: 'action' },
+      ],
+    },
+  ]
+
+  // ---- Toolbar: a roving-focus item button ----
+  const toolbarBtn = (value: string, glyph: string, title: string): Node =>
+    button(
+      {
+        ...tb.item(value).root,
+        title,
+        class:
+          'w-8 h-8 grid place-items-center rounded text-sm border border-border bg-surface hover:bg-surface-hover data-[disabled]:opacity-40',
+      },
+      [text(glyph)],
+    )
 
   return [
     sectionGroup('Surfaces + navigation', [
@@ -314,6 +492,96 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
         ),
         div({ class: 'mt-2 text-xs text-text-muted' }, [
           text(state.at('scroll').map((s) => `scrollTop: ${Math.round(s.scrollTop)}px`)),
+        ]),
+      ]),
+      card('Breadcrumbs', [
+        // The trail collapses to first + ellipsis + last N (maxVisible 3).
+        // Clicking the ellipsis (…) expands the hidden middle; Collapse re-hides it.
+        nav({ ...bc.root }, [
+          ol({ ...bc.list, class: 'flex flex-wrap items-center gap-1 text-sm' }, [
+            each(
+              state.at('breadcrumbs').map((s) => breadcrumbs.visibleItems(s)),
+              {
+                key: (entry) => (entry.type === 'ellipsis' ? '__ellipsis__' : entry.id),
+                render: (entry, index) => [
+                  li({ class: 'flex items-center gap-1' }, [
+                    show(
+                      index.map((i) => i > 0),
+                      () => [span({ ...bc.separator, class: 'text-text-muted' }, [text('/')])],
+                    ),
+                    branch(entry, (e) => e.type, {
+                      ellipsis: () => [
+                        button(
+                          {
+                            ...bc.ellipsisTrigger,
+                            class: 'px-1.5 rounded text-text-muted hover:bg-surface-hover',
+                          },
+                          [text('…')],
+                        ),
+                      ],
+                      item: (it) => {
+                        const id = it.peek().id
+                        return [
+                          a(
+                            {
+                              ...bc.link(id),
+                              href: '#',
+                              class: it.map((e) =>
+                                e.current ? 'font-medium text-text' : 'text-accent hover:underline',
+                              ),
+                              onClick: (e: MouseEvent) => e.preventDefault(),
+                            },
+                            [text(it.at('label'))],
+                          ),
+                        ]
+                      },
+                    }),
+                  ]),
+                ],
+              },
+            ),
+          ]),
+        ]),
+        div({ class: 'mt-3 flex gap-2' }, [
+          button(
+            {
+              class: 'btn btn-secondary text-xs',
+              onClick: () => send({ type: 'breadcrumbs', msg: { type: 'collapse' } }),
+            },
+            [text('Collapse')],
+          ),
+        ]),
+      ]),
+      card('Menubar', [
+        div(
+          { ...mb.root, class: 'flex gap-1' },
+          menuDefs.map((m) => renderMenu(m.id, m.items)),
+        ),
+        div({ class: 'mt-3 text-xs text-text-muted' }, [
+          text('Open menu: '),
+          text(state.at('menubar').map((s) => s.open ?? '(none)')),
+        ]),
+      ]),
+      card('Toolbar', [
+        div({ ...tb.root, class: 'flex items-center gap-1' }, [
+          div({ ...tb.group('format').root, class: 'flex gap-1' }, [
+            span({ ...tb.group('format').label, class: 'sr-only' }, [text('Text format')]),
+            toolbarBtn('bold', 'B', 'Bold'),
+            toolbarBtn('italic', 'I', 'Italic'),
+            toolbarBtn('underline', 'U', 'Underline'),
+          ]),
+          div({ ...tb.separator, class: 'mx-1 self-stretch w-px bg-border' }, []),
+          div({ ...tb.group('align').root, class: 'flex gap-1' }, [
+            span({ ...tb.group('align').label, class: 'sr-only' }, [text('Alignment')]),
+            toolbarBtn('left', '⬅', 'Align left'),
+            toolbarBtn('center', '↔', 'Align center'),
+            toolbarBtn('right', '➡', 'Align right'),
+          ]),
+        ]),
+        div({ class: 'mt-3 text-xs text-text-muted' }, [
+          text('Focused item: '),
+          text(state.at('toolbar').map((s) => s.focused ?? '(none)')),
+          text(' — Tab in, then arrow keys to rove.'),
         ]),
       ]),
     ]),

@@ -1,4 +1,4 @@
-import { div, button, span, h3, p, input, svg, path, each, text } from '@llui/dom'
+import { div, button, span, h3, p, input, svg, path, each, text, onMount } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
@@ -17,6 +17,13 @@ import {
   type ConfirmDialogMsg,
   openWith,
 } from '@llui/components/patterns/confirm-dialog'
+import {
+  commandMenu,
+  watchHotkey,
+  type Command,
+  type CommandMenuEffect,
+} from '@llui/components/patterns/command-menu'
+import { searchableSelect } from '@llui/components/patterns/searchable-select'
 import { sectionGroup, card } from '../shared/ui'
 import {
   registerToastHandler,
@@ -54,6 +61,19 @@ const FRUITS = [
   'Watermelon',
 ]
 
+// Command palette commands. JSON-serializable: execution is surfaced as an
+// `execute` effect keyed by `id`, handled in `onEffect` below.
+const COMMANDS: Command[] = [
+  { id: 'new-file', label: 'New File', group: 'File', keywords: ['create', 'add'], shortcut: '⌘N' },
+  { id: 'open-file', label: 'Open File…', group: 'File', keywords: ['load'], shortcut: '⌘O' },
+  { id: 'save', label: 'Save', group: 'File', keywords: ['write', 'persist'], shortcut: '⌘S' },
+  { id: 'copy', label: 'Copy', group: 'Edit', keywords: ['clipboard'], shortcut: '⌘C' },
+  { id: 'paste', label: 'Paste', group: 'Edit', keywords: ['clipboard'], shortcut: '⌘V' },
+  { id: 'find', label: 'Find in File', group: 'Edit', keywords: ['search'], shortcut: '⌘F' },
+  { id: 'toggle-theme', label: 'Toggle Theme', group: 'View', keywords: ['dark', 'light'] },
+  { id: 'zen', label: 'Zen Mode', group: 'View', keywords: ['focus', 'distraction'] },
+]
+
 // confirm is excluded from `children` because it has a custom handler that
 // updates sibling state (`message`) when the dialog confirms or cancels.
 const children = {
@@ -68,6 +88,8 @@ const children = {
   dialog,
   alertDialog,
   toast,
+  commandMenu,
+  searchSelect: searchableSelect,
 } as const
 
 export type State = ModulesState<typeof children> & {
@@ -92,7 +114,11 @@ export type Msg =
    */
   | { type: 'askConfirm'; tag: string; title: string; description: string; destructive: boolean }
 
-export const init = (): [State, never[]] => [
+// command-menu is the only child that emits effects; its `execute` effect is
+// routed by the root app into `onEffect` (below).
+export type Effect = CommandMenuEffect
+
+export const init = (): [State, Effect[]] => [
   {
     popover: popover.init({ open: false }),
     tooltip: tooltip.init({ open: false }),
@@ -105,14 +131,19 @@ export const init = (): [State, never[]] => [
     dialog: dialog.init({ open: false }),
     alertDialog: alertDialog.init({ open: false }),
     toast: toast.init({ placement: 'bottom-end' }),
+    commandMenu: commandMenu.init({ commands: COMMANDS }),
+    searchSelect: searchableSelect.init({
+      items: FRUITS,
+      placeholder: 'Pick a fruit',
+    }),
     confirm: confirmDialog.init(),
     message: '',
   },
   [],
 ]
 
-export const update = mergeHandlers<State, Msg, never>(
-  composeModules<State, Msg, never>(children),
+export const update = mergeHandlers<State, Msg, Effect>(
+  composeModules<State, Msg, Effect>(children),
   (state, msg) => {
     if (msg.type !== 'confirm') return null
     const [confirm] = confirmDialog.update(state.confirm, msg.msg)
@@ -152,6 +183,16 @@ export const update = mergeHandlers<State, Msg, never>(
     return [{ ...state, confirm: c }, []]
   },
 )
+
+// The root app routes this section's effects here. command-menu emits a single
+// effect shape — `{ type: 'execute'; commandId: string }` — when the user runs a
+// command. We perform the command's side effect; for the demo that's a toast.
+export function onEffect(effect: Effect, _send: Send<Msg>): void {
+  if (effect.type === 'execute') {
+    const command = COMMANDS.find((c) => c.id === effect.commandId)
+    showToast('success', 'Command', command?.label ?? effect.commandId)
+  }
+}
 
 export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // Register bus handlers so other sections can trigger toast/confirm
@@ -206,6 +247,20 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     },
   )
   const toastParts = toast.connect(state.at('toast'), (m) => send({ type: 'toast', msg: m }))
+  // command-menu emits an `execute` effect when a command runs; the root app
+  // routes it to this section's `onEffect`, which performs the side effect (a
+  // toast). The view only needs to forward messages to the section reducer.
+  const sendCommandMenu = (m: Parameters<typeof commandMenu.update>[1]): void =>
+    send({ type: 'commandMenu', msg: m })
+  const cmd = commandMenu.connect(state.at('commandMenu'), sendCommandMenu, { id: 'cmdk-demo' })
+  const ssel = searchableSelect.connect(
+    state.at('searchSelect'),
+    (m) => send({ type: 'searchSelect', msg: m }),
+    { id: 'ssel-demo' },
+  )
+
+  // Global ⌘K / Ctrl+K hotkey opens the command palette.
+  onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
 
   const selectItems = (): Node[] =>
     ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
@@ -318,6 +373,121 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
           ),
         ]),
       ]),
+    ],
+  })
+
+  const commandMenuOverlay = dialog.overlay({
+    state: state.at('commandMenu').map((c) => ({ open: c.open })),
+    send: (m) => {
+      if (m.type === 'close') send({ type: 'commandMenu', msg: { type: 'escape' } })
+    },
+    parts: cmd.dialog,
+    content: () => [
+      div(
+        {
+          ...cmd.dialog.content,
+          class:
+            'w-[32rem] max-w-[90vw] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl',
+        },
+        [
+          div({ ...cmd.combobox.root, class: 'border-b border-slate-100' }, [
+            input({
+              ...cmd.combobox.input,
+              class: 'w-full px-4 py-3 text-sm outline-none',
+              placeholder: 'Type a command…',
+              onKeyDown: (e: KeyboardEvent) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  send({ type: 'commandMenu', msg: { type: 'escape' } })
+                  return
+                }
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const first = state.peek().commandMenu.filtered.find((c) => !c.disabled)
+                  if (first) sendCommandMenu({ type: 'execute', commandId: first.id })
+                }
+              },
+            }),
+          ]),
+          div({ ...cmd.combobox.content, class: 'max-h-72 overflow-y-auto p-1' }, [
+            each(state.at('commandMenu.filtered'), {
+              key: (c) => c.id,
+              render: (item, index) => {
+                const cmdItem = item.peek()
+                const parts = cmd.combobox.item(cmdItem.id, index.peek()).item
+                return [
+                  div(
+                    {
+                      ...parts,
+                      class:
+                        'flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm data-[highlighted]:bg-slate-100',
+                    },
+                    [
+                      span([text(item.at('label'))]),
+                      span({ class: 'text-xs text-text-muted' }, [
+                        text(item.map((c) => c.shortcut ?? '')),
+                      ]),
+                    ],
+                  ),
+                ]
+              },
+            }),
+            div({ ...cmd.empty, class: 'px-3 py-6 text-center text-sm text-text-muted' }, [
+              text('No matching commands'),
+            ]),
+          ]),
+        ],
+      ),
+    ],
+    closeOnOutsideClick: true,
+  })
+
+  const searchSelectOverlay = searchableSelect.overlay({
+    state: state.at('searchSelect'),
+    send: (m) => send({ type: 'searchSelect', msg: m }),
+    parts: ssel,
+    content: () => [
+      div(
+        {
+          class:
+            'min-w-[12rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg',
+        },
+        [
+          div({ class: 'border-b border-slate-100 p-1' }, [
+            input({
+              ...ssel.input,
+              class: 'w-full rounded px-2 py-1.5 text-sm outline-none',
+              placeholder: 'Search fruits…',
+            }),
+          ]),
+          div({ ...ssel.content, class: 'max-h-60 overflow-y-auto p-1' }, [
+            each(state.at('searchSelect.combobox.filteredItems'), {
+              key: (v) => v,
+              render: (item, index) => {
+                const value = item.peek()
+                const parts = ssel.item(value, index.peek()).item
+                return [
+                  div(
+                    {
+                      ...parts,
+                      class:
+                        'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-slate-100 data-[state=selected]:font-semibold',
+                    },
+                    [text(item)],
+                  ),
+                ]
+              },
+            }),
+            div(
+              {
+                ...ssel.empty,
+                class: 'px-3 py-4 text-center text-sm text-text-muted',
+              },
+              [text('No results')],
+            ),
+          ]),
+        ],
+      ),
     ],
   })
 
@@ -472,6 +642,39 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
           text(state.at('combobox').map((c) => c.value[0] ?? 'none')),
         ]),
       ]),
+      card('Searchable Select', [
+        button(
+          {
+            ...ssel.trigger,
+            class: 'btn btn-secondary flex w-full items-center justify-between gap-1.5',
+          },
+          [
+            span([text(ssel.triggerLabel)]),
+            svg(
+              {
+                xmlns: 'http://www.w3.org/2000/svg',
+                width: '16',
+                height: '16',
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2',
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'aria-hidden': 'true',
+              },
+              [path({ d: 'M6 9l6 6 6-6' })],
+            ),
+          ],
+        ),
+        div({ class: 'mt-3 text-sm text-text-muted' }, [
+          text('Selected: '),
+          text(state.at('searchSelect.combobox.value').map((v) => v[0] ?? 'none')),
+        ]),
+        p({ class: 'mt-1 text-xs text-text-muted' }, [
+          text('Filter-only input — typed text never commits; pick from the list.'),
+        ]),
+      ]),
       card('Drawer', [button({ ...dr.trigger, class: 'btn btn-primary' }, [text('Open drawer')])]),
       card('Dialog', [
         button({ ...dlg.trigger, class: 'btn btn-primary' }, [text('Edit profile')]),
@@ -480,6 +683,23 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
         button({ ...adlg.trigger, class: 'btn btn-danger' }, [text('Revoke API key…')]),
         p({ class: 'mt-2 text-xs text-text-muted' }, [
           text('role="alertdialog" — outside-click does not dismiss by default.'),
+        ]),
+      ]),
+      card('Command Menu', [
+        button(
+          {
+            class: 'btn btn-primary flex items-center gap-2',
+            onClick: () => send({ type: 'commandMenu', msg: { type: 'open' } }),
+          },
+          [
+            text('Open palette'),
+            span({ class: 'rounded bg-white/20 px-1.5 py-0.5 text-xs font-mono' }, [text('⌘K')]),
+          ],
+        ),
+        p({ class: 'mt-2 text-xs text-text-muted' }, [
+          text(
+            'Type to filter, ↑↓ to navigate, Enter to run. Executed commands toast + rank as recents.',
+          ),
         ]),
       ]),
       card('Toast', [
@@ -528,5 +748,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     drawerOverlay,
     dialogOverlay,
     alertDialogOverlay,
+    commandMenuOverlay,
+    searchSelectOverlay,
   ]
 }

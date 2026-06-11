@@ -46,34 +46,55 @@ type Msg =
   | { type: 'surfaces'; msg: surfaces.Msg }
   | { type: 'canvas'; msg: canvas.Msg }
 
-export const App = component<State, Msg, never>({
+// Only the sections whose components emit effects participate here. Each section
+// owns its own effect handler (`onEffect`); the root wraps the raw effect with
+// the section tag, forwards it from update/init, and routes it back to the
+// section handler with a section-scoped `send`. Effect-free sections return `[]`.
+type Effect =
+  | { type: 'inputs'; effect: inputs.Effect }
+  | { type: 'data'; effect: data.Effect }
+  | { type: 'overlays'; effect: overlays.Effect }
+
+export const App = component<State, Msg, Effect>({
   name: 'ComponentsDemo',
-  init: () => [
-    {
-      overlays: overlays.init()[0],
-      inputs: inputs.init()[0],
-      data: data.init()[0],
-      pickersEditing: pickersEditing.init()[0],
-      timeInputs: timeInputs.init()[0],
-      content: content.init()[0],
-      surfaces: surfaces.init()[0],
-      canvas: canvas.init()[0],
-    },
-    [],
-  ],
+  init: () => {
+    const [overlaysState, overlaysFx] = overlays.init()
+    const [inputsState, inputsFx] = inputs.init()
+    const [dataState, dataFx] = data.init()
+    return [
+      {
+        overlays: overlaysState,
+        inputs: inputsState,
+        data: dataState,
+        pickersEditing: pickersEditing.init()[0],
+        timeInputs: timeInputs.init()[0],
+        content: content.init()[0],
+        surfaces: surfaces.init()[0],
+        canvas: canvas.init()[0],
+      },
+      [
+        ...overlaysFx.map((effect) => ({ type: 'overlays' as const, effect })),
+        ...inputsFx.map((effect) => ({ type: 'inputs' as const, effect })),
+        ...dataFx.map((effect) => ({ type: 'data' as const, effect })),
+      ],
+    ]
+  },
   update: (state, msg) => {
     switch (msg.type) {
       case 'overlays': {
-        const [s] = overlays.update(state.overlays, msg.msg)
-        return [{ ...state, overlays: s }, []]
+        const [s, fx] = overlays.update(state.overlays, msg.msg)
+        return [
+          { ...state, overlays: s },
+          fx.map((effect) => ({ type: 'overlays' as const, effect })),
+        ]
       }
       case 'inputs': {
-        const [s] = inputs.update(state.inputs, msg.msg)
-        return [{ ...state, inputs: s }, []]
+        const [s, fx] = inputs.update(state.inputs, msg.msg)
+        return [{ ...state, inputs: s }, fx.map((effect) => ({ type: 'inputs' as const, effect }))]
       }
       case 'data': {
-        const [s] = data.update(state.data, msg.msg)
-        return [{ ...state, data: s }, []]
+        const [s, fx] = data.update(state.data, msg.msg)
+        return [{ ...state, data: s }, fx.map((effect) => ({ type: 'data' as const, effect }))]
       }
       case 'pickersEditing': {
         const [s] = pickersEditing.update(state.pickersEditing, msg.msg)
@@ -95,6 +116,16 @@ export const App = component<State, Msg, never>({
         const [s] = canvas.update(state.canvas, msg.msg)
         return [{ ...state, canvas: s }, []]
       }
+    }
+  },
+  onEffect: (effect, { send }) => {
+    switch (effect.type) {
+      case 'inputs':
+        return inputs.onEffect(effect.effect, (m) => send({ type: 'inputs', msg: m }))
+      case 'data':
+        return data.onEffect(effect.effect, (m) => send({ type: 'data', msg: m }))
+      case 'overlays':
+        return overlays.onEffect(effect.effect, (m) => send({ type: 'overlays', msg: m }))
     }
   },
   view: ({ state, send }) => [
