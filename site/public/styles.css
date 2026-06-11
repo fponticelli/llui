@@ -148,64 +148,88 @@ body {
   flex-shrink: 0;
 }
 
-.nav-section {
-  display: block;
-  padding: 8px 12px 4px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--c-text-muted);
-}
-
-.nav-section:not(:first-child) {
-  margin-top: 12px;
-}
-
-/* A collapsible package family (Core, Compiler, …) — a native <details>. */
+/* A collapsible group — a native <details>. Used for both top-level sections
+   (.nav-group-section) and the nested package families inside Packages. */
 .nav-group {
   display: block;
 }
 
-/* Family sub-header — the <summary> of each .nav-group. Lighter than the
-   top-level .nav-section so the hierarchy reads as section > family, and
-   clickable with a chevron that rotates as the group opens. */
+.nav-group-section:not(:first-child) {
+  margin-top: 6px;
+}
+
+/* Section + family headers are the <summary> of their .nav-group: clickable
+   disclosure rows with a chevron that rotates as the group opens. .nav-section
+   is the top level; .nav-subsection is the (lighter, indented) family level. */
+.nav-section,
 .nav-subsection {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px 4px;
-  font-size: 0.65rem;
+  gap: 8px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--c-text-muted);
-  opacity: 0.75;
   cursor: pointer;
   user-select: none;
   list-style: none;
 }
 
+.nav-section {
+  padding: 8px 12px 4px;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.nav-subsection {
+  padding: 7px 12px 3px;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+
 /* Hide the native disclosure triangle (Safari/Chrome + standards). */
+.nav-section::-webkit-details-marker,
 .nav-subsection::-webkit-details-marker {
   display: none;
 }
 
-/* Custom chevron — points right when collapsed, rotates down when open. */
+/* CSS-drawn chevron — a rotated corner. Crisp at any zoom and follows the text
+   colour. Points right when collapsed, rotates to point down when open. */
+.nav-section::before,
 .nav-subsection::before {
-  content: '▸';
-  font-size: 0.7rem;
-  line-height: 1;
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transform-origin: 55% 45%;
+  opacity: 0.55;
   transition: transform 0.15s ease;
 }
 
-.nav-group[open] > .nav-subsection::before {
-  transform: rotate(90deg);
+.nav-subsection::before {
+  width: 4px;
+  height: 4px;
+  border-width: 1.25px;
 }
 
+.nav-group[open] > .nav-section::before,
+.nav-group[open] > .nav-subsection::before {
+  transform: rotate(45deg);
+}
+
+.nav-section:hover,
 .nav-subsection:hover {
   opacity: 1;
   color: var(--c-text);
+}
+
+/* Indent the nested package families (and their links) under the Packages
+   section so the two-level hierarchy reads at a glance. */
+.nav-group-section > .nav-group {
+  padding-left: 8px;
 }
 
 .nav-link {

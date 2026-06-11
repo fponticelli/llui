@@ -6,6 +6,20 @@ import type { PackageMeta } from '../../pages/api/@pkg/packages'
 
 export type LayoutMsg = { type: 'toggleMenu' }
 
+// Page slugs under the Guide section — used to decide whether the section is
+// auto-expanded for the current page (Examples/Packages derive theirs from
+// EXAMPLES/PACKAGES; this static set has no other source of truth).
+const GUIDE_SLUGS = [
+  'index',
+  'getting-started',
+  'cookbook',
+  'composition-patterns',
+  'publishing-a-precompiled-library',
+  'architecture',
+  'benchmarks',
+  'changelog',
+]
+
 /**
  * Site chrome wrapper — header, sidebar nav, content slot, footer.
  *
@@ -64,55 +78,75 @@ export function siteLayout({
           'aria-label': 'Main navigation',
         },
         [
-          span({ class: 'nav-section' }, [text('Guide')]),
-          navLink('/', 'index', 'Home', slug),
-          navLink('/getting-started', 'getting-started', 'Getting Started', slug),
-          navLink('/cookbook', 'cookbook', 'Cookbook', slug),
-          navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
-          navLink(
-            '/publishing-a-precompiled-library',
-            'publishing-a-precompiled-library',
-            'Publishing a Library',
+          // Every top-level section is a collapsible <details> (zero JS). All are
+          // collapsed by default; the section (and, for Packages, the family)
+          // containing the current page is auto-expanded via a reactive `open`
+          // binding so the active link is always visible.
+          navSection('Guide', slug, GUIDE_SLUGS, [
+            navLink('/', 'index', 'Home', slug),
+            navLink('/getting-started', 'getting-started', 'Getting Started', slug),
+            navLink('/cookbook', 'cookbook', 'Cookbook', slug),
+            navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
+            navLink(
+              '/publishing-a-precompiled-library',
+              'publishing-a-precompiled-library',
+              'Publishing a Library',
+              slug,
+            ),
+            navLink('/architecture', 'architecture', 'Architecture', slug),
+            navLink('/benchmarks', 'benchmarks', 'Benchmarks', slug),
+            navLink('/changelog', 'changelog', 'Changelog', slug),
+          ]),
+          navSection(
+            'AI Integration',
             slug,
+            ['debugging', 'agents'],
+            [
+              navLink('/debugging', 'debugging', 'Debugging', slug),
+              navLink('/agents', 'agents', 'Agents', slug),
+            ],
           ),
-          navLink('/architecture', 'architecture', 'Architecture', slug),
-          navLink('/benchmarks', 'benchmarks', 'Benchmarks', slug),
-          navLink('/changelog', 'changelog', 'Changelog', slug),
-          span({ class: 'nav-section' }, [text('AI Integration')]),
-          navLink('/debugging', 'debugging', 'Debugging', slug),
-          navLink('/agents', 'agents', 'Agents', slug),
-          span({ class: 'nav-section' }, [text('Examples')]),
-          navLink('/examples', 'examples', 'Overview', slug),
           // Generated from EXAMPLES (single source of truth) so adding an example
           // to examples-data.ts adds its sidebar link automatically.
-          ...EXAMPLES.map((ex) =>
-            navLink(`/examples/${ex.slug}`, `examples/${ex.slug}`, ex.title, slug),
+          navSection(
+            'Examples',
+            slug,
+            ['examples', ...EXAMPLES.map((ex) => `examples/${ex.slug}`)],
+            [
+              navLink('/examples', 'examples', 'Overview', slug),
+              ...EXAMPLES.map((ex) =>
+                navLink(`/examples/${ex.slug}`, `examples/${ex.slug}`, ex.title, slug),
+              ),
+            ],
           ),
-          span({ class: 'nav-section' }, [text('Packages')]),
           // Generated from PACKAGES (the same single source of truth that drives
           // the `/api/<pkg>` routes) so a new package page gets its sidebar link
           // automatically and the two can never drift apart. Chunked into the
-          // families declared by PACKAGE_CATEGORIES, each a collapsible <details>
-          // (zero JS) so the 20-package list reads as a handful of scannable
-          // groups. Collapsed by default; the family containing the current page
-          // is expanded so the active link is always visible.
-          ...PACKAGE_CATEGORIES.flatMap((cat) => {
-            const pkgs = PACKAGES.filter((p) => p.category === cat.id)
-            if (pkgs.length === 0) return []
-            const memberSlugs = pkgs.map((p) => `api/${p.slug}`)
-            return [
-              details(
-                {
-                  class: 'nav-group',
-                  open: slug.map((current) => memberSlugs.includes(current)),
-                },
-                [
-                  summary({ class: 'nav-subsection' }, [text(cat.label)]),
-                  ...pkgs.map((pkg) => pkgNavLink(pkg, slug)),
-                ],
-              ),
-            ]
-          }),
+          // families declared by PACKAGE_CATEGORIES, each a nested collapsible
+          // <details> so the 20-package list reads as a handful of scannable
+          // groups.
+          navSection(
+            'Packages',
+            slug,
+            PACKAGES.map((p) => `api/${p.slug}`),
+            PACKAGE_CATEGORIES.flatMap((cat) => {
+              const pkgs = PACKAGES.filter((p) => p.category === cat.id)
+              if (pkgs.length === 0) return []
+              const memberSlugs = pkgs.map((p) => `api/${p.slug}`)
+              return [
+                details(
+                  {
+                    class: 'nav-group',
+                    open: slug.map((current) => memberSlugs.includes(current)),
+                  },
+                  [
+                    summary({ class: 'nav-subsection' }, [text(cat.label)]),
+                    ...pkgs.map((pkg) => pkgNavLink(pkg, slug)),
+                  ],
+                ),
+              ]
+            }),
+          ),
         ],
       ),
 
@@ -227,5 +261,26 @@ function pkgNavLink(pkg: PackageMeta, currentSlug: Signal<string>): Node {
       ]),
       span({ class: 'nav-pkg-blurb' }, [text(pkg.blurb)]),
     ],
+  )
+}
+
+/**
+ * A collapsible top-level sidebar section — a native <details> whose <summary>
+ * is the section header. Collapsed by default; auto-expanded (via a reactive
+ * `open` binding) when the current page's slug is one of `memberSlugs`, so the
+ * active link is always visible.
+ */
+function navSection(
+  label: string,
+  currentSlug: Signal<string>,
+  memberSlugs: readonly string[],
+  children: Node[],
+): Node {
+  return details(
+    {
+      class: 'nav-group nav-group-section',
+      open: currentSlug.map((current) => memberSlugs.includes(current)),
+    },
+    [summary({ class: 'nav-section' }, [text(label)]), ...children],
   )
 }
