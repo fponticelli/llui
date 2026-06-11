@@ -40,19 +40,44 @@ export type PathValue<T, S extends string> = [Extract<T, null | undefined>] exte
   : PathValue<NonNullable<T>, S> | Extract<T, null | undefined>
 
 /**
+ * Recursion budget for {@link ValidPath}. Each level of object/array descent
+ * decrements it; at `0` enumeration stops (only the keys at the current level
+ * stay valid, no deeper paths). Two reasons it exists:
+ *
+ * 1. **Termination on recursive types.** A self-referential state shape — a tree
+ *    node whose field references the node type (e.g. a menu item with
+ *    `children?: Item[]`) — would expand `ValidPath` forever and surface as
+ *    `TS2615: Type ... circularly references itself`. Decrementing the budget
+ *    passes DIFFERENT type arguments at each level, which breaks the cycle.
+ * 2. **Bounding the union.** `ValidPath<T>` grows multiplicatively with width ×
+ *    depth; a cap keeps very deep shapes from blowing TypeScript's instantiation
+ *    limit (`TS2589`). Paths deeper than the budget aren't typo-checked — reach
+ *    for `.map(s => s.deep.path)` there (it sidesteps path typing entirely).
+ *
+ * The budget is generous (8 segments) — deeper than any hand-written state path
+ * in practice — so it only ever bites pathological/recursive shapes.
+ */
+type PathDepthBudget = 8
+type DecrDepth = [0, 0, 1, 2, 3, 4, 5, 6, 7]
+
+/**
  * The union of all valid dot-separated paths of `T` — both intermediate
  * (object) paths and leaf paths. Arrays contribute `${number}` indices,
  * `${number}.<sub>` nested paths, and `'length'`. Navigation descends through
- * nullable/optional fields (via `NonNullable`).
+ * nullable/optional fields (via `NonNullable`), bounded by {@link PathDepthBudget}.
  */
-export type ValidPath<T> = T extends null | undefined
-  ? ValidPath<NonNullable<T>>
+export type ValidPath<T, D extends number = PathDepthBudget> = T extends null | undefined
+  ? ValidPath<NonNullable<T>, D>
   : T extends readonly (infer U)[]
-    ? `${number}` | `${number}.${ValidPath<U>}` | 'length'
+    ? D extends 0
+      ? `${number}` | 'length'
+      : `${number}` | `${number}.${ValidPath<U, DecrDepth[D]>}` | 'length'
     : T extends object
       ? {
           [K in keyof T & string]: NonNullable<T[K]> extends object
-            ? K | `${K}.${ValidPath<NonNullable<T[K]>>}`
+            ? D extends 0
+              ? K
+              : K | `${K}.${ValidPath<NonNullable<T[K]>, DecrDepth[D]>}`
             : K
         }[keyof T & string]
       : never

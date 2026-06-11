@@ -2706,17 +2706,21 @@ export type PathValue<T, S extends string> = [Extract<T, null | undefined>] exte
 The union of all valid dot-separated paths of `T` — both intermediate
 (object) paths and leaf paths. Arrays contribute `${number}` indices,
 `${number}.<sub>` nested paths, and `'length'`. Navigation descends through
-nullable/optional fields (via `NonNullable`).
+nullable/optional fields (via `NonNullable`), bounded by {@link PathDepthBudget}.
 
 ```typescript
-export type ValidPath<T> = T extends null | undefined
-  ? ValidPath<NonNullable<T>>
+export type ValidPath<T, D extends number = PathDepthBudget> = T extends null | undefined
+  ? ValidPath<NonNullable<T>, D>
   : T extends readonly (infer U)[]
-    ? `${number}` | `${number}.${ValidPath<U>}` | 'length'
+    ? D extends 0
+      ? `${number}` | 'length'
+      : `${number}` | `${number}.${ValidPath<U, DecrDepth[D]>}` | 'length'
     : T extends object
       ? {
           [K in keyof T & string]: NonNullable<T[K]> extends object
-            ? K | `${K}.${ValidPath<NonNullable<T[K]>>}`
+            ? D extends 0
+              ? K
+              : K | `${K}.${ValidPath<NonNullable<T[K]>, DecrDepth[D]>}`
             : K
         }[keyof T & string]
       : never
@@ -7594,340 +7598,6 @@ const delay
 
 ---
 
-# @llui/test
-
-Test harness for [LLui](https://github.com/fponticelli/llui) components. Mount components in jsdom, send messages, and assert on state and DOM.
-
-```bash
-pnpm add -D @llui/test
-```
-
-## Usage
-
-```ts
-import { testView } from '@llui/test'
-import { counterDef } from './counter'
-
-const harness = testView(counterDef, { count: 0 })
-
-harness.click('[data-testid="increment"]')
-harness.flush()
-
-expect(harness.text('[data-testid="display"]')).toBe('1')
-harness.unmount()
-```
-
-## API
-
-### testComponent
-
-```ts
-testComponent(def) => { state, send, flush, effects }
-```
-
-Mount a component definition headlessly. Returns current state snapshot and message dispatch.
-
-### testView
-
-```ts
-testView(def, state?) => ViewHarness<M>
-```
-
-Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods.
-
-| Method                   | Description                                     |
-| ------------------------ | ----------------------------------------------- |
-| `.send(msg)`             | Dispatch a message                              |
-| `.flush()`               | Force synchronous update (skip microtask queue) |
-| `.click(selector)`       | Simulate click on element                       |
-| `.input(selector, val)`  | Set input value and fire input event            |
-| `.text(selector)`        | Get textContent of element                      |
-| `.attr(selector, name)`  | Get attribute value                             |
-| `.query(selector)`       | querySelector on mounted DOM                    |
-| `.queryAll(selector)`    | querySelectorAll on mounted DOM                 |
-| `.fire(selector, event)` | Dispatch a custom event                         |
-| `.unmount()`             | Tear down the component and clean up            |
-
-### assertEffects
-
-```ts
-assertEffects(effects, expected) => void
-```
-
-Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
-
-### propertyTest
-
-```ts
-propertyTest(gen, prop) => void
-```
-
-Property-based testing. Generates random inputs via `gen` and checks `prop` holds for all.
-
-### replayTrace
-
-```ts
-replayTrace(def, trace) => void
-```
-
-Replay a recorded message trace against a component definition. Asserts state at each step.
-
-### emulateBlurOnRemoval / withBlurOnRemoval
-
-```ts
-emulateBlurOnRemoval(doc?) => () => void
-withBlurOnRemoval(fn, doc?) => ReturnType<fn>
-```
-
-Browser-faithful blur emulation for jsdom. When a focused element (or an ancestor) is removed from the document, real browsers run the HTML "removing steps" focus fixup and synchronously fire `blur` then `focusout`; jsdom resets `document.activeElement` but fires no events. That gap makes the inline-edit-commit pattern — an `<input>` whose `onBlur` commits, inside a `branch` arm the commit itself swaps out — impossible to exercise on its real path. `emulateBlurOnRemoval()` patches `removeChild` / `remove` / `replaceChild` to dispatch the missing events synchronously, returning an uninstall function; `withBlurOnRemoval(fn)` scopes the patch around `fn`.
-
-
-## Functions
-
-### `testComponent()`
-
-```typescript
-function testComponent<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E>
-```
-
-### `testView()`
-
-Mount a component against a fresh container and return an interactive harness.
-Simulates events + auto-flushes so tests can chain assertions naturally.
-
-```typescript
-function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
-```
-
-### `defineTestComponent()`
-
-```typescript
-function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(input: DefineTestComponentInput<S, M, E>): SignalComponentDef<S, M, E>
-```
-
-### `assertEffects()`
-
-```typescript
-function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
-```
-
-### `propertyTest()`
-
-```typescript
-function propertyTest<S, M, E>(def: SignalComponentDef<S, M, E>, config: PropertyTestConfig<S, M, E>): void
-```
-
-### `replayTrace()`
-
-```typescript
-function replayTrace<S, M, E>(def: SignalComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
-```
-
-### `reducer()`
-
-Builds a view-less `ComponentDef` from an init + update pair so reducer
-suites can drop a component definition into `testComponent()` without
-padding a no-op `view`. Use when a test only exercises pure state
-transitions (no DOM, no accessors).
-The default name `'__reducer__'` is intentionally unergonomic — it
-shows up in devtools/HMR registries if one ever leaks into a real
-mount, flagging the mistake. Override via `name` when you want the
-history trail to match your module.
-
-```typescript
-function reducer<S, M extends { type: string }, E extends { type: string } = never>(opts: ReducerOptions<S, M, E>): SignalComponentDef<S, M, E>
-```
-
-### `emulateBlurOnRemoval()`
-
-Browser-faithful blur emulation for jsdom.
-The HTML standard's node-removing steps run a "focus fixup": when the
-currently-focused element (or an ancestor of it) is removed from the
-document, the user agent resets focus to the viewport and fires `blur` then
-`focusout` on the old focus target — SYNCHRONOUSLY, as part of the mutation.
-Real apps depend on this: an inline-edit `<input>` whose `onBlur` commits,
-sitting in a structural arm that the commit itself swaps out, fires that blur
-mid-reconcile and re-enters the reducer.
-jsdom resets `document.activeElement` to `<body>` on removal but fires NO
-events, so that reentrancy is invisible in tests — the single most important
-inline-edit interaction can't be exercised. `emulateBlurOnRemoval` closes the
-gap by patching the removal-causing mutation methods to dispatch the missing
-events synchronously, in browser order (`blur`, then the bubbling `focusout`).
-Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
-or use {@link withBlurOnRemoval} for automatic scoping.
-@param doc - document whose `activeElement` is consulted (defaults to the
-  ambient `document`). The patch is applied to the shared `Node`/`Element`
-  prototypes, matching the single jsdom document under test.
-@returns an idempotent uninstall function restoring the native methods.
-
-```typescript
-function emulateBlurOnRemoval(doc: Document = document): () => void
-```
-
-### `withBlurOnRemoval()`
-
-Run `fn` with {@link emulateBlurOnRemoval} installed, uninstalling afterwards
-even if `fn` throws. Returns whatever `fn` returns.
-
-```typescript
-function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
-```
-
-### `recordAgentSession()`
-
-Begin recording an agent session. Returns a recorder whose `send`
-forwards to the handle and captures the message; `stop()` finalizes
-the trace into a JSON-serializable fixture.
-Typical usage:
-```ts
-const handle = mountApp(root, App)
-const r = recordAgentSession(handle)
-r.send({ type: 'Cloud/NewMatrix' })
-r.send({ type: 'Matrix/AddCriteria', criteria: [...] })
-r.send({ type: 'Cloud/Save' })
-const fixture = r.stop()
-// Persist `fixture` as JSON; replay in CI to assert the same
-// sequence still produces the same final state.
-```
-The recorder relies on the handle's `flush()` after every send so
-the snapshot in `stop()` reflects the drained-message-queue state.
-For long-running async effects, snapshot only fires after the
-synchronous reducer cycles complete; subsequent commits from
-effect responses won't be captured. Apps that need full async
-coverage can manually call `await handle.flush()` plus a microtask
-sleep before `stop()`, or wrap individual sends in
-`await new Promise(r => setTimeout(r, 0))` between them.
-
-```typescript
-function recordAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>): AgentSessionRecorder
-```
-
-### `replayAgentSession()`
-
-```typescript
-function replayAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>, fixture: AgentSessionFixture, options: ReplayOptions = {}): ReplayResult
-```
-
-## Interfaces
-
-### `DefineTestComponentInput`
-
-```typescript
-export interface DefineTestComponentInput<
-  S,
-  M extends { type: string },
-  E extends { type: string } = never,
-> {
-  name: string
-  init: () => [S, E[]] | S
-  update: (state: S, msg: M) => [S, E[]] | S
-  view: (bag: SignalViewBag<S, M>) => Renderable
-  onEffect?: SignalComponentDef<S, M, E>['onEffect']
-}
-```
-
-### `ReducerOptions`
-
-```typescript
-export interface ReducerOptions<S, M extends { type: string }, E extends { type: string } = never> {
-  init: () => [S, E[]]
-  update: (state: S, msg: M) => [S, E[]]
-  name?: string
-}
-```
-
-### `AgentSessionFixture`
-
-Captured trace of an agent-driven session: the sequence of
-messages dispatched and the final state observed after the last
-one. Serializable as JSON so test fixtures can live alongside
-code (`__fixtures__/login-flow.json`) and replay deterministically
-in CI.
-
-```typescript
-export interface AgentSessionFixture {
-  /**
-   * State snapshot taken when recording started. Replay starts from
-   * here — if the new handle's initial state diverges, the harness
-   * reports the divergence so callers can decide whether to fail or
-   * normalize.
-   */
-  initialState: unknown
-  /**
-   * Messages dispatched in order. Each is the raw msg the agent
-   * sent (or whatever the recorder's `send(msg)` was called with).
-   */
-  msgs: Array<{ type: string; [k: string]: unknown }>
-  /** State after every `msg` has been dispatched + drained. */
-  finalState: unknown
-}
-```
-
-### `AgentSessionRecorder`
-
-```typescript
-export interface AgentSessionRecorder {
-  /**
-   * Send a message through the wrapped channel. Forwards to the
-   * underlying `handle.send` and records the msg into the trace.
-   * Use this in place of `handle.send(msg)` for the duration of
-   * the session you want to capture.
-   */
-  send(msg: { type: string; [k: string]: unknown }): void
-  /**
-   * Stop recording, snapshot the final state, return the fixture.
-   * After `stop()`, further `send()` calls throw.
-   */
-  stop(): AgentSessionFixture
-}
-```
-
-### `ReplayResult`
-
-Replay a previously-recorded session against a fresh `handle`.
-Dispatches each msg in order, snapshots state after the last one,
-and compares to `fixture.finalState`. Returns:
-  - `matches: true`           — bit-exact replay; nothing changed.
-  - `matches: false, diff`   — final state differs; `diff` lists the
-    paths that diverged in the same JSON-Patch shape as
-    `send_message`'s `stateDiff`. Use it in test assertions:
-    `expect(result.diff).toEqual([])`.
-The harness deliberately ignores the `initialState` half of the
-fixture by default — replay starts from whatever the new handle's
-`init()` produced, so apps with deterministic init don't need to
-carry their initial state around in source control. Pass
-`assertInitial: true` to also enforce that the initial states
-match; useful when a test wants to catch init-effect drift.
-
-```typescript
-export interface ReplayResult {
-  matches: boolean
-  /**
-   * Diff from fixture.finalState to the replay's actual final state.
-   * Empty when `matches: true`. Empty when `matches: false` only if
-   * the divergence was at the `initialState` level and `assertInitial`
-   * was true.
-   */
-  diff: Array<{ op: 'add' | 'remove' | 'replace'; path: string; value?: unknown }>
-}
-```
-
-### `ReplayOptions`
-
-```typescript
-export interface ReplayOptions {
-  /**
-   * When true, also assert that the new handle's initial state
-   * matches `fixture.initialState`. Defaults to false — most apps
-   * have deterministic init, but ones that read time / random /
-   * environment shouldn't enforce this.
-   */
-  assertInitial?: boolean
-}
-```
-
----
-
 # @llui/components
 
 58 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
@@ -8157,7 +7827,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 58 components follow the same pattern:
+All 66 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -8217,10 +7887,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `step` | `number` |
 | `disabled` | `boolean` |
 | `readonly` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`
+**Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`, `setDir`
 
-**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
+**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -8266,6 +7937,28 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 ---
 
+### Breadcrumbs
+
+**State** (`BreadcrumbsState`):
+
+| Field | Type |
+|---|---|
+| `items` | `BreadcrumbItem[]` |
+| `maxVisible` | `number \| null` |
+| `expanded` | `boolean` |
+
+**Messages:** `setItems`, `expand`, `collapse`
+
+**Init options:** `items?: BreadcrumbItem[], maxVisible?: number | null, expanded?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `list`, `item`, `link`, `separator`, `ellipsisTrigger`
+
+**Utilities:** `visibleItems()`
+
+---
+
 ### Carousel
 
 **State** (`CarouselState`):
@@ -8279,16 +7972,19 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `interval` | `number` |
 | `paused` | `boolean` |
 | `direction` | `'forward' \| 'backward'` |
+| `swipeThreshold` | `number` |
+| `dragging` | `CarouselDrag \| null` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
 
-**Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number`
+**Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number, swipeThreshold?: number, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
 
-**Utilities:** `canGoNext()`, `canGoPrev()`
+**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`
 
 ---
 
@@ -8376,17 +8072,17 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 | Field | Type |
 |---|---|
-| `hsl` | `Hsl` |
+| `hsv` | `Hsv` |
 | `alpha` | `number` |
 | `disabled` | `boolean` |
 
-**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`
+**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`
 
-**Init options:** `hsl?: Hsl, alpha?: number, disabled?: boolean`
+**Init options:** `hsl?: Hsl, hsv?: Hsv, alpha?: number, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `swatch`
+**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `preview`, `area`, `areaThumb`, `alphaSlider`, `swatchGroup`, `swatch`
 
 ---
 
@@ -8400,21 +8096,26 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `value` | `string[]` |
 | `inputValue` | `string` |
 | `items` | `string[]` |
+| `groups` | `ComboboxGroup[]` |
 | `disabledItems` | `string[]` |
 | `filteredItems` | `string[]` |
 | `highlightedIndex` | `number \| null` |
 | `selectionMode` | `SelectionMode` |
 | `disabled` | `boolean` |
+| `allowCreate` | `boolean` |
+| `status` | `AsyncStatus` |
+| `requestId` | `number` |
+| `error` | `string \| null` |
 
-**Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`
+**Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`, `loadStart`, `loadSuccess`, `loadError`
 
-**Init options:** `value?: string[], inputValue?: string, items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean`
+**Init options:** `value?: string[], inputValue?: string, items?: string[], groups?: ComboboxGroup[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, allowCreate?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `empty`
+**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isCreateOption()`, `CREATE_OPTION_VALUE()`
 
 ---
 
@@ -8425,19 +8126,26 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
 | `x` | `number` |
 | `y` | `number` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `highlighted` | `string \| null` |
+| `items` | `ContextMenuItem[]` |
+| `highlights` | `Record<string, string \| null>` |
+| `openPath` | `string[]` |
+| `checked` | `string[]` |
+| `closeOnSelect` | `boolean` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `selectHighlighted`, `select`, `setItems`
+**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `items?: string[], disabledItems?: string[]`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
 ---
 
@@ -8472,22 +8180,27 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 | Field | Type |
 |---|---|
+| `mode` | `DatePickerMode` |
 | `value` | `string \| null` |
+| `start` | `string \| null` |
+| `end` | `string \| null` |
+| `hoverDate` | `string \| null` |
 | `visibleMonth` | `number` |
 | `visibleYear` | `number` |
+| `months` | `number` |
 | `focused` | `string` |
 | `min` | `string \| null` |
 | `max` | `string \| null` |
 | `weekStartsOn` | `0 \| 1` |
 | `disabled` | `boolean` |
 
-**Messages:** `setValue`, `setFocused`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
+**Messages:** `setValue`, `setRange`, `setFocused`, `setHover`, `clearHover`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
 
-**Init options:** `value?: string | null, visibleMonth?: number, visibleYear?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
+**Init options:** `mode?: DatePickerMode, value?: string | null, start?: string | null, end?: string | null, visibleMonth?: number, visibleYear?: number, months?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`
+**Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`, `preset`
 
 ---
 
@@ -8498,16 +8211,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -8518,16 +8233,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -8549,6 +8266,49 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `preview`, `input`, `submitTrigger`, `cancelTrigger`, `editTrigger`
+
+---
+
+### Field
+
+**State** (`FieldState`):
+
+| Field | Type |
+|---|---|
+| `id` | `string` |
+| `invalid` | `boolean` |
+| `required` | `boolean` |
+| `disabled` | `boolean` |
+| `readonly` | `boolean` |
+| `touched` | `boolean` |
+
+**Messages:** `setInvalid`, `setRequired`, `setDisabled`, `setReadonly`, `setTouched`
+
+**Init options:** `id: string, invalid?: boolean, required?: boolean, disabled?: boolean, readonly?: boolean, touched?: boolean`
+
+**Connect options:** `FieldConnectOptions`
+
+**Parts:** `root`, `label`, `control`, `description`, `errorText`
+
+---
+
+### Fieldset
+
+**State** (`FieldsetState`):
+
+| Field | Type |
+|---|---|
+| `id` | `string` |
+| `disabled` | `boolean` |
+| `invalid` | `boolean` |
+
+**Messages:** `setDisabled`, `setInvalid`
+
+**Init options:** `id: string, disabled?: boolean, invalid?: boolean`
+
+**Connect options:** `FieldsetConnectOptions`
+
+**Parts:** `root`, `legend`, `errorText`
 
 ---
 
@@ -8636,10 +8396,12 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
 
-**Messages:** `show`, `hide`, `setOpen`
+**Messages:** `show`, `hide`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -8742,21 +8504,75 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
-| `items` | `string[]` |
-| `disabledItems` | `string[]` |
-| `highlighted` | `string \| null` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
+| `items` | `MenuItem[]` |
+| `highlights` | `Record<string, string \| null>` |
+| `openPath` | `string[]` |
+| `checked` | `string[]` |
+| `closeOnSelect` | `boolean` |
 | `typeahead` | `string` |
 | `typeaheadExpiresAt` | `number` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `setItems`, `typeahead`
+**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: string[], disabledItems?: string[], highlighted?: string | null`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+
+---
+
+### Menubar
+
+**State** (`MenubarState`):
+
+| Field | Type |
+|---|---|
+| `menus` | `string[]` |
+| `open` | `string \| null` |
+| `focused` | `string \| null` |
+| `disabledMenus` | `string[]` |
+| `menuStates` | `Record<string, MenuState>` |
+
+**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `focusNext`, `focusPrev`, `menuMsg`
+
+**Init options:** `menus: MenubarMenu[], focused?: string | null`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `menuTrigger`, `menu`
 
 **Utilities:** `overlay()`
+
+---
+
+### Meter
+
+**State** (`MeterState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number` |
+| `min` | `number` |
+| `max` | `number` |
+| `low` | `number` |
+| `high` | `number` |
+| `optimum` | `number` |
+
+**Messages:** `setValue`, `setMax`
+
+**Init options:** `value?: number, min?: number, max?: number, low?: number, high?: number, optimum?: number`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `track`, `range`, `label`, `valueText`
+
+**Utilities:** `percent()`, `thresholdState()`
 
 ---
 
@@ -8769,10 +8585,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `open` | `string[]` |
 | `focused` | `string \| null` |
 | `disabled` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`
 
-**Init options:** `open?: string[], focused?: string | null, disabled?: boolean`
+**Init options:** `open?: string[], focused?: string | null, disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -8816,16 +8633,17 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `siblings` | `number` |
 | `boundaries` | `number` |
 | `disabled` | `boolean` |
+| `dir` | `TextDirection` |
 
-**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`
+**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`, `setDir`
 
-**Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean`
+**Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `prevTrigger`, `nextTrigger`, `item`, `ellipsis`
 
-**Utilities:** `totalPages()`, `pageItems()`
+**Utilities:** `totalPages()`, `pageItems()`, `onControlKeyDown()`
 
 ---
 
@@ -8879,16 +8697,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `skipAnimations` | `boolean` |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `title`, `description`, `arrow`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -8965,10 +8785,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `disabledItems` | `string[]` |
 | `disabled` | `boolean` |
 | `orientation` | `Orientation` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`
+**Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`, `setDir`
 
-**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation`
+**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -8988,10 +8809,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `disabled` | `boolean` |
 | `readonly` | `boolean` |
 | `hoveredValue` | `number \| null` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
+**Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`, `setDir`
 
-**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean`
+**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -9019,6 +8841,25 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 ---
 
+### Search Field
+
+**State** (`SearchFieldState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `disabled` | `boolean` |
+
+**Messages:** `setValue`, `clear`, `submit`
+
+**Init options:** `value?: string, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `label`, `input`, `clearTrigger`
+
+---
+
 ### Select
 
 **State** (`SelectState`):
@@ -9028,6 +8869,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `open` | `boolean` |
 | `value` | `string[]` |
 | `items` | `string[]` |
+| `groups` | `SelectGroup[]` |
 | `disabledItems` | `string[]` |
 | `selectionMode` | `SelectionMode` |
 | `highlightedIndex` | `number \| null` |
@@ -9038,11 +8880,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Messages:** `open`, `close`, `toggle`, `selectOption`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
-**Init options:** `value?: string[], items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, required?: boolean`
+**Init options:** `value?: string[], items?: string[], groups?: SelectGroup[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `valueText`
+**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `group`, `valueText`
 
 **Utilities:** `overlay()`
 
@@ -9083,10 +8925,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `disabled` | `boolean` |
 | `orientation` | `Orientation` |
 | `minStepsBetweenThumbs` | `number` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
+**Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`, `setDir`
 
-**Init options:** `value?: number[], min?: number, max?: number, step?: number, disabled?: boolean, orientation?: Orientation, minStepsBetweenThumbs?: number`
+**Init options:** `value?: number[], min?: number, max?: number, step?: number, disabled?: boolean, orientation?: Orientation, minStepsBetweenThumbs?: number, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `thumb`, `root`, `control`, `track`, `range`, `thumb`, `value`
 
@@ -9134,10 +8977,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `orientation` | `Orientation` |
 | `disabled` | `boolean` |
 | `dragging` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`
+**Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`, `setDir`
 
-**Init options:** `position?: number, min?: number, max?: number, step?: number, orientation?: Orientation, disabled?: boolean`
+**Init options:** `position?: number, min?: number, max?: number, step?: number, orientation?: Orientation, disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `root`, `primaryPanel`, `secondaryPanel`, `resizeTrigger`
 
@@ -9187,6 +9031,35 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 ---
 
+### Table
+
+**State** (`TableState`):
+
+| Field | Type |
+|---|---|
+| `columns` | `TableColumn[]` |
+| `rows` | `string[]` |
+| `sort` | `TableSort \| null` |
+| `selection` | `string[]` |
+| `selectionMode` | `TableSelectionMode` |
+| `focusedCell` | `TableCellCoord \| null` |
+| `rangeAnchor` | `number \| null` |
+| `pageSize` | `number` |
+| `descFirst` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `toggleSort`, `setSort`, `toggleRow`, `selectAll`, `clearSelection`, `toggleAll`, `setSelection`, `selectRange`, `activateRow`, `setRows`, `setColumns`, `focusCell`, `moveCell`, `rowStart`, `rowEnd`, `gridStart`, `gridEnd`, `pageDown`, `pageUp`
+
+**Init options:** `columns?: TableColumn[], rows?: string[], sort?: TableSort | null, selection?: string[], selectionMode?: TableSelectionMode, focusedCell?: TableCellCoord | null, pageSize?: number, descFirst?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `columnHeader`, `row`, `cell`, `selectAllCheckbox`, `rowCheckbox`
+
+**Utilities:** `isRowSelected()`, `isAllSelected()`, `isSomeSelected()`, `sortDirectionFor()`
+
+---
+
 ### Tabs
 
 **State** (`TabsState`):
@@ -9201,10 +9074,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `focused` | `string \| null` |
 | `loopFocus` | `boolean` |
 | `deselectable` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`
+**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
 
-**Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean`
+**Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -9309,16 +9183,17 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `toasts` | `Toast[]` |
 | `max` | `number` |
 | `placement` | `ToastPlacement` |
+| `animated` | `boolean` |
 
-**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `pause`, `resume`, `pauseAll`, `resumeAll`
+**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
 
-**Init options:** `max?: number, placement?: ToastPlacement`
+**Init options:** `max?: number, placement?: ToastPlacement, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `region`, `toast`
+**Parts:** `region`, `toast`, `progress`, `isPresent`
 
-**Utilities:** `nextToastId()`
+**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`
 
 ---
 
@@ -9357,10 +9232,13 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `disabled` | `boolean` |
 | `orientation` | `Orientation` |
 | `deselectable` | `boolean` |
+| `focused` | `string \| null` |
+| `loopFocus` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`
+**Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusItem`, `setDir`
 
-**Init options:** `value?: string[], type?: 'single' | 'multiple', items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, deselectable?: boolean`
+**Init options:** `value?: string[], type?: 'single' | 'multiple', items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, deselectable?: boolean, focused?: string | null, loopFocus?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `root`, `item`
 
@@ -9383,6 +9261,29 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 ---
 
+### Toolbar
+
+**State** (`ToolbarState`):
+
+| Field | Type |
+|---|---|
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `focused` | `string \| null` |
+| `orientation` | `Orientation` |
+| `loopFocus` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `setItems`, `setFocused`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
+
+**Init options:** `items?: string[], disabledItems?: string[], focused?: string | null, orientation?: Orientation, loopFocus?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `separator`, `item`, `group`
+
+---
+
 ### Tooltip
 
 **State** (`TooltipState`):
@@ -9390,16 +9291,18 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `open` | `boolean` |
+| `status` | `PresenceStatus` |
+| `animated` | `boolean` |
 
-**Messages:** `show`, `hide`, `toggle`, `setOpen`
+**Messages:** `show`, `hide`, `toggle`, `setOpen`, `animationEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `arrow`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`
 
 ---
 
@@ -9446,10 +9349,14 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `renaming` | `string \| null` |
 | `renameDraft` | `string` |
 | `loading` | `string[]` |
+| `nodes` | `Record<string, TreeNodeMeta>` |
+| `roots` | `string[]` |
+| `loaded` | `string[]` |
+| `loadFailed` | `string[]` |
 
-**Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`
+**Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`, `setNodes`, `childrenLoaded`, `childrenLoadFailed`
 
-**Init options:** `expanded?: string[], selected?: string[], checked?: string[], indeterminate?: string[], selectionMode?: SelectionMode, disabled?: boolean, visibleItems?: string[], visibleLabels?: string[]`
+**Init options:** `expanded?: string[], selected?: string[], checked?: string[], indeterminate?: string[], selectionMode?: SelectionMode, disabled?: boolean, visibleItems?: string[], visibleLabels?: string[], nodes?: Record<string, TreeNodeMeta>, roots?: string[], loaded?: string[], loadFailed?: string[]`
 
 **Connect options:** `ConnectOptions`
 
@@ -10262,6 +10169,340 @@ export interface TransitionSpec {
   duration?: number
   /** If true, run the enter transition on initial mount (default: true). */
   appear?: boolean
+}
+```
+
+---
+
+# @llui/test
+
+Test harness for [LLui](https://github.com/fponticelli/llui) components. Mount components in jsdom, send messages, and assert on state and DOM.
+
+```bash
+pnpm add -D @llui/test
+```
+
+## Usage
+
+```ts
+import { testView } from '@llui/test'
+import { counterDef } from './counter'
+
+const harness = testView(counterDef, { count: 0 })
+
+harness.click('[data-testid="increment"]')
+harness.flush()
+
+expect(harness.text('[data-testid="display"]')).toBe('1')
+harness.unmount()
+```
+
+## API
+
+### testComponent
+
+```ts
+testComponent(def) => { state, send, flush, effects }
+```
+
+Mount a component definition headlessly. Returns current state snapshot and message dispatch.
+
+### testView
+
+```ts
+testView(def, state?) => ViewHarness<M>
+```
+
+Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods.
+
+| Method                   | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| `.send(msg)`             | Dispatch a message                              |
+| `.flush()`               | Force synchronous update (skip microtask queue) |
+| `.click(selector)`       | Simulate click on element                       |
+| `.input(selector, val)`  | Set input value and fire input event            |
+| `.text(selector)`        | Get textContent of element                      |
+| `.attr(selector, name)`  | Get attribute value                             |
+| `.query(selector)`       | querySelector on mounted DOM                    |
+| `.queryAll(selector)`    | querySelectorAll on mounted DOM                 |
+| `.fire(selector, event)` | Dispatch a custom event                         |
+| `.unmount()`             | Tear down the component and clean up            |
+
+### assertEffects
+
+```ts
+assertEffects(effects, expected) => void
+```
+
+Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
+
+### propertyTest
+
+```ts
+propertyTest(gen, prop) => void
+```
+
+Property-based testing. Generates random inputs via `gen` and checks `prop` holds for all.
+
+### replayTrace
+
+```ts
+replayTrace(def, trace) => void
+```
+
+Replay a recorded message trace against a component definition. Asserts state at each step.
+
+### emulateBlurOnRemoval / withBlurOnRemoval
+
+```ts
+emulateBlurOnRemoval(doc?) => () => void
+withBlurOnRemoval(fn, doc?) => ReturnType<fn>
+```
+
+Browser-faithful blur emulation for jsdom. When a focused element (or an ancestor) is removed from the document, real browsers run the HTML "removing steps" focus fixup and synchronously fire `blur` then `focusout`; jsdom resets `document.activeElement` but fires no events. That gap makes the inline-edit-commit pattern — an `<input>` whose `onBlur` commits, inside a `branch` arm the commit itself swaps out — impossible to exercise on its real path. `emulateBlurOnRemoval()` patches `removeChild` / `remove` / `replaceChild` to dispatch the missing events synchronously, returning an uninstall function; `withBlurOnRemoval(fn)` scopes the patch around `fn`.
+
+
+## Functions
+
+### `testComponent()`
+
+```typescript
+function testComponent<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E>
+```
+
+### `testView()`
+
+Mount a component against a fresh container and return an interactive harness.
+Simulates events + auto-flushes so tests can chain assertions naturally.
+
+```typescript
+function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
+```
+
+### `defineTestComponent()`
+
+```typescript
+function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(input: DefineTestComponentInput<S, M, E>): SignalComponentDef<S, M, E>
+```
+
+### `assertEffects()`
+
+```typescript
+function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
+```
+
+### `propertyTest()`
+
+```typescript
+function propertyTest<S, M, E>(def: SignalComponentDef<S, M, E>, config: PropertyTestConfig<S, M, E>): void
+```
+
+### `replayTrace()`
+
+```typescript
+function replayTrace<S, M, E>(def: SignalComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+```
+
+### `reducer()`
+
+Builds a view-less `ComponentDef` from an init + update pair so reducer
+suites can drop a component definition into `testComponent()` without
+padding a no-op `view`. Use when a test only exercises pure state
+transitions (no DOM, no accessors).
+The default name `'__reducer__'` is intentionally unergonomic — it
+shows up in devtools/HMR registries if one ever leaks into a real
+mount, flagging the mistake. Override via `name` when you want the
+history trail to match your module.
+
+```typescript
+function reducer<S, M extends { type: string }, E extends { type: string } = never>(opts: ReducerOptions<S, M, E>): SignalComponentDef<S, M, E>
+```
+
+### `emulateBlurOnRemoval()`
+
+Browser-faithful blur emulation for jsdom.
+The HTML standard's node-removing steps run a "focus fixup": when the
+currently-focused element (or an ancestor of it) is removed from the
+document, the user agent resets focus to the viewport and fires `blur` then
+`focusout` on the old focus target — SYNCHRONOUSLY, as part of the mutation.
+Real apps depend on this: an inline-edit `<input>` whose `onBlur` commits,
+sitting in a structural arm that the commit itself swaps out, fires that blur
+mid-reconcile and re-enters the reducer.
+jsdom resets `document.activeElement` to `<body>` on removal but fires NO
+events, so that reentrancy is invisible in tests — the single most important
+inline-edit interaction can't be exercised. `emulateBlurOnRemoval` closes the
+gap by patching the removal-causing mutation methods to dispatch the missing
+events synchronously, in browser order (`blur`, then the bubbling `focusout`).
+Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
+or use {@link withBlurOnRemoval} for automatic scoping.
+@param doc - document whose `activeElement` is consulted (defaults to the
+  ambient `document`). The patch is applied to the shared `Node`/`Element`
+  prototypes, matching the single jsdom document under test.
+@returns an idempotent uninstall function restoring the native methods.
+
+```typescript
+function emulateBlurOnRemoval(doc: Document = document): () => void
+```
+
+### `withBlurOnRemoval()`
+
+Run `fn` with {@link emulateBlurOnRemoval} installed, uninstalling afterwards
+even if `fn` throws. Returns whatever `fn` returns.
+
+```typescript
+function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
+```
+
+### `recordAgentSession()`
+
+Begin recording an agent session. Returns a recorder whose `send`
+forwards to the handle and captures the message; `stop()` finalizes
+the trace into a JSON-serializable fixture.
+Typical usage:
+```ts
+const handle = mountApp(root, App)
+const r = recordAgentSession(handle)
+r.send({ type: 'Cloud/NewMatrix' })
+r.send({ type: 'Matrix/AddCriteria', criteria: [...] })
+r.send({ type: 'Cloud/Save' })
+const fixture = r.stop()
+// Persist `fixture` as JSON; replay in CI to assert the same
+// sequence still produces the same final state.
+```
+The recorder relies on the handle's `flush()` after every send so
+the snapshot in `stop()` reflects the drained-message-queue state.
+For long-running async effects, snapshot only fires after the
+synchronous reducer cycles complete; subsequent commits from
+effect responses won't be captured. Apps that need full async
+coverage can manually call `await handle.flush()` plus a microtask
+sleep before `stop()`, or wrap individual sends in
+`await new Promise(r => setTimeout(r, 0))` between them.
+
+```typescript
+function recordAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>): AgentSessionRecorder
+```
+
+### `replayAgentSession()`
+
+```typescript
+function replayAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>, fixture: AgentSessionFixture, options: ReplayOptions = {}): ReplayResult
+```
+
+## Interfaces
+
+### `DefineTestComponentInput`
+
+```typescript
+export interface DefineTestComponentInput<
+  S,
+  M extends { type: string },
+  E extends { type: string } = never,
+> {
+  name: string
+  init: () => [S, E[]] | S
+  update: (state: S, msg: M) => [S, E[]] | S
+  view: (bag: SignalViewBag<S, M>) => Renderable
+  onEffect?: SignalComponentDef<S, M, E>['onEffect']
+}
+```
+
+### `ReducerOptions`
+
+```typescript
+export interface ReducerOptions<S, M extends { type: string }, E extends { type: string } = never> {
+  init: () => [S, E[]]
+  update: (state: S, msg: M) => [S, E[]]
+  name?: string
+}
+```
+
+### `AgentSessionFixture`
+
+Captured trace of an agent-driven session: the sequence of
+messages dispatched and the final state observed after the last
+one. Serializable as JSON so test fixtures can live alongside
+code (`__fixtures__/login-flow.json`) and replay deterministically
+in CI.
+
+```typescript
+export interface AgentSessionFixture {
+  /**
+   * State snapshot taken when recording started. Replay starts from
+   * here — if the new handle's initial state diverges, the harness
+   * reports the divergence so callers can decide whether to fail or
+   * normalize.
+   */
+  initialState: unknown
+  /**
+   * Messages dispatched in order. Each is the raw msg the agent
+   * sent (or whatever the recorder's `send(msg)` was called with).
+   */
+  msgs: Array<{ type: string; [k: string]: unknown }>
+  /** State after every `msg` has been dispatched + drained. */
+  finalState: unknown
+}
+```
+
+### `AgentSessionRecorder`
+
+```typescript
+export interface AgentSessionRecorder {
+  /**
+   * Send a message through the wrapped channel. Forwards to the
+   * underlying `handle.send` and records the msg into the trace.
+   * Use this in place of `handle.send(msg)` for the duration of
+   * the session you want to capture.
+   */
+  send(msg: { type: string; [k: string]: unknown }): void
+  /**
+   * Stop recording, snapshot the final state, return the fixture.
+   * After `stop()`, further `send()` calls throw.
+   */
+  stop(): AgentSessionFixture
+}
+```
+
+### `ReplayResult`
+
+Replay a previously-recorded session against a fresh `handle`.
+Dispatches each msg in order, snapshots state after the last one,
+and compares to `fixture.finalState`. Returns:
+  - `matches: true`           — bit-exact replay; nothing changed.
+  - `matches: false, diff`   — final state differs; `diff` lists the
+    paths that diverged in the same JSON-Patch shape as
+    `send_message`'s `stateDiff`. Use it in test assertions:
+    `expect(result.diff).toEqual([])`.
+The harness deliberately ignores the `initialState` half of the
+fixture by default — replay starts from whatever the new handle's
+`init()` produced, so apps with deterministic init don't need to
+carry their initial state around in source control. Pass
+`assertInitial: true` to also enforce that the initial states
+match; useful when a test wants to catch init-effect drift.
+
+```typescript
+export interface ReplayResult {
+  matches: boolean
+  /**
+   * Diff from fixture.finalState to the replay's actual final state.
+   * Empty when `matches: true`. Empty when `matches: false` only if
+   * the divergence was at the `initialState` level and `assertInitial`
+   * was true.
+   */
+  diff: Array<{ op: 'add' | 'remove' | 'replace'; path: string; value?: unknown }>
+}
+```
+
+### `ReplayOptions`
+
+```typescript
+export interface ReplayOptions {
+  /**
+   * When true, also assert that the new handle's initial state
+   * matches `fixture.initialState`. Defaults to false — most apps
+   * have deterministic init, but ones that read time / random /
+   * environment shouldn't enforce this.
+   */
+  assertInitial?: boolean
 }
 ```
 
@@ -14629,507 +14870,6 @@ const defaultRenderers: BuiltinRenderers
 
 ---
 
-# @llui/lexical
-
-The seam between [Lexical](https://lexical.dev) (Meta's extensible text-editor framework) and the LLui signal runtime. It mounts a Lexical editor as a [`foreign()`](/api/dom) island inside an LLui view, defines a small plugin contract so editor behavior composes the same way LLui views do, and bridges Lexical `DecoratorNode`s to LLui sub-views so rich embeds (callouts, math, images, …) are authored as ordinary LLui components.
-
-This is the low-level layer. If you want a ready-made WYSIWYG editor, reach for [`@llui/markdown-editor`](/api/markdown-editor), which is built on top of this package. Use `@llui/lexical` directly when you are building your own editor surface or a custom node type.
-
-```bash
-pnpm add @llui/lexical @llui/dom lexical
-```
-
-`lexical` is a peer dependency — you bring the Lexical version you want.
-
-## The three seams
-
-- **`lexicalForeign(opts)`** — wraps a Lexical editor as an LLui `foreign()` mountable. LLui owns the host node; Lexical owns everything inside it. Editor output (selection/format changes, content edits) flows back out as messages, so the surrounding LLui component reacts with the normal `update`/`view` cycle.
-- **Plugin contract** (`LexicalPlugin`, `PluginContext`, `decoratorBridge`, `registerShortcuts`) — a plugin receives a `PluginContext` (the editor, a shortcut registrar, a decorator-bridge factory) and registers commands, nodes, and key bindings. Plugins are plain values you compose into a list, mirroring how LLui structural primitives compose.
-- **Decorator bridge** (`LLuiDecoratorNode`, `registerDecoratorBridges`, `DecoratorBridge`) — a Lexical `DecoratorNode` whose rendered body is an LLui sub-view. Author an embed once as an LLui component; the bridge mounts/unmounts it as Lexical inserts and removes the node.
-
-## Reading selection state
-
-`readBaseFormat` / `$readBaseFormat` collapse the active Lexical selection into a plain, serializable `BaseFormat` (block type, alignment, bold/italic/…) — the shape a toolbar binds to. The `$`-prefixed variant runs inside a Lexical read transaction; the unprefixed one wraps that for you.
-
-## API
-
-
-## Functions
-
-### `decoratorBridge()`
-
-Author-facing constructor for a {@link DecoratorBridge}. Preserves the
-sub-component's `State`/`Msg`/`Effect` and the node `Data` type at the
-definition site; only the node's serialized payload is narrowed back to
-`Data` at mount time (the single deserialization-boundary cast, exactly like
-`JSON.parse` returning a declared type).
-
-```typescript
-function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(type: string, factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>): DecoratorBridge
-```
-
-### `parseCombo()`
-
-Parse a chord like `Mod-Shift-7` into its parts. Case-insensitive on
-modifiers; the final segment is the key (lower-cased for letters).
-
-```typescript
-function parseCombo(combo: string): ParsedCombo
-```
-
-### `matchesCombo()`
-
-Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
-Ctrl elsewhere; all declared modifiers must match exactly (no extras).
-
-```typescript
-function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean
-```
-
-### `isMacPlatform()`
-
-Best-effort macOS detection (browser only; defaults to false off-DOM).
-
-```typescript
-function isMacPlatform(): boolean
-```
-
-### `registerShortcuts()`
-
-Register a set of shortcuts on the editor through one KEY_DOWN handler.
-Returns a disposer. The first matching shortcut whose `run` returns `true`
-wins and the event is consumed.
-
-```typescript
-function registerShortcuts(editor: LexicalEditor, shortcuts: readonly ShortcutSpec[]): () => void
-```
-
-### `$readBaseFormat()`
-
-Read the base format at the current selection. Must run inside a Lexical
-read/update context (it calls `$`-prefixed APIs).
-
-```typescript
-function $readBaseFormat(): BaseFormat
-```
-
-### `readBaseFormat()`
-
-Convenience wrapper that opens a read context on `editor`.
-
-```typescript
-function readBaseFormat(editor: LexicalEditor): BaseFormat
-```
-
-### `lexicalForeign()`
-
-Mount Lexical into an LLui view. Returns a `Mountable` placed in the view
-array; Lexical is created on mount and destroyed on the component's dispose.
-
-```typescript
-function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>): Mountable
-```
-
-### `$createLLuiDecoratorNode()`
-
-Create a decorator node for `bridgeType` carrying `data`.
-
-```typescript
-function $createLLuiDecoratorNode(bridgeType: string, data: unknown): LLuiDecoratorNode
-```
-
-### `$isLLuiDecoratorNode()`
-
-```typescript
-function $isLLuiDecoratorNode(node: LexicalNode | null | undefined): node is LLuiDecoratorNode
-```
-
-### `registerDecoratorBridges()`
-
-Wire decorator bridges onto an editor: register the bridge registry, place
-each decoration element into its node's DOM, and dispose sub-apps when their
-nodes are destroyed. Returns a disposer that tears down all live sub-apps.
-Typically called from a plugin's `register`.
-
-```typescript
-function registerDecoratorBridges(editor: LexicalEditor, bridges: readonly DecoratorBridge[]): () => void
-```
-
-## Types
-
-### `BaseBlockType`
-
-Block kinds resolvable without list/code packages. Anything else → 'other',
-which the markdown layer refines (list, code, …).
-
-```typescript
-export type BaseBlockType =
-  | 'paragraph'
-  | 'h1'
-  | 'h2'
-  | 'h3'
-  | 'h4'
-  | 'h5'
-  | 'h6'
-  | 'quote'
-  | 'other'
-```
-
-### `Alignment`
-
-```typescript
-export type Alignment = 'left' | 'center' | 'right' | 'justify' | 'start' | 'end' | null
-```
-
-### `SerializedLLuiDecoratorNode`
-
-```typescript
-export type SerializedLLuiDecoratorNode = Spread<
-  { bridgeType: string; data: unknown },
-  SerializedLexicalNode
->
-```
-
-## Interfaces
-
-### `ShortcutSpec`
-
-A keyboard shortcut bound to an editor action.
-`combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
-elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
-when it handled the event (which stops propagation / prevents default).
-
-```typescript
-export interface ShortcutSpec {
-  combo: string
-  run: (editor: LexicalEditor) => boolean
-}
-```
-
-### `PluginContext`
-
-Context handed to `plugin.register` so a plugin can talk back to the host
-(e.g. open a slash menu) without owning the host's `send`. `Emit` is the
-host message type; `@llui/lexical` leaves it `unknown`, hosts narrow it.
-
-```typescript
-export interface PluginContext<Emit = unknown> {
-  /** Emit a host message into the embedding component's update loop. */
-  emit: (msg: Emit) => void
-}
-```
-
-### `DecoratorApi`
-
-Imperative handle a decorator sub-view uses to talk to its Lexical node.
-
-```typescript
-export interface DecoratorApi<Data> {
-  /** Persist new node data (writes into the Lexical node → markdown-serializable). */
-  update: (next: Data) => void
-  /** The owning Lexical editor (for dispatching commands, reading state). */
-  editor: LexicalEditor
-}
-```
-
-### `DecoratorBridge`
-
-Bridges a custom node type to an LLui sub-view. The sub-view's
-`State`/`Msg`/`Effect` and `Data` types are fully erased here: a bridge is
-stored monomorphically in the registry, and `mount` builds + mounts the
-sub-app, returning a disposer. Authors construct bridges with the typed
-{@link decoratorBridge} helper, which captures concrete types in a closure.
-
-```typescript
-export interface DecoratorBridge {
-  /** The id used by the contributing markdown transformer. */
-  type: string
-  /** Mount the sub-view for a node's (deserialized) data; returns a disposer. */
-  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => () => void
-}
-```
-
-### `LexicalPlugin`
-
-A composable unit of editor behaviour.
-
-```typescript
-export interface LexicalPlugin<Emit = unknown> {
-  /** Stable identifier (also used for de-duplication and overrides). */
-  name: string
-  /** Lexical node classes registered on the editor config. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
-  /** Imperative registration (commands, listeners). Returns a disposer. */
-  register?: (editor: LexicalEditor, ctx: PluginContext<Emit>) => () => void
-  /** Keyboard shortcuts wired through a single KEY_DOWN command. */
-  shortcuts?: readonly ShortcutSpec[]
-  /** Decorator bridges this plugin owns. */
-  decorators?: readonly DecoratorBridge[]
-}
-```
-
-### `ParsedCombo`
-
-A parsed chord. `mod` means ⌘ on macOS / Ctrl elsewhere.
-
-```typescript
-export interface ParsedCombo {
-  key: string
-  mod: boolean
-  shift: boolean
-  alt: boolean
-  ctrl: boolean
-}
-```
-
-### `BaseFormat`
-
-The generic format surface at the current selection.
-
-```typescript
-export interface BaseFormat {
-  bold: boolean
-  italic: boolean
-  strikethrough: boolean
-  underline: boolean
-  code: boolean
-  blockType: BaseBlockType
-  alignment: Alignment
-  /** The resolved top-level block element key (lets the markdown layer refine). */
-  blockKey: string | null
-  hasSelection: boolean
-  isCollapsed: boolean
-}
-```
-
-### `SelectionContext`
-
-Context handed to the selection callback on every commit.
-
-```typescript
-export interface SelectionContext {
-  editor: LexicalEditor
-  canUndo: boolean
-  canRedo: boolean
-}
-```
-
-### `LexicalForeignOptions`
-
-```typescript
-export interface LexicalForeignOptions<Emit = unknown> {
-  /** Editor namespace (instance isolation; required for distinct editors). */
-  namespace: string
-  theme?: EditorThemeClasses
-  /** Node classes registered in addition to the plugins' own nodes. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
-  /** Plugins: their `nodes` are merged, `register`/`shortcuts` wired at mount. */
-  plugins?: ReadonlyArray<LexicalPlugin<Emit>>
-  /** Serialize the live document → string (runs in a read context). */
-  serialize: (editor: LexicalEditor) => string
-  /** Deserialize a string into the document (runs in an update context). */
-  deserialize: (editor: LexicalEditor, value: string) => void
-  /** Initial document (uncontrolled) — ignored when `value` is provided. */
-  defaultValue?: string
-  /** Controlled document signal; the editor follows it (echo-guarded). */
-  value?: Signal<string>
-  /** Reactive read-only flag (always supplied by the host's state). */
-  readonly: Signal<boolean>
-  /** Debounce window (ms) for outbound serialization. Default 300. */
-  changeDebounceMs?: number
-  /** Register the built-in `@lexical/history` undo stack. Default `true`.
-   * Set `false` when an external owner provides history (e.g. a CRDT undo
-   * manager in collab mode) — a local stack would shadow it and cross peers. */
-  history?: boolean
-  /** When the document is seeded. `'auto'` (default) seeds from
-   * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
-   * external owner controls it (e.g. collab seeds once, gated on provider sync,
-   * only if the shared doc is still empty). */
-  seedMode?: 'auto' | 'deferred'
-  /** Outbound: serialized document changed (debounced, real edits only). */
-  onChange?: (value: string) => void
-  /** Outbound: selection / format / structure changed (every commit). */
-  onSelectionChange?: (ctx: SelectionContext) => void
-  /** Host emit, handed to each plugin's `register` context. */
-  emit?: (msg: Emit) => void
-  /** Receives the live editor at mount (host dispatches commands through it). */
-  onReady?: (editor: LexicalEditor) => void
-  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
-  register?: (editor: LexicalEditor) => () => void
-  onError?: (error: Error) => void
-}
-```
-
-## Classes
-
-### `LLuiDecoratorNode`
-
-A generic decorator node that mounts an LLui sub-view via a registered
-{@link DecoratorBridge}.
-
-```typescript
-class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
-  __bridgeType: string
-  __data: unknown
-  getType(): string
-  clone(node: LLuiDecoratorNode): LLuiDecoratorNode
-  constructor(bridgeType: string, data: unknown, key?: NodeKey)
-  createDOM(_config: EditorConfig): HTMLElement
-  updateDOM(): false
-  isInline(): false
-  importDOM(): DOMConversionMap | null
-  getBridgeType(): string
-  getData(): unknown
-  setData(data: unknown): void
-  decorate(editor: LexicalEditor): HTMLElement
-  exportJSON(): SerializedLLuiDecoratorNode
-  importJSON(json: SerializedLLuiDecoratorNode): LLuiDecoratorNode
-}
-```
-
-## Constants
-
-### `PROGRAMMATIC_TAG`
-
-Lexical update tag marking a programmatic write (seed / controlled setValue),
-so the outbound change listener doesn't echo it back to the host.
-
-```typescript
-const PROGRAMMATIC_TAG
-```
-
-
-
-## Related
-
-- [`@llui/markdown-editor`](/api/markdown-editor) — the WYSIWYG editor built on this seam.
-- [`@llui/dom`](/api/dom) — `foreign()`, the imperative-library mounting primitive this package builds on.
-- [Lexical documentation](https://lexical.dev) — the underlying editor framework.
-
----
-
-# @llui/lexical-collab
-
-Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `register` hook you wire into `lexicalForeign({ history: false, seedMode: 'deferred', register })` — or you pass it through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
-
-```bash
-pnpm add @llui/lexical-collab @llui/lexical @lexical/yjs yjs
-```
-
-`@lexical/yjs` and `yjs` are peer dependencies.
-
-## What it gives you
-
-- **CRDT sync** — document state converges across clients through the injected `CollabProvider`.
-- **Scoped undo** — undo/redo is bound to each client's own edits rather than the shared global stream.
-- **Presence cursors** — remote users (`CollabUser`) surface as live selection/cursor decorations.
-
-## API
-
-
-## Functions
-
-### `yjsCollab()`
-
-Build (but do not yet bind) a collaborative editing handle.
-
-```typescript
-function yjsCollab(config: YjsCollabConfig): YjsCollab
-```
-
-## Types
-
-### `CollabProvider`
-
-A Yjs network/transport provider. Structurally identical to `@lexical/yjs`'s
-`Provider`; re-exported so consumers type their factory without reaching into
-`@lexical/yjs` directly. `y-websocket` / `y-webrtc` / `@hocuspocus/provider`
-all satisfy it.
-
-```typescript
-export type CollabProvider = Provider
-```
-
-## Interfaces
-
-### `CollabUser`
-
-Local presence identity broadcast to peers (name + caret colour).
-
-```typescript
-export interface CollabUser {
-  /** Display name shown on the remote caret. */
-  name: string
-  /** Caret / selection colour (any CSS colour). */
-  color: string
-  /** Arbitrary extra data merged into this client's awareness state. */
-  awarenessData?: Record<string, unknown>
-}
-```
-
-### `YjsCollabConfig`
-
-```typescript
-export interface YjsCollabConfig {
-  /** Shared document id (room name). Must match across peers. */
-  id: string
-  /** The shared Yjs document. Created if omitted (and registered in `docMap`). */
-  doc?: YDoc
-  /** Doc registry shared with the provider factory. Created if omitted. */
-  docMap?: Map<string, YDoc>
-  /** A ready provider. Mutually exclusive with `providerFactory`. */
-  provider?: CollabProvider
-  /** Factory building the provider from the (id, docMap). Preferred — it lets
-   * this module own doc creation/registration before the provider binds. */
-  providerFactory?: (id: string, docMap: Map<string, YDoc>) => CollabProvider
-  /** Local presence identity. Presence is disabled when omitted. */
-  user?: CollabUser
-  /** Whether THIS peer may seed an empty shared document. Default `true`.
-   * In a multi-peer app exactly one peer should bootstrap (e.g. the creator);
-   * the seed only runs if the shared doc is still empty after first sync. */
-  shouldBootstrap?: boolean
-  /** Seed an empty shared document (runs once, inside an editor update, only on
-   * the bootstrapping peer). Without it an empty paragraph is inserted. */
-  seed?: (editor: LexicalEditor) => void
-  /** Overlay element that hosts remote carets. Created over the editor when
-   * omitted; its offsetParent is made `position: relative` if it is static. */
-  cursorsContainer?: HTMLElement
-  /** Per-node properties excluded from CRDT sync (advanced). */
-  excludedProperties?: ExcludedProperties
-  /** Connect the provider at mount. Default `true`. */
-  autoConnect?: boolean
-  /** Connection status changed (`'connected'` ⇄ disconnected). */
-  onStatus?: (connected: boolean) => void
-  /** Provider sync state changed (initial document handshake complete). */
-  onSync?: (synced: boolean) => void
-  /** Remote peer count changed (distinct awareness states, excluding self). */
-  onPeers?: (count: number) => void
-}
-```
-
-### `YjsCollab`
-
-Live handle returned by {@link yjsCollab}.
-
-```typescript
-export interface YjsCollab {
-  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
-   * Returns a disposer that tears down every listener, the provider connection,
-   * and the cursors overlay. */
-  register: (editor: LexicalEditor) => () => void
-  /** The shared Yjs document. */
-  readonly doc: YDoc
-  /** The network provider. */
-  readonly provider: CollabProvider
-  /** Connect the provider (no-op if `autoConnect` already connected). */
-  connect: () => void
-  /** Disconnect the provider. */
-  disconnect: () => void
-}
-```
-
----
-
 # @llui/markdown-editor
 
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
@@ -15929,3 +15669,504 @@ const GFM_TRANSFORMERS: readonly Transformer[]
 - [`@llui/lexical`](/api/lexical) — the low-level Lexical ↔ signal-runtime binding this editor is built on.
 - [`@llui/dom`](/api/dom) — the runtime; `markdownEditor()` is a standard LLui component.
 - [Examples on GitHub](https://github.com/fponticelli/llui/tree/main/examples/markdown-editor) — full editor wired with every plugin.
+
+---
+
+# @llui/lexical
+
+The seam between [Lexical](https://lexical.dev) (Meta's extensible text-editor framework) and the LLui signal runtime. It mounts a Lexical editor as a [`foreign()`](/api/dom) island inside an LLui view, defines a small plugin contract so editor behavior composes the same way LLui views do, and bridges Lexical `DecoratorNode`s to LLui sub-views so rich embeds (callouts, math, images, …) are authored as ordinary LLui components.
+
+This is the low-level layer. If you want a ready-made WYSIWYG editor, reach for [`@llui/markdown-editor`](/api/markdown-editor), which is built on top of this package. Use `@llui/lexical` directly when you are building your own editor surface or a custom node type.
+
+```bash
+pnpm add @llui/lexical @llui/dom lexical
+```
+
+`lexical` is a peer dependency — you bring the Lexical version you want.
+
+## The three seams
+
+- **`lexicalForeign(opts)`** — wraps a Lexical editor as an LLui `foreign()` mountable. LLui owns the host node; Lexical owns everything inside it. Editor output (selection/format changes, content edits) flows back out as messages, so the surrounding LLui component reacts with the normal `update`/`view` cycle.
+- **Plugin contract** (`LexicalPlugin`, `PluginContext`, `decoratorBridge`, `registerShortcuts`) — a plugin receives a `PluginContext` (the editor, a shortcut registrar, a decorator-bridge factory) and registers commands, nodes, and key bindings. Plugins are plain values you compose into a list, mirroring how LLui structural primitives compose.
+- **Decorator bridge** (`LLuiDecoratorNode`, `registerDecoratorBridges`, `DecoratorBridge`) — a Lexical `DecoratorNode` whose rendered body is an LLui sub-view. Author an embed once as an LLui component; the bridge mounts/unmounts it as Lexical inserts and removes the node.
+
+## Reading selection state
+
+`readBaseFormat` / `$readBaseFormat` collapse the active Lexical selection into a plain, serializable `BaseFormat` (block type, alignment, bold/italic/…) — the shape a toolbar binds to. The `$`-prefixed variant runs inside a Lexical read transaction; the unprefixed one wraps that for you.
+
+## API
+
+
+## Functions
+
+### `decoratorBridge()`
+
+Author-facing constructor for a {@link DecoratorBridge}. Preserves the
+sub-component's `State`/`Msg`/`Effect` and the node `Data` type at the
+definition site; only the node's serialized payload is narrowed back to
+`Data` at mount time (the single deserialization-boundary cast, exactly like
+`JSON.parse` returning a declared type).
+
+```typescript
+function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(type: string, factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>): DecoratorBridge
+```
+
+### `parseCombo()`
+
+Parse a chord like `Mod-Shift-7` into its parts. Case-insensitive on
+modifiers; the final segment is the key (lower-cased for letters).
+
+```typescript
+function parseCombo(combo: string): ParsedCombo
+```
+
+### `matchesCombo()`
+
+Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
+Ctrl elsewhere; all declared modifiers must match exactly (no extras).
+
+```typescript
+function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean
+```
+
+### `isMacPlatform()`
+
+Best-effort macOS detection (browser only; defaults to false off-DOM).
+
+```typescript
+function isMacPlatform(): boolean
+```
+
+### `registerShortcuts()`
+
+Register a set of shortcuts on the editor through one KEY_DOWN handler.
+Returns a disposer. The first matching shortcut whose `run` returns `true`
+wins and the event is consumed.
+
+```typescript
+function registerShortcuts(editor: LexicalEditor, shortcuts: readonly ShortcutSpec[]): () => void
+```
+
+### `$readBaseFormat()`
+
+Read the base format at the current selection. Must run inside a Lexical
+read/update context (it calls `$`-prefixed APIs).
+
+```typescript
+function $readBaseFormat(): BaseFormat
+```
+
+### `readBaseFormat()`
+
+Convenience wrapper that opens a read context on `editor`.
+
+```typescript
+function readBaseFormat(editor: LexicalEditor): BaseFormat
+```
+
+### `lexicalForeign()`
+
+Mount Lexical into an LLui view. Returns a `Mountable` placed in the view
+array; Lexical is created on mount and destroyed on the component's dispose.
+
+```typescript
+function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>): Mountable
+```
+
+### `$createLLuiDecoratorNode()`
+
+Create a decorator node for `bridgeType` carrying `data`.
+
+```typescript
+function $createLLuiDecoratorNode(bridgeType: string, data: unknown): LLuiDecoratorNode
+```
+
+### `$isLLuiDecoratorNode()`
+
+```typescript
+function $isLLuiDecoratorNode(node: LexicalNode | null | undefined): node is LLuiDecoratorNode
+```
+
+### `registerDecoratorBridges()`
+
+Wire decorator bridges onto an editor: register the bridge registry, place
+each decoration element into its node's DOM, and dispose sub-apps when their
+nodes are destroyed. Returns a disposer that tears down all live sub-apps.
+Typically called from a plugin's `register`.
+
+```typescript
+function registerDecoratorBridges(editor: LexicalEditor, bridges: readonly DecoratorBridge[]): () => void
+```
+
+## Types
+
+### `BaseBlockType`
+
+Block kinds resolvable without list/code packages. Anything else → 'other',
+which the markdown layer refines (list, code, …).
+
+```typescript
+export type BaseBlockType =
+  | 'paragraph'
+  | 'h1'
+  | 'h2'
+  | 'h3'
+  | 'h4'
+  | 'h5'
+  | 'h6'
+  | 'quote'
+  | 'other'
+```
+
+### `Alignment`
+
+```typescript
+export type Alignment = 'left' | 'center' | 'right' | 'justify' | 'start' | 'end' | null
+```
+
+### `SerializedLLuiDecoratorNode`
+
+```typescript
+export type SerializedLLuiDecoratorNode = Spread<
+  { bridgeType: string; data: unknown },
+  SerializedLexicalNode
+>
+```
+
+## Interfaces
+
+### `ShortcutSpec`
+
+A keyboard shortcut bound to an editor action.
+`combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
+elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
+when it handled the event (which stops propagation / prevents default).
+
+```typescript
+export interface ShortcutSpec {
+  combo: string
+  run: (editor: LexicalEditor) => boolean
+}
+```
+
+### `PluginContext`
+
+Context handed to `plugin.register` so a plugin can talk back to the host
+(e.g. open a slash menu) without owning the host's `send`. `Emit` is the
+host message type; `@llui/lexical` leaves it `unknown`, hosts narrow it.
+
+```typescript
+export interface PluginContext<Emit = unknown> {
+  /** Emit a host message into the embedding component's update loop. */
+  emit: (msg: Emit) => void
+}
+```
+
+### `DecoratorApi`
+
+Imperative handle a decorator sub-view uses to talk to its Lexical node.
+
+```typescript
+export interface DecoratorApi<Data> {
+  /** Persist new node data (writes into the Lexical node → markdown-serializable). */
+  update: (next: Data) => void
+  /** The owning Lexical editor (for dispatching commands, reading state). */
+  editor: LexicalEditor
+}
+```
+
+### `DecoratorBridge`
+
+Bridges a custom node type to an LLui sub-view. The sub-view's
+`State`/`Msg`/`Effect` and `Data` types are fully erased here: a bridge is
+stored monomorphically in the registry, and `mount` builds + mounts the
+sub-app, returning a disposer. Authors construct bridges with the typed
+{@link decoratorBridge} helper, which captures concrete types in a closure.
+
+```typescript
+export interface DecoratorBridge {
+  /** The id used by the contributing markdown transformer. */
+  type: string
+  /** Mount the sub-view for a node's (deserialized) data; returns a disposer. */
+  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => () => void
+}
+```
+
+### `LexicalPlugin`
+
+A composable unit of editor behaviour.
+
+```typescript
+export interface LexicalPlugin<Emit = unknown> {
+  /** Stable identifier (also used for de-duplication and overrides). */
+  name: string
+  /** Lexical node classes registered on the editor config. */
+  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  /** Imperative registration (commands, listeners). Returns a disposer. */
+  register?: (editor: LexicalEditor, ctx: PluginContext<Emit>) => () => void
+  /** Keyboard shortcuts wired through a single KEY_DOWN command. */
+  shortcuts?: readonly ShortcutSpec[]
+  /** Decorator bridges this plugin owns. */
+  decorators?: readonly DecoratorBridge[]
+}
+```
+
+### `ParsedCombo`
+
+A parsed chord. `mod` means ⌘ on macOS / Ctrl elsewhere.
+
+```typescript
+export interface ParsedCombo {
+  key: string
+  mod: boolean
+  shift: boolean
+  alt: boolean
+  ctrl: boolean
+}
+```
+
+### `BaseFormat`
+
+The generic format surface at the current selection.
+
+```typescript
+export interface BaseFormat {
+  bold: boolean
+  italic: boolean
+  strikethrough: boolean
+  underline: boolean
+  code: boolean
+  blockType: BaseBlockType
+  alignment: Alignment
+  /** The resolved top-level block element key (lets the markdown layer refine). */
+  blockKey: string | null
+  hasSelection: boolean
+  isCollapsed: boolean
+}
+```
+
+### `SelectionContext`
+
+Context handed to the selection callback on every commit.
+
+```typescript
+export interface SelectionContext {
+  editor: LexicalEditor
+  canUndo: boolean
+  canRedo: boolean
+}
+```
+
+### `LexicalForeignOptions`
+
+```typescript
+export interface LexicalForeignOptions<Emit = unknown> {
+  /** Editor namespace (instance isolation; required for distinct editors). */
+  namespace: string
+  theme?: EditorThemeClasses
+  /** Node classes registered in addition to the plugins' own nodes. */
+  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  /** Plugins: their `nodes` are merged, `register`/`shortcuts` wired at mount. */
+  plugins?: ReadonlyArray<LexicalPlugin<Emit>>
+  /** Serialize the live document → string (runs in a read context). */
+  serialize: (editor: LexicalEditor) => string
+  /** Deserialize a string into the document (runs in an update context). */
+  deserialize: (editor: LexicalEditor, value: string) => void
+  /** Initial document (uncontrolled) — ignored when `value` is provided. */
+  defaultValue?: string
+  /** Controlled document signal; the editor follows it (echo-guarded). */
+  value?: Signal<string>
+  /** Reactive read-only flag (always supplied by the host's state). */
+  readonly: Signal<boolean>
+  /** Debounce window (ms) for outbound serialization. Default 300. */
+  changeDebounceMs?: number
+  /** Register the built-in `@lexical/history` undo stack. Default `true`.
+   * Set `false` when an external owner provides history (e.g. a CRDT undo
+   * manager in collab mode) — a local stack would shadow it and cross peers. */
+  history?: boolean
+  /** When the document is seeded. `'auto'` (default) seeds from
+   * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
+   * external owner controls it (e.g. collab seeds once, gated on provider sync,
+   * only if the shared doc is still empty). */
+  seedMode?: 'auto' | 'deferred'
+  /** Outbound: serialized document changed (debounced, real edits only). */
+  onChange?: (value: string) => void
+  /** Outbound: selection / format / structure changed (every commit). */
+  onSelectionChange?: (ctx: SelectionContext) => void
+  /** Host emit, handed to each plugin's `register` context. */
+  emit?: (msg: Emit) => void
+  /** Receives the live editor at mount (host dispatches commands through it). */
+  onReady?: (editor: LexicalEditor) => void
+  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
+  register?: (editor: LexicalEditor) => () => void
+  onError?: (error: Error) => void
+}
+```
+
+## Classes
+
+### `LLuiDecoratorNode`
+
+A generic decorator node that mounts an LLui sub-view via a registered
+{@link DecoratorBridge}.
+
+```typescript
+class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
+  __bridgeType: string
+  __data: unknown
+  getType(): string
+  clone(node: LLuiDecoratorNode): LLuiDecoratorNode
+  constructor(bridgeType: string, data: unknown, key?: NodeKey)
+  createDOM(_config: EditorConfig): HTMLElement
+  updateDOM(): false
+  isInline(): false
+  importDOM(): DOMConversionMap | null
+  getBridgeType(): string
+  getData(): unknown
+  setData(data: unknown): void
+  decorate(editor: LexicalEditor): HTMLElement
+  exportJSON(): SerializedLLuiDecoratorNode
+  importJSON(json: SerializedLLuiDecoratorNode): LLuiDecoratorNode
+}
+```
+
+## Constants
+
+### `PROGRAMMATIC_TAG`
+
+Lexical update tag marking a programmatic write (seed / controlled setValue),
+so the outbound change listener doesn't echo it back to the host.
+
+```typescript
+const PROGRAMMATIC_TAG
+```
+
+
+
+## Related
+
+- [`@llui/markdown-editor`](/api/markdown-editor) — the WYSIWYG editor built on this seam.
+- [`@llui/dom`](/api/dom) — `foreign()`, the imperative-library mounting primitive this package builds on.
+- [Lexical documentation](https://lexical.dev) — the underlying editor framework.
+
+---
+
+# @llui/lexical-collab
+
+Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `register` hook you wire into `lexicalForeign({ history: false, seedMode: 'deferred', register })` — or you pass it through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
+
+```bash
+pnpm add @llui/lexical-collab @llui/lexical @lexical/yjs yjs
+```
+
+`@lexical/yjs` and `yjs` are peer dependencies.
+
+## What it gives you
+
+- **CRDT sync** — document state converges across clients through the injected `CollabProvider`.
+- **Scoped undo** — undo/redo is bound to each client's own edits rather than the shared global stream.
+- **Presence cursors** — remote users (`CollabUser`) surface as live selection/cursor decorations.
+
+## API
+
+
+## Functions
+
+### `yjsCollab()`
+
+Build (but do not yet bind) a collaborative editing handle.
+
+```typescript
+function yjsCollab(config: YjsCollabConfig): YjsCollab
+```
+
+## Types
+
+### `CollabProvider`
+
+A Yjs network/transport provider. Structurally identical to `@lexical/yjs`'s
+`Provider`; re-exported so consumers type their factory without reaching into
+`@lexical/yjs` directly. `y-websocket` / `y-webrtc` / `@hocuspocus/provider`
+all satisfy it.
+
+```typescript
+export type CollabProvider = Provider
+```
+
+## Interfaces
+
+### `CollabUser`
+
+Local presence identity broadcast to peers (name + caret colour).
+
+```typescript
+export interface CollabUser {
+  /** Display name shown on the remote caret. */
+  name: string
+  /** Caret / selection colour (any CSS colour). */
+  color: string
+  /** Arbitrary extra data merged into this client's awareness state. */
+  awarenessData?: Record<string, unknown>
+}
+```
+
+### `YjsCollabConfig`
+
+```typescript
+export interface YjsCollabConfig {
+  /** Shared document id (room name). Must match across peers. */
+  id: string
+  /** The shared Yjs document. Created if omitted (and registered in `docMap`). */
+  doc?: YDoc
+  /** Doc registry shared with the provider factory. Created if omitted. */
+  docMap?: Map<string, YDoc>
+  /** A ready provider. Mutually exclusive with `providerFactory`. */
+  provider?: CollabProvider
+  /** Factory building the provider from the (id, docMap). Preferred — it lets
+   * this module own doc creation/registration before the provider binds. */
+  providerFactory?: (id: string, docMap: Map<string, YDoc>) => CollabProvider
+  /** Local presence identity. Presence is disabled when omitted. */
+  user?: CollabUser
+  /** Whether THIS peer may seed an empty shared document. Default `true`.
+   * In a multi-peer app exactly one peer should bootstrap (e.g. the creator);
+   * the seed only runs if the shared doc is still empty after first sync. */
+  shouldBootstrap?: boolean
+  /** Seed an empty shared document (runs once, inside an editor update, only on
+   * the bootstrapping peer). Without it an empty paragraph is inserted. */
+  seed?: (editor: LexicalEditor) => void
+  /** Overlay element that hosts remote carets. Created over the editor when
+   * omitted; its offsetParent is made `position: relative` if it is static. */
+  cursorsContainer?: HTMLElement
+  /** Per-node properties excluded from CRDT sync (advanced). */
+  excludedProperties?: ExcludedProperties
+  /** Connect the provider at mount. Default `true`. */
+  autoConnect?: boolean
+  /** Connection status changed (`'connected'` ⇄ disconnected). */
+  onStatus?: (connected: boolean) => void
+  /** Provider sync state changed (initial document handshake complete). */
+  onSync?: (synced: boolean) => void
+  /** Remote peer count changed (distinct awareness states, excluding self). */
+  onPeers?: (count: number) => void
+}
+```
+
+### `YjsCollab`
+
+Live handle returned by {@link yjsCollab}.
+
+```typescript
+export interface YjsCollab {
+  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
+   * Returns a disposer that tears down every listener, the provider connection,
+   * and the cursors overlay. */
+  register: (editor: LexicalEditor) => () => void
+  /** The shared Yjs document. */
+  readonly doc: YDoc
+  /** The network provider. */
+  readonly provider: CollabProvider
+  /** Connect the provider (no-op if `autoConnect` already connected). */
+  connect: () => void
+  /** Disconnect the provider. */
+  disconnect: () => void
+}
+```

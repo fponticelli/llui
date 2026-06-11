@@ -53,6 +53,9 @@ function dialogOpen(msg: DialogMsg, current: boolean): boolean {
       return !current
     case 'setOpen':
       return msg.open
+    case 'animationEnd':
+    case 'transitionEnd':
+      return current
   }
 }
 

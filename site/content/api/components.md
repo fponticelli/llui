@@ -233,7 +233,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 58 components follow the same pattern:
+All 66 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -287,18 +287,19 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`AngleSliderState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `value`    | `number`  |
-| `min`      | `number`  |
-| `max`      | `number`  |
-| `step`     | `number`  |
-| `disabled` | `boolean` |
-| `readonly` | `boolean` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `value`    | `number`         |
+| `min`      | `number`         |
+| `max`      | `number`         |
+| `step`     | `number`         |
+| `disabled` | `boolean`        |
+| `readonly` | `boolean`        |
+| `dir`      | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`
+**Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`, `setDir`
 
-**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean`
+**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readonly?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -344,29 +345,54 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ---
 
+### Breadcrumbs
+
+**State** (`BreadcrumbsState`):
+
+| Field        | Type               |
+| ------------ | ------------------ |
+| `items`      | `BreadcrumbItem[]` |
+| `maxVisible` | `number \| null`   |
+| `expanded`   | `boolean`          |
+
+**Messages:** `setItems`, `expand`, `collapse`
+
+**Init options:** `items?: BreadcrumbItem[], maxVisible?: number | null, expanded?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `list`, `item`, `link`, `separator`, `ellipsisTrigger`
+
+**Utilities:** `visibleItems()`
+
+---
+
 ### Carousel
 
 **State** (`CarouselState`):
 
-| Field       | Type                      |
-| ----------- | ------------------------- |
-| `current`   | `number`                  |
-| `count`     | `number`                  |
-| `loop`      | `boolean`                 |
-| `autoplay`  | `boolean`                 |
-| `interval`  | `number`                  |
-| `paused`    | `boolean`                 |
-| `direction` | `'forward' \| 'backward'` |
+| Field            | Type                      |
+| ---------------- | ------------------------- |
+| `current`        | `number`                  |
+| `count`          | `number`                  |
+| `loop`           | `boolean`                 |
+| `autoplay`       | `boolean`                 |
+| `interval`       | `number`                  |
+| `paused`         | `boolean`                 |
+| `direction`      | `'forward' \| 'backward'` |
+| `swipeThreshold` | `number`                  |
+| `dragging`       | `CarouselDrag \| null`    |
+| `dir`            | `'ltr' \| 'rtl'`          |
 
-**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
 
-**Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number`
+**Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number, swipeThreshold?: number, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
 
-**Utilities:** `canGoNext()`, `canGoPrev()`
+**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`
 
 ---
 
@@ -454,17 +480,17 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 | Field      | Type      |
 | ---------- | --------- |
-| `hsl`      | `Hsl`     |
+| `hsv`      | `Hsv`     |
 | `alpha`    | `number`  |
 | `disabled` | `boolean` |
 
-**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`
+**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`
 
-**Init options:** `hsl?: Hsl, alpha?: number, disabled?: boolean`
+**Init options:** `hsl?: Hsl, hsv?: Hsv, alpha?: number, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `swatch`
+**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `preview`, `area`, `areaThumb`, `alphaSlider`, `swatchGroup`, `swatch`
 
 ---
 
@@ -472,27 +498,32 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ComboboxState`):
 
-| Field              | Type             |
-| ------------------ | ---------------- |
-| `open`             | `boolean`        |
-| `value`            | `string[]`       |
-| `inputValue`       | `string`         |
-| `items`            | `string[]`       |
-| `disabledItems`    | `string[]`       |
-| `filteredItems`    | `string[]`       |
-| `highlightedIndex` | `number \| null` |
-| `selectionMode`    | `SelectionMode`  |
-| `disabled`         | `boolean`        |
+| Field              | Type              |
+| ------------------ | ----------------- |
+| `open`             | `boolean`         |
+| `value`            | `string[]`        |
+| `inputValue`       | `string`          |
+| `items`            | `string[]`        |
+| `groups`           | `ComboboxGroup[]` |
+| `disabledItems`    | `string[]`        |
+| `filteredItems`    | `string[]`        |
+| `highlightedIndex` | `number \| null`  |
+| `selectionMode`    | `SelectionMode`   |
+| `disabled`         | `boolean`         |
+| `allowCreate`      | `boolean`         |
+| `status`           | `AsyncStatus`     |
+| `requestId`        | `number`          |
+| `error`            | `string \| null`  |
 
-**Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`
+**Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`, `loadStart`, `loadSuccess`, `loadError`
 
-**Init options:** `value?: string[], inputValue?: string, items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean`
+**Init options:** `value?: string[], inputValue?: string, items?: string[], groups?: ComboboxGroup[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, allowCreate?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `empty`
+**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isCreateOption()`, `CREATE_OPTION_VALUE()`
 
 ---
 
@@ -500,22 +531,29 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ContextMenuState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `open`          | `boolean`        |
-| `x`             | `number`         |
-| `y`             | `number`         |
-| `items`         | `string[]`       |
-| `disabledItems` | `string[]`       |
-| `highlighted`   | `string \| null` |
+| Field                | Type                             |
+| -------------------- | -------------------------------- |
+| `open`               | `boolean`                        |
+| `status`             | `PresenceStatus`                 |
+| `skipAnimations`     | `boolean`                        |
+| `x`                  | `number`                         |
+| `y`                  | `number`                         |
+| `items`              | `ContextMenuItem[]`              |
+| `highlights`         | `Record<string, string \| null>` |
+| `openPath`           | `string[]`                       |
+| `checked`            | `string[]`                       |
+| `closeOnSelect`      | `boolean`                        |
+| `typeahead`          | `string`                         |
+| `typeaheadExpiresAt` | `number`                         |
+| `dir`                | `'ltr' \| 'rtl'`                 |
 
-**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `selectHighlighted`, `select`, `setItems`
+**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `items?: string[], disabledItems?: string[]`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
 ---
 
@@ -550,22 +588,27 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 | Field          | Type             |
 | -------------- | ---------------- |
+| `mode`         | `DatePickerMode` |
 | `value`        | `string \| null` |
+| `start`        | `string \| null` |
+| `end`          | `string \| null` |
+| `hoverDate`    | `string \| null` |
 | `visibleMonth` | `number`         |
 | `visibleYear`  | `number`         |
+| `months`       | `number`         |
 | `focused`      | `string`         |
 | `min`          | `string \| null` |
 | `max`          | `string \| null` |
 | `weekStartsOn` | `0 \| 1`         |
 | `disabled`     | `boolean`        |
 
-**Messages:** `setValue`, `setFocused`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
+**Messages:** `setValue`, `setRange`, `setFocused`, `setHover`, `clearHover`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
 
-**Init options:** `value?: string | null, visibleMonth?: number, visibleYear?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
+**Init options:** `mode?: DatePickerMode, value?: string | null, start?: string | null, end?: string | null, visibleMonth?: number, visibleYear?: number, months?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`
+**Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`, `preset`
 
 ---
 
@@ -573,19 +616,21 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DialogState`):
 
-| Field  | Type      |
-| ------ | --------- |
-| `open` | `boolean` |
+| Field            | Type             |
+| ---------------- | ---------------- |
+| `open`           | `boolean`        |
+| `status`         | `PresenceStatus` |
+| `skipAnimations` | `boolean`        |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -593,19 +638,21 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DrawerState`):
 
-| Field  | Type      |
-| ------ | --------- |
-| `open` | `boolean` |
+| Field            | Type             |
+| ---------------- | ---------------- |
+| `open`           | `boolean`        |
+| `status`         | `PresenceStatus` |
+| `skipAnimations` | `boolean`        |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -627,6 +674,49 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `preview`, `input`, `submitTrigger`, `cancelTrigger`, `editTrigger`
+
+---
+
+### Field
+
+**State** (`FieldState`):
+
+| Field      | Type      |
+| ---------- | --------- |
+| `id`       | `string`  |
+| `invalid`  | `boolean` |
+| `required` | `boolean` |
+| `disabled` | `boolean` |
+| `readonly` | `boolean` |
+| `touched`  | `boolean` |
+
+**Messages:** `setInvalid`, `setRequired`, `setDisabled`, `setReadonly`, `setTouched`
+
+**Init options:** `id: string, invalid?: boolean, required?: boolean, disabled?: boolean, readonly?: boolean, touched?: boolean`
+
+**Connect options:** `FieldConnectOptions`
+
+**Parts:** `root`, `label`, `control`, `description`, `errorText`
+
+---
+
+### Fieldset
+
+**State** (`FieldsetState`):
+
+| Field      | Type      |
+| ---------- | --------- |
+| `id`       | `string`  |
+| `disabled` | `boolean` |
+| `invalid`  | `boolean` |
+
+**Messages:** `setDisabled`, `setInvalid`
+
+**Init options:** `id: string, disabled?: boolean, invalid?: boolean`
+
+**Connect options:** `FieldsetConnectOptions`
+
+**Parts:** `root`, `legend`, `errorText`
 
 ---
 
@@ -711,13 +801,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`HoverCardState`):
 
-| Field  | Type      |
-| ------ | --------- |
-| `open` | `boolean` |
+| Field            | Type             |
+| ---------------- | ---------------- |
+| `open`           | `boolean`        |
+| `status`         | `PresenceStatus` |
+| `skipAnimations` | `boolean`        |
 
-**Messages:** `show`, `hide`, `setOpen`
+**Messages:** `show`, `hide`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -817,24 +909,78 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`MenuState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `open`               | `boolean`        |
-| `items`              | `string[]`       |
-| `disabledItems`      | `string[]`       |
-| `highlighted`        | `string \| null` |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
+| Field                | Type                             |
+| -------------------- | -------------------------------- |
+| `open`               | `boolean`                        |
+| `status`             | `PresenceStatus`                 |
+| `skipAnimations`     | `boolean`                        |
+| `items`              | `MenuItem[]`                     |
+| `highlights`         | `Record<string, string \| null>` |
+| `openPath`           | `string[]`                       |
+| `checked`            | `string[]`                       |
+| `closeOnSelect`      | `boolean`                        |
+| `typeahead`          | `string`                         |
+| `typeaheadExpiresAt` | `number`                         |
+| `dir`                | `'ltr' \| 'rtl'`                 |
 
-**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `setItems`, `typeahead`
+**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: string[], disabledItems?: string[], highlighted?: string | null`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+
+---
+
+### Menubar
+
+**State** (`MenubarState`):
+
+| Field           | Type                        |
+| --------------- | --------------------------- |
+| `menus`         | `string[]`                  |
+| `open`          | `string \| null`            |
+| `focused`       | `string \| null`            |
+| `disabledMenus` | `string[]`                  |
+| `menuStates`    | `Record<string, MenuState>` |
+
+**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `focusNext`, `focusPrev`, `menuMsg`
+
+**Init options:** `menus: MenubarMenu[], focused?: string | null`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `menuTrigger`, `menu`
 
 **Utilities:** `overlay()`
+
+---
+
+### Meter
+
+**State** (`MeterState`):
+
+| Field     | Type     |
+| --------- | -------- |
+| `value`   | `number` |
+| `min`     | `number` |
+| `max`     | `number` |
+| `low`     | `number` |
+| `high`    | `number` |
+| `optimum` | `number` |
+
+**Messages:** `setValue`, `setMax`
+
+**Init options:** `value?: number, min?: number, max?: number, low?: number, high?: number, optimum?: number`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `track`, `range`, `label`, `valueText`
+
+**Utilities:** `percent()`, `thresholdState()`
 
 ---
 
@@ -847,10 +993,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `open`     | `string[]`       |
 | `focused`  | `string \| null` |
 | `disabled` | `boolean`        |
+| `dir`      | `'ltr' \| 'rtl'` |
 
-**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`
 
-**Init options:** `open?: string[], focused?: string | null, disabled?: boolean`
+**Init options:** `open?: string[], focused?: string | null, disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -886,24 +1033,25 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PaginationState`):
 
-| Field        | Type      |
-| ------------ | --------- |
-| `page`       | `number`  |
-| `pageSize`   | `number`  |
-| `total`      | `number`  |
-| `siblings`   | `number`  |
-| `boundaries` | `number`  |
-| `disabled`   | `boolean` |
+| Field        | Type            |
+| ------------ | --------------- |
+| `page`       | `number`        |
+| `pageSize`   | `number`        |
+| `total`      | `number`        |
+| `siblings`   | `number`        |
+| `boundaries` | `number`        |
+| `disabled`   | `boolean`       |
+| `dir`        | `TextDirection` |
 
-**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`
+**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`, `setDir`
 
-**Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean`
+**Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `prevTrigger`, `nextTrigger`, `item`, `ellipsis`
 
-**Utilities:** `totalPages()`, `pageItems()`
+**Utilities:** `totalPages()`, `pageItems()`, `onControlKeyDown()`
 
 ---
 
@@ -954,19 +1102,21 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PopoverState`):
 
-| Field  | Type      |
-| ------ | --------- |
-| `open` | `boolean` |
+| Field            | Type             |
+| ---------------- | ---------------- |
+| `open`           | `boolean`        |
+| `status`         | `PresenceStatus` |
+| `skipAnimations` | `boolean`        |
 
-**Messages:** `open`, `close`, `toggle`, `setOpen`
+**Messages:** `open`, `close`, `toggle`, `setOpen`, `animationEnd`, `transitionEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `title`, `description`, `arrow`, `closeTrigger`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
 
 ---
 
@@ -1043,10 +1193,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabledItems` | `string[]`       |
 | `disabled`      | `boolean`        |
 | `orientation`   | `Orientation`    |
+| `dir`           | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`
+**Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`, `setDir`
 
-**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation`
+**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -1066,10 +1217,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabled`     | `boolean`        |
 | `readonly`     | `boolean`        |
 | `hoveredValue` | `number \| null` |
+| `dir`          | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
+**Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`, `setDir`
 
-**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean`
+**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readonly?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -1097,6 +1249,25 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ---
 
+### Search Field
+
+**State** (`SearchFieldState`):
+
+| Field      | Type      |
+| ---------- | --------- |
+| `value`    | `string`  |
+| `disabled` | `boolean` |
+
+**Messages:** `setValue`, `clear`, `submit`
+
+**Init options:** `value?: string, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `label`, `input`, `clearTrigger`
+
+---
+
 ### Select
 
 **State** (`SelectState`):
@@ -1106,6 +1277,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `open`               | `boolean`        |
 | `value`              | `string[]`       |
 | `items`              | `string[]`       |
+| `groups`             | `SelectGroup[]`  |
 | `disabledItems`      | `string[]`       |
 | `selectionMode`      | `SelectionMode`  |
 | `highlightedIndex`   | `number \| null` |
@@ -1116,11 +1288,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Messages:** `open`, `close`, `toggle`, `selectOption`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
-**Init options:** `value?: string[], items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, required?: boolean`
+**Init options:** `value?: string[], items?: string[], groups?: SelectGroup[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `valueText`
+**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `group`, `valueText`
 
 **Utilities:** `overlay()`
 
@@ -1152,19 +1324,20 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SliderState`):
 
-| Field                   | Type          |
-| ----------------------- | ------------- |
-| `value`                 | `number[]`    |
-| `min`                   | `number`      |
-| `max`                   | `number`      |
-| `step`                  | `number`      |
-| `disabled`              | `boolean`     |
-| `orientation`           | `Orientation` |
-| `minStepsBetweenThumbs` | `number`      |
+| Field                   | Type             |
+| ----------------------- | ---------------- |
+| `value`                 | `number[]`       |
+| `min`                   | `number`         |
+| `max`                   | `number`         |
+| `step`                  | `number`         |
+| `disabled`              | `boolean`        |
+| `orientation`           | `Orientation`    |
+| `minStepsBetweenThumbs` | `number`         |
+| `dir`                   | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
+**Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`, `setDir`
 
-**Init options:** `value?: number[], min?: number, max?: number, step?: number, disabled?: boolean, orientation?: Orientation, minStepsBetweenThumbs?: number`
+**Init options:** `value?: number[], min?: number, max?: number, step?: number, disabled?: boolean, orientation?: Orientation, minStepsBetweenThumbs?: number, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `thumb`, `root`, `control`, `track`, `range`, `thumb`, `value`
 
@@ -1203,19 +1376,20 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SplitterState`):
 
-| Field         | Type          |
-| ------------- | ------------- |
-| `position`    | `number`      |
-| `min`         | `number`      |
-| `max`         | `number`      |
-| `step`        | `number`      |
-| `orientation` | `Orientation` |
-| `disabled`    | `boolean`     |
-| `dragging`    | `boolean`     |
+| Field         | Type             |
+| ------------- | ---------------- |
+| `position`    | `number`         |
+| `min`         | `number`         |
+| `max`         | `number`         |
+| `step`        | `number`         |
+| `orientation` | `Orientation`    |
+| `disabled`    | `boolean`        |
+| `dragging`    | `boolean`        |
+| `dir`         | `'ltr' \| 'rtl'` |
 
-**Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`
+**Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`, `setDir`
 
-**Init options:** `position?: number, min?: number, max?: number, step?: number, orientation?: Orientation, disabled?: boolean`
+**Init options:** `position?: number, min?: number, max?: number, step?: number, orientation?: Orientation, disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `root`, `primaryPanel`, `secondaryPanel`, `resizeTrigger`
 
@@ -1265,6 +1439,35 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ---
 
+### Table
+
+**State** (`TableState`):
+
+| Field           | Type                     |
+| --------------- | ------------------------ |
+| `columns`       | `TableColumn[]`          |
+| `rows`          | `string[]`               |
+| `sort`          | `TableSort \| null`      |
+| `selection`     | `string[]`               |
+| `selectionMode` | `TableSelectionMode`     |
+| `focusedCell`   | `TableCellCoord \| null` |
+| `rangeAnchor`   | `number \| null`         |
+| `pageSize`      | `number`                 |
+| `descFirst`     | `boolean`                |
+| `disabled`      | `boolean`                |
+
+**Messages:** `toggleSort`, `setSort`, `toggleRow`, `selectAll`, `clearSelection`, `toggleAll`, `setSelection`, `selectRange`, `activateRow`, `setRows`, `setColumns`, `focusCell`, `moveCell`, `rowStart`, `rowEnd`, `gridStart`, `gridEnd`, `pageDown`, `pageUp`
+
+**Init options:** `columns?: TableColumn[], rows?: string[], sort?: TableSort | null, selection?: string[], selectionMode?: TableSelectionMode, focusedCell?: TableCellCoord | null, pageSize?: number, descFirst?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `columnHeader`, `row`, `cell`, `selectAllCheckbox`, `rowCheckbox`
+
+**Utilities:** `isRowSelected()`, `isAllSelected()`, `isSomeSelected()`, `sortDirectionFor()`
+
+---
+
 ### Tabs
 
 **State** (`TabsState`):
@@ -1279,10 +1482,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `focused`       | `string \| null` |
 | `loopFocus`     | `boolean`        |
 | `deselectable`  | `boolean`        |
+| `dir`           | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`
+**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
 
-**Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean`
+**Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
@@ -1387,16 +1591,17 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `toasts`    | `Toast[]`        |
 | `max`       | `number`         |
 | `placement` | `ToastPlacement` |
+| `animated`  | `boolean`        |
 
-**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `pause`, `resume`, `pauseAll`, `resumeAll`
+**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
 
-**Init options:** `max?: number, placement?: ToastPlacement`
+**Init options:** `max?: number, placement?: ToastPlacement, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `region`, `toast`
+**Parts:** `region`, `toast`, `progress`, `isPresent`
 
-**Utilities:** `nextToastId()`
+**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`
 
 ---
 
@@ -1435,10 +1640,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabled`      | `boolean`                |
 | `orientation`   | `Orientation`            |
 | `deselectable`  | `boolean`                |
+| `focused`       | `string \| null`         |
+| `loopFocus`     | `boolean`                |
+| `dir`           | `'ltr' \| 'rtl'`         |
 
-**Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`
+**Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusItem`, `setDir`
 
-**Init options:** `value?: string[], type?: 'single' | 'multiple', items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, deselectable?: boolean`
+**Init options:** `value?: string[], type?: 'single' | 'multiple', items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, deselectable?: boolean, focused?: string | null, loopFocus?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Parts:** `root`, `item`
 
@@ -1461,23 +1669,48 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ---
 
+### Toolbar
+
+**State** (`ToolbarState`):
+
+| Field           | Type             |
+| --------------- | ---------------- |
+| `items`         | `string[]`       |
+| `disabledItems` | `string[]`       |
+| `focused`       | `string \| null` |
+| `orientation`   | `Orientation`    |
+| `loopFocus`     | `boolean`        |
+| `disabled`      | `boolean`        |
+
+**Messages:** `setItems`, `setFocused`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
+
+**Init options:** `items?: string[], disabledItems?: string[], focused?: string | null, orientation?: Orientation, loopFocus?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `separator`, `item`, `group`
+
+---
+
 ### Tooltip
 
 **State** (`TooltipState`):
 
-| Field  | Type      |
-| ------ | --------- |
-| `open` | `boolean` |
+| Field      | Type             |
+| ---------- | ---------------- |
+| `open`     | `boolean`        |
+| `status`   | `PresenceStatus` |
+| `animated` | `boolean`        |
 
-**Messages:** `show`, `hide`, `toggle`, `setOpen`
+**Messages:** `show`, `hide`, `toggle`, `setOpen`, `animationEnd`
 
-**Init options:** `open?: boolean`
+**Init options:** `open?: boolean, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `arrow`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `isMounted()`
 
 ---
 
@@ -1508,26 +1741,30 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TreeViewState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `expanded`           | `string[]`       |
-| `selected`           | `string[]`       |
-| `checked`            | `string[]`       |
-| `indeterminate`      | `string[]`       |
-| `focused`            | `string \| null` |
-| `selectionMode`      | `SelectionMode`  |
-| `visibleItems`       | `string[]`       |
-| `visibleLabels`      | `string[]`       |
-| `disabled`           | `boolean`        |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
-| `renaming`           | `string \| null` |
-| `renameDraft`        | `string`         |
-| `loading`            | `string[]`       |
+| Field                | Type                           |
+| -------------------- | ------------------------------ |
+| `expanded`           | `string[]`                     |
+| `selected`           | `string[]`                     |
+| `checked`            | `string[]`                     |
+| `indeterminate`      | `string[]`                     |
+| `focused`            | `string \| null`               |
+| `selectionMode`      | `SelectionMode`                |
+| `visibleItems`       | `string[]`                     |
+| `visibleLabels`      | `string[]`                     |
+| `disabled`           | `boolean`                      |
+| `typeahead`          | `string`                       |
+| `typeaheadExpiresAt` | `number`                       |
+| `renaming`           | `string \| null`               |
+| `renameDraft`        | `string`                       |
+| `loading`            | `string[]`                     |
+| `nodes`              | `Record<string, TreeNodeMeta>` |
+| `roots`              | `string[]`                     |
+| `loaded`             | `string[]`                     |
+| `loadFailed`         | `string[]`                     |
 
-**Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`
+**Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`, `setNodes`, `childrenLoaded`, `childrenLoadFailed`
 
-**Init options:** `expanded?: string[], selected?: string[], checked?: string[], indeterminate?: string[], selectionMode?: SelectionMode, disabled?: boolean, visibleItems?: string[], visibleLabels?: string[]`
+**Init options:** `expanded?: string[], selected?: string[], checked?: string[], indeterminate?: string[], selectionMode?: SelectionMode, disabled?: boolean, visibleItems?: string[], visibleLabels?: string[], nodes?: Record<string, TreeNodeMeta>, roots?: string[], loaded?: string[], loadFailed?: string[]`
 
 **Connect options:** `ConnectOptions`
 

@@ -61,7 +61,7 @@ import {
   type CollapsibleState,
 } from '@llui/components/collapsible'
 import { tabs, type TabsMsg, type TabsState } from '@llui/components/tabs'
-import { menu, type MenuMsg, type MenuState } from '@llui/components/menu'
+import { menu, type MenuMsg, type MenuState, type MenuItem } from '@llui/components/menu'
 import { bakeAnnotations } from './bake.js'
 import { createBrowseView } from './browse-view.js'
 import type { ExportableStore, NotesStore } from './notes-store.js'
@@ -452,7 +452,10 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
       const [tasks, effs] = reduceTask(state.tasks, msg.msg)
       let solveMenu = state.solveMenu
       const items = solveMenuItems(tasks)
-      if (items.join('\u0000') !== solveMenu.items.join('\u0000')) {
+      const changed =
+        items.length !== solveMenu.items.length ||
+        items.some((it, i) => it.value !== solveMenu.items[i]?.value)
+      if (changed) {
         ;[solveMenu] = menu.update(solveMenu, { type: 'setItems', items })
       }
       return [
@@ -468,13 +471,14 @@ function reduceHud(state: HudState, msg: HudMsg): [HudState, HudEffect[]] {
 /** The 'Start fresh' menu item value (sentinel — not a real chain name). */
 const SOLVE_FRESH = '__fresh__'
 
-/** Menu item values for the Solve resume dropdown: chains newest-first + fresh. */
-function solveMenuItems(tasks: TaskState): string[] {
+/** Menu items for the Solve resume dropdown: chains newest-first + fresh. */
+function solveMenuItems(tasks: TaskState): MenuItem[] {
   return Object.values(tasks.chains)
     .slice()
     .sort((a, b) => b.ts - a.ts)
     .map((c) => c.name)
     .concat([SOLVE_FRESH])
+    .map((value) => ({ value, kind: 'action' as const }))
 }
 
 function lineageText(tasks: TaskState): string {
