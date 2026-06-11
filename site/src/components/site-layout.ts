@@ -1,7 +1,8 @@
 import { div, nav, a, span, button, text, onMount } from '@llui/dom'
 import type { Signal, Send } from '@llui/dom'
 import { EXAMPLES } from '../examples-data'
-import { PACKAGES } from '../../pages/api/@pkg/packages'
+import { PACKAGES, PACKAGE_CATEGORIES } from '../../pages/api/@pkg/packages'
+import type { PackageMeta } from '../../pages/api/@pkg/packages'
 
 export type LayoutMsg = { type: 'toggleMenu' }
 
@@ -90,8 +91,17 @@ export function siteLayout({
           span({ class: 'nav-section' }, [text('Packages')]),
           // Generated from PACKAGES (the same single source of truth that drives
           // the `/api/<pkg>` routes) so a new package page gets its sidebar link
-          // automatically and the two can never drift apart.
-          ...PACKAGES.map((pkg) => navLink(`/api/${pkg}`, `api/${pkg}`, pkg, slug)),
+          // automatically and the two can never drift apart. Chunked into the
+          // families declared by PACKAGE_CATEGORIES so the 20-package list reads
+          // as a handful of scannable groups rather than one long run.
+          ...PACKAGE_CATEGORIES.flatMap((cat) => {
+            const pkgs = PACKAGES.filter((p) => p.category === cat.id)
+            if (pkgs.length === 0) return []
+            return [
+              span({ class: 'nav-subsection' }, [text(cat.label)]),
+              ...pkgs.map((pkg) => pkgNavLink(pkg, slug)),
+            ]
+          }),
         ],
       ),
 
@@ -181,5 +191,30 @@ function navLink(href: string, slug: string, label: string, currentSlug: Signal<
       'aria-current': currentSlug.map((current) => (current === slug ? 'page' : undefined)),
     },
     [text(label)],
+  )
+}
+
+/**
+ * Package link in the sidebar — richer than a plain nav link: the name is
+ * rendered as a code identifier with a dimmed `@llui/` scope, a per-family
+ * colour accent (via `data-cat`, styled in styles.css), and a one-line blurb
+ * underneath so the long package list is scannable at a glance.
+ */
+function pkgNavLink(pkg: PackageMeta, currentSlug: Signal<string>): Node {
+  const slug = `api/${pkg.slug}`
+  return a(
+    {
+      href: `/api/${pkg.slug}`,
+      class: currentSlug.map((current) => (current === slug ? 'nav-pkg active' : 'nav-pkg')),
+      'aria-current': currentSlug.map((current) => (current === slug ? 'page' : undefined)),
+      'data-cat': pkg.category,
+    },
+    [
+      span({ class: 'nav-pkg-name' }, [
+        span({ class: 'nav-pkg-scope' }, [text('@llui/')]),
+        text(pkg.slug),
+      ]),
+      span({ class: 'nav-pkg-blurb' }, [text(pkg.blurb)]),
+    ],
   )
 }

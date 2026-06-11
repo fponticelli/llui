@@ -111,10 +111,10 @@ const cookbook = stripFrontmatter(readLocal('content/cookbook.md'))
 // always covers exactly the published pages — in the same order. (The legacy
 // hand-written `docs/designs/09 API Reference.md` was removed with the
 // pre-signal design docs, which previously left this section empty.)
-const apiRef = PACKAGES.map((pkg) => {
-  const md = readLocal(`content/api/${pkg}.md`)
+const apiRef = PACKAGES.map(({ slug }) => {
+  const md = readLocal(`content/api/${slug}.md`)
   if (!md) {
-    console.warn(`  ⚠ no content/api/${pkg}.md — omitted from llms-full.txt`)
+    console.warn(`  ⚠ no content/api/${slug}.md — omitted from llms-full.txt`)
     return ''
   }
   // Drop frontmatter and the auto-api injection markers (HTML comments).

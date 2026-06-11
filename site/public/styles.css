@@ -11,7 +11,7 @@
   --c-code-bg: #f8fafc;
   --c-nav-bg: #f1f5f9;
   --max-width: 1200px;
-  --sidebar-width: 220px;
+  --sidebar-width: 248px;
 }
 
 /* Dark palette — applied when user selects dark OR system prefers dark (without explicit light) */
@@ -162,6 +162,19 @@ body {
   margin-top: 12px;
 }
 
+/* Family sub-header inside the Packages section (Core, Compiler, …). Lighter
+   than the top-level .nav-section so the hierarchy reads as section > family. */
+.nav-subsection {
+  display: block;
+  padding: 10px 12px 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+  opacity: 0.7;
+}
+
 .nav-link {
   display: block;
   padding: 6px 12px;
@@ -180,6 +193,68 @@ body {
   background: var(--c-accent-light);
   color: var(--c-accent);
   font-weight: 600;
+}
+
+/* ── Package links ──────────────────────────────────────────────
+   Code-style name with a dimmed scope, a family colour accent on the left
+   edge, and a one-line blurb underneath so the long list stays scannable. */
+.nav-pkg {
+  display: block;
+  padding: 5px 10px 6px;
+  border-radius: 6px;
+  border-left: 3px solid var(--cat-color, transparent);
+  color: var(--c-text);
+  text-decoration: none;
+  line-height: 1.3;
+}
+
+.nav-pkg:hover {
+  background: var(--c-accent-light);
+}
+
+.nav-pkg.active {
+  background: var(--c-accent-light);
+}
+
+.nav-pkg-name {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.nav-pkg.active .nav-pkg-name {
+  color: var(--c-accent);
+}
+
+.nav-pkg-scope {
+  color: var(--c-text-muted);
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+.nav-pkg-blurb {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--c-text-muted);
+  margin-top: 1px;
+}
+
+/* Per-family accent colour, consumed by .nav-pkg's border-left. */
+.nav-pkg[data-cat='core'] {
+  --cat-color: #2563eb;
+}
+.nav-pkg[data-cat='compiler'] {
+  --cat-color: #7c3aed;
+}
+.nav-pkg[data-cat='libraries'] {
+  --cat-color: #059669;
+}
+.nav-pkg[data-cat='ai'] {
+  --cat-color: #d97706;
+}
+.nav-pkg[data-cat='rich-text'] {
+  --cat-color: #db2777;
 }
 
 .site-content {
