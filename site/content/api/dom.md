@@ -964,17 +964,21 @@ export type PathValue<T, S extends string> = [Extract<T, null | undefined>] exte
 The union of all valid dot-separated paths of `T` — both intermediate
 (object) paths and leaf paths. Arrays contribute `${number}` indices,
 `${number}.<sub>` nested paths, and `'length'`. Navigation descends through
-nullable/optional fields (via `NonNullable`).
+nullable/optional fields (via `NonNullable`), bounded by {@link PathDepthBudget}.
 
 ```typescript
-export type ValidPath<T> = T extends null | undefined
-  ? ValidPath<NonNullable<T>>
+export type ValidPath<T, D extends number = PathDepthBudget> = T extends null | undefined
+  ? ValidPath<NonNullable<T>, D>
   : T extends readonly (infer U)[]
-    ? `${number}` | `${number}.${ValidPath<U>}` | 'length'
+    ? D extends 0
+      ? `${number}` | 'length'
+      : `${number}` | `${number}.${ValidPath<U, DecrDepth[D]>}` | 'length'
     : T extends object
       ? {
           [K in keyof T & string]: NonNullable<T[K]> extends object
-            ? K | `${K}.${ValidPath<NonNullable<T[K]>>}`
+            ? D extends 0
+              ? K
+              : K | `${K}.${ValidPath<NonNullable<T[K]>, DecrDepth[D]>}`
             : K
         }[keyof T & string]
       : never

@@ -59,7 +59,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // Pointer events for the signature canvas — dispatches stroke
   // messages. The stroke visualization uses a reactive SVG overlay
   // (see below) so we don't need an imperative paint loop.
-  onMount(() => {
+  const signatureMount = onMount(() => {
     const canvasEl = document.querySelector<HTMLCanvasElement>(
       '[data-scope="signature-pad"][data-part="canvas"]',
     )
@@ -108,7 +108,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
 
   // Image-cropper drag/resize wiring — same document-level pattern
   // used by floating-panel.
-  onMount(() => {
+  const cropperMount = onMount(() => {
     let last: { x: number; y: number } | null = null
     let mode: 'drag' | 'resize' | null = null
     let handle: string | null = null
@@ -159,6 +159,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   })
 
   return [
+    // Placed so the signature-pad and image-cropper pointer-wiring onMounts
+    // register (a discarded onMount() is inert).
+    signatureMount,
+    cropperMount,
     sectionGroup('Canvas + image', [
       card('Signature Pad', [
         div({ ...sp.root, class: 'flex flex-col gap-2' }, [

@@ -261,6 +261,22 @@
       "import": "./dist/components/menubar.js",
       "types": "./dist/components/menubar.d.ts"
     },
+    "./in-view": {
+      "import": "./dist/components/in-view.js",
+      "types": "./dist/components/in-view.d.ts"
+    },
+    "./theme-switch": {
+      "import": "./dist/components/theme-switch.js",
+      "types": "./dist/components/theme-switch.d.ts"
+    },
+    "./sortable": {
+      "import": "./dist/components/sortable.js",
+      "types": "./dist/components/sortable.d.ts"
+    },
+    "./form": {
+      "import": "./dist/components/form.js",
+      "types": "./dist/components/form.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"

@@ -68,7 +68,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   const mq = marquee.connect(state.at('marquee'), (m) => send({ type: 'marquee', msg: m }))
 
   // Timer tick loop — dispatches `tick` at 100ms intervals while running.
-  onMount(() => {
+  const timerMount = onMount(() => {
     const id = window.setInterval(() => {
       send({ type: 'timer', msg: { type: 'tick', now: Date.now() } })
     }, 100)
@@ -76,6 +76,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   })
 
   return [
+    // Placed so the timer-tick onMount registers (a discarded onMount() is inert).
+    timerMount,
     sectionGroup('Time + new inputs', [
       card('Timer', [
         div({ ...tm.root, class: 'flex items-center gap-3' }, [

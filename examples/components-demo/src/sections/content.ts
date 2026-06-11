@@ -1,10 +1,12 @@
-import { div, button, span, p, a, ul, li, img, input, each, branch, text } from '@llui/dom'
+import { div, button, span, p, a, ul, li, img, input, each, branch, onMount, text } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { toc } from '@llui/components/toc'
 import { cascadeSelect } from '@llui/components/cascade-select'
 import { asyncList, type AsyncListState, type AsyncListMsg } from '@llui/components/async-list'
 import { presence } from '@llui/components/presence'
 import { qrCode } from '@llui/components/qr-code'
+import { inView } from '@llui/components/in-view'
+import { themeSwitch, type Theme } from '@llui/components/theme-switch'
 import { encode as uqrEncode } from 'uqr'
 import { sectionGroup, card } from '../shared/ui'
 import {
@@ -16,7 +18,15 @@ import {
 
 type Item = { id: number; label: string }
 
-const children = { toc, cascade: cascadeSelect, list: asyncList, presence, qr: qrCode } as const
+const children = {
+  toc,
+  cascade: cascadeSelect,
+  list: asyncList,
+  presence,
+  qr: qrCode,
+  inView,
+  themeSwitch,
+} as const
 
 // `asyncList`'s generic defaults to `unknown` in the composed type, so pin the
 // `list` slice (state + msgs) to our `Item` shape explicitly.
@@ -79,6 +89,8 @@ export const init = (): [State, never[]] => [
     }),
     presence: presence.init({ present: true, unmountOnExit: false }),
     qr: qrCode.init({ value: 'https://llui.dev', matrix: encodeQr('https://llui.dev') }),
+    inView: inView.init(),
+    themeSwitch: themeSwitch.init('system'),
   },
   [],
 ]
@@ -122,6 +134,58 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // qrCode.connect exposed for full usage; here we use the static
   // toDataUrl helper directly for brevity.
   void qrCode.connect(state.at('qr'), (m) => send({ type: 'qr', msg: m }))
+  const iv = inView.connect(state.at('inView'), (m) => send({ type: 'inView', msg: m }), {
+    id: 'iv-demo',
+  })
+  const tw = themeSwitch.connect(
+    state.at('themeSwitch'),
+    (m) => send({ type: 'themeSwitch', msg: m }),
+    { id: 'theme-demo', label: 'Color theme' },
+  )
+
+  // in-view: wire an IntersectionObserver to the box once it's in the DOM.
+  // `onMount` hands us the section's root element; we find the tracked box by
+  // its data-scope/data-part (set by `iv.root`) and observe it. The reducer
+  // flips visible on enter/leave as the box scrolls past the threshold.
+  const inViewMount = onMount((root) => {
+    const box = root.querySelector<HTMLElement>('[data-scope="in-view"][data-part="root"]')
+    if (!box) return
+    return inView.createObserver(box, (m) => send({ type: 'inView', msg: m }), { threshold: 0.6 })
+  })
+
+  // theme-switch: apply the resolved theme to <html> on mount, and keep
+  // following the OS when the preference is 'system'. Clicks also apply
+  // immediately (see the option buttons below) so the data-theme on <html>
+  // tracks the control without needing a state subscription in the view.
+  const themeMount = onMount(() => {
+    const themeSig = state.at('themeSwitch').at('theme')
+    themeSwitch.applyTheme(themeSwitch.resolveTheme(themeSig.peek()))
+    return themeSwitch.watchSystemTheme((resolved) => {
+      if (themeSig.peek() === 'system') themeSwitch.applyTheme(resolved)
+    })
+  })
+
+  // A theme option button: reuses the part bag for a11y (role/aria-pressed/
+  // data-theme) but overrides onClick to BOTH send the message and apply the
+  // resolved theme to <html> right away (direct calls are fine in handlers).
+  const themeOption = (theme: Theme, label: string): Node => {
+    const part = tw.option(theme)
+    return button(
+      {
+        ...part,
+        class: state
+          .at('themeSwitch')
+          .map((t) =>
+            t.theme === theme ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
+          ),
+        onClick: (e: MouseEvent) => {
+          part.onClick(e)
+          themeSwitch.applyTheme(themeSwitch.resolveTheme(theme))
+        },
+      },
+      [text(label)],
+    )
+  }
 
   // A region button — active highlight tracks the level-1 selection (component
   // state, read fine inside the branch arm); click sets the region.
@@ -140,6 +204,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     )
 
   return [
+    // Placed (not discarded) so their onMount callbacks actually register —
+    // a bare onMount() returns a lazy Mountable that only wires up when mounted.
+    inViewMount,
+    themeMount,
     sectionGroup('Content + data', [
       card('Table of Contents', [
         div({ ...tc.root }, [
@@ -359,6 +427,100 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
               ]),
             ]),
           ]),
+        ]),
+      ]),
+      card('In View', [
+        div({ class: 'flex flex-col gap-3' }, [
+          p({ class: 'text-xs text-text-muted' }, [
+            text('Scroll the panel below. The badge flips when the tracked box '),
+            text('crosses 60% visibility (IntersectionObserver).'),
+          ]),
+          // Live status badge — reads component state reactively.
+          div(
+            {
+              class: state
+                .at('inView')
+                .map(
+                  (s) =>
+                    'self-start rounded px-2 py-1 text-xs font-semibold ' +
+                    (s.visible
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-surface-muted text-text-muted'),
+                ),
+            },
+            [text(state.at('inView').map((s) => (s.visible ? 'In view' : 'Out of view')))],
+          ),
+          // Scrollable viewport with spacers above/below so the tracked box
+          // genuinely enters and leaves as you scroll.
+          div(
+            {
+              class: 'h-40 overflow-y-auto rounded border border-border bg-surface-muted/40 p-2',
+            },
+            [
+              div({ class: 'h-40 flex items-end justify-center text-xs text-text-muted' }, [
+                text('↓ scroll down ↓'),
+              ]),
+              div(
+                {
+                  ...iv.root,
+                  class: state
+                    .at('inView')
+                    .map(
+                      (s) =>
+                        'mx-auto flex h-24 w-full items-center justify-center rounded text-sm font-medium transition-colors ' +
+                        (s.visible ? 'bg-blue-500 text-white' : 'bg-surface text-text-muted'),
+                    ),
+                },
+                [text(state.at('inView').map((s) => (s.visible ? '👁 visible' : 'hidden')))],
+              ),
+              div({ class: 'h-40 flex items-start justify-center text-xs text-text-muted' }, [
+                text('↑ scroll up ↑'),
+              ]),
+            ],
+          ),
+        ]),
+      ]),
+      card('Theme Switch', [
+        div({ ...tw.root, class: 'flex flex-col gap-3' }, [
+          p({ class: 'text-xs text-text-muted' }, [
+            text('Sets '),
+            span({ class: 'font-mono' }, [text('data-theme')]),
+            text(' on '),
+            span({ class: 'font-mono' }, [text('<html>')]),
+            text(". 'System' follows your OS preference live."),
+          ]),
+          div({ class: 'flex items-center gap-2' }, [
+            themeOption('light', 'Light'),
+            themeOption('dark', 'Dark'),
+            themeOption('system', 'System'),
+          ]),
+          div({ class: 'flex items-center gap-4 text-sm text-text-muted' }, [
+            div([
+              text('Preference: '),
+              span({ class: 'font-mono text-text' }, [text(state.at('themeSwitch').at('theme'))]),
+            ]),
+            div([
+              text('Resolved: '),
+              span({ class: 'font-mono text-text' }, [
+                text(state.at('themeSwitch').map((t) => themeSwitch.resolveTheme(t.theme))),
+              ]),
+            ]),
+          ]),
+          // A self-contained preview swatch whose own data-theme tracks the
+          // resolved theme reactively (independent of the global <html> apply).
+          div(
+            {
+              'data-theme': state.at('themeSwitch').map((t) => themeSwitch.resolveTheme(t.theme)),
+              class: state
+                .at('themeSwitch')
+                .map((t) =>
+                  themeSwitch.resolveTheme(t.theme) === 'dark'
+                    ? 'rounded border border-border bg-slate-900 px-3 py-2 text-sm text-slate-100'
+                    : 'rounded border border-border bg-white px-3 py-2 text-sm text-slate-900',
+                ),
+            },
+            [text('Preview surface for the resolved theme.')],
+          ),
         ]),
       ]),
     ]),
