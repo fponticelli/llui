@@ -245,7 +245,13 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
         {
           ...state,
           open: true,
-          highlightedIndex: firstEnabledIndex(state.filteredItems, state.disabledItems),
+          // Only seed the highlight on the closed→open transition. Re-opening an
+          // already-open listbox (the input's ArrowDown/Up handler sends `open`
+          // before `highlight*`) must preserve the current highlight, otherwise
+          // every arrow keypress resets to the first item and navigation sticks.
+          highlightedIndex: state.open
+            ? state.highlightedIndex
+            : firstEnabledIndex(state.filteredItems, state.disabledItems),
         },
         [],
       ]

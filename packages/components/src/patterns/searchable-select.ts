@@ -660,7 +660,11 @@ export function overlay(opts: OverlayOptions): Mountable {
             )
             cleanups.push(
               pushDismissable({
-                element: contentEl,
+                // The dismiss boundary is the whole floating popup (positioner),
+                // not just the listbox: the filter input is rendered as a sibling
+                // of `content` inside the popup, so focusing it on open must not
+                // count as an outside interaction and dismiss the overlay.
+                element: floatingEl,
                 ignore: () => [triggerEl],
                 onDismiss: () => {
                   opts.send({ type: 'close' })
