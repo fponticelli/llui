@@ -253,11 +253,23 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   const sendCommandMenu = (m: Parameters<typeof commandMenu.update>[1]): void =>
     send({ type: 'commandMenu', msg: m })
   const cmd = commandMenu.connect(state.at('commandMenu'), sendCommandMenu, { id: 'cmdk-demo' })
+  const SSEL_ID = 'ssel-demo'
   const ssel = searchableSelect.connect(
     state.at('searchSelect'),
     (m) => send({ type: 'searchSelect', msg: m }),
-    { id: 'ssel-demo' },
+    { id: SSEL_ID },
   )
+  // The currently-highlighted option's VALUE (not its index). Built once here,
+  // outside the option each(), so the per-row highlight binding compares the
+  // row's stable value against it — keeping the highlight correct after the
+  // filter shifts positions, without a frozen build-time index.
+  const ssselHighlightValue = state
+    .at('searchSelect')
+    .map((ss) =>
+      ss.combobox.highlightedIndex !== null
+        ? (ss.combobox.filteredItems[ss.combobox.highlightedIndex] ?? null)
+        : null,
+    )
 
   // Global ⌘K / Ctrl+K hotkey opens the command palette.
   const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
@@ -465,11 +477,30 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
               key: (v) => v,
               render: (item, index) => {
                 const value = item.peek()
+                // The value-dependent fields (role, aria-selected, onClick, …) are
+                // stable per row since the each() is keyed by value. But the row's
+                // POSITION shifts when the list is filtered, so the position-derived
+                // fields must follow the LIVE `index` signal — otherwise the
+                // build-time index freezes and the keyboard highlight +
+                // aria-activedescendant desync after the first filter. `id` /
+                // `data-index` track the live position; `data-highlighted` is keyed
+                // by VALUE (the highlighted slot's value) so it stays correct
+                // regardless of position with a single state.map.
                 const parts = ssel.item(value, index.peek()).item
                 return [
                   div(
                     {
                       ...parts,
+                      id: index.map((i) => `${SSEL_ID}:item:${i}`),
+                      'data-index': index.map((i) => String(i)),
+                      'data-highlighted': ssselHighlightValue.map((hv) =>
+                        hv === value ? '' : undefined,
+                      ),
+                      onPointerMove: () =>
+                        send({
+                          type: 'searchSelect',
+                          msg: { type: 'highlight', index: index.peek() },
+                        }),
                       class:
                         'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-slate-100 data-[state=selected]:font-semibold',
                     },

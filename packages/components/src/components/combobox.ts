@@ -245,7 +245,13 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
         {
           ...state,
           open: true,
-          highlightedIndex: firstEnabledIndex(state.filteredItems, state.disabledItems),
+          // Only seed the highlight on the closed→open transition. Re-opening an
+          // already-open listbox (the input's ArrowDown/Up handler sends `open`
+          // before `highlight*`) must preserve the current highlight, otherwise
+          // every arrow keypress resets to the first item and navigation sticks.
+          highlightedIndex: state.open
+            ? state.highlightedIndex
+            : firstEnabledIndex(state.filteredItems, state.disabledItems),
         },
         [],
       ]
@@ -333,12 +339,20 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
+      const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
+      // Clamp the highlight to the new list: a shrinking setItems can leave the
+      // previous index out of bounds, which would dangle aria-activedescendant.
+      const highlightedIndex =
+        state.highlightedIndex !== null && state.highlightedIndex < filteredItems.length
+          ? state.highlightedIndex
+          : null
       return [
         {
           ...state,
           items: msg.items,
           disabledItems: disabled,
-          filteredItems: computeFiltered(msg.items, state.inputValue, state.allowCreate),
+          filteredItems,
+          highlightedIndex,
           value,
         },
         [],
