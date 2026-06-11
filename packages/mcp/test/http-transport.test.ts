@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { killChild } from './kill-child'
 
 // Integration test: spawn the built CLI in HTTP mode, issue an
 // `initialize` JSON-RPC call over HTTP, verify the SDK-backed response
@@ -28,8 +29,9 @@ describe('llui-mcp --http integration', () => {
     if (!ready) throw new Error('[llui-mcp] did not start within 30s')
   }, 35000)
 
-  afterAll(() => {
-    if (proc && !proc.killed) proc.kill('SIGTERM')
+  afterAll(async () => {
+    await killChild(proc)
+    proc = null
   })
 
   it('routes tool calls through the shared bridge relay (not dead session relays)', async () => {

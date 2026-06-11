@@ -26,6 +26,11 @@ jobs:
     # browser revision matches what `playwright` expects — bump both together.
     container:
       image: mcr.microsoft.com/playwright:v1.59.1-noble
+      # tini as PID 1: reaps zombie children and forwards signals. Tests spawn
+      # the llui-mcp CLI server; without an init the container leaves killed
+      # children unreaped, which kept the last vitest process alive (a 24-min
+      # stall until the job timeout). Pairs with the tests' SIGKILL teardown.
+      options: --init
     # Backstop against any hung step so a hang fails fast instead of burning CI
     # minutes.
     timeout-minutes: 30

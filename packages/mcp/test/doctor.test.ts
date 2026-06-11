@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { killChild } from './kill-child'
 
 // Integration test: `llui-mcp doctor` as a subcommand. Offline-only
 // (no long-lived server), so the suite spawns the CLI, captures the
@@ -71,8 +72,7 @@ describe('llui-mcp doctor', () => {
       expect(run.stdout).toMatch(/✓\s+bridge port \d+ listening/)
       expect(run.stdout).toMatch(/✓\s+marker pid \d+/)
     } finally {
-      server.kill('SIGTERM')
-      await delay(100)
+      await killChild(server)
     }
   }, 35000)
 
