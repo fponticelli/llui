@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { browserEnv } from '@llui/dom/ssr'
-import { component, div, header, main, text, provide, useContext, createContext } from '@llui/dom'
+import { div, header, main, text, provide, useContext, createContext } from '@llui/dom'
 import type { SignalComponentDef } from '@llui/dom'
 import { createOnRenderClient, pageSlot, _resetChainForTest } from '../src/on-render-client'
 import { createOnRenderHtml } from '../src/on-render-html'
@@ -44,7 +44,7 @@ function makeAppLayout(): SignalComponentDef<LayoutState, LayoutMsg, never> {
   return {
     name: 'AppLayout',
     init: () => ({ session: 'anonymous' }),
-    update: (state, msg) => {
+    update: (_state, msg) => {
       switch (msg.type) {
         case 'login':
           return { session: 'alice' }
@@ -116,6 +116,38 @@ function makeSettingsPage(): SignalComponentDef<{ tab: string }, never, never> {
     view: () => [
       div({ class: 'settings-page' }, [div({ class: 'page-name' }, [text('Settings')])]),
     ],
+  }
+}
+
+// ──── Docs-section fixtures (issue #33 repro) ────
+//
+// A route-scoped section layout: `/docs/*` routes get [AppLayout, DocsLayout],
+// everything else gets [AppLayout]. DocsLayout owns persistent section chrome
+// (a sidebar) and a content slot; the article page is the only layer that
+// re-mounts on docs→docs navigation.
+
+function makeDocsLayout(): SignalComponentDef<{ section: string }, never, never> {
+  return {
+    name: 'DocsLayout',
+    init: () => ({ section: 'guide' }),
+    update: (s) => s,
+    view: () => [
+      div({ class: 'docs-shell' }, [
+        // Persistent chrome — must survive intra-section navigation.
+        div({ class: 'docs-sidebar' }, [text('Docs nav')]),
+        // The route transition must scope to THIS element, not the whole shell.
+        div({ class: 'docs-content' }, [pageSlot()]),
+      ]),
+    ],
+  }
+}
+
+function makeArticlePage(slug: string): SignalComponentDef<{ slug: string }, never, never> {
+  return {
+    name: `Article-${slug}`,
+    init: () => ({ slug }),
+    update: (s) => s,
+    view: () => [div({ class: `article article-${slug}` }, [text(slug)])],
   }
 }
 
@@ -261,20 +293,20 @@ describe('persistent layouts — nested layout chain', () => {
     const SettingsPage = makeSettingsPage()
 
     // Custom resolver — routes with a dashboard path get the nested
-    // chain, others get just the app layout.
+    // chain, others get just the app layout. Reads the typed `urlPathname`
+    // off the resolver's pageContext (no cast — see issue #33).
     const render = createOnRenderClient({
-      Layout: (ctx) => {
-        const path = (ctx as unknown as { path?: string }).path
-        return path === '/dashboard' ? [AppLayout, DashboardLayout] : [AppLayout]
-      },
+      Layout: (ctx) =>
+        ctx.urlPathname.startsWith('/dashboard') ? [AppLayout, DashboardLayout] : [AppLayout],
     })
 
     // Start on a dashboard page (full 3-layer chain)
     await render({
       Page: ReportsPage,
       isHydration: false,
-      ...{ path: '/dashboard' },
-    } as Parameters<typeof render>[0])
+      urlPathname: '/dashboard',
+      routeParams: {},
+    })
     expect(document.querySelector('.dashboard')).not.toBeNull()
     const appHeader = document.querySelector('.app-header')
 
@@ -282,8 +314,9 @@ describe('persistent layouts — nested layout chain', () => {
     await render({
       Page: SettingsPage,
       isHydration: false,
-      ...{ path: '/settings' },
-    } as Parameters<typeof render>[0])
+      urlPathname: '/settings',
+      routeParams: {},
+    })
 
     // Outer AppLayout stays alive.
     expect(document.querySelector('.app-header')).toBe(appHeader)
@@ -363,5 +396,154 @@ describe('persistent layouts — SSR chain render', () => {
 
     const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     await expect(render({ Page: BadPage })).rejects.toThrow(/innermost component/)
+  })
+})
+
+// Issue #33: a route-scoped section layout (e.g. a docs sidebar) must persist
+// across navigations WITHIN the section, with only the innermost content
+// re-mounting and the route transition scoped to that content — not the
+// persistent chrome. Drives the chain with a `urlPathname`-based resolver, the
+// documented pattern, reading the typed route field with no cast.
+describe('persistent layouts — route-scoped section layout (issue #33)', () => {
+  beforeEach(() => {
+    _resetChainForTest()
+    document.body.innerHTML = ''
+    const container = document.createElement('div')
+    container.id = 'app'
+    document.body.appendChild(container)
+  })
+
+  // Resolver: docs routes carry the nested [AppLayout, DocsLayout] chain;
+  // everything else is just [AppLayout].
+  const docsResolver = (AppLayout: SignalComponentDef<LayoutState, LayoutMsg, never>) => {
+    const DocsLayout = makeDocsLayout()
+    return (ctx: { urlPathname: string }) =>
+      ctx.urlPathname.startsWith('/docs') ? [AppLayout, DocsLayout] : [AppLayout]
+  }
+
+  it('keeps the docs sidebar mounted across intra-section nav; only the article re-mounts', async () => {
+    const AppLayout = makeAppLayout()
+    const render = createOnRenderClient({ Layout: docsResolver(AppLayout) })
+
+    await render({
+      Page: makeArticlePage('intro'),
+      isHydration: false,
+      urlPathname: '/docs/intro',
+      routeParams: {},
+    })
+
+    const sidebar = document.querySelector('.docs-sidebar') as HTMLElement
+    const appHeader = document.querySelector('.app-header')
+    expect(sidebar).not.toBeNull()
+    expect(document.querySelector('.article-intro')).not.toBeNull()
+
+    // Mutate the live sidebar node: if it survives, the mutation survives;
+    // if it re-mounts, a fresh node replaces it and the marker is gone. This
+    // is the robust proxy for "scroll position / focus / effects preserved".
+    sidebar.dataset.marker = 'kept'
+
+    // Navigate WITHIN the docs section: /docs/intro → /docs/advanced.
+    await render({
+      Page: makeArticlePage('advanced'),
+      isHydration: false,
+      urlPathname: '/docs/advanced',
+      routeParams: {},
+    })
+
+    // Sidebar is the SAME node, marker intact — it never re-mounted.
+    expect(document.querySelector('.docs-sidebar')).toBe(sidebar)
+    expect((document.querySelector('.docs-sidebar') as HTMLElement).dataset.marker).toBe('kept')
+    // AppLayout chrome also untouched.
+    expect(document.querySelector('.app-header')).toBe(appHeader)
+    // Only the article swapped.
+    expect(document.querySelector('.article-intro')).toBeNull()
+    expect(document.querySelector('.article-advanced')).not.toBeNull()
+  })
+
+  it('scopes the route transition to the docs content slot, not the section chrome', async () => {
+    const AppLayout = makeAppLayout()
+    const leaveTargets: HTMLElement[] = []
+    const render = createOnRenderClient({
+      Layout: docsResolver(AppLayout),
+      onLeave: (el) => {
+        leaveTargets.push(el)
+      },
+    })
+
+    await render({
+      Page: makeArticlePage('intro'),
+      isHydration: false,
+      urlPathname: '/docs/intro',
+      routeParams: {},
+    })
+    // No onLeave on first mount.
+    expect(leaveTargets).toHaveLength(0)
+
+    await render({
+      Page: makeArticlePage('advanced'),
+      isHydration: false,
+      urlPathname: '/docs/advanced',
+      routeParams: {},
+    })
+
+    // The transition animates the DocsLayout content slot's container — the
+    // element that holds the article — NOT the app shell or the sidebar.
+    expect(leaveTargets).toHaveLength(1)
+    expect(leaveTargets[0]!.classList.contains('docs-content')).toBe(true)
+  })
+
+  it('disposes the docs section layout when navigating out of the subtree', async () => {
+    const AppLayout = makeAppLayout()
+    const render = createOnRenderClient({ Layout: docsResolver(AppLayout) })
+
+    await render({
+      Page: makeArticlePage('intro'),
+      isHydration: false,
+      urlPathname: '/docs/intro',
+      routeParams: {},
+    })
+    const appHeader = document.querySelector('.app-header')
+    expect(document.querySelector('.docs-sidebar')).not.toBeNull()
+
+    // Navigate OUT of /docs — chain collapses to [AppLayout].
+    await render({
+      Page: makeSettingsPage(),
+      isHydration: false,
+      urlPathname: '/settings',
+      routeParams: {},
+    })
+
+    // AppLayout survives; the docs section layout (and its sidebar) is gone.
+    expect(document.querySelector('.app-header')).toBe(appHeader)
+    expect(document.querySelector('.docs-shell')).toBeNull()
+    expect(document.querySelector('.docs-sidebar')).toBeNull()
+    expect(document.querySelector('.settings-page')).not.toBeNull()
+  })
+
+  it('renders the same route-scoped chain on the server for hydration parity', async () => {
+    const AppLayout = makeAppLayout()
+    const render = createOnRenderHtml({ domEnv, Layout: docsResolver(AppLayout) })
+
+    const result = await render({
+      Page: makeArticlePage('intro'),
+      urlPathname: '/docs/intro',
+      routeParams: {},
+    })
+    const html =
+      typeof result.documentHtml === 'string' ? result.documentHtml : result.documentHtml._escaped
+
+    // Server composed all three layers for the docs route.
+    expect(html).toContain('app-shell')
+    expect(html).toContain('docs-sidebar')
+    expect(html).toContain('article-intro')
+
+    // Chain-aware envelope: AppLayout + DocsLayout as layouts, article as page.
+    expect(result.pageContext.lluiState).toEqual({
+      layouts: [
+        { name: 'AppLayout', state: { session: 'anonymous' } },
+        { name: 'DocsLayout', state: { section: 'guide' } },
+      ],
+      page: { name: 'Article-intro', state: { slug: 'intro' } },
+    })
   })
 })

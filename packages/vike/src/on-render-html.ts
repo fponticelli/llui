@@ -49,9 +49,39 @@ type LayoutChain = ReadonlyArray<AnyLayer>
 export interface PageContext {
   Page: AnyLayer
   data?: VikePageContextData
+
+  /**
+   * Vike's resolved pathname for the current route (origin-, query- and
+   * hash-stripped, e.g. `/docs/getting-started`). Vike always populates this on
+   * the live pageContext; it's optional here only because not every test/SSR
+   * construction site supplies it. Inside a `Layout` resolver it is guaranteed
+   * present — see {@link ServerLayoutResolverContext}.
+   */
+  urlPathname?: string
+
+  /**
+   * Vike's route params for the current route (e.g. `{ slug: 'intro' }` for a
+   * `/docs/@slug` route). Empty object when the matched route has no params.
+   * Guaranteed present inside a `Layout` resolver — see
+   * {@link ServerLayoutResolverContext}.
+   */
+  routeParams?: Record<string, string>
+
   lluiLayoutData?: readonly unknown[]
   head?: string
 }
+
+/**
+ * The pageContext a server-side `Layout` **resolver function** receives.
+ * Identical to {@link PageContext} except Vike's routing fields (`urlPathname`,
+ * `routeParams`) are guaranteed present — the resolver only runs against a live
+ * page render, which always populates them. Mirrors the client's
+ * `LayoutResolverContext` so a single route-scoped resolver branches the same
+ * way on both sides, keeping the server-rendered chain in lockstep with the
+ * chain the client hydrates.
+ */
+export type ServerLayoutResolverContext = PageContext &
+  Required<Pick<PageContext, 'urlPathname' | 'routeParams'>>
 
 export interface DocumentContext {
   /** Rendered component HTML (layout + page composed if a Layout is configured) */
@@ -117,7 +147,7 @@ export interface RenderHtmlOptions {
    * hydration reads the matching envelope and reconstructs the chain
    * layer-by-layer.
    */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: PageContext) => LayoutChain)
+  Layout?: AnyLayer | LayoutChain | ((pageContext: ServerLayoutResolverContext) => LayoutChain)
 
   /**
    * Factory that returns the `DomEnv` backing SSR render. Call with
@@ -144,7 +174,11 @@ function resolveLayoutChain(
 ): LayoutChain {
   if (!layoutOption) return []
   if (typeof layoutOption === 'function') {
-    return layoutOption(pageContext) ?? []
+    // The resolver only runs against a live page render, which always populates
+    // `urlPathname`/`routeParams`. Our base type marks them optional (test/SSR
+    // construction sites needn't supply them), so narrow to the resolver's
+    // required view at this single boundary.
+    return layoutOption(pageContext as ServerLayoutResolverContext) ?? []
   }
   if (Array.isArray(layoutOption)) return layoutOption
   return [layoutOption as AnyLayer]

@@ -49,9 +49,49 @@ declare global {
 export interface ClientPageContext {
   Page: AnyLayer
   data?: VikePageContextData
+
+  /**
+   * Vike's resolved pathname for the current navigation (origin-, query- and
+   * hash-stripped, e.g. `/docs/getting-started`). Vike always populates this on
+   * the live pageContext; it's optional here only because not every test/SSR
+   * construction site supplies it. Inside a `Layout` resolver it is guaranteed
+   * present — see {@link LayoutResolverContext}.
+   */
+  urlPathname?: string
+
+  /**
+   * Vike's route params for the current route (e.g. `{ slug: 'intro' }` for a
+   * `/docs/@slug` route). Empty object when the matched route has no params.
+   * Guaranteed present inside a `Layout` resolver — see
+   * {@link LayoutResolverContext}.
+   */
+  routeParams?: Record<string, string>
+
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
 }
+
+/**
+ * The pageContext a `Layout` **resolver function** receives. Identical to
+ * {@link ClientPageContext} except Vike's routing fields (`urlPathname`,
+ * `routeParams`) are guaranteed present — the resolver only ever runs against a
+ * live Vike navigation, which always populates them. Typing them as required
+ * here lets a route-scoped resolver read the route directly, with no cast:
+ *
+ * ```ts
+ * Layout: (pageContext) =>
+ *   pageContext.urlPathname.startsWith('/docs')
+ *     ? [AppLayout, DocsLayout]   // docs section keeps its sidebar mounted…
+ *     : [AppLayout],              // …only the article re-mounts on docs→docs nav
+ * ```
+ *
+ * The chain diff keeps every layer shared (by def reference) between the old
+ * and new chain mounted, disposing only the divergent suffix — so navigating
+ * `/docs/a → /docs/b` re-mounts just the page while `DocsLayout` (and its
+ * sidebar, scroll position, focus, and effects) survives.
+ */
+export type LayoutResolverContext = ClientPageContext &
+  Required<Pick<ClientPageContext, 'urlPathname' | 'routeParams'>>
 
 type LayoutChain = ReadonlyArray<AnyLayer>
 
@@ -66,7 +106,11 @@ function resolveLayoutChain(
 ): LayoutChain {
   if (!layoutOption) return []
   if (typeof layoutOption === 'function') {
-    return layoutOption(pageContext) ?? []
+    // The resolver only ever runs against a live Vike navigation, which always
+    // populates `urlPathname`/`routeParams`. Our base type marks them optional
+    // (test/SSR construction sites needn't supply them), so narrow to the
+    // resolver's required view at this single boundary.
+    return layoutOption(pageContext as LayoutResolverContext) ?? []
   }
   if (Array.isArray(layoutOption)) return layoutOption
   return [layoutOption as AnyLayer]
@@ -105,7 +149,7 @@ export interface RenderClientOptions {
    * Layers shared between the previous and next navigation stay mounted.
    * Only the divergent suffix is disposed and re-mounted.
    */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: ClientPageContext) => LayoutChain)
+  Layout?: AnyLayer | LayoutChain | ((pageContext: LayoutResolverContext) => LayoutChain)
 
   /**
    * Called on the slot element whose contents are about to be replaced,

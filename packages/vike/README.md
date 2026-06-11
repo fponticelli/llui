@@ -124,7 +124,24 @@ createOnRenderClient({
 })
 ```
 
+The resolver's `pageContext` exposes Vike's routing fields directly — `urlPathname` (a `string`) and `routeParams` (a `Record<string, string>`) — so you branch the chain on the route with no cast. Configure the **same resolver** on `createOnRenderHtml` so the server renders the identical chain the client hydrates. (Its type is exported as `LayoutResolverContext` / `ServerLayoutResolverContext` if you want to annotate a standalone resolver.)
+
 The chain diff on each nav walks old and new chains in parallel and finds the first mismatch. Every layer before that mismatch stays mounted; every layer at or after it is torn down innermost-first and re-mounted outermost-first. Navigating from `/dashboard/reports` to `/dashboard/overview` only disposes the `Page` — `AppLayout` and `DashboardLayout` stay alive. Navigating to `/settings` disposes `DashboardLayout` and the `Page`, keeping only `AppLayout`.
+
+#### Route-scoped section layouts (persistent sidebar)
+
+This is the idiomatic way to build a **section with its own persistent chrome** — a docs area with a left sidebar, a settings master-detail, a dashboard rail. Make the section's chrome a layout that's only in the chain for that section's routes:
+
+```ts
+// /docs/* keeps DocsLayout (the sidebar) mounted; everything else drops it.
+const Layout = (pageContext) =>
+  pageContext.urlPathname.startsWith('/docs') ? [AppLayout, DocsLayout] : [AppLayout]
+
+createOnRenderHtml({ Layout, domEnv: jsdomEnv })
+createOnRenderClient({ Layout, ...fromTransition(routeTransition({ duration: 200 })) })
+```
+
+Navigating `/docs/intro → /docs/advanced` keeps `AppLayout` **and** `DocsLayout` mounted — the sidebar's DOM, scroll position, focus, and effect subscriptions are untouched — and re-mounts only the innermost article `Page`. Because the transition operates on the innermost surviving layer's `pageSlot()` container, `fromTransition(...)` animates just the article column, not the persistent sidebar. Navigating out of `/docs` disposes `DocsLayout` (and its sidebar) along with the page.
 
 #### Layout ↔ Page communication
 
