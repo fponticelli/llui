@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -29,6 +30,8 @@ export interface NavMenuState {
   open: string[]
   focused: string | null
   disabled: boolean
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type NavMenuMsg =
@@ -42,11 +45,14 @@ export type NavMenuMsg =
   | { type: 'closeAll' }
   /** @humanOnly */
   | { type: 'focus'; id: string | null }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface NavMenuInit {
   open?: string[]
   focused?: string | null
   disabled?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: NavMenuInit = {}): NavMenuState {
@@ -54,10 +60,12 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
     open: opts.open ?? [],
     focused: opts.focused ?? null,
     disabled: opts.disabled ?? false,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
 export function update(state: NavMenuState, msg: NavMenuMsg): [NavMenuState, never[]] {
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'openBranch': {
@@ -110,6 +118,7 @@ export interface NavItemParts {
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   content: {
     role: 'menu'
@@ -210,6 +219,21 @@ export function connect(
             }
           }),
           onFocus: tagSend(send, ['focus'], () => send({ type: 'focus', id })),
+          // Horizontal arrows move along the menubar; under rtl ArrowLeft/
+          // ArrowRight swap meaning (logical ArrowRight = forward/open,
+          // logical ArrowLeft = back/close). Vertical ArrowDown also opens a
+          // branch and is never flipped.
+          onKeyDown: tagSend(send, ['openBranch', 'closeBranch'], (e: KeyboardEvent) => {
+            if (!options.isBranch) return
+            const key = flipArrow(e.key, state.peek().dir)
+            if (key === 'ArrowRight' || e.key === 'ArrowDown') {
+              e.preventDefault()
+              send({ type: 'openBranch', id, ancestorIds })
+            } else if (key === 'ArrowLeft') {
+              e.preventDefault()
+              send({ type: 'closeBranch', id })
+            }
+          }),
         },
         content: {
           role: 'menu',

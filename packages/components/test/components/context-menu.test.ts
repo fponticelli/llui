@@ -1,44 +1,200 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect } from '../../src/components/context-menu'
-import { rootSignal, read } from '../_signal'
+import {
+  init,
+  update,
+  connect,
+  isPresent,
+  type ContextMenuItem,
+} from '../../src/components/context-menu'
+import { rootSignal, signalOf, read } from '../_signal'
+
+const flat: ContextMenuItem[] = [
+  { value: 'a', kind: 'action' },
+  { value: 'b', kind: 'action' },
+]
 
 describe('context-menu reducer', () => {
   it('initializes closed at 0,0', () => {
-    expect(init()).toMatchObject({ open: false, x: 0, y: 0 })
+    const s = init()
+    expect(s.open).toBe(false)
+    expect(s.x).toBe(0)
+    expect(s.y).toBe(0)
+    expect(s.openPath).toEqual([])
   })
 
   it('openAt sets position and open, highlights first item', () => {
-    const s0 = init({ items: ['a', 'b'] })
+    const s0 = init({ items: flat })
     const [s] = update(s0, { type: 'openAt', x: 100, y: 200 })
     expect(s.open).toBe(true)
     expect(s.x).toBe(100)
     expect(s.y).toBe(200)
-    expect(s.highlighted).toBe('a')
+    expect(s.highlights['']).toBe('a')
   })
 
-  it('close clears open + highlighted', () => {
-    const s0 = { ...init({ items: ['a'] }), open: true, highlighted: 'a' }
+  it('openAt skips separators for initial highlight', () => {
+    const s0 = init({
+      items: [
+        { value: 'sep', kind: 'separator' },
+        { value: 'a', kind: 'action' },
+      ],
+    })
+    const [s] = update(s0, { type: 'openAt', x: 0, y: 0 })
+    expect(s.highlights['']).toBe('a')
+  })
+
+  it('close clears open + highlighted + openPath', () => {
+    const s0 = { ...init({ items: flat }), open: true, openPath: ['x'] }
+    s0.highlights[''] = 'a'
     const [s] = update(s0, { type: 'close' })
     expect(s.open).toBe(false)
-    expect(s.highlighted).toBeNull()
+    expect(s.highlights['']).toBeNull()
+    expect(s.openPath).toEqual([])
   })
 
   it('highlightNext wraps', () => {
-    const s0 = { ...init({ items: ['a', 'b'] }), highlighted: 'b' }
-    const [s] = update(s0, { type: 'highlightNext' })
-    expect(s.highlighted).toBe('a')
+    const s0 = { ...init({ items: flat }) }
+    s0.highlights[''] = 'b'
+    const [s] = update(s0, { type: 'highlightNext', level: '' })
+    expect(s.highlights['']).toBe('a')
   })
 
-  it('select closes menu', () => {
-    const s0 = { ...init({ items: ['a', 'b'] }), open: true, highlighted: 'a' }
+  it('select (action) closes menu', () => {
+    const s0 = { ...init({ items: flat }), open: true }
+    s0.highlights[''] = 'a'
     const [s] = update(s0, { type: 'select', value: 'a' })
     expect(s.open).toBe(false)
   })
 
   it('select ignored for disabled', () => {
-    const s0 = { ...init({ items: ['a'], disabledItems: ['a'] }), open: true }
+    const s0 = { ...init({ items: [{ value: 'a', kind: 'action', disabled: true }] }), open: true }
     const [s] = update(s0, { type: 'select', value: 'a' })
     expect(s.open).toBe(true)
+  })
+})
+
+describe('context-menu presence lifecycle', () => {
+  it('init defaults to skipAnimations + status closed', () => {
+    const s = init({ items: flat })
+    expect(s.skipAnimations).toBe(true)
+    expect(s.status).toBe('closed')
+  })
+
+  it('openAt moves status to open', () => {
+    const [s] = update(init({ items: flat }), { type: 'openAt', x: 1, y: 2 })
+    expect(s.status).toBe('open')
+  })
+
+  it('non-animated close (default) jumps straight to closed — no hang', () => {
+    const s0 = { ...init({ items: flat }), open: true, status: 'open' as const }
+    const [s] = update(s0, { type: 'close' })
+    expect(s.open).toBe(false)
+    expect(s.status).toBe('closed')
+  })
+
+  it('animated close goes to closing, stays mounted, then animationEnd → closed', () => {
+    const s0 = {
+      ...init({ items: flat, skipAnimations: false }),
+      open: true,
+      status: 'open' as const,
+    }
+    const [closing] = update(s0, { type: 'close' })
+    expect(closing.open).toBe(false)
+    expect(closing.status).toBe('closing')
+    expect(isPresent(closing)).toBe(true)
+
+    const [closed] = update(closing, { type: 'animationEnd' })
+    expect(closed.status).toBe('closed')
+    expect(isPresent(closed)).toBe(false)
+  })
+
+  it('animationEnd is inert outside a transition', () => {
+    const s0 = { ...init({ items: flat }), open: true, status: 'open' as const }
+    const [s] = update(s0, { type: 'animationEnd' })
+    expect(s).toBe(s0)
+  })
+
+  it('selecting an action leaf routes the close through presence (animated)', () => {
+    const s0 = {
+      ...init({ items: flat, skipAnimations: false }),
+      open: true,
+      status: 'open' as const,
+    }
+    s0.highlights[''] = 'a'
+    const [s] = update(s0, { type: 'select', value: 'a' })
+    expect(s.open).toBe(false)
+    expect(s.status).toBe('closing')
+  })
+
+  it('connect content data-state reflects the presence status incl. closing', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const ds = pc.content['data-state']
+    expect(read(ds, { ...init({ items: flat }), status: 'open' })).toBe('open')
+    expect(read(ds, { ...init({ items: flat }), status: 'closing' })).toBe('closing')
+    expect(read(ds, { ...init({ items: flat }), status: 'closed' })).toBe('closed')
+  })
+
+  it('connect content onAnimationEnd sends animationEnd', () => {
+    const send = vi.fn()
+    const pc = connect(rootSignal(), send, { id: 'x' })
+    pc.content.onAnimationEnd({} as AnimationEvent)
+    expect(send).toHaveBeenCalledWith({ type: 'animationEnd' })
+  })
+})
+
+describe('context-menu checkbox / radio', () => {
+  const items: ContextMenuItem[] = [
+    { value: 'wrap', kind: 'checkbox' },
+    { value: 'r1', kind: 'radio', group: 'g' },
+    { value: 'r2', kind: 'radio', group: 'g' },
+  ]
+
+  it('checkbox toggles and stays open', () => {
+    const s0 = { ...init({ items }), open: true }
+    const [s1] = update(s0, { type: 'select', value: 'wrap' })
+    expect(s1.open).toBe(true)
+    expect(s1.checked).toContain('wrap')
+  })
+
+  it('radio is mutually exclusive within a group', () => {
+    const s0 = { ...init({ items }), open: true }
+    const [s1] = update(s0, { type: 'select', value: 'r1' })
+    const [s2] = update(s1, { type: 'select', value: 'r2' })
+    expect(s2.checked).toContain('r2')
+    expect(s2.checked).not.toContain('r1')
+  })
+})
+
+describe('context-menu submenu reducer', () => {
+  const tree: ContextMenuItem[] = [
+    { value: 'a', kind: 'action' },
+    {
+      value: 'more',
+      kind: 'action',
+      children: [
+        { value: 'x', kind: 'action' },
+        { value: 'y', kind: 'action' },
+      ],
+    },
+  ]
+
+  it('openSub pushes onto openPath and highlights first child', () => {
+    const s0 = { ...init({ items: tree }), open: true }
+    const [s] = update(s0, { type: 'openSub', value: 'more' })
+    expect(s.openPath).toEqual(['more'])
+    expect(s.highlights['more']).toBe('x')
+  })
+
+  it('closeSub pops the deepest level', () => {
+    const s0 = { ...init({ items: tree }), open: true, openPath: ['more'] }
+    const [s] = update(s0, { type: 'closeSub' })
+    expect(s.openPath).toEqual([])
+  })
+
+  it('selecting a leaf in a submenu closes everything', () => {
+    const s0 = { ...init({ items: tree }), open: true, openPath: ['more'] }
+    const [s] = update(s0, { type: 'select', value: 'x' })
+    expect(s.open).toBe(false)
+    expect(s.openPath).toEqual([])
   })
 })
 
@@ -55,16 +211,16 @@ describe('context-menu.connect', () => {
   })
 
   it('positioner style uses x/y', () => {
-    const style = read(p.positioner.style, { ...init({ items: ['a'] }), open: true, x: 42, y: 99 })
+    const style = read(p.positioner.style, { ...init({ items: flat }), open: true, x: 42, y: 99 })
     expect(style).toContain('top:99px')
     expect(style).toContain('left:42px')
   })
 
-  it('content ArrowDown sends highlightNext', () => {
+  it('content ArrowDown sends highlightNext scoped to root', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
-    expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: '' })
   })
 
   it('content Escape closes', () => {
@@ -81,5 +237,87 @@ describe('context-menu.connect', () => {
     pc.item('a').item.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'select', value: 'a' })
     expect(onSelect).toHaveBeenCalledWith('a')
+  })
+
+  it('checkboxItem role menuitemcheckbox + aria-checked', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const ci = pc.checkboxItem('wrap').item
+    expect(ci.role).toBe('menuitemcheckbox')
+    expect(read(ci['aria-checked'], { ...init({ items: flat }), checked: ['wrap'] })).toBe('true')
+  })
+
+  it('radioItem role menuitemradio', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(pc.radioItem('r1').item.role).toBe('menuitemradio')
+  })
+
+  it('group role group + aria-labelledby, separator role separator', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const g = pc.group('g')
+    expect(g.group.role).toBe('group')
+    expect(g.group['aria-labelledby']).toBe(g.label.id)
+    expect(pc.separator().role).toBe('separator')
+  })
+
+  it('subTrigger ArrowRight opens, subContent ArrowLeft/Escape closes', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat })), send, { id: 'x' })
+    pc.subTrigger('more').onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'more' })
+    pc.subContent('more').onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
+    )
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+})
+
+describe('context-menu RTL', () => {
+  it('init defaults dir to ltr; respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBe('ltr')
+    expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+  })
+
+  it('setDir updates the reading direction', () => {
+    const [s] = update(init({ items: flat }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('ltr: subTrigger ArrowRight opens, ArrowLeft is inert', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat })), send, { id: 'x' })
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'more' })
+    send.mockClear()
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('rtl: arrows swap — ArrowLeft opens the submenu, ArrowRight is inert', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'more' })
+    send.mockClear()
+    pc.subTrigger('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('rtl: subContent ArrowRight closes the submenu; ArrowLeft does not', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+    send.mockClear()
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).not.toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('vertical arrows are never flipped under rtl', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ items: flat, dir: 'rtl' })), send, { id: 'x' })
+    pc.subContent('more').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: 'more' })
   })
 })

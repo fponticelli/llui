@@ -4,6 +4,7 @@ import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import type { PresenceStatus } from './presence.js'
 
 /**
  * Popover — click-triggered, non-modal floating overlay anchored to its
@@ -15,6 +16,10 @@ import { attachFloating, type Placement } from '../utils/floating.js'
 
 export interface PopoverState {
   open: boolean
+  /** Presence lifecycle — drives data-state and keeps the node mounted through exit animations. */
+  status: PresenceStatus
+  /** When true, close transitions go straight to 'closed' (no exit-animation wait). */
+  skipAnimations: boolean
 }
 
 export type PopoverMsg =
@@ -26,26 +31,62 @@ export type PopoverMsg =
   | { type: 'toggle' }
   /** @intent("Set the popover's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
+  /** @humanOnly */
+  | { type: 'transitionEnd' }
 
 export interface PopoverInit {
   open?: boolean
+  /** Skip enter/exit animations — close unmounts synchronously (default: true). */
+  skipAnimations?: boolean
 }
 
 export function init(opts: PopoverInit = {}): PopoverState {
-  return { open: opts.open ?? false }
+  const open = opts.open ?? false
+  return {
+    open,
+    status: open ? 'open' : 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
+  }
+}
+
+function openTo(state: PopoverState): PopoverState {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
+}
+
+function closeTo(state: PopoverState): PopoverState {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
 }
 
 export function update(state: PopoverState, msg: PopoverMsg): [PopoverState, never[]] {
   switch (msg.type) {
     case 'open':
-      return [{ ...state, open: true }, []]
+      return [openTo(state), []]
     case 'close':
-      return [{ ...state, open: false }, []]
+      return [closeTo(state), []]
     case 'toggle':
-      return [{ ...state, open: !state.open }, []]
+      return [state.open ? closeTo(state) : openTo(state), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [msg.open ? openTo(state) : closeTo(state), []]
+    case 'animationEnd':
+    case 'transitionEnd':
+      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
+      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
+      return [state, []]
   }
+}
+
+/** Whether the popover node should be in the DOM — true through the exit animation. */
+export function isMounted(state: PopoverState): boolean {
+  return state.status !== 'closed'
+}
+
+/** Alias of {@link isMounted} — whether the popover is currently present in the DOM. */
+export function isPresent(state: PopoverState): boolean {
+  return isMounted(state)
 }
 
 export interface PopoverParts {
@@ -70,9 +111,11 @@ export interface PopoverParts {
     id: string
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'popover'
     'data-part': 'content'
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   title: {
     id: string
@@ -137,9 +180,11 @@ export function connect(
       id: contentId,
       'aria-labelledby': titleId,
       tabindex: -1,
-      'data-state': state.map((st) => (st.open ? 'open' : 'closed')),
+      'data-state': state.map((st) => st.status),
       'data-scope': 'popover',
       'data-part': 'content',
+      onAnimationEnd: () => send({ type: 'animationEnd' }),
+      onTransitionEnd: () => send({ type: 'transitionEnd' }),
     },
     title: {
       id: titleId,
@@ -208,9 +253,12 @@ export function overlay(opts: OverlayOptions): Renderable {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
+  // Outer block stays mounted through the exit animation (status !== 'closed');
+  // inner block tracks visibility (open) so interaction wiring tears down at the
+  // close REQUEST while the node lingers for the exit transition.
   return [
     show(
-      opts.state.map((st) => st.open),
+      opts.state.map((st) => isMounted(st)),
       () => {
         const targetEl =
           typeof rawTarget === 'string'
@@ -218,60 +266,70 @@ export function overlay(opts: OverlayOptions): Renderable {
             : rawTarget
         return [
           portal(() => {
-            const dismissable = onMount(() => {
+            // Floating positioning lives with the mounted node so the content
+            // stays anchored while the exit animation plays.
+            const floating = onMount(() => {
               const contentEl = document.getElementById(contentId)
               const triggerEl = document.getElementById(triggerId)
               if (!contentEl || !triggerEl) return
-
-              const cleanups: Array<() => void> = []
-
-              // Position content relative to trigger
               const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
               const floatingEl = positioner ?? contentEl
               const arrow = opts.arrowSelector
                 ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
                 : null
-              cleanups.push(
-                attachFloating({
-                  anchor: triggerEl,
-                  floating: floatingEl,
-                  placement,
-                  offset,
-                  flip,
-                  shift,
-                  arrow: arrow ?? undefined,
-                }),
-              )
-
-              if (trapFocus) {
-                cleanups.push(
-                  pushFocusTrap({
-                    container: contentEl,
-                    restoreFocus,
-                  }),
-                )
-              }
-
-              if (closeOnEscape || closeOnOutsideClick) {
-                cleanups.push(
-                  pushDismissable({
-                    element: contentEl,
-                    ignore: () => [triggerEl],
-                    disableEscape: !closeOnEscape,
-                    disableOutside: !closeOnOutsideClick,
-                    onDismiss: () => {
-                      opts.send({ type: 'close' })
-                      if (restoreFocus) triggerEl.focus()
-                    },
-                  }),
-                )
-              }
-
-              return () => {
-                for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-              }
+              return attachFloating({
+                anchor: triggerEl,
+                floating: floatingEl,
+                placement,
+                offset,
+                flip,
+                shift,
+                arrow: arrow ?? undefined,
+              })
             })
-            return [dismissable, div(parts.positioner, opts.content())]
+            // Dismissable + focus-trap are interaction concerns: they unwind at
+            // the close REQUEST (visibility false), not at DOM removal.
+            const interaction = show(
+              opts.state.map((st) => st.open),
+              () => [
+                onMount(() => {
+                  const contentEl = document.getElementById(contentId)
+                  const triggerEl = document.getElementById(triggerId)
+                  if (!contentEl || !triggerEl) return
+
+                  const cleanups: Array<() => void> = []
+
+                  if (trapFocus) {
+                    cleanups.push(
+                      pushFocusTrap({
+                        container: contentEl,
+                        restoreFocus,
+                      }),
+                    )
+                  }
+
+                  if (closeOnEscape || closeOnOutsideClick) {
+                    cleanups.push(
+                      pushDismissable({
+                        element: contentEl,
+                        ignore: () => [triggerEl],
+                        disableEscape: !closeOnEscape,
+                        disableOutside: !closeOnOutsideClick,
+                        onDismiss: () => {
+                          opts.send({ type: 'close' })
+                          if (restoreFocus) triggerEl.focus()
+                        },
+                      }),
+                    )
+                  }
+
+                  return () => {
+                    for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+                  }
+                }),
+              ],
+            )
+            return [floating, interaction, div(parts.positioner, opts.content())]
           }, targetEl),
         ]
       },
@@ -279,4 +337,4 @@ export function overlay(opts: OverlayOptions): Renderable {
   ]
 }
 
-export const popover = { init, update, connect, overlay }
+export const popover = { init, update, connect, overlay, isMounted, isPresent }

@@ -99,3 +99,62 @@ describe('select.connect', () => {
     ).toBe('a | b')
   })
 })
+
+describe('select option groups', () => {
+  it('flat string[] still works with no groups', () => {
+    const s = init({ items: ['a', 'b', 'c'] })
+    expect(s.items).toEqual(['a', 'b', 'c'])
+    expect(s.groups).toEqual([])
+  })
+
+  it('init derives flat items from groups when items omitted', () => {
+    const s = init({
+      groups: [
+        { id: 'fruit', label: 'Fruit', items: ['apple', 'banana'] },
+        { id: 'veg', label: 'Veg', items: ['carrot'] },
+      ],
+    })
+    expect(s.items).toEqual(['apple', 'banana', 'carrot'])
+    expect(s.groups).toEqual([
+      { id: 'fruit', label: 'Fruit', items: ['apple', 'banana'] },
+      { id: 'veg', label: 'Veg', items: ['carrot'] },
+    ])
+  })
+
+  it('group(id) part exposes role=group + aria-labelledby pointing at the label', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'sel' })
+    const g = p.group('fruit')
+    expect(g.group.role).toBe('group')
+    expect(g.group['aria-labelledby']).toBe('sel:group:fruit:label')
+    expect(g.group['data-scope']).toBe('select')
+    expect(g.group['data-part']).toBe('group')
+    expect(g.groupLabel.id).toBe('sel:group:fruit:label')
+    expect(g.groupLabel['data-part']).toBe('group-label')
+  })
+
+  it('navigation skips disabled items across group boundaries', () => {
+    const s0 = init({
+      groups: [
+        { id: 'g1', label: 'G1', items: ['a', 'b'] },
+        { id: 'g2', label: 'G2', items: ['c', 'd'] },
+      ],
+      disabledItems: ['b', 'c'],
+    })
+    // items === ['a','b','c','d']; highlight starts null
+    const [s1] = update(s0, { type: 'highlightFirst' })
+    expect(s1.highlightedIndex).toBe(0) // 'a'
+    const [s2] = update(s1, { type: 'highlightNext' })
+    expect(s2.highlightedIndex).toBe(3) // skips disabled 'b' and 'c', lands on 'd'
+    const [s3] = update(s2, { type: 'highlightPrev' })
+    expect(s3.highlightedIndex).toBe(0) // back to 'a'
+    const [s4] = update(s0, { type: 'highlightLast' })
+    expect(s4.highlightedIndex).toBe(3) // 'd'
+  })
+
+  it('group items() helper indexes against the flat list order', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'sel' })
+    // item part ids are stable across groups via flat index
+    expect(p.item('apple', 0).item.id).toBe('sel:item:0')
+    expect(p.item('carrot', 2).item.id).toBe('sel:item:2')
+  })
+})

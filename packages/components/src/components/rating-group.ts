@@ -15,6 +15,8 @@ export interface RatingGroupState {
   disabled: boolean
   readonly: boolean
   hoveredValue: number | null
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  dir: 'ltr' | 'rtl'
 }
 
 export type RatingGroupMsg =
@@ -32,6 +34,8 @@ export type RatingGroupMsg =
   | { type: 'decrementValue'; step?: number }
   /** @intent("Snap the rating to its maximum (count)") */
   | { type: 'toEnd' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
 
 export interface RatingGroupInit {
   value?: number
@@ -39,6 +43,7 @@ export interface RatingGroupInit {
   allowHalf?: boolean
   disabled?: boolean
   readonly?: boolean
+  dir?: 'ltr' | 'rtl'
 }
 
 export function init(opts: RatingGroupInit = {}): RatingGroupState {
@@ -49,6 +54,7 @@ export function init(opts: RatingGroupInit = {}): RatingGroupState {
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,
     hoveredValue: null,
+    dir: opts.dir ?? 'ltr',
   }
 }
 
@@ -57,6 +63,7 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 export function update(state: RatingGroupState, msg: RatingGroupMsg): [RatingGroupState, never[]] {
+  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
   if (state.disabled || state.readonly) {
     if (msg.type === 'hover') return [{ ...state, hoveredValue: null }, []]
     return [state, []]
@@ -177,7 +184,7 @@ export function connect(
         }),
         onPointerLeave: tagSend(send, ['hover'], () => send({ type: 'hover', value: null })),
         onKeyDown: tagSend(send, ['incrementValue', 'decrementValue', 'setValue', 'toEnd'], (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
+          const key = flipArrow(e.key, state.peek().dir)
           switch (key) {
             case 'ArrowRight':
             case 'ArrowUp':

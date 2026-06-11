@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, itemFill } from '../../src/components/rating-group'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('rating-group reducer', () => {
   it('initializes with value=0', () => {
@@ -97,15 +97,57 @@ describe('rating-group.connect', () => {
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'incrementValue' })
   })
 
   it('End sends toEnd', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'toEnd' })
+  })
+
+  it('rtl: ArrowLeft increments, ArrowRight decrements', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'incrementValue' })
+
+    send.mockClear()
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrementValue' })
+  })
+
+  it('ltr (default): ArrowLeft decrements, ArrowRight increments', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init()), send)
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrementValue' })
+
+    send.mockClear()
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'incrementValue' })
+  })
+
+  it('rtl: vertical arrows are NOT flipped (Up increments, Down decrements)', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send)
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'incrementValue' })
+
+    send.mockClear()
+    p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrementValue' })
+  })
+
+  it('init defaults dir to ltr', () => {
+    expect(init().dir).toBe('ltr')
+  })
+
+  it('setDir updates direction even when readonly', () => {
+    const [s] = update(init({ readonly: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
   })
 })

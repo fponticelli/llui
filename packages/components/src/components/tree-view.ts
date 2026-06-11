@@ -17,6 +17,38 @@ import {
 
 export type SelectionMode = 'single' | 'multiple' | 'checkbox'
 
+/**
+ * JSON-serializable adjacency entry for one tree node. The reducer owns the
+ * tree structure (as a flat record) so it can traverse descendants/ancestors
+ * for automatic indeterminate derivation and lazy-load bookkeeping without
+ * any external collection. Build the record from a {@link TreeCollection} or
+ * by hand; seed it via `init({ nodes, roots })` or the `setNodes` message.
+ */
+export interface TreeNodeMeta {
+  /** Ordered ids of this node's loaded children (empty until loaded). */
+  children: string[]
+  /** Parent id, or null for a root. */
+  parentId: string | null
+  /** When true, descendant cascade and checked-derivation skip this node. */
+  disabled?: boolean
+  /**
+   * Declares the node as a branch whose children are loaded lazily. Expanding
+   * a `hasChildren` node that has not yet been loaded emits a `loadChildren`
+   * effect; the consumer fetches and replies with `childrenLoaded`.
+   */
+  hasChildren?: boolean
+}
+
+/** Shape of a lazily-loaded child handed back via `childrenLoaded`. */
+export interface TreeNodeInput {
+  id: string
+  /** Eagerly-known children of this freshly-loaded node, if any. */
+  children?: string[]
+  disabled?: boolean
+  /** Mark this freshly-loaded node as itself lazily-loadable. */
+  hasChildren?: boolean
+}
+
 export interface TreeViewState {
   /** Ids of expanded branches. */
   expanded: string[]
@@ -47,14 +79,36 @@ export interface TreeViewState {
   renameDraft: string
   /**
    * Ids of branches currently loading their children asynchronously. Item
-   * parts expose `aria-busy` while loading so assistive tech announces
-   * the in-progress state. The consumer kicks off the fetch externally
-   * (in a handler that intercepts `expand`, or via an effect), dispatches
-   * `loadingStart` immediately, fetches the children, then dispatches
-   * `setVisibleItems` with the new tree contents followed by `loadingEnd`.
+   * parts expose `aria-busy` while loading so assistive tech announces the
+   * in-progress state. This is now driven by the machine itself: expanding a
+   * `hasChildren` node sets `loading` and emits a `loadChildren` effect; the
+   * `childrenLoaded` / `childrenLoadFailed` replies clear it. The legacy
+   * `loadingStart` / `loadingEnd` messages remain for manual control.
    */
   loading: string[]
+  /**
+   * Flat tree structure (adjacency record). Owned by the reducer for
+   * descendant/ancestor traversal. JSON-serializable.
+   */
+  nodes: Record<string, TreeNodeMeta>
+  /** Ids of the top-level (root) nodes, in order. */
+  roots: string[]
+  /**
+   * Ids of branches whose children have been loaded (distinguishes a
+   * loaded-but-empty branch from a not-yet-fetched one so we never refetch).
+   */
+  loaded: string[]
+  /**
+   * Ids of branches whose last lazy load failed. Re-expanding such a branch
+   * retries the load (clears the flag and re-emits `loadChildren`).
+   */
+  loadFailed: string[]
 }
+
+/** Effects emitted by the tree-view machine for the consumer's `onEffect`. */
+export type TreeViewEffect =
+  /** Fetch the children of `id` lazily, then reply with `childrenLoaded`/`childrenLoadFailed`. */
+  { type: 'loadChildren'; id: string }
 
 export type TreeViewMsg =
   /** @intent("Toggle the branch with the given id expanded/collapsed") */
@@ -107,6 +161,12 @@ export type TreeViewMsg =
   | { type: 'loadingStart'; id: string }
   /** @intent("Clear the loading state for the given branch id (after async fetch completes)") */
   | { type: 'loadingEnd'; id: string }
+  /** @intent("Replace the whole tree structure (adjacency record + root ids)") */
+  | { type: 'setNodes'; nodes: Record<string, TreeNodeMeta>; roots: string[] }
+  /** @intent("Supply the lazily-loaded children of branch `id` (clears loading, marks loaded)") */
+  | { type: 'childrenLoaded'; id: string; items: TreeNodeInput[] }
+  /** @intent("Report that the lazy load of branch `id` failed (allows retry on re-expand)") */
+  | { type: 'childrenLoadFailed'; id: string }
 
 export interface TreeViewInit {
   expanded?: string[]
@@ -117,6 +177,10 @@ export interface TreeViewInit {
   disabled?: boolean
   visibleItems?: string[]
   visibleLabels?: string[]
+  nodes?: Record<string, TreeNodeMeta>
+  roots?: string[]
+  loaded?: string[]
+  loadFailed?: string[]
 }
 
 export function init(opts: TreeViewInit = {}): TreeViewState {
@@ -135,21 +199,143 @@ export function init(opts: TreeViewInit = {}): TreeViewState {
     renaming: null,
     renameDraft: '',
     loading: [],
+    nodes: opts.nodes ?? {},
+    roots: opts.roots ?? [],
+    loaded: opts.loaded ?? [],
+    loadFailed: opts.loadFailed ?? [],
   }
 }
 
-export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, never[]] {
-  if (state.disabled && msg.type !== 'setVisibleItems') return [state, []]
+// ---------------------------------------------------------------------------
+// Traversal helpers (operate on the flat `nodes` record in state). Kept pure
+// so the reducer stays deterministic and JSON-serializable.
+// ---------------------------------------------------------------------------
+
+/** Direct child ids of `id` (empty if unknown or a leaf). */
+function childrenOf(nodes: Record<string, TreeNodeMeta>, id: string): string[] {
+  return nodes[id]?.children ?? []
+}
+
+/** All descendants of `id` in depth-first order (excluding `id`). */
+function descendantsOf(nodes: Record<string, TreeNodeMeta>, id: string): string[] {
+  const out: string[] = []
+  const walk = (current: string): void => {
+    for (const child of childrenOf(nodes, current)) {
+      out.push(child)
+      walk(child)
+    }
+  }
+  walk(id)
+  return out
+}
+
+/**
+ * Determine whether a node's children are already loaded (so expanding it is a
+ * pure UI toggle, not a fetch). A node needs loading when it declares
+ * `hasChildren` and has neither loaded children present nor been marked loaded.
+ */
+function needsLoad(state: TreeViewState, id: string): boolean {
+  const meta = state.nodes[id]
+  if (!meta || meta.hasChildren !== true) return false
+  if (meta.children.length > 0) return false
+  return !state.loaded.includes(id)
+}
+
+/**
+ * Recompute the full checked + indeterminate sets from a seed checked-set,
+ * bottom-up across the whole structure. A branch is checked iff it has at
+ * least one ENABLED descendant and all of them are checked; it is
+ * indeterminate iff some-but-not-all enabled descendants are checked (or it
+ * has a checked descendant alongside an indeterminate one). Disabled nodes are
+ * never auto-checked and never counted toward a parent's roll-up. Leaves keep
+ * their explicit checked state from the seed.
+ */
+function deriveCheckState(
+  nodes: Record<string, TreeNodeMeta>,
+  roots: string[],
+  seed: ReadonlySet<string>,
+): { checked: string[]; indeterminate: string[] } {
+  const checked = new Set<string>(seed)
+  const indeterminate = new Set<string>()
+
+  // Post-order so children resolve before parents.
+  const visit = (id: string): void => {
+    const kids = childrenOf(nodes, id)
+    for (const k of kids) visit(k)
+    if (kids.length === 0) return
+    const enabled = kids.filter((k) => nodes[k]?.disabled !== true)
+    // No enabled children to roll up from → leave parent's explicit state.
+    if (enabled.length === 0) return
+    let allChecked = true
+    let anyChecked = false
+    for (const k of enabled) {
+      const kChecked = checked.has(k)
+      const kIndeterminate = indeterminate.has(k)
+      if (kChecked || kIndeterminate) anyChecked = true
+      if (!kChecked) allChecked = false
+    }
+    if (allChecked) {
+      checked.add(id)
+      indeterminate.delete(id)
+    } else if (anyChecked) {
+      checked.delete(id)
+      indeterminate.add(id)
+    } else {
+      checked.delete(id)
+      indeterminate.delete(id)
+    }
+  }
+  for (const r of roots) visit(r)
+
+  return { checked: Array.from(checked), indeterminate: Array.from(indeterminate) }
+}
+
+/**
+ * Expand a node, triggering a lazy load when required. Returns the next state
+ * plus any effect to emit. Suppresses a duplicate fetch while one is already
+ * in flight; retries (and clears the failed flag) when the previous load
+ * failed.
+ */
+function expandNode(state: TreeViewState, id: string): [TreeViewState, TreeViewEffect[]] {
+  const expanded = state.expanded.includes(id) ? state.expanded : [...state.expanded, id]
+  if (!needsLoad(state, id)) {
+    return [{ ...state, expanded }, []]
+  }
+  // Already loading and not previously failed → suppress duplicate fetch.
+  if (state.loading.includes(id) && !state.loadFailed.includes(id)) {
+    return [{ ...state, expanded }, []]
+  }
+  return [
+    {
+      ...state,
+      expanded,
+      loading: state.loading.includes(id) ? state.loading : [...state.loading, id],
+      loadFailed: state.loadFailed.filter((x) => x !== id),
+    },
+    [{ type: 'loadChildren', id }],
+  ]
+}
+
+export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, TreeViewEffect[]] {
+  if (
+    state.disabled &&
+    msg.type !== 'setVisibleItems' &&
+    msg.type !== 'setNodes' &&
+    msg.type !== 'childrenLoaded' &&
+    msg.type !== 'childrenLoadFailed'
+  )
+    return [state, []]
   switch (msg.type) {
     case 'toggleBranch': {
-      const expanded = state.expanded.includes(msg.id)
-        ? state.expanded.filter((id) => id !== msg.id)
-        : [...state.expanded, msg.id]
-      return [{ ...state, expanded }, []]
+      if (state.expanded.includes(msg.id)) {
+        // Collapse — keep loading/loaded state so an in-flight load still
+        // resolves correctly (stale-insert) and we never refetch.
+        return [{ ...state, expanded: state.expanded.filter((id) => id !== msg.id) }, []]
+      }
+      return expandNode(state, msg.id)
     }
     case 'expand':
-      if (state.expanded.includes(msg.id)) return [state, []]
-      return [{ ...state, expanded: [...state.expanded, msg.id] }, []]
+      return expandNode(state, msg.id)
     case 'collapse':
       if (!state.expanded.includes(msg.id)) return [state, []]
       return [{ ...state, expanded: state.expanded.filter((id) => id !== msg.id) }, []]
@@ -209,10 +395,11 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       return [state, []]
     }
     case 'arrowRightFrom': {
-      // If this branch is closed, expand it; otherwise focus the first
-      // visible child (the next item in depth-first visibleItems order).
+      // If this branch is closed, expand it (triggering a lazy load when
+      // required); otherwise focus the first visible child (the next item in
+      // depth-first visibleItems order).
       if (!state.expanded.includes(msg.id)) {
-        return [{ ...state, expanded: [...state.expanded, msg.id] }, []]
+        return expandNode(state, msg.id)
       }
       const idx = state.visibleItems.indexOf(msg.id)
       if (idx === -1 || idx === state.visibleItems.length - 1) return [state, []]
@@ -235,20 +422,34 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       ]
     }
     case 'toggleChecked': {
-      // Toggle the item's checked state, propagating to descendants if any.
-      // The caller passes `descendantIds` for branches; for leaves, pass
-      // an empty list or omit. Indeterminate flag is cleared on the id
-      // (a deliberate toggle is a definite state). The caller is
-      // responsible for recomputing `indeterminate` on ancestors via
-      // setIndeterminate after this message.
-      const desc = msg.descendantIds ?? []
-      const all = [msg.id, ...desc]
-      const isChecked = state.checked.includes(msg.id)
-      const next = isChecked
-        ? state.checked.filter((id) => !all.includes(id))
-        : Array.from(new Set([...state.checked, ...all]))
-      const indeterminate = state.indeterminate.filter((id) => !all.includes(id))
-      return [{ ...state, checked: next, indeterminate }, []]
+      // Toggle the item, cascading to ENABLED descendants, then re-derive
+      // checked/indeterminate for every ancestor automatically from the
+      // `nodes` structure. If no structure is known, fall back to the
+      // explicit `descendantIds` (legacy) or a plain leaf toggle.
+      const hasStructure = state.nodes[msg.id] !== undefined
+      const turningOn = !state.checked.includes(msg.id)
+
+      if (!hasStructure) {
+        const desc = msg.descendantIds ?? []
+        const all = [msg.id, ...desc]
+        const next = turningOn
+          ? Array.from(new Set([...state.checked, ...all]))
+          : state.checked.filter((id) => !all.includes(id))
+        const indeterminate = state.indeterminate.filter((id) => !all.includes(id))
+        return [{ ...state, checked: next, indeterminate }, []]
+      }
+
+      // Cascade across enabled descendants (and self if enabled).
+      const cascade = [msg.id, ...descendantsOf(state.nodes, msg.id)].filter(
+        (id) => state.nodes[id]?.disabled !== true,
+      )
+      const seed = new Set(state.checked)
+      for (const id of cascade) {
+        if (turningOn) seed.add(id)
+        else seed.delete(id)
+      }
+      const { checked, indeterminate } = deriveCheckState(state.nodes, state.roots, seed)
+      return [{ ...state, checked, indeterminate }, []]
     }
     case 'setChecked':
       return [{ ...state, checked: msg.ids }, []]
@@ -266,6 +467,60 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       return [{ ...state, loading: [...state.loading, msg.id] }, []]
     case 'loadingEnd':
       return [{ ...state, loading: state.loading.filter((id) => id !== msg.id) }, []]
+    case 'setNodes':
+      return [{ ...state, nodes: msg.nodes, roots: msg.roots }, []]
+    case 'childrenLoaded': {
+      // Insert the loaded children into the structure even if the node was
+      // collapsed in the meantime (stale-insert). Mark loaded so we never
+      // refetch (including the loaded-but-empty case), and clear loading /
+      // failed flags.
+      const childIds = msg.items.map((c) => c.id)
+      const nodes: Record<string, TreeNodeMeta> = { ...state.nodes }
+      const parent = nodes[msg.id]
+      nodes[msg.id] = {
+        children: childIds,
+        parentId: parent?.parentId ?? null,
+        ...(parent?.disabled ? { disabled: true } : {}),
+        hasChildren: true,
+      }
+      for (const c of msg.items) {
+        nodes[c.id] = {
+          children: c.children ?? [],
+          parentId: msg.id,
+          ...(c.disabled ? { disabled: true } : {}),
+          ...(c.hasChildren ? { hasChildren: true } : {}),
+        }
+      }
+      const nextState: TreeViewState = {
+        ...state,
+        nodes,
+        loading: state.loading.filter((id) => id !== msg.id),
+        loadFailed: state.loadFailed.filter((id) => id !== msg.id),
+        loaded: state.loaded.includes(msg.id) ? state.loaded : [...state.loaded, msg.id],
+      }
+      // Re-derive tri-state if a checked ancestor should cascade onto the
+      // freshly-loaded enabled descendants, or vice-versa.
+      if (state.selectionMode === 'checkbox') {
+        const { checked, indeterminate } = deriveCheckState(
+          nextState.nodes,
+          nextState.roots,
+          new Set(nextState.checked),
+        )
+        return [{ ...nextState, checked, indeterminate }, []]
+      }
+      return [nextState, []]
+    }
+    case 'childrenLoadFailed':
+      return [
+        {
+          ...state,
+          loading: state.loading.filter((id) => id !== msg.id),
+          loadFailed: state.loadFailed.includes(msg.id)
+            ? state.loadFailed
+            : [...state.loadFailed, msg.id],
+        },
+        [],
+      ]
   }
 }
 
@@ -293,6 +548,14 @@ export function isLoading(state: TreeViewState, id: string): boolean {
   return state.loading.includes(id)
 }
 
+export function isLoaded(state: TreeViewState, id: string): boolean {
+  return state.loaded.includes(id)
+}
+
+export function isLoadFailed(state: TreeViewState, id: string): boolean {
+  return state.loadFailed.includes(id)
+}
+
 export interface TreeItemParts {
   item: {
     role: 'treeitem'
@@ -309,6 +572,7 @@ export interface TreeItemParts {
     'data-selected': Signal<'' | undefined>
     'data-focused': Signal<'' | undefined>
     'data-loading': Signal<'' | undefined>
+    'data-load-failed': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -407,6 +671,7 @@ export function connect(
         'data-selected': state.map((s) => (isSelected(s, id) ? '' : undefined)),
         'data-focused': state.map((s) => (s.focused === id ? '' : undefined)),
         'data-loading': state.map((s) => (isLoading(s, id) ? '' : undefined)),
+        'data-load-failed': state.map((s) => (isLoadFailed(s, id) ? '' : undefined)),
         onClick: tagSend(send, ['select', 'toggleBranch'], (e) => {
           send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
           if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
@@ -508,4 +773,6 @@ export const treeView = {
   isIndeterminate,
   isRenaming,
   isLoading,
+  isLoaded,
+  isLoadFailed,
 }

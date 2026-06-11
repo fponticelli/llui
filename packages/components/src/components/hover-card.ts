@@ -1,6 +1,7 @@
 import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import type { PresenceStatus } from './presence.js'
 
 /**
  * Hover card — richer tooltip-like popup triggered by hover or focus.
@@ -10,27 +11,70 @@ import { attachFloating, type Placement } from '../utils/floating.js'
 
 export interface HoverCardState {
   open: boolean
+  /** Presence lifecycle — drives data-state and keeps the node mounted through exit animations. */
+  status: PresenceStatus
+  /** When true, hide transitions go straight to 'closed' (no exit-animation wait). */
+  skipAnimations: boolean
 }
 
-export type HoverCardMsg = { type: 'show' } | { type: 'hide' } | { type: 'setOpen'; open: boolean }
+export type HoverCardMsg =
+  | { type: 'show' }
+  | { type: 'hide' }
+  | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'animationEnd' }
+  /** @humanOnly */
+  | { type: 'transitionEnd' }
 
 export interface HoverCardInit {
   open?: boolean
+  /** Skip enter/exit animations — hide unmounts synchronously (default: true). */
+  skipAnimations?: boolean
 }
 
 export function init(opts: HoverCardInit = {}): HoverCardState {
-  return { open: opts.open ?? false }
+  const open = opts.open ?? false
+  return {
+    open,
+    status: open ? 'open' : 'closed',
+    skipAnimations: opts.skipAnimations ?? true,
+  }
+}
+
+function showTo(state: HoverCardState): HoverCardState {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
+}
+
+function hideTo(state: HoverCardState): HoverCardState {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
 }
 
 export function update(state: HoverCardState, msg: HoverCardMsg): [HoverCardState, never[]] {
   switch (msg.type) {
     case 'show':
-      return [{ ...state, open: true }, []]
+      return [showTo(state), []]
     case 'hide':
-      return [{ ...state, open: false }, []]
+      return [hideTo(state), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [msg.open ? showTo(state) : hideTo(state), []]
+    case 'animationEnd':
+    case 'transitionEnd':
+      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
+      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
+      return [state, []]
   }
+}
+
+/** Whether the hover-card node should be in the DOM — true through the exit animation. */
+export function isMounted(state: HoverCardState): boolean {
+  return state.status !== 'closed'
+}
+
+/** Alias of {@link isMounted} — whether the hover-card is currently present in the DOM. */
+export function isPresent(state: HoverCardState): boolean {
+  return isMounted(state)
 }
 
 export interface HoverCardParts {
@@ -54,11 +98,13 @@ export interface HoverCardParts {
   content: {
     role: 'dialog'
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<PresenceStatus>
     'data-scope': 'hover-card'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
   }
   arrow: {
     'data-scope': 'hover-card'
@@ -136,7 +182,7 @@ export function connect(
     content: {
       role: 'dialog',
       id: contentId,
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-state': state.map((s) => s.status),
       'data-scope': 'hover-card',
       'data-part': 'content',
       onPointerEnter: () => {
@@ -146,6 +192,8 @@ export function connect(
         }
       },
       onPointerLeave: scheduleClose,
+      onAnimationEnd: () => send({ type: 'animationEnd' }),
+      onTransitionEnd: () => send({ type: 'transitionEnd' }),
     },
     arrow: {
       'data-scope': 'hover-card',
@@ -178,8 +226,10 @@ export function overlay(opts: OverlayOptions): Mountable {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
+  // Stay mounted through the exit animation (status !== 'closed'); the content
+  // keeps its floating position while the close transition plays.
   return show(
-    opts.state.map((s) => s.open),
+    opts.state.map((s) => isMounted(s)),
     () => {
       const targetEl =
         typeof rawTarget === 'string'
@@ -213,4 +263,4 @@ export function overlay(opts: OverlayOptions): Mountable {
   )
 }
 
-export const hoverCard = { init, update, connect, overlay }
+export const hoverCard = { init, update, connect, overlay, isMounted, isPresent }

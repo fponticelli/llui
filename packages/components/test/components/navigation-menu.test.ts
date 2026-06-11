@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isOpen } from '../../src/components/navigation-menu'
 import type { NavMenuState } from '../../src/components/navigation-menu'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('navigation-menu reducer', () => {
   it('starts with nothing open', () => {
@@ -167,5 +167,56 @@ describe('navigation-menu.connect', () => {
     const content = p.item('file', { isBranch: true }).content
     expect(read(content.hidden, init())).toBe(true)
     expect(read(content.hidden, init({ open: ['file'] }))).toBe(false)
+  })
+})
+
+describe('navigation-menu RTL', () => {
+  it('init defaults dir to ltr; respects opts.dir', () => {
+    expect(init().dir).toBe('ltr')
+    expect(init({ dir: 'rtl' }).dir).toBe('rtl')
+  })
+
+  it('setDir updates the reading direction (even when disabled)', () => {
+    const [s] = update(init({ disabled: true }), { type: 'setDir', dir: 'rtl' })
+    expect(s.dir).toBe('rtl')
+  })
+
+  it('ltr: ArrowRight opens a branch, ArrowLeft closes it', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init()), send, { id: 'nav' })
+    const trigger = p.item('file', { isBranch: true }).trigger
+    trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openBranch', id: 'file', ancestorIds: [] })
+    send.mockClear()
+    trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeBranch', id: 'file' })
+  })
+
+  it('rtl: horizontal arrows swap — ArrowLeft opens, ArrowRight closes', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send, { id: 'nav' })
+    const trigger = p.item('file', { isBranch: true, ancestorIds: ['root'] }).trigger
+    trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openBranch', id: 'file', ancestorIds: ['root'] })
+    send.mockClear()
+    trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'closeBranch', id: 'file' })
+  })
+
+  it('ArrowDown opens a branch and is never flipped under rtl', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init({ dir: 'rtl' })), send, { id: 'nav' })
+    const trigger = p.item('file', { isBranch: true }).trigger
+    trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(send).toHaveBeenCalledWith({ type: 'openBranch', id: 'file', ancestorIds: [] })
+  })
+
+  it('arrow keydown on a leaf is a no-op', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(init()), send, { id: 'nav' })
+    p.item('home', { isBranch: false }).trigger.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+    )
+    expect(send).not.toHaveBeenCalled()
   })
 })

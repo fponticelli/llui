@@ -8,13 +8,25 @@ type Ctx = { d: DrawerState }
 
 describe('drawer reducer', () => {
   it('initializes closed', () => {
-    expect(init()).toEqual({ open: false })
+    expect(init().open).toBe(false)
+    expect(init().status).toBe('closed')
   })
 
   it('open/close/toggle', () => {
     expect(update(init(), { type: 'open' })[0].open).toBe(true)
     expect(update(init({ open: true }), { type: 'close' })[0].open).toBe(false)
     expect(update(init(), { type: 'toggle' })[0].open).toBe(true)
+  })
+
+  it('skipAnimations (default) closes straight to closed', () => {
+    expect(update(init({ open: true }), { type: 'close' })[0].status).toBe('closed')
+  })
+
+  it('animated close goes open → closing → (animationEnd) closed', () => {
+    const [closing] = update(init({ open: true, skipAnimations: false }), { type: 'close' })
+    expect(closing.status).toBe('closing')
+    expect(closing.open).toBe(false)
+    expect(update(closing, { type: 'animationEnd' })[0].status).toBe('closed')
   })
 })
 
@@ -70,11 +82,11 @@ describe('drawer.overlay integration', () => {
     document.body.style.overflow = ''
   })
 
-  function makeApp(initialOpen = false): { send: (m: DrawerMsg) => void } {
+  function makeApp(initialOpen = false, skipAnimations = true): { send: (m: DrawerMsg) => void } {
     let sendRef!: (m: DrawerMsg) => void
     const def = component<Ctx, DrawerMsg, never>({
       name: 'Test',
-      init: () => [{ d: init({ open: initialOpen }) }, []],
+      init: () => [{ d: init({ open: initialOpen, skipAnimations }) }, []],
       update: (state, msg) => {
         const [next] = update(state.d, msg)
         return [{ d: next }, []]
@@ -117,6 +129,31 @@ describe('drawer.overlay integration', () => {
     makeApp(true)
     await new Promise((r) => setTimeout(r, 0))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('non-animated close unmounts synchronously (no hang)', async () => {
+    const { send } = makeApp(true, true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).not.toBeNull()
+    send({ type: 'close' })
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('animated close keeps the node mounted as data-state=closing until animationEnd', async () => {
+    const { send } = makeApp(true, false)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.body.style.overflow).toBe('hidden')
+
+    send({ type: 'close' })
+    const closing = document.querySelector('[data-part="content"]') as HTMLElement
+    expect(closing).not.toBeNull()
+    expect(closing.getAttribute('data-state')).toBe('closing')
+    // Scroll unlock happened at close-request time, before DOM removal.
+    expect(document.body.style.overflow).toBe('')
+
+    closing.dispatchEvent(new Event('animationend', { bubbles: true }))
     await new Promise((r) => setTimeout(r, 0))
     expect(document.querySelector('[data-part="content"]')).toBeNull()
   })

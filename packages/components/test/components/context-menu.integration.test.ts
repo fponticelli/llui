@@ -21,12 +21,17 @@ describe('context-menu.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: ContextMenuMsg) => void } {
     let sendRef!: (m: ContextMenuMsg) => void
-    const initial = init({ items: ['copy', 'delete'] })
+    const initial = init({
+      items: [
+        { value: 'copy', kind: 'action' },
+        { value: 'delete', kind: 'action' },
+      ],
+    })
     if (initialOpen) {
       initial.open = true
       initial.x = 100
       initial.y = 50
-      initial.highlighted = 'copy'
+      initial.highlights = { '': 'copy' }
     }
     const def = component<Ctx, ContextMenuMsg, never>({
       name: 'T',
@@ -37,11 +42,12 @@ describe('context-menu.overlay integration', () => {
       },
       view: ({ state, send }) => {
         sendRef = send
-        const parts = connect(state.at('m'), send, { id: 'cm' })
+        const m = state.map((s) => s.m)
+        const parts = connect(m, send, { id: 'cm' })
         return [
           div({ ...parts.trigger }, [text('Right-click me')]),
           overlay({
-            state: state.at('m'),
+            state: m,
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],
