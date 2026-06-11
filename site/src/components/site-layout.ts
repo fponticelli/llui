@@ -276,10 +276,15 @@ function navSection(
   memberSlugs: readonly string[],
   children: Node[],
 ): Node {
+  const isActive = currentSlug.map((current) => memberSlugs.includes(current))
   return details(
     {
-      class: 'nav-group nav-group-section',
-      open: currentSlug.map((current) => memberSlugs.includes(current)),
+      // `active` marks the section whose page is open so the header can show an
+      // accent (selected state); the same flag drives the auto-expand via `open`.
+      class: isActive.map((active) =>
+        active ? 'nav-group nav-group-section active' : 'nav-group nav-group-section',
+      ),
+      open: isActive,
     },
     [summary({ class: 'nav-section' }, [text(label)]), ...children],
   )

@@ -199,13 +199,13 @@ body {
 .nav-subsection::before {
   content: '';
   flex: none;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
   transform-origin: 55% 45%;
-  opacity: 0.55;
+  opacity: 0.7;
   transition: transform 0.15s ease;
 }
 
@@ -213,6 +213,7 @@ body {
   width: 4px;
   height: 4px;
   border-width: 1.25px;
+  opacity: 0.6;
 }
 
 .nav-group[open] > .nav-section::before,
@@ -226,10 +227,30 @@ body {
   color: var(--c-text);
 }
 
-/* Indent the nested package families (and their links) under the Packages
-   section so the two-level hierarchy reads at a glance. */
+/* The section containing the current page reads as selected — accent label and
+   chevron — layered on top of the auto-expand. */
+.nav-group-section.active > .nav-section {
+  color: var(--c-accent);
+  opacity: 1;
+}
+
+.nav-group-section.active > .nav-section::before {
+  opacity: 1;
+}
+
+/* Indent each section's content beneath its header so the hierarchy reads at a
+   glance: section links and family headers sit one level in, and package links
+   sit one level deeper still (inside their family). */
+.nav-group-section > .nav-link {
+  padding-left: 26px;
+}
+
 .nav-group-section > .nav-group {
-  padding-left: 8px;
+  padding-left: 10px;
+}
+
+.nav-group-section > .nav-group > .nav-pkg {
+  margin-left: 12px;
 }
 
 .nav-link {
