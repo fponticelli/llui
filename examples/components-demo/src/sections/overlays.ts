@@ -399,10 +399,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
         {
           ...cmd.dialog.content,
           class:
-            'w-[32rem] max-w-[90vw] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl',
+            'w-[32rem] max-w-[90vw] overflow-hidden rounded-lg border border-border bg-surface shadow-2xl',
         },
         [
-          div({ ...cmd.combobox.root, class: 'border-b border-slate-100' }, [
+          div({ ...cmd.combobox.root, class: 'border-b border-border' }, [
             input({
               ...cmd.combobox.input,
               class: 'w-full px-4 py-3 text-sm outline-none',
@@ -432,7 +432,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                     {
                       ...parts,
                       class:
-                        'flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm data-[highlighted]:bg-slate-100',
+                        'flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm data-[highlighted]:bg-surface-hover',
                     },
                     [
                       span([text(item.at('label'))]),
@@ -462,10 +462,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       div(
         {
           class:
-            'min-w-[12rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg',
+            'min-w-[12rem] overflow-hidden rounded-md border border-border bg-surface shadow-lg',
         },
         [
-          div({ class: 'border-b border-slate-100 p-1' }, [
+          div({ class: 'border-b border-border p-1' }, [
             input({
               ...ssel.input,
               class: 'w-full rounded px-2 py-1.5 text-sm outline-none',
@@ -502,7 +502,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                           msg: { type: 'highlight', index: index.peek() },
                         }),
                       class:
-                        'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-slate-100 data-[state=selected]:font-semibold',
+                        'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-surface-hover data-[state=selected]:font-semibold',
                     },
                     [text(item)],
                   ),
@@ -536,7 +536,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             div(
               {
                 ...po.content,
-                class: 'min-w-[16rem] rounded-md border border-slate-200 bg-white p-4 shadow-lg',
+                class: 'min-w-[16rem] rounded-md border border-border bg-surface p-4 shadow-lg',
               },
               [
                 h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),

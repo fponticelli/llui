@@ -367,8 +367,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-slate-200 px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50'
-          : 'border-b border-slate-200 px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-surface-hover'
+          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
       },
       [text(label), sortableCol ? sortGlyph(colId) : span([])],
     )
@@ -379,7 +379,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     return tr(
       {
         ...r,
-        class: 'cursor-pointer border-b border-slate-100 hover:bg-slate-50',
+        class: 'cursor-pointer border-b border-border hover:bg-surface-hover',
       },
       [
         td({ class: 'px-3 py-2 text-sm' }, [
@@ -387,7 +387,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
             {
               ...tbl.rowCheckbox(person.id, index),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-slate-300 text-center text-xs leading-4',
+                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center text-xs leading-4',
             },
             [text(state.at('table.selection').map((sel) => (sel.includes(person.id) ? '✓' : '')))],
           ),
@@ -452,7 +452,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       {
         ...it,
         class:
-          'flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm transition-colors',
+          'flex items-center gap-2 rounded border border-border bg-surface-muted px-3 py-2 text-sm transition-colors',
         'data-dragging': sortableSig.map((s) =>
           s.dragging && s.dragging.id === label ? '' : undefined,
         ),
@@ -500,8 +500,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-slate-200 px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50'
-          : 'border-b border-slate-200 px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-surface-hover'
+          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
       },
       [
         text(label),
@@ -526,13 +526,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     const person = dtById.get(rowId)
     const r = dt.table.row(rowId, idx)
     return [
-      tr({ ...r, class: 'cursor-pointer border-b border-slate-100 hover:bg-slate-50' }, [
+      tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-surface-hover' }, [
         td({ class: 'px-3 py-2 text-sm' }, [
           span(
             {
               ...dt.table.rowCheckbox(rowId, idx),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-slate-300 text-center text-xs leading-4',
+                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center text-xs leading-4',
             },
             [
               text(
@@ -628,14 +628,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
           {
             ...lb.root,
             'aria-label': 'Status filter',
-            class: 'flex flex-col gap-1 rounded border border-slate-200 p-1',
+            class: 'flex flex-col gap-1 rounded border border-border p-1',
           },
           ['Draft', 'Published', 'Archived', 'Deleted'].map((v, i) => {
             const p = lb.item(v, i).root
             return div(
               {
                 ...p,
-                class: 'cursor-pointer rounded px-2 py-1 text-sm hover:bg-slate-100',
+                class: 'cursor-pointer rounded px-2 py-1 text-sm hover:bg-surface-hover',
               },
               [text(v)],
             )
