@@ -51,11 +51,19 @@ describe('llui-mcp doctor', () => {
     })
     let stderr = ''
     server.stderr?.on('data', (b: Buffer) => (stderr += b.toString()))
-    // Poll for the listening line.
-    for (let i = 0; i < 40; i++) {
-      if (/HTTP transport on/.test(stderr)) break
+    // Poll for the listening line. Generous cap (~30s): a cold `node`
+    // spawn + MCP SDK load under parallel CI load can take many seconds,
+    // and a tight cap let doctor run before the bridge was up. Breaks
+    // immediately once the line appears, so the happy path stays fast.
+    let listening = false
+    for (let i = 0; i < 600; i++) {
+      if (/HTTP transport on/.test(stderr)) {
+        listening = true
+        break
+      }
       await delay(50)
     }
+    if (!listening) throw new Error('[llui-mcp] did not start within 30s')
     try {
       const run = await runDoctor()
       expect(run.stdout).toMatch(/✓\s+marker file/)
@@ -66,7 +74,7 @@ describe('llui-mcp doctor', () => {
       server.kill('SIGTERM')
       await delay(100)
     }
-  }, 6000)
+  }, 35000)
 
   it('falls back to OK/FAIL glyphs with --plain', async () => {
     const run = await runDoctor(['--plain'])
