@@ -36,6 +36,26 @@ const fmBase: Omit<NoteFrontmatter, 'id' | 'ts'> = {
   llui: { runtime: '0.4.3', compiler: '0.5.6' },
 }
 
+// Poll until `pred` holds, or throw after `timeoutMs`. Use this instead of a
+// fixed `setTimeout` before asserting on an async bus emission: a small fixed
+// wait races the long-poll round-trip and intermittently fails on a loaded CI
+// runner. Resolves as soon as the event lands, so the happy path stays fast.
+const waitUntil = async (pred: () => boolean, timeoutMs = 2000): Promise<void> => {
+  const start = Date.now()
+  while (!pred()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitUntil: condition not met within ${timeoutMs}ms`)
+    }
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
+const isCaptureRequest = (e: unknown): boolean =>
+  typeof e === 'object' &&
+  e !== null &&
+  'type' in e &&
+  (e as { type: unknown }).type === 'capture-request'
+
 interface Fixture {
   notesRoot: string
   server: Server
@@ -106,8 +126,9 @@ describe('llui_capture (MCP tool, end-to-end with middleware)', () => {
       prose: 'inspect the user card',
     })
 
-    // Wait briefly for the capture-request event to land.
-    await new Promise((r) => setTimeout(r, 30))
+    // Wait for the capture-request event to land (poll, not a fixed sleep:
+    // the async emission can outrun a small fixed wait on a loaded CI runner).
+    await waitUntil(() => events.some(isCaptureRequest))
     const evt = events.find(
       (e): e is { type: 'capture-request'; requestId: string } =>
         typeof e === 'object' && e !== null && 'type' in e && e.type === 'capture-request',
@@ -156,7 +177,7 @@ describe('llui_capture (MCP tool, end-to-end with middleware)', () => {
       timeoutMs: 100,
       forceMode: 'hud',
     })
-    await new Promise((r) => setTimeout(r, 30))
+    await waitUntil(() => events.some(isCaptureRequest))
     const evt = events.find(
       (e): e is { type: 'capture-request'; payload: Record<string, unknown> } =>
         typeof e === 'object' && e !== null && 'type' in e && e.type === 'capture-request',
