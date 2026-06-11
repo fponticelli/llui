@@ -18,6 +18,10 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Backstop against a hung step (e.g. a stalled Playwright CDN download —
+    # observed once as a 3h+ runner-killed job). Bounds the whole job to a
+    # sane window so a hang fails fast instead of burning CI minutes.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +46,21 @@ jobs:
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium --with-deps
+        # The CDN download occasionally stalls at 100% and hangs indefinitely
+        # (observed: a job killed only by the 3h+ runner shutdown). Bound each
+        # attempt with `timeout` and retry so a transient stall self-heals
+        # instead of taking the whole run down. timeout-minutes is the backstop
+        # in case the inner `timeout` itself wedges.
+        timeout-minutes: 15
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 300 pnpm exec playwright install chromium --with-deps; then
+              exit 0
+            fi
+            echo "::warning::Playwright install attempt $attempt stalled or failed; retrying…"
+          done
+          echo "::error::Playwright install failed after 3 attempts"
+          exit 1
 
       - name: Install Playwright system deps
         if: steps.playwright-cache.outputs.cache-hit == 'true'
