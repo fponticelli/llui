@@ -31,3 +31,20 @@
   --md-code-fg: #e6edf3;
   --md-quote-border: #3d444d;
 }
+
+/* Explicit light opt-out: when an app drives the theme itself (a `data-theme`
+ * toggle on the wrapper/ancestor) it must be authoritative in BOTH directions.
+ * Without this, the `prefers-color-scheme: dark` block above leaks dark colors
+ * into a preview the app has explicitly set to light whenever the OS is dark —
+ * giving light text on a light background. The attribute selector outranks the
+ * media query's bare `.markdown-body`, so explicit light always wins. */
+[data-theme='light'] .markdown-body,
+.markdown-body[data-theme='light'] {
+  --md-fg: #1f2328;
+  --md-muted: #59636e;
+  --md-border: #d1d9e0;
+  --md-accent: #0969da;
+  --md-code-bg: #f6f8fa;
+  --md-code-fg: #1f2328;
+  --md-quote-border: #d1d9e0;
+}
