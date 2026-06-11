@@ -1,6 +1,7 @@
 import { div, nav, a, span, button, text, onMount } from '@llui/dom'
 import type { Signal, Send } from '@llui/dom'
 import { EXAMPLES } from '../examples-data'
+import { PACKAGES } from '../../pages/api/@pkg/packages'
 
 export type LayoutMsg = { type: 'toggleMenu' }
 
@@ -87,29 +88,10 @@ export function siteLayout({
             navLink(`/examples/${ex.slug}`, `examples/${ex.slug}`, ex.title, slug),
           ),
           span({ class: 'nav-section' }, [text('Packages')]),
-          navLink('/api/dom', 'api/dom', 'dom', slug),
-          navLink('/api/compiler', 'api/compiler', 'compiler', slug),
-          navLink('/api/vite-plugin', 'api/vite-plugin', 'vite-plugin', slug),
-          navLink(
-            '/api/compiler-introspection',
-            'api/compiler-introspection',
-            'compiler-introspection',
-            slug,
-          ),
-          navLink('/api/compiler-devtools', 'api/compiler-devtools', 'compiler-devtools', slug),
-          navLink('/api/compiler-ssr', 'api/compiler-ssr', 'compiler-ssr', slug),
-          navLink('/api/effects', 'api/effects', 'effects', slug),
-          navLink('/api/components', 'api/components', 'components', slug),
-          navLink('/api/router', 'api/router', 'router', slug),
-          navLink('/api/transitions', 'api/transitions', 'transitions', slug),
-          navLink('/api/test', 'api/test', 'test', slug),
-          navLink('/api/vike', 'api/vike', 'vike', slug),
-          navLink('/api/mcp', 'api/mcp', 'mcp', slug),
-          navLink('/api/agent', 'api/agent', 'agent', slug),
-          navLink('/api/agent-bridge', 'api/agent-bridge', 'agent-bridge', slug),
-          navLink('/api/devmode-annotate', 'api/devmode-annotate', 'devmode-annotate', slug),
-          navLink('/api/lexical', 'api/lexical', 'lexical', slug),
-          navLink('/api/markdown-editor', 'api/markdown-editor', 'markdown-editor', slug),
+          // Generated from PACKAGES (the same single source of truth that drives
+          // the `/api/<pkg>` routes) so a new package page gets its sidebar link
+          // automatically and the two can never drift apart.
+          ...PACKAGES.map((pkg) => navLink(`/api/${pkg}`, `api/${pkg}`, pkg, slug)),
         ],
       ),
 
