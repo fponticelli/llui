@@ -65,19 +65,18 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        # Cap to two package suites at a time. Each vitest suite already forks
-        # ~ncpu workers, so turbo's default (many suites at once) oversubscribes
-        # the 4-core runner ~10x — starving timers and CPU so tests with short
-        # fixed waits (async round-trips) or heavy work (the compiler's TS
-        # programs) flake. Two at a time keeps load gentle (~2x) while still
-        # streaming output from multiple tasks, which avoids the single-stream
-        # output-drain stall seen at --concurrency=1. Build/check/lint (separate
-        # steps) keep full parallelism.
+        # Run tests with pnpm's recursive runner, NOT `turbo test`. Under turbo,
+        # this step reproducibly hung for 24 min after every task had finished
+        # (all log groups closed) — turbo never returned, only inside the GH
+        # container (it exits fine locally). Build already ran via turbo, so the
+        # dist deps tests need are present; pnpm just executes each package's
+        # `vitest run` directly and exits cleanly when they're done.
         #
-        # --no-daemon: don't leave a turbo daemon that the run waits on at exit
-        # (the 24-min post-run hang); this step spawns child processes, unlike
-        # build/check/lint, so it's the one that exposed it.
-        run: pnpm turbo test --concurrency=2 --no-daemon
+        # --workspace-concurrency=2 caps to two package suites at once: each
+        # vitest already forks ~ncpu workers, so running many suites in parallel
+        # oversubscribes the 4-core runner ~10x and starves timer-sensitive
+        # tests. Two at a time keeps load gentle (~2x).
+        run: pnpm -r --workspace-concurrency=2 run test
 
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
