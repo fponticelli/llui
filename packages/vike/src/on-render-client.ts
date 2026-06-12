@@ -7,6 +7,8 @@ import type { VikePageContextData } from './vike-namespace.js'
 // Re-exported so `@llui/vike/client` is a one-stop-shop for everything
 // a pages/+onRenderClient.ts / Layout.ts file needs.
 export { pageSlot } from './page-slot.js'
+export { createNavigationProgress } from './nav-progress.js'
+export type { NavigationProgress, NavigationProgressOptions } from './nav-progress.js'
 
 /** A type-erased signal component as the adapter handles it (type params unused
  * at runtime). Method syntax + a single `unknown` view-bag param so any concrete
@@ -159,6 +161,13 @@ export interface RenderClientOptions {
    *
    * For a plain no-layout setup, the slot element is the root container.
    * Not called on the initial hydration render.
+   *
+   * **Not a loading hook.** `onLeave` fires after Vike has already fetched the
+   * new page's `+data` — Vike only invokes `onRenderClient` once the incoming
+   * pageContext is populated. So `onLeave`/`onEnter` bracket the DOM *swap*, not
+   * the network *wait*; nothing here covers the during-fetch latency the user
+   * perceives as lag. For a navigation-start signal (fires on the click, before
+   * the round-trip) use {@link createNavigationProgress}.
    */
   onLeave?: (el: HTMLElement) => void | Promise<void>
 
@@ -223,6 +232,11 @@ export interface RenderClientOptions {
  * The transition operates on the slot element — in a no-layout setup,
  * the root container; in a layout setup, the innermost surviving layer's
  * `pageSlot()` element.
+ *
+ * Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
+ * transition brackets the DOM *swap*, which runs after Vike has fetched the new
+ * page's `+data` — it does not animate over the network wait. For a
+ * during-fetch loading indicator, pair it with {@link createNavigationProgress}.
  */
 export function fromTransition(
   t: TransitionOptions,

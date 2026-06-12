@@ -41,6 +41,22 @@ let pendingSlot: PendingSlot | null = null
  * within the layout's own parent element; a synthesized end sentinel
  * (`<!-- llui-mount-end -->`) brackets the owned region.
  *
+ * **You may place your own siblings next to `pageSlot()`** — before it, or
+ * after it — in the same parent element (e.g. a navigation-loading bar beside
+ * the page inside `<main>`). The slot owns only the region between its anchor
+ * and the end sentinel, so on both SSR and every client navigation it
+ * inserts/disposes that region without touching your siblings. The
+ * `display: contents` wrapper that older guidance used to isolate the slot is
+ * **no longer needed** — drop it (regression-tested in
+ * `client-page-slot.test.ts` and `ssr-page-slot.test.ts`).
+ *
+ * ```ts
+ * main([
+ *   navBar(state.at('nav'), send),   // ← your sibling survives navigation…
+ *   pageSlot(),                      // …only this region swaps
+ * ])
+ * ```
+ *
  * Contexts provided by the layout (via `provide()`) ABOVE the slot are
  * reachable from inside the nested page: `pageSlot()` snapshots the
  * in-scope context values and the adapter replays them into the nested

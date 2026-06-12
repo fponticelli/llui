@@ -105,6 +105,20 @@ export const onRenderHtml = createOnRenderHtml({
 
 Call `pageSlot()` exactly once in each layout's view, at the position where nested content should render. It's an ordinary structural primitive — composes naturally inside `show()`, `branch()`, `provide()`, and any other view tree.
 
+You can place your **own siblings** next to `pageSlot()` — before it or after it — in the same parent element (e.g. a navigation-loading bar beside the page inside `<main>`). The slot owns only the region between its anchor and a synthesized end sentinel, so on both SSR and every client navigation it inserts/disposes that region without touching your siblings. The `display: contents` wrapper that older guidance used to isolate the slot is **no longer needed** — drop it.
+
+```ts
+import { div, main, text } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+const navBar = () => div({ class: 'nav-loading' }, [text('…')])
+
+main([
+  navBar(), // ← your sibling survives navigation…
+  pageSlot(), // …only this region swaps
+])
+```
+
 #### Nested layouts
 
 Pass an array to stack layouts outer-to-inner. Each layout except the innermost calls its own `pageSlot()`. The innermost layer is always the route's `Page`.
@@ -251,6 +265,8 @@ export const onRenderClient = createOnRenderClient({
 
 `fromTransition` adapts any `TransitionOptions` (the shape returned by `routeTransition`, `fade`, `slide`, etc.) into the hook pair. The transition operates on the container element — its opacity / transform fades out the outgoing page, then the new page fades in after mount.
 
+> **`onLeave`/`onEnter` are not loading hooks.** They bracket the DOM **swap**, which runs _after_ Vike has already fetched the new page's `+data` — Vike only invokes `onRenderClient` once the incoming pageContext is populated. Nothing in this cycle covers the during-fetch latency a user perceives as lag. For a loader that appears the moment a navigation starts (on the click, before the round-trip), use [Navigation Progress](#navigation-progress) below.
+
 For raw animations without `@llui/transitions`, write the hooks yourself:
 
 ```ts
@@ -259,6 +275,55 @@ export const onRenderClient = createOnRenderClient({
   onEnter: (el) => el.animate({ opacity: [0, 1] }, 200),
 })
 ```
+
+### Navigation Progress
+
+To show a loader _while_ a client navigation is in flight — the latency between the click and the new page appearing — you need a signal at navigation **start**, before the `+data` round-trip. None of the `onRenderClient` hooks fire there (see the note above). Vike's native `onPageTransitionStart` / `onPageTransitionEnd` hooks do, and `createNavigationProgress()` wraps them into a reactive boolean the layout binds:
+
+```ts
+// nav-progress.ts — your module, created once
+import { createNavigationProgress } from '@llui/vike/client'
+
+// `delay` debounces the reveal: navigations that resolve faster than 120ms
+// (e.g. served from a hover prefetch) never flash the indicator.
+export const navProgress = createNavigationProgress({ delay: 120 })
+```
+
+`@llui/vike` can't register Vike's `+onPageTransition*` hooks for you — Vike discovers them by the `+` filename convention — so re-export the handle's hook functions from the two convention files:
+
+```ts
+// pages/+onPageTransitionStart.ts
+export { onPageTransitionStart } from '../nav-progress'
+```
+
+```ts
+// pages/+onPageTransitionEnd.ts
+export { onPageTransitionEnd } from '../nav-progress'
+```
+
+Then bind `navProgress.pending` in the layout. It's a `LiveSignal<boolean>`: `peek()` for a one-shot read, `bind(cb)` for a reactive subscription that fires immediately with the current value and on every change. The zero-message path is an `onMount` that toggles a class — `bind` returns its unsubscribe, which doubles as the `onMount` cleanup:
+
+```ts
+// pages/Layout.ts
+import { component, div, header, main, onMount } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+import { navProgress } from '../nav-progress'
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ session: null }, []],
+  update: layoutUpdate,
+  view: () => [
+    div({ class: 'app-shell' }, [
+      onMount((root) => navProgress.pending.bind((p) => root.classList.toggle('nav-pending', p))),
+      header([]),
+      main([pageSlot()]),
+    ]),
+  ],
+})
+```
+
+This replaces the module-singleton + layout-handle capture + hand-rolled `nav/pending` message + reducer case each app would otherwise re-derive. If you'd rather drive the indicator from layout state instead of a class toggle, `bind` straight into a `send({ type: 'nav/pending', pending })` — but the class toggle needs no message at all.
 
 ### Client Navigation Lifecycle
 
@@ -337,13 +402,14 @@ Hydrates the server-rendered HTML on the client. Attaches event listeners and re
 
 ## API
 
-| Export                 | Sub-path            | Description                                                     |
-| ---------------------- | ------------------- | --------------------------------------------------------------- |
-| `onRenderHtml`         | `@llui/vike/server` | Default server hook — minimal HTML template                     |
-| `createOnRenderHtml`   | `@llui/vike/server` | Factory for custom document templates + persistent layouts      |
-| `onRenderClient`       | `@llui/vike/client` | Default client hook — hydrate or mount                          |
-| `createOnRenderClient` | `@llui/vike/client` | Factory for custom container + layouts + transition hooks       |
-| `pageSlot`             | `@llui/vike/client` | Structural primitive — declares where a layout renders its page |
-| `fromTransition`       | `@llui/vike/client` | Adapter: `TransitionOptions` → `{ onLeave, onEnter }` hook pair |
+| Export                     | Sub-path            | Description                                                                      |
+| -------------------------- | ------------------- | -------------------------------------------------------------------------------- |
+| `onRenderHtml`             | `@llui/vike/server` | Default server hook — minimal HTML template                                      |
+| `createOnRenderHtml`       | `@llui/vike/server` | Factory for custom document templates + persistent layouts                       |
+| `onRenderClient`           | `@llui/vike/client` | Default client hook — hydrate or mount                                           |
+| `createOnRenderClient`     | `@llui/vike/client` | Factory for custom container + layouts + transition hooks                        |
+| `pageSlot`                 | `@llui/vike/client` | Structural primitive — declares where a layout renders its page                  |
+| `fromTransition`           | `@llui/vike/client` | Adapter: `TransitionOptions` → `{ onLeave, onEnter }` hook pair                  |
+| `createNavigationProgress` | `@llui/vike/client` | Reactive `pending` signal + `+onPageTransition*` hooks for a during-fetch loader |
 
 The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path imports to avoid bundling jsdom into the client.

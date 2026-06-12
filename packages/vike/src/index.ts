@@ -22,3 +22,6 @@ export type {
 } from './on-render-client.js'
 
 export { pageSlot } from './page-slot.js'
+
+export { createNavigationProgress } from './nav-progress.js'
+export type { NavigationProgress, NavigationProgressOptions } from './nav-progress.js'
