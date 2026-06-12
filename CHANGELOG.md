@@ -11,6 +11,21 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-12 — @llui/components@0.12.0, @llui/markdown-editor@0.2.7
+
+**Released:** `@llui/components@0.12.0`; `@llui/markdown-editor@0.2.7`
+
+Fixes a high-severity interaction-layering bug: an interactive overlay portaled to a body-level sibling (e.g. a `@llui/markdown-editor` floating toolbar) opened from inside a `dialog.overlay()` was mis-classified as "outside", so clicking it dismissed the host dialog. Adds a shared nested-layer registry to `@llui/components` so a logically-nested portal counts as part of the active layer. Split release — `@llui/dom` and the other lockstep packages are unchanged (peer range stays `^0.11.3`).
+
+### `@llui/components@0.12.0`
+
+- **Added** `registerNestedLayer(el | () => Element[])` (plus `getNestedLayers` / `isInNestedLayer`), exported from `@llui/components` and `@llui/components/utils`. A portaled, interactive overlay that is logically nested inside an active dismissable / focus-trap / aria-hidden layer but physically rendered as a body-level sibling can register its root so the three "outside-aware" utilities treat it as inside: `watchInteractOutside` won't dismiss on interaction within it, `setAriaHiddenOutside` won't `inert` it, and `pushFocusTrap` includes it as an additional focusable container. Mirrors the `getPersistentElements` pattern (Zag/Ark) — a flat global registry; the resolver form is re-read live so an overlay registers once and surfaces its live root only while open.
+- **Fixed** a `dialog.overlay()` (or any dismissable layer) wrapped around content that itself opens a portaled overlay — a markdown-editor floating toolbar / typeahead / context menu, or any future combobox/menu/tooltip used inside a dialog — no longer dismisses when you interact with that overlay. The dialog's capture-phase `pointerdown` watcher previously saw the sibling portal as "outside" and (because `send` is synchronous) closed the dialog before the click's own handler ran, so e.g. an inline-format button never applied. The three interaction utilities now honor the nested-layer registry. `@llui/components`' own portaled overlays (`select` / `menu` / `popover`) were already safe via the dismissable stack; this covers overlays that don't push a dismissable layer.
+
+### `@llui/markdown-editor@0.2.7`
+
+- **Fixed** the rich Markdown editor is now usable inside a `@llui/components` dialog: `overlayRoot` (the shared primitive behind the floating toolbar, slash/mention typeaheads, context menu, and table tools) registers its portal root as a nested layer on mount, so a host dialog no longer dismisses, `inert`s, or focus-excludes those overlays. The link dialog already worked (it's a real nested `dialog.overlay()`). Peer range on `@llui/components` bumped to `^0.12.0`.
+
 ## 2026-06-12 — @llui/vike@0.11.4
 
 **Released:** `@llui/vike@0.11.4`
