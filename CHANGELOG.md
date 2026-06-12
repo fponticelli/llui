@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-12 — 0.11.4
+
+**Released:** `@llui/dom@0.11.4`; `@llui/components@0.12.1`; `@llui/markdown@0.10.5`; `@llui/router@0.10.5`; `@llui/transitions@0.10.5`; `@llui/agent@0.10.5`; `@llui/test@0.11.5`; `@llui/vike@0.11.5`; `@llui/mcp@0.12.6`; `@llui/lexical@0.2.5`; `@llui/lexical-collab@0.2.3`; `@llui/markdown-editor@0.2.8`; `@llui/devmode-annotate@0.2.7`
+
+Fixes a high-severity reactivity bug in `@llui/dom`: a `send()` issued from an `onMount` callback (or a synchronous effect it kicks off) updated state but never reconciled the view, so a "compute on mount" pane stayed frozen on its loading placeholder until an unrelated later dispatch. Every other package is an unchanged cascade re-release so consumers pinning `^0.11.4` resolve the fixed runtime.
+
+### `@llui/dom@0.11.4`
+
+- **Fixed** a `send()` dispatched from an `onMount` callback now reconciles the view on first paint. `onMount` callbacks run synchronously inside the initial `mount = mountSignal(...)` call — before `mount` is assigned — so a state-changing send during that window committed against a still-null `mount` and was silently dropped, leaving `show`/`each`/`branch` arms frozen until the next user-driven dispatch. The commit is now deferred while `mount` is null and replayed once it is live (sync scheduler; `raf` mode already schedules a post-assignment frame). App-side workarounds that deferred the mount dispatch to `setTimeout(0)` / `queueMicrotask` are no longer needed and can be reverted.
+
+### All packages — cascade re-release
+
+- **Fixed** `@llui/components`, `@llui/markdown`, `@llui/router`, `@llui/transitions`, `@llui/agent`, `@llui/test`, `@llui/vike`, `@llui/mcp`, `@llui/lexical`, `@llui/lexical-collab`, `@llui/markdown-editor`, and `@llui/devmode-annotate` are republished with their `@llui/dom` peer range bumped to `^0.11.4`. No behavior change in these packages — the bump exists so consumers pick up the runtime fix above.
+
 ## 2026-06-12 — @llui/components@0.12.0, @llui/markdown-editor@0.2.7
 
 **Released:** `@llui/components@0.12.0`; `@llui/markdown-editor@0.2.7`
