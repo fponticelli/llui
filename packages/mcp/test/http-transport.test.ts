@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { killChild } from './kill-child'
 
 // Integration test: spawn the built CLI in HTTP mode, issue an
 // `initialize` JSON-RPC call over HTTP, verify the SDK-backed response
@@ -18,14 +19,19 @@ describe('llui-mcp --http integration', () => {
     proc = spawn(process.execPath, [CLI_PATH, '--http', String(TEST_PORT)], {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    // Wait for the server to log its listening line. 1s is plenty; the
-    // logged string lets us confirm the bind succeeded before we send.
-    const ready = await waitForStderr(proc, /HTTP transport on/, 2000)
-    if (!ready) throw new Error('[llui-mcp] did not start within 2s')
-  }, 4000)
+    // Wait for the server to log its listening line; the logged string
+    // confirms the bind succeeded before we send. The timeout is generous
+    // (not "1s is plenty") because a cold `node` spawn + loading the MCP
+    // SDK under a CPU-starved parallel CI run can take many seconds — a
+    // 2s cap flaked the container CI. We resolve as soon as the line
+    // appears, so the happy path stays fast.
+    const ready = await waitForStderr(proc, /HTTP transport on/, 30000)
+    if (!ready) throw new Error('[llui-mcp] did not start within 30s')
+  }, 35000)
 
-  afterAll(() => {
-    if (proc && !proc.killed) proc.kill('SIGTERM')
+  afterAll(async () => {
+    await killChild(proc)
+    proc = null
   })
 
   it('routes tool calls through the shared bridge relay (not dead session relays)', async () => {

@@ -14,13 +14,31 @@ concurrency:
 # GitHub makes Node 24 the default 2026-06-16, after which this is a no-op.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Turbo's background daemon and its telemetry flush both do I/O after a run
+  # completes; in the CI container that post-run step hung turbo for 24 min
+  # after every task had already finished (all log groups closed, but turbo
+  # never returned). Disable both so turbo exits as soon as the tasks do.
+  TURBO_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # Backstop against a hung step (e.g. a stalled Playwright CDN download —
-    # observed once as a 3h+ runner-killed job). Bounds the whole job to a
-    # sane window so a hang fails fast instead of burning CI minutes.
+    # Run inside the official Playwright image: Chromium + its OS deps are baked
+    # in, so CI never touches cdn.playwright.dev — which was deterministically
+    # hanging at 100% on the chromium download and taking the job down (a 3h+
+    # runner-killed job, then every retry stalling at the same point). The tag
+    # MUST match the playwright version in pnpm-lock.yaml (1.59.1) so the bundled
+    # browser revision matches what `playwright` expects — bump both together.
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-noble
+      # tini as PID 1: reaps zombie children and forwards signals. Tests spawn
+      # the llui-mcp CLI server; without an init the container leaves killed
+      # children unreaped, which kept the last vitest process alive (a 24-min
+      # stall until the job timeout). Pairs with the tests' SIGKILL teardown.
+      options: --init
+    # Backstop against any hung step so a hang fails fast instead of burning CI
+    # minutes.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -33,38 +51,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-
-      # Cache Playwright's downloaded browser binaries keyed on the
-      # playwright version in pnpm-lock.yaml. Keeps CI fast — the
-      # chromium install is ~250 MB and takes ~30s cold.
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        # The CDN download occasionally stalls at 100% and hangs indefinitely
-        # (observed: a job killed only by the 3h+ runner shutdown). Bound each
-        # attempt with `timeout` and retry so a transient stall self-heals
-        # instead of taking the whole run down. timeout-minutes is the backstop
-        # in case the inner `timeout` itself wedges.
-        timeout-minutes: 15
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 300 pnpm exec playwright install chromium --with-deps; then
-              exit 0
-            fi
-            echo "::warning::Playwright install attempt $attempt stalled or failed; retrying…"
-          done
-          echo "::error::Playwright install failed after 3 attempts"
-          exit 1
-
-      - name: Install Playwright system deps
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
 
       - name: Format check
         run: pnpm format:check
@@ -79,12 +65,24 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        run: pnpm turbo test
+        # Run tests with pnpm's recursive runner, NOT `turbo test`. Under turbo,
+        # this step reproducibly hung for 24 min after every task had finished
+        # (all log groups closed) — turbo never returned, only inside the GH
+        # container (it exits fine locally). Build already ran via turbo, so the
+        # dist deps tests need are present; pnpm just executes each package's
+        # `vitest run` directly and exits cleanly when they're done.
+        #
+        # --workspace-concurrency=2 caps to two package suites at once: each
+        # vitest already forks ~ncpu workers, so running many suites in parallel
+        # oversubscribes the 4-core runner ~10x and starves timer-sensitive
+        # tests. Two at a time keeps load gentle (~2x).
+        run: pnpm -r --workspace-concurrency=2 run test
 
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
       # the bundle compiles cleanly but crashes on first paint
       # (missing __view, broken __prefixes, etc.) — the kind of fault
-      # type-checks and unit tests can't surface.
+      # type-checks and unit tests can't surface. Uses the browser
+      # pre-installed in the container image (PLAYWRIGHT_BROWSERS_PATH).
       - name: Smoke-test example bundles
         run: pnpm smoke:examples

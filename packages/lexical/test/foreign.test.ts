@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { component, mountApp, type Signal } from '@llui/dom'
 import { $getRoot, $createParagraphNode, $createTextNode, type LexicalEditor } from 'lexical'
 import { lexicalForeign } from '../src/foreign.js'
+import { waitFor } from './wait-for'
 
 interface AppState {
   value: string
@@ -75,7 +76,7 @@ describe('lexicalForeign (uncontrolled)', () => {
         .clear()
         .append($createParagraphNode().append($createTextNode('world')))
     })
-    await wait(30)
+    await waitFor(() => changes.at(-1) === 'world')
     expect(changes.at(-1)).toBe('world')
   })
 
@@ -257,7 +258,7 @@ describe('lexicalForeign (controlled)', () => {
         .clear()
         .append($createParagraphNode().append($createTextNode('typed')))
     })
-    await wait(20)
+    await waitFor(() => changes.at(-1) === 'typed')
     expect(changes.at(-1)).toBe('typed')
     const callsBeforeEcho = deserializeCalls
     app.send({ type: 'set', value: 'typed' }) // mirror the emission back into state

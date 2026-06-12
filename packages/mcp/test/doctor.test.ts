@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { killChild } from './kill-child'
 
 // Integration test: `llui-mcp doctor` as a subcommand. Offline-only
 // (no long-lived server), so the suite spawns the CLI, captures the
@@ -51,11 +52,19 @@ describe('llui-mcp doctor', () => {
     })
     let stderr = ''
     server.stderr?.on('data', (b: Buffer) => (stderr += b.toString()))
-    // Poll for the listening line.
-    for (let i = 0; i < 40; i++) {
-      if (/HTTP transport on/.test(stderr)) break
+    // Poll for the listening line. Generous cap (~30s): a cold `node`
+    // spawn + MCP SDK load under parallel CI load can take many seconds,
+    // and a tight cap let doctor run before the bridge was up. Breaks
+    // immediately once the line appears, so the happy path stays fast.
+    let listening = false
+    for (let i = 0; i < 600; i++) {
+      if (/HTTP transport on/.test(stderr)) {
+        listening = true
+        break
+      }
       await delay(50)
     }
+    if (!listening) throw new Error('[llui-mcp] did not start within 30s')
     try {
       const run = await runDoctor()
       expect(run.stdout).toMatch(/✓\s+marker file/)
@@ -63,10 +72,9 @@ describe('llui-mcp doctor', () => {
       expect(run.stdout).toMatch(/✓\s+bridge port \d+ listening/)
       expect(run.stdout).toMatch(/✓\s+marker pid \d+/)
     } finally {
-      server.kill('SIGTERM')
-      await delay(100)
+      await killChild(server)
     }
-  }, 6000)
+  }, 35000)
 
   it('falls back to OK/FAIL glyphs with --plain', async () => {
     const run = await runDoctor(['--plain'])
