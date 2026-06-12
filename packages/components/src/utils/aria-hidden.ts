@@ -9,6 +9,8 @@
  * been claimed by a higher layer (tracked via a WeakMap reference count).
  */
 
+import { getNestedLayers } from './nested-layer.js'
+
 interface Snapshot {
   ariaHidden: string | null
   inert: string | null
@@ -20,8 +22,12 @@ const snapshots = new WeakMap<Element, Snapshot>()
 export function setAriaHiddenOutside(target: Element): () => void {
   if (typeof document === 'undefined') return () => {}
   const claimed: Element[] = []
+  // Registered nested layers (and their ancestors) are part of this layer — a
+  // sibling that contains one must stay interactive, so never inert it.
+  const nested = getNestedLayers()
 
   walkSiblings(target, (sibling) => {
+    if (containsNestedLayer(sibling, nested)) return
     const count = ownership.get(sibling) ?? 0
     if (count === 0) {
       snapshots.set(sibling, {
@@ -73,4 +79,12 @@ function walkSiblings(target: Element, visit: (sibling: Element) => void): void 
 function shouldSkip(el: Element): boolean {
   const tag = el.tagName.toLowerCase()
   return tag === 'script' || tag === 'style' || tag === 'link' || tag === 'meta' || tag === 'title'
+}
+
+/** Whether `el` is, or is an ancestor of, any registered nested layer. */
+function containsNestedLayer(el: Element, nested: Element[]): boolean {
+  for (const layer of nested) {
+    if (el === layer || el.contains(layer)) return true
+  }
+  return false
 }

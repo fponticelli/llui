@@ -167,6 +167,19 @@ Shared helpers used internally and exported for advanced use:
 | `dismissable`    | Esc / outside-click dismiss layer stack                                  |
 | `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                  |
 | `remove-scroll`  | Body scroll lock for modals/drawers                                      |
+| `nested-layer`   | `registerNestedLayer` — count a sibling-portal overlay as "inside"       |
+
+### Nested overlays inside a dialog (`registerNestedLayer`)
+
+The three "outside-aware" utilities above (`dismissable`, `aria-hidden`, `focus-trap`) define _inside_ as a single content element. But an interactive overlay opened from within a dialog — a `select` listbox, a markdown-editor floating toolbar, any typeahead/menu — is often `portal()`-ed to a **body-level sibling**, so it is logically nested but physically _outside_ the dialog's content. Left unhandled, clicking it dismisses the dialog, `inert` makes it dead, and Tab can't reach it.
+
+`@llui/components`' own portaled overlays (`select`/`menu`/`popover`/…) already cooperate by pushing onto the dismissable **stack** (only the topmost layer claims an outside-click). A portaled surface that does _not_ register a dismissable layer (e.g. a selection-tracked floating toolbar) instead declares itself with `registerNestedLayer(el | () => Element[])` on mount:
+
+```ts
+onMount(() => registerNestedLayer(() => overlayRootElement()))
+```
+
+While registered, the element (and its descendants) is treated as inside by all three utilities. Prefer the resolver form — register once for the overlay's lifetime and return the live root only while open.
 
 ## Styling (opt-in)
 

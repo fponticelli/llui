@@ -1,5 +1,6 @@
 import { resolveElements, type ElementSource } from './dom.js'
 import { getFocusables } from './focusables.js'
+import { getNestedLayers } from './nested-layer.js'
 
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
@@ -21,8 +22,13 @@ function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Tab') return
   const top = stack[stack.length - 1]
   if (!top) return
-  const containers = resolveElements(top.container)
-  if (containers.length === 0) return
+  const base = resolveElements(top.container)
+  if (base.length === 0) return
+  // Registered nested layers (e.g. a portaled overlay opened inside the trap)
+  // extend the trap — but skip any already contained by a base container so a
+  // focusable isn't counted twice.
+  const nested = getNestedLayers().filter((n) => !base.some((c) => c.contains(n)))
+  const containers = nested.length ? [...base, ...nested] : base
 
   // Combine focusables from all container elements.
   const focusables: HTMLElement[] = []
