@@ -287,6 +287,14 @@ export function mountSignalComponent<S, M, E = never>(
   // callers loop until the queue is empty afterwards.
   function commitPending(): void {
     if (!pendingCommit) return
+    // During the initial `mount = mountSignal(...)` call below, onMount callbacks
+    // run synchronously BEFORE `mount` is assigned. A state-changing send from an
+    // onMount callback (or an effect it kicks off whose continuation is synchronous)
+    // advances `state` and reaches here while `mount` is still null — committing now
+    // would `mount?.update()` no-op and silently drop the reconcile, so the view
+    // would stay frozen until a later, unrelated dispatch. Leave `pendingCommit`
+    // set and bail; the post-mount flush replays it once `mount` is live.
+    if (mount === null) return
     pendingCommit = false
     const next = state
     // Hot per-send path: skip the withBindingErrors wrapper (and its per-commit
@@ -387,6 +395,13 @@ export function mountSignalComponent<S, M, E = never>(
         : { container: target as Element, mode: hy ? 'replace' : 'append' }
     mount = mountSignal(mt, state, () => def.view({ state: handle, send, batch }), opts?.contexts)
   })
+  // onMount callbacks ran synchronously inside mountSignal above, before `mount`
+  // was assigned. If one dispatched a state-changing send, `commitPending` deferred
+  // the reconcile (mount was still null); replay it now that `mount` is live so a
+  // "compute on mount" view paints its result on first frame instead of waiting for
+  // an unrelated later dispatch. In raf mode the deferred commit is already a
+  // scheduled frame, so only force it in sync mode.
+  if (pendingCommit && scheduler === 'sync') commitPending()
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
     for (const e of initialEffects) runEffect(e)
