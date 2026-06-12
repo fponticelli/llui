@@ -223,8 +223,22 @@ export class WebSocketRelayTransport implements RelayTransport {
   }
 
   stop(): void {
-    this.wsServer?.close()
-    this.wsServer = null
+    if (this.wsServer) {
+      // `WebSocketServer.close()` stops listening but does NOT close already-
+      // connected clients — their TCP sockets stay open as live handles. Left
+      // open they keep the process alive (a dev-server restart would leak them;
+      // in CI it hung the whole test process after the suite finished).
+      // Forcibly terminate every client so no socket outlives the relay.
+      for (const client of this.wsServer.clients) {
+        try {
+          client.terminate()
+        } catch {
+          // already closing/closed; nothing to do
+        }
+      }
+      this.wsServer.close()
+      this.wsServer = null
+    }
     this.browserWs = null
     for (const p of this.pending.values()) p.reject(new Error('relay closed'))
     this.pending.clear()
