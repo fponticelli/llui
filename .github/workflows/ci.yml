@@ -14,6 +14,12 @@ concurrency:
 # GitHub makes Node 24 the default 2026-06-16, after which this is a no-op.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Turbo's background daemon and its telemetry flush both do I/O after a run
+  # completes; in the CI container that post-run step hung turbo for 24 min
+  # after every task had already finished (all log groups closed, but turbo
+  # never returned). Disable both so turbo exits as soon as the tasks do.
+  TURBO_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
 
 jobs:
   verify:
@@ -67,7 +73,11 @@ jobs:
         # streaming output from multiple tasks, which avoids the single-stream
         # output-drain stall seen at --concurrency=1. Build/check/lint (separate
         # steps) keep full parallelism.
-        run: pnpm turbo test --concurrency=2
+        #
+        # --no-daemon: don't leave a turbo daemon that the run waits on at exit
+        # (the 24-min post-run hang); this step spawns child processes, unlike
+        # build/check/lint, so it's the one that exposed it.
+        run: pnpm turbo test --concurrency=2 --no-daemon
 
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
