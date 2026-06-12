@@ -37,6 +37,22 @@ const PageB = component<PageBS, never, never>({
   view: ({ state }) => [div({ class: 'page-b' }, [text(state.map((s) => s.title))])],
 })
 
+// Layout that places consumer siblings BOTH before and after pageSlot() in the
+// same parent — the arrangement the docs now bless (e.g. a nav-loading bar +
+// footer beside the page, no `display: contents` wrapper).
+const LayoutWithSiblings = component<LayoutS, LayoutM, never>({
+  name: 'TestLayoutSiblings',
+  init: () => ({ count: 0 }),
+  update: (s) => s,
+  view: () => [
+    div({ class: 'shell-sib' }, [
+      div({ class: 'nav-bar' }, [text('loader')]), // sibling BEFORE the slot
+      pageSlot(),
+      div({ class: 'footer' }, [text('footer')]), // sibling AFTER the end sentinel
+    ]),
+  ],
+})
+
 // Helper: find a Comment node by its nodeValue anywhere in a subtree.
 function findCommentByValue(root: Node, value: string): Comment | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
@@ -126,6 +142,43 @@ describe('client pageSlot with comment anchor', () => {
     // the layout's slot and must not be recreated on nav.
     const anchorAfter = findCommentByValue(root, 'llui-page-slot')
     expect(anchorAfter).toBe(anchorBefore)
+  })
+
+  it('nav: consumer siblings placed before AND after pageSlot() survive a page swap', async () => {
+    const render = createOnRenderClient({ Layout: LayoutWithSiblings })
+
+    // First mount — layout (with siblings) + PageA.
+    await render({ Page: PageA, isHydration: false })
+
+    const root = document.getElementById('app')!
+    const navBarBefore = root.querySelector('.nav-bar')
+    const footerBefore = root.querySelector('.footer')
+    expect(navBarBefore).not.toBeNull()
+    expect(footerBefore).not.toBeNull()
+    expect(root.querySelector('.page-a')).not.toBeNull()
+
+    // Order invariant: nav-bar (sibling) → anchor → page-a → end sentinel → footer.
+    const shell = root.querySelector('.shell-sib')!
+    const order = Array.from(shell.childNodes)
+    const navIdx = order.indexOf(navBarBefore!)
+    const anchorIdx = order.indexOf(findCommentByValue(shell, 'llui-page-slot')!)
+    const pageIdx = order.indexOf(root.querySelector('.page-a')!)
+    const endIdx = order.indexOf(findCommentByValue(shell, 'llui-mount-end')!)
+    const footerIdx = order.indexOf(footerBefore!)
+    expect(navIdx).toBeLessThan(anchorIdx)
+    expect(anchorIdx).toBeLessThan(pageIdx)
+    expect(pageIdx).toBeLessThan(endIdx)
+    expect(endIdx).toBeLessThan(footerIdx)
+
+    // Navigate to PageB — only the slot region swaps.
+    await render({ Page: PageB, isHydration: false })
+
+    // Both consumer siblings keep their exact node identity across the nav…
+    expect(root.querySelector('.nav-bar')).toBe(navBarBefore)
+    expect(root.querySelector('.footer')).toBe(footerBefore)
+    // …while the page region swapped underneath them.
+    expect(root.querySelector('.page-a')).toBeNull()
+    expect(root.querySelector('.page-b')).not.toBeNull()
   })
 
   it('dispose of an anchor-mounted layer removes its region but not outer siblings', async () => {
