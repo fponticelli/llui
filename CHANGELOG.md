@@ -11,6 +11,18 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-12 — @llui/vike@0.11.4
+
+**Released:** `@llui/vike@0.11.4`
+
+Adds a first-class navigation-pending signal to `@llui/vike`, plus documentation fixes for the page-transition timing model and the `pageSlot()` sibling contract. Single-package release; `@llui/dom` and the other lockstep packages are unchanged (peer range stays `^0.11.3`).
+
+### `@llui/vike@0.11.4`
+
+- **Added** `createNavigationProgress()` (exported from `@llui/vike` and `@llui/vike/client`) — a first-class way to show a loader _while_ a client navigation is in flight. It wraps Vike's native `onPageTransitionStart` / `onPageTransitionEnd` hooks (which fire on the click, before the `+data` round-trip) into a `LiveSignal<boolean>` `pending` handle the layout binds with `peek()` / `bind()`, plus the two hook functions to re-export from the `+onPageTransition*.ts` convention files. An optional `{ delay }` debounce suppresses the indicator for navigations that resolve faster than the threshold (e.g. served from a hover prefetch). Replaces the module-singleton + layout-handle capture + hand-rolled `nav/pending` message + reducer boilerplate every app would otherwise re-derive. None of `createOnRenderClient`'s existing hooks expose this moment: Vike only invokes `onRenderClient` _after_ it has fetched the new page's data, so `onLeave`/`onEnter` bracket the DOM swap, not the network wait.
+- **Improved** `onLeave` / `fromTransition` jsdoc and the README now state explicitly that these fire _after_ Vike has fetched the new page's `+data` — they bracket the DOM swap, not the network wait — and point at `createNavigationProgress` for a during-fetch loader.
+- **Improved** `pageSlot()` jsdoc and README now document that consumer siblings placed before or after the slot in the same parent survive SSR and every client navigation (the slot owns only the region between its anchor and end sentinel). The `display: contents` wrapper older guidance used to isolate the slot is no longer needed and has been retired. Backed by a new regression test asserting siblings keep node identity across a full page-to-page navigation.
+
 ## 2026-06-11 — 0.11.3
 
 **Released:** `@llui/dom@0.11.3`; `@llui/components@0.11.7`; `@llui/vike@0.11.3`; `@llui/test@0.11.4`; `@llui/router@0.10.4`; `@llui/transitions@0.10.4`; `@llui/markdown@0.10.4`; `@llui/lexical@0.2.4`; `@llui/lexical-collab@0.2.2`; `@llui/markdown-editor@0.2.6`; `@llui/devmode-annotate@0.2.6`; `@llui/agent@0.10.4`; `llui-agent@0.10.2`; `@llui/mcp@0.12.5`
