@@ -10653,6 +10653,20 @@ Emits a single `<!-- llui-page-slot -->` comment as an insertion
 anchor. The nested layer's DOM lives as siblings of this comment
 within the layout's own parent element; a synthesized end sentinel
 (`<!-- llui-mount-end -->`) brackets the owned region.
+**You may place your own siblings next to `pageSlot()`** — before it, or
+after it — in the same parent element (e.g. a navigation-loading bar beside
+the page inside `<main>`). The slot owns only the region between its anchor
+and the end sentinel, so on both SSR and every client navigation it
+inserts/disposes that region without touching your siblings. The
+`display: contents` wrapper that older guidance used to isolate the slot is
+**no longer needed** — drop it (regression-tested in
+`client-page-slot.test.ts` and `ssr-page-slot.test.ts`).
+```ts
+main([
+  navBar(state.at('nav'), send),   // ← your sibling survives navigation…
+  pageSlot(),                      // …only this region swaps
+])
+```
 Contexts provided by the layout (via `provide()`) ABOVE the slot are
 reachable from inside the nested page: `pageSlot()` snapshots the
 in-scope context values and the adapter replays them into the nested
@@ -10687,6 +10701,15 @@ view throws (when both are placed).
 function pageSlot(): Mountable
 ```
 
+### `createNavigationProgress()`
+
+Create a {@link NavigationProgress} handle. See the interface docs for the
+three-file wiring and binding patterns.
+
+```typescript
+function createNavigationProgress(options?: NavigationProgressOptions): NavigationProgress
+```
+
 ### `fromTransition()`
 
 Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
@@ -10702,6 +10725,10 @@ export const onRenderClient = createOnRenderClient({
 The transition operates on the slot element — in a no-layout setup,
 the root container; in a layout setup, the innermost surviving layer's
 `pageSlot()` element.
+Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
+transition brackets the DOM *swap*, which runs after Vike has fetched the new
+page's `+data` — it does not animate over the network wait. For a
+during-fetch loading indicator, pair it with {@link createNavigationProgress}.
 
 ```typescript
 function fromTransition(t: TransitionOptions): Pick<RenderClientOptions, 'onLeave' | 'onEnter'>
@@ -10964,6 +10991,96 @@ export interface RenderHtmlOptions {
 }
 ```
 
+### `NavigationProgress`
+
+A navigation-progress handle: the first-class answer to "show a loader while a
+client navigation is in flight."
+**Why this exists.** None of `createOnRenderClient`'s lifecycle hooks fire
+during the latency window a user perceives as lag. `onLeave`/`onEnter` bracket
+the DOM *swap*, and Vike only invokes `onRenderClient` *after* it has already
+fetched the new page's `+data` — so by the time any of those run, the wait is
+over. The only signals that fire at navigation *start* (on the click, before
+the server round-trip) are Vike's native `onPageTransitionStart` /
+`onPageTransitionEnd` hooks. This helper wraps that pair into a reactive
+boolean the layout binds, removing the module-singleton + layout-handle capture
++ hand-rolled `nav/pending` message + reducer case every app would otherwise
+re-derive.
+**Wiring (three small files, no per-app glue logic).** `@llui/vike` cannot
+register Vike's `+onPageTransition*` hooks for you — Vike discovers them by the
+`+` filename convention — so create the handle once in your own module and
+re-export its hook functions from the convention files:
+```ts
+// nav-progress.ts — your module, created once
+import { createNavigationProgress } from '@llui/vike/client'
+export const navProgress = createNavigationProgress({ delay: 120 })
+```
+```ts
+// pages/+onPageTransitionStart.ts
+export { onPageTransitionStart } from '../nav-progress'   // (re-export by name)
+// pages/+onPageTransitionEnd.ts
+export { onPageTransitionEnd } from '../nav-progress'
+```
+Then bind `pending` in the layout. It is a {@link LiveSignal}: `peek()` in
+handlers, `bind()` for a reactive subscription. The zero-message path is to
+place an `onMount` in the layout view and `bind()` there — `bind` returns its
+unsubscribe, which doubles as the `onMount` cleanup, so it auto-disposes:
+```ts
+import { onMount, div } from '@llui/dom'
+import { navProgress } from '../nav-progress'
+view: () => [
+  div({ class: 'app-shell' }, [
+    onMount((root) =>
+      navProgress.pending.bind((p) => root.classList.toggle('nav-pending', p)),
+    ),
+    // …header, main([pageSlot()]), etc.
+  ]),
+]
+```
+
+```typescript
+export interface NavigationProgress {
+  /**
+   * Vike `+onPageTransitionStart` hook. Fires on the navigation click, before
+   * Vike fetches the new page's `+data`. Re-export it from
+   * `pages/+onPageTransitionStart.ts`. Bound to the handle — safe to detach.
+   */
+  readonly onPageTransitionStart: () => void
+
+  /**
+   * Vike `+onPageTransitionEnd` hook. Fires once the new page is rendered.
+   * Re-export it from `pages/+onPageTransitionEnd.ts`. Bound to the handle —
+   * safe to detach.
+   */
+  readonly onPageTransitionEnd: () => void
+
+  /**
+   * `true` while a client navigation is in flight, `false` otherwise. A
+   * {@link LiveSignal}: `peek()` for a one-shot read; `bind(cb)` fires `cb`
+   * immediately with the current value, then on every change, returning an
+   * unsubscribe. When a `delay` is configured the value only flips to `true`
+   * after the navigation has been pending that long (the debounce that prevents
+   * prefetch-fast navigations from flashing the indicator).
+   */
+  readonly pending: LiveSignal<boolean>
+}
+```
+
+### `NavigationProgressOptions`
+
+```typescript
+export interface NavigationProgressOptions {
+  /**
+   * Anti-flash debounce, in milliseconds. The `pending` signal only becomes
+   * `true` once a navigation has been in flight for `delay` ms, so navigations
+   * that resolve faster than that (e.g. served from a hover prefetch) never
+   * reveal the indicator. The end transition always settles `pending` to `false`
+   * immediately, cancelling any not-yet-fired reveal. Default `0` (reveal
+   * immediately on navigation start).
+   */
+  delay?: number
+}
+```
+
 ### `ClientPageContext`
 
 Page context shape as seen by `@llui/vike`'s client-side hooks. The
@@ -11045,6 +11162,13 @@ export interface RenderClientOptions {
    *
    * For a plain no-layout setup, the slot element is the root container.
    * Not called on the initial hydration render.
+   *
+   * **Not a loading hook.** `onLeave` fires after Vike has already fetched the
+   * new page's `+data` — Vike only invokes `onRenderClient` once the incoming
+   * pageContext is populated. So `onLeave`/`onEnter` bracket the DOM *swap*, not
+   * the network *wait*; nothing here covers the during-fetch latency the user
+   * perceives as lag. For a navigation-start signal (fires on the click, before
+   * the round-trip) use {@link createNavigationProgress}.
    */
   onLeave?: (el: HTMLElement) => void | Promise<void>
 
