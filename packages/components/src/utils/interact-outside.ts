@@ -1,4 +1,5 @@
 import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
+import { isInNestedLayer } from './nested-layer.js'
 
 export interface InteractOutsideOptions {
   /** Element(s) that define the "inside" region. */
@@ -34,6 +35,10 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
     if (isInAnyElement(target, inside)) return
     const ignore = opts.ignore ? resolveElements(opts.ignore) : []
     if (isInAnyElement(target, ignore)) return
+    // A logically-nested overlay portaled to a body-level sibling (e.g. a
+    // markdown-editor floating toolbar opened inside this dialog) counts as
+    // inside — see registerNestedLayer.
+    if (isInNestedLayer(target)) return
     opts.onInteractOutside(event)
   }
 
@@ -44,6 +49,7 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
     if (isInAnyElement(target, inside)) return
     const ignore = opts.ignore ? resolveElements(opts.ignore) : []
     if (isInAnyElement(target, ignore)) return
+    if (isInNestedLayer(target)) return
     opts.onInteractOutside(event)
   }
 

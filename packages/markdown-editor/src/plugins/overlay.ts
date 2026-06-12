@@ -20,7 +20,17 @@
 //   63 — table tools                         — element-anchored, sits over a table
 // The values live with each plugin's view; this comment is the source of truth.
 
-import { div, derived, portal, show, type Mountable, type Renderable, type Signal } from '@llui/dom'
+import {
+  div,
+  derived,
+  onMount,
+  portal,
+  show,
+  type Mountable,
+  type Renderable,
+  type Signal,
+} from '@llui/dom'
+import { registerNestedLayer } from '@llui/components/utils'
 
 export const OVERLAY_Z = {
   typeahead: 60,
@@ -30,6 +40,13 @@ export const OVERLAY_Z = {
 } as const
 
 const toMountables = (r: Renderable): Mountable[] => [...r]
+
+// Unique marker per overlay instance so its portal root can be located while
+// open. Every overlayRoot is a body-level sibling portal; without declaring it
+// as a nested layer, a host `dialog.overlay()` mis-reads an interaction inside
+// it as "outside" and dismisses (see @llui/components registerNestedLayer).
+let layerSeq = 0
+const NESTED_LAYER_ATTR = 'data-llui-nested-layer'
 
 export interface OverlayRootConfig {
   /** Whether the overlay is shown. */
@@ -64,11 +81,22 @@ export function overlayRoot(cfg: OverlayRootConfig): Renderable {
       `position:fixed;left:${x}px;top:${y}px;z-index:${cfg.zIndex}` +
       (cfg.transform ? `;${cfg.transform}` : ''),
   ) as Signal<string>
+  const layerId = `mdo-${++layerSeq}`
   return [
+    // Register once for the overlay's lifetime; the resolver returns the live
+    // portal root only while open (and nothing when closed/unmounted), so the
+    // single registration tracks open/closed without per-toggle churn.
+    onMount(() =>
+      registerNestedLayer(() => {
+        if (typeof document === 'undefined') return []
+        const el = document.querySelector(`[${NESTED_LAYER_ATTR}="${layerId}"]`)
+        return el ? [el] : []
+      }),
+    ),
     show(cfg.open, () => [
       portal(() => [
         ...(cfg.before ? toMountables(cfg.before()) : []),
-        div({ ...cfg.attrs, style }, toMountables(cfg.children())),
+        div({ ...cfg.attrs, [NESTED_LAYER_ATTR]: layerId, style }, toMountables(cfg.children())),
       ]),
     ]),
   ]
