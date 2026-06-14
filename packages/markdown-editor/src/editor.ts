@@ -19,6 +19,7 @@ import {
 } from '@llui/lexical'
 import { corePlugin } from './plugins/core.js'
 import { linkPlugin } from './plugins/link.js'
+import { registerMarkdownPaste } from './paste.js'
 import { toolbar as renderToolbar } from './surfaces/toolbar.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
 import type { PluginUI } from './plugins/ui.js'
@@ -61,6 +62,10 @@ export interface EditorConfig {
   onReady?: (editor: LexicalEditor) => void
   /** Render the built-in toolbar above the editor. Default false (minimal). */
   toolbar?: boolean
+  /** Convert plain-text Markdown to rich content on paste. Default true.
+   * Pastes that carry `text/html` are always left to Lexical's HTML import,
+   * regardless of this flag. Set false to paste Markdown as literal text. */
+  pasteMarkdown?: boolean
   /** Enable collaborative editing. The editor hands you a markdown `seed` and
    * status sinks; return a binding (build it with `yjsCollab` from
    * `@llui/lexical-collab`, wiring your own provider). Mutually exclusive with
@@ -241,6 +246,8 @@ export function markdownEditor(
         : {}),
       register: (editor) => {
         const disposers = [registerMarkdownShortcuts(editor, transformers)]
+        if (config.pasteMarkdown !== false)
+          disposers.push(registerMarkdownPaste(editor, transformers))
         if (decorators.length > 0) disposers.push(registerDecoratorBridges(editor, decorators))
         if (collabBinding) disposers.push(collabBinding.register(editor))
         return () => {
