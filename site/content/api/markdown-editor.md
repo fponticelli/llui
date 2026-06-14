@@ -384,6 +384,10 @@ export interface EditorConfig {
   onReady?: (editor: LexicalEditor) => void
   /** Render the built-in toolbar above the editor. Default false (minimal). */
   toolbar?: boolean
+  /** Convert plain-text Markdown to rich content on paste. Default true.
+   * Pastes that carry `text/html` are always left to Lexical's HTML import,
+   * regardless of this flag. Set false to paste Markdown as literal text. */
+  pasteMarkdown?: boolean
   /** Enable collaborative editing. The editor hands you a markdown `seed` and
    * status sinks; return a binding (build it with `yjsCollab` from
    * `@llui/lexical-collab`, wiring your own provider). Mutually exclusive with
