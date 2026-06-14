@@ -120,6 +120,23 @@ describe('llui-mcp --http integration', () => {
     expect(res.status).toBe(403)
   })
 
+  it('rejects a literal Origin: null even with the right token (403)', async () => {
+    // A sandboxed iframe / file:/data: document sends `Origin: null`. That
+    // is a browser context, not an absent header, so it must NOT be treated
+    // as a trusted native client.
+    const res = await fetch(`http://127.0.0.1:${TEST_PORT}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+        origin: 'null',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 95, method: 'initialize', params: {} }),
+    })
+    expect(res.status).toBe(403)
+  })
+
   it('rejects a non-local Host header even with the right token (403)', async () => {
     // Must use a raw request: `fetch` treats `Host` as a forbidden
     // header and silently drops it, so the gate can't be exercised

@@ -56,3 +56,28 @@ export function checkWsOrigin(
   if (origin === selfOrigin) return { ok: true }
   return { ok: false, reason: `cross-origin ${origin} (expected ${selfOrigin})` }
 }
+
+/**
+ * Compose the server's own origin (`scheme://host`) from forwarded and
+ * fallback proto/host values. Shared by the Node and WHATWG upgrade
+ * adapters so the forwarded-header precedence lives in one place: a
+ * `x-forwarded-proto`/`x-forwarded-host` value (first entry of a possibly
+ * comma-joined list, trimmed) wins when present and non-empty; otherwise
+ * the runtime-derived fallback is used. Behind a TLS-terminating proxy the
+ * forwarded scheme is what the browser's `Origin` reflects, so honoring it
+ * keeps the same-origin CSWSH check from false-rejecting proxied upgrades.
+ */
+export function composeSelfOrigin(parts: {
+  forwardedProto?: string | null
+  fallbackProto: string
+  forwardedHost?: string | null
+  fallbackHost: string
+}): string {
+  const first = (v: string | null | undefined): string | undefined => {
+    const head = v?.split(',')[0]?.trim()
+    return head ? head : undefined
+  }
+  const proto = first(parts.forwardedProto) ?? parts.fallbackProto
+  const host = first(parts.forwardedHost) ?? parts.fallbackHost
+  return `${proto}://${host}`
+}

@@ -143,28 +143,34 @@ synchronously into the `foreign` element's node, or hydrate asynchronously as ab
 
 ## Security
 
-| Concern                      | Default                                    | Opt-in                                               |
-| ---------------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| Raw HTML (`<div>`)           | Dropped                                    | `allowDangerousHtml: true` → routed via `unsafeHtml` |
-| `javascript:` / `data:` URLs | Neutralized (link → text, image → dropped) | add the scheme to `allowedProtocols`                 |
-| Link rewriting               | —                                          | `transformLink: (href, node) => string \| null`      |
+| Concern                      | Default                                    | Opt-in                                                     |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
+| Raw HTML (`<div>`)           | Dropped                                    | `sanitizeHtml: (html) => string` → result injected as HTML |
+| `javascript:` / `data:` URLs | Neutralized (link → text, image → dropped) | add the scheme to `allowedProtocols`                       |
+| Link rewriting               | —                                          | `transformLink: (href, node) => string \| null`            |
+
+There is intentionally no "render raw HTML unsanitized" switch. To render raw
+HTML, supply `sanitizeHtml` — a function that takes the raw HTML and returns a
+sanitized string (e.g. wrap [DOMPurify](https://github.com/cure53/DOMPurify)).
+The result is injected verbatim, so the sanitizer owns safety; without it, raw
+HTML is dropped.
 
 `allowedProtocols` defaults to `['http', 'https', 'mailto', 'tel']`. Relative
 URLs, query strings and `#anchors` are always allowed.
 
 ## Options
 
-| Option               | Type                                | Default               |
-| -------------------- | ----------------------------------- | --------------------- |
-| `gfm`                | `boolean`                           | `true`                |
-| `renderers`          | `Renderers`                         | —                     |
-| `extensions`         | micromark extensions                | —                     |
-| `mdastExtensions`    | mdast extensions                    | —                     |
-| `allowDangerousHtml` | `boolean`                           | `false`               |
-| `allowedProtocols`   | `string[]`                          | http/https/mailto/tel |
-| `transformLink`      | `(href, node) => string \| null`    | —                     |
-| `class`              | `string`                            | `'markdown-body'`     |
-| `keyOf`              | `(node, index) => string \| number` | content hash          |
+| Option             | Type                                | Default               |
+| ------------------ | ----------------------------------- | --------------------- |
+| `gfm`              | `boolean`                           | `true`                |
+| `renderers`        | `Renderers`                         | —                     |
+| `extensions`       | micromark extensions                | —                     |
+| `mdastExtensions`  | mdast extensions                    | —                     |
+| `sanitizeHtml`     | `(html: string) => string`          | — (raw HTML dropped)  |
+| `allowedProtocols` | `string[]`                          | http/https/mailto/tel |
+| `transformLink`    | `(href, node) => string \| null`    | —                     |
+| `class`            | `string`                            | `'markdown-body'`     |
+| `keyOf`            | `(node, index) => string \| number` | content hash          |
 
 ### `keyOf`
 
