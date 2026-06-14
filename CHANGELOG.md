@@ -11,6 +11,15 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-14 — @llui/markdown-editor@0.2.9
+
+**Released:** `@llui/markdown-editor@0.2.9`
+
+### `@llui/markdown-editor@0.2.9`
+
+- **Added** Markdown is now converted to rich content on paste by default. Plain-text pastes are parsed as Markdown and inserted at the caret (`# Heading`, `- item`, `**bold**`, `` `code` ``, links, task lists, etc. become real formatting); pastes that also carry `text/html` still defer to Lexical's richer HTML import, so copy-from-the-web keeps its formatting. Disable per-editor with `markdownEditor({ pasteMarkdown: false })`. New exports: `registerMarkdownPaste` and `$insertMarkdownAtSelection`.
+- **Fixed** The paste handler no longer swallows a paste it can't convert (e.g. over a selected decorator/`NodeSelection`): it now only claims the event when there is a range selection to insert into, otherwise falling through to Lexical's default paste handler. Also adds Lexical's decorator-input guard so native inputs inside decorator nodes paste themselves.
+
 ## 2026-06-12 — 0.11.4
 
 **Released:** `@llui/dom@0.11.4`; `@llui/components@0.12.1`; `@llui/markdown@0.10.5`; `@llui/router@0.10.5`; `@llui/transitions@0.10.5`; `@llui/agent@0.10.5`; `@llui/test@0.11.5`; `@llui/vike@0.11.5`; `@llui/mcp@0.12.6`; `@llui/lexical@0.2.5`; `@llui/lexical-collab@0.2.3`; `@llui/markdown-editor@0.2.8`; `@llui/devmode-annotate@0.2.7`
