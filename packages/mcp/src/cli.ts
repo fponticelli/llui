@@ -85,7 +85,13 @@ function singleHeader(value: string | string[] | undefined): string | undefined 
 }
 
 function isAllowedOrigin(origin: string | undefined): boolean {
-  if (origin === undefined || origin === 'null') return true
+  // A native MCP client sends NO Origin header → allow. A literal
+  // `Origin: null` is a browser context (sandboxed iframe, `file:`/`data:`
+  // document), NOT an absent header, so it is NOT auto-allowed: it falls
+  // through to the loopback check below, where `new URL('null')` throws and
+  // it is rejected. (Defense in depth — the 0600 bearer token already gates
+  // every request.)
+  if (origin === undefined) return true
   try {
     const { hostname } = new URL(origin)
     return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'

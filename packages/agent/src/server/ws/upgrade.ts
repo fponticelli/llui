@@ -5,7 +5,7 @@ import type { Duplex } from 'node:stream'
 import type { TLSSocket } from 'node:tls'
 import type { PairingConnection } from './pairing-registry.js'
 import type { AgentCoreHandle } from '../core.js'
-import { checkWsOrigin } from './origin.js'
+import { checkWsOrigin, composeSelfOrigin } from './origin.js'
 import type { ClientFrame, ServerFrame } from '../../protocol.js'
 
 export type UpgradeDeps = {
@@ -33,12 +33,14 @@ function rejectSocket(socket: Duplex, status: string): void {
 
 /** Derive the server's own origin from the upgrade request. */
 function selfOriginOf(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-proto']
-  const proto =
-    (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined) ??
-    ((req.socket as TLSSocket).encrypted ? 'https' : 'http')
-  const host = req.headers.host ?? ''
-  return `${proto}://${host}`
+  const firstHeader = (v: string | string[] | undefined): string | undefined =>
+    Array.isArray(v) ? v[0] : v
+  return composeSelfOrigin({
+    forwardedProto: firstHeader(req.headers['x-forwarded-proto']),
+    fallbackProto: (req.socket as TLSSocket).encrypted ? 'https' : 'http',
+    forwardedHost: firstHeader(req.headers['x-forwarded-host']),
+    fallbackHost: req.headers.host ?? '',
+  })
 }
 
 /**
