@@ -329,11 +329,14 @@ export function createAgentClient<State, Msg>(
   // own `lastDispatchError` state field; the framework now owns it.
   let lastDispatchOutcome: import('./rpc/describe-context.js').LastDispatchOutcome | null = null
 
-  // Single seam for state leaving the app toward the agent: redact at
-  // the source (the app's own `redactState`), THEN encode for the wire.
-  // Used by every wire-bound read so none can bypass redaction.
-  const stateForWire = (state: unknown): unknown =>
-    encodeForWire(opts.redactState ? opts.redactState(state as State) : state, codecs)
+  // Single seam for state leaving the app toward the agent. `redactedState`
+  // applies the app's own `redactState` at the source; `stateForWire` then
+  // encodes it for the wire. Every outbound surface — wire reads AND the
+  // hello-frame affordances sample — goes through `redactedState`, so none
+  // can leak a redacted field.
+  const redactedState = (state: unknown): unknown =>
+    opts.redactState ? opts.redactState(state as State) : state
+  const stateForWire = (state: unknown): unknown => encodeForWire(redactedState(state), codecs)
 
   const rpcHost: RpcHosts = {
     getState: () => stateForWire(opts.handle.getState()),
@@ -381,7 +384,7 @@ export function createAgentClient<State, Msg>(
     msgSchema: (opts.def.__msgSchema ?? {}) as Record<string, MessageSchemaEntry>,
     stateSchema: (opts.def.__stateSchema ?? {}) as object,
     affordancesSample: opts.def.agentAffordances
-      ? opts.def.agentAffordances(opts.handle.getState())
+      ? opts.def.agentAffordances(redactedState(opts.handle.getState()))
       : [],
     docs: opts.def.agentDocs ?? null,
     schemaHash: opts.def.__schemaHash ?? '',

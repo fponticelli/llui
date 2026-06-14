@@ -115,7 +115,10 @@ export function createReproRecorder(): ReproRecorderHandle {
       e.key.startsWith('Arrow') ||
       (isChar && hasCommandModifier)
     if (!tracked) return
-    if (isHud(e.target as Element | null)) return
+    const target = e.target as Element | null
+    // Same opt-out as clicks/inputs: never record keys pressed inside a
+    // `data-llui-private` region (or the HUD itself).
+    if (isHud(target) || isPrivate(target)) return
     const mods = [e.metaKey && '⌘', e.ctrlKey && '⌃', e.shiftKey && '⇧', e.altKey && '⌥']
       .filter(Boolean)
       .join('')

@@ -50,8 +50,18 @@ describe('llui_run_test', () => {
 })
 
 describe('llui_compiler_diagnostics — fixes', () => {
+  let fixtureDir: string | undefined
+  afterEach(() => {
+    if (fixtureDir && existsSync(fixtureDir)) rmSync(fixtureDir, { recursive: true, force: true })
+    fixtureDir = undefined
+  })
+
   it('emits a deterministic rename fix for convention / handler / attr-name', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'llui-mcp-fix-'))
+    // The fixture must live INSIDE the workspace: llui_compiler_diagnostics
+    // is workspace-scoped (path-traversal defense), so an os.tmpdir() path
+    // is rejected by design.
+    const dir = mkdtempSync(join(ROOT, 'packages/mcp/.tmp-fix-'))
+    fixtureDir = dir
     writeFileSync(
       join(dir, 'c.tsx'),
       [

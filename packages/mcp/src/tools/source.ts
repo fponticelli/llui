@@ -112,7 +112,8 @@ export function registerSourceTools(registry: ToolRegistry): void {
     },
     'source',
     async (args, _ctx) => {
-      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const workspaceRoot = findWorkspaceRoot()
+      const rootDir = assertWithinWorkspace(args.rootDir ?? workspaceRoot, workspaceRoot)
       const idFilter = args.idFilter
       const files = collectTsFiles(rootDir)
       const diagnostics: Array<{

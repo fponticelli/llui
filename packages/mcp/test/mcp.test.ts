@@ -194,6 +194,13 @@ describe('llui_lint tool', () => {
     ).rejects.toThrow(/not found/)
   })
 
+  it('rejects an out-of-workspace rootDir for compiler diagnostics (path-traversal defense)', async () => {
+    const server = new LluiMcpServer()
+    await expect(
+      server.handleToolCall('llui_compiler_diagnostics', { rootDir: '/' }),
+    ).rejects.toThrow(/escapes the workspace root/)
+  })
+
   it('exposes llui_lint in the tool list', () => {
     const server = new LluiMcpServer()
     const tools = server.getTools()

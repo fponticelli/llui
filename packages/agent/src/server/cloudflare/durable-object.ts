@@ -90,7 +90,12 @@ export class AgentPairingDurableObject {
       const mcpOpts = mcp === true ? {} : mcp
       const lapBasePath = coreOpts.lapBasePath ?? '/agent/lap/v1'
       this.mcpRouter = createMcpRouter(
-        { coreRouter: this.agent.router, tokenStore: this.agent.tokenStore, lapBasePath },
+        {
+          coreRouter: this.agent.router,
+          tokenStore: this.agent.tokenStore,
+          lapBasePath,
+          slidingTtlMs: this.agent.slidingTtlMs,
+        },
         mcpOpts,
       )
     } else {

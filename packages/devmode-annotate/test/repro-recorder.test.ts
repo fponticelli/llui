@@ -142,3 +142,22 @@ describe('repro replay safety gate (DA3)', () => {
     expect(res.applied).toBe(2)
   })
 })
+
+describe('repro recorder — onKey privacy (fix)', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+  it('does not record keys pressed inside a data-llui-private region', () => {
+    const wrap = document.createElement('div')
+    wrap.setAttribute('data-llui-private', '')
+    const input = document.createElement('input')
+    wrap.append(input)
+    document.body.append(wrap)
+    const rec = createReproRecorder()
+    rec.start()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+    expect(rec.flush().some((e) => e.type === 'keydown')).toBe(false)
+    rec.stop()
+  })
+})

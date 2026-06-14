@@ -14460,6 +14460,21 @@ Default bundle filename: `llui-notes-<contentHash prefix>.zip`.
 function bundleFilename(manifest: BundleManifest): string
 ```
 
+### `defaultSecretRedactor()`
+
+An **opt-in** convenience redactor for the `state` channel: deep-walks
+the captured `stateSnapshot` / message+console logs and masks common
+secret shapes (Bearer tokens, `sk-`/`ghp_` keys, JWTs, emails) in
+string values. A defense-in-depth default a host can plug in
+(`redact: { state: defaultSecretRedactor() }`); it does NOT replace
+authoring-time care — the host still owns what's sensitive. State is
+JSON-serializable (no cycles) by the framework contract; a depth cap
+guards pathological inputs.
+
+```typescript
+function defaultSecretRedactor(options: SecretRedactorOptions = {}): (body: NoteBody) => NoteBody
+```
+
 ### `mountAnnotateHud()`
 
 ```typescript
@@ -14797,6 +14812,19 @@ export interface CaptureDefaults {
   debug: boolean
   /** Record user interactions (repro trace). */
   repro: boolean
+}
+```
+
+### `SecretRedactorOptions`
+
+```typescript
+export interface SecretRedactorOptions {
+  /** Extra regexes whose matches are masked (added to the built-ins). */
+  patterns?: readonly RegExp[]
+  /** Replacement token. Default `'[redacted]'`. */
+  mask?: string
+  /** Max recursion depth for the state walk. Default 12. */
+  maxDepth?: number
 }
 ```
 

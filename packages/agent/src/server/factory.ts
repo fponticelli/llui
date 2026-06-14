@@ -31,7 +31,12 @@ export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHand
   if (opts.mcp) {
     const mcpOpts = opts.mcp === true ? {} : opts.mcp
     const mcpRouter = createMcpRouter(
-      { coreRouter: core.router, tokenStore: core.tokenStore, lapBasePath },
+      {
+        coreRouter: core.router,
+        tokenStore: core.tokenStore,
+        lapBasePath,
+        slidingTtlMs: core.slidingTtlMs,
+      },
       mcpOpts,
     )
     router = async (req) => {

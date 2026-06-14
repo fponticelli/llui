@@ -68,6 +68,9 @@ export async function handleLapNarrate(req: Request, deps: LapNarrateDeps): Prom
   deps.registry.send(auth.tid, { t: 'log-push', entry })
 
   await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
+  // Refresh the sliding-TTL clock — an authenticated call keeps the
+  // session alive, mirroring `/message` and `/observe`.
+  await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

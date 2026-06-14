@@ -527,6 +527,27 @@ describe('createAgentClient — source-side state redaction (S6)', () => {
     client.stop()
   })
 
+  it('redacts the state fed to the hello-frame affordances sample', async () => {
+    const handle = makeHandle({ connect: { secret: 'sk-LEAK-99' }, confirm: { pending: [] } })
+    const opts = makeOpts(handle, () => ({ pending: [] }))
+    opts.redactState = (s) => ({ ...s, connect: { redacted: true } })
+    opts.def = {
+      ...opts.def,
+      agentAffordances: (state) => [{ type: 'dump', state: JSON.stringify(state) }],
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tokAff' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    const hello = JSON.parse(lastFakeWs!.sent[0]!)
+    expect(JSON.stringify(hello.affordancesSample)).not.toContain('sk-LEAK-99')
+    expect(JSON.stringify(hello.affordancesSample)).toContain('redacted')
+    client.stop()
+  })
+
   it('passes state through unredacted when no hook is set (control)', async () => {
     const handle = makeHandle({ connect: { token: 'visible' }, confirm: { pending: [] } })
     const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))

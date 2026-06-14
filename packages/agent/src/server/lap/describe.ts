@@ -59,6 +59,9 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   // the old describe-only path left the browser stuck on
   // `awaiting-claude` indefinitely.
   await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
+  // Refresh the sliding-TTL clock — an authenticated read keeps the
+  // session alive, mirroring `/message` and `/observe`.
+  await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

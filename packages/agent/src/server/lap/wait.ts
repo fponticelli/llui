@@ -30,6 +30,12 @@ export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Re
     return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
   }
 
+  // Refresh the sliding-TTL clock at request ARRIVAL — `/wait` is a long
+  // poll that can block past `slidingTtlMs`, so touching only after it
+  // resolves would let the inactivity expiry kill an actively-polling
+  // agent. `lastSeenAt` must advance the moment the request lands.
+  await deps.tokenStore.touch(auth.tid, (deps.now ?? (() => Date.now()))())
+
   const body = ((await req.json().catch(() => null)) ?? {}) as LapWaitRequest
   const timeoutMs = body.timeoutMs ?? 10_000
   const result = await deps.registry.waitForChange(auth.tid, body.path, timeoutMs)
