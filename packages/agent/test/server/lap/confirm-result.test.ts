@@ -38,6 +38,26 @@ const req = (body: unknown): Request =>
   })
 
 describe('handleLapConfirmResult', () => {
+  it('refreshes the sliding-TTL clock at request arrival (before the confirm poll)', async () => {
+    // Regression: this route long-polls `waitForConfirm` while a human
+    // decides; without an arrival-time touch, sliding-TTL would expire an
+    // actively-polling agent. Same bug class as `/wait`.
+    const touch = vi.spyOn(store, 'touch')
+    let resolveConfirm: (v: { outcome: 'user-cancelled' }) => void = () => {}
+    vi.spyOn(registry, 'waitForConfirm').mockImplementation(
+      () => new Promise((r) => (resolveConfirm = r)),
+    )
+    const pending = handleLapConfirmResult(req({ confirmId: 'c1', timeoutMs: 10_000 }), deps())
+    // Poll until the arrival-time touch fires (robust under parallel load);
+    // the poll never resolves, so a touch here proves it precedes the poll.
+    for (let i = 0; i < 100 && touch.mock.calls.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(touch).toHaveBeenCalledWith('t1', expect.anything())
+    resolveConfirm({ outcome: 'user-cancelled' })
+    await pending
+  })
+
   it('returns confirmed when waitForConfirm resolves with confirmed', async () => {
     vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({
       outcome: 'confirmed',

@@ -33,6 +33,12 @@ export async function handleLapConfirmResult(
     return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
   }
 
+  // Refresh the sliding-TTL clock at request ARRIVAL — like `/wait`, this
+  // route long-polls (`waitForConfirm`, default 5s, caller-controllable),
+  // so touching only after it resolves would let the inactivity expiry kill
+  // an agent that is actively polling while a human decides on the confirm.
+  await deps.tokenStore.touch(auth.tid, (deps.now ?? (() => Date.now()))())
+
   const body = (await req.json().catch(() => null)) as LapConfirmResultRequest | null
   if (!body || typeof body.confirmId !== 'string') return json({ error: { code: 'invalid' } }, 400)
   const timeoutMs = body.timeoutMs ?? 5_000

@@ -3,6 +3,21 @@ import { createWHATWGPairingConnection } from './adapter.js'
 import { checkWsOrigin } from '../ws/origin.js'
 
 /**
+ * The server's own origin for the same-origin CSWSH fallback. Behind a
+ * TLS-terminating proxy the runtime sees `http://…` while the browser's
+ * `Origin` is `https://…`, so honor `x-forwarded-proto`/`x-forwarded-host`
+ * (mirroring the Node adapter) before falling back to the request URL —
+ * otherwise every legitimate proxied upgrade would 403 unless the operator
+ * sets `corsOrigins`.
+ */
+function selfOriginOf(req: Request): string {
+  const url = new URL(req.url)
+  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const host = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  return `${proto ?? url.protocol.replace(/:$/, '')}://${host ?? url.host}`
+}
+
+/**
  * Extract the bearer token from a LAP WebSocket upgrade request.
  * Accepts the token on either `?token=` or `Authorization: Bearer` —
  * query-string is the common pattern because browsers can't set
@@ -45,7 +60,7 @@ export async function handleCloudflareUpgrade(
   // the victim's ambient credentials.
   const originCheck = checkWsOrigin(
     req.headers.get('origin'),
-    new URL(req.url).origin,
+    selfOriginOf(req),
     agent.allowedOrigins,
   )
   if (!originCheck.ok) return new Response('Forbidden', { status: 403 })
@@ -99,7 +114,7 @@ export async function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): P
   // CSWSH defense — see checkWsOrigin.
   const originCheck = checkWsOrigin(
     req.headers.get('origin'),
-    new URL(req.url).origin,
+    selfOriginOf(req),
     agent.allowedOrigins,
   )
   if (!originCheck.ok) return new Response('Forbidden', { status: 403 })

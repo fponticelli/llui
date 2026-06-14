@@ -904,9 +904,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       }
     }
 
-    if (screenshotBase64) {
-      screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
-    }
+    // No second redaction here: `captureRedactBake` already redacted the
+    // RAW capture before baking annotations on top. Re-running the hook on
+    // the baked composite would let a coordinate-mask re-cover the fresh
+    // annotation labels, or a `null` return silently drop a screenshot that
+    // already passed redaction.
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter: baseFrontmatter(screenshotBase64 ? 'placeholder.png' : null),

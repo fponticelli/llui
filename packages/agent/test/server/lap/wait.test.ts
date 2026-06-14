@@ -67,9 +67,13 @@ describe('handleLapWait', () => {
       () => new Promise((r) => (resolveWait = r)),
     )
     const pending = handleLapWait(req({ timeoutMs: 10_000 }), deps())
-    // Flush pending microtasks (auth/crypto awaits) so the handler reaches
-    // the now-blocking poll.
-    await new Promise((r) => setTimeout(r, 0))
+    // Poll until the arrival-time touch fires — the handler's async auth
+    // chain (crypto) must complete first, and timing varies under parallel
+    // load. The poll never resolves, so a touch observed here proves it
+    // happens BEFORE the poll, robustly.
+    for (let i = 0; i < 100 && touch.mock.calls.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
     expect(touch).toHaveBeenCalledWith('t1', expect.anything())
     resolveWait({ status: 'timeout', stateAfter: null })
     await pending
