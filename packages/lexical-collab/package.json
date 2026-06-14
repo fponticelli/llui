@@ -1,6 +1,6 @@
 {
   "name": "@llui/lexical-collab",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,7 @@
   },
   "peerDependencies": {
     "@llui/dom": "^0.11.4",
-    "@llui/lexical": "^0.2.5",
+    "@llui/lexical": "^0.2.6",
     "lexical": "^0.45.0",
     "@lexical/yjs": "^0.45.0",
     "yjs": "^13.6.0"

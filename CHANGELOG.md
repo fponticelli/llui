@@ -11,6 +11,65 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-14 — security hardening
+
+**Released:** `@llui/agent@0.11.0`, `@llui/mcp@0.13.0`, `@llui/markdown@0.11.0`; `@llui/lexical@0.2.6`, `@llui/devmode-annotate@0.2.8`, `@llui/markdown-editor@0.2.10`; `@llui/lexical-collab@0.2.4`, `@llui/vite-plugin@0.11.4`, `llui-agent@0.10.3`
+
+A security-hardening pass across the agent/MCP, markdown, lexical, and devmode surfaces, from a whole-repo audit. Three packages carry breaking or behavioral changes — read Breaking/Migration first.
+
+### Breaking
+
+- **`@llui/markdown@0.11.0`** — the `allowDangerousHtml: boolean` option is removed. Raw HTML is dropped by default; to render it, supply a `sanitizeHtml: (html: string) => string` hook whose result is injected. There is intentionally no unsanitized passthrough.
+- **`@llui/agent@0.11.0`** — `/agent/mint` now **fails closed** when the identity resolver yields no `uid` (the default). Deployments that relied on anonymous mint must either provide an `identityResolver` or set `allowAnonymous: true`.
+- **`@llui/mcp@0.13.0`** — the `llui-mcp --http` transport now requires a per-launch bearer token (written to a 0600 file) plus a loopback `Host` and same-origin `Origin`; unauthenticated/cross-origin requests are rejected. The arbitrary-JS `llui_eval` tool is no longer registered unless `LLUI_MCP_ENABLE_EVAL=1`.
+
+### Migration
+
+- **markdown** — replace `allowDangerousHtml: true` with `sanitizeHtml: (html) => /* sanitized */ html` (e.g. wrap DOMPurify). Without it, raw HTML drops.
+- **agent** — if you depended on anonymous mint, pass `allowAnonymous: true` (or wire an `identityResolver`). Set `corsOrigins` if browsers connect from a non-same-origin host.
+- **mcp** — `--http` clients must send `Authorization: Bearer <token>` (read it from the marker file) and a loopback `Host`. Opt into `llui_eval` with `LLUI_MCP_ENABLE_EVAL=1` only if you need it.
+
+### `@llui/agent@0.11.0`
+
+- **Breaking** anonymous `/agent/mint` fails closed; see top.
+- **Added** `allowAnonymous`, `corsOrigins` (CSWSH origin allowlist, now enforced on every WebSocket upgrade across the Node, Cloudflare, and Deno adapters), `slidingTtlMs` (inactivity expiry, refreshed on every authenticated call including the `/wait` and `/confirm-result` long polls), and `redactState` (a source-side hook applied to every state snapshot leaving the app — `get_state`/`observe`/`query_state`, the per-change broadcast, confirm snapshots, and the hello-frame affordances sample — so a redacted field never reaches the server or the model).
+- **Fixed** WebSocket upgrades validate `Origin` (CSWSH defense), honoring `x-forwarded-proto`/`x-forwarded-host` behind a TLS proxy; the Node WS path now routes through the shared `acceptConnection` so revoke / sliding-TTL / pending-resume grace are enforced in one place; the codec wire-decoder is hardened against `__proto__` / `__codec` injection.
+
+### `@llui/mcp@0.13.0`
+
+- **Breaking** `--http` requires a bearer token + loopback Host/Origin; `llui_eval` is opt-in. See top.
+- **Fixed** command injection in `llui_lint` / `llui_run_test` / `llui_find_msg_producers` (now `execFileSync` with an argv array — no shell); path-traversal in the source tools (every caller-supplied path/`rootDir`, including `llui_compiler_diagnostics`, is constrained to the workspace root); a literal `Origin: null` is no longer auto-trusted.
+
+### `@llui/markdown@0.11.0`
+
+- **Breaking** `allowDangerousHtml` removed in favor of the `sanitizeHtml` hook; see top.
+- **Fixed** the URL sanitizer strips tabs/newlines and leading control characters before resolving the scheme, closing a `java\tscript:`-style bypass.
+
+### `@llui/lexical@0.2.6`
+
+- **Added** an `externalUndo` seam option on `lexicalForeign` — when set, it owns the undo stack and **forces the built-in `@lexical/history` off**, so a CRDT/collab undo owner can't double-apply; combining it with `history: true` is reported as a misconfiguration.
+
+### `@llui/devmode-annotate@0.2.8`
+
+- **Added** `defaultSecretRedactor` — an opt-in state-channel redactor that masks common secret shapes (Bearer tokens, `sk-`/`ghp_` keys, JWTs, emails).
+- **Fixed** the repro recorder captures input values only when a field opts in via `data-llui-capture-value`, and no longer records keystrokes (including inside `data-llui-private` regions); replay is gated behind a confirmation, an origin-path match, and app-root containment; screenshots are redacted **before** annotation labels are baked in, on both the human and LLM-driven capture paths.
+
+### `@llui/markdown-editor@0.2.10`
+
+- **Improved** the math / mermaid `render` callback may now return a DOM `Node` (mounted directly, no sanitization needed) in addition to a trusted HTML string, removing the forced string→`unsafeHtml` sink. Peer `@llui/lexical` → `^0.2.6`.
+
+### `@llui/lexical-collab@0.2.4`
+
+- **Improved** peer `@llui/lexical` → `^0.2.6` (cascade).
+
+### `@llui/vite-plugin@0.11.4`
+
+- **Improved** rebuilt against `@llui/devmode-annotate@0.2.8` (cascade).
+
+### `llui-agent@0.10.3`
+
+- **Improved** rebuilt against `@llui/agent@0.11.0` (cascade).
+
 ## 2026-06-14 — @llui/markdown-editor@0.2.9
 
 **Released:** `@llui/markdown-editor@0.2.9`
