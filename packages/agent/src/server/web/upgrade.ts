@@ -1,5 +1,6 @@
 import type { AgentCoreHandle } from '../core.js'
 import { createWHATWGPairingConnection } from './adapter.js'
+import { checkWsOrigin } from '../ws/origin.js'
 
 /**
  * Extract the bearer token from a LAP WebSocket upgrade request.
@@ -40,6 +41,14 @@ export async function handleCloudflareUpgrade(
   if (req.headers.get('upgrade') !== 'websocket') {
     return new Response('Expected upgrade: websocket', { status: 426 })
   }
+  // CSWSH defense — see checkWsOrigin. Must run before any work bound to
+  // the victim's ambient credentials.
+  const originCheck = checkWsOrigin(
+    req.headers.get('origin'),
+    new URL(req.url).origin,
+    agent.allowedOrigins,
+  )
+  if (!originCheck.ok) return new Response('Forbidden', { status: 403 })
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 
@@ -87,6 +96,13 @@ export async function handleCloudflareUpgrade(
  * ```
  */
 export async function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response> {
+  // CSWSH defense — see checkWsOrigin.
+  const originCheck = checkWsOrigin(
+    req.headers.get('origin'),
+    new URL(req.url).origin,
+    agent.allowedOrigins,
+  )
+  if (!originCheck.ok) return new Response('Forbidden', { status: 403 })
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 

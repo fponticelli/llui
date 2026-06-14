@@ -1,10 +1,11 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { z } from 'zod'
 import { lintSignalSource } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
+import { assertWithinWorkspace } from '../util/workspace.js'
 
 export function registerSourceTools(registry: ToolRegistry): void {
   registry.register(
@@ -22,7 +23,8 @@ export function registerSourceTools(registry: ToolRegistry): void {
     },
     'source',
     async (args, _ctx) => {
-      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const workspaceRoot = findWorkspaceRoot()
+      const rootDir = assertWithinWorkspace(args.rootDir ?? workspaceRoot, workspaceRoot)
       const pattern = `send\\(\\{[^}]*type:\\s*['"]${args.msgType}['"]`
       const hits = grepHits(pattern, rootDir, ['*.ts', '*.tsx'])
       return { msgType: args.msgType, hits }
@@ -44,7 +46,8 @@ export function registerSourceTools(registry: ToolRegistry): void {
     },
     'source',
     async (args, _ctx) => {
-      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const workspaceRoot = findWorkspaceRoot()
+      const rootDir = assertWithinWorkspace(args.rootDir ?? workspaceRoot, workspaceRoot)
       const pattern = `case\\s+['"]${args.msgType}['"]\\s*:`
       const hits = grepHits(pattern, rootDir, ['*.ts', '*.tsx'])
       return { msgType: args.msgType, hits }
@@ -64,11 +67,20 @@ export function registerSourceTools(registry: ToolRegistry): void {
     'source',
     async (args, _ctx) => {
       const workspaceRoot = findWorkspaceRoot()
-      let cmd = `pnpm exec vitest run`
-      if (args.file) cmd += ` "${args.file}"`
-      if (args.testName) cmd += ` -t "${args.testName}"`
+      // Build the argv as discrete array entries — no shell, so a `"`,
+      // `$(...)`, backtick, or `;` in `file`/`testName` is passed
+      // literally to vitest and can never be reinterpreted as a command.
+      const argv = ['exec', 'vitest', 'run']
+      if (args.file) {
+        argv.push(assertWithinWorkspace(args.file, workspaceRoot))
+      }
+      if (args.testName) {
+        // `-t <pattern>` — the pattern is its own argv item, never
+        // concatenated into a command string.
+        argv.push('-t', args.testName)
+      }
       try {
-        const output = execSync(cmd, {
+        const output = execFileSync('pnpm', argv, {
           cwd: workspaceRoot,
           encoding: 'utf8',
           timeout: 60_000,
@@ -220,9 +232,15 @@ interface GrepHit {
 
 function grepHits(pattern: string, rootDir: string, globs: string[]): GrepHit[] {
   if (!existsSync(rootDir)) return []
-  const globArgs = globs.map((g) => `--include="${g}"`).join(' ')
+  // Each flag, glob, the pattern, and the root dir are discrete argv
+  // entries — grep receives them verbatim with no shell in between, so a
+  // pattern or path containing `"`, `$(...)`, backticks, or `;` is matched
+  // literally and can never spawn a subprocess.
+  const argv = ['-rn', '--color=never', '-E']
+  for (const g of globs) argv.push(`--include=${g}`)
+  argv.push(pattern, rootDir)
   try {
-    const out = execSync(`grep -rn --color=never -E ${globArgs} "${pattern}" "${rootDir}"`, {
+    const out = execFileSync('grep', argv, {
       encoding: 'utf8',
       timeout: 15_000,
       stdio: ['ignore', 'pipe', 'pipe'],

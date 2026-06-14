@@ -13,12 +13,16 @@ import { createMcpRouter } from './mcp/router.js'
  * Spec §10.1, §10.4.
  */
 export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHandle {
-  const core = createLluiAgentCore(opts)
+  // `pairingGraceMs` is the public name for the core's pending-resume
+  // grace window; map it through here so the option isn't dead.
+  const core = createLluiAgentCore({
+    ...opts,
+    pendingResumeGraceMs: opts.pairingGraceMs,
+  })
 
   const wsUpgrade = createWsUpgradeHandler({
-    tokenStore: core.tokenStore,
-    registry: core.registry,
-    auditSink: core.auditSink,
+    acceptConnection: core.acceptConnection,
+    corsOrigins: core.allowedOrigins,
   })
 
   const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'

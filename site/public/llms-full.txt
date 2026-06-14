@@ -11369,6 +11369,19 @@ when one runs from the repo root and the other from a subpackage.
 function mcpActiveFilePath(cwd: string = process.cwd()): string
 ```
 
+### `mcpHttpTokenPath()`
+
+Path for the per-launch HTTP bearer token used in `--http` mode. Lives
+next to the active marker (same workspace-rooted cache dir) so a
+same-user local client can read it, but is a SEPARATE 0600 file — the
+token is never written into the world-readable marker. Lives here (not
+in cli.ts) so tests can import the path without triggering the CLI's
+top-level `main()` side effect.
+
+```typescript
+function mcpHttpTokenPath(cwd: string = process.cwd()): string
+```
+
 ## Interfaces
 
 ### `LluiMcpServerOptions`
@@ -11411,6 +11424,15 @@ export interface LluiMcpServerOptions {
    * root + `.llui/notes`.
    */
   notesRoot?: string
+  /**
+   * Opt in to the arbitrary-eval tool (`llui_eval`). OFF by default.
+   *
+   * SECURITY: `llui_eval` runs caller-supplied JavaScript in the user's
+   * live browser session (RCE). It is registered only when this flag is
+   * true OR `LLUI_MCP_ENABLE_EVAL=1` is set; otherwise the tool is never
+   * registered and never listed.
+   */
+  enableEval?: boolean
 }
 ```
 
@@ -12142,6 +12164,24 @@ export type CoreOptions = {
   rateLimiter?: RateLimiter
   lapBasePath?: string
   /**
+   * Allow minting tokens for unauthenticated callers (identity resolves
+   * to `null`). SECURITY: defaults to `false` (fail closed). See
+   * `MintDeps.allowAnonymous`.
+   */
+  allowAnonymous?: boolean
+  /**
+   * Sliding (inactivity) TTL in ms. When set, a token unused for longer
+   * than this is rejected on every verify (LAP/MCP and WS upgrade) even
+   * before its hard expiry. Undefined / `0` disables the check.
+   */
+  slidingTtlMs?: number
+  /**
+   * Allowed `Origin` allowlist for WebSocket upgrades (CSWSH defense).
+   * Unset → same-origin only. Stored on the returned handle as
+   * `allowedOrigins` for the runtime upgrade adapters to enforce.
+   */
+  corsOrigins?: readonly string[]
+  /**
    * Override the default `InMemoryPairingRegistry`. Web runtimes that
    * need a different pairing implementation (e.g. a Cloudflare
    * Durable Object that persists across isolates) pass it here.
@@ -12191,6 +12231,19 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
+   * the `corsOrigins` core option. `undefined`/empty means same-origin
+   * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
+   * `wsUpgrade`) read this to validate the handshake `Origin`.
+   */
+  allowedOrigins?: readonly string[]
+  /**
+   * Sliding (inactivity) TTL in ms, mirroring the `slidingTtlMs` core
+   * option. The WS upgrade adapters apply this on acceptance via
+   * `acceptConnection`, which already enforces it server-side.
+   */
+  slidingTtlMs?: number
+  /**
    * Validate an agent token and register a `PairingConnection` with
    * the registry. Use this after accepting a WebSocket upgrade via
    * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
@@ -12219,8 +12272,24 @@ export type ServerOptions = {
   /** Token store. Defaults to an `InMemoryTokenStore`. */
   tokenStore?: TokenStore
 
-  /** Identity resolver. Defaults to anonymous (always null). */
+  /**
+   * Identity resolver. Defaults to one that always resolves `null`
+   * (unauthenticated). With the default resolver and `allowAnonymous`
+   * left `false`, `/agent/mint` fails closed — see `allowAnonymous`.
+   */
   identityResolver?: IdentityResolver
+
+  /**
+   * Allow minting remote-control tokens for unauthenticated callers
+   * (identity resolves to `null`).
+   *
+   * SECURITY: defaults to `false`. When false, `/agent/mint` rejects
+   * with 401 unless the identity resolver returns a real uid, so a
+   * deployment without a configured resolver does NOT let any anonymous
+   * visitor mint a token. Set `true` only for apps that deliberately
+   * allow anonymous agent pairing.
+   */
+  allowAnonymous?: boolean
 
   /** Audit sink. Defaults to `consoleAuditSink`. */
   auditSink?: AuditSink
@@ -12231,13 +12300,38 @@ export type ServerOptions = {
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
-  /** Pairing grace window after a tab closes, in ms. Default 15 min. */
+  /**
+   * Grace window, in ms, during which a closed pairing can re-pair with
+   * the same bearer token without going through the rotate-on-resume
+   * (`/resume/claim`) path. Wired to the core's pending-resume grace.
+   * Default 60 s; `0` opts out (a WS close immediately requires a
+   * rotated token to reconnect).
+   */
   pairingGraceMs?: number
 
-  /** Sliding TTL for active tokens, in ms. Default 1 h. */
+  /**
+   * Sliding (inactivity) TTL for tokens, in ms. A token whose
+   * `lastSeenAt + slidingTtlMs` is in the past is treated as expired on
+   * the next verify — on every LAP/MCP call AND on the WebSocket
+   * upgrade — even though its hard expiry hasn't elapsed. Caps the live
+   * window of a leaked-but-idle bearer.
+   *
+   * SECURITY-relevant: undefined / `0` disables the sliding check (the
+   * hard `expiresAt` ceiling still applies). Set a value to enforce
+   * inactivity expiry.
+   */
   slidingTtlMs?: number
 
-  /** Allowed origins for the HTTP surface (CORS). Empty = any. */
+  /**
+   * Allowed `Origin` values for the WebSocket upgrade (CSWSH defense).
+   *
+   * When set, a browser-issued WS upgrade whose `Origin` is not in this
+   * list is rejected with 403 before the handshake completes. When
+   * unset, the upgrade defaults to same-origin (the request `Origin`
+   * must equal the server's own origin). Requests with NO `Origin`
+   * header (non-browser clients) are always allowed, since CSWSH
+   * requires a browser-supplied Origin.
+   */
   corsOrigins?: readonly string[]
 
   /**
@@ -12483,6 +12577,19 @@ export type CreateAgentClientOpts<State, Msg> = {
    * file uploads). See `@llui/agent/codecs` for the convention.
    */
   codecs?: CodecRegistry
+  /**
+   * Redaction hook applied to app state **at the source**, before any
+   * snapshot leaves the browser for the agent/LLM. Runs on every
+   * wire-bound read — `get_state`/`observe`/`query_state`, the
+   * per-change `state-update` broadcast, and confirm-resolution
+   * snapshots — so a secret omitted here never transits the WS, the
+   * server, or the model. Return a redacted COPY (do not mutate the
+   * input); the reducer/app keep the real state. Omit fields, mask
+   * values, or return `{}` to withhold state entirely. This is the
+   * only place that can use the app's own knowledge of which fields
+   * are sensitive — prefer it over any downstream/server-side filter.
+   */
+  redactState?: (state: State) => State
   /**
    * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
    * the canonical paths in `@llui/vite-plugin`'s dev middleware and
@@ -15006,9 +15113,12 @@ export interface MarkdownOptions {
   extensions?: FromMarkdownOptions['extensions']
   /** Extra mdast extensions matching the syntax extensions above. */
   mdastExtensions?: FromMarkdownOptions['mdastExtensions']
-  /** Render raw HTML nodes via `unsafeHtml` instead of dropping them.
-   * Default `false` (raw HTML is dropped — safe for untrusted/LLM content). */
-  allowDangerousHtml?: boolean
+  /** Sanitizer for raw HTML nodes. Raw HTML is **dropped by default**
+   * (safe for untrusted/LLM content). To render it, supply a function
+   * that takes the raw HTML and returns a sanitized string (e.g. wrap
+   * DOMPurify); the result is injected verbatim. There is intentionally
+   * no "render raw HTML unsanitized" switch — that would be an XSS sink. */
+  sanitizeHtml?: (html: string) => string
   /** URL schemes permitted in links/images. A URL with no scheme (relative,
    * anchor, query) is always allowed. Default `['http','https','mailto','tel']`. */
   allowedProtocols?: string[]
@@ -15032,7 +15142,7 @@ export interface ResolvedOptions {
   renderers: ResolvedRenderers
   extensions: FromMarkdownOptions['extensions']
   mdastExtensions: FromMarkdownOptions['mdastExtensions']
-  allowDangerousHtml: boolean
+  sanitizeHtml: ((html: string) => string) | undefined
   allowedProtocols: string[]
   transformLink: TransformLink | undefined
   class: string
@@ -15709,7 +15819,11 @@ export interface CalloutPluginOptions {
 export interface MathPluginOptions {
   /** Typeset TeX to an HTML string (e.g. via KaTeX). When omitted, the raw TeX is
    * shown in a styled box. */
-  render?: (tex: string) => string
+  /** Render the TeX source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 ```
 
@@ -15719,7 +15833,11 @@ export interface MathPluginOptions {
 export interface MermaidPluginOptions {
   /** Render the diagram source to an HTML string (e.g. mermaid). When omitted,
    * the raw source is shown in a styled box. */
-  render?: (code: string) => string
+  /** Render the mermaid source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 ```
 
@@ -16180,8 +16298,19 @@ export interface LexicalForeignOptions<Emit = unknown> {
   changeDebounceMs?: number
   /** Register the built-in `@lexical/history` undo stack. Default `true`.
    * Set `false` when an external owner provides history (e.g. a CRDT undo
-   * manager in collab mode) — a local stack would shadow it and cross peers. */
+   * manager in collab mode) — a local stack would shadow it and cross peers.
+   * Prefer {@link ForeignOptions.externalUndo} over setting this manually:
+   * it owns undo AND disables the built-in stack in one place, so the two
+   * can't both be live. */
   history?: boolean
+  /** An external owner of the undo/redo stack (e.g. `@llui/lexical-collab`'s
+   * CRDT undo manager). When set, the built-in `@lexical/history` stack is
+   * **forced off** — so a collab consumer cannot accidentally run both and
+   * double-apply undo (the conflict is unrepresentable, not a doc footnote).
+   * Registered after rich-text like {@link ForeignOptions.register}; return
+   * a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported. */
+  externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
    * external owner controls it (e.g. collab seeds once, gated on provider sync,

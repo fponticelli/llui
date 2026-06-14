@@ -57,8 +57,19 @@ export interface LexicalForeignOptions<Emit = unknown> {
   changeDebounceMs?: number
   /** Register the built-in `@lexical/history` undo stack. Default `true`.
    * Set `false` when an external owner provides history (e.g. a CRDT undo
-   * manager in collab mode) — a local stack would shadow it and cross peers. */
+   * manager in collab mode) — a local stack would shadow it and cross peers.
+   * Prefer {@link ForeignOptions.externalUndo} over setting this manually:
+   * it owns undo AND disables the built-in stack in one place, so the two
+   * can't both be live. */
   history?: boolean
+  /** An external owner of the undo/redo stack (e.g. `@llui/lexical-collab`'s
+   * CRDT undo manager). When set, the built-in `@lexical/history` stack is
+   * **forced off** — so a collab consumer cannot accidentally run both and
+   * double-apply undo (the conflict is unrepresentable, not a doc footnote).
+   * Registered after rich-text like {@link ForeignOptions.register}; return
+   * a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported. */
+  externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
    * external owner controls it (e.g. collab seeds once, gated on provider sync,
@@ -145,10 +156,22 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
 
     const emitSelection = (): void => opts.onSelectionChange?.({ editor, canUndo, canRedo })
 
+    // An external undo owner (CRDT/collab) forces the built-in history
+    // stack off — running both double-applies undo. Requesting both
+    // explicitly is a misconfiguration; surface it loudly rather than
+    // silently letting them fight.
+    if (opts.externalUndo && opts.history === true) {
+      console.error(
+        'lexicalForeign: `externalUndo` owns the undo stack, so `history: true` is ignored — remove it to silence this.',
+      )
+    }
+    const builtInHistory = opts.externalUndo ? false : opts.history !== false
+
     const baseDispose = mergeRegister(
       registerRichText(editor),
-      opts.history === false ? () => {} : registerHistory(editor, createEmptyHistoryState(), 1000),
+      builtInHistory ? registerHistory(editor, createEmptyHistoryState(), 1000) : () => {},
       opts.register?.(editor) ?? (() => {}),
+      opts.externalUndo?.(editor) ?? (() => {}),
       editor.registerCommand(
         CAN_UNDO_COMMAND,
         (payload: boolean) => {

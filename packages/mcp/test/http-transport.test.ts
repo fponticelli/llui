@@ -1,8 +1,31 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { request as httpRequest } from 'node:http'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import { killChild } from './kill-child'
+import { mcpHttpTokenPath } from '../src/index'
+
+/**
+ * Low-level POST that can set the forbidden `Host` header (the `fetch`
+ * API silently drops it). Used to exercise the DNS-rebinding Host gate.
+ */
+function rawPost(
+  port: number,
+  path: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ status: number }> {
+  return new Promise((resolveP, rejectP) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, method: 'POST', headers }, (res) => {
+      res.resume()
+      res.on('end', () => resolveP({ status: res.statusCode ?? 0 }))
+    })
+    req.on('error', rejectP)
+    req.end(body)
+  })
+}
 
 // Integration test: spawn the built CLI in HTTP mode, issue an
 // `initialize` JSON-RPC call over HTTP, verify the SDK-backed response
@@ -11,6 +34,10 @@ import { killChild } from './kill-child'
 
 const CLI_PATH = resolve(__dirname, '../dist/cli.js')
 const TEST_PORT = 15210
+
+// Module-scoped so the `callMcp` helper (defined below the describe) can
+// attach the bearer token to every authenticated request by default.
+let token = ''
 
 describe('llui-mcp --http integration', () => {
   let proc: ChildProcess | null = null
@@ -27,11 +54,88 @@ describe('llui-mcp --http integration', () => {
     // appears, so the happy path stays fast.
     const ready = await waitForStderr(proc, /HTTP transport on/, 30000)
     if (!ready) throw new Error('[llui-mcp] did not start within 30s')
+    // The per-launch bearer token is written to a 0600 file a same-user
+    // local client can read. Mirrors how the Vite plugin / native client
+    // would authenticate.
+    token = readFileSync(mcpHttpTokenPath(), 'utf8').trim()
+    expect(token.length).toBeGreaterThan(0)
   }, 35000)
 
   afterAll(async () => {
     await killChild(proc)
     proc = null
+  })
+
+  it('rejects a request with no bearer token (401)', async () => {
+    const res = await fetch(`http://127.0.0.1:${TEST_PORT}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 99,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'vitest', version: '1' },
+        },
+      }),
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a request with a wrong bearer token (401)', async () => {
+    const res = await callMcp(
+      TEST_PORT,
+      {
+        jsonrpc: '2.0',
+        id: 98,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'vitest', version: '1' },
+        },
+      },
+      undefined,
+      { token: 'deadbeef-not-the-real-token' },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a cross-origin POST even with the right token (403)', async () => {
+    const res = await fetch(`http://127.0.0.1:${TEST_PORT}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+        origin: 'http://evil.example.com',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 97, method: 'initialize', params: {} }),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('rejects a non-local Host header even with the right token (403)', async () => {
+    // Must use a raw request: `fetch` treats `Host` as a forbidden
+    // header and silently drops it, so the gate can't be exercised
+    // through it.
+    const res = await rawPost(
+      TEST_PORT,
+      '/mcp',
+      {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${token}`,
+        host: 'attacker.example.com',
+      },
+      JSON.stringify({ jsonrpc: '2.0', id: 96, method: 'initialize', params: {} }),
+    )
+    expect(res.status).toBe(403)
   })
 
   it('routes tool calls through the shared bridge relay (not dead session relays)', async () => {
@@ -137,11 +241,16 @@ async function callMcp(
   port: number,
   payload: Record<string, unknown>,
   sessionId?: string,
+  opts?: { token?: string },
 ): Promise<McpCallResult> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
   }
+  // Default to the live per-launch token; tests that want to exercise a
+  // bad/missing token override it explicitly.
+  const bearer = opts && 'token' in opts ? opts.token : token
+  if (bearer) headers['authorization'] = `Bearer ${bearer}`
   if (sessionId) headers['mcp-session-id'] = sessionId
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: 'POST',

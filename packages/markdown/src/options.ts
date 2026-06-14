@@ -11,7 +11,7 @@ export function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions {
     renderers: mergeRenderers(opts.renderers),
     extensions: opts.extensions,
     mdastExtensions: opts.mdastExtensions,
-    allowDangerousHtml: opts.allowDangerousHtml ?? false,
+    sanitizeHtml: opts.sanitizeHtml,
     allowedProtocols: opts.allowedProtocols ?? DEFAULT_PROTOCOLS,
     transformLink: opts.transformLink,
     class: opts.class ?? 'markdown-body',

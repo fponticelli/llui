@@ -320,8 +320,19 @@ export interface LexicalForeignOptions<Emit = unknown> {
   changeDebounceMs?: number
   /** Register the built-in `@lexical/history` undo stack. Default `true`.
    * Set `false` when an external owner provides history (e.g. a CRDT undo
-   * manager in collab mode) — a local stack would shadow it and cross peers. */
+   * manager in collab mode) — a local stack would shadow it and cross peers.
+   * Prefer {@link ForeignOptions.externalUndo} over setting this manually:
+   * it owns undo AND disables the built-in stack in one place, so the two
+   * can't both be live. */
   history?: boolean
+  /** An external owner of the undo/redo stack (e.g. `@llui/lexical-collab`'s
+   * CRDT undo manager). When set, the built-in `@lexical/history` stack is
+   * **forced off** — so a collab consumer cannot accidentally run both and
+   * double-apply undo (the conflict is unrepresentable, not a doc footnote).
+   * Registered after rich-text like {@link ForeignOptions.register}; return
+   * a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported. */
+  externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
    * external owner controls it (e.g. collab seeds once, gated on provider sync,

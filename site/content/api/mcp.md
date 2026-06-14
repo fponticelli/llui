@@ -154,6 +154,19 @@ when one runs from the repo root and the other from a subpackage.
 function mcpActiveFilePath(cwd: string = process.cwd()): string
 ```
 
+### `mcpHttpTokenPath()`
+
+Path for the per-launch HTTP bearer token used in `--http` mode. Lives
+next to the active marker (same workspace-rooted cache dir) so a
+same-user local client can read it, but is a SEPARATE 0600 file — the
+token is never written into the world-readable marker. Lives here (not
+in cli.ts) so tests can import the path without triggering the CLI's
+top-level `main()` side effect.
+
+```typescript
+function mcpHttpTokenPath(cwd: string = process.cwd()): string
+```
+
 ## Interfaces
 
 ### `LluiMcpServerOptions`
@@ -196,6 +209,15 @@ export interface LluiMcpServerOptions {
    * root + `.llui/notes`.
    */
   notesRoot?: string
+  /**
+   * Opt in to the arbitrary-eval tool (`llui_eval`). OFF by default.
+   *
+   * SECURITY: `llui_eval` runs caller-supplied JavaScript in the user's
+   * live browser session (RCE). It is registered only when this flag is
+   * true OR `LLUI_MCP_ENABLE_EVAL=1` is set; otherwise the tool is never
+   * registered and never listed.
+   */
+  enableEval?: boolean
 }
 ```
 

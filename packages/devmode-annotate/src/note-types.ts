@@ -226,7 +226,7 @@ export interface NoteBody {
 
 export type ReproEvent =
   | { type: 'click'; t: number; selector: string }
-  | { type: 'input'; t: number; selector: string; value: string }
+  | { type: 'input'; t: number; selector: string; value?: string; redacted?: boolean }
   | { type: 'keydown'; t: number; key: string; mods?: string }
   | { type: 'route'; t: number; pathname: string }
 

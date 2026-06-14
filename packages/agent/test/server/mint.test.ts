@@ -53,7 +53,7 @@ describe('handleMint', () => {
     expect(fromHash?.tid).toBe(body.tid)
   })
 
-  it('tolerates a null identity (anonymous app)', async () => {
+  it('FAILS CLOSED on a null identity by default (no anonymous mint)', async () => {
     const req = new Request('https://app.example/agent/mint', { method: 'POST' })
     const res = await handleMint(req, {
       tokenStore: store,
@@ -63,10 +63,48 @@ describe('handleMint', () => {
       now: () => clock * 1000,
       uuid: () => 't-null',
     })
+    // Without an identity and without explicit opt-in, no token is
+    // minted — an unauthenticated caller must NOT receive a
+    // remote-control token.
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('auth-required')
+    // Nothing was persisted.
+    const stored = await store.findByTid('t-null')
+    expect(stored).toBeNull()
+  })
+
+  it('mints with a null identity when allowAnonymous is explicitly enabled', async () => {
+    const req = new Request('https://app.example/agent/mint', { method: 'POST' })
+    const res = await handleMint(req, {
+      tokenStore: store,
+      identityResolver: async () => null,
+      auditSink: audit,
+      lapBasePath: '/agent/lap/v1',
+      allowAnonymous: true,
+      now: () => clock * 1000,
+      uuid: () => 't-null',
+    })
     expect(res.status).toBe(200)
     const body = (await res.json()) as MintResponse
     const stored = await store.findByTid(body.tid)
     expect(stored?.uid).toBeNull()
+  })
+
+  it('mints when the resolver returns a real uid (default config)', async () => {
+    const req = new Request('https://app.example/agent/mint', { method: 'POST' })
+    const res = await handleMint(req, {
+      tokenStore: store,
+      identityResolver: async () => 'real-user',
+      auditSink: audit,
+      lapBasePath: '/agent/lap/v1',
+      now: () => clock * 1000,
+      uuid: () => 't-real',
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as MintResponse
+    const stored = await store.findByTid(body.tid)
+    expect(stored?.uid).toBe('real-user')
   })
 
   it('writes a mint audit entry', async () => {

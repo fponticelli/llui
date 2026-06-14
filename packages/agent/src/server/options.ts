@@ -24,8 +24,24 @@ export type ServerOptions = {
   /** Token store. Defaults to an `InMemoryTokenStore`. */
   tokenStore?: TokenStore
 
-  /** Identity resolver. Defaults to anonymous (always null). */
+  /**
+   * Identity resolver. Defaults to one that always resolves `null`
+   * (unauthenticated). With the default resolver and `allowAnonymous`
+   * left `false`, `/agent/mint` fails closed — see `allowAnonymous`.
+   */
   identityResolver?: IdentityResolver
+
+  /**
+   * Allow minting remote-control tokens for unauthenticated callers
+   * (identity resolves to `null`).
+   *
+   * SECURITY: defaults to `false`. When false, `/agent/mint` rejects
+   * with 401 unless the identity resolver returns a real uid, so a
+   * deployment without a configured resolver does NOT let any anonymous
+   * visitor mint a token. Set `true` only for apps that deliberately
+   * allow anonymous agent pairing.
+   */
+  allowAnonymous?: boolean
 
   /** Audit sink. Defaults to `consoleAuditSink`. */
   auditSink?: AuditSink
@@ -36,13 +52,38 @@ export type ServerOptions = {
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
-  /** Pairing grace window after a tab closes, in ms. Default 15 min. */
+  /**
+   * Grace window, in ms, during which a closed pairing can re-pair with
+   * the same bearer token without going through the rotate-on-resume
+   * (`/resume/claim`) path. Wired to the core's pending-resume grace.
+   * Default 60 s; `0` opts out (a WS close immediately requires a
+   * rotated token to reconnect).
+   */
   pairingGraceMs?: number
 
-  /** Sliding TTL for active tokens, in ms. Default 1 h. */
+  /**
+   * Sliding (inactivity) TTL for tokens, in ms. A token whose
+   * `lastSeenAt + slidingTtlMs` is in the past is treated as expired on
+   * the next verify — on every LAP/MCP call AND on the WebSocket
+   * upgrade — even though its hard expiry hasn't elapsed. Caps the live
+   * window of a leaked-but-idle bearer.
+   *
+   * SECURITY-relevant: undefined / `0` disables the sliding check (the
+   * hard `expiresAt` ceiling still applies). Set a value to enforce
+   * inactivity expiry.
+   */
   slidingTtlMs?: number
 
-  /** Allowed origins for the HTTP surface (CORS). Empty = any. */
+  /**
+   * Allowed `Origin` values for the WebSocket upgrade (CSWSH defense).
+   *
+   * When set, a browser-issued WS upgrade whose `Origin` is not in this
+   * list is rejected with 403 before the handshake completes. When
+   * unset, the upgrade defaults to same-origin (the request `Origin`
+   * must equal the server's own origin). Requests with NO `Origin`
+   * header (non-browser clients) are always allowed, since CSWSH
+   * requires a browser-supplied Origin.
+   */
   corsOrigins?: readonly string[]
 
   /**

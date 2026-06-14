@@ -724,6 +724,24 @@ export type CoreOptions = {
   rateLimiter?: RateLimiter
   lapBasePath?: string
   /**
+   * Allow minting tokens for unauthenticated callers (identity resolves
+   * to `null`). SECURITY: defaults to `false` (fail closed). See
+   * `MintDeps.allowAnonymous`.
+   */
+  allowAnonymous?: boolean
+  /**
+   * Sliding (inactivity) TTL in ms. When set, a token unused for longer
+   * than this is rejected on every verify (LAP/MCP and WS upgrade) even
+   * before its hard expiry. Undefined / `0` disables the check.
+   */
+  slidingTtlMs?: number
+  /**
+   * Allowed `Origin` allowlist for WebSocket upgrades (CSWSH defense).
+   * Unset → same-origin only. Stored on the returned handle as
+   * `allowedOrigins` for the runtime upgrade adapters to enforce.
+   */
+  corsOrigins?: readonly string[]
+  /**
    * Override the default `InMemoryPairingRegistry`. Web runtimes that
    * need a different pairing implementation (e.g. a Cloudflare
    * Durable Object that persists across isolates) pass it here.
@@ -773,6 +791,19 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
+   * the `corsOrigins` core option. `undefined`/empty means same-origin
+   * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
+   * `wsUpgrade`) read this to validate the handshake `Origin`.
+   */
+  allowedOrigins?: readonly string[]
+  /**
+   * Sliding (inactivity) TTL in ms, mirroring the `slidingTtlMs` core
+   * option. The WS upgrade adapters apply this on acceptance via
+   * `acceptConnection`, which already enforces it server-side.
+   */
+  slidingTtlMs?: number
+  /**
    * Validate an agent token and register a `PairingConnection` with
    * the registry. Use this after accepting a WebSocket upgrade via
    * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
@@ -801,8 +832,24 @@ export type ServerOptions = {
   /** Token store. Defaults to an `InMemoryTokenStore`. */
   tokenStore?: TokenStore
 
-  /** Identity resolver. Defaults to anonymous (always null). */
+  /**
+   * Identity resolver. Defaults to one that always resolves `null`
+   * (unauthenticated). With the default resolver and `allowAnonymous`
+   * left `false`, `/agent/mint` fails closed — see `allowAnonymous`.
+   */
   identityResolver?: IdentityResolver
+
+  /**
+   * Allow minting remote-control tokens for unauthenticated callers
+   * (identity resolves to `null`).
+   *
+   * SECURITY: defaults to `false`. When false, `/agent/mint` rejects
+   * with 401 unless the identity resolver returns a real uid, so a
+   * deployment without a configured resolver does NOT let any anonymous
+   * visitor mint a token. Set `true` only for apps that deliberately
+   * allow anonymous agent pairing.
+   */
+  allowAnonymous?: boolean
 
   /** Audit sink. Defaults to `consoleAuditSink`. */
   auditSink?: AuditSink
@@ -813,13 +860,38 @@ export type ServerOptions = {
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
-  /** Pairing grace window after a tab closes, in ms. Default 15 min. */
+  /**
+   * Grace window, in ms, during which a closed pairing can re-pair with
+   * the same bearer token without going through the rotate-on-resume
+   * (`/resume/claim`) path. Wired to the core's pending-resume grace.
+   * Default 60 s; `0` opts out (a WS close immediately requires a
+   * rotated token to reconnect).
+   */
   pairingGraceMs?: number
 
-  /** Sliding TTL for active tokens, in ms. Default 1 h. */
+  /**
+   * Sliding (inactivity) TTL for tokens, in ms. A token whose
+   * `lastSeenAt + slidingTtlMs` is in the past is treated as expired on
+   * the next verify — on every LAP/MCP call AND on the WebSocket
+   * upgrade — even though its hard expiry hasn't elapsed. Caps the live
+   * window of a leaked-but-idle bearer.
+   *
+   * SECURITY-relevant: undefined / `0` disables the sliding check (the
+   * hard `expiresAt` ceiling still applies). Set a value to enforce
+   * inactivity expiry.
+   */
   slidingTtlMs?: number
 
-  /** Allowed origins for the HTTP surface (CORS). Empty = any. */
+  /**
+   * Allowed `Origin` values for the WebSocket upgrade (CSWSH defense).
+   *
+   * When set, a browser-issued WS upgrade whose `Origin` is not in this
+   * list is rejected with 403 before the handshake completes. When
+   * unset, the upgrade defaults to same-origin (the request `Origin`
+   * must equal the server's own origin). Requests with NO `Origin`
+   * header (non-browser clients) are always allowed, since CSWSH
+   * requires a browser-supplied Origin.
+   */
   corsOrigins?: readonly string[]
 
   /**
@@ -1066,6 +1138,19 @@ export type CreateAgentClientOpts<State, Msg> = {
    * file uploads). See `@llui/agent/codecs` for the convention.
    */
   codecs?: CodecRegistry
+  /**
+   * Redaction hook applied to app state **at the source**, before any
+   * snapshot leaves the browser for the agent/LLM. Runs on every
+   * wire-bound read — `get_state`/`observe`/`query_state`, the
+   * per-change `state-update` broadcast, and confirm-resolution
+   * snapshots — so a secret omitted here never transits the WS, the
+   * server, or the model. Return a redacted COPY (do not mutate the
+   * input); the reducer/app keep the real state. Omit fields, mask
+   * values, or return `{}` to withhold state entirely. This is the
+   * only place that can use the app's own knowledge of which fields
+   * are sensitive — prefer it over any downstream/server-side filter.
+   */
+  redactState?: (state: State) => State
   /**
    * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
    * the canonical paths in `@llui/vite-plugin`'s dev middleware and

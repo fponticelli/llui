@@ -180,10 +180,17 @@ describe('llui_lint tool', () => {
     )
   })
 
-  it('rejects nonexistent paths', async () => {
+  it('rejects paths outside the workspace root (path-traversal defense)', async () => {
     const server = new LluiMcpServer()
     await expect(
       server.handleToolCall('llui_lint', { path: '/nonexistent/file.ts' }),
+    ).rejects.toThrow(/escapes the workspace root/)
+  })
+
+  it('rejects a nonexistent in-workspace path', async () => {
+    const server = new LluiMcpServer()
+    await expect(
+      server.handleToolCall('llui_lint', { path: 'packages/mcp/does-not-exist.ts' }),
     ).rejects.toThrow(/not found/)
   })
 

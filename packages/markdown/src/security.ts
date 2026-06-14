@@ -12,7 +12,14 @@ import type { ResolvedOptions } from './types.js'
 /** Returns the URL unchanged if its scheme is allowed (or it is relative),
  * otherwise `null`. */
 export function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null {
-  const value = String(url)
+  // Normalize the way a browser does before scheme resolution: tab/CR/LF
+  // are stripped anywhere in a URL, and leading ASCII control/space chars
+  // are ignored. Without this, `java\tscript:` or a leading control char
+  // would hide a dangerous scheme from the checks below.
+  const stripped = String(url).replace(/[\t\n\r]/g, '')
+  let from = 0
+  while (from < stripped.length && stripped.charCodeAt(from) <= 0x20) from++
+  const value = stripped.slice(from)
   const colon = value.indexOf(':')
   if (colon < 0) return value // no scheme → relative/anchor/query, safe
 

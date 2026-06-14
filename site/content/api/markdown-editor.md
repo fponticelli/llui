@@ -654,7 +654,11 @@ export interface CalloutPluginOptions {
 export interface MathPluginOptions {
   /** Typeset TeX to an HTML string (e.g. via KaTeX). When omitted, the raw TeX is
    * shown in a styled box. */
-  render?: (tex: string) => string
+  /** Render the TeX source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 ```
 
@@ -664,7 +668,11 @@ export interface MathPluginOptions {
 export interface MermaidPluginOptions {
   /** Render the diagram source to an HTML string (e.g. mermaid). When omitted,
    * the raw source is shown in a styled box. */
-  render?: (code: string) => string
+  /** Render the mermaid source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 ```
 

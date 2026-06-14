@@ -56,10 +56,13 @@ const renderImage: NodeRenderer<Image> = (node, ctx) => {
 }
 
 const renderHtml: NodeRenderer<Html> = (node, ctx) => {
-  // Raw HTML is dropped unless the consumer explicitly opts in; only then is it
-  // routed verbatim through unsafeHtml.
-  if (!ctx.options.allowDangerousHtml) return []
-  return [unsafeHtml(node.value)]
+  // Raw HTML is dropped by default (safe for untrusted/LLM content). It
+  // renders only when the consumer supplies a `sanitizeHtml` hook, which
+  // sees the raw string and returns the safe HTML to inject — there is
+  // no unsanitized passthrough.
+  const sanitize = ctx.options.sanitizeHtml
+  if (!sanitize) return []
+  return [unsafeHtml(sanitize(node.value))]
 }
 
 const renderLinkReference: NodeRenderer<LinkReference> = (node, ctx) => {

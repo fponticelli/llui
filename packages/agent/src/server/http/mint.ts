@@ -9,6 +9,18 @@ export type MintDeps = {
   identityResolver: IdentityResolver
   auditSink: AuditSink
   lapBasePath: string
+  /**
+   * Permit minting a remote-control token for an UNAUTHENTICATED caller
+   * (one the `identityResolver` resolves to `null`/`undefined`).
+   *
+   * SECURITY: defaults to `false` — fail closed. Without an identity and
+   * without this explicit opt-in, `POST /agent/mint` returns 401 and no
+   * token is created, so a deployment that forgets to configure an
+   * identity resolver can't hand out remote-control tokens to anyone who
+   * can reach the endpoint. Set `true` only for genuinely anonymous apps
+   * that intend to let any visitor pair an agent.
+   */
+  allowAnonymous?: boolean
   /** Wall-clock in milliseconds; injectable for tests. */
   now?: () => number
   /** UUID generator; injectable for tests. */
@@ -40,6 +52,17 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   const hardExpiryMs = deps.hardExpiryMs ?? 24 * 60 * 60 * 1000
 
   const uid = await deps.identityResolver(req)
+
+  // Fail closed: an unauthenticated caller (no resolved identity) must
+  // not be able to mint a remote-control token unless the operator has
+  // explicitly opted into anonymous pairing. See `allowAnonymous`.
+  if ((uid === null || uid === undefined) && !deps.allowAnonymous) {
+    return new Response(JSON.stringify({ error: { code: 'auth-required' } }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
   const tid = uuid()
   const nowMs = now()
   const expiresAt = nowMs + hardExpiryMs

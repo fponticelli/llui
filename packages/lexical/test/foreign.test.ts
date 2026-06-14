@@ -266,3 +266,59 @@ describe('lexicalForeign (controlled)', () => {
     expect(deserializeCalls).toBe(callsBeforeEcho) // echo suppressed
   })
 })
+
+describe('lexicalForeign — external undo owner (collab) forces history off', () => {
+  function mountWith(opts: {
+    externalUndo?: (e: LexicalEditor) => () => void
+    history?: boolean
+  }): ReturnType<typeof mountApp> {
+    const def = component<AppState, AppMsg, never>({
+      name: 'ExternalUndo',
+      init: () => ({ value: '', readonly: false }),
+      update: (s) => s,
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'external-undo',
+          readonly: state.at('readonly'),
+          serialize,
+          deserialize,
+          defaultValue: 'x',
+          ...(opts.externalUndo ? { externalUndo: opts.externalUndo } : {}),
+          ...(opts.history !== undefined ? { history: opts.history } : {}),
+        }),
+      ],
+    })
+    return mountApp(container, def)
+  }
+
+  it('registers the externalUndo owner and disposes it on unmount', async () => {
+    let registered = false
+    let disposed = false
+    app = mountWith({
+      externalUndo: () => {
+        registered = true
+        return () => {
+          disposed = true
+        }
+      },
+    })
+    await wait(10)
+    expect(registered).toBe(true)
+    app.dispose()
+    app = null
+    expect(disposed).toBe(true)
+  })
+
+  it('reports the misconfiguration when externalUndo is combined with history:true', async () => {
+    const errors: string[] = []
+    const orig = console.error
+    console.error = (...a: unknown[]) => errors.push(a.map(String).join(' '))
+    try {
+      app = mountWith({ externalUndo: () => () => {}, history: true })
+      await wait(10)
+    } finally {
+      console.error = orig
+    }
+    expect(errors.some((e) => /externalUndo/.test(e) && /history/.test(e))).toBe(true)
+  })
+})

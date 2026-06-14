@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { LluiMcpServer } from '../src/index'
 
@@ -86,6 +86,60 @@ describe('llui_compiler_diagnostics — fixes', () => {
 
     const attr = byId('attr-name')
     expect(attr?.fix?.edits[0]?.newText).toBe('class')
+  })
+})
+
+describe('source tools — command injection hardening', () => {
+  const sentinel = join(tmpdir(), `llui-mcp-pwned-${process.pid}-${Date.now()}`)
+
+  afterEach(() => {
+    if (existsSync(sentinel)) rmSync(sentinel)
+  })
+
+  it('does not execute an injected command in llui_run_test testName', async () => {
+    const server = new LluiMcpServer()
+    // A shell would interpret `; touch <sentinel>; #` as a separate
+    // command. With execFileSync (no shell) it is passed to vitest as a
+    // literal -t pattern, so the sentinel must never appear.
+    await server.handleToolCall('llui_run_test', {
+      file: resolve(ROOT, 'packages/mcp/test/mcp.test.ts'),
+      testName: `nope"; touch ${sentinel}; echo "`,
+    })
+    expect(existsSync(sentinel)).toBe(false)
+  }, 60_000)
+
+  it('does not execute an injected command in llui_find_msg_producers msgType', async () => {
+    const server = new LluiMcpServer()
+    // msgType is interpolated into the grep -E pattern; a `$(...)` /
+    // backtick / `;` must reach grep as literal regex text, not the shell.
+    await server.handleToolCall('llui_find_msg_producers', {
+      msgType: `x"; touch ${sentinel}; echo "`,
+      rootDir: resolve(ROOT, 'examples/counter/src'),
+    })
+    expect(existsSync(sentinel)).toBe(false)
+    const server2 = new LluiMcpServer()
+    await server2.handleToolCall('llui_find_msg_producers', {
+      msgType: 'x$(touch ' + sentinel + ')',
+      rootDir: resolve(ROOT, 'examples/counter/src'),
+    })
+    expect(existsSync(sentinel)).toBe(false)
+  })
+
+  it('rejects a rootDir that escapes the workspace root', async () => {
+    const server = new LluiMcpServer()
+    await expect(
+      server.handleToolCall('llui_find_msg_producers', {
+        msgType: 'inc',
+        rootDir: '/etc',
+      }),
+    ).rejects.toThrow(/escapes the workspace root/)
+  })
+
+  it('rejects a llui_run_test file that escapes the workspace root', async () => {
+    const server = new LluiMcpServer()
+    await expect(server.handleToolCall('llui_run_test', { file: '/etc/passwd' })).rejects.toThrow(
+      /escapes the workspace root/,
+    )
   })
 })
 

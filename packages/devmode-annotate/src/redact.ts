@@ -51,6 +51,73 @@ export function redactState(body: NoteBody, hook?: RedactHooks['state']): NoteBo
   return hook ? hook(body) : body
 }
 
+/** Built-in secret shapes masked by {@link defaultSecretRedactor}. */
+const DEFAULT_SECRET_PATTERNS: readonly RegExp[] = [
+  /Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, // Authorization bearer tokens
+  /\bsk-[A-Za-z0-9]{16,}\b/g, // OpenAI-style secret keys
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, // GitHub tokens
+  /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, // JWTs
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, // email addresses
+]
+
+export interface SecretRedactorOptions {
+  /** Extra regexes whose matches are masked (added to the built-ins). */
+  patterns?: readonly RegExp[]
+  /** Replacement token. Default `'[redacted]'`. */
+  mask?: string
+  /** Max recursion depth for the state walk. Default 12. */
+  maxDepth?: number
+}
+
+/**
+ * An **opt-in** convenience redactor for the `state` channel: deep-walks
+ * the captured `stateSnapshot` / message+console logs and masks common
+ * secret shapes (Bearer tokens, `sk-`/`ghp_` keys, JWTs, emails) in
+ * string values. A defense-in-depth default a host can plug in
+ * (`redact: { state: defaultSecretRedactor() }`); it does NOT replace
+ * authoring-time care — the host still owns what's sensitive. State is
+ * JSON-serializable (no cycles) by the framework contract; a depth cap
+ * guards pathological inputs.
+ */
+export function defaultSecretRedactor(
+  options: SecretRedactorOptions = {},
+): (body: NoteBody) => NoteBody {
+  const mask = options.mask ?? '[redacted]'
+  const maxDepth = options.maxDepth ?? 12
+  const patterns = [...DEFAULT_SECRET_PATTERNS, ...(options.patterns ?? [])]
+
+  const maskString = (s: string): string => patterns.reduce((acc, re) => acc.replace(re, mask), s)
+
+  const scrub = (value: unknown, depth: number): unknown => {
+    if (typeof value === 'string') return maskString(value)
+    if (depth >= maxDepth || value === null || typeof value !== 'object') return value
+    if (Array.isArray(value)) return value.map((v) => scrub(v, depth + 1))
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const scrubbed = scrub(v, depth + 1)
+      // Copy reserved keys as plain data, never via the prototype setter.
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        Object.defineProperty(out, k, {
+          value: scrubbed,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        })
+      } else {
+        out[k] = scrubbed
+      }
+    }
+    return out
+  }
+
+  return (body) => ({
+    ...body,
+    ...(body.stateSnapshot !== undefined ? { stateSnapshot: scrub(body.stateSnapshot, 0) } : {}),
+    ...(body.messageLog ? { messageLog: scrub(body.messageLog, 0) as NoteBody['messageLog'] } : {}),
+    ...(body.consoleLog ? { consoleLog: scrub(body.consoleLog, 0) as NoteBody['consoleLog'] } : {}),
+  })
+}
+
 export function redactRepro(events: ReproEvent[], hook?: RedactHooks['repro']): ReproEvent[] {
   return hook ? hook(events) : events
 }
