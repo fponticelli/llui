@@ -66,6 +66,8 @@ export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/e
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
 export { tablePlugin } from './plugins/table.js'
 
+export { $insertMarkdownAtSelection, registerMarkdownPaste } from './paste.js'
+
 export { GFM_NODES, GFM_TRANSFORMERS } from './transformers/gfm.js'
 export { buildTransformers, orderTransformers } from './transformers/registry.js'
 
