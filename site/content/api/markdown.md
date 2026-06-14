@@ -224,9 +224,12 @@ export interface MarkdownOptions {
   extensions?: FromMarkdownOptions['extensions']
   /** Extra mdast extensions matching the syntax extensions above. */
   mdastExtensions?: FromMarkdownOptions['mdastExtensions']
-  /** Render raw HTML nodes via `unsafeHtml` instead of dropping them.
-   * Default `false` (raw HTML is dropped — safe for untrusted/LLM content). */
-  allowDangerousHtml?: boolean
+  /** Sanitizer for raw HTML nodes. Raw HTML is **dropped by default**
+   * (safe for untrusted/LLM content). To render it, supply a function
+   * that takes the raw HTML and returns a sanitized string (e.g. wrap
+   * DOMPurify); the result is injected verbatim. There is intentionally
+   * no "render raw HTML unsanitized" switch — that would be an XSS sink. */
+  sanitizeHtml?: (html: string) => string
   /** URL schemes permitted in links/images. A URL with no scheme (relative,
    * anchor, query) is always allowed. Default `['http','https','mailto','tel']`. */
   allowedProtocols?: string[]
@@ -250,7 +253,7 @@ export interface ResolvedOptions {
   renderers: ResolvedRenderers
   extensions: FromMarkdownOptions['extensions']
   mdastExtensions: FromMarkdownOptions['mdastExtensions']
-  allowDangerousHtml: boolean
+  sanitizeHtml: ((html: string) => string) | undefined
   allowedProtocols: string[]
   transformLink: TransformLink | undefined
   class: string

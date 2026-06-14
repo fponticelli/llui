@@ -25,6 +25,8 @@ export type McpServerDeps = {
   serverName: string
   serverVersion: string
   connectDescription: string
+  /** Sliding (inactivity) TTL in ms; folded into the connect verify. */
+  slidingTtlMs?: number
 }
 
 /**
@@ -53,7 +55,9 @@ export function createAgentMcpServer(deps: McpServerDeps): McpServer {
       const authReq = new Request('http://local/auth', {
         headers: { authorization: `Bearer ${token}` },
       })
-      const auth = await verifyAndReadTid(authReq, deps.tokenStore)
+      const auth = await verifyAndReadTid(authReq, deps.tokenStore, {
+        slidingTtlMs: deps.slidingTtlMs,
+      })
       if (!auth.ok) {
         return errorResult(
           auth.code === 'auth-failed'

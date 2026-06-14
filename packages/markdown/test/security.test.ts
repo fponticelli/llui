@@ -29,6 +29,18 @@ describe('sanitizeUrl', () => {
     expect(sanitizeUrl('java\nscript:alert(1)', allowed)).toBeNull()
   })
 
+  it('blocks schemes hidden behind tabs/newlines and leading control chars', () => {
+    // Browsers strip ASCII whitespace/control chars from URLs before
+    // resolving the scheme, so a sanitizer that does not normalize first
+    // can be bypassed by `java\tscript:` or a leading control char.
+    expect(sanitizeUrl('java\tscript:alert(1)', allowed)).toBeNull()
+    expect(sanitizeUrl('java\r\nscript:alert(1)', allowed)).toBeNull()
+    expect(sanitizeUrl('javascript:alert(1)', allowed)).toBeNull()
+    expect(sanitizeUrl('  \tjavascript:alert(1)', allowed)).toBeNull()
+    // Normalization must not break a legitimate URL with stray leading space.
+    expect(sanitizeUrl('  https://example.com', allowed)).toBe('https://example.com')
+  })
+
   it('honors a custom protocol allowlist', () => {
     expect(sanitizeUrl('data:image/png;base64,AAAA', ['data'])).toBe('data:image/png;base64,AAAA')
   })
@@ -50,10 +62,29 @@ describe('render security', () => {
     expect(root.textContent).toContain('after')
   })
 
-  it('renders raw HTML when allowDangerousHtml is set', () => {
-    mounted = mountStatic('<div class="ok">x</div>', { allowDangerousHtml: true })
+  it('renders raw HTML only through a sanitizeHtml hook', () => {
+    // No unsanitized passthrough exists: raw HTML renders only when the
+    // consumer supplies a sanitizer, which sees the raw string and
+    // returns the safe HTML to inject.
+    const seen: string[] = []
+    mounted = mountStatic('<div class="ok">x</div><img onerror="alert(1)">', {
+      sanitizeHtml: (html) => {
+        seen.push(html)
+        // Trivial allow-list sanitizer for the test: keep the div, drop the img.
+        return html.replace(/<img[^>]*>/g, '')
+      },
+    })
     const root = body(mounted.container)
     expect(root.querySelector('.ok')).toBeTruthy()
+    expect(root.querySelector('img')).toBeNull()
+    expect(seen.join('')).toContain('onerror')
+  })
+
+  it('drops raw HTML when no sanitizeHtml hook is provided', () => {
+    mounted = mountStatic('<img src=x onerror="alert(1)"><div class="danger">x</div>')
+    const root = body(mounted.container)
+    expect(root.querySelector('img')).toBeNull()
+    expect(root.querySelector('.danger')).toBeNull()
   })
 
   it('drops an image with a blocked src', () => {

@@ -13,10 +13,12 @@ export type LapWaitDeps = {
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
+  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
+  slidingTtlMs?: number
 }
 
 export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore)
+  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -27,6 +29,12 @@ export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Re
   if (!rlCheck.allowed) {
     return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
   }
+
+  // Refresh the sliding-TTL clock at request ARRIVAL — `/wait` is a long
+  // poll that can block past `slidingTtlMs`, so touching only after it
+  // resolves would let the inactivity expiry kill an actively-polling
+  // agent. `lastSeenAt` must advance the moment the request lands.
+  await deps.tokenStore.touch(auth.tid, (deps.now ?? (() => Date.now()))())
 
   const body = ((await req.json().catch(() => null)) ?? {}) as LapWaitRequest
   const timeoutMs = body.timeoutMs ?? 10_000

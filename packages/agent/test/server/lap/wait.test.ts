@@ -56,6 +56,29 @@ describe('handleLapWait', () => {
     expect(body.status).toBe('timeout')
   })
 
+  it('refreshes the sliding-TTL clock at request arrival (before the long poll)', async () => {
+    // Regression: `/wait` is a long poll; without an arrival-time touch the
+    // sliding-TTL inactivity expiry would kill an actively-polling agent.
+    // The poll is held open (never resolves) to prove `touch` fires BEFORE
+    // it, not after it returns.
+    const touch = vi.spyOn(store, 'touch')
+    let resolveWait: (v: { status: 'timeout'; stateAfter: null }) => void = () => {}
+    vi.spyOn(registry, 'waitForChange').mockImplementation(
+      () => new Promise((r) => (resolveWait = r)),
+    )
+    const pending = handleLapWait(req({ timeoutMs: 10_000 }), deps())
+    // Poll until the arrival-time touch fires — the handler's async auth
+    // chain (crypto) must complete first, and timing varies under parallel
+    // load. The poll never resolves, so a touch observed here proves it
+    // happens BEFORE the poll, robustly.
+    for (let i = 0; i < 100 && touch.mock.calls.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(touch).toHaveBeenCalledWith('t1', expect.anything())
+    resolveWait({ status: 'timeout', stateAfter: null })
+    await pending
+  })
+
   it('returns 429 with retryAfterMs when rate limiter denies', async () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),

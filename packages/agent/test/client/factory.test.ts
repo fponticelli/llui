@@ -504,3 +504,63 @@ describe('createAgentClient', () => {
     client.stop()
   })
 })
+
+describe('createAgentClient — source-side state redaction (S6)', () => {
+  it('redacts state on the state-update broadcast before it leaves the app', async () => {
+    const handle = makeHandle({ connect: { secret: 'sk-LEAK-0' }, confirm: { pending: [] } })
+    const opts = makeOpts(handle, () => ({ pending: [] }))
+    opts.redactState = (s) => ({ ...s, connect: { redacted: true } })
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tokR' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    client.start()
+    handle.setState({ connect: { secret: 'sk-STILL-SECRET' }, confirm: { pending: [] } })
+    const frames = lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update')
+    expect(frames.length).toBeGreaterThan(0)
+    const last = frames[frames.length - 1]
+    expect(last.stateAfter.connect).toEqual({ redacted: true })
+    expect(JSON.stringify(last)).not.toContain('STILL-SECRET')
+    client.stop()
+  })
+
+  it('redacts the state fed to the hello-frame affordances sample', async () => {
+    const handle = makeHandle({ connect: { secret: 'sk-LEAK-99' }, confirm: { pending: [] } })
+    const opts = makeOpts(handle, () => ({ pending: [] }))
+    opts.redactState = (s) => ({ ...s, connect: { redacted: true } })
+    opts.def = {
+      ...opts.def,
+      agentAffordances: (state) => [{ type: 'dump', state: JSON.stringify(state) }],
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tokAff' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    const hello = JSON.parse(lastFakeWs!.sent[0]!)
+    expect(JSON.stringify(hello.affordancesSample)).not.toContain('sk-LEAK-99')
+    expect(JSON.stringify(hello.affordancesSample)).toContain('redacted')
+    client.stop()
+  })
+
+  it('passes state through unredacted when no hook is set (control)', async () => {
+    const handle = makeHandle({ connect: { token: 'visible' }, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tokC' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    client.start()
+    handle.setState({ connect: { token: 'visible' }, confirm: { pending: [] } })
+    const frames = lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update')
+    expect(JSON.stringify(frames[frames.length - 1])).toContain('visible')
+    client.stop()
+  })
+})

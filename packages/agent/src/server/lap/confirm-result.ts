@@ -13,13 +13,15 @@ export type LapConfirmResultDeps = {
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
+  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
+  slidingTtlMs?: number
 }
 
 export async function handleLapConfirmResult(
   req: Request,
   deps: LapConfirmResultDeps,
 ): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore)
+  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -30,6 +32,12 @@ export async function handleLapConfirmResult(
   if (!rlCheck.allowed) {
     return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
   }
+
+  // Refresh the sliding-TTL clock at request ARRIVAL — like `/wait`, this
+  // route long-polls (`waitForConfirm`, default 5s, caller-controllable),
+  // so touching only after it resolves would let the inactivity expiry kill
+  // an agent that is actively polling while a human decides on the confirm.
+  await deps.tokenStore.touch(auth.tid, (deps.now ?? (() => Date.now()))())
 
   const body = (await req.json().catch(() => null)) as LapConfirmResultRequest | null
   if (!body || typeof body.confirmId !== 'string') return json({ error: { code: 'invalid' } }, 400)

@@ -21,7 +21,14 @@ import { createHttpRouter } from './http/router.js'
 import { createLapRouter } from './lap/router.js'
 import { InMemoryPairingRegistry } from './ws/pairing-registry.js'
 import { tokenHashOf } from './token.js'
+import { isSlidingTtlExpired } from './sliding-ttl.js'
 
+/**
+ * Default resolver: every caller is unauthenticated (`null`). With this
+ * resolver and `allowAnonymous` left `false`, `/agent/mint` fails closed
+ * (401) — so a deployment that forgets to configure an identity resolver
+ * does NOT mint remote-control tokens for anonymous callers.
+ */
 const ANONYMOUS_RESOLVER: IdentityResolver = async () => null
 
 /**
@@ -36,6 +43,24 @@ export type CoreOptions = {
   auditSink?: AuditSink
   rateLimiter?: RateLimiter
   lapBasePath?: string
+  /**
+   * Allow minting tokens for unauthenticated callers (identity resolves
+   * to `null`). SECURITY: defaults to `false` (fail closed). See
+   * `MintDeps.allowAnonymous`.
+   */
+  allowAnonymous?: boolean
+  /**
+   * Sliding (inactivity) TTL in ms. When set, a token unused for longer
+   * than this is rejected on every verify (LAP/MCP and WS upgrade) even
+   * before its hard expiry. Undefined / `0` disables the check.
+   */
+  slidingTtlMs?: number
+  /**
+   * Allowed `Origin` allowlist for WebSocket upgrades (CSWSH defense).
+   * Unset → same-origin only. Stored on the returned handle as
+   * `allowedOrigins` for the runtime upgrade adapters to enforce.
+   */
+  corsOrigins?: readonly string[]
   /**
    * Override the default `InMemoryPairingRegistry`. Web runtimes that
    * need a different pairing implementation (e.g. a Cloudflare
@@ -79,6 +104,19 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
+   * the `corsOrigins` core option. `undefined`/empty means same-origin
+   * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
+   * `wsUpgrade`) read this to validate the handshake `Origin`.
+   */
+  allowedOrigins?: readonly string[]
+  /**
+   * Sliding (inactivity) TTL in ms, mirroring the `slidingTtlMs` core
+   * option. The WS upgrade adapters apply this on acceptance via
+   * `acceptConnection`, which already enforces it server-side.
+   */
+  slidingTtlMs?: number
+  /**
    * Validate an agent token and register a `PairingConnection` with
    * the registry. Use this after accepting a WebSocket upgrade via
    * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
@@ -106,6 +144,9 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
   const rateLimiter = opts.rateLimiter ?? defaultRateLimiter({ perBucket: '30/minute' })
   const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'
   const pendingResumeGraceMs = opts.pendingResumeGraceMs ?? 60_000
+  const allowAnonymous = opts.allowAnonymous ?? false
+  const slidingTtlMs = opts.slidingTtlMs
+  const allowedOrigins = opts.corsOrigins
 
   const registry: PairingRegistry =
     opts.registry ??
@@ -131,6 +172,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     identityResolver,
     auditSink,
     lapBasePath,
+    allowAnonymous,
   })
 
   const lapRouter = createLapRouter(
@@ -139,6 +181,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
       registry,
       auditSink,
       rateLimiter,
+      slidingTtlMs,
     },
     lapBasePath,
   )
@@ -157,6 +200,11 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     const rec = await tokenStore.findByTokenHash(hash)
     if (!rec) return { ok: false, status: 401, code: 'auth-failed' }
     if (rec.expiresAt <= Date.now()) return { ok: false, status: 401, code: 'auth-failed' }
+    // Sliding (inactivity) expiry — an idle token stops authenticating
+    // before its hard expiry when `slidingTtlMs` is configured.
+    if (isSlidingTtlExpired(rec, slidingTtlMs, Date.now())) {
+      return { ok: false, status: 401, code: 'auth-failed' }
+    }
     if (rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
     // Reject `pending-resume` records past their grace window — the
     // agent has to go through `/resume/claim` (which rotates the
@@ -212,5 +260,13 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     return { ok: true, tid }
   }
 
-  return { router, registry, tokenStore, auditSink, acceptConnection }
+  return {
+    router,
+    registry,
+    tokenStore,
+    auditSink,
+    acceptConnection,
+    allowedOrigins,
+    slidingTtlMs,
+  }
 }

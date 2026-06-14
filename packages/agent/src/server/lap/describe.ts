@@ -1,4 +1,5 @@
 import { tokenHashOf } from '../token.js'
+import { isSlidingTtlExpired } from '../sliding-ttl.js'
 import type { TokenStore } from '../token-store.js'
 import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
@@ -13,10 +14,12 @@ export type LapDescribeDeps = {
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
+  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
+  slidingTtlMs?: number
 }
 
 export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore)
+  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -56,6 +59,9 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   // the old describe-only path left the browser stuck on
   // `awaiting-claude` indefinitely.
   await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
+  // Refresh the sliding-TTL clock — an authenticated read keeps the
+  // session alive, mirroring `/message` and `/observe`.
+  await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,
@@ -78,11 +84,24 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
  * status. This function only cares whether the bearer is one of ours
  * and unexpired.
  */
+export type VerifyTidOptions = {
+  /** Wall clock in ms; injectable for tests. Defaults to `Date.now()`. */
+  now?: number
+  /**
+   * Sliding (inactivity) TTL in ms. When set, a token whose
+   * `lastSeenAt + slidingTtlMs` is in the past collapses to the same
+   * `auth-failed` as a hard-expired or unknown token. Undefined / `0`
+   * disables the check.
+   */
+  slidingTtlMs?: number
+}
+
 export async function verifyAndReadTid(
   req: Request,
   tokenStore: TokenStore,
-  nowMs: number = Date.now(),
+  opts: VerifyTidOptions = {},
 ): Promise<{ ok: true; tid: string } | { ok: false; status: number; code: string }> {
+  const nowMs = opts.now ?? Date.now()
   const auth = req.headers.get('authorization')
   if (!auth || !auth.startsWith('Bearer ')) return { ok: false, status: 401, code: 'auth-failed' }
   const token = auth.slice('Bearer '.length)
@@ -91,6 +110,12 @@ export async function verifyAndReadTid(
   const rec = await tokenStore.findByTokenHash(hash)
   if (!rec) return { ok: false, status: 401, code: 'auth-failed' }
   if (rec.expiresAt <= nowMs) return { ok: false, status: 401, code: 'auth-failed' }
+  // Sliding (inactivity) expiry — folded into the same uniform
+  // `auth-failed` so an idle-token probe is indistinguishable from any
+  // other invalid bearer.
+  if (isSlidingTtlExpired(rec, opts.slidingTtlMs, nowMs)) {
+    return { ok: false, status: 401, code: 'auth-failed' }
+  }
   return { ok: true, tid: rec.tid }
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { LluiMcpServer } from '../src/index'
 import type { LluiDebugAPI, PendingEffect, EffectTimelineEntry, StateDiff } from '@llui/dom'
 import type { EffectMatch } from '@llui/dom'
@@ -77,7 +77,67 @@ function mkApi(overrides?: Partial<LluiDebugAPI>): LluiDebugAPI {
   return base
 }
 
+describe('llui_eval registration gating (RCE opt-in)', () => {
+  it('does NOT register or list llui_eval by default', () => {
+    const prev = process.env['LLUI_MCP_ENABLE_EVAL']
+    delete process.env['LLUI_MCP_ENABLE_EVAL']
+    try {
+      const server = new LluiMcpServer()
+      const names = server.getTools().map((t) => t.name)
+      expect(names).not.toContain('llui_eval')
+      // The structured dry-run dispatch tool stays available.
+      expect(names).toContain('llui_eval_update')
+    } finally {
+      if (prev !== undefined) process.env['LLUI_MCP_ENABLE_EVAL'] = prev
+    }
+  })
+
+  it('rejects dispatch of llui_eval when not enabled', async () => {
+    const prev = process.env['LLUI_MCP_ENABLE_EVAL']
+    delete process.env['LLUI_MCP_ENABLE_EVAL']
+    try {
+      const server = new LluiMcpServer()
+      server.connectDirect(mkApi())
+      await expect(server.handleToolCall('llui_eval', { code: '1' })).rejects.toThrow(
+        /Unknown tool/,
+      )
+    } finally {
+      if (prev !== undefined) process.env['LLUI_MCP_ENABLE_EVAL'] = prev
+    }
+  })
+
+  it('registers llui_eval when enableEval option is set', () => {
+    const server = new LluiMcpServer({ enableEval: true })
+    const names = server.getTools().map((t) => t.name)
+    expect(names).toContain('llui_eval')
+  })
+
+  it('registers llui_eval when LLUI_MCP_ENABLE_EVAL=1', () => {
+    const prev = process.env['LLUI_MCP_ENABLE_EVAL']
+    process.env['LLUI_MCP_ENABLE_EVAL'] = '1'
+    try {
+      const server = new LluiMcpServer()
+      const names = server.getTools().map((t) => t.name)
+      expect(names).toContain('llui_eval')
+    } finally {
+      if (prev === undefined) delete process.env['LLUI_MCP_ENABLE_EVAL']
+      else process.env['LLUI_MCP_ENABLE_EVAL'] = prev
+    }
+  })
+})
+
 describe('llui_eval', () => {
+  // These exercise the eval behavior, so they need the tool registered.
+  let prevEnableEval: string | undefined
+  beforeAll(() => {
+    prevEnableEval = process.env['LLUI_MCP_ENABLE_EVAL']
+    process.env['LLUI_MCP_ENABLE_EVAL'] = '1'
+  })
+  afterAll(() => {
+    if (prevEnableEval === undefined) delete process.env['LLUI_MCP_ENABLE_EVAL']
+    else process.env['LLUI_MCP_ENABLE_EVAL'] = prevEnableEval
+  })
+
   it('returns result and empty sideEffects for a pure expression', async () => {
     const fn = vi.fn(() => ({
       result: 42,

@@ -115,6 +115,19 @@ export type CreateAgentClientOpts<State, Msg> = {
    */
   codecs?: CodecRegistry
   /**
+   * Redaction hook applied to app state **at the source**, before any
+   * snapshot leaves the browser for the agent/LLM. Runs on every
+   * wire-bound read — `get_state`/`observe`/`query_state`, the
+   * per-change `state-update` broadcast, and confirm-resolution
+   * snapshots — so a secret omitted here never transits the WS, the
+   * server, or the model. Return a redacted COPY (do not mutate the
+   * input); the reducer/app keep the real state. Omit fields, mask
+   * values, or return `{}` to withhold state entirely. This is the
+   * only place that can use the app's own knowledge of which fields
+   * are sensitive — prefer it over any downstream/server-side filter.
+   */
+  redactState?: (state: State) => State
+  /**
    * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
    * the canonical paths in `@llui/vite-plugin`'s dev middleware and
    * `@llui/agent/server`). The mint URL, resume URLs, and revoke URL
@@ -316,8 +329,17 @@ export function createAgentClient<State, Msg>(
   // own `lastDispatchError` state field; the framework now owns it.
   let lastDispatchOutcome: import('./rpc/describe-context.js').LastDispatchOutcome | null = null
 
+  // Single seam for state leaving the app toward the agent. `redactedState`
+  // applies the app's own `redactState` at the source; `stateForWire` then
+  // encodes it for the wire. Every outbound surface — wire reads AND the
+  // hello-frame affordances sample — goes through `redactedState`, so none
+  // can leak a redacted field.
+  const redactedState = (state: unknown): unknown =>
+    opts.redactState ? opts.redactState(state as State) : state
+  const stateForWire = (state: unknown): unknown => encodeForWire(redactedState(state), codecs)
+
   const rpcHost: RpcHosts = {
-    getState: () => encodeForWire(opts.handle.getState(), codecs),
+    getState: () => stateForWire(opts.handle.getState()),
     send: (m) => opts.handle.send(decodeFromWire(m, codecs)),
     flush: () => opts.handle.flush(),
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
@@ -362,7 +384,7 @@ export function createAgentClient<State, Msg>(
     msgSchema: (opts.def.__msgSchema ?? {}) as Record<string, MessageSchemaEntry>,
     stateSchema: (opts.def.__stateSchema ?? {}) as object,
     affordancesSample: opts.def.agentAffordances
-      ? opts.def.agentAffordances(opts.handle.getState())
+      ? opts.def.agentAffordances(redactedState(opts.handle.getState()))
       : [],
     docs: opts.def.agentDocs ?? null,
     schemaHash: opts.def.__schemaHash ?? '',
@@ -433,11 +455,7 @@ export function createAgentClient<State, Msg>(
       if (resolvedConfirms.has(entry.id)) continue
       resolvedConfirms.add(entry.id)
       if (entry.status === 'approved') {
-        wsClient?.resolveConfirm(
-          entry.id,
-          'confirmed',
-          encodeForWire(opts.handle.getState(), codecs),
-        )
+        wsClient?.resolveConfirm(entry.id, 'confirmed', stateForWire(opts.handle.getState()))
       } else if (entry.status === 'rejected') {
         wsClient?.resolveConfirm(entry.id, 'user-cancelled')
       }
@@ -450,10 +468,10 @@ export function createAgentClient<State, Msg>(
       if (!confirmPollTimer) confirmPollTimer = setInterval(pollConfirms, 200)
       if (!stateSubscription) {
         stateSubscription = opts.handle.subscribe((state) => {
-          // Same codec convention as `getState`: outgoing snapshots
-          // pass through the encoder so non-JSON-safe values (Date,
-          // etc.) become tagged-wire form.
-          wsClient?.emitStateUpdate('/', encodeForWire(state, codecs))
+          // Same source-redact-then-encode seam as `getState`: outgoing
+          // snapshots are redacted (so secrets never broadcast) and
+          // non-JSON-safe values (Date, etc.) become tagged-wire form.
+          wsClient?.emitStateUpdate('/', stateForWire(state))
         })
       }
       // Auto-restore from storage. If a non-expired session blob is

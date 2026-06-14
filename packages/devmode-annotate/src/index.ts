@@ -136,7 +136,8 @@ export {
   type ExportBundleResult,
 } from './export-bundle.js'
 export { NOTE_SCHEMA_VERSION } from './note-format.js'
-export type { RedactHooks, CaptureDefaults } from './redact.js'
+export { defaultSecretRedactor } from './redact.js'
+export type { RedactHooks, CaptureDefaults, SecretRedactorOptions } from './redact.js'
 
 export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
 
@@ -547,7 +548,19 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const browse = createBrowseView({
     store,
     onError: (m) => handle.send({ type: 'status/set', text: m }),
-    onReplayRepro: (events) => replayReproEvents(events as ReproEvent[]),
+    onReplayRepro: (events) =>
+      replayReproEvents(events as ReproEvent[], {
+        // Replaying a trace synthesizes real clicks/navigation in the
+        // live app — gate it behind an explicit confirmation. The
+        // route-match guard (origin path stamped in the trace) is
+        // enforced by replayReproEvents itself.
+        confirm: () =>
+          typeof window !== 'undefined' && typeof window.confirm === 'function'
+            ? window.confirm(
+                'Replay this recorded interaction? It will fire real clicks and navigation in the app.',
+              )
+            : false,
+      }),
     // Only surface the export button when the store can actually export.
     ...(storeCanExport(store)
       ? {
@@ -688,6 +701,23 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   let defaultIntentRef: NoteIntent = solveEnabled ? 'task' : 'note'
 
+  // Capture → redact → bake, in that order. The host screenshot redactor
+  // masks sensitive page regions on the RAW capture, BEFORE annotation
+  // labels are composited on top — so the redactor sees page content (not
+  // a composite), annotations aren't masked away, and `null` from the
+  // redactor drops the screenshot entirely. Used by both the human
+  // (`submit`) and LLM-driven capture paths so neither can skip redaction.
+  const captureRedactBake = async (annotations: Annotation[]): Promise<string | undefined> => {
+    const raw = await captureScreenshot({ ...(opts.capture ? { capture: opts.capture } : {}) })
+    const rawB64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw
+    const redacted = redactScreenshot(rawB64, opts.redact?.screenshot)
+    if (redacted === null) return undefined
+    if (annotations.length === 0) return redacted
+    const bake = opts.bake ?? bakeAnnotations
+    const baked = await bake(redacted, annotations)
+    return baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
+  }
+
   const submit = async (
     prose: string,
     submitOpts: {
@@ -710,19 +740,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
     if (annotations.length > 0 && !screenshotBase64) {
       try {
-        const raw = await captureScreenshot({ ...(opts.capture ? { capture: opts.capture } : {}) })
-        const bake = opts.bake ?? bakeAnnotations
-        const baked = await bake(raw, annotations)
-        screenshotBase64 = baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
+        screenshotBase64 = await captureRedactBake(annotations)
       } catch (err) {
         throw new Error(`devmode-annotate: screenshot failed — ${describeCaptureError(err)}`, {
           cause: err,
         })
       }
-    }
-
-    // Host screenshot redaction (mask/drop) before persist.
-    if (screenshotBase64) {
+    } else if (screenshotBase64) {
+      // A screenshot supplied directly (not captured here) — still redact
+      // before persist.
       screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
     }
 
@@ -861,14 +887,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     })
 
     try {
-      const raw = await captureScreenshot({ ...(opts.capture ? { capture: opts.capture } : {}) })
-      if (annotations.length > 0) {
-        const bake = opts.bake ?? bakeAnnotations
-        const baked = await bake(raw, annotations)
-        screenshotBase64 = baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
-      } else {
-        screenshotBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw
-      }
+      // Same capture → redact → bake path as the human flow, so an
+      // LLM-requested capture can't skip host screenshot redaction.
+      screenshotBase64 = await captureRedactBake(annotations)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const failBody: CreateNoteRequest = {
@@ -883,9 +904,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       }
     }
 
-    if (screenshotBase64) {
-      screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
-    }
+    // No second redaction here: `captureRedactBake` already redacted the
+    // RAW capture before baking annotations on top. Re-running the hook on
+    // the baked composite would let a coordinate-mask re-cover the fresh
+    // annotation labels, or a `null` return silently drop a screenshot that
+    // already passed redaction.
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter: baseFrontmatter(screenshotBase64 ? 'placeholder.png' : null),

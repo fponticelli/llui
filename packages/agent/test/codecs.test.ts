@@ -159,3 +159,26 @@ describe('CodecRegistry — custom codecs', () => {
     expect(out2[WIRE_VALUE]).toBe('OVERRIDDEN:2026-01-01T00:00:00.000Z')
   })
 })
+
+describe('codecs — prototype-pollution hardening', () => {
+  it('does not let a wire __proto__ key pollute Object.prototype', () => {
+    const registry = makeDefaultCodecs()
+    const hostile = JSON.parse('{"__proto__": {"polluted": true}, "ok": 1}')
+    const out = decodeFromWire(hostile, registry) as Record<string, unknown>
+    // Object.prototype must be untouched.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    // The output keeps a normal prototype and carries __proto__ as plain data.
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(out, '__proto__')).toBe(true)
+    expect(out.ok).toBe(1)
+  })
+
+  it('encodeForWire is equally hardened against a __proto__ data key', () => {
+    const registry = makeDefaultCodecs()
+    const hostile = JSON.parse('{"__proto__": {"x": 1}, "y": 2}')
+    const out = encodeForWire(hostile, registry) as Record<string, unknown>
+    expect(({} as Record<string, unknown>).x).toBeUndefined()
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(out.y).toBe(2)
+  })
+})

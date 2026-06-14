@@ -11,8 +11,9 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { component, div, span, text, unsafeHtml, type Mountable, type Signal } from '@llui/dom'
+import { component, div, span, text, type Mountable, type Signal } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
+import { renderedPreview, type PreviewRender } from './_preview.js'
 
 const BRIDGE_TYPE = 'math'
 
@@ -31,7 +32,11 @@ const stop = (e: Event): void => e.stopPropagation()
 export interface MathPluginOptions {
   /** Typeset TeX to an HTML string (e.g. via KaTeX). When omitted, the raw TeX is
    * shown in a styled box. */
-  render?: (tex: string) => string
+  /** Render the TeX source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 
 export function mathPlugin(opts: MathPluginOptions = {}): MarkdownPlugin {
@@ -65,11 +70,7 @@ export function mathPlugin(opts: MathPluginOptions = {}): MarkdownPlugin {
           ),
         ]
         if (opts.render) {
-          children.push(
-            span({ 'data-part': 'preview', contenteditable: 'false' }, [
-              unsafeHtml(state.at('tex').map((tex) => opts.render!(tex)) as Signal<string>),
-            ]),
-          )
+          children.push(renderedPreview(state.at('tex') as Signal<string>, opts.render, 'span'))
         }
         return [
           div({ 'data-scope': 'md-math', 'data-part': 'root', contenteditable: 'false' }, children),

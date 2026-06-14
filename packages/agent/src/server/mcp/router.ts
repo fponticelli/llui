@@ -18,6 +18,8 @@ export type McpRouterDeps = {
   coreRouter: (req: Request) => Promise<Response | null>
   tokenStore: TokenStore
   lapBasePath: string
+  /** Sliding (inactivity) TTL in ms; folded into the connect verify. */
+  slidingTtlMs?: number
 }
 
 const DEFAULT_CONNECT_DESCRIPTION =
@@ -105,6 +107,7 @@ export function createMcpRouter(
       serverName,
       serverVersion,
       connectDescription,
+      slidingTtlMs: deps.slidingTtlMs,
     })
 
     await mcpServer.connect(transport)

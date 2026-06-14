@@ -15,8 +15,9 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { component, div, text, unsafeHtml, type Mountable, type Signal } from '@llui/dom'
+import { component, div, text, type Mountable, type Signal } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
+import { renderedPreview, type PreviewRender } from './_preview.js'
 
 const BRIDGE_TYPE = 'mermaid'
 
@@ -37,7 +38,11 @@ const stop = (e: Event): void => e.stopPropagation()
 export interface MermaidPluginOptions {
   /** Render the diagram source to an HTML string (e.g. mermaid). When omitted,
    * the raw source is shown in a styled box. */
-  render?: (code: string) => string
+  /** Render the mermaid source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 
 export function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin {
@@ -73,11 +78,7 @@ export function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin {
             ),
           ]
           if (opts.render) {
-            children.push(
-              div({ 'data-part': 'preview', contenteditable: 'false' }, [
-                unsafeHtml(state.at('code').map((code) => opts.render!(code)) as Signal<string>),
-              ]),
-            )
+            children.push(renderedPreview(state.at('code') as Signal<string>, opts.render))
           }
           return [
             div(

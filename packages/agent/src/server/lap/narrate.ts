@@ -13,6 +13,8 @@ export type LapNarrateDeps = {
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
+  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
+  slidingTtlMs?: number
 }
 
 /**
@@ -34,7 +36,7 @@ export type LapNarrateDeps = {
  * runtime is back.
  */
 export async function handleLapNarrate(req: Request, deps: LapNarrateDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore)
+  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -66,6 +68,9 @@ export async function handleLapNarrate(req: Request, deps: LapNarrateDeps): Prom
   deps.registry.send(auth.tid, { t: 'log-push', entry })
 
   await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
+  // Refresh the sliding-TTL clock — an authenticated call keeps the
+  // session alive, mirroring `/message` and `/observe`.
+  await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

@@ -28,7 +28,13 @@
  *   async fetch(req: Request, env: Env) {
  *     return routeToAgentDO(req, env.AGENT_DO, async (token) => {
  *       const stub = env.AGENT_DO.get(env.AGENT_DO.idFromName('__root'))
- *       const r = await stub.fetch(`http://internal/__resolve?token=${encodeURIComponent(token)}`)
+ *       // Bearer in a header (and POST), never the query string — a
+ *       // token in the URL lands in Workers logs/traces. Keep
+ *       // `__resolve` reachable only via this internal DO stub.
+ *       const r = await stub.fetch('http://internal/__resolve', {
+ *         method: 'POST',
+ *         headers: { authorization: `Bearer ${token}` },
+ *       })
  *       const body = (await r.json()) as { tid: string | null }
  *       return body.tid
  *     })

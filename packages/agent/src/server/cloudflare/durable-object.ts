@@ -35,7 +35,14 @@
  *     // const stub when you don't shard by tid.
  *     return routeToAgentDO(req, env.AGENT_DO, async (token) => {
  *       const stub = env.AGENT_DO.get(env.AGENT_DO.idFromName('__root'))
- *       const r = await stub.fetch(`http://internal/__resolve?token=${encodeURIComponent(token)}`)
+ *       // Send the bearer in a header (and POST), never the query
+ *       // string — a token in the URL lands in Workers request logs and
+ *       // traces. `__resolve` must be reachable ONLY via this internal
+ *       // DO stub, never wired to a public route.
+ *       const r = await stub.fetch('http://internal/__resolve', {
+ *         method: 'POST',
+ *         headers: { authorization: `Bearer ${token}` },
+ *       })
  *       const body = (await r.json()) as { tid: string | null }
  *       return body.tid
  *     })
@@ -83,7 +90,12 @@ export class AgentPairingDurableObject {
       const mcpOpts = mcp === true ? {} : mcp
       const lapBasePath = coreOpts.lapBasePath ?? '/agent/lap/v1'
       this.mcpRouter = createMcpRouter(
-        { coreRouter: this.agent.router, tokenStore: this.agent.tokenStore, lapBasePath },
+        {
+          coreRouter: this.agent.router,
+          tokenStore: this.agent.tokenStore,
+          lapBasePath,
+          slidingTtlMs: this.agent.slidingTtlMs,
+        },
         mcpOpts,
       )
     } else {

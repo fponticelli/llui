@@ -3,6 +3,8 @@ import { z } from 'zod'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
 import { domDiff, diffState } from '../util/diff.js'
+import { assertWithinWorkspace } from '../util/workspace.js'
+import { findWorkspaceRoot } from '../index.js'
 
 /**
  * Register the 33 debug-API-backed tools. Every handler routes through
@@ -15,7 +17,35 @@ import { domDiff, diffState } from '../util/diff.js'
  * and the JSON Schema published in `tools/list` (derived once at
  * registration time). Handlers receive parsed/typed arguments.
  */
-export function registerDebugApiTools(registry: ToolRegistry): void {
+export interface DebugApiToolOptions {
+  /**
+   * Register `llui_eval` — the arbitrary-JavaScript-in-page tool.
+   *
+   * SECURITY: `llui_eval` forwards a caller-supplied string to
+   * `evalInPage`, which runs it verbatim in the user's live browser
+   * session (full DOM, cookies, localStorage, network). That is remote
+   * code execution against whoever has the dev app open, so it is OFF by
+   * default and registered only when an operator explicitly opts in via
+   * `LLUI_MCP_ENABLE_EVAL=1` (or this flag, threaded from the CLI). When
+   * disabled the tool is never registered and therefore never appears in
+   * `tools/list`. The structured `llui_eval_update` (dry-run
+   * message-dispatch) tool is unaffected — only arbitrary code is gated.
+   */
+  enableEval?: boolean
+}
+
+/**
+ * Whether arbitrary-eval tools should be registered. True only when the
+ * operator explicitly opts in — via the `enableEval` flag (threaded from
+ * the CLI) or the `LLUI_MCP_ENABLE_EVAL=1` environment variable. Defaults
+ * to false so a fresh install never exposes RCE.
+ */
+export function evalEnabled(opts?: DebugApiToolOptions): boolean {
+  if (opts?.enableEval) return true
+  return process.env['LLUI_MCP_ENABLE_EVAL'] === '1'
+}
+
+export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToolOptions): void {
   registry.register(
     {
       name: 'llui_get_state',
@@ -412,13 +442,20 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
       if (!args.path.endsWith('.ts') && !args.path.endsWith('.tsx')) {
         throw new Error(`llui_lint: only .ts/.tsx files are supported, got: ${args.path}`)
       }
-      if (!existsSync(args.path)) {
+      // Contain the path to the workspace subtree — a `../../../etc`
+      // traversal would let the tool lint (and thus read) files outside
+      // the project.
+      const workspaceRoot = findWorkspaceRoot()
+      const safePath = assertWithinWorkspace(args.path, workspaceRoot)
+      if (!existsSync(safePath)) {
         throw new Error(`llui_lint: file not found: ${args.path}`)
       }
 
-      const { execSync } = await import('node:child_process')
+      const { execFileSync } = await import('node:child_process')
       try {
-        const output = execSync(`pnpm exec eslint --format json "${args.path}"`, {
+        // Discrete argv — no shell — so a path containing `"`, `$(...)`,
+        // backticks, or `;` is passed to eslint verbatim, never executed.
+        const output = execFileSync('pnpm', ['exec', 'eslint', '--format', 'json', safePath], {
           encoding: 'utf8',
         })
         const results = JSON.parse(output)
@@ -729,14 +766,20 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     },
   )
 
-  registry.register(
-    {
-      name: 'llui_eval',
-      description:
-        "Arbitrary JavaScript in the page context via the debug relay. Returns { result, sideEffects }. 'result' is the expression's return value or { error }. 'sideEffects' makes any state changes, new history entries, new pending effects, and dirty bindings visible. Phase 1 does not support async expressions; expose async results via globalThis instead.",
-      schema: z.object({ code: z.string() }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('evalInPage', [args.code]),
-  )
+  // SECURITY: `llui_eval` is arbitrary RCE against the user's live
+  // browser session — gated behind an explicit opt-in (OFF by default).
+  // When disabled it is never registered, so it cannot appear in
+  // `tools/list` or be dispatched.
+  if (evalEnabled(opts)) {
+    registry.register(
+      {
+        name: 'llui_eval',
+        description:
+          "Arbitrary JavaScript in the page context via the debug relay. Returns { result, sideEffects }. 'result' is the expression's return value or { error }. 'sideEffects' makes any state changes, new history entries, new pending effects, and dirty bindings visible. Phase 1 does not support async expressions; expose async results via globalThis instead.",
+        schema: z.object({ code: z.string() }),
+      },
+      'debug-api',
+      async (args, ctx) => ctx.relay!.call('evalInPage', [args.code]),
+    )
+  }
 }

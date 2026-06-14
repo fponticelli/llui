@@ -1,5 +1,21 @@
 import type { AgentCoreHandle } from '../core.js'
 import { createWHATWGPairingConnection } from './adapter.js'
+import { checkWsOrigin } from '../ws/origin.js'
+
+/**
+ * The server's own origin for the same-origin CSWSH fallback. Behind a
+ * TLS-terminating proxy the runtime sees `http://…` while the browser's
+ * `Origin` is `https://…`, so honor `x-forwarded-proto`/`x-forwarded-host`
+ * (mirroring the Node adapter) before falling back to the request URL —
+ * otherwise every legitimate proxied upgrade would 403 unless the operator
+ * sets `corsOrigins`.
+ */
+function selfOriginOf(req: Request): string {
+  const url = new URL(req.url)
+  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const host = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  return `${proto ?? url.protocol.replace(/:$/, '')}://${host ?? url.host}`
+}
 
 /**
  * Extract the bearer token from a LAP WebSocket upgrade request.
@@ -40,6 +56,14 @@ export async function handleCloudflareUpgrade(
   if (req.headers.get('upgrade') !== 'websocket') {
     return new Response('Expected upgrade: websocket', { status: 426 })
   }
+  // CSWSH defense — see checkWsOrigin. Must run before any work bound to
+  // the victim's ambient credentials.
+  const originCheck = checkWsOrigin(
+    req.headers.get('origin'),
+    selfOriginOf(req),
+    agent.allowedOrigins,
+  )
+  if (!originCheck.ok) return new Response('Forbidden', { status: 403 })
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 
@@ -87,6 +111,13 @@ export async function handleCloudflareUpgrade(
  * ```
  */
 export async function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response> {
+  // CSWSH defense — see checkWsOrigin.
+  const originCheck = checkWsOrigin(
+    req.headers.get('origin'),
+    selfOriginOf(req),
+    agent.allowedOrigins,
+  )
+  if (!originCheck.ok) return new Response('Forbidden', { status: 403 })
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 

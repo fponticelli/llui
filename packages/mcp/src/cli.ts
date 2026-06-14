@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { LluiMcpServer, mcpActiveFilePath } from './index.js'
+import { LluiMcpServer, mcpActiveFilePath, mcpHttpTokenPath } from './index.js'
 
 /**
  * Parse `--http [port]` from argv. Returns:
@@ -39,6 +40,60 @@ function parseHeadedFlag(argv: string[]): boolean {
   return argv.includes('--headed')
 }
 
+/**
+ * Parse `--enable-eval` from argv. Returns true if the flag is present.
+ *
+ * SECURITY: opts in to the arbitrary-JS `llui_eval` tool (RCE against the
+ * user's browser session). Also honored via `LLUI_MCP_ENABLE_EVAL=1`.
+ */
+function parseEnableEvalFlag(argv: string[]): boolean {
+  return argv.includes('--enable-eval') || process.env['LLUI_MCP_ENABLE_EVAL'] === '1'
+}
+
+/**
+ * Constant-time comparison of two ASCII tokens. Avoids leaking length /
+ * content via early-exit timing on the auth check.
+ */
+function tokensMatch(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+/**
+ * Reject DNS-rebinding / cross-origin POSTs. Defends a local-only server
+ * against a malicious web page in the user's browser POSTing to
+ * `http://127.0.0.1:<port>/mcp`. We require:
+ *   - the Host header (if present) to be a loopback host, and
+ *   - the Origin header (if present) to be loopback OR absent.
+ * A native MCP client sends no Origin and a loopback Host, so it passes.
+ */
+function isLocalHostHeader(host: string | undefined): boolean {
+  if (host === undefined) return true
+  // Strip an optional `:port` suffix. IPv6 hosts are bracketed
+  // (`[::1]:5200`) so the last colon is the port separator only when the
+  // host is not bracketed; handle both.
+  const hostname = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
+}
+
+/** Collapse a possibly-multi-valued request header to a single string. */
+function singleHeader(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0]
+  return value
+}
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (origin === undefined || origin === 'null') return true
+  try {
+    const { hostname } = new URL(origin)
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
+
 const bridgePort = Number(process.env.LLUI_MCP_PORT ?? 5200)
 const args = process.argv.slice(2)
 const httpPort = parseHttpFlag(args)
@@ -67,6 +122,7 @@ async function main(): Promise<void> {
       bridgePort,
       devUrl: parseUrlFlag(args) ?? undefined,
       headed: parseHeadedFlag(args),
+      enableEval: parseEnableEvalFlag(args),
     })
     server.startBridge()
     const transport = new StdioServerTransport()
@@ -86,6 +142,19 @@ async function main(): Promise<void> {
   // Streamable HTTP transport (`/mcp`) and the browser bridge WebSocket
   // (upgrade on `/bridge`). `.mcp.json` uses type: "http" with url
   // `http://127.0.0.1:<port>/mcp`.
+  // Per-launch random bearer token. Every `/mcp` request must present it
+  // via `Authorization: Bearer <token>`. Written to a 0600 file a
+  // same-user local client can read; never printed to stdout (which, in
+  // http mode, is not the protocol channel but we keep the invariant).
+  const httpToken = randomBytes(32).toString('hex')
+  const tokenPath = mcpHttpTokenPath()
+  try {
+    mkdirSync(dirname(tokenPath), { recursive: true })
+    writeFileSync(tokenPath, httpToken, { mode: 0o600 })
+  } catch (err) {
+    process.stderr.write(`[llui-mcp] failed to write http token file: ${String(err)}\n`)
+  }
+
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>()
   const httpServer = createServer((req, res) => {
     handleHttp(req, res).catch((err) => {
@@ -104,6 +173,7 @@ async function main(): Promise<void> {
     attachTo: httpServer,
     devUrl: parseUrlFlag(args) ?? undefined,
     headed: parseHeadedFlag(args),
+    enableEval: parseEnableEvalFlag(args),
   })
   bridgeHost.startBridge()
 
@@ -117,6 +187,12 @@ async function main(): Promise<void> {
     bridgeHost.stopBridge()
     for (const t of mcpTransports.values()) await t.close()
     mcpTransports.clear()
+    try {
+      if (existsSync(tokenPath)) unlinkSync(tokenPath)
+    } catch {
+      // Best-effort cleanup — the token is per-launch and worthless once
+      // the process is gone.
+    }
     httpServer.close()
     process.exit(0)
   }
@@ -132,6 +208,33 @@ async function main(): Promise<void> {
     if (!url.startsWith('/mcp')) {
       res.statusCode = 404
       res.end('not found')
+      return
+    }
+
+    // ── Security gate (BEFORE any MCP handling) ──────────────────────
+    // (a) DNS-rebinding / cross-origin defense: a malicious web page in
+    //     the user's browser could POST to http://127.0.0.1:<port>/mcp.
+    //     Reject non-loopback Host and cross-origin Origin headers.
+    const hostHeader = singleHeader(req.headers.host)
+    const originHeader = singleHeader(req.headers.origin)
+    if (!isLocalHostHeader(hostHeader) || !isAllowedOrigin(originHeader)) {
+      res.statusCode = 403
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: 'forbidden: cross-origin or non-local host rejected' }))
+      return
+    }
+
+    // (b) Bearer-token auth: every request must carry the per-launch
+    //     secret. Without it the request is rejected before the MCP SDK
+    //     ever sees it, so unauthenticated `initialize` / `tools/call`
+    //     (incl. the exec tools and any gated eval) is impossible.
+    const auth = singleHeader(req.headers.authorization) ?? ''
+    const presented = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+    if (!presented || !tokensMatch(presented, httpToken)) {
+      res.statusCode = 401
+      res.setHeader('content-type', 'application/json')
+      res.setHeader('www-authenticate', 'Bearer')
+      res.end(JSON.stringify({ error: 'unauthorized: missing or invalid bearer token' }))
       return
     }
 

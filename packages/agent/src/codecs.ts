@@ -148,11 +148,32 @@ export function encodeForWire(value: unknown, registry: CodecRegistry): unknown 
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value as object)) {
-      out[k] = encodeForWire(v, registry)
+      assignSafe(out, k, encodeForWire(v, registry))
     }
     return out
   }
   return value
+}
+
+/**
+ * Assign a key copied from an untrusted wire object as a plain own data
+ * property. Reserved keys (`__proto__`, `constructor`, `prototype`) are
+ * defined explicitly so a wire payload can't invoke the `__proto__`
+ * setter (or shadow `constructor`) and re-point the object's prototype —
+ * the rebuilt object keeps a normal `Object.prototype` and the global
+ * prototype is never touched.
+ */
+function assignSafe(out: Record<string, unknown>, key: string, value: unknown): void {
+  if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+    Object.defineProperty(out, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    })
+  } else {
+    out[key] = value
+  }
 }
 
 /**
@@ -173,7 +194,7 @@ export function decodeFromWire(value: unknown, registry: CodecRegistry): unknown
   }
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
-    out[k] = decodeFromWire(v, registry)
+    assignSafe(out, k, decodeFromWire(v, registry))
   }
   return out
 }
