@@ -459,6 +459,13 @@ For composing multiple node trees (layout + page) before one serialization, use
 `renderNodes(def, state, env, contexts?)` + `serializeNodes(nodes)`. On Cloudflare Workers,
 use `linkedomEnv` from `@llui/dom/ssr/linkedom` instead of `jsdomEnv`.
 
+`onMount` callbacks do **not** run on the server — the mount lifecycle is a client-DOM
+concern. The server still emits the marker node (so the serialized tree is stable), but
+the callback (and its cleanup) is deferred to the client mount/hydrate pass. So a
+DOM-touching `onMount` body (`el.querySelector(...)`, `instanceof HTMLElement`, attaching
+listeners) needs no `typeof window === 'undefined'` guard — it simply won't fire until the
+browser owns the tree.
+
 ### Client Hydration
 
 `hydrateSignalApp(container, def, serverState)` rebuilds the client tree against

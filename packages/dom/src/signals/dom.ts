@@ -96,6 +96,13 @@ interface BuildCtx {
    * so `each`/`show`/`branch` registrations and their teardowns all affect the
    * one registry the handle's `getBindingDescriptors` reads. */
   descriptors: Map<string, number>
+  /** True when this build is part of a server render (`renderNodes`/`renderToString`).
+   * Inherited into every nested build (each rows, show/branch arms). The mount
+   * lifecycle is a client-DOM concern, so `onMount` skips REGISTERING its callback
+   * under SSR (it still emits the marker comment) — the callback runs only on the
+   * client mount/hydrate pass. Without this, an `onMount` body touching a browser
+   * global (`window`, `HTMLElement`, …) throws during a DOM-less server render. */
+  ssr: boolean
 }
 let ctx: BuildCtx | null = null
 
@@ -458,6 +465,10 @@ function runBuild(
   // Otherwise `inRow` is inherited from the parent build, so arm/nested builds
   // inside a row stay row-aware.
   forceInRow = false,
+  // Mark this build (and every nested build it inherits into) as a server render.
+  // Only the ROOT build sets it (`renderSignalTree`'s `ssr` arg); nested structural
+  // builds inherit it from their parent ctx, so it never needs re-passing.
+  rootSsr = false,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
@@ -482,7 +493,20 @@ function runBuild(
   // registrations and decrements land in the component's single registry.
   const descriptors = parent?.descriptors ?? new Map<string, number>()
   const inRow = forceInRow || parent?.inRow || false
-  ctx = { specs, doc, host, teardowns, mounts, contexts, ownContexts: false, inRow, descriptors }
+  // Inherit SSR from the parent build; the root build seeds it from `rootSsr`.
+  const ssr = parent?.ssr ?? rootSsr
+  ctx = {
+    specs,
+    doc,
+    host,
+    teardowns,
+    mounts,
+    contexts,
+    ownContexts: false,
+    inRow,
+    descriptors,
+    ssr,
+  }
   let nodes: readonly Node[]
   try {
     // Materialize any Mountable returned DIRECTLY (a structural primitive not wrapped
@@ -534,7 +558,12 @@ function runMounts(
 export function onMount(cb: (root: Element) => void | (() => void)): Mountable {
   return mountable(() => {
     const c = requireCtx()
-    c.mounts.push(cb)
+    // The mount lifecycle is a client-DOM concern: under SSR (`renderNodes`) there
+    // is no live DOM, the returned cleanup would never run, and a callback body
+    // touching a browser global (`window`/`HTMLElement`/…) would throw and 500 a
+    // DOM-less server render. So DON'T register the callback server-side — still
+    // emit the marker comment (the client mount/hydrate rebuild runs the callback).
+    if (!c.ssr) c.mounts.push(cb)
     return c.doc.createComment('onMount')
   })
 }
@@ -1534,6 +1563,11 @@ export function signalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Mounta
 function buildSignalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
   const c = requireCtx()
   const anchor = c.doc.createComment('subApp')
+  // Like `onMount`, the isolated child is mounted via the mount lifecycle, which
+  // is a client-DOM concern: skip it under SSR (the child would mount with its own
+  // fresh — non-SSR — build and crash on any browser-global in its `onMount`). The
+  // anchor still serializes; the client mount/hydrate pass brings the child up.
+  if (c.ssr) return anchor
   c.mounts.push(() => {
     // Anchor is attached now; mount the isolated instance as siblings after it.
     const handle = mountSignalComponent<S, M, E>(
@@ -1865,6 +1899,10 @@ export function renderSignalTree(
   // Adapter seed (see `runBuild`): context values to expose at the root of this
   // build when no surrounding build provides them (`@llui/vike` slot replay).
   seedContexts?: ReadonlyMap<symbol, unknown>,
+  // Server render: marks the build (and every nested arm/row) as SSR so the mount
+  // lifecycle is skipped (see `BuildCtx.ssr` / `onMount`). The client mount and
+  // hydrate paths leave this false — they own the real DOM and run onMount.
+  ssr = false,
 ): {
   nodes: readonly Node[]
   scope: SignalScope
@@ -1873,7 +1911,7 @@ export function renderSignalTree(
   mounts: Array<(root: Element) => void | (() => void)>
   getDescriptors: () => Array<{ variant: string }>
 } {
-  const built = runBuild(doc, build, undefined, seedContexts)
+  const built = runBuild(doc, build, undefined, seedContexts, false, ssr)
   const scope = buildAndPublishScope(built)
   return {
     nodes: built.nodes,
