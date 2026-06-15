@@ -1,6 +1,6 @@
 {
   "name": "@llui/markdown-editor",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -31,9 +31,9 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.4",
-    "@llui/lexical": "^0.2.6",
-    "@llui/components": "^0.12.1",
+    "@llui/dom": "^0.11.5",
+    "@llui/lexical": "^0.2.7",
+    "@llui/components": "^0.12.2",
     "lexical": "^0.45.0",
     "@lexical/markdown": "^0.45.0",
     "@lexical/rich-text": "^0.45.0",

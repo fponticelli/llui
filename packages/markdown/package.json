@@ -1,6 +1,6 @@
 {
   "name": "@llui/markdown",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.4"
+    "@llui/dom": "^0.11.5"
   },
   "dependencies": {
     "mdast-util-from-markdown": "^2.0.2",

@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-15 — 0.11.5
+
+**Released:** `@llui/dom@0.11.5`, `@llui/test@0.11.6`, `@llui/router@0.10.6`, `@llui/transitions@0.10.6`, `@llui/components@0.12.2`, `@llui/markdown@0.11.1`, `@llui/mcp@0.13.1`, `@llui/agent@0.11.1`, `@llui/vike@0.11.6`; `@llui/lexical@0.2.7`, `@llui/lexical-collab@0.2.5`, `@llui/markdown-editor@0.2.11`, `@llui/devmode-annotate@0.2.9`
+
+A single `@llui/dom` SSR fix; every package carrying a `@llui/dom` peer is republished to pick it up.
+
+### `@llui/dom@0.11.5`
+
+- **Fixed** `onMount` callbacks no longer fire during a DOM-less server render (`renderNodes`/`renderToString`). The mount lifecycle is a client-DOM concern; under SSR an `onMount` body touching a browser global (`window`, `querySelector`, …) would run and throw, 500-ing the render (the `dicerun` branch-arm repro). An `ssr` flag now threads through the build context — seeded by `renderSignalTree` and inherited by every nested build (`each` rows, `show`/`branch` arms) — so under SSR `onMount` skips registering its callback and `signalSubApp` skips mounting its isolated child, while both still emit their marker/anchor comment so the serialized tree stays stable. The client mount/hydrate pass runs the callback and mounts the child as before, so no per-callback browser-global guard is needed.
+
+### Cascade republish
+
+- **Improved** `@llui/agent@0.11.1`, `@llui/components@0.12.2`, `@llui/devmode-annotate@0.2.9`, `@llui/lexical@0.2.7`, `@llui/lexical-collab@0.2.5`, `@llui/markdown@0.11.1`, `@llui/markdown-editor@0.2.11`, `@llui/mcp@0.13.1`, `@llui/router@0.10.6`, `@llui/test@0.11.6`, `@llui/transitions@0.10.6`, and `@llui/vike@0.11.6` are version-only bumps that advance their `@llui/dom` peer range to `^0.11.5` (and the `@llui/lexical`/`@llui/components` peers on `lexical-collab` / `markdown-editor`). No code changes.
+
 ## 2026-06-14 — security hardening
 
 **Released:** `@llui/agent@0.11.0`, `@llui/mcp@0.13.0`, `@llui/markdown@0.11.0`; `@llui/lexical@0.2.6`, `@llui/devmode-annotate@0.2.8`, `@llui/markdown-editor@0.2.10`; `@llui/lexical-collab@0.2.4`, `@llui/vite-plugin@0.11.4`, `llui-agent@0.10.3`
