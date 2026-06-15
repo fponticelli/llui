@@ -103,9 +103,12 @@ export function renderNodes<S, M, E>(
     env,
     () => def.view({ state: handle, send: noopSend, batch: noopBatch }),
     contexts,
+    true, // ssr: skip the mount lifecycle (onMount) at every depth — see BuildCtx.ssr
   )
-  // Mount on the detached tree to bake initial values into the serialized HTML
-  // (SSR has no live document; onMount/portal effects are intentionally skipped).
+  // Mount on the detached tree to bake initial values into the serialized HTML.
+  // The `ssr` flag above means onMount callbacks are never registered (a DOM-less
+  // server render can't run them, and a browser-global in the body would throw);
+  // portals with no explicit target are already client-only (see `buildPortal`).
   tree.mount(seed)
   return {
     nodes: tree.nodes,
