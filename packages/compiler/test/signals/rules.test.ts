@@ -216,6 +216,35 @@ describe('peek-in-slot', () => {
     expect(msg).toContain("state.at('todos').map(")
   })
 
+  it('teaches the sanctioned one-shot read (block-body render const + plain-value helpers)', () => {
+    // The message must name the legitimate snapshot path so authors do not
+    // reinvent the laundering wrapper (a fn whose param isn't `state`) — that
+    // trick would re-open the bypass the non-bypassable-error design prevents.
+    const msg = messageFor("text(state.at('x').peek())", 'peek-in-slot')
+    expect(msg).toContain('block-body render `const`')
+    expect(msg).toContain('plain value')
+  })
+
+  it('does NOT flag an outer state.peek() snapshot in a block-body render const', () => {
+    // The value-aligned refactor for an intentional one-shot read: take the
+    // snapshot at the render boundary, then pass the plain value to a helper.
+    expect(
+      rules(
+        "each(state.at('decls'), { key: (d) => d.id, render: (declSig) => { const decl = declSig.peek(); const snap = state.peek(); return [control(resolveInputKind(decl, snap, id))] } })",
+      ),
+    ).not.toContain('peek-in-slot')
+  })
+
+  it('does NOT flag a pure helper that takes a plain snapshot (no live signal, no .peek)', () => {
+    // resolveInputKind refactored to plain-in/plain-out: nothing to flag, and
+    // crucially it no longer needs a `peekOnce`-style laundering wrapper.
+    expect(
+      rules(
+        "function resolveInputKind(decl, snap, id) { const v = currentValue(factAt(snap, id, decl.id)); return isRangeShape(v) ? 'range' : decl.value_kind[0] }",
+      ),
+    ).not.toContain('peek-in-slot')
+  })
+
   it('does NOT flag .peek() inside an event handler', () => {
     expect(rules("button({ onClick: () => send(state.at('x').peek()) }, [])")).not.toContain(
       'peek-in-slot',

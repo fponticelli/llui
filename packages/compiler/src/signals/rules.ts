@@ -876,12 +876,18 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       // `node` is `<receiver>.peek()` — quote the receiver so the suggested fix
       // is the user's actual signal, and offer the two reactive replacements:
       // `.at('field')` to track a sub-field, `.map(v => …)` to derive a value.
+      // For a DELIBERATE one-shot read (keyed remount, value-shape dispatch) the
+      // sanctioned shape is a block-body render `const` (already allowed: peekOk
+      // flips true for render var-decls), with helpers taking the plain snapshot
+      // value — NOT the live signal. Naming that path here keeps people off the
+      // laundering trick (wrap in a fn whose param isn't `state`), which would
+      // re-open the bypass the non-bypassable-error design exists to prevent.
       const recv = snippet(
         ((node as ts.CallExpression).expression as ts.PropertyAccessExpression).expression,
       )
       push(
         'peek-in-slot',
-        `\`${recv}.peek()\` in a reactive slot reads once and never updates. For reactivity use \`${recv}.at('field')\` to track a sub-field, or \`${recv}.map(v => …)\` to derive a value; keep .peek() for event handlers/effects.`,
+        `\`${recv}.peek()\` in a reactive slot reads once and never updates. For reactivity use \`${recv}.at('field')\` to track a sub-field, or \`${recv}.map(v => …)\` to derive a value. For a deliberate one-shot read, snapshot it in a block-body render \`const\` (\`render: (item) => { const v = ${recv}.peek(); return […] }\`) and pass the plain value into helpers — don't .peek() inside a helper that takes the live signal. Keep .peek() for event handlers/effects.`,
         node,
       )
     }
