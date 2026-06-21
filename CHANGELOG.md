@@ -11,6 +11,16 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-06-21 — @llui/compiler@0.11.2
+
+**Released:** `@llui/compiler@0.11.2`
+
+A single `@llui/compiler` change: the `peek-in-slot` lint error now teaches the sanctioned one-shot-read idiom.
+
+### `@llui/compiler@0.11.2`
+
+- **Improved** the `peek-in-slot` error message now names the sanctioned escape for a _deliberate_ one-shot read — snapshot the value in a block-body render `const` (`render: (item) => { const v = state.peek(); return [...] }`) and pass the plain value into helpers — instead of only suggesting `.at()`/`.map()`. Authors who genuinely wanted a snapshot previously had to rediscover a fragile laundering wrapper (a function whose param isn't named `state`) to dodge the rule; naming the real path keeps the non-bypassable error honest. No rule-logic or API change.
+
 ## 2026-06-15 — 0.11.5
 
 **Released:** `@llui/dom@0.11.5`, `@llui/test@0.11.6`, `@llui/router@0.10.6`, `@llui/transitions@0.10.6`, `@llui/components@0.12.2`, `@llui/markdown@0.11.1`, `@llui/mcp@0.13.1`, `@llui/agent@0.11.1`, `@llui/vike@0.11.6`; `@llui/lexical@0.2.7`, `@llui/lexical-collab@0.2.5`, `@llui/markdown-editor@0.2.11`, `@llui/devmode-annotate@0.2.9`
