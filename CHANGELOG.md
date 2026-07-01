@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-07-01 — @llui/markdown-editor@0.2.12 (Lexical 0.46)
+
+**Released:** `@llui/lexical@0.2.8`, `@llui/lexical-collab@0.2.6`, `@llui/markdown-editor@0.2.12`, `@llui/devmode-annotate@0.2.10`
+
+Migrates the Lexical peer stack from `0.45.0` to `0.46.0`, which fixes the markdown-editor typing loop reported in #44. The published packages now require `lexical@^0.46.0` (and matching `@lexical/*`).
+
+### Breaking
+
+- **`@llui/lexical@0.2.8`, `@llui/lexical-collab@0.2.6`, `@llui/markdown-editor@0.2.12`, `@llui/devmode-annotate@0.2.10`** — the `lexical` / `@lexical/*` peer ranges move from `^0.45.0` to `^0.46.0`. Consumers must upgrade their Lexical install to `0.46.x`.
+
+### Migration
+
+- Bump `lexical` and every `@lexical/*` package in your app to `^0.46.0` (they release in lockstep). No changes to your editor code are required.
+
+### `@llui/markdown-editor@0.2.12`
+
+- **Fixed** typing ~160 characters of continuous prose no longer throws Lexical's "update listeners are endlessly enqueueing more updates" error ([#44](https://github.com/fponticelli/llui/issues/44)). The root cause was upstream: `@lexical/markdown`'s `registerMarkdownShortcuts` enqueues a follow-up `editor.update()` on every keystroke that is a no-op on ordinary prose (no markdown trigger character). Lexical 0.45 skipped committing no-op updates, so the `$triggerEnqueuedUpdates` cascade-counter reset never ran and the counter leaked +1 per keystroke until it tripped the guard (~100 qualifying keys). Reproduced deterministically in bare Lexical with no LLui involved, confirming the LLui↔Lexical bridge was not at fault. Lexical 0.46 fixes it by scheduling a macrotask cascade reset that runs once control returns to the event loop between keystrokes (bounded typing resets the budget; genuine synchronous recursion still trips), and a tripped guard now clears the queue and routes through `_onWarn` instead of a fatal uncaught throw. A regression test types ~480 characters, yielding to the event loop between keys, and asserts no error with a bounded cascade counter.
+- **Breaking** `@llui/lexical` / `lexical` peer ranges move to `^0.2.8` / `^0.46.0`. See top of release block.
+
+### `@llui/lexical@0.2.8`
+
+- **Breaking** `lexical` / `@lexical/*` peer ranges move to `^0.46.0`. See top of release block. No code changes.
+
+### `@llui/lexical-collab@0.2.6`
+
+- **Breaking** `@llui/lexical` peer range moves to `^0.2.8` and `lexical` / `@lexical/*` (incl. `@lexical/yjs`) to `^0.46.0`. See top of release block. No code changes.
+
+### `@llui/devmode-annotate@0.2.10`
+
+- **Improved** version-only cascade bump so its bundled rich-text note editor picks up the `@llui/markdown-editor@0.2.12` / `@llui/lexical@0.2.8` fix. No code changes.
+
 ## 2026-06-21 — @llui/compiler@0.11.2
 
 **Released:** `@llui/compiler@0.11.2`
