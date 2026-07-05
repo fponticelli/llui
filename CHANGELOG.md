@@ -11,6 +11,21 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-07-05 — @llui/a2ui@0.1.0
+
+**Released:** `@llui/a2ui@0.1.0`
+
+New package: a renderer for Google's [A2UI](https://a2ui.org) protocol v0.9 on the LLui signal runtime, reusing `@llui/components` for interactive controls. See `docs/proposals/a2ui-renderer.md`.
+
+### `@llui/a2ui@0.1.0`
+
+- **Added** `mountA2ui(container, opts)` renders A2UI v0.9 server→client envelopes (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`) into live LLui DOM. Structure reacts to the component map, data to the data model, so a streaming `updateDataModel` re-commits only bound values without rebuilding the tree.
+- **Added** literal, `{ path }` (JSON-Pointer), and nested `{ call }` bindings; templates over arrays and objects with spec-correct item-scoped paths; two-way binding; actions delivered via `onAction`.
+- **Added** client-defined functions (`formatString`, `formatNumber/Currency/Date`, `pluralize`, `required`/`regex`/`length`/`numeric`/`email`, `and`/`or`/`not`) and validation `checks` (input error messages, disabled buttons).
+- **Added** full Basic catalog (18 components): display/layout as semantic HTML; `CheckBox`/`Tabs`/`Modal`/`Slider`/`ChoicePicker`/`DateTimeInput` reuse `@llui/components` (checkbox, tabs, dialog with focus-trap + scroll-lock, slider with drag+keyboard, combobox with typeahead+chips, date-picker calendar). Open catalog registry via `defineCatalog`; `catalogId` selects the catalog with fallback to Basic.
+- **Added** `sendDataModel` client→server sync (data model rides on the action event), best-effort version negotiation (`SUPPORTED_VERSIONS`), `handle.capabilities()`, and a WebSocket transport adapter (`connectA2ui` + `webSocketTransport`).
+- Conformance-tested against the real `google/A2UI` v0.9 sample payloads.
+
 ## 2026-07-01 — @llui/markdown-editor@0.2.12 (Lexical 0.46)
 
 **Released:** `@llui/lexical@0.2.8`, `@llui/lexical-collab@0.2.6`, `@llui/markdown-editor@0.2.12`, `@llui/devmode-annotate@0.2.10`
