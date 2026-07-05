@@ -99,7 +99,7 @@ Tier 3 (depend on tier 2):
 
 Cascade rules:
 
-- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `lexical`, `markdown-editor`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
+- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `lexical`, `lexical-collab`, `markdown-editor`, `devmode-annotate`, `vike`, `mcp`, `agent`, `a2ui`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
 - `compiler` changed → add `compiler-introspection`, `compiler-devtools`, `compiler-ssr` (the opt-in compiler modules).
 - `lexical` changed → add `markdown-editor` (peer-depends on `@llui/lexical`).
 - `components` changed → add `markdown-editor` (peer-depends on `@llui/components`).
@@ -117,6 +117,7 @@ Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These
 - `packages/mcp/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/agent/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/markdown-editor/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/a2ui/package.json` → `peerDependencies["@llui/dom"]`
 
 **`@llui/markdown-editor` carries two more `@llui` peer ranges than the dom-only cascade above** — `peerDependencies["@llui/lexical"]` and `peerDependencies["@llui/components"]`. When `lexical` or `components` bumps, `markdown-editor`'s peer range for that package must bump too, exactly like the `@llui/dom` updates. The step-5 bump script only rewrites `@llui/dom`, so add `@llui/lexical` / `@llui/components` to its rewrite block (or hand-edit `packages/markdown-editor/package.json`) whenever either is in the changed set.
 
