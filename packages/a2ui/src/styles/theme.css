@@ -1,0 +1,234 @@
+/**
+ * @llui/a2ui Basic-catalog theme.
+ *
+ * Neutral, overridable defaults driven by CSS custom properties. The A2UI
+ * `theme` sets `--a2ui-primary` and the surface font per-surface inline.
+ */
+
+.a2ui-surface {
+  --a2ui-primary: #2563eb;
+  --a2ui-gap: 0.5rem;
+  --a2ui-radius: 0.5rem;
+  --a2ui-border: #e2e8f0;
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.a2ui-text-h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0.4em 0;
+}
+.a2ui-text-h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0.4em 0;
+}
+.a2ui-text-h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.4em 0;
+}
+.a2ui-text-h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.4em 0;
+}
+.a2ui-text-h5 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.4em 0;
+}
+.a2ui-text-caption {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+.a2ui-text-body {
+  margin: 0.25em 0;
+}
+
+.a2ui-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.a2ui-image-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.a2ui-image-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.a2ui-icon::before {
+  content: attr(data-icon);
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.a2ui-card {
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  padding: 1rem;
+  background: canvas;
+}
+
+.a2ui-divider {
+  border: none;
+  border-top: 1px solid var(--a2ui-border);
+  margin: 0.5rem 0;
+}
+.a2ui-divider-vertical {
+  border-top: none;
+  border-left: 1px solid var(--a2ui-border);
+  align-self: stretch;
+}
+
+.a2ui-button {
+  padding: 0.5rem 1rem;
+  border-radius: var(--a2ui-radius);
+  border: 1px solid var(--a2ui-primary);
+  background: transparent;
+  color: var(--a2ui-primary);
+  cursor: pointer;
+  font: inherit;
+}
+.a2ui-button-primary {
+  background: var(--a2ui-primary);
+  color: white;
+}
+.a2ui-button-borderless {
+  border-color: transparent;
+}
+.a2ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.a2ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.a2ui-field-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.a2ui-textfield-input {
+  padding: 0.5rem;
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  font: inherit;
+}
+.a2ui-textfield-input:focus-visible {
+  outline: 2px solid var(--a2ui-primary);
+  outline-offset: 1px;
+}
+
+.a2ui-slider {
+  width: 100%;
+  accent-color: var(--a2ui-primary);
+}
+.a2ui-choicepicker {
+  padding: 0.5rem;
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  font: inherit;
+}
+
+/* Checkbox */
+.a2ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.a2ui-checkbox-box {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--a2ui-border);
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.a2ui-checkbox-box[data-state='checked'],
+.a2ui-checkbox-box[data-state='indeterminate'] {
+  background: var(--a2ui-primary);
+  border-color: var(--a2ui-primary);
+}
+.a2ui-checkbox-indicator::after {
+  content: '';
+}
+.a2ui-checkbox-box[data-state='checked'] .a2ui-checkbox-indicator::after {
+  content: '✓';
+  color: white;
+  font-size: 0.8rem;
+}
+.a2ui-checkbox-box[data-state='indeterminate'] .a2ui-checkbox-indicator::after {
+  content: '–';
+  color: white;
+}
+
+/* Tabs */
+.a2ui-tabs-list {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--a2ui-border);
+}
+.a2ui-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  border-bottom: 2px solid transparent;
+}
+.a2ui-tab[data-state='active'] {
+  border-bottom-color: var(--a2ui-primary);
+  color: var(--a2ui-primary);
+}
+.a2ui-tab-panel {
+  padding: 1rem 0;
+}
+
+/* Modal */
+.a2ui-modal-trigger {
+  display: inline-block;
+  cursor: pointer;
+}
+.a2ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+.a2ui-modal-positioner {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.a2ui-modal-content {
+  position: relative;
+  background: canvas;
+  border-radius: var(--a2ui-radius);
+  padding: 1.5rem;
+  max-width: min(90vw, 32rem);
+  max-height: 85vh;
+  overflow: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+.a2ui-modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+}

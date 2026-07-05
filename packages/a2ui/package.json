@@ -1,0 +1,60 @@
+{
+  "name": "@llui/a2ui",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles/theme.css": "./dist/styles/theme.css"
+  },
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json && pnpm copy:css",
+    "copy:css": "node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/styles',{recursive:true});cpSync('src/styles','dist/styles',{recursive:true})\"",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/dom": "^0.11.5"
+  },
+  "dependencies": {
+    "@llui/components": "^0.12.2"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "jsdom": "^25.0.1",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "sideEffects": [
+    "./dist/styles/theme.css"
+  ],
+  "description": "LLui renderer for Google's A2UI protocol — render agent-driven UIs from A2UI envelopes onto the LLui signal runtime, reusing @llui/components headless primitives",
+  "keywords": [
+    "llui",
+    "a2ui",
+    "generative-ui",
+    "agent",
+    "protocol",
+    "reactive"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/a2ui"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/a2ui#readme",
+  "files": [
+    "dist"
+  ]
+}

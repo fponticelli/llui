@@ -381,6 +381,25 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  packages/a2ui:
+    dependencies:
+      '@llui/components':
+        specifier: ^0.12.2
+        version: 0.12.2(@llui/dom@packages+dom)
+    devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@25.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/agent:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -2281,6 +2300,14 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  '@llui/components@0.12.2':
+    resolution:
+      {
+        integrity: sha512-TizhPtvvWPztGwXtKlcl7livw0WsIjm7Ih1ioakSbYHrOlTkav4aeot5av1W6qO7balrfcOrvyQUqktYio0TEQ==,
+      }
+    peerDependencies:
+      '@llui/dom': ^0.11.5
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution:
@@ -7291,6 +7318,12 @@ snapshots:
       yjs: 13.6.31
     optionalDependencies:
       typescript: 6.0.2
+
+  '@llui/components@0.12.2(@llui/dom@packages+dom)':
+    dependencies:
+      '@floating-ui/dom': 1.7.6
+      '@llui/dom': link:packages/dom
+      '@standard-schema/spec': 1.1.0
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.3.6)':
     dependencies:

@@ -1,0 +1,110 @@
+/**
+ * The catalog seam: how an A2UI component-type name maps to a live LLui build.
+ *
+ * A catalog is an open registry of builders (`Text` → …, `Button` → …) plus
+ * client-defined functions. Custom catalogs plug in via {@link defineCatalog},
+ * optionally extending the Basic catalog.
+ */
+
+import type { Signal, Reactive, Renderable } from '@llui/dom'
+import type {
+  ChildList,
+  ComponentId,
+  ComponentNode,
+  FunctionCall,
+  JsonObject,
+  JsonValue,
+  Theme,
+} from './protocol.js'
+import type { A2uiMsg } from './state.js'
+
+/**
+ * The reactive data context a component renders against. At the surface root
+ * this wraps the whole data model; inside a template it wraps the current item.
+ */
+export interface RenderScope {
+  /** Reactive data for this scope (root data model, or a template item). */
+  readonly data: Signal<JsonValue>
+  /**
+   * The surface data-model root, correctly scoped for THIS depth. Absolute
+   * (`/…`) bindings resolve against this; it is threaded through template rows
+   * so it stays valid at any nesting depth (an outer-scope handle would
+   * re-scope to the row item).
+   */
+  readonly root: Signal<JsonValue>
+  /**
+   * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
+   * used for two-way write-back. Absolute pointers pass through unchanged.
+   */
+  absPath(pointer: string): string
+}
+
+/** Everything a builder needs to render one component and recurse into children. */
+export interface RenderContext {
+  readonly surfaceId: string
+  readonly theme: Signal<Theme>
+  /** The surface data model root (absolute `/…` bindings resolve against this). */
+  readonly rootData: Signal<JsonValue>
+  /** Client-local UI state (per stateful component), keyed by component id. */
+  readonly uiState: Signal<JsonObject>
+  readonly send: (msg: A2uiMsg) => void
+  readonly catalog: Catalog
+  /** Write a stateful component's local UI state (Tabs active tab, Modal open). */
+  setUi(componentId: ComponentId, value: JsonValue): void
+  /** Look up a component definition by id in the current structural snapshot. */
+  getComponent(id: ComponentId): ComponentNode | undefined
+  /** Render a component (and its subtree) by id within a scope. */
+  renderById(id: ComponentId, scope: RenderScope): Renderable
+  /** Render a static id list or a repeated template within a scope. */
+  renderChildren(children: ChildList | undefined, scope: RenderScope): Renderable
+}
+
+export interface BuildArgs {
+  readonly node: ComponentNode
+  readonly ctx: RenderContext
+  readonly scope: RenderScope
+}
+
+/** Builds the live DOM for one A2UI component type. */
+export type ComponentBuilder = (args: BuildArgs) => Renderable
+
+/** A client-defined function (formatting, validation, local actions). */
+export type CatalogFunction = (
+  call: FunctionCall,
+  ctx: RenderContext,
+  scope: RenderScope,
+) => Reactive<JsonValue>
+
+export interface Catalog {
+  readonly id?: string
+  readonly components: Readonly<Record<string, ComponentBuilder>>
+  readonly functions: Readonly<Record<string, CatalogFunction>>
+}
+
+export interface CatalogSpec {
+  readonly id?: string
+  readonly components: Readonly<Record<string, ComponentBuilder>>
+  readonly functions?: Readonly<Record<string, CatalogFunction>>
+  /** A base catalog to inherit builders/functions from (this spec wins on conflict). */
+  readonly extends?: Catalog
+}
+
+/** Build a catalog, optionally layering over a base. */
+export function defineCatalog(spec: CatalogSpec): Catalog {
+  return {
+    id: spec.id ?? spec.extends?.id,
+    components: { ...(spec.extends?.components ?? {}), ...spec.components },
+    functions: { ...(spec.extends?.functions ?? {}), ...(spec.functions ?? {}) },
+  }
+}
+
+/** A resolver from an A2UI `catalogId` to a concrete catalog. */
+export type CatalogResolver = (catalogId: string) => Catalog | undefined
+
+let warned: Set<string> | undefined
+export function warnOnce(message: string): void {
+  warned ??= new Set()
+  if (warned.has(message)) return
+  warned.add(message)
+  if (typeof console !== 'undefined') console.warn(`[@llui/a2ui] ${message}`)
+}
