@@ -177,6 +177,78 @@
   font: inherit;
 }
 
+/* ChoicePicker (combobox) */
+.a2ui-cb {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  padding: 0.25rem;
+}
+.a2ui-cb-chips {
+  display: contents;
+}
+.a2ui-cb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--a2ui-primary) 15%, transparent);
+  font-size: 0.85rem;
+}
+.a2ui-cb-chip-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0;
+}
+.a2ui-cb-input {
+  flex: 1;
+  min-width: 4rem;
+  border: none;
+  outline: none;
+  font: inherit;
+  padding: 0.25rem;
+  background: transparent;
+}
+.a2ui-cb-trigger {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.a2ui-cb-positioner {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+.a2ui-cb-list {
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: canvas;
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  max-height: 14rem;
+  overflow: auto;
+}
+.a2ui-cb-item {
+  padding: 0.4rem 0.5rem;
+  border-radius: calc(var(--a2ui-radius) - 2px);
+  cursor: pointer;
+}
+.a2ui-cb-item[data-highlighted],
+.a2ui-cb-item[data-state='selected'] {
+  background: color-mix(in srgb, var(--a2ui-primary) 15%, transparent);
+}
+
 /* Checkbox */
 .a2ui-checkbox {
   display: inline-flex;

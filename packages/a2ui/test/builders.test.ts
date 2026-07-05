@@ -25,7 +25,6 @@ function mount(components: ComponentNode[], data: unknown = {}): void {
   ])
 }
 const only = (sel: string) => container.querySelector<HTMLElement>(sel)!
-const data = () => handle.getState().surfaces['s']?.dataModel as Record<string, unknown>
 
 describe('layout builders', () => {
   it('Row maps justify/align to flexbox and weight to flex-grow', () => {
@@ -195,34 +194,7 @@ describe('DateTimeInput', () => {
   })
 })
 
-describe('ChoicePicker multiple selection', () => {
-  it('writes back all selected values', () => {
-    mount(
-      [
-        {
-          id: 'root',
-          component: 'ChoicePicker',
-          label: 'Toppings',
-          variant: 'multipleSelection',
-          options: [
-            { label: 'A', value: 'a' },
-            { label: 'B', value: 'b' },
-            { label: 'C', value: 'c' },
-          ],
-          value: { path: '/picked' },
-        },
-      ],
-      { picked: ['a'] },
-    )
-    const sel = only('.a2ui-choicepicker') as HTMLSelectElement
-    expect(sel.multiple).toBe(true)
-    sel.options[0]!.selected = true
-    sel.options[2]!.selected = true
-    sel.options[1]!.selected = false
-    sel.dispatchEvent(new Event('change'))
-    expect(data().picked).toEqual(['a', 'c'])
-  })
-})
+// ChoicePicker is covered by the combobox tests in controls.test.ts.
 
 describe('binding coercions', () => {
   it('renders a literal number and a JSON object binding as strings', () => {

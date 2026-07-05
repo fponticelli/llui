@@ -6,12 +6,24 @@
  * their messages back through our reducer — no child-component boundary needed.
  */
 
-import { div, label as labelEl, onMount, show, span, text, type Send, type Signal } from '@llui/dom'
+import {
+  derived,
+  div,
+  each,
+  label as labelEl,
+  onMount,
+  show,
+  span,
+  text,
+  type Send,
+  type Signal,
+} from '@llui/dom'
 import { lockBodyScroll, pushFocusTrap } from '@llui/components/utils'
 import * as checkbox from '@llui/components/checkbox'
 import * as tabs from '@llui/components/tabs'
 import * as dialog from '@llui/components/dialog'
 import * as slider from '@llui/components/slider'
+import * as combobox from '@llui/components/combobox'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
 import { bindString, firstCheckError } from '../binding.js'
 import { resolvePointer } from '../pointer.js'
@@ -286,10 +298,139 @@ const Slider: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   )
 }
 
+interface Choice {
+  readonly label: DynamicString
+  readonly value: string
+}
+function toStrList(value: JsonValue | undefined): string[] {
+  return Array.isArray(value) ? value.map((v) => String(v)) : []
+}
+
+/** ChoicePicker → `@llui/components` combobox: filterable/typeahead select with
+ * chips for multi-select. Selection lives in the data model (source of truth);
+ * the combobox's UI state (open/input/highlight) lives in the surface UI store. */
+const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
+  const options = (Array.isArray(node.options) ? node.options : []) as Choice[]
+  // Combobox items are the LABELS (so typeahead matches visible text); we map
+  // label ↔ A2UI value at the data-model boundary.
+  const labels = options.map((o) => (typeof o.label === 'string' ? o.label : String(o.value)))
+  const valueByLabel = new Map(options.map((o, i) => [labels[i] as string, String(o.value)]))
+  const labelByValue = new Map(options.map((o, i) => [String(o.value), labels[i] as string]))
+  const toLabels = (values: string[]): string[] => values.map((v) => labelByValue.get(v) ?? v)
+  const toValues = (ls: string[]): string[] => ls.map((l) => valueByLabel.get(l) ?? l)
+
+  const multiple = node.variant === 'multipleSelection'
+  const path = isPathBinding(node.value) ? (node.value as { path: string }).path : undefined
+  const abs = path ? scope.absPath(path) : undefined
+  const key = instanceKey(scope, node.id)
+  const initial = combobox.init({ items: labels, selectionMode: multiple ? 'multiple' : 'single' })
+  const dataValues = (d: JsonValue): string[] => (path ? toStrList(resolvePointer(d, path)) : [])
+
+  // Merge: the combobox's `value` (label list) is projected from the data model;
+  // its UI state comes from the store. `derived` reacts to both.
+  const state = derived(scope.uiState, scope.data, (ui, d) => {
+    const stored = readUi(ui, key, initial)
+    return { ...stored, value: toLabels(dataValues(d)) }
+  })
+  const send: Send<combobox.ComboboxMsg> = (msg) => {
+    const current = {
+      ...readUi(scope.uiState.peek(), key, initial),
+      value: toLabels(dataValues(scope.data.peek())),
+    }
+    const [next] = combobox.update(current, msg)
+    const nextValues = toValues(next.value)
+    if (abs && JSON.stringify(nextValues) !== JSON.stringify(dataValues(scope.data.peek()))) {
+      ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: nextValues })
+    }
+    ctx.setUi(key, next as unknown as JsonValue)
+  }
+  const parts = combobox.connect(state, send, { id: domId(`cb-${key}`) })
+
+  // Hand-roll item attrs from the each's OWN row signal (correctly scoped).
+  // parts.item() signals read the combobox `state` and would re-scope to the row
+  // item inside this `each` — so we derive selected/highlighted from the unit and
+  // route clicks straight to `send`.
+  const itemUnits = state.map((s) =>
+    s.filteredItems.map((label, i) => ({
+      label,
+      index: i,
+      selected: s.value.includes(label),
+      highlighted: s.highlightedIndex === i,
+    })),
+  )
+  const items = each(itemUnits, {
+    key: (u) => u.label,
+    render: (uSig) => {
+      const label = uSig.peek().label
+      return [
+        elx(
+          'li',
+          {
+            role: 'option',
+            class: 'a2ui-cb-item',
+            'data-value': label,
+            'data-state': uSig.map((u) => (u.selected ? 'selected' : undefined)),
+            'data-highlighted': uSig.map((u) => (u.highlighted ? '' : undefined)),
+            onClick: () => send({ type: 'selectOption', value: label }),
+            onPointerMove: () => send({ type: 'highlight', index: uSig.peek().index }),
+          },
+          [text(label)],
+        ),
+      ]
+    },
+  })
+
+  const chips = each(
+    state.map((s) => (multiple ? s.value : [])),
+    {
+      key: (label) => label,
+      render: (labelSig) => {
+        const label = labelSig.peek()
+        return [
+          elx('span', { class: 'a2ui-cb-chip' }, [
+            text(label),
+            elx(
+              'button',
+              {
+                type: 'button',
+                class: 'a2ui-cb-chip-remove',
+                'aria-label': 'Remove',
+                onClick: () => send({ type: 'selectOption', value: label }),
+              },
+              [text('✕')],
+            ),
+          ]),
+        ]
+      },
+    },
+  )
+
+  return labelledField(
+    [text(bindString(ctx, scope, node.label as DynamicString | undefined))],
+    [
+      elx('div', { ...parts.root, class: 'a2ui-cb' }, [
+        ...(multiple ? [elx('div', { class: 'a2ui-cb-chips' }, [chips])] : []),
+        elx('input', { ...parts.input, class: 'a2ui-cb-input' }),
+        elx('button', { ...parts.trigger, class: 'a2ui-cb-trigger' }, [text('▾')]),
+        show(
+          state.map((s) => s.open),
+          () => [
+            elx('div', { ...parts.positioner, class: 'a2ui-cb-positioner' }, [
+              elx('ul', { ...parts.content, class: 'a2ui-cb-list' }, [items]),
+            ]),
+          ],
+        ),
+      ]),
+    ],
+    firstCheckError(ctx, scope, checksOf(node)),
+  )
+}
+
 /** Builders backed by `@llui/components` headless state machines. */
 export const headlessComponents: Readonly<Record<string, ComponentBuilder>> = {
   CheckBox,
   Tabs,
   Modal,
   Slider,
+  ChoicePicker,
 }

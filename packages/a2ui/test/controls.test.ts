@@ -69,8 +69,15 @@ describe('Slider (via @llui/components)', () => {
   })
 })
 
-describe('ChoicePicker', () => {
-  it('renders options and writes the selection as a list', () => {
+describe('ChoicePicker (via @llui/components combobox)', () => {
+  const options = [
+    { label: 'Small', value: 's' },
+    { label: 'Large', value: 'l' },
+    { label: 'Medium', value: 'm' },
+  ]
+  const itemTexts = () => [...container.querySelectorAll('.a2ui-cb-item')].map((i) => i.textContent)
+
+  it('opens, filters by label, and writes the value on select', () => {
     mount(
       [
         {
@@ -78,21 +85,49 @@ describe('ChoicePicker', () => {
           component: 'ChoicePicker',
           label: 'Size',
           variant: 'mutuallyExclusive',
-          options: [
-            { label: 'Small', value: 's' },
-            { label: 'Large', value: 'l' },
-          ],
+          options,
           value: { path: '/size' },
         },
       ],
       { size: ['s'] },
     )
-    const select = container.querySelector<HTMLSelectElement>('.a2ui-choicepicker')!
-    expect([...select.options].map((o) => o.textContent)).toEqual(['Small', 'Large'])
-    expect(select.value).toBe('s')
-    select.value = 'l'
-    select.dispatchEvent(new Event('change'))
+    expect(container.querySelector('.a2ui-cb-input')).not.toBeNull()
+    container.querySelector<HTMLButtonElement>('.a2ui-cb-trigger')!.click() // open
+    expect(itemTexts()).toEqual(['Small', 'Large', 'Medium'])
+
+    // Typeahead filters on the visible label, not the value.
+    const input = container.querySelector<HTMLInputElement>('.a2ui-cb-input')!
+    input.value = 'La'
+    input.dispatchEvent(new Event('input'))
+    expect(itemTexts()).toEqual(['Large'])
+
+    container.querySelector<HTMLElement>('.a2ui-cb-item')!.click()
     expect(data().size).toEqual(['l'])
+  })
+
+  it('multi-select shows chips and toggles values', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'ChoicePicker',
+          label: 'Sizes',
+          variant: 'multipleSelection',
+          options,
+          value: { path: '/picked' },
+        },
+      ],
+      { picked: ['s'] },
+    )
+    expect([...container.querySelectorAll('.a2ui-cb-chip')].map((c) => c.textContent)).toEqual([
+      'Small✕',
+    ])
+    container.querySelector<HTMLButtonElement>('.a2ui-cb-trigger')!.click()
+    const large = [...container.querySelectorAll<HTMLElement>('.a2ui-cb-item')].find(
+      (i) => i.textContent === 'Large',
+    )!
+    large.click()
+    expect(data().picked).toEqual(['s', 'l'])
   })
 })
 
