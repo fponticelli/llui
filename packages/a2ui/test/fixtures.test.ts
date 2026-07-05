@@ -8,8 +8,15 @@
  * skipped, not fatal — and document the inline-catalog gap.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import type { ServerToClientEnvelope } from '../src/index.js'
-import { mountA2ui, type A2uiHandle } from '../src/index.js'
+import { el, text } from '@llui/dom'
+import type { JsonValue, ServerToClientEnvelope } from '../src/index.js'
+import {
+  basicCatalog,
+  defineCatalog,
+  mountA2ui,
+  resolvePointer,
+  type A2uiHandle,
+} from '../src/index.js'
 
 import bookingForm from './fixtures/booking_form.json'
 import singleColumnList from './fixtures/single_column_list.json'
@@ -89,5 +96,36 @@ describe('A2UI sample payloads (documented Phase-1 gaps)', () => {
     expect(container.querySelectorAll('.a2ui-surface')).toHaveLength(surfaceCount(stream))
     expect(errorSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
+  })
+})
+
+describe('custom-catalog sample renders when the consumer provides the catalog', () => {
+  it('renders org_chart via a consumer OrgChart catalog (inline-catalog scenario)', () => {
+    // The "inline_catalog" samples need a consumer-supplied builder for their
+    // custom component — which defineCatalog already provides. This proves the
+    // OrgChart sample renders end-to-end once that catalog is registered.
+    const orgCatalog = defineCatalog({
+      extends: basicCatalog,
+      components: {
+        OrgChart: ({ node, scope }) => {
+          const path = (node.chain as { path?: string } | undefined)?.path ?? '/hierarchy'
+          const names = scope.root.map((d: JsonValue) => {
+            const h = resolvePointer(d, path)
+            return h && typeof h === 'object'
+              ? Object.values(h)
+                  .map((v) => (v && typeof v === 'object' ? (v as { name?: string }).name : ''))
+                  .filter(Boolean)
+                  .join(', ')
+              : ''
+          })
+          return [el('div', { class: 'org-chart' }, [text(names)])]
+        },
+      },
+    })
+    handle = mountA2ui(container, { catalogs: { inline_catalog: orgCatalog } })
+    handle.apply(asStream(orgChart))
+    expect(container.querySelector('.a2ui-surface')).not.toBeNull()
+    expect(container.textContent).toContain('Organizational Chart')
+    expect(container.querySelector('.org-chart')?.textContent).toContain('Jane Doe')
   })
 })
