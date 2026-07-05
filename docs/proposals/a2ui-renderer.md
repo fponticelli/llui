@@ -80,8 +80,9 @@ elsewhere):
 - **Phase 1 — Spec faithfulness** — functions + `checks`; object-template
   iteration; Modal initial-open; stateful-in-templates + focus-trap; conformance
   green gate.
-- **Phase 2 — Transport & interop** — `sendDataModel` client→server sync;
-  version negotiation + capabilities (incl. `inlineCatalogs`).
+- **Phase 2 — Transport & interop** ✅ — `sendDataModel` client→server sync (the
+  data model rides on `A2uiActionEvent`); `SUPPORTED_VERSIONS` best-effort
+  version negotiation; `handle.capabilities()` advertises supported catalog ids.
 - **Phase 3 — Polish & strategic** — richer `@llui/components` reuse;
   A2UI ↔ `@llui/agent-bridge` (make an LLui app an A2UI render target for
   external agents); release.

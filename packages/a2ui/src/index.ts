@@ -9,8 +9,9 @@
 
 import { component, mountApp, type Renderable } from '@llui/dom'
 import type { Catalog, CatalogResolver } from './catalog.js'
-import { basicCatalog } from './catalog/index.js'
-import type { JsonObject, ServerToClientEnvelope } from './protocol.js'
+import { warnOnce } from './catalog.js'
+import { basicCatalog, BASIC_CATALOG_ID } from './catalog/index.js'
+import type { JsonObject, JsonValue, ServerToClientEnvelope } from './protocol.js'
 import { renderSurfaces } from './render.js'
 import {
   a2uiUpdate,
@@ -27,6 +28,12 @@ export interface A2uiActionEvent {
   readonly name: string
   readonly context: JsonObject
   readonly timestamp: string
+  /**
+   * The surface's full data model, present only when the surface was created
+   * with `sendDataModel: true` (A2UI's client→server data sync — the data model
+   * rides along with the client-bound action for collaborative editing).
+   */
+  readonly dataModel?: JsonValue
 }
 
 export interface A2uiOptions {
@@ -38,11 +45,22 @@ export interface A2uiOptions {
   readonly scheduler?: 'sync' | 'raf'
 }
 
+/** A2UI protocol versions this renderer accepts (others render best-effort). */
+export const SUPPORTED_VERSIONS: readonly string[] = ['v0.9', 'v0.9.1']
+
+/** Client capabilities to advertise to the server (A2UI `client_capabilities`). */
+export interface ClientCapabilities {
+  /** Catalog ids the client can render (the Basic catalog plus any custom ones). */
+  readonly supportedCatalogIds: readonly string[]
+}
+
 export interface A2uiHandle {
   /** Apply one server→client envelope, or a batch, as a single reconcile. */
   apply(envelopes: ServerToClientEnvelope | readonly ServerToClientEnvelope[]): void
   /** Snapshot the current renderer state. */
   getState(): A2uiState
+  /** The client capabilities to send to the server (catalogs the client supports). */
+  capabilities(): ClientCapabilities
   /** Observe state after every update cycle. Returns an unsubscribe. */
   subscribe(listener: (state: A2uiState) => void): () => void
   /** Tear down the mounted renderer. */
@@ -60,14 +78,18 @@ export function mountA2ui(container: Element, options: A2uiOptions = {}): A2uiHa
     update: a2uiUpdate,
     view: ({ state, send }): Renderable =>
       renderSurfaces(state, send, resolveCatalog, basicCatalog),
-    onEffect: (effect) => {
+    onEffect: (effect, api) => {
       if (effect.type === 'a2ui/action') {
+        const surface = api.state.peek().surfaces[effect.surfaceId]
         options.onAction?.({
           surfaceId: effect.surfaceId,
           sourceComponentId: effect.sourceComponentId,
           name: effect.name,
           context: effect.context,
           timestamp: new Date().toISOString(),
+          // A2UI client→server data sync: ride the data model along when the
+          // surface opted in via createSurface.sendDataModel.
+          ...(surface?.sendDataModel ? { dataModel: surface.dataModel } : {}),
         })
       }
     },
@@ -82,11 +104,19 @@ export function mountA2ui(container: Element, options: A2uiOptions = {}): A2uiHa
   return {
     apply(envelopes) {
       const list = Array.isArray(envelopes) ? envelopes : [envelopes]
+      for (const envelope of list) {
+        if (envelope.version && !SUPPORTED_VERSIONS.includes(envelope.version)) {
+          warnOnce(`Unsupported A2UI version "${envelope.version}" — rendering best-effort`)
+        }
+      }
       app.batch(() => {
         for (const envelope of list) app.send({ type: 'apply', envelope })
       })
     },
     getState: () => app.getState(),
+    capabilities: () => ({
+      supportedCatalogIds: [BASIC_CATALOG_ID, ...Object.keys(catalogs)],
+    }),
     subscribe: (listener) => app.subscribe(listener),
     dispose: () => app.dispose(),
   }
