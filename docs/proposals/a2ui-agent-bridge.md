@@ -60,11 +60,19 @@ external A2UI clients render an LLui app) is the inverse and the least clear in
 value: it requires walking the live scope tree back into catalog components and
 constraining authors to the catalog. Deferred unless a concrete need appears.
 
+## Progress
+
+**Direction A seam + WebSocket adapter landed** (`src/transport.ts`): the shared
+`A2uiTransport` interface (`onEnvelope` / `sendAction`), `connectA2ui(container,
+transport, opts)` that wires inbound envelopes → `apply()` and `onAction` →
+`sendAction` (dispose unsubscribes), and `webSocketTransport(socket)`. A2A /
+AG-UI / MCP now drop onto the same proven `A2uiTransport` interface.
+
 ## Recommendation
 
 1. **Direction A first** — transport adapters. Concrete, low-risk, and it
    delivers the original strategic goal (LLui on the A2UI distribution rails).
-   Start with A2A + WebSocket.
+   ✅ Seam + WebSocket done; **A2A next** on the proven seam.
 2. **Direction B next** — LAP introspection, once A is proven. Mostly a state
    projection; high leverage for the LLui+Claude tooling story.
 3. **Direction C** — defer.

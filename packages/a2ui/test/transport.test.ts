@@ -1,0 +1,96 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import {
+  connectA2ui,
+  webSocketTransport,
+  type A2uiHandle,
+  type WebSocketLike,
+} from '../src/index.js'
+
+const CATALOG = 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json'
+
+class MockSocket implements WebSocketLike {
+  readonly sent: string[] = []
+  private readonly listeners = new Set<(event: { data: unknown }) => void>()
+  send(data: string): void {
+    this.sent.push(data)
+  }
+  addEventListener(_type: 'message', listener: (event: { data: unknown }) => void): void {
+    this.listeners.add(listener)
+  }
+  removeEventListener(_type: 'message', listener: (event: { data: unknown }) => void): void {
+    this.listeners.delete(listener)
+  }
+  /** Simulate an inbound frame. */
+  receive(data: unknown): void {
+    const payload = typeof data === 'string' ? data : JSON.stringify(data)
+    for (const listener of this.listeners) listener({ data: payload })
+  }
+  get listenerCount(): number {
+    return this.listeners.size
+  }
+}
+
+let container: HTMLElement
+let handle: A2uiHandle
+let socket: MockSocket
+
+beforeEach(() => {
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  socket = new MockSocket()
+})
+afterEach(() => {
+  handle?.dispose()
+  container.remove()
+})
+
+describe('WebSocket transport', () => {
+  it('renders inbound envelope frames and sends actions outbound', () => {
+    handle = connectA2ui(container, webSocketTransport(socket))
+
+    socket.receive([
+      { version: 'v0.9', createSurface: { surfaceId: 's', catalogId: CATALOG } },
+      {
+        version: 'v0.9',
+        updateComponents: {
+          surfaceId: 's',
+          components: [
+            { id: 'root', component: 'Button', child: 'l', action: { event: { name: 'go' } } },
+            { id: 'l', component: 'Text', text: 'Go' },
+          ],
+        },
+      },
+    ])
+    expect(container.querySelector('.a2ui-button')?.textContent).toBe('Go')
+
+    container.querySelector<HTMLButtonElement>('.a2ui-button')!.click()
+    expect(socket.sent).toHaveLength(1)
+    const frame = JSON.parse(socket.sent[0]!) as { action: { name: string } }
+    expect(frame.action.name).toBe('go')
+  })
+
+  it('accepts a single-envelope frame (not just arrays)', () => {
+    handle = connectA2ui(container, webSocketTransport(socket))
+    socket.receive({ version: 'v0.9', createSurface: { surfaceId: 's', catalogId: CATALOG } })
+    socket.receive({
+      version: 'v0.9',
+      updateComponents: {
+        surfaceId: 's',
+        components: [{ id: 'root', component: 'Text', text: 'hi' }],
+      },
+    })
+    expect(container.querySelector('.a2ui-text')?.textContent).toBe('hi')
+  })
+
+  it('unsubscribes from the socket on dispose', () => {
+    handle = connectA2ui(container, webSocketTransport(socket))
+    expect(socket.listenerCount).toBe(1)
+    handle.dispose()
+    expect(socket.listenerCount).toBe(0)
+  })
+
+  it('ignores malformed frames without throwing', () => {
+    handle = connectA2ui(container, webSocketTransport(socket))
+    expect(() => socket.receive('{not json')).not.toThrow()
+  })
+})

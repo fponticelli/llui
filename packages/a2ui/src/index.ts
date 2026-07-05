@@ -156,3 +156,9 @@ export {
   displayString,
 } from './binding.js'
 export { renderSurfaces } from './render.js'
+export {
+  connectA2ui,
+  webSocketTransport,
+  type A2uiTransport,
+  type WebSocketLike,
+} from './transport.js'

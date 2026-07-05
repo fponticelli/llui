@@ -130,6 +130,18 @@ back to the Basic catalog.
 envelopes via `handle.apply(...)` and emits actions via `onAction` — wire those
 to A2A, WebSockets, AG-UI, MCP, SSE, or plain HTTP however you like.
 
+A WebSocket adapter ships built-in via the shared `A2uiTransport` seam:
+
+```ts
+import { connectA2ui, webSocketTransport } from '@llui/a2ui'
+
+const handle = connectA2ui(container, webSocketTransport(new WebSocket(url)))
+// inbound envelope frames render; user actions are sent as `{ action }` frames.
+```
+
+Other transports (A2A, AG-UI, MCP) implement the same `A2uiTransport` interface
+(`onEnvelope` / `sendAction`).
+
 ## Status
 
 Implements the full A2UI v0.9 server→client message set (`createSurface`,
