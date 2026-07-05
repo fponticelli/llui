@@ -64,9 +64,14 @@ elsewhere):
    reuses `@llui/components` focus-trap + scroll-lock.
 3. **Inline catalogs** — `org_chart`/`multi_surface` send an in-band
    `inline_catalog` with a custom `OrgChart` type. Needs inline-catalog support.
-4. **Client-defined functions + `checks`** — spec feature (`formatString`, format
-   helpers, validation); seam exists, not yet implemented. Note: **no** shipped
-   sample uses these — inline catalogs (3) are the higher-value real-world gap.
+4. ~~**Client-defined functions + `checks`**~~ ✅ — the full Basic function set
+   (`formatString`, `formatNumber/Currency/Date`, `pluralize`, `required`,
+   `regex`, `length`, `numeric`, `email`, `and/or/not`) is implemented as pure
+   `(call, env) => value` functions with reactivity applied at the binding site;
+   `checks` show error messages on inputs and disable buttons. Note: **no**
+   shipped sample uses these — inline catalogs (3) were the surprise real-world
+   gap, and they resolve to consumer-provided catalogs (already supported), so
+   the graceful-skip is correct.
 
 ## Roadmap
 

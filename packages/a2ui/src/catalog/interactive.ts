@@ -12,15 +12,17 @@ import {
   label as labelEl,
   option,
   select,
+  show,
   span,
   text,
   textarea,
+  type ChildNode,
   type Reactive,
   type Renderable,
   type Signal,
 } from '@llui/dom'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
-import { bindNumber, bindString, bindStringList } from '../binding.js'
+import { bindNumber, bindString, bindStringList, firstCheckError, type Check } from '../binding.js'
 import {
   isPathBinding,
   type ComponentNode,
@@ -39,10 +41,20 @@ function writeBackPath(
   return isPathBinding(binding) ? scope.absPath(binding.path) : undefined
 }
 
-function labelled(text_: Renderable, control: Renderable): Renderable {
-  return [
-    labelEl({ class: 'a2ui-field' }, [span({ class: 'a2ui-field-label' }, text_), ...control]),
-  ]
+function labelled(
+  text_: Renderable,
+  control: Renderable,
+  error: Signal<string | null> | null = null,
+): Renderable {
+  const children: ChildNode[] = [span({ class: 'a2ui-field-label' }, text_), ...control]
+  if (error) {
+    children.push(show(error, (e) => [span({ class: 'a2ui-field-error' }, [text(e)])]))
+  }
+  return [labelEl({ class: 'a2ui-field' }, children)]
+}
+
+function checksOf(node: ComponentNode): Check[] | undefined {
+  return Array.isArray(node.checks) ? (node.checks as Check[]) : undefined
 }
 
 const TextField: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
@@ -64,7 +76,11 @@ const TextField: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
             onInput,
           }),
         ]
-  return labelled([text(bindString(ctx, scope, node.label as DynamicString | undefined))], control)
+  return labelled(
+    [text(bindString(ctx, scope, node.label as DynamicString | undefined))],
+    control,
+    firstCheckError(ctx, scope, checksOf(node)),
+  )
 }
 
 const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
@@ -88,6 +104,7 @@ const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
         onInput,
       }),
     ],
+    firstCheckError(ctx, scope, checksOf(node)),
   )
 }
 
@@ -121,6 +138,7 @@ const Slider: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
         onInput,
       }),
     ],
+    firstCheckError(ctx, scope, checksOf(node)),
   )
 }
 
@@ -156,6 +174,7 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   return labelled(
     [text(bindString(ctx, scope, node.label as DynamicString | undefined))],
     [select({ class: 'a2ui-choicepicker', multiple, onChange }, optionEls)],
+    firstCheckError(ctx, scope, checksOf(node)),
   )
 }
 

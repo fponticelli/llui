@@ -3,8 +3,8 @@
  * bindings for the LLui element helpers, and one-shot reads for event handlers.
  */
 
-import { isSignalHandle, type Reactive, type Signal } from '@llui/dom'
-import type { RenderContext, RenderScope } from './catalog.js'
+import { derived, isSignalHandle, type Reactive, type Signal } from '@llui/dom'
+import type { Catalog, EvalEnv, RenderContext, RenderScope } from './catalog.js'
 import { warnOnce } from './catalog.js'
 import {
   isFunctionCall,
@@ -34,34 +34,82 @@ function mapReactive<T>(r: Reactive<JsonValue>, fn: (v: JsonValue) => T): Reacti
   return isSignalHandle(r) ? (r as Signal<JsonValue>).map(fn) : fn(r as JsonValue)
 }
 
+/**
+ * Pure evaluation of a dynamic value against data snapshots: literal → itself;
+ * `{path}` → pointer resolution (absolute against `root`, relative against
+ * `data`); `{call}` → the catalog function, recursively.
+ */
+export function evalDynamic(
+  catalog: Catalog,
+  root: JsonValue,
+  data: JsonValue,
+  value: unknown,
+): JsonValue | undefined {
+  if (isPathBinding(value)) {
+    const src = value.path.startsWith('/') ? root : data
+    return resolvePointer(src, value.path)
+  }
+  if (isFunctionCall(value)) {
+    const fn = catalog.functions[value.call]
+    if (!fn) {
+      warnOnce(`No catalog function "${value.call}" — binding resolves to empty`)
+      return undefined
+    }
+    const env: EvalEnv = {
+      root,
+      data,
+      eval: (v) => evalDynamic(catalog, root, data, v),
+      arg: (name) => evalDynamic(catalog, root, data, value.args?.[name]),
+    }
+    return fn(value, env)
+  }
+  return value as JsonValue
+}
+
+/** A validation check on an input/button: a function call plus an error message. */
+export interface Check {
+  readonly call: string
+  readonly args?: Readonly<Record<string, unknown>>
+  readonly message?: string
+}
+
+/**
+ * Reactively evaluate a component's `checks`, returning the first failing check's
+ * message (or `null` if all pass). Returns `null` when there are no checks.
+ */
+export function firstCheckError(
+  ctx: RenderContext,
+  scope: RenderScope,
+  checks: readonly Check[] | undefined,
+): Signal<string | null> | null {
+  if (!checks || checks.length === 0) return null
+  const catalog = ctx.catalog
+  return derived(scope.root, scope.data, (root, data): string | null => {
+    for (const check of checks) {
+      const ok = evalDynamic(catalog, root, data, { call: check.call, args: check.args })
+      if (ok !== true) return check.message ?? 'Invalid'
+    }
+    return null
+  })
+}
+
 /** One-shot, non-reactive resolution — for action context + input write-back reads. */
 export function resolveDynamic(
   ctx: RenderContext,
   scope: RenderScope,
   dyn: unknown,
 ): JsonValue | undefined {
-  if (dyn === undefined || dyn === null) return dyn ?? undefined
-  if (isPathBinding(dyn)) {
-    return resolvePointer(sourceFor(scope, dyn.path).peek(), dyn.path)
-  }
-  if (isFunctionCall(dyn)) {
-    const fn = ctx.catalog.functions[dyn.call]
-    if (!fn) return undefined
-    const r = fn(dyn, ctx, scope)
-    return isSignalHandle(r) ? (r as Signal<JsonValue>).peek() : (r as JsonValue)
-  }
-  return dyn as JsonValue
+  return evalDynamic(ctx.catalog, scope.root.peek(), scope.data.peek(), dyn)
 }
 
-function bindFunction(
-  ctx: RenderContext,
-  scope: RenderScope,
-  dyn: { call: string },
-): Reactive<JsonValue> {
-  const fn = ctx.catalog.functions[dyn.call]
-  if (fn) return fn(dyn as never, ctx, scope)
-  warnOnce(`No catalog function "${dyn.call}" — binding resolves to empty`)
-  return ''
+/** Reactive evaluation of a `{call}` (or any dynamic value) as a binding source. */
+function bindFunction(ctx: RenderContext, scope: RenderScope, dyn: unknown): Reactive<JsonValue> {
+  const catalog = ctx.catalog
+  return derived(
+    scope.root,
+    scope.data,
+    (root, data) => evalDynamic(catalog, root, data, dyn) ?? '',
+  )
 }
 
 /** Reactive string binding for text/attrs. */

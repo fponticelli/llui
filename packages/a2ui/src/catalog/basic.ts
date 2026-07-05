@@ -9,7 +9,7 @@
 
 import { button, div, hr, img, el, span, text, type Mountable, type PropValue } from '@llui/dom'
 import type { BuildArgs, ComponentBuilder } from '../catalog.js'
-import { bindString, resolveDynamic } from '../binding.js'
+import { bindString, firstCheckError, resolveDynamic, type Check } from '../binding.js'
 import type { Action, ComponentNode, JsonObject, JsonValue } from '../protocol.js'
 import { isFunctionCall } from '../protocol.js'
 
@@ -194,13 +194,20 @@ const Button: ComponentBuilder = (args) => {
   const { node, ctx, scope } = args
   const childId = typeof node.child === 'string' ? node.child : undefined
   const variant = typeof node.variant === 'string' ? node.variant : 'default'
+  const checks = Array.isArray(node.checks) ? (node.checks as Check[]) : undefined
+  const error = firstCheckError(ctx, scope, checks)
   return [
     button(
       {
         class: `a2ui-button a2ui-button-${variant}`,
         type: 'button',
         style: layoutStyle(node),
-        onClick: () => runAction(args),
+        // Disable the button while any check fails.
+        disabled: error ? error.map((e) => e !== null) : undefined,
+        onClick: () => {
+          if (error && error.peek() !== null) return
+          runAction(args)
+        },
       },
       childId ? ctx.renderById(childId, scope) : [],
     ),

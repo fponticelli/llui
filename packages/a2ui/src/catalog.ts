@@ -6,7 +6,7 @@
  * optionally extending the Basic catalog.
  */
 
-import type { Signal, Reactive, Renderable } from '@llui/dom'
+import type { Signal, Renderable } from '@llui/dom'
 import type {
   ChildList,
   ComponentId,
@@ -78,12 +78,26 @@ export interface BuildArgs {
 /** Builds the live DOM for one A2UI component type. */
 export type ComponentBuilder = (args: BuildArgs) => Renderable
 
-/** A client-defined function (formatting, validation, local actions). */
-export type CatalogFunction = (
-  call: FunctionCall,
-  ctx: RenderContext,
-  scope: RenderScope,
-) => Reactive<JsonValue>
+/**
+ * Evaluation environment handed to a catalog function: the current data root and
+ * scope data (for `${path}` interpolation), plus resolvers for the call's args
+ * and arbitrary dynamic values (literal | `{path}` | nested `{call}`).
+ */
+export interface EvalEnv {
+  readonly root: JsonValue
+  readonly data: JsonValue
+  /** Resolve one of the call's args by name. */
+  arg(name: string): JsonValue | undefined
+  /** Resolve an arbitrary dynamic value (used for nested calls / interpolation). */
+  eval(value: unknown): JsonValue | undefined
+}
+
+/**
+ * A client-defined function (formatting, validation, local actions). Pure: given
+ * a call and its evaluation environment, return a value. Reactivity is handled
+ * once at the binding site, so functions need not deal with signals.
+ */
+export type CatalogFunction = (call: FunctionCall, env: EvalEnv) => JsonValue
 
 export interface Catalog {
   readonly id?: string
