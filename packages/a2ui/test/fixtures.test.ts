@@ -70,9 +70,11 @@ describe('A2UI sample payloads (Basic catalog)', () => {
 // Payloads that render gracefully but do not yet show their full content —
 // each documents a real Phase-1 gap discovered from the shipped samples.
 const DOCUMENTED_GAPS: Array<[string, ServerToClientEnvelope[], string]> = [
-  // A confirmation Modal with an empty trigger — clearly meant to be visible.
-  // Needs Modal initial-open semantics (open-by-default / programmatic open).
-  ['action_confirmation', asStream(actionConfirmation), 'Modal initial-open semantics'],
+  // A confirmation Modal whose trigger is an empty Text. Our Modal is
+  // spec-faithful (the Basic catalog Modal has no open field — it is
+  // trigger-driven), so the content is hidden until the (empty) trigger is
+  // clicked. Not a renderer gap; a quirk of this sample.
+  ['action_confirmation', asStream(actionConfirmation), 'trigger-driven modal (sample quirk)'],
   // Reference an inline `OrgChart` catalog we do not register — needs inline /
   // in-band catalog support.
   ['org_chart', asStream(orgChart), 'inline catalog support'],

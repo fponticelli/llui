@@ -57,13 +57,16 @@ elsewhere):
 1. ~~**Template iteration over objects**~~ ✅ — `contact_list` binds a template to
    an object (`/contacts = {contact1,…}`); templates now iterate object values.
    Also corrected: template paths are item-scoped (leading-slash included).
-2. **Modal initial-open** — `action_confirmation` is a confirmation Modal with an
-   empty trigger, clearly meant to be visible. Needs open-by-default /
-   programmatic-open semantics.
+2. ~~**Modal initial-open**~~ ✅ (resolved as non-gap) — the Basic-catalog Modal
+   schema is `{trigger, content}` with no open field, so our trigger-driven Modal
+   is spec-faithful; `action_confirmation`'s empty trigger is a sample quirk.
+   Stateful components repeated in templates now get per-row state, and Modal
+   reuses `@llui/components` focus-trap + scroll-lock.
 3. **Inline catalogs** — `org_chart`/`multi_surface` send an in-band
    `inline_catalog` with a custom `OrgChart` type. Needs inline-catalog support.
 4. **Client-defined functions + `checks`** — spec feature (`formatString`, format
-   helpers, validation); seam exists, not yet implemented.
+   helpers, validation); seam exists, not yet implemented. Note: **no** shipped
+   sample uses these — inline catalogs (3) are the higher-value real-world gap.
 
 ## Roadmap
 

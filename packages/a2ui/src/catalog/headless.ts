@@ -6,11 +6,12 @@
  * their messages back through our reducer — no child-component boundary needed.
  */
 
-import { div, label as labelEl, show, span, text, type Send, type Signal } from '@llui/dom'
+import { div, label as labelEl, onMount, show, span, text, type Send, type Signal } from '@llui/dom'
+import { lockBodyScroll, pushFocusTrap } from '@llui/components/utils'
 import * as checkbox from '@llui/components/checkbox'
 import * as tabs from '@llui/components/tabs'
 import * as dialog from '@llui/components/dialog'
-import type { BuildArgs, ComponentBuilder, RenderContext } from '../catalog.js'
+import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
 import { bindString } from '../binding.js'
 import { resolvePointer } from '../pointer.js'
 import {
@@ -45,17 +46,29 @@ function readUi<T>(ui: JsonObject, id: ComponentId, fallback: T): T {
  */
 function driveUi<S, M>(
   ctx: RenderContext,
-  id: ComponentId,
+  scope: RenderScope,
+  key: string,
   initial: S,
   reducer: (state: S, msg: M) => [S, unknown[]],
 ): { state: Signal<S>; send: Send<M> } {
-  const state = ctx.uiState.map((ui) => readUi(ui, id, initial))
+  // Read from the (depth-scoped) scope.uiState; write via ctx.setUi (a plain
+  // send, safe at any depth).
+  const state = scope.uiState.map((ui) => readUi(ui, key, initial))
   const send: Send<M> = (msg) => {
-    const current = readUi(ctx.uiState.peek(), id, initial)
+    const current = readUi(scope.uiState.peek(), key, initial)
     const [next] = reducer(current, msg)
-    ctx.setUi(id, next as unknown as JsonValue)
+    ctx.setUi(key, next as unknown as JsonValue)
   }
   return { state, send }
+}
+
+/** A per-instance key so a stateful component repeated in a template rows apart. */
+function instanceKey(scope: { keyPrefix: string }, id: ComponentId): string {
+  return `${scope.keyPrefix}:${id}`
+}
+
+function domId(key: string): string {
+  return `a2ui-${key}`.replace(/[^\w-]/g, '-')
 }
 
 /** CheckBox → `@llui/components` checkbox, two-way bound to a boolean data path. */
@@ -111,8 +124,15 @@ const Tabs: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   const defs = (Array.isArray(node.tabs) ? node.tabs : []) as TabDef[]
   const values = defs.map((_, i) => String(i))
   const initial = tabs.init({ items: values, value: values[0] ?? '' })
-  const { state, send } = driveUi<tabs.TabsState, tabs.TabsMsg>(ctx, node.id, initial, tabs.update)
-  const parts = tabs.connect(state, send, { id: `a2ui-tabs-${node.id}` })
+  const key = instanceKey(scope, node.id)
+  const { state, send } = driveUi<tabs.TabsState, tabs.TabsMsg>(
+    ctx,
+    scope,
+    key,
+    initial,
+    tabs.update,
+  )
+  const parts = tabs.connect(state, send, { id: domId(`tabs-${key}`) })
 
   const triggers = defs.map((tab, i) => {
     const item = parts.item(String(i))
@@ -137,13 +157,15 @@ const Tabs: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
 const Modal: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   const triggerId = typeof node.trigger === 'string' ? node.trigger : undefined
   const contentId = typeof node.content === 'string' ? node.content : undefined
+  const key = instanceKey(scope, node.id)
   const { state, send } = driveUi<dialog.DialogState, dialog.DialogMsg>(
     ctx,
-    node.id,
+    scope,
+    key,
     dialog.init(),
     dialog.update,
   )
-  const parts = dialog.connect(state, send, { id: `a2ui-modal-${node.id}` })
+  const parts = dialog.connect(state, send, { id: domId(`modal-${key}`) })
   const open = state.map((s) => s.open)
 
   return [
@@ -161,6 +183,18 @@ const Modal: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
         }),
         elx('div', { ...parts.positioner, class: 'a2ui-modal-positioner' }, [
           elx('div', { ...parts.content, class: 'a2ui-modal-content' }, [
+            // Trap focus + lock body scroll while open; both release on close
+            // (this subtree unmounts when `open` goes false).
+            onMount(() => {
+              const el = document.getElementById(parts.content.id)
+              if (!el) return
+              const releaseTrap = pushFocusTrap({ container: el })
+              const unlock = lockBodyScroll()
+              return () => {
+                releaseTrap()
+                unlock()
+              }
+            }),
             elx(
               'button',
               {

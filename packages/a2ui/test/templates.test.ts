@@ -98,6 +98,39 @@ describe('leading-slash path inside a template (v0.8 compat)', () => {
   })
 })
 
+describe('stateful component repeated in a template', () => {
+  it('gives each Tabs instance independent active-tab state per row', () => {
+    mount(
+      [
+        { id: 'root', component: 'List', children: { componentId: 'row-tabs', path: '/items' } },
+        {
+          id: 'row-tabs',
+          component: 'Tabs',
+          tabs: [
+            { title: 'A', child: 'pa' },
+            { title: 'B', child: 'pb' },
+          ],
+        },
+        { id: 'pa', component: 'Text', text: 'panel A' },
+        { id: 'pb', component: 'Text', text: 'panel B' },
+      ],
+      {
+        items: [{ id: 'x' }, { id: 'y' }],
+      },
+    )
+    const tabsEls = container.querySelectorAll('.a2ui-tabs')
+    expect(tabsEls).toHaveLength(2)
+    const triggersOf = (el: Element) => el.querySelectorAll<HTMLButtonElement>('.a2ui-tab')
+
+    // Switch the SECOND row's Tabs to tab B.
+    triggersOf(tabsEls[1]!)[1]!.click()
+    expect(triggersOf(tabsEls[1]!)[1]!.getAttribute('data-state')).toBe('active')
+    // The FIRST row's Tabs must be unaffected — still on tab A.
+    expect(triggersOf(tabsEls[0]!)[0]!.getAttribute('data-state')).toBe('active')
+    expect(triggersOf(tabsEls[0]!)[1]!.getAttribute('data-state')).toBe('inactive')
+  })
+})
+
 describe('action fired from inside a template', () => {
   it('resolves relative action context against the row item', () => {
     const events: A2uiActionEvent[] = []

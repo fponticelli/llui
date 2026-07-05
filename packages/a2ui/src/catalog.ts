@@ -33,10 +33,22 @@ export interface RenderScope {
    */
   readonly root: Signal<JsonValue>
   /**
+   * Client-local UI state for stateful components, correctly scoped for THIS
+   * depth (threaded through template rows like {@link root}). Read via this;
+   * write via {@link RenderContext.setUi}.
+   */
+  readonly uiState: Signal<JsonObject>
+  /**
    * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
    * used for two-way write-back. Absolute pointers pass through unchanged.
    */
   absPath(pointer: string): string
+  /**
+   * Stable prefix identifying THIS scope instance (`''` at the surface root,
+   * `/rows/0` in a template row). Namespaces client-local UI state so a stateful
+   * component repeated across template rows gets independent state per row.
+   */
+  readonly keyPrefix: string
 }
 
 /** Everything a builder needs to render one component and recurse into children. */
@@ -45,8 +57,6 @@ export interface RenderContext {
   readonly theme: Signal<Theme>
   /** The surface data model root (absolute `/…` bindings resolve against this). */
   readonly rootData: Signal<JsonValue>
-  /** Client-local UI state (per stateful component), keyed by component id. */
-  readonly uiState: Signal<JsonObject>
   readonly send: (msg: A2uiMsg) => void
   readonly catalog: Catalog
   /** Write a stateful component's local UI state (Tabs active tab, Modal open). */

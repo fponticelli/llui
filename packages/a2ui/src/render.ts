@@ -45,16 +45,22 @@ function joinPointer(base: string, ...segments: string[]): string {
 }
 
 // ── Template rows ──────────────────────────────────────────────────
-interface TemplateRow {
+interface RowBase {
   readonly item: JsonValue
   /** Path segment for this row: array index or object key. */
   readonly segment: string
+}
+// Threads the (correctly-scoped) data root and UI state into each row so both
+// stay valid inside the `each`'s re-scoping — an outer-scope handle would
+// re-scope to the row item.
+interface TemplateRow extends RowBase {
+  readonly uiState: JsonObject
 }
 
 // Expand a template collection: A2UI iterates arrays (by index) and objects (by
 // key). The segment becomes both the write-back path segment and the fallback
 // row key.
-function templateRows(source: JsonValue | undefined): TemplateRow[] {
+function templateRows(source: JsonValue | undefined): RowBase[] {
   if (Array.isArray(source)) {
     return source.map((item, index) => ({ item, segment: String(index) }))
   }
@@ -88,7 +94,6 @@ function makeContext(
   surfaceId: string,
   theme: Signal<Theme>,
   rootData: Signal<JsonValue>,
-  uiState: Signal<JsonObject>,
   send: (msg: A2uiMsg) => void,
   catalog: Catalog,
   components: Readonly<Record<ComponentId, ComponentNode>>,
@@ -97,7 +102,6 @@ function makeContext(
     surfaceId,
     theme,
     rootData,
-    uiState,
     send,
     catalog,
     setUi: (componentId, value) => send({ type: 'setUi', surfaceId, componentId, value }),
@@ -133,13 +137,17 @@ function renderChildren(
   const path = tpl.path
   const collectionBase = path.startsWith('/') ? path : scope.absPath(path)
 
-  // Wrap each item with its index and the (correctly-scoped) data-model root, so
-  // both flow through the `each`'s re-scoping and stay valid inside the row —
-  // an outer-scope root handle would re-scope to the row item.
-  const rows: Signal<readonly TemplateRow[]> = derived(scope.root, scope.data, (root, dataHere) => {
-    const source = path.startsWith('/') ? root : dataHere
-    return templateRows(resolvePointer(source, path))
-  })
+  // Thread the data root and UI state into each row so both flow through the
+  // `each`'s re-scoping and stay valid inside the row.
+  const rows: Signal<readonly TemplateRow[]> = derived(
+    scope.root,
+    scope.data,
+    scope.uiState,
+    (root, dataHere, uiState) => {
+      const source = path.startsWith('/') ? root : dataHere
+      return templateRows(resolvePointer(source, path)).map((r) => ({ ...r, uiState }))
+    },
+  )
 
   const list = each(rows, {
     key: (row) => rowKey(row.item, row.segment),
@@ -148,11 +156,13 @@ function renderChildren(
       // relative (`name`) and leading-slash (`/name`) paths resolve to the item
       // (`/products/N/name`). So data === root === the item here.
       const item = rowSig.map((r) => r.item)
+      const segment = rowSig.peek().segment
       const itemScope: RenderScope = {
         data: item,
         root: item,
-        absPath: (p) =>
-          joinPointer(collectionBase, rowSig.peek().segment, p.startsWith('/') ? p.slice(1) : p),
+        uiState: rowSig.map((r) => r.uiState),
+        absPath: (p) => joinPointer(collectionBase, segment, p.startsWith('/') ? p.slice(1) : p),
+        keyPrefix: joinPointer(collectionBase, segment),
       }
       return ctx.renderById(tpl.componentId, itemScope)
     },
@@ -188,11 +198,13 @@ function renderSurface(
       const uiState: Signal<JsonObject> = unit.map((u) => u.surface.uiState)
       const su = unit.peek().surface
       if (!su.rootId || !su.components[su.rootId]) return []
-      const ctx = makeContext(surfaceId, theme, rootData, uiState, send, catalog, su.components)
+      const ctx = makeContext(surfaceId, theme, rootData, send, catalog, su.components)
       const rootScope: RenderScope = {
         data: rootData,
         root: rootData,
+        uiState,
         absPath: (p) => (p.startsWith('/') ? p : `/${p}`),
+        keyPrefix: '',
       }
       return ctx.renderById(su.rootId, rootScope)
     },

@@ -145,8 +145,12 @@ describe('Modal (via @llui/components)', () => {
     expect(bodyPresent()).toBe(true)
     const content = container.querySelector('.a2ui-modal-content')!
     expect(content.getAttribute('role')).toBe('dialog')
+    // Body scroll is locked while open (focus-trap + scroll-lock reused from
+    // @llui/components).
+    expect(document.body.style.overflow).toBe('hidden')
 
     container.querySelector<HTMLElement>('.a2ui-modal-close')!.click()
     expect(bodyPresent()).toBe(false)
+    expect(document.body.style.overflow).toBe('') // released on close
   })
 })
