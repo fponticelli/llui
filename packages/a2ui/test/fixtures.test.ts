@@ -52,6 +52,7 @@ const BASIC: Array<[string, ServerToClientEnvelope[], string]> = [
   ['two_column_list', asStream(twoColumnList), 'Book Now'],
   ['confirmation', asStream(confirmation), 'We look forward to seeing you!'],
   ['contact_card', asStream(contactCard), 'Calendar'],
+  ['contact_list', asStream(contactList), 'Alice Wonderland'], // object template iteration
 ]
 
 describe('A2UI sample payloads (Basic catalog)', () => {
@@ -69,9 +70,6 @@ describe('A2UI sample payloads (Basic catalog)', () => {
 // Payloads that render gracefully but do not yet show their full content —
 // each documents a real Phase-1 gap discovered from the shipped samples.
 const DOCUMENTED_GAPS: Array<[string, ServerToClientEnvelope[], string]> = [
-  // Binds a template to `/contacts`, which is an OBJECT, not an array. A2UI
-  // templates must iterate object VALUES too — we currently only iterate arrays.
-  ['contact_list', asStream(contactList), 'template iteration over object values'],
   // A confirmation Modal with an empty trigger — clearly meant to be visible.
   // Needs Modal initial-open semantics (open-by-default / programmatic open).
   ['action_confirmation', asStream(actionConfirmation), 'Modal initial-open semantics'],

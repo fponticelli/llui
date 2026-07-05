@@ -47,19 +47,32 @@ function joinPointer(base: string, ...segments: string[]): string {
 // ── Template rows ──────────────────────────────────────────────────
 interface TemplateRow {
   readonly item: JsonValue
-  readonly index: number
-  readonly root: JsonValue
+  /** Path segment for this row: array index or object key. */
+  readonly segment: string
+}
+
+// Expand a template collection: A2UI iterates arrays (by index) and objects (by
+// key). The segment becomes both the write-back path segment and the fallback
+// row key.
+function templateRows(source: JsonValue | undefined): TemplateRow[] {
+  if (Array.isArray(source)) {
+    return source.map((item, index) => ({ item, segment: String(index) }))
+  }
+  if (source !== null && typeof source === 'object') {
+    return Object.entries(source).map(([key, item]) => ({ item, segment: key }))
+  }
+  return []
 }
 
 // Prefer an explicit id/key (stable across reorder + edits); otherwise key by
-// position, which keeps rows stable while an input inside them is being edited
-// (a content hash would rebuild the row on every keystroke).
-function itemKey(item: JsonValue, index: number): string {
+// the path segment, which keeps rows stable while an input inside them is being
+// edited (a content hash would rebuild the row on every keystroke).
+function rowKey(item: JsonValue, segment: string): string {
   if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
     const id = (item as Record<string, JsonValue>).id ?? (item as Record<string, JsonValue>).key
     if (typeof id === 'string' || typeof id === 'number') return String(id)
   }
-  return String(index)
+  return segment
 }
 
 // ── Theme → CSS custom properties ──────────────────────────────────
@@ -125,19 +138,21 @@ function renderChildren(
   // an outer-scope root handle would re-scope to the row item.
   const rows: Signal<readonly TemplateRow[]> = derived(scope.root, scope.data, (root, dataHere) => {
     const source = path.startsWith('/') ? root : dataHere
-    const value = resolvePointer(source, path)
-    const items = Array.isArray(value) ? value : []
-    return items.map((item, index) => ({ item, index, root }))
+    return templateRows(resolvePointer(source, path))
   })
 
   const list = each(rows, {
-    key: (row) => itemKey(row.item, row.index),
+    key: (row) => rowKey(row.item, row.segment),
     render: (rowSig) => {
+      // Inside a template the item is the local root: per the A2UI spec, both
+      // relative (`name`) and leading-slash (`/name`) paths resolve to the item
+      // (`/products/N/name`). So data === root === the item here.
+      const item = rowSig.map((r) => r.item)
       const itemScope: RenderScope = {
-        data: rowSig.map((r) => r.item),
-        root: rowSig.map((r) => r.root),
+        data: item,
+        root: item,
         absPath: (p) =>
-          p.startsWith('/') ? p : joinPointer(collectionBase, String(rowSig.peek().index), p),
+          joinPointer(collectionBase, rowSig.peek().segment, p.startsWith('/') ? p.slice(1) : p),
       }
       return ctx.renderById(tpl.componentId, itemScope)
     },

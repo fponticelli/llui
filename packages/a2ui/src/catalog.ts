@@ -26,10 +26,10 @@ export interface RenderScope {
   /** Reactive data for this scope (root data model, or a template item). */
   readonly data: Signal<JsonValue>
   /**
-   * The surface data-model root, correctly scoped for THIS depth. Absolute
-   * (`/…`) bindings resolve against this; it is threaded through template rows
-   * so it stays valid at any nesting depth (an outer-scope handle would
-   * re-scope to the row item).
+   * The local data-model root for THIS scope: the surface data model at the top
+   * level, or the current item inside a template. Per the A2UI spec, template
+   * paths are item-scoped, so both relative (`name`) and leading-slash (`/name`)
+   * bindings resolve against this. Correctly scoped for the current depth.
    */
   readonly root: Signal<JsonValue>
   /**

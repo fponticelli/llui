@@ -60,23 +60,40 @@ describe('template two-way write-back', () => {
   })
 })
 
-describe('absolute path inside a template', () => {
-  it('resolves absolute /... bindings against the root, shared across rows', () => {
-    mount(listOf([{ id: 'row', component: 'Text', text: { path: '/shared' } }]), {
-      shared: 'X',
-      rows: [{ id: 'a' }, { id: 'b' }],
+describe('template iteration over an object', () => {
+  it('iterates object values keyed by object key, with correct write-back paths', () => {
+    mount(
+      [
+        { id: 'root', component: 'List', children: { componentId: 'row', path: '/people' } },
+        { id: 'row', component: 'TextField', label: 'Name', value: { path: 'name' } },
+      ],
+      { people: { p1: { name: 'Alice' }, p2: { name: 'Bob' } } },
+    )
+    const inputs = container.querySelectorAll<HTMLInputElement>('.a2ui-textfield-input')
+    expect([...inputs].map((i) => i.value)).toEqual(['Alice', 'Bob'])
+
+    // Editing the second row must write to /people/p2/name (object key, not index).
+    inputs[1]!.value = 'Bobby'
+    inputs[1]!.dispatchEvent(new Event('input'))
+    const people = data().people as Record<string, { name: string }>
+    expect(people.p1?.name).toBe('Alice')
+    expect(people.p2?.name).toBe('Bobby')
+  })
+})
+
+describe('leading-slash path inside a template (v0.8 compat)', () => {
+  it('resolves a leading-slash path against the ITEM, like a relative path', () => {
+    // Per the A2UI spec, inside a template `/name` and `name` both resolve to
+    // `/rows/N/name` — the item is the local root (contact_list relies on this).
+    mount(listOf([{ id: 'row', component: 'Text', text: { path: '/label' } }]), {
+      rows: [
+        { id: 'a', label: 'Alpha' },
+        { id: 'b', label: 'Beta' },
+      ],
     })
     expect([...container.querySelectorAll('.a2ui-text')].map((n) => n.textContent)).toEqual([
-      'X',
-      'X',
-    ])
-    handle.apply({
-      version: 'v0.9',
-      updateDataModel: { surfaceId: 's', path: '/shared', value: 'Y' },
-    })
-    expect([...container.querySelectorAll('.a2ui-text')].map((n) => n.textContent)).toEqual([
-      'Y',
-      'Y',
+      'Alpha',
+      'Beta',
     ])
   })
 })

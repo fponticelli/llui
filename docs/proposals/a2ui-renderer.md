@@ -31,11 +31,13 @@ message set maps onto The Elm Architecture:
   to the data model. Because a data update never changes the component map's
   identity, a high-frequency `updateDataModel` stream re-commits only bound
   values and never rebuilds the tree (structural `each` key stays stable).
-- **Scope-root threading** — a subtle LLui rule: a signal handle used inside an
+- **Scope model** — a subtle LLui rule: a signal handle used inside an
   `each`/`show`/`branch` row reads that row's scoped state, not root. So the
-  renderer iterates surfaces AS DATA, carries the whole surface in the structural
-  unit, and threads the data-model root through template row wrappers
-  (`RenderScope.root`) so absolute `/…` bindings stay valid at any nesting depth.
+  renderer iterates surfaces AS DATA and carries the whole surface in the
+  structural unit. Inside a template the item is the local root: per the A2UI
+  spec, template paths are item-scoped, so both relative (`name`) and
+  leading-slash (`/name`, v0.8-style) bindings resolve against the item.
+  Templates iterate arrays (by index) and objects (by key).
 - **Catalog seam** (`catalog.ts`) — an open registry (`defineCatalog`) mapping an
   A2UI component-type name to a live LLui build; custom catalogs may extend the
   Basic catalog. `catalogId` selects the catalog; unknown ids fall back to Basic.
@@ -52,9 +54,9 @@ Running the shipped `google/A2UI` v0.9 samples surfaced the real-world gaps
 (notably: the samples use **no** functions or `checks` — the actual gaps are
 elsewhere):
 
-1. **Template iteration over objects** — `contact_list` binds a template to an
-   object (`/contacts = {contact1,…}`), not an array. Templates must iterate
-   object values too.
+1. ~~**Template iteration over objects**~~ ✅ — `contact_list` binds a template to
+   an object (`/contacts = {contact1,…}`); templates now iterate object values.
+   Also corrected: template paths are item-scoped (leading-slash included).
 2. **Modal initial-open** — `action_confirmation` is a confirmation Modal with an
    empty trigger, clearly meant to be visible. Needs open-by-default /
    programmatic-open semantics.
