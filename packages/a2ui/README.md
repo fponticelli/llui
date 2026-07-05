@@ -132,8 +132,18 @@ to A2A, WebSockets, AG-UI, MCP, SSE, or plain HTTP however you like.
 
 ## Status
 
-Implements the A2UI v0.9 server→client message set (`createSurface`,
-`updateComponents`, `updateDataModel`, `deleteSurface`), literal + `{ path }`
-bindings, templates, two-way binding, and actions. Client-defined **functions**
-(`formatString`, validation `checks`) have a typed catalog seam but are not yet
-implemented — a `FunctionCall` binding resolves to empty with a dev warning.
+Implements the full A2UI v0.9 server→client message set (`createSurface`,
+`updateComponents`, `updateDataModel`, `deleteSurface`), plus:
+
+- literal, `{ path }`, and nested `{ call }` bindings;
+- client-defined **functions** — `formatString`, `formatNumber/Currency/Date`,
+  `pluralize`, `required`/`regex`/`length`/`numeric`/`email`, `and`/`or`/`not`;
+- validation **`checks`** (error messages on inputs, disabled buttons);
+- **templates** over arrays and objects, with spec-correct item-scoped paths;
+- two-way binding and actions;
+- `sendDataModel` client→server sync, best-effort version negotiation, and
+  `handle.capabilities()`.
+
+Conformance-tested against the real `google/A2UI` v0.9 sample payloads. Custom
+components (e.g. inline-catalog `OrgChart`) render once the consumer registers a
+catalog via `defineCatalog`.
