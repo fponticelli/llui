@@ -51,19 +51,21 @@ describe('CheckBox (via @llui/components)', () => {
   })
 })
 
-describe('Slider', () => {
-  it('binds a number path and writes back on input', () => {
+describe('Slider (via @llui/components)', () => {
+  it('binds a number path with ARIA and drives value via keyboard', () => {
     mount(
       [{ id: 'root', component: 'Slider', label: 'Vol', min: 0, max: 10, value: { path: '/vol' } }],
       { vol: 3 },
     )
-    const range = container.querySelector<HTMLInputElement>('.a2ui-slider')!
-    expect(range.value).toBe('3')
-    expect(range.min).toBe('0')
-    expect(range.max).toBe('10')
-    range.value = '7'
-    range.dispatchEvent(new Event('input'))
-    expect(data().vol).toBe(7)
+    const thumb = container.querySelector<HTMLElement>('.a2ui-slider-thumb')!
+    expect(thumb.getAttribute('role')).toBe('slider')
+    expect(thumb.getAttribute('aria-valuenow')).toBe('3')
+    expect(thumb.getAttribute('aria-valuemin')).toBe('0')
+    expect(thumb.getAttribute('aria-valuemax')).toBe('10')
+
+    thumb.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(data().vol).toBe(4)
+    expect(container.querySelector('.a2ui-slider-thumb')?.getAttribute('aria-valuenow')).toBe('4')
   })
 })
 

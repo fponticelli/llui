@@ -11,8 +11,9 @@ import { lockBodyScroll, pushFocusTrap } from '@llui/components/utils'
 import * as checkbox from '@llui/components/checkbox'
 import * as tabs from '@llui/components/tabs'
 import * as dialog from '@llui/components/dialog'
+import * as slider from '@llui/components/slider'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
-import { bindString } from '../binding.js'
+import { bindString, firstCheckError } from '../binding.js'
 import { resolvePointer } from '../pointer.js'
 import {
   isPathBinding,
@@ -22,10 +23,14 @@ import {
   type JsonObject,
   type JsonValue,
 } from '../protocol.js'
-import { elx } from './basic.js'
+import { checksOf, elx, labelledField } from './basic.js'
 
 function toBool(value: unknown): boolean {
   return value === true || value === 'true'
+}
+function toNum(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : 0
 }
 
 /**
@@ -212,9 +217,79 @@ const Modal: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   ]
 }
 
+/** Slider → `@llui/components` slider, two-way bound to a number data path, with
+ * keyboard + pointer-drag driven through the real slider reducer. */
+const Slider: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
+  const min = typeof node.min === 'number' ? node.min : 0
+  const max = typeof node.max === 'number' ? node.max : 100
+  const path = isPathBinding(node.value) ? (node.value as { path: string }).path : undefined
+  const abs = path ? scope.absPath(path) : undefined
+
+  const state = scope.data.map((d) =>
+    slider.init({
+      value: [path ? toNum(resolvePointer(d, path)) : toNum(node.value)],
+      min,
+      max,
+      step: 1,
+    }),
+  )
+  const send: Send<slider.SliderMsg> = (msg) => {
+    if (!abs) return
+    const [next] = slider.update(state.peek(), msg)
+    ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: next.value[0] ?? min })
+  }
+  const parts = slider.connect(state, send)
+
+  const control = elx(
+    'div',
+    {
+      ...parts.control,
+      class: 'a2ui-slider-control',
+      onPointerDown: (e: PointerEvent) => {
+        e.preventDefault()
+        const el = e.currentTarget as HTMLElement
+        const at = (ev: PointerEvent) =>
+          send({
+            type: 'setThumb',
+            index: 0,
+            value: slider.valueFromPoint(
+              state.peek(),
+              el.getBoundingClientRect(),
+              ev.clientX,
+              ev.clientY,
+            ),
+          })
+        at(e)
+        el.setPointerCapture(e.pointerId)
+        const move = (ev: PointerEvent) => at(ev)
+        const up = (): void => {
+          el.releasePointerCapture(e.pointerId)
+          el.removeEventListener('pointermove', move)
+          el.removeEventListener('pointerup', up)
+        }
+        el.addEventListener('pointermove', move)
+        el.addEventListener('pointerup', up)
+      },
+    },
+    [
+      elx('div', { ...parts.track, class: 'a2ui-slider-track' }, [
+        elx('div', { ...parts.range, class: 'a2ui-slider-range' }),
+      ]),
+      elx('div', { ...parts.thumb(0).thumb, class: 'a2ui-slider-thumb' }),
+    ],
+  )
+
+  return labelledField(
+    [text(bindString(ctx, scope, node.label as DynamicString | undefined))],
+    [elx('div', { ...parts.root, class: 'a2ui-slider' }, [control])],
+    firstCheckError(ctx, scope, checksOf(node)),
+  )
+}
+
 /** Builders backed by `@llui/components` headless state machines. */
 export const headlessComponents: Readonly<Record<string, ComponentBuilder>> = {
   CheckBox,
   Tabs,
   Modal,
+  Slider,
 }

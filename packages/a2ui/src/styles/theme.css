@@ -135,7 +135,40 @@
 
 .a2ui-slider {
   width: 100%;
-  accent-color: var(--a2ui-primary);
+}
+.a2ui-slider-control {
+  position: relative;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.a2ui-slider-track {
+  position: relative;
+  flex: 1;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--a2ui-border);
+}
+.a2ui-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--a2ui-primary);
+}
+.a2ui-slider-thumb {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--a2ui-primary);
+  transform: translateX(-50%);
+  cursor: grab;
+}
+.a2ui-slider-thumb:focus-visible {
+  outline: 2px solid var(--a2ui-primary);
+  outline-offset: 2px;
 }
 .a2ui-choicepicker {
   padding: 0.5rem;

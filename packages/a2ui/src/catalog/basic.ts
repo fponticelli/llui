@@ -7,7 +7,22 @@
  * display/layout half and the shared builder helpers.
  */
 
-import { button, div, hr, img, el, span, text, type Mountable, type PropValue } from '@llui/dom'
+import {
+  button,
+  div,
+  hr,
+  img,
+  el,
+  label as labelEl,
+  show,
+  span,
+  text,
+  type ChildNode,
+  type Mountable,
+  type PropValue,
+  type Renderable,
+  type Signal,
+} from '@llui/dom'
 import type { BuildArgs, ComponentBuilder } from '../catalog.js'
 import { bindString, firstCheckError, resolveDynamic, type Check } from '../binding.js'
 import type { Action, ComponentNode, JsonObject, JsonValue } from '../protocol.js'
@@ -22,6 +37,25 @@ export function elx(
   children: readonly (Mountable | string | number)[] = [],
 ): Mountable {
   return el(tag, props as Record<string, PropValue>, children)
+}
+
+/** A labelled form field: `<label>` wrapping a label span, the control, and an
+ * optional reactive validation-error message. Shared by every input builder. */
+export function labelledField(
+  labelText: Renderable,
+  control: Renderable,
+  error: Signal<string | null> | null = null,
+): Renderable {
+  const children: ChildNode[] = [span({ class: 'a2ui-field-label' }, labelText), ...control]
+  if (error) {
+    children.push(show(error, (e) => [span({ class: 'a2ui-field-error' }, [text(e)])]))
+  }
+  return [labelEl({ class: 'a2ui-field' }, children)]
+}
+
+/** A component's validation checks, if any. */
+export function checksOf(node: ComponentNode): Check[] | undefined {
+  return Array.isArray(node.checks) ? (node.checks as Check[]) : undefined
 }
 
 /** Layout style shared by every component: `weight` → flex-grow, `align` → self. */
