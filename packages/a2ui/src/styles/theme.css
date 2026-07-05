@@ -249,6 +249,65 @@
   background: color-mix(in srgb, var(--a2ui-primary) 15%, transparent);
 }
 
+/* DateTimeInput (date-picker calendar) */
+.a2ui-dp {
+  display: inline-block;
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  padding: 0.5rem;
+}
+.a2ui-dp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+.a2ui-dp-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.a2ui-dp-nav {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0 0.5rem;
+  line-height: 1;
+}
+.a2ui-dp-weekdays,
+.a2ui-dp-row {
+  display: grid;
+  grid-template-columns: repeat(7, 2rem);
+}
+.a2ui-dp-weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  padding: 0.25rem 0;
+}
+.a2ui-dp-cell {
+  height: 2rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: calc(var(--a2ui-radius) - 2px);
+  font: inherit;
+}
+.a2ui-dp-cell:not([data-in-month]) {
+  opacity: 0.35;
+}
+.a2ui-dp-cell[data-today] {
+  outline: 1px solid var(--a2ui-border);
+}
+.a2ui-dp-cell[data-selected] {
+  background: var(--a2ui-primary);
+  color: white;
+}
+.a2ui-dp-cell[data-disabled] {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* Checkbox */
 .a2ui-checkbox {
   display: inline-flex;

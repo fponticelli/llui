@@ -84,15 +84,16 @@ tree.
 All 18 A2UI Basic components are implemented. Display and layout render as
 semantic HTML; the richer interactive controls reuse `@llui/components`:
 
-| Component                                                                                             | Backed by                                    |
-| ----------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `CheckBox`                                                                                            | `@llui/components/checkbox`                  |
-| `Tabs`                                                                                                | `@llui/components/tabs` (roving focus, ARIA) |
-| `Modal`                                                                                               | `@llui/components/dialog`                    |
-| `Slider`                                                                                              | native `input[type=range]`                   |
-| `ChoicePicker`                                                                                        | native `select` (single / multiple)          |
-| `TextField`, `DateTimeInput`                                                                          | native accessible inputs                     |
-| `Text`, `Image`, `Icon`, `Video`, `AudioPlayer`, `Row`, `Column`, `List`, `Card`, `Divider`, `Button` | semantic HTML                                |
+| Component                                                                                             | Backed by                                                                        |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `CheckBox`                                                                                            | `@llui/components/checkbox`                                                      |
+| `Tabs`                                                                                                | `@llui/components/tabs` (roving focus, ARIA)                                     |
+| `Modal`                                                                                               | `@llui/components/dialog` (focus-trap + scroll-lock)                             |
+| `Slider`                                                                                              | `@llui/components/slider` (pointer-drag + keyboard)                              |
+| `ChoicePicker`                                                                                        | `@llui/components/combobox` (typeahead filter + chips)                           |
+| `DateTimeInput`                                                                                       | `@llui/components/date-picker` (inline calendar); native input for time/datetime |
+| `TextField`                                                                                           | native accessible input                                                          |
+| `Text`, `Image`, `Icon`, `Video`, `AudioPlayer`, `Row`, `Column`, `List`, `Card`, `Divider`, `Button` | semantic HTML                                                                    |
 
 Interactive components with client-local view state (a tab's active index, a
 modal's open flag — state A2UI does not put in the data model) keep that state

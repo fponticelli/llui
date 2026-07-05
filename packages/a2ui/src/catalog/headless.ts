@@ -10,6 +10,7 @@ import {
   derived,
   div,
   each,
+  input,
   label as labelEl,
   onMount,
   show,
@@ -24,6 +25,7 @@ import * as tabs from '@llui/components/tabs'
 import * as dialog from '@llui/components/dialog'
 import * as slider from '@llui/components/slider'
 import * as combobox from '@llui/components/combobox'
+import * as datePicker from '@llui/components/date-picker'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
 import { bindString, firstCheckError } from '../binding.js'
 import { resolvePointer } from '../pointer.js'
@@ -426,6 +428,115 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   )
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** DateTimeInput → `@llui/components` date-picker (inline calendar) for the
+ * date-only case; native input when time is involved (native time pickers are
+ * platform-optimal). Selected date lives in the data model. */
+const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
+  const enableDate = node.enableDate !== false
+  const enableTime = node.enableTime === true
+  const path = isPathBinding(node.value) ? (node.value as { path: string }).path : undefined
+  const abs = path ? scope.absPath(path) : undefined
+  const label = [text(bindString(ctx, scope, node.label as DynamicString | undefined))]
+  const error = firstCheckError(ctx, scope, checksOf(node))
+
+  // Time / datetime → native input (best-in-class platform picker).
+  if (enableTime || !enableDate) {
+    const type = enableDate && enableTime ? 'datetime-local' : enableTime ? 'time' : 'date'
+    const value = bindString(ctx, scope, node.value as DynamicString | undefined)
+    const onInput = abs
+      ? (e: Event) =>
+          ctx.send({
+            type: 'setData',
+            surfaceId: ctx.surfaceId,
+            path: abs,
+            value: (e.target as HTMLInputElement).value,
+          })
+      : undefined
+    return labelledField(
+      label,
+      [input({ class: 'a2ui-textfield-input', type, value, onInput })],
+      error,
+    )
+  }
+
+  // Date-only → inline calendar.
+  const key = instanceKey(scope, node.id)
+  const dateValue = (d: JsonValue): string | null => {
+    const v = path ? resolvePointer(d, path) : undefined
+    return typeof v === 'string' && v !== '' ? v.slice(0, 10) : null
+  }
+  const initial = datePicker.init({ value: dateValue(scope.data.peek()) })
+  const state = derived(scope.uiState, scope.data, (ui, d) => ({
+    ...readUi(ui, key, initial),
+    value: dateValue(d),
+  }))
+  const send: Send<datePicker.DatePickerMsg> = (msg) => {
+    const current = {
+      ...readUi(scope.uiState.peek(), key, initial),
+      value: dateValue(scope.data.peek()),
+    }
+    const [next] = datePicker.update(current, msg)
+    if (abs && next.value !== current.value) {
+      ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: next.value ?? '' })
+    }
+    ctx.setUi(key, next as unknown as JsonValue)
+  }
+  const parts = datePicker.connect(state, send)
+
+  const header = elx('div', { class: 'a2ui-dp-header' }, [
+    elx('button', { ...parts.prevMonthTrigger, class: 'a2ui-dp-nav' }, [text('‹')]),
+    elx('span', { class: 'a2ui-dp-title' }, [text(parts.grid(0)['aria-label'])]),
+    elx('button', { ...parts.nextMonthTrigger, class: 'a2ui-dp-nav' }, [text('›')]),
+  ])
+  const weekdayRow = elx(
+    'div',
+    { class: 'a2ui-dp-weekdays' },
+    WEEKDAYS.map((w) => elx('span', { class: 'a2ui-dp-weekday' }, [text(w)])),
+  )
+
+  // dayCell parts are static values (not signals), so the whole grid rebuilds
+  // wholesale when the calendar state changes — keyed by the visible window.
+  const gridUnits = state.map((s) => [
+    {
+      key: `${s.visibleYear}-${s.visibleMonth}-${s.value}-${s.focused}`,
+      cells: datePicker.monthGrid(s),
+    },
+  ])
+  const grid = each(gridUnits, {
+    key: (u) => u.key,
+    render: (uSig) => {
+      const cells = uSig.peek().cells
+      const rows = []
+      for (let w = 0; w < cells.length / 7; w++) {
+        rows.push(
+          elx(
+            'div',
+            { ...parts.row, class: 'a2ui-dp-row' },
+            cells
+              .slice(w * 7, w * 7 + 7)
+              .map((cell) =>
+                elx(
+                  'button',
+                  { ...parts.dayCell(cell).cell, class: 'a2ui-dp-cell', type: 'button' },
+                  [text(String(cell.day))],
+                ),
+              ),
+          ),
+        )
+      }
+      return rows
+    },
+  })
+
+  return labelledField(
+    label,
+    [elx('div', { ...parts.root, class: 'a2ui-dp' }, [header, weekdayRow, grid])],
+    error,
+  )
+}
+
 /** Builders backed by `@llui/components` headless state machines. */
 export const headlessComponents: Readonly<Record<string, ComponentBuilder>> = {
   CheckBox,
@@ -433,4 +544,5 @@ export const headlessComponents: Readonly<Record<string, ComponentBuilder>> = {
   Modal,
   Slider,
   ChoicePicker,
+  DateTimeInput,
 }

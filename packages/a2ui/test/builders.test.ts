@@ -156,7 +156,7 @@ describe('TextField variants', () => {
 })
 
 describe('DateTimeInput', () => {
-  it('selects the input type from enableDate/enableTime', () => {
+  it('uses a native input for time / datetime', () => {
     mount([
       {
         id: 'root',
@@ -180,17 +180,51 @@ describe('DateTimeInput', () => {
       },
     ])
     expect((only('.a2ui-textfield-input') as HTMLInputElement).type).toBe('time')
+  })
 
-    mount([
-      {
-        id: 'root',
-        component: 'DateTimeInput',
-        label: 'D',
-        value: { path: '/d' },
-        enableDate: true,
-      },
-    ])
-    expect((only('.a2ui-textfield-input') as HTMLInputElement).type).toBe('date')
+  it('renders an inline calendar for the date-only case and writes the picked day', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'DateTimeInput',
+          label: 'D',
+          value: { path: '/d' },
+          enableDate: true,
+        },
+      ],
+      { d: '2024-06-15' },
+    )
+    const dp = only('.a2ui-dp')
+    expect(dp).not.toBeNull()
+    expect(dp.querySelector('.a2ui-dp-title')?.textContent).toContain('2024')
+    // The bound date is marked selected.
+    const selected = dp.querySelector('.a2ui-dp-cell[data-date="2024-06-15"]')
+    expect(selected?.getAttribute('data-selected')).toBe('')
+
+    // Click another day → data updates.
+    dp.querySelector<HTMLButtonElement>('.a2ui-dp-cell[data-date="2024-06-20"]')!.click()
+    const d = handle.getState().surfaces['s']?.dataModel as { d: string }
+    expect(d.d).toBe('2024-06-20')
+  })
+
+  it('navigates months', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'DateTimeInput',
+          label: 'D',
+          value: { path: '/d' },
+          enableDate: true,
+        },
+      ],
+      { d: '2024-06-15' },
+    )
+    const title = () => only('.a2ui-dp-title').textContent
+    expect(title()).toContain('June')
+    only('.a2ui-dp-nav').click() // prev month
+    expect(title()).toContain('May')
   })
 })
 
