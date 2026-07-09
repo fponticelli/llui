@@ -593,6 +593,10 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'compiler-devtools', sourceFiles: ['index.ts'] },
   { name: 'compiler-ssr', sourceFiles: ['index.ts'] },
   { name: 'devmode-annotate', sourceFiles: ['index.ts'] },
+  // `index.ts` holds the direct exports (mountA2ui + its option/handle types) and
+  // named re-exports the extractor follows one level; `protocol.js` is pulled in
+  // via `export *`, which the extractor can't follow — scan it directly.
+  { name: 'a2ui', sourceFiles: ['index.ts', 'protocol.ts'] },
   // `index.ts` re-exports `from './x.js'` chains the extractor doesn't follow —
   // scan the concrete public ABI source files directly.
   {

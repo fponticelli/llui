@@ -73,6 +73,11 @@ export const PACKAGES: PackageMeta[] = [
     blurb: 'Dev HUD — annotate into a shared notebook',
   },
   {
+    slug: 'a2ui',
+    category: 'ai',
+    blurb: "Renderer for Google's A2UI agent-driven UI protocol",
+  },
+  {
     slug: 'markdown',
     category: 'rich-text',
     blurb: 'Reactive markdown() — live DOM, streaming',

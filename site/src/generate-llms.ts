@@ -52,6 +52,7 @@ const llmsTxt = `# LLui
 - @llui/agent — LLM control surface: LAP server + browser client (observe/send_message with drain semantics)
 - @llui/agent-bridge — MCP bridge CLI (llui-agent) translating Claude Desktop tool calls to LAP
 - @llui/devmode-annotate — Dev-only HUD: annotate the running app into a shared on-disk notebook the LLM reads/writes
+- @llui/a2ui — Renderer for Google's A2UI (Agent-to-UI) protocol: mountA2ui() applies server→client envelopes to a reactive TEA surface, with {path} bindings, templates, two-way inputs, actions, and an open catalog registry (Basic catalog reuses @llui/components)
 - @llui/markdown — Reactive Markdown rendering: markdown() parses to mdast and builds live reactive DOM (no HTML string), per-node renderer overrides, streaming-friendly keyed blocks
 - @llui/lexical — Low-level Lexical ↔ signal-runtime binding: lexicalForeign seam, plugin contract, DecoratorNode ↔ LLui sub-view bridge
 - @llui/lexical-collab — Opt-in collaborative editing: yjsCollab over an injected Yjs provider (CRDT sync, scoped undo, presence cursors)
