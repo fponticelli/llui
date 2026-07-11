@@ -311,9 +311,14 @@ function connectA2ui(
 
 A WebSocket A2UI transport. Inbound frames are parsed as an envelope or an
 array of envelopes; outbound actions are sent as `{ action }` JSON frames.
+Unparseable or non-envelope frames are reported via `options.onError`
+(default: `console.warn`) rather than dropped silently.
 
 ```typescript
-function webSocketTransport(socket: WebSocketLike): A2uiTransport
+function webSocketTransport(
+  socket: WebSocketLike,
+  options: WebSocketTransportOptions = {},
+): A2uiTransport
 ```
 
 ### `mountA2ui()`
@@ -749,6 +754,22 @@ export interface WebSocketLike {
   send(data: string): void
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
   removeEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
+}
+```
+
+### `WebSocketTransportOptions`
+
+Options for `webSocketTransport`.
+
+```typescript
+export interface WebSocketTransportOptions {
+  /**
+   * Called when an inbound frame can't be used — unparseable JSON, or a value
+   * that isn't an envelope object. Defaults to `console.warn`; pass your own to
+   * route these somewhere else (or a no-op to intentionally ignore them).
+   * Frames are never dropped *silently*.
+   */
+  onError?: (error: Error, rawData: unknown) => void
 }
 ```
 

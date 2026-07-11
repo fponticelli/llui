@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { handleEffects, http, sequence, race, type Effect, type ApiError } from '../src/index'
+import { handleEffects, http, log, sequence, race, type Effect, type ApiError } from '../src/index'
 
 type Send = (msg: Record<string, unknown>) => void
 
@@ -54,6 +54,74 @@ describe('sequence', () => {
 
     expect(send.mock.calls[0]![0]).toEqual({ type: 'r1', payload: { url: '/first' } })
     expect(send.mock.calls[1]![0]).toEqual({ type: 'r2', payload: { url: '/second' } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('advances past a side-effect-only step (log) instead of stalling', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const handler = handleEffects<Effect>().else(() => {})
+
+    handler({
+      effect: sequence([
+        log('step 1'),
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/after-log',
+          onSuccess: (data) => ({ type: 'done', payload: data }),
+          onError: (err) => ({ type: 'err', error: err }),
+        }),
+      ]),
+      send,
+      signal,
+    })
+
+    // The http step must run even though the preceding log step sends no message.
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(send.mock.calls[0]![0]).toEqual({ type: 'done', payload: { ok: 1 } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('does not fast-forward later async steps when a step emits multiple messages', async () => {
+    // A never-resolving fetch: lets us observe how many http steps were dispatched
+    // synchronously without any of them completing.
+    const fetchMock = vi.fn().mockImplementation(() => new Promise<Response>(() => {}))
+    vi.stubGlobal('fetch', fetchMock)
+
+    // A custom effect that emits two messages synchronously.
+    const handler = handleEffects<Effect | { type: 'emit-twice' }>().else((ctx) => {
+      if (ctx.effect.type === 'emit-twice') {
+        ctx.send({ type: 'x1' } as never)
+        ctx.send({ type: 'x2' } as never)
+      }
+    })
+
+    handler({
+      effect: sequence([
+        { type: 'emit-twice' } as unknown as Effect,
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/a',
+          onSuccess: (data) => ({ type: 'a', payload: data }),
+          onError: (err) => ({ type: 'ea', error: err }),
+        }),
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/b',
+          onSuccess: (data) => ({ type: 'b', payload: data }),
+          onError: (err) => ({ type: 'eb', error: err }),
+        }),
+      ]),
+      send,
+      signal,
+    })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    // The extra 'x2' message must NOT advance the sequence a second time: only the
+    // first http (/a) should have fired; /b waits for /a to complete.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]![0]).toBe('/a')
 
     vi.unstubAllGlobals()
   })

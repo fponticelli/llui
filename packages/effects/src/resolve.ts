@@ -6,7 +6,7 @@
  * parallel, applies success/error messages to state via update(),
  * and recurses if the responses produce more effects (up to a depth limit).
  */
-import type { HttpEffect, ApiError } from './index.js'
+import { httpStatusToApiError, type HttpEffect } from './index.js'
 
 type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
 
@@ -36,7 +36,7 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
       const res = await fetch(effect.url, opts)
 
       if (!res.ok) {
-        const error = await mapStatusToError(res)
+        const error = await httpStatusToApiError(res)
         return { effect, ok: false as const, error }
       }
 
@@ -70,33 +70,4 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
   }
 
   return currentState
-}
-
-async function mapStatusToError(res: Response): Promise<ApiError> {
-  switch (res.status) {
-    case 401:
-      return { kind: 'unauthorized' }
-    case 403:
-      return { kind: 'forbidden' }
-    case 404:
-      return { kind: 'notfound' }
-    case 429: {
-      const retry = res.headers.get('retry-after')
-      return { kind: 'ratelimit', retryAfter: retry ? parseInt(retry, 10) : undefined }
-    }
-    case 400:
-    case 422: {
-      try {
-        const body = await res.json()
-        if (body && typeof body === 'object' && 'errors' in body) {
-          return { kind: 'validation', fields: body.errors as Record<string, string[]> }
-        }
-      } catch {
-        /* fall through */
-      }
-      return { kind: 'server', status: res.status, message: res.statusText }
-    }
-    default:
-      return { kind: 'server', status: res.status, message: res.statusText }
-  }
 }

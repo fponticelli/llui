@@ -93,4 +93,22 @@ describe('WebSocket transport', () => {
     handle = connectA2ui(container, webSocketTransport(socket))
     expect(() => socket.receive('{not json')).not.toThrow()
   })
+
+  it('reports malformed and non-envelope frames via onError instead of dropping silently', () => {
+    const errors: Array<{ message: string; raw: unknown }> = []
+    handle = connectA2ui(
+      container,
+      webSocketTransport(socket, {
+        onError: (error, raw) => errors.push({ message: error.message, raw }),
+      }),
+    )
+
+    socket.receive('{not json') // unparseable JSON
+    socket.receive(42) // parses, but not an envelope object
+
+    expect(errors).toHaveLength(2)
+    expect(errors[0]!.message).toMatch(/JSON|token|Unexpected/i)
+    expect(errors[1]!.message).toMatch(/envelope/i)
+    expect(errors[1]!.raw).toBe(42)
+  })
 })

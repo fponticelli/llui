@@ -55,22 +55,49 @@ export interface WebSocketLike {
   removeEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
 }
 
+/** Options for `webSocketTransport`. */
+export interface WebSocketTransportOptions {
+  /**
+   * Called when an inbound frame can't be used — unparseable JSON, or a value
+   * that isn't an envelope object. Defaults to `console.warn`; pass your own to
+   * route these somewhere else (or a no-op to intentionally ignore them).
+   * Frames are never dropped *silently*.
+   */
+  onError?: (error: Error, rawData: unknown) => void
+}
+
 /**
  * A WebSocket A2UI transport. Inbound frames are parsed as an envelope or an
  * array of envelopes; outbound actions are sent as `{ action }` JSON frames.
+ * Unparseable or non-envelope frames are reported via `options.onError`
+ * (default: `console.warn`) rather than dropped silently.
  */
-export function webSocketTransport(socket: WebSocketLike): A2uiTransport {
+export function webSocketTransport(
+  socket: WebSocketLike,
+  options: WebSocketTransportOptions = {},
+): A2uiTransport {
+  const onError =
+    options.onError ??
+    ((error: Error, rawData: unknown) =>
+      console.warn(`[a2ui] dropped WebSocket frame: ${error.message}`, rawData))
   return {
     onEnvelope(handler) {
       const listener = (event: { data: unknown }): void => {
         let parsed: unknown
         try {
           parsed = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-        } catch {
+        } catch (e) {
+          onError(e instanceof Error ? e : new Error(String(e)), event.data)
           return
         }
         const list = Array.isArray(parsed) ? parsed : [parsed]
-        for (const envelope of list) handler(envelope as ServerToClientEnvelope)
+        for (const envelope of list) {
+          if (envelope === null || typeof envelope !== 'object') {
+            onError(new Error('frame is not an envelope object'), envelope)
+            continue
+          }
+          handler(envelope as ServerToClientEnvelope)
+        }
       }
       socket.addEventListener('message', listener)
       return () => socket.removeEventListener('message', listener)

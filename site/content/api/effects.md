@@ -429,6 +429,12 @@ function asOnEffect<E extends { type: string }, M>(
 ): (effect: E, api: { send: (msg: M) => void }) => () => void
 ```
 
+### `httpStatusToApiError()`
+
+```typescript
+function httpStatusToApiError(res: Response): Promise<ApiError>
+```
+
 ## Types
 
 ### `EffectInterceptorResult`

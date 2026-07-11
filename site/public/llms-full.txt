@@ -6654,6 +6654,12 @@ Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
 function asOnEffect<E extends { type: string }, M>(chain: (ctx: EffectCtx<E, M>) => void): (effect: E, api: { send: (msg: M) => void }) => () => void
 ```
 
+### `httpStatusToApiError()`
+
+```typescript
+function httpStatusToApiError(res: Response): Promise<ApiError>
+```
+
 ## Types
 
 ### `EffectInterceptorResult`
@@ -14637,9 +14643,11 @@ function connectA2ui(container: Element, transport: A2uiTransport, options: A2ui
 
 A WebSocket A2UI transport. Inbound frames are parsed as an envelope or an
 array of envelopes; outbound actions are sent as `{ action }` JSON frames.
+Unparseable or non-envelope frames are reported via `options.onError`
+(default: `console.warn`) rather than dropped silently.
 
 ```typescript
-function webSocketTransport(socket: WebSocketLike): A2uiTransport
+function webSocketTransport(socket: WebSocketLike, options: WebSocketTransportOptions = {}): A2uiTransport
 ```
 
 ### `mountA2ui()`
@@ -15075,6 +15083,22 @@ export interface WebSocketLike {
   send(data: string): void
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
   removeEventListener(type: 'message', listener: (event: { data: unknown }) => void): void
+}
+```
+
+### `WebSocketTransportOptions`
+
+Options for `webSocketTransport`.
+
+```typescript
+export interface WebSocketTransportOptions {
+  /**
+   * Called when an inbound frame can't be used — unparseable JSON, or a value
+   * that isn't an envelope object. Defaults to `console.warn`; pass your own to
+   * route these somewhere else (or a no-op to intentionally ignore them).
+   * Frames are never dropped *silently*.
+   */
+  onError?: (error: Error, rawData: unknown) => void
 }
 ```
 

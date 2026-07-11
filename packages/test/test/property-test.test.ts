@@ -51,6 +51,33 @@ describe('propertyTest', () => {
     ).toThrow(/invariant/)
   })
 
+  it('shrinks a failing sequence to a minimal reproduction', () => {
+    const Buggy = component<{ count: number }, { type: 'dec' }, never>({
+      name: 'Buggy',
+      init: () => [{ count: 0 }, []],
+      update: (state) => [{ count: state.count - 1 }, []], // negative after one dec
+      view: () => [],
+    })
+
+    let message = ''
+    try {
+      propertyTest(Buggy, {
+        invariants: [(state) => state.count >= 0],
+        messageGenerators: { dec: () => ({ type: 'dec' as const }) },
+        runs: 5,
+        maxSequenceLength: 8,
+      })
+    } catch (e) {
+      message = (e as Error).message
+    }
+
+    // A single `dec` (0 → -1) already violates the invariant, so the reported
+    // repro must be shrunk to exactly one step — no ' → ' chaining.
+    expect(message).toMatch(/invariant/)
+    expect(message).toMatch(/\[dec\]/)
+    expect(message).not.toContain('→')
+  })
+
   describe('mount mode', () => {
     interface Row {
       id: string

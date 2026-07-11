@@ -278,6 +278,15 @@ object depends on every field and re-runs on every change.
 plain values — no `send`/`fetch`/timers, no `.at`/`.map`/`.peek` on a signal, no element or
 text helpers. Use a structural primitive (`show`/`branch`/`each`) to build conditional DOM.
 
+**Returning a fresh object/array from `.map`/`derived` every call.** The reconciler decides
+whether to commit a binding by reference equality (`Object.is`) against the value it last
+produced. A derive that allocates a new value each run — `state.map((s) => ({ ...s.user }))`,
+`state.map((s) => s.items.filter(...))`, `state.map((s) => [...s.rows])` — is **never equal to
+its previous output**, so it re-commits on every state change even when nothing it reads
+changed. This is silent (correct, just wasteful). Prefer narrowing with `.at()` so the binding
+depends only on what it uses, keep derives returning primitives or stable references, and let
+`each` (keyed by id) own list identity rather than mapping to a fresh array in a slot.
+
 ---
 
 ## When to reach for `child()`

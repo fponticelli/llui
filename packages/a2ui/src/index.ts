@@ -161,4 +161,5 @@ export {
   webSocketTransport,
   type A2uiTransport,
   type WebSocketLike,
+  type WebSocketTransportOptions,
 } from './transport.js'

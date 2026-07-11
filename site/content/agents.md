@@ -263,6 +263,16 @@ component itself and shape what Claude sees in `describe_app` and
 `describe_context`. Per-field `@should("...")` hints document expected
 shapes for payload fields.
 
+**CSP note.** The predicate annotations that gate affordance visibility —
+`@routeGated("expr", "reason")` and field-level `@validates("expr")` — are
+compiled to functions with `new Function(...)` at runtime (they evaluate the
+expression against live state). This is your own authored source, never
+agent-supplied input, so it is not an injection vector; but `new Function` is
+`eval`-shaped and a strict Content-Security-Policy without `'unsafe-eval'` in
+`script-src` will block it. If you ship a strict CSP, avoid these two
+annotations (use `agentAffordances(state)` to compute affordability in plain
+code instead) or relax the policy for the app bundle.
+
 For the full grammar, compiler passes, and tool surface, see the
 [`@llui/agent` API reference](/api/agent) and the
 [`@llui/compiler` reference](/api/compiler). The authoritative

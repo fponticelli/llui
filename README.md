@@ -5,7 +5,7 @@ A compile-time-optimized web framework built on [The Elm Architecture](https://g
 **No virtual DOM. Effects as data. Compile-time chunked-mask optimization.**
 
 ```typescript
-import { component, mountApp, div, button } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -21,10 +21,10 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: ({ send, text }) => [
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],

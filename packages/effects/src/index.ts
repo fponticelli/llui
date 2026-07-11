@@ -763,7 +763,7 @@ async function parseResponseBody(
   return ct.includes('application/json') ? res.json() : res.text()
 }
 
-async function httpStatusToApiError(res: Response): Promise<ApiError> {
+export async function httpStatusToApiError(res: Response): Promise<ApiError> {
   switch (res.status) {
     case 401:
       return { kind: 'unauthorized' }
@@ -1162,6 +1162,18 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
   xhr.send(effect.body)
 }
 
+// Effect kinds that complete synchronously without ever dispatching a message.
+// Inside a `sequence` these would otherwise stall the chain forever (the next
+// step only runs once the current one sends), so the sequence advances past
+// them as soon as they've been dispatched.
+const NON_DISPATCHING_EFFECTS = new Set<string>([
+  'log',
+  'storage-set',
+  'storage-remove',
+  'broadcast',
+  'ws-send',
+])
+
 function runSequence(
   effect: SequenceEffect,
   send: InternalSend,
@@ -1177,9 +1189,21 @@ function runSequence(
     if (signal.aborted || effects.length === 0) return
     const current = effects.shift()!
 
+    // A step advances the sequence exactly once — on its first emitted message
+    // (the common terminal-message case, e.g. http's onSuccess/onError). A step
+    // that emits several messages (interval ticks, upload progress) advances on
+    // the first and must not fast-forward the remaining steps; a step that emits
+    // none (see NON_DISPATCHING_EFFECTS) advances synchronously below.
+    let advanced = false
+    const advance = (): void => {
+      if (advanced || signal.aborted) return
+      advanced = true
+      next()
+    }
+
     const wrappedSend: InternalSend = (msg) => {
       send(msg)
-      next()
+      advance()
     }
 
     dispatchEffect(
@@ -1191,6 +1215,8 @@ function runSequence(
       websockets,
       custom,
     )
+
+    if (NON_DISPATCHING_EFFECTS.has(current.type)) advance()
   }
 
   next()
