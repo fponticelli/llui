@@ -80,7 +80,7 @@ export type WsClientOpts = {
 }
 
 /**
- * Wires up a WebSocket to serve rpc requests from the server. See spec §9.4.
+ * Wires up a WebSocket to serve rpc requests from the server.
  */
 export function attachWsClient(
   ws: WsLike,

@@ -213,7 +213,7 @@ view: ({ send, branch, show }) => {
 - `@llui/agent/server` — `createLluiAgentServer`, `InMemoryTokenStore`, `consoleAuditSink`, interfaces.
 - `@llui/agent/client` — `createAgentClient`, `agentConnect`, `agentConfirm`, `agentLog`, `AgentEffect`.
 
-See the [Agent Protocol doc](../../docs/designs/10%20Agent%20Protocol.md) for the full wire protocol and security model.
+See the [Agents doc](https://llui.dev/agents) for the full wire protocol and security model.
 
 ## Custom serialization (codecs)
 

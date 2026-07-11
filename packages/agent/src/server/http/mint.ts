@@ -36,7 +36,7 @@ export type MintDeps = {
 
 /**
  * POST /agent/mint — creates a pairing record and returns the mint
- * response. See spec §6.2. The caller is responsible for routing
+ * response. The caller is responsible for routing
  * `/agent/mint` requests to this handler; `router.ts` composes that.
  */
 export async function handleMint(req: Request, deps: MintDeps): Promise<Response> {

@@ -63,8 +63,8 @@ export {
  *   - `schemaHashModule`    always (well-defined hash over null inputs)
  *   - `bindingDescriptorsModule` always when introspection is on
  *
- * The "always-on schemaHash" comes from spec §7.4: the hash ships in
- * prod too, used by HMR re-send gating regardless of agent mode.
+ * The "always-on schemaHash" ships in prod too, used by HMR re-send
+ * gating regardless of agent mode.
  */
 export const introspectionFactory: IntrospectionFactory = (input) => {
   const modules: CompilerModule[] = []
@@ -98,7 +98,7 @@ export const introspectionFactory: IntrospectionFactory = (input) => {
 
   // schemaHashModule registers UNCONDITIONALLY — hash is well-defined
   // for null inputs (deterministic). HMR re-send gating consumes the
-  // hash in prod builds (spec §7.4) even when no other introspection
+  // hash in prod builds even when no other introspection
   // metadata is emitted.
   modules.push(schemaHashModule)
 

@@ -1,7 +1,7 @@
 import type { TokenRecord } from '../protocol.js'
 
 /**
- * Append-only, read-friendly storage for token records. See spec §10.3.
+ * Append-only, read-friendly storage for token records.
  *
  * Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
  * value) on every authenticated request. The `tid` index is kept for

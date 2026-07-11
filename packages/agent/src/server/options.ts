@@ -13,7 +13,7 @@ export type { McpRouterOptions }
 
 /**
  * Options accepted by `createLluiAgentServer`. All values are
- * optional and fall back to in-memory defaults. See spec §10.1.
+ * optional and fall back to in-memory defaults.
  *
  * Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
  * The new opaque-token scheme (token.ts) doesn't sign anything — the

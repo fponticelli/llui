@@ -61,7 +61,7 @@ renderer fills subtrees in as they resolve.
 
 ## How it maps onto LLui
 
-LLui is [The Elm Architecture](../../docs/designs/01%20Architecture.md): state is
+LLui is [The Elm Architecture](https://llui.dev/architecture): state is
 immutable and only changes through a reducer. A2UI fits it cleanly:
 
 | A2UI concept                           | LLui                                                          |

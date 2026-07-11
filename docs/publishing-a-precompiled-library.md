@@ -17,6 +17,17 @@ whole slice and re-evaluates the binding on every change. A **dependency
 manifest** closes that gap: it records what each helper reads, so the consumer
 narrows the binding to the exact paths — across the npm boundary.
 
+> **Status (current):** the **producer** half is live — `scripts/publish.sh`
+> emits a `dist/__llui_deps.json` for every published package, so the manifests
+> ship today. The **consumer** half is **not yet wired into the live compiler**:
+> resolution (`manifest-resolve.ts`) is only consumed by the cross-file walker
+> (`walkProgram` in `cross-file-walker.ts`), which the `@llui/vite-plugin`
+> transform does **not** invoke yet. So a shipped manifest is currently a no-op
+> for consumers — bindings through a package helper still coarsen (see
+> [Soundness](#soundness)). Emitting the manifest now is forward-compatible:
+> it costs nothing and starts narrowing automatically once the walker is wired
+> into the live path. The rest of this doc describes the intended end state.
+
 ## The manifest
 
 A package ships `dist/__llui_deps.json` (schema v2). You don't hand-write it —
@@ -32,7 +43,8 @@ emits a fresh manifest automatically. Requirements:
 
 - `@llui/compiler` must be built first (it is, in the publish/build order).
 - The manifest ships because `package.json` already has `"files": ["dist"]`.
-- The consumer resolves it by reading `<pkg>/dist/__llui_deps.json` directly.
+- Consumer resolution (once wired into the live transform) reads
+  `<pkg>/dist/__llui_deps.json` directly via `manifest-resolve.ts`.
 
 ## What gets narrowed (and what doesn't)
 

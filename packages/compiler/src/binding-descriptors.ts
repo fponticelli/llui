@@ -47,7 +47,6 @@ import ts from 'typescript'
  * cases declare `agentAffordances` on the component def — the
  * documented escape hatch.
  *
- * @see agent spec §5.2, §12.2
  * @see @llui/dom binding-descriptors.ts (runtime registry + helper)
  */
 

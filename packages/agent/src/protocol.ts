@@ -1,7 +1,8 @@
 // ── LAP — LLui Agent Protocol ────────────────────────────────────
 // JSON over HTTPS between the llui-agent bridge (MCP side) and the
 // @llui/agent server library mounted in the developer's backend.
-// See docs/superpowers/specs/2026-04-19-llui-agent-design.md §7.
+// This file is the authoritative definition of the LAP wire protocol;
+// see also the Agents doc at https://llui.dev/agents.
 
 export type LapErrorCode =
   | 'auth-failed'
@@ -370,7 +371,7 @@ export type LapDescribeVisibleResponse = {
 // ── App + context documentation ──────────────────────────────────
 // Static app-level docs (authored once on the component record) and
 // dynamic per-state context docs (pure function of state, served by
-// `/lap/v1/context`). See spec §5.4.
+// `/lap/v1/context`).
 
 export type AgentDocs = {
   purpose: string
@@ -432,7 +433,7 @@ export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
 
 // ── Relay WS frames ──────────────────────────────────────────────
 // Bidirectional framing between the LLui runtime in the browser and
-// the @llui/agent server over /agent/ws. See spec §10.5.
+// the @llui/agent server over /agent/ws.
 
 export type LogKind =
   | 'proposed'

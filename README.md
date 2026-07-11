@@ -2,7 +2,7 @@
 
 A compile-time-optimized web framework built on [The Elm Architecture](https://guide.elm-lang.org/architecture/), designed for LLM-first authoring.
 
-**No virtual DOM. Effects as data. Compile-time bitmask optimization.**
+**No virtual DOM. Effects as data. Compile-time chunked-mask optimization.**
 
 ```typescript
 import { component, mountApp, div, button } from '@llui/dom'
@@ -45,7 +45,7 @@ mountApp(document.getElementById('app')!, Counter)
 | Package                                                           | Description                                                                                                                                                            |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`@llui/dom`](packages/dom)                                       | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers                                                                       |
-| [`@llui/compiler`](packages/compiler)                             | Engine — 3-pass TypeScript transform + 41 compile-time lint rules (all error severity)                                                                                 |
+| [`@llui/compiler`](packages/compiler)                             | Engine — signal TypeScript transform (view lowering) + compile-time lint rules (all error severity)                                                                    |
 | [`@llui/vite-plugin`](packages/vite-plugin)                       | Vite adapter — wires the compiler into Vite, surfaces diagnostics via `this.error()`                                                                                   |
 | [`@llui/compiler-introspection`](packages/compiler-introspection) | Opt-in compiler module — agent schemas, msg annotations, schema hash emission                                                                                          |
 | [`@llui/compiler-devtools`](packages/compiler-devtools)           | Opt-in compiler module — `__componentMeta` emission for source navigation                                                                                              |
@@ -93,10 +93,13 @@ npx vite
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — first component, project setup, basic patterns
-- [Cookbook](docs/cookbook.md) — forms, async, lists, routing, composition, SSR
-- [Design Documents](docs/designs/) — architecture, compiler, runtime, performance
-- [API Reference](docs/designs/09%20API%20Reference.md) — type signatures for all exports
+Full documentation lives at **[llui.dev](https://llui.dev)**:
+
+- [Getting Started](https://llui.dev/getting-started) — first component, project setup, basic patterns
+- [Cookbook](https://llui.dev/cookbook) — forms, async, lists, routing, composition, SSR
+- [Architecture](https://llui.dev/architecture) — build-once views, chunked-mask reactivity, the compiler, scope tree
+- [API Reference](https://llui.dev/api/dom) — type signatures for every package
+- [Agents](https://llui.dev/agents) — the LLM operator protocol and JSDoc annotations
 
 ## Development
 

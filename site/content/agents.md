@@ -263,12 +263,12 @@ component itself and shape what Claude sees in `describe_app` and
 `describe_context`. Per-field `@should("...")` hints document expected
 shapes for payload fields.
 
-For the full grammar, compiler passes, tool surface, and ESLint rule
-list, see [Design Doc 11 — Agent Annotations and
-Tools](https://github.com/fponticelli/llui/blob/main/docs/designs/11%20Agent%20Annotations%20and%20Tools.md).
-For the wire protocol, token format, and threat model, see [Design
-Doc 10 — Agent
-Protocol](https://github.com/fponticelli/llui/blob/main/docs/designs/10%20Agent%20Protocol.md).
+For the full grammar, compiler passes, and tool surface, see the
+[`@llui/agent` API reference](/api/agent) and the
+[`@llui/compiler` reference](/api/compiler). The authoritative
+definition of the wire protocol, token format, and threat model is the
+source itself — `packages/agent/src/protocol.ts` (LAP types + frames)
+and `packages/agent/src/server/` (token lifecycle, pairing, audit).
 
 ## Tokens
 
