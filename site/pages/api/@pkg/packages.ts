@@ -36,16 +36,6 @@ export const PACKAGES: PackageMeta[] = [
   { slug: 'compiler', category: 'core', blurb: 'Signal transform + compile-time lint rules' },
   { slug: 'vite-plugin', category: 'core', blurb: 'Wires the compiler into Vite' },
   {
-    slug: 'compiler-introspection',
-    category: 'compiler',
-    blurb: 'Opt-in — agent schemas & msg annotations',
-  },
-  {
-    slug: 'compiler-devtools',
-    category: 'compiler',
-    blurb: 'Opt-in — __componentMeta for source navigation',
-  },
-  {
     slug: 'compiler-ssr',
     category: 'compiler',
     blurb: "Opt-in — 'use client' directive handling",

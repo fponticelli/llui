@@ -33,7 +33,7 @@ set -e
 # from `@llui/compiler`.
 TIER1=(dom effects compiler)
 TIER2=(
-  compiler-introspection compiler-devtools compiler-ssr
+  compiler-ssr
   vite-plugin test router transitions components markdown lexical vike mcp agent
 )
 TIER3=(agent-bridge markdown-editor devmode-annotate)

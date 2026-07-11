@@ -821,7 +821,7 @@ export type AgentCoreHandle = {
 ### `ServerOptions`
 
 Options accepted by `createLluiAgentServer`. All values are
-optional and fall back to in-memory defaults. See spec §10.1.
+optional and fall back to in-memory defaults.
 Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
 The new opaque-token scheme (token.ts) doesn't sign anything — the
 server stores the SHA-256 hash and looks tokens up. The option is
@@ -2431,7 +2431,7 @@ export type AuditEntry = {
 
 ### `TokenStore`
 
-Append-only, read-friendly storage for token records. See spec §10.3.
+Append-only, read-friendly storage for token records.
 Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
 value) on every authenticated request. The `tid` index is kept for
 the resume / revoke / sessions surfaces — those operate on session

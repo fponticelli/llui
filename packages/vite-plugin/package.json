@@ -28,8 +28,6 @@
   },
   "dependencies": {
     "@llui/compiler": "workspace:^",
-    "@llui/compiler-devtools": "workspace:^",
-    "@llui/compiler-introspection": "workspace:^",
     "@llui/compiler-ssr": "workspace:^",
     "@llui/devmode-annotate": "workspace:^",
     "fflate": "^0.8.3",

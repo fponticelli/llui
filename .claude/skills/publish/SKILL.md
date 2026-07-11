@@ -90,7 +90,7 @@ If a dependency changed, every package that imports from it at runtime must also
 Tier 1 (no in-repo deps): dom, effects, compiler
 Tier 2 (depend on tier 1):
   dom      → vite-plugin, test, router, transitions, components, markdown, lexical, vike, mcp, agent
-  compiler → compiler-introspection, compiler-devtools, compiler-ssr
+  compiler → compiler-ssr, vite-plugin, mcp
   effects  → (no in-repo dependents)
 Tier 3 (depend on tier 2):
   agent              → agent-bridge (publishes as llui-agent)
@@ -100,7 +100,7 @@ Tier 3 (depend on tier 2):
 Cascade rules:
 
 - `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `lexical`, `lexical-collab`, `markdown-editor`, `devmode-annotate`, `vike`, `mcp`, `agent`, `a2ui`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
-- `compiler` changed → add `compiler-introspection`, `compiler-devtools`, `compiler-ssr` (the opt-in compiler modules).
+- `compiler` changed → add `compiler-ssr` (the remaining opt-in compiler module) plus its in-repo consumers `vite-plugin` and `mcp`.
 - `lexical` changed → add `markdown-editor` (peer-depends on `@llui/lexical`).
 - `components` changed → add `markdown-editor` (peer-depends on `@llui/components`).
 - `effects` has no in-repo dependents today — no cascade.

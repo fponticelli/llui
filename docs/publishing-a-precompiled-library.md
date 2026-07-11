@@ -19,14 +19,16 @@ narrows the binding to the exact paths — across the npm boundary.
 
 > **Status (current):** the **producer** half is live — `scripts/publish.sh`
 > emits a `dist/__llui_deps.json` for every published package, so the manifests
-> ship today. The **consumer** half is **not yet wired into the live compiler**:
-> resolution (`manifest-resolve.ts`) is only consumed by the cross-file walker
-> (`walkProgram` in `cross-file-walker.ts`), which the `@llui/vite-plugin`
-> transform does **not** invoke yet. So a shipped manifest is currently a no-op
-> for consumers — bindings through a package helper still coarsen (see
-> [Soundness](#soundness)). Emitting the manifest now is forward-compatible:
-> it costs nothing and starts narrowing automatically once the walker is wired
-> into the live path. The rest of this doc describes the intended end state.
+> ship today. The **consumer** half is **not wired into the live compiler**:
+> the resolution code (`manifest-resolve.ts`) exists and is unit-tested, but the
+> live signal transform (`transformSignalComponentSource`) never calls it — it
+> has no `ts.Program`/checker, which `manifest-resolve` needs. So a shipped
+> manifest is currently a no-op for consumers — bindings through a package
+> helper still coarsen (see [Soundness](#soundness)). Phase 3 was
+> **evidence-closed (2026-06-10)**: a scan of the real consumers found zero call
+> sites that would benefit (no app renders large lists through rows imported
+> from a _precompiled_ package). Emitting the manifest now is forward-compatible
+> and costs nothing; the rest of this doc describes the intended end state.
 
 ## The manifest
 

@@ -1,21 +1,8 @@
 import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import {
-  transformSignalComponentSource,
-  collectDeps,
-  registerIntrospectionFactory,
-  registerDevtoolsFactory,
-} from '@llui/compiler'
-import { introspectionFactory } from '@llui/compiler-introspection'
-import { devtoolsFactory } from '@llui/compiler-devtools'
+import { transformSignalComponentSource, collectDeps } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
-
-// Register opt-in module factories at module-import time. @llui/compiler
-// doesn't depend on its sibling packages; the MCP package wires them
-// when its static-compiler tool is loaded.
-registerIntrospectionFactory(introspectionFactory)
-registerDevtoolsFactory(devtoolsFactory)
 
 /**
  * v2c §4 — MCP static-mode tools.

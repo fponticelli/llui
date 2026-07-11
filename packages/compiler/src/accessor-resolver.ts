@@ -140,9 +140,7 @@ export function resolveAccessorBody(
 /**
  * Follow the alias chain for an identifier reference through the type
  * checker, then inspect the resolved symbol's declarations for an arrow
- * accessor we can mask-analyze. This is the same descent the cross-file
- * walker does for view-helper classification (`cross-file-walker.ts`),
- * applied here so a same-package import like
+ * accessor we can mask-analyze. Applied so a same-package import like
  *   `import { matrixOrEmpty } from '../state'`
  *   `value: (s) => matrixOrEmpty(s).field`
  * doesn't trip the opaque-flow leak diagnostic — the walker descends

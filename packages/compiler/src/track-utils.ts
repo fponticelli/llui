@@ -9,14 +9,9 @@
 // shapes inside it as leaks. The user has explicitly said
 // "trust me here."
 //
-// This helper is consumed by:
-//   - `modules/opaque-state-flow.ts` — suppresses the strict
-//     `llui/opaque-state-flow` error inside track.deps
-//   - `collect-deps.ts` — suppresses the file-local opaque flag
-//     (which drives the `opaque-accessor-file-wide-mask` warning)
-//     and skips delegation-following inside track.deps
-//   - `cross-file-walker.ts` — same suppression for the cross-file
-//     opacity flag
+// This helper is consumed by `collect-deps.ts` — it suppresses the
+// file-local opaque flag (which drives the `opaque-accessor-file-wide-mask`
+// warning) and skips delegation-following inside track.deps.
 //
 // Handles both forms: bare `track({...})` imported from `@llui/dom`
 // and the View-bag form `h.track({...})` if it ever exists.

@@ -114,7 +114,7 @@ export interface LluiPluginOptions {
    *
    *   1. Emits schemas + binding descriptors in prod builds so the
    *      @llui/agent runtime has metadata to advertise over its WS hello
-   *      frame (see agent spec §7.4).
+   *      frame.
    *   2. Auto-mounts `@llui/agent/server`'s router at `/agent/*` and its
    *      WS upgrade handler at `/agent/ws` on the Vite dev server — so
    *      plain `vite dev` has working agent endpoints with no extra

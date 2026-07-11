@@ -37,10 +37,8 @@ const llmsTxt = `# LLui
 ## Packages
 
 - @llui/dom — Runtime: component, mount, scope tree, bindings, HTML/SVG/MathML element helpers
-- @llui/compiler — Engine: 3-pass TypeScript transform + 41 compile-time lint rules (all error severity)
+- @llui/compiler — Engine: signal TypeScript transform (view lowering) + compile-time lint rules (all error severity)
 - @llui/vite-plugin — Vite adapter: wires the compiler into Vite, surfaces diagnostics via this.error()
-- @llui/compiler-introspection — Opt-in: agent schemas, msg annotations, schema hash emission
-- @llui/compiler-devtools — Opt-in: __componentMeta emission for source navigation
 - @llui/compiler-ssr — Opt-in: 'use client' directive handling and SSR emission
 - @llui/effects — Effect builders: http, cancel, debounce, websocket, retry, upload
 - @llui/router — Routing: structured path matching, guards, history/hash mode

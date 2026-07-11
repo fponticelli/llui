@@ -10,8 +10,6 @@ Build-tool-agnostic compiler engine for [LLui](https://github.com/fponticelli/ll
 This package is the engine. End users normally consume it through an adapter:
 
 - [`@llui/vite-plugin`](/api/vite-plugin) — the Vite adapter
-- [`@llui/compiler-introspection`](/api/compiler-introspection) — opt-in agent schemas + annotations
-- [`@llui/compiler-devtools`](/api/compiler-devtools) — opt-in `__componentMeta` emission
 - [`@llui/compiler-ssr`](/api/compiler-ssr) — opt-in `'use client'` directive handling
 
 ## Why compile-time errors, not lint warnings
@@ -44,10 +42,9 @@ The `@llui/eslint-plugin` package was removed when the rules migrated into this 
 | `llui/helper-cycle`                | A cycle in the cross-file view-helper graph                                                                                               |
 | `llui/substitution-cycle`          | A cycle while substituting a precompiled library helper's dependency paths                                                                |
 | `llui/substitution-depth-exceeded` | A precompiled-helper substitution chain exceeded the depth limit (coarsens that call site)                                                |
-| `llui/module-emission-conflict`    | Two compiler modules tried to emit conflicting output for the same node                                                                   |
 
-Opt-in modules add their own checks: `@llui/compiler-introspection` enforces the agent
-annotation rules (`@intent` / `@emits` / `@should` / `tagSend` translators); see its API page.
+The signal transform also enforces the agent annotation rules
+(`@intent` / `@emits` / `@should` / `tagSend` translators) when agent metadata is emitted.
 
 <!-- auto-api:start -->
 
@@ -350,69 +347,6 @@ function readComponentTypeArgNames(call: ts.CallExpression): {
 }
 ```
 
-### `classifyViewHelper()`
-
-Classify the symbol's declaration against the §2.1 rule.
-Operates on the _declared_ type (`getTypeOfSymbolAtLocation(symbol,
-symbol.declarations[0])`), not the inferred-at-call-site type. This is
-load-bearing: TypeScript inference at call sites widens to union
-shapes (`Node[] | undefined`, `JSX.Element | string`) that miss
-assignability for case 2. The rule's intent is "did the author commit
-to a view-helper signature in the declaration" — inference-narrowed
-types don't satisfy that intent.
-
-```typescript
-function classifyViewHelper(symbol: ts.Symbol, checker: ts.TypeChecker): ViewHelperClassification
-```
-
-### `walkProgram()`
-
-Walk a Program looking for call expressions that should be classified
-by the §2.1 rule. Restricts the walk to files matching `filter` so
-tests can scope to a subdirectory.
-
-```typescript
-function walkProgram(
-  program: ts.Program,
-  options: { filter?: (sourceFile: ts.SourceFile) => boolean } = {},
-): WalkerResult
-```
-
-### `toCanonicalDiagnostic()`
-
-Convert a walker-internal diagnostic to the canonical `Diagnostic`
-shape. Reads the source text (for line/column resolution) and a
-project root (for path relativization).
-
-```typescript
-function toCanonicalDiagnostic(
-  d: WalkerDiagnostic,
-  sourceText: string,
-  projectRoot: string,
-): Diagnostic
-```
-
-### `crossFileAccessorPaths()`
-
-Collect the cross-file union of accessor paths read from a focal file.
-Returns the union over every reactive accessor in `focalFile`, with
-cross-file view-helper descents merged in.
-Reactive-accessor entry is gated by `isReactiveAccessor` (the same
-predicate the file-local `collect-deps` walker uses) _plus_ a
-cross-file extension: an arrow at the first-arg position of a call
-to a §2.1 view-helper also counts as reactive, because that's the
-lift the helper applies to our state.
-Without the gate, every 1-param arrow in the file gets walked —
-including `onEffect: (bag) => bag.send(...)`, where `bag.send` ends
-up in the path set as a phantom "send" prefix. Issue #5, bug 3.
-
-```typescript
-function crossFileAccessorPaths(
-  program: ts.Program,
-  focalFile: ts.SourceFile,
-): { paths: Set<string>; opaque: boolean; opaqueNode?: ts.Node }
-```
-
 ### `rangeFromOffsets()`
 
 Convert a TS Compiler API `(start, end)` offset pair against a source
@@ -553,55 +487,6 @@ function applyLintFixes(
   source: string,
   messages: ReadonlyArray<{ fix?: LintFix }>,
 ): { code: string; applied: number; skipped: number }
-```
-
-### `registerIntrospectionFactory()`
-
-Register the introspection module factory. Called once per process
-by `@llui/compiler-introspection`'s init code (or by test setup /
-vite-plugin's import side-effect). Subsequent registrations replace
-the previous; that's intentional for test isolation.
-
-```typescript
-function registerIntrospectionFactory(factory: IntrospectionFactory | null): void
-```
-
-### `getIntrospectionFactory()`
-
-Used by transformLlui to retrieve the registered factory. Returns
-`null` when no factory is registered (introspection disabled).
-
-```typescript
-function getIntrospectionFactory(): IntrospectionFactory | null
-```
-
-### `registerDevtoolsFactory()`
-
-```typescript
-function registerDevtoolsFactory(factory: DevtoolsFactory | null): void
-```
-
-### `getDevtoolsFactory()`
-
-```typescript
-function getDevtoolsFactory(): DevtoolsFactory | null
-```
-
-### `findComponentCalls()`
-
-Walk a SourceFile and collect every `component(...)` CallExpression.
-Used by per-target emission modules to capture their targets in `emit`
-(not `visit`) so the refs match the post-Phase-2b AST.
-Phase 2b's `transformCall*` hooks rebuild ancestor nodes via
-`ts.visitEachChild` whenever any descendant is rewritten — e.g. a
-`text()` rewrite inside a `component()` call's view ladder
-invalidates every component-call ref captured during the visitor
-walk (Phase 2). Calling `findComponentCalls(analysis.sourceFile)` in
-`emit` returns refs into the post-Phase-2b tree, which is the same
-tree the umbrella's per-statement visitor walks.
-
-```typescript
-function findComponentCalls(sf: ts.SourceFile): ts.CallExpression[]
 ```
 
 ### `hasNonDefaultAnnotation()`
@@ -793,18 +678,6 @@ export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
 export type CompilerDomInternalImport = (typeof COMPILER_DOM_INTERNAL_IMPORTS)[number]
 ```
 
-### `ViewHelperKind`
-
-```typescript
-export type ViewHelperKind = 'walked' | 'opaque' | 'async' | 'not-a-helper'
-```
-
-### `DiagnosticId`
-
-```typescript
-export type DiagnosticId = 'llui/opaque-view-call' | 'llui/async-view-helper' | 'llui/helper-cycle'
-```
-
 ### `DiagnosticSeverity`
 
 ```typescript
@@ -906,18 +779,6 @@ export type ManifestLookupResult =
   | { kind: 'incompatible'; detail: string }
   /** Manifest present but unparseable/structurally wrong — coarsen + emit a diagnostic. */
   | { kind: 'malformed'; detail: string }
-```
-
-### `IntrospectionFactory`
-
-```typescript
-export type IntrospectionFactory = (input: IntrospectionFactoryInput) => CompilerModule[]
-```
-
-### `DevtoolsFactory`
-
-```typescript
-export type DevtoolsFactory = (input: DevtoolsFactoryInput) => CompilerModule[]
 ```
 
 ### `DispatchMode`
@@ -1235,50 +1096,6 @@ export interface ResolvedTypeSource {
 }
 ```
 
-### `ViewHelperClassification`
-
-```typescript
-export interface ViewHelperClassification {
-  kind: ViewHelperKind
-  /** Which §2.1 case fired. Only populated when kind === 'walked'. */
-  cases: Array<1 | 2 | 3>
-  /** Human-readable reason. */
-  reason: string
-}
-```
-
-### `WalkerDiagnostic`
-
-```typescript
-export interface WalkerDiagnostic {
-  id: DiagnosticId
-  file: string
-  pos: number
-  end: number
-  message: string
-  helperName: string | undefined
-}
-```
-
-### `WalkerResult`
-
-```typescript
-export interface WalkerResult {
-  diagnostics: WalkerDiagnostic[]
-  /** Per-file counts for telemetry. */
-  perFile: Map<
-    string,
-    {
-      callsClassified: number
-      walked: number
-      opaque: number
-      async: number
-      notAHelper: number
-    }
-  >
-}
-```
-
 ### `Position`
 
 ```typescript
@@ -1581,305 +1398,6 @@ export interface SignalLintMessage {
 }
 ```
 
-### `DiagnosticDefinition`
-
-```typescript
-export interface DiagnosticDefinition {
-  /** Stable id, e.g. `llui/opaque-view-call`. Per v2c §3 §8.2. */
-  id: string
-  /** One-line description; useful for adapter UIs that don't render the message. */
-  description: string
-}
-```
-
-### `FileAnalysis`
-
-Per-file analysis output. Modules accumulate findings here during
-visitor dispatch; emit consumes it. The shape is intentionally
-open-ended — modules name their own slots and the umbrella's
-orchestrator never inspects them, only forwards.
-
-```typescript
-export interface FileAnalysis {
-  /** Source file the analysis ran over. */
-  sourceFile: ts.SourceFile
-  /** Per-module accumulator buckets, keyed by module name. */
-  perModule: Map<string, unknown>
-  /** Diagnostics emitted during the walk. */
-  diagnostics: Diagnostic[]
-}
-```
-
-### `ModuleExternalTypes`
-
-Resolved external type sources for the file under analysis. Same
-shape as `transform.ts`'s `ExternalTypeSources`; declared here as a
-structural minimum so the module registry doesn't import from the
-umbrella. The host adapter (vite-plugin) supplies the values via
-its async cross-file resolver (`findTypeSource`).
-Always undefined for test-only `transformLlui(source, fileName)`
-invocations and for lint adapters without import resolution. Modules
-that consume this should fall back to file-local behaviour when
-absent.
-
-```typescript
-export interface ModuleExternalTypes {
-  state?: { source: string; typeName: string }
-  msg?: { source: string; typeName: string }
-  effect?: { source: string; typeName: string }
-}
-```
-
-### `AnalysisContext`
-
-```typescript
-export interface AnalysisContext {
-  sourceFile: ts.SourceFile
-  /** TS TypeChecker, when the host adapter has built a Program. May be undefined for AST-only paths. */
-  checker: ts.TypeChecker | undefined
-  /**
-   * The cross-file Program the checker is bound to, when available.
-   * Modules that need to resolve identifiers across files (e.g. the
-   * opaque-state-flow lint walking through imported helpers) must walk
-   * Program-bound nodes — the file the registry hands them is a
-   * locally-reparsed copy and its identifiers won't resolve through the
-   * checker. Use `program.getSourceFile(sourceFile.fileName)` to fetch
-   * the Program-bound counterpart. Undefined when the host doesn't
-   * supply a Program (test path, lint adapters without cross-file).
-   */
-  program: ts.Program | undefined
-  /**
-   * Get the named module's accumulator slot (creating it lazily). The
-   * slot is whatever shape the module wrote; type-safe access is the
-   * module author's responsibility — typically via a typed `get<T>()`
-   * wrapper exported alongside the module.
-   */
-  getSlot<T>(moduleName: string, init: () => T): T
-  /** Record a diagnostic. The diagnostic's `id` should match one declared in `DiagnosticDefinition[]`. */
-  reportDiagnostic(d: Diagnostic): void
-  /**
-   * External type sources from the host adapter's cross-file resolver.
-   * Undefined when the host doesn't supply them (test path, lint-only
-   * adapters without import resolution).
-   */
-  externalTypes?: ModuleExternalTypes
-}
-```
-
-### `EmissionContribution`
-
-```typescript
-export interface EmissionContribution {
-  /** Module emitting this contribution — used for conflict reporting. */
-  module: string
-  /** Field name on the `ComponentDef` object literal (e.g. `__msgSchema`). */
-  field: string
-  /** AST expression to assign. The umbrella merges into the component()'s config arg. */
-  value: ts.Expression
-  /**
-   * Optional per-call target. When set, this contribution applies only
-   * to the named `component()` call expression; the umbrella's
-   * emission-merger writes the field into that call's config-arg
-   * object literal. When omitted, the contribution is *file-global*:
-   * the merger writes the field into every `component()` call in the
-   * file (the common case — `__msgSchema`, `__prefixes`, `__schemaHash`
-   * are file-shape-derived).
-   *
-   * Per-call target is needed for `__componentMeta` (file + line vary
-   * per call site) and any other field whose value depends on the
-   * specific `component()` call location.
-   *
-   * Conflict-detection runs per-(field, target) tuple — two modules
-   * may both contribute `__custom` if they target *different* call
-   * expressions; same target on the same field is still an error.
-   */
-  target?: ts.CallExpression
-}
-```
-
-### `EmissionContext`
-
-```typescript
-export interface EmissionContext {
-  sourceFile: ts.SourceFile
-  factory: ts.NodeFactory
-}
-```
-
-### `CompilerModule`
-
-A compiler module declares:
-
-- identification (name, compilerVersion semver against the umbrella);
-- the diagnostics it can emit (stable IDs);
-- per-`SyntaxKind` visitor handlers (the walker dispatches each AST
-  node once; every module with a handler for its kind sees it);
-- optionally, an `emit` function that contributes ComponentDef fields
-  after the walk completes;
-- optionally, `runtimeImports` declaring which `@llui/dom` symbols
-  its emissions reference.
-
-```typescript
-export interface CompilerModule {
-  name: string
-  /** Semver range against the compiler API. v2c §5. */
-  compilerVersion: string
-  /** Modules this one depends on. The registry verifies presence at activation. */
-  dependsOn?: string[]
-  diagnostics: DiagnosticDefinition[]
-  /**
-   * Optional AST pre-transform. Called once per file BEFORE the
-   * visitor walk and emission phase. Returns a (possibly rewritten)
-   * SourceFile; the result is threaded through subsequent modules'
-   * pre-transforms (in declaration order) and then becomes the file
-   * the visitor walks. Use for AST mutations the visitor model can't
-   * cleanly express — adjacent statement insertion, wrapping arrow
-   * expressions, etc. The agent's connect-pattern pass and the
-   * universal handler-tagger are the canonical examples (MODULE-MAPPING.md
-   * binding-descriptors entry).
-   *
-   * Most modules do NOT need this. Visitor + emit is the preferred
-   * shape because it composes deterministically across modules without
-   * threading a mutable SourceFile through each one. preTransform
-   * exists for the cases where AST mutation is unavoidable.
-   *
-   * The §2.1 "walker runs once per file" invariant is preserved: the
-   * VISITOR walk runs once. preTransform passes are additional, but
-   * they're typically cheap (targeted call-site rewrites, not deep
-   * recursive walks) and execute before the single visitor walk.
-   */
-  preTransform?(ctx: PreTransformContext, sf: ts.SourceFile): ts.SourceFile
-  visitors: {
-    [K in ts.SyntaxKind]?: (ctx: AnalysisContext, node: ts.Node) => void
-  }
-  /**
-   * Optional per-call AST rewrite, BOTTOM-UP (after children visited).
-   * Called once per `CallExpression` during the post-visitor transform
-   * phase, AFTER analysis has accumulated findings in
-   * `analysis.perModule` AND after `ts.visitEachChild` has recursively
-   * rewritten the node's children. Returns either:
-   *   - `null` — node unchanged; chain continues with the next module's
-   *     transformCall (if any).
-   *   - a new `ts.CallExpression` — node replaced; subsequent modules'
-   *     transformCall hooks see the new node (composes in declaration
-   *     order, just like preTransform).
-   *
-   * Use for rewrites that depend on the already-rewritten children — when
-   * a parent-call rewrite must observe the output a child-call rewrite
-   * produced (the bottom-up order guarantees the child fired first). Module
-   * authors should treat transformCall as a pure function of its inputs (the
-   * node + analysis findings).
-   */
-  transformCall?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
-  /**
-   * Optional per-call AST rewrite, TOP-DOWN (before children visited).
-   * Mirrors `transformCall` but fires BEFORE `ts.visitEachChild`
-   * recurses into the call's children. Use when the rewrite must happen
-   * before the children are visited — most commonly when the rewrite
-   * changes the call's argument shape and the children's visitor would
-   * misinterpret the original shape. Memo-wrapping the `items:`
-   * accessor of an `each()` call is the canonical example: the wrapped
-   * accessor is what subsequent passes (item-selector dedup, mask
-   * injection) read.
-   *
-   * Both `transformCallEnter` and `transformCall` may be declared by
-   * the same module; enter fires top-down before recursion, transformCall
-   * fires bottom-up after. Ordering within each direction is declaration
-   * order across modules; the two directions never interleave for a
-   * given node.
-   */
-  transformCallEnter?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
-  /** Called once per file after the visitor pass completes. Returns this module's emission contributions. */
-  emit?(ctx: EmissionContext, analysis: FileAnalysis): EmissionContribution[]
-  /** Runtime symbol names this module's emissions reference (from `@llui/dom`). */
-  runtimeImports?: string[]
-}
-```
-
-### `PreTransformContext`
-
-```typescript
-export interface PreTransformContext {
-  factory: ts.NodeFactory
-  /**
-   * Shared per-file findings accumulator. preTransform passes that
-   * need to communicate with their own emit step (e.g. "this file
-   * needed scope-variant registrations") use this slot map. The same
-   * `analysis.perModule` map is later passed to visitors and emit.
-   */
-  analysis: FileAnalysis
-}
-```
-
-### `TransformCallContext`
-
-Context passed to every `transformCall` invocation. Carries the
-factory for building new AST nodes and a read-only view of analysis
-findings (visitors have already completed and populated
-`analysis.perModule` by the time transformCall fires).
-
-```typescript
-export interface TransformCallContext {
-  factory: ts.NodeFactory
-  /** Read-only access to visitor-phase findings. */
-  analysis: FileAnalysis
-}
-```
-
-### `RegistryRunResult`
-
-```typescript
-export interface RegistryRunResult {
-  analysis: FileAnalysis
-  emissions: EmissionContribution[]
-  /** Union of runtime imports from every active module. */
-  runtimeImports: string[]
-}
-```
-
-### `BindingDescriptorsSlot`
-
-```typescript
-export interface BindingDescriptorsSlot {
-  scopeRegistrationsInjected: boolean
-}
-```
-
-### `IntrospectionFactoryInput`
-
-Inputs the orchestrator hands to the introspection factory. These
-are the file-level extractions the orchestrator already performs
-(the extractors `extractMsgSchema`, `extractStateSchema`, etc.
-remain in `@llui/compiler` because the orchestrator uses their
-output for the compiler cache too).
-
-```typescript
-export interface IntrospectionFactoryInput {
-  /** Source file the modules will walk. */
-  sourceFile: ts.SourceFile
-  /** Pre-extracted Msg schema (or null when extraction failed / not present). */
-  msgSchema: unknown
-  /** Pre-extracted Effect schema. */
-  effectSchema: unknown
-  /** Pre-extracted State schema. */
-  stateSchema: unknown
-  /** Pre-extracted message annotations (or null when extraction failed). */
-  msgAnnotations: Record<string, unknown> | null
-  /** Whether agent-metadata emission is requested (devMode || emitAgentMetadata). */
-  shouldEmitAgentMetadata: boolean
-}
-```
-
-### `DevtoolsFactoryInput`
-
-```typescript
-export interface DevtoolsFactoryInput {
-  sourceFile: ts.SourceFile
-  /** Whether dev-mode emission is requested (controls componentMeta). */
-  devMode: boolean
-}
-```
-
 ### `MsgFieldRich`
 
 Rich per-field descriptor. Emitted only when there's something
@@ -1954,30 +1472,6 @@ class CompilerCache {
   set(componentName: string, entry: CompilerCacheEntry): void
   get(componentName: string): CompilerCacheEntry | undefined
   has(componentName: string): boolean
-}
-```
-
-### `ModuleRegistry`
-
-The visitor registry. Built once per compiler boot from the user's
-`llui.config.ts` `modules: [...]` array; the umbrella's per-file
-pipeline calls `run(sourceFile, checker)` to drive a complete pass.
-
-```typescript
-class ModuleRegistry {
-  modules: ReadonlyArray<CompilerModule>
-  visitorsByKind: Map<ts.SyntaxKind, Array<CompilerModule>>
-  constructor(modules: ReadonlyArray<CompilerModule>)
-  verifyDependencies(): void
-  buildVisitorIndex(): Map<ts.SyntaxKind, Array<CompilerModule>>
-  run(
-    sourceFile: ts.SourceFile,
-    checker?: ts.TypeChecker,
-    externalTypes?: ModuleExternalTypes,
-    program?: ts.Program,
-  ): RegistryRunResult
-  listModules(): string[]
-  listDiagnostics(): DiagnosticDefinition[]
 }
 ```
 
@@ -2077,18 +1571,6 @@ release time.
 
 ```typescript
 const COMPILER_VERSION
-```
-
-### `BINDING_DESCRIPTORS_SLOT`
-
-Slot key the binding-descriptors module sets to signal whether it
-inserted `__registerScopeVariants` calls. Lives here (not in
-`@llui/compiler-introspection`) so the orchestrator can read the
-slot without static-importing the sibling package. The CONSTANT
-is the contract; both sides must agree on the literal string.
-
-```typescript
-const BINDING_DESCRIPTORS_SLOT
 ```
 
 <!-- auto-api:end -->

@@ -17,21 +17,11 @@ import {
   transformSignalComponentSource,
   lintSignalSource,
   applyLintFixes,
-  registerIntrospectionFactory,
-  registerDevtoolsFactory,
   COMPILER_RENAMEABLE_KEYS,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
 import { transformUseClientSsr, hasUseClientDirective } from '@llui/compiler-ssr'
-import { introspectionFactory } from '@llui/compiler-introspection'
-import { devtoolsFactory } from '@llui/compiler-devtools'
-
-// Register opt-in module factories at plugin-import time.
-// @llui/compiler doesn't depend on its sibling packages (would
-// create a workspace cycle), so the host wires them.
-registerIntrospectionFactory(introspectionFactory)
-registerDevtoolsFactory(devtoolsFactory)
 import { createCaptureRegistry } from './notes/capture-registry.js'
 import { createEventBus } from './notes/event-bus.js'
 import { createNotesMiddleware } from './notes/middleware.js'

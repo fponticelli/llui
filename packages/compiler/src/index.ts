@@ -6,7 +6,6 @@ export * from './binding-descriptors.js'
 export * from './collect-deps.js'
 export * from './compiler-cache.js'
 export * from './cross-file-resolver.js'
-export * from './cross-file-walker.js'
 export * from './diagnostic.js'
 export * from './manifest.js'
 export * from './manifest-io.js'
@@ -22,26 +21,14 @@ export {
   type LintFix,
   type LintEdit,
 } from './signals/rules.js'
-export * from './module.js'
 export * from './version.js'
-export * from './introspection-factory.js'
-export { findComponentCalls } from './modules/_shared.js'
-// Introspection modules (schemaHashModule, msg-schema, msg-annotations,
-// state-schema, binding-descriptors) moved to @llui/compiler-introspection
-// in v2c/decomp-26. Adapters that previously imported these names from
-// @llui/compiler must now import from @llui/compiler-introspection.
-// BINDING_DESCRIPTORS_SLOT is re-exported from introspection-factory.js
-// (above) so the orchestrator can read the slot without depending on
-// the introspection package.
-// componentMetaModule moved to @llui/compiler-devtools (v2c/decomp-27).
-//
-// The legacy 3-pass transform (`transform.ts`) and its emission modules
-// (element-rewrite, core-synthesis, row-factory, item-dedup, text-mask,
-// structural-mask, mask-legend, each-memo, compiler-stamp) plus the
-// legacy lint runner (`lint-modules.ts`) were removed in the
-// signal-runtime migration. Signal components compile via
-// `transformSignalComponentSource` and lint via `lintSignalSource`
-// (both re-exported above).
+// Signal components compile via `transformSignalComponentSource` and lint
+// via `lintSignalSource` (both re-exported above). Agent/devtools metadata
+// (`__msgSchema`, `__msgAnnotations`, `__stateSchema`, `__schemaHash`,
+// `__componentMeta`) is emitted inline by that transform; the v2c module
+// registry / factory system and the `@llui/compiler-{introspection,devtools}`
+// packages that fed it were removed once the signal transform superseded
+// the `transformLlui` orchestrator.
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
