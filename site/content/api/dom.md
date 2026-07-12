@@ -532,14 +532,17 @@ function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
 
 Virtualized keyed list — only the rows in the scroll viewport (+overscan) exist
 in the DOM. A scroll container (fixed `containerHeight`, `data-virtual-container`)
-holds an inner spacer (`data-virtual-spacer`) sized to `items.length*itemHeight`;
-each visible row is absolutely positioned (`translateY`) at `index*itemHeight`.
+holds an inner spacer (`data-virtual-spacer`) sized to the total height; each
+visible row is absolutely positioned (`translateY`) at its cumulative offset.
 On scroll the visible window is recomputed and rows are reconciled BY KEY using
 the same per-row machinery as `signalEach` (per-row sub-build via `runBuild`
 with `inherit`, a row scope mounted on a `{ item, state, index }` ctx, teardowns
 on removal). Rows scrolled out are disposed; rows scrolled in are built. The
 window also recomputes when `items` changes (a spec gated on `items.deps`).
-Limitation: FIXED row height only — `itemHeight` must be uniform.
+`itemHeight` is a uniform `number` (O(1) windowing) or a per-item function
+`(item, index) => number` for variable-height rows (cumulative offsets via a
+prefix sum, rebuilt when `items` changes). Heights come from the data —
+measured/auto heights are not supported.
 
 ```typescript
 function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Mountable
