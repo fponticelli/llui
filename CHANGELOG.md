@@ -11,6 +11,55 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-07-12 — @llui/dom@0.11.6 + compiler/runtime cleanup
+
+**Released:** `@llui/dom@0.11.6`, `@llui/compiler@0.11.3`, `@llui/effects@0.1.2`, `@llui/test@0.11.7`, `@llui/a2ui@0.1.1`, `@llui/vite-plugin@0.11.5`, `@llui/mcp@0.13.2`
+
+Reactive-runtime correctness fixes (`each` / `lazy`), a real `propertyTest` shrinker, effect-sequencing fixes, and removal of the dead v2c compiler module-registry / cross-file-walker surface (including two now-unused packages). All changes are backward compatible except the compiler API removal below.
+
+### Breaking
+
+- **`@llui/compiler@0.11.3`** — removed the dead v2c module system from the public API: `ModuleRegistry`, `CompilerModule`, `registerIntrospectionFactory` / `registerDevtoolsFactory` / `getIntrospectionFactory` / `getDevtoolsFactory`, and the cross-file walker (`walkProgram`, `crossFileAccessorPaths`). None were wired into the live signal transform (which emits introspection metadata inline). The `@llui/compiler-introspection` and `@llui/compiler-devtools` packages are removed entirely for the same reason.
+
+### Migration
+
+- If you imported any removed compiler symbol or the `@llui/compiler-{introspection,devtools}` packages, delete those imports — they registered factories the shipping compiler never invoked, so removal is behavior-preserving. Agent/devtools metadata (`__msgSchema`, `__msgAnnotations`, `__stateSchema`, `__schemaHash`, `__componentMeta`) is still emitted by `@llui/vite-plugin` exactly as before.
+
+### `@llui/dom@0.11.6`
+
+- **Fixed** `each` derives its per-row reactivity probe (rebase / reads-component-state / fan-out gating) **per row** instead of latching it from the first row. A data-conditional `render` where the first row reads no component state but a later row does now renders and updates that later row correctly — previously it rendered empty and went stale on state changes. Homogeneous rows are unaffected, and the streaming (ticker) fast path is untouched.
+- **Fixed** `lazy()`'s error arm mounts against the **live component state** and stays reactive to it (via a state getter threaded through the mount path), instead of mounting with `null`. An error arm that reads component state — a localized message, a retry button — now renders and updates correctly.
+- **Added** `virtualEach` supports **variable row heights**: `itemHeight` accepts a per-item function `(item, index) => number` (cumulative-offset windowing via prefix sums) in addition to a uniform `number`. Fully backward compatible; measured/auto heights remain unsupported.
+
+### `@llui/compiler@0.11.3`
+
+- **Breaking** removed the dead v2c module-registry / cross-file-walker public API and the `@llui/compiler-{introspection,devtools}` packages. See the top of this release block.
+
+### `@llui/effects@0.1.2`
+
+- **Fixed** `sequence` advances exactly once per step — on the step's first emitted message — so a step that emits several messages no longer fast-forwards the rest of the chain, and side-effect-only steps (`log`, `storageSet`, `storageRemove`, `broadcast`, `wsSend`) auto-advance instead of stalling the chain forever.
+- **Added** `httpStatusToApiError` is now exported (previously a private helper duplicated in the SSR resolver, now the single source of truth for both paths).
+
+### `@llui/test@0.11.7`
+
+- **Improved** `propertyTest` performs real delta-debugging shrinking: on failure it replays recorded messages, drops the steps not needed to reproduce the same failure, and reports the minimal sequence. Previously the shrink step was a no-op that reported the full sequence.
+
+### `@llui/a2ui@0.1.1`
+
+- **Added** `webSocketTransport` accepts an `onError` option (default `console.warn`) plus a frame-shape guard — unparseable or non-envelope frames are reported instead of dropped silently. New `WebSocketTransportOptions` type.
+
+### `@llui/vite-plugin@0.11.5`
+
+- **Improved** dropped the dead registration of the v2c introspection/devtools compiler-module factories (removed with `@llui/compiler@0.11.3`). Metadata emission is unchanged — it was always inline in the signal transform.
+
+### `@llui/mcp@0.13.2`
+
+- **Improved** dropped the same dead compiler-module factory registration in the static-compiler tool.
+
+### Docs
+
+- Removed dead references to the pre-signal `docs/designs/` spec files across README, CLAUDE.md, and package docs — the authoritative docs live at [llui.dev](https://llui.dev). Documented the `Object.is` output-equality perf cliff (composition patterns), the `@routeGated` / `@validates` `new Function` CSP caveat (agents), and the current status of the precompiled-library dependency manifest.
+
 ## 2026-07-05 — @llui/a2ui@0.1.0
 
 **Released:** `@llui/a2ui@0.1.0`
