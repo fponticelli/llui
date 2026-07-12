@@ -997,20 +997,23 @@ function buildSignalEach<T>(
   let stateGatable = false
   let rowStatePaths: string[] = []
   let prevStateVals: unknown[] | null = null
-  // Whether the row template has ANY binding that reads component state (`state` /
-  // `state.*` deps, after rebasing). Probed once from the first built row — every
-  // row shares the template, so it's a property of the `each`, not the row. When
-  // false, a row whose `item` + `index` are unchanged needs no re-evaluation even
-  // though the component-state ref changed (its bindings can't depend on it), so we
-  // skip its `scope.update` — turning an N-row in-place update into work
-  // proportional to the rows that actually changed.
-  let templateReadsState = true
-  // Whether any row spec has a non-row-local dep (a bare component-state path from
-  // an uncompiled connect-part) needing rebasing to `state.*`. Probed once — when
-  // false (compiled rows / item-only rows) the per-row `rebaseRowSpec` map is pure
-  // overhead, so it's skipped.
-  let needsRebase = true
-  let templateProbed = false
+  // State-fanout gating stays viable only while every state-reading row is cheaply
+  // gatable (no structural child, no rebased connect-part, no whole-`state` read).
+  // A data-conditional render can make rows heterogeneous — a divergent row flips
+  // this off permanently and we fall back to sweeping all rows on any state change.
+  let gatingViable = true
+  const statePathSet = new Set<string>()
+  // Whether ANY built row template reads component state (`state` / `state.*` deps,
+  // after rebasing). Accumulated MONOTONICALLY across every row built — a
+  // data-conditional render may have the first row read no state and a later row
+  // read it, so we can never latch this false from one row. When it stays false
+  // (no row reads component state), a row whose `item` + `index` are unchanged
+  // needs no re-evaluation even though the component-state ref changed, so we skip
+  // its `scope.update` — turning an N-row in-place update into work proportional to
+  // the rows that actually changed. `templateSeen` guards one-time setup below;
+  // the correctness-affecting flags accumulate per row and are NOT latched.
+  let templateReadsState = false
+  let templateSeen = false
 
   // When this each is nested in an enclosing row, the scope hands `reconcile`
   // the COMBINED row ctx (`{ item, state, index }`). Rows must always mount with
@@ -1146,63 +1149,81 @@ function buildSignalEach<T>(
           created.mounts = b.mounts
           renderHost = b.host
         }
-        // Probe the template once (all rows share it): does any VALUE spec need
-        // rebasing (non-row-local dep), and does any binding read component state?
-        // Structural specs make themselves row-aware, so they're excluded here.
-        if (!templateProbed) {
-          templateProbed = true
-          // A keyed row must be one or more STABLE nodes. A structural primitive
-          // (show/branch/each) returns a DocumentFragment that empties on insertion
-          // — as a bare row root it leaves the row with no stable handle to move or
-          // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it
-          // to be wrapped in an element, which becomes the row's stable boundary.
-          if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
-            throw new Error(
-              'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
-                'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
-                'row has a stable node to key, move, and remove. ' +
-                `(each items deps: ${JSON.stringify(source.deps)})`,
-            )
-          }
-          needsRebase = builtSpecs.some(
-            (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
+        // A keyed row must be one or more STABLE nodes. A structural primitive
+        // (show/branch/each) returns a DocumentFragment that empties on insertion —
+        // as a bare row root it leaves the row with no stable handle to move or
+        // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it to
+        // be wrapped in an element, which becomes the row's stable boundary. Checked
+        // once (the template shape governs the root node type).
+        if (
+          !templateSeen &&
+          created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)
+        ) {
+          throw new Error(
+            'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
+              'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
+              'row has a stable node to key, move, and remove. ' +
+              `(each items deps: ${JSON.stringify(source.deps)})`,
           )
-          // A row reads component state if any binding has a `state.*`/`state` dep,
-          // OR if it has a STRUCTURAL child (show/branch/each): that child's arms are
-          // built lazily and may read state from inside (e.g. a folder/file show
-          // whose file arm nests a `state.editingId` rename show). We can't see those
-          // arm specs here, so any structural child forces per-state-change row
-          // re-evaluation — which propagates the update down to the arm scopes.
-          templateReadsState =
-            needsRebase ||
-            builtSpecs.some(
-              (s) => s.structural || s.deps.some((d) => d === 'state' || d.startsWith('state.')),
-            )
-          // State-fanout gating (B): capture the component-state value paths the
-          // row reads, but only when templateReadsState is true SOLELY because of
-          // them — a structural child (lazy arm state reads we can't see), a
-          // rebased connect-part, or a whole-`state` read can't be gated cheaply.
-          stateGatable = templateReadsState && !needsRebase && !builtSpecs.some((s) => s.structural)
-          if (stateGatable) {
-            const paths = new Set<string>()
+        }
+        templateSeen = true
+
+        // Per-row probe — accumulated across EVERY row built, never latched from
+        // one row, because a data-conditional render can make rows heterogeneous
+        // (the first row row-local, a later row reading component state).
+        //
+        // `rowNeedsRebase`: does THIS row have a VALUE spec with a non-row-local dep
+        // (a bare component-state read that must be re-rooted to `ctx.state`)? Used
+        // locally below to decide whether to rebase this row's specs. Structural
+        // specs make themselves row-aware, so they're excluded.
+        const rowNeedsRebase = builtSpecs.some(
+          (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
+        )
+        const rowStructural = builtSpecs.some((s) => s.structural)
+        // A row reads component state if any binding has a `state.*`/`state` dep,
+        // needs rebasing, OR has a STRUCTURAL child (show/branch/each) whose arms are
+        // built lazily and may read state from inside (e.g. a folder/file show whose
+        // file arm nests a `state.editingId` rename show) — we can't see those arm
+        // specs here, so a structural child forces per-state-change row re-eval.
+        const rowReadsState =
+          rowNeedsRebase ||
+          rowStructural ||
+          builtSpecs.some((s) => s.deps.some((d) => d === 'state' || d.startsWith('state.')))
+        // Monotonic: once ANY row reads component state, every state change must
+        // re-evaluate the affected rows (see `sweepAll`).
+        if (rowReadsState) templateReadsState = true
+        // State-fanout gating (B): capture the component-state value paths rows read
+        // so a reconcile can skip the all-row sweep when none changed (the ticker
+        // tick that bumps tickCount but not displayMode). Gating stays viable only
+        // while every state-reading row is cheaply gatable — a structural child
+        // (unseen arm reads), a rebased connect-part, or a whole-`state` read can't
+        // be gated, and flips it off for the whole `each`.
+        if (rowReadsState && gatingViable) {
+          const rowGatable =
+            !rowStructural &&
+            !rowNeedsRebase &&
+            !builtSpecs.some((s) => s.deps.some((d) => d === 'state'))
+          if (!rowGatable) {
+            gatingViable = false
+            stateGatable = false
+          } else {
+            const before = statePathSet.size
             for (const s of builtSpecs) {
-              for (const d of s.deps) {
-                if (d === 'state') {
-                  stateGatable = false // whole-state read → any change matters
-                  break
-                }
-                if (d.startsWith('state.')) paths.add(d.slice(6))
-              }
-              if (!stateGatable) break
+              for (const d of s.deps) if (d.startsWith('state.')) statePathSet.add(d.slice(6))
             }
-            rowStatePaths = [...paths]
-            if (stateGatable) prevStateVals = rowStatePaths.map((p) => resolvePath(rowState, p))
+            stateGatable = true
+            // A newly-seen path invalidates the captured baseline (sized for the old
+            // path set); force one conservative sweep + recapture next reconcile.
+            if (statePathSet.size !== before) {
+              rowStatePaths = [...statePathSet]
+              prevStateVals = null
+            }
           }
         }
         // Re-root component-state-rooted VALUE bindings (e.g. connect() parts placed
-        // in the row by an uncompiled each) to read ctx.state — only when needed.
-        // Local so the direct row hands `dr.bindings` through as-is (no copy).
-        const rowSpecs: readonly BindingSpec[] = needsRebase
+        // in the row by an uncompiled each) to read ctx.state — only when this row
+        // needs it. Local so the direct row hands `dr.bindings` through as-is.
+        const rowSpecs: readonly BindingSpec[] = rowNeedsRebase
           ? rebaseRowSpecs(builtSpecs)
           : builtSpecs
         if (rowFactory) {
