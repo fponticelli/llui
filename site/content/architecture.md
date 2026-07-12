@@ -168,7 +168,7 @@ const rect = panelEl.getBoundingClientRect()
 
 ### `batch` — coalescing a burst
 
-`batch(fn)` (on the component handle **and** in the view/`onEffect` bag, alongside `send`) coalesces a burst of `send`s into **one** reconcile: every reducer still runs in order and effects still fire per message, but the DOM commit and subscriber notification are deferred to a single pass against the final state when the outermost `batch` returns. State is applied by the time `batch` returns, so the synchronous contract still holds at the boundary. This is the opt-in burst/streaming fast path — drain a websocket frame of N ticks as one re-render (~13× on a 1k-tick burst). The compiler also **auto-wraps** provably-safe straight-line multi-`send` handlers (a block of only `send(...)` calls) in `batch(...)` and injects `batch` into the bag.
+`batch(fn)` (on the component handle **and** in the view/`onEffect` bag, alongside `send`) coalesces a burst of `send`s into **one** reconcile: every reducer still runs in order and effects still fire per message, but the DOM commit and subscriber notification are deferred to a single pass against the final state when the outermost `batch` returns. State is applied by the time `batch` returns, so the synchronous contract still holds at the boundary. This is the opt-in burst/streaming fast path — drain a websocket frame of N ticks as one re-render (~2.4× on a 1k-tick burst, per the committed ticker baseline). The compiler also **auto-wraps** provably-safe straight-line multi-`send` handlers (a block of only `send(...)` calls) in `batch(...)` and injects `batch` into the bag.
 
 ### `raf` scheduler
 
