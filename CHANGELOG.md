@@ -11,6 +11,121 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-12 — @llui/dom@0.11.7 (repo-wide audit remediation)
+
+**Released:** `@llui/dom@0.11.7`, `@llui/vite-plugin@0.11.6`, `@llui/test@0.11.8`, `@llui/router@0.10.7`, `@llui/transitions@0.10.7`, `@llui/components@0.12.3`, `@llui/vike@0.11.7`; `@llui/compiler@0.11.4`, `@llui/compiler-ssr@0.11.3`, `@llui/effects@0.1.3`, `@llui/mcp@0.13.3`, `@llui/agent@0.11.2`, `llui-agent@0.10.4`; `@llui/markdown@0.11.2`, `@llui/lexical@0.2.9`, `@llui/lexical-collab@0.2.7`, `@llui/markdown-editor@0.2.13`, `@llui/a2ui@0.1.2`, `@llui/devmode-annotate@0.2.11`; **new:** `@llui/notes-format@0.1.0`
+
+A whole-repository audit and remediation touching every package: correctness and security fixes, accessibility, running-cost reductions, large behavior-preserving refactors, and the previously-dead element transitions now wired end-to-end. New leaf package `@llui/notes-format` removes the Lexical editor stack (~18 MB) from every `@llui/vite-plugin` / `@llui/mcp` consumer install.
+
+### Breaking
+
+- **`@llui/vite-plugin@0.11.6`** — the dev HUD (`@llui/devmode-annotate`) is no longer a hard dependency; the plugin resolves it from your project when installed. Removed the unused `crossFile` and `verbose` plugin options.
+- **`@llui/components@0.12.3`** — part-bag changes: `menu` / `context-menu` `group()` now takes an opaque group **id** (was the label text, which produced invalid ids for multi-word labels); the `combobox` root part no longer carries `role="combobox"`/`aria-expanded`/`aria-haspopup`/`aria-controls` (these live solely on the input per ARIA 1.2); `tree-view` and `listbox` roots no longer emit `aria-owns` (items are DOM descendants); `alert-dialog` drops the never-consumed `cancelLabel`/`confirmLabel` options; the overlay `transition` option is back and now actually animates.
+- **`@llui/vike@0.11.7`** — the hydration envelope is now versioned (`{ v: 2 }`) and the legacy flat shape is dropped; init effects now run on hydration by default (`runInitEffectsOnHydrate` defaults to `true`, since the server never runs them); `vike` is now a declared peer dependency.
+- **`@llui/effects@0.1.3`** — `upload()` routes non-2xx responses through `onError` (matching `http()`) instead of `onSuccess`; `retry()` is typed to `HttpEffect`; plugins registered via `.use()` now run **before** built-in runners (so a plugin can intercept `http`).
+- **`@llui/agent@0.11.2` / `llui-agent@0.10.4`** — a confirm that times out now returns `{ status: 'pending-confirmation', confirmId }` instead of a spurious rejection (poll `get_confirm_result`); LAP frames carry a `lapVersion`.
+
+### Migration
+
+- **Dev HUD:** if you relied on `@llui/vite-plugin` auto-injecting the annotate HUD, add it to your dev deps — `pnpm add -D @llui/devmode-annotate`. The plugin resolves it from your project in dev builds.
+- **Smaller markdown bundle:** import from `@llui/markdown/commonmark` to skip the GFM machinery when you don't need tables/footnotes/strikethrough; the default `@llui/markdown` entry still bundles GFM.
+- **Menu groups:** change `group('My Label')` to `group('my-group-id')` and render the label yourself; the id must be a valid HTML id.
+- **Vike hydration:** if your `init()` effects were already satisfied by a `+data` hook, pass `runInitEffectsOnHydrate: false` to keep them from re-running on hydrate.
+
+### New package
+
+- **`@llui/notes-format@0.1.0`** — a zero-dependency leaf package holding the pure notebook note modules (`note-types`, `note-format`, `note-serialize`), extracted from `@llui/devmode-annotate`. `@llui/vite-plugin` and `@llui/mcp` now depend on it instead of the full HUD package, removing `lexical` + 8 `@lexical/*` + `html-to-image` + the editor stack (~18 MB) from every consumer's install closure.
+
+### `@llui/dom@0.11.7`
+
+- **Fixed** `virtualEach` rows that read component state now update on state-only changes (they previously had no whole-state dependency and went stale).
+- **Fixed** `send()` / `batch()` after `dispose()` are now no-ops, and an effect cleanup returned after dispose still runs (was a subscription leak); a component-state field literally named `state`/`item`/`index` now resolves correctly inside `each` rows; duplicate `each` keys are detected in dev.
+- **Fixed** the SSR serializer no longer HTML-escapes `<style>`/`<script>` contents, and anonymous `<head>` dedup keys are deterministic per render (no more duplicate tags accumulating across SSR requests).
+- **Added** a per-mount `signal: AbortSignal` on the `EffectApi` bag; exported `normalizeUpdateResult`; `virtualEach` authoring accepts a per-item `itemHeight` function.
+- **Added** structural transition hooks: `show` / `branch` / `each` accept an optional `transition` (enter/leave/onTransition), SSR-gated and interruption-safe; the no-transition path is byte-identical.
+- **Improved** SSR renders reuse one cached JSDOM window per process (per-request documents) instead of constructing a full window each time.
+
+### `@llui/vite-plugin@0.11.6`
+
+- **Fixed** (**security**) the `/_llui/*` notes middleware now enforces a loopback Host + same-origin/absent-Origin gate and rejects non-JSON bodies; note-supplied `proposedDiff` paths are contained within the project root (was an arbitrary-file-delete vector); a task note only spawns a CLI agent when its provenance is trusted (not on the on-disk `intent` field alone); `sessionId` traversal is guarded.
+- **Fixed** the signal transform now emits real sourcemaps; editing a sibling `Msg`/`State` type re-transforms the importing component (watch invalidation); the integrity check drives the real pipeline.
+- **Breaking** removed `crossFile`/`verbose`; the HUD dependency is now consumer-provided (see top of block).
+
+### `@llui/components@0.12.3`
+
+- **Fixed** (**a11y**) roving-tabindex components (tabs, tree-view, accordion, radio-group, toggle-group, pin-input) now move DOM focus on arrow keys; menus expose `aria-activedescendant`; selecting an option restores focus to the trigger; seven overlays are now SSR-safe; shadow-DOM outside-detection uses the composed path so overlays inside a shadow root don't self-dismiss.
+- **Fixed** hover-intent submenu timers no longer fire into closed/unmounted state; tooltip content is now pointer-interactive (WCAG hover persistence).
+- **Improved** one unified `createOverlay` engine replaces 12 copy-pasted overlay bodies; `context-menu` de-duplicated against `menu` via a shared machine; pointer-move highlight is now a no-op when unchanged (removes a per-tick reconcile storm).
+- **Breaking** part-bag/aria changes and the newly-functional `transition` option — see top of block.
+
+### `@llui/effects@0.1.3`
+
+- **Fixed** per-mount effect lifecycle — `handleEffects`/`asOnEffect` key their AbortControllers off the runtime's per-mount signal, so unmounting one instance of a component no longer aborts a concurrent instance's in-flight effects/sockets/timers; `runHttp` no longer rebrands a reducer/`onSuccess` exception as a network error; abort is re-checked before dispatch; `debounce`+`cancel`, the websocket-replacement race, and SSR `resolveEffects` header/error parity are fixed.
+- **Improved** runners split into modules with a Map-based dispatch and an opt-in `handleEffectsWith(runners)` for tree-shaking; the batteries-included `handleEffects()` is unchanged.
+- **Breaking** `upload()`/`retry()`/`.use()` contract changes — see top of block.
+
+### `@llui/router@0.10.7`
+
+- **Fixed** `link()` in history mode now runs `beforeLeave`/`beforeEnter` guards (was bypassing them) and updates `currentRoute`; hash mode no longer double-dispatches; a guard-blocked popstate no longer corrupts the history stack; malformed percent-encoding no longer throws; query parsing uses `URLSearchParams`.
+- **Added** `base` path support (`RouterConfig.base`).
+- **Improved** route→URL formatting is now a direct O(segments) format via tagged route defs (no per-call `build({})` heuristic).
+
+### `@llui/markdown@0.11.2`
+
+- **Fixed** `transformLink` now runs for reference-style links/images (was bypassed); reference definitions that arrive later in a stream now resolve in earlier blocks; split inline raw HTML is sanitized as one run; the content hash is 64-bit.
+- **Added** `@llui/markdown/commonmark` entry that never bundles GFM; **incremental tail re-parse** for reactive `markdown()` — reuses parsed prefix blocks and re-parses only the changed tail (~41× faster on long streaming appends), with setext/lazy-continuation/definition hazards handled and a dev self-heal assertion.
+
+### `@llui/lexical@0.2.9`, `@llui/lexical-collab@0.2.7`, `@llui/markdown-editor@0.2.13`
+
+- **Fixed** `lexicalForeign` calls `editor.setRootElement(null)` on dispose (was leaking the editor + document listener on every unmount); the outbound debounce flushes on dispose and no longer emits programmatic writes as user edits; explicit `Ctrl-` shortcut chords work off-mac.
+- **Fixed** collab bootstrap fires against an already-synced provider; an internally-created `YDoc` is destroyed on teardown; the `markdownEditor` live-editor reference is per-instance (two editors no longer cross-wire); decorator round-trips (callout/math/image) preserve content.
+
+### `@llui/agent@0.11.2`, `llui-agent@0.10.4`
+
+- **Fixed** a stale WebSocket's close no longer tears down a live replacement pairing; `/resume/claim` persists the rotated token; the hello frame isn't lost in the accept race; app callbacks receive un-wire-encoded state; path-scoped `wait_for_change` works.
+- **Fixed** (**security/cost**) `/agent/mint` is rate-limited and token records are evicted; full-state snapshots are no longer shipped over the socket on every commit (subscription-driven watch).
+- **Improved** a shared `withLapGates` combinator and a unified MCP executor across the server and bridge surfaces; the bridge invalidates its describe cache on `schemaHash` change and times out forwarded calls; `computeStateDiff` is exported from `@llui/agent/protocol`.
+
+### `@llui/mcp@0.13.3`
+
+- **Fixed** (**security**) the browser-bridge WebSocket upgrade now validates Origin + a per-launch bearer token; `sessionId` traversal is guarded; synchronous `execFile`/eslint calls are async (no more event-loop stalls); the CDP session manager no longer leaks headless Chromium.
+- **Breaking** removed ~25 advertised debug tools that no runtime could serve (they failed at call time); `llui_lint` now runs the real `@llui/compiler` signal rules; removed the deprecated numeric-port constructor.
+
+### `@llui/compiler@0.11.4`, `@llui/compiler-ssr@0.11.3`
+
+- **Fixed** six miscompiles: non-identifier `.at()` keys, helper-inline operator precedence, a nested `component()` producing unparseable output, duplicate-import `SyntaxError`, a stack overflow on recursive `State` types, and `derived()` leaking signal handles into the produced value.
+- **Fixed** two non-bypassable lint false-positives (a valid reducer using `state` in an operator; `readonly`/`disabled` controlled inputs) and emitted real sourcemaps.
+- **Improved** framework-call recognition is now import-binding based (resolves `@llui/dom` aliases, honors lexical shadowing) — a user's own function named `text`/`each`/`div` is no longer miscompiled.
+
+### `@llui/transitions@0.10.7`
+
+- **Fixed** interruption-safe enter/leave (superseded runs roll back their transient styles); completion resolves on `transitionend`/`animationend` (no stall in throttled tabs; `spring` leave no longer deadlocks in a hidden tab); `flip()` no longer strongly retains detached rows.
+- **Improved** element-level structural transitions (`show`/`each`/`branch`, per-row `stagger`, FLIP via `onTransition`) are now wired through the `@llui/dom` seam and documented as working.
+
+### `@llui/a2ui@0.1.2`
+
+- **Fixed** (**security**) the `openUrl` action validates the URL scheme and passes `noopener`; theme/style strings are no longer concatenated from untrusted server input; `__proto__`/array-index writes in the pointer store are guarded.
+- **Improved** streamed `updateComponents` reconciles changed subtrees instead of rebuilding the whole surface; unreachable components/UI-state are garbage-collected; a render-cycle guard prevents stack overflow on a cyclic component graph.
+
+### `@llui/devmode-annotate@0.2.11`
+
+- **Fixed** the element picker no longer leaves the host app click-dead after `destroy()`; screenshot annotations are correct on scrolled/retina pages and exclude the HUD's own chrome; the IndexedDB note-id race is fixed; shadow-DOM isolate mode portals its overlays correctly; the repro trace is no longer lost on a failed submit.
+- **Improved** the 2,022-line entry closure split into lifecycle-owning modules with a disposer registry; ~1.3k lines of dead prototype code removed.
+
+### `@llui/test@0.11.8`
+
+- **Added** `testComponent` gains an opt-in `withEffects` mode that faithfully replicates the runtime drain (effect cascades, `batch`), with a parity test against a real mount; `propertyTest` is seeded (deterministic replay) and reports the minimal failing payloads.
+- **Fixed** shared JSON comparators (`partialMatch` now length-checks nested arrays); `normalizeUpdateResult` is imported from `@llui/dom` rather than re-implemented.
+
+### All packages — build output
+
+- **Fixed** `sideEffects` on packages that export CSS is an allow-list (bundlers no longer tree-shake the stylesheet away); exports maps list `types` first (publint clean); every publishable package ships a LICENSE and README; five packages now extend the root `tsconfig` (fixing latent strictness gaps).
+- **Fixed** `publish.sh` derives its package list (topo-sorted, with a completeness assertion) and skips dependents of a failed publish; `turbo` declares `globalDependencies` + `build` inputs so config changes bust stale caches; CI caches `.turbo` and gates on generated-doc drift.
+
+### Docs
+
+- **Fixed** a large accuracy sweep across `site/content` and `docs/proposals`: corrected samples (`child()`→`subApp()`, `handleEffects().else()` + `asOnEffect`), the lint-rule inventory (the fictional `view-bag-import` rule that inverted reality is gone), removed the deleted `signingKey` agent option, and un-stale proposal statuses. Site headings now get anchor ids; the API reference regenerates from a TypeChecker walk with a CI drift gate.
+
 ## 2026-07-12 — @llui/dom@0.11.6 + compiler/runtime cleanup
 
 **Released:** `@llui/dom@0.11.6`, `@llui/compiler@0.11.3`, `@llui/effects@0.1.2`, `@llui/test@0.11.7`, `@llui/a2ui@0.1.1`, `@llui/vite-plugin@0.11.5`, `@llui/mcp@0.13.2`
