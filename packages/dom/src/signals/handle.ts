@@ -16,7 +16,7 @@ import { resolveSegments } from './mask.js'
 // item/index inputs read the combined ctx. These are runtime-only calls (inside
 // `derived`), so the handle→dom import is a benign one-way edge (dom does not
 // import handle).
-import { __inRowBuild, isRowLocalDep, rebaseRowDep } from './dom.js'
+import { __inRowBuild, isRowLocalDep, rebaseComponentDep } from './dom.js'
 import type { Signal, MappedSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
@@ -29,6 +29,13 @@ export interface SignalHandle<T> extends Signal<T> {
   readonly produce: (state: unknown) => T
   /** dependency paths into the binding's state */
   readonly deps: readonly string[]
+  /** Root discriminant for row rebasing. `true` ⇒ this handle reads the ROW ctx
+   * (an `item`/`index` handle from `rowHandle`, or a row-aware `derived`); `false`
+   * (or absent) ⇒ it reads the COMPONENT state and must be rebased to `ctx.state`
+   * when placed inside an `each` row. Set at construction from the getter's origin,
+   * so locality never depends on string-inferring a `state`/`item`/`index` field
+   * name (which collides with a component field literally named that). */
+  readonly rowLocal?: boolean
 }
 
 /** A runtime handle produced by `.map()` / `derived()` — same carrier as
@@ -40,6 +47,7 @@ export interface MappedHandle<T> extends MappedSignal<T> {
   readonly [SIGNAL]: true
   readonly produce: (state: unknown) => T
   readonly deps: readonly string[]
+  readonly rowLocal?: boolean
 }
 
 export function isSignalHandle(v: unknown): v is SignalHandle<unknown> {
@@ -47,8 +55,11 @@ export function isSignalHandle(v: unknown): v is SignalHandle<unknown> {
 }
 
 /** A path-rooted handle: `produce` resolves `base` from the binding state;
- * `peek` reads the live value via `get`. `at` extends the path; `map` derives. */
-export function pathHandle<T>(get: () => unknown, base: string): SignalHandle<T> {
+ * `peek` reads the live value via `get`. `at` extends the path; `map` derives.
+ * `rowLocal` marks a handle rooted at a ROW ctx (the internal `rowHandle` for
+ * `item`/`index`); it propagates through `.at`/`.map` so row locality is carried,
+ * never string-inferred. Component-state handles default to `false`. */
+export function pathHandle<T>(get: () => unknown, base: string, rowLocal = false): SignalHandle<T> {
   // Pre-split the base path ONCE at handle creation; `produce`/`peek` run on
   // every binding evaluation (and re-evaluation on update), so they must not
   // re-`String.split` the path each time. This keeps `.at(x)` as cheap per-read
@@ -60,17 +71,29 @@ export function pathHandle<T>(get: () => unknown, base: string): SignalHandle<T>
     [SIGNAL]: true,
     produce,
     deps: [base],
+    rowLocal,
     peek: () => resolveSegments(get(), segs) as T,
     at: ((path: string) =>
-      pathHandle(get, base === '' ? path : `${base}.${path}`)) as Signal<T>['at'],
+      pathHandle(get, base === '' ? path : `${base}.${path}`, rowLocal)) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
       derivedHandle<U>(
         () => fn(resolveSegments(get(), segs) as T),
         (s) => fn(produce(s)),
         [base],
+        rowLocal,
       )) as Signal<T>['map'],
   }
   return h
+}
+
+/** A ROW-rooted path handle (`item`/`index` inside an `each`/`virtualEach` row).
+ * Identical to {@link pathHandle} but branded `rowLocal` — so a spec built from it
+ * (or from `.at`/`.map` off it) reads the row ctx and is NOT rebased to
+ * `ctx.state`. This is the emission target for the compiled each-arm prelude
+ * (`const item = rowHandle(getCtx, 'item')`) and the authoring `each`/`virtualEach`
+ * item/index handles. */
+export function rowHandle<T>(get: () => unknown, base: string): SignalHandle<T> {
+  return pathHandle<T>(get, base, true)
 }
 
 const EMPTY_SEGS: readonly string[] = []
@@ -82,6 +105,7 @@ function derivedHandle<T>(
   peek: () => T,
   produce: (state: unknown) => T,
   deps: readonly string[],
+  rowLocal = false,
 ): MappedHandle<T> {
   // The carrier keeps a THROWING `at` as a runtime safety net for uncompiled
   // view-helper code; the public type is `MappedSignal` (`at: never`), which
@@ -93,6 +117,7 @@ function derivedHandle<T>(
     [SIGNAL]: true,
     produce,
     deps,
+    rowLocal,
     peek,
     at: (() => {
       throw new Error('.at() on a mapped signal is unsupported — slice with .at() before .map()')
@@ -102,6 +127,7 @@ function derivedHandle<T>(
         () => fn(peek()),
         (s) => fn(produce(s)),
         deps,
+        rowLocal,
       )) as Signal<T>['map'],
   }
   return h as MappedHandle<T>
@@ -176,11 +202,17 @@ function combineSignals(
   // against the right root. The resulting deps are all row-local, so the enclosing
   // `rebaseRowSpec` / `show` cond pass the FULL combined ctx through to this produce.
   const rowAware = __inRowBuild()
+  // Row locality comes from each input's brand (`rowLocal`), NOT string inference —
+  // so a component input reading a field literally named `state`/`item`/`index`
+  // still rebases correctly. Unbranded inputs (rare: a hand-built handle) fall back
+  // to the legacy dep-string test.
+  const inputIsComponentRooted = (h: SignalHandle<unknown>): boolean =>
+    h.rowLocal === true ? false : h.rowLocal === false ? true : !h.deps.every(isRowLocalDep)
   const inputs = handles.map((h) => {
-    if (rowAware && !h.deps.every(isRowLocalDep)) {
+    if (rowAware && inputIsComponentRooted(h)) {
       return {
         produce: (ctx: unknown) => h.produce((ctx as { state: unknown }).state),
-        deps: h.deps.map(rebaseRowDep),
+        deps: h.deps.map(rebaseComponentDep),
       }
     }
     return { produce: (ctx: unknown) => h.produce(ctx), deps: h.deps }
@@ -189,5 +221,8 @@ function combineSignals(
     () => fn(...handles.map((h) => h.peek())),
     (state) => fn(...inputs.map((i) => i.produce(state))),
     [...new Set(inputs.flatMap((i) => i.deps))],
+    // In a row build the inputs are rebased to read the combined ctx, so the
+    // result reads the row ctx → row-local. Outside a row it reads component state.
+    rowAware,
   )
 }

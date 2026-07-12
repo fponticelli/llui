@@ -54,4 +54,48 @@ describe('shadow-DOM isolation (isolate: true)', () => {
     // chrome is directly queryable in light DOM
     expect(root.querySelector('[data-llui-fab]')).not.toBeNull()
   })
+
+  // Finding 6 — the editor stylesheet must be adopted into the shadow (the
+  // light-DOM `import '…/editor.css'` can't cross the boundary). We inject the
+  // CSS via the `editorCss` seam so the assertion is deterministic regardless
+  // of whether the `?raw` import resolves in the test env.
+  it('bundles the markdown-editor stylesheet into the shadow root', () => {
+    mountAnnotateHud({
+      isolate: true,
+      subscribeEvents: false,
+      editorCss: '.md-underline-probe { text-decoration: underline }',
+    })
+    const shadow = document.getElementById(HUD_ID)!.shadowRoot!
+    const adopted = shadow.adoptedStyleSheets ?? []
+    const styleText =
+      Array.from(shadow.querySelectorAll('style'))
+        .map((s) => s.textContent ?? '')
+        .join('\n') +
+      adopted.flatMap((sheet) => Array.from(sheet.cssRules).map((r) => r.cssText)).join('\n')
+    expect(styleText).toContain('md-underline-probe')
+  })
+
+  it('portals a filter dropdown INTO the shadow root, not the light DOM', () => {
+    mountAnnotateHud({ isolate: true, subscribeEvents: false })
+    const shadow = document.getElementById(HUD_ID)!.shadowRoot!
+    const portal = shadow.querySelector('[data-llui-overlay-portal]')
+    expect(portal).not.toBeNull()
+
+    const trigger = shadow.getElementById('llui-browse-kind:trigger')
+    expect(trigger).not.toBeNull()
+    // Open the dropdown (the signal runtime commits synchronously).
+    trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    // The option content is mounted inside the shadow's overlay portal — not
+    // orphaned into document.body (which would render unstyled + uncontained).
+    const optionInShadow = Array.from(portal!.querySelectorAll('button')).some((b) =>
+      (b.textContent ?? '').includes('text'),
+    )
+    expect(optionInShadow).toBe(true)
+    // Nothing leaked into the light DOM.
+    const leaked = Array.from(document.body.querySelectorAll('button')).some((b) =>
+      (b.textContent ?? '').includes('📝 text'),
+    )
+    expect(leaked).toBe(false)
+  })
 })

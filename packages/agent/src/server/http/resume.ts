@@ -14,6 +14,8 @@ export type ResumeDeps = {
   tokenStore: TokenStore
   identityResolver: IdentityResolver
   auditSink: AuditSink
+  /** LAP base path, e.g. `/agent/lap/v1` — used to build the resume `lapUrl`. */
+  lapBasePath: string
   now?: () => number
   hardExpiryMs?: number
   /** Override mint primitive for tests. */
@@ -84,7 +86,16 @@ export async function handleResumeClaim(req: Request, deps: ResumeDeps): Promise
   })
 
   const wsUrl = toWsUrl(origin) + '/agent/ws'
-  const out: ResumeClaimResponse = { token, wsUrl }
+  const lapUrl = new URL(deps.lapBasePath, origin).toString()
+  const out: ResumeClaimResponse = {
+    token,
+    tid: rec.tid,
+    wsUrl,
+    lapUrl,
+    // Seconds-since-epoch, matching MintResponse so the client's session
+    // storage compares units consistently.
+    expiresAt: Math.floor(expiresAt / 1000),
+  }
   return jsonResponse(out, 200)
 }
 

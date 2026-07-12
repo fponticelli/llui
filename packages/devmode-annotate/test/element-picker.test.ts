@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { testComponent, reducer } from '@llui/test'
 import {
   buildSelector,
+  pickElement,
   pickInit,
   pickReduce,
   type PickState,
@@ -119,5 +120,44 @@ describe('buildSelector', () => {
     document.body.innerHTML = '<ul id="list"><li>a</li><li>b</li><li>c</li></ul>'
     const second = document.querySelectorAll('li')[1]!
     expect(buildSelector(second)).toBe('#list > li:nth-of-type(2)')
+  })
+})
+
+// Finding 1 — after a pick settles the three capture-phase interaction
+// listeners must be removed IMMEDIATELY, so the host app isn't left
+// click-dead while the outline lingers.
+describe('pickElement — host input after a settled pick', () => {
+  const origFromPoint = document.elementFromPoint
+  afterEach(() => {
+    document.elementFromPoint = origFromPoint
+    document.body.innerHTML = ''
+    document.querySelector('[data-llui-element-picker-host]')?.remove()
+  })
+
+  it('stops preventing host clicks the instant a pick is made', async () => {
+    document.body.innerHTML = '<button id="host">hi</button>'
+    const host = document.getElementById('host')!
+    // jsdom has no layout engine; point the picker's elementFromPoint at the host.
+    document.elementFromPoint = () => host
+
+    const pending = pickElement()
+    // Hover → sets the outline/selector so the click resolves to submit.
+    host.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 5, clientY: 5 }))
+    // Click → locks the pick. This click IS swallowed (preventDefault).
+    const pickClick = new MouseEvent('click', { bubbles: true, cancelable: true })
+    host.dispatchEvent(pickClick)
+    expect(pickClick.defaultPrevented).toBe(true)
+
+    const result = await pending
+    expect(result.reason).toBe('submit')
+    expect(result.element?.selector).toBe('#host')
+
+    // A subsequent host click reaches the app (not preventDefault'd) even
+    // though the outline is still lingering (dismiss not yet called).
+    const afterClick = new MouseEvent('click', { bubbles: true, cancelable: true })
+    host.dispatchEvent(afterClick)
+    expect(afterClick.defaultPrevented).toBe(false)
+
+    result.dismiss?.()
   })
 })

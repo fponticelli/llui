@@ -1,5 +1,6 @@
-import { tagSend } from '@llui/dom'
+import { tagSend, useContext } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { LocaleContext } from '../locale.js'
 
 /**
  * Sortable — pointer-based reorderable list.
@@ -23,8 +24,10 @@ import type { Send, Signal } from '@llui/dom'
  *   }
  * }
  *
- * view: ({ send, each, text }) => {
- *   const s = sortable.connect(state.map((s) => s.sort), m => send({ type: 'sort', msg: m }), { id: 'list' })
+ * // `each`, `ul`, `li`, `div`, `text` are imports from '@llui/dom';
+ * // the view bag provides only `state` (a Signal) and `send`.
+ * view: ({ state, send }) => {
+ *   const s = sortable.connect(state.at('sort'), (m) => send({ type: 'sort', msg: m }), { id: 'list' })
  *   return [
  *     ul({ ...s.root, class: 'list' }, [
  *       ...each({
@@ -258,6 +261,7 @@ export function connect(
   // The connect's `id` doubles as the cross-container identifier
   const containerId = opts.id
   const layout = opts.layout ?? '1d'
+  const locale = useContext(LocaleContext)
 
   // Snapshots taken at drag start — stable throughout the drag so computing
   // the target index is not affected by items visually shifting via CSS.
@@ -488,8 +492,7 @@ export function connect(
         const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId
       }),
-      'aria-label':
-        'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
+      'aria-label': locale.sortable.handle,
       onPointerDown: tagSend(send, ['start'], (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null
@@ -581,8 +584,9 @@ export function reorder<T>(arr: readonly T[], from: number, to: number): T[] {
   const t = Math.max(0, Math.min(len - 1, to))
   if (f === t) return arr.slice()
   const result = arr.slice()
+  // f is clamped to [0, len-1] and len > 0, so splice always removes one item.
   const [item] = result.splice(f, 1)
-  result.splice(t, 0, item)
+  result.splice(t, 0, item!)
   return result
 }
 

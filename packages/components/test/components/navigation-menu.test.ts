@@ -94,10 +94,23 @@ describe('navigation-menu.connect', () => {
     expect(read(leaf['aria-expanded'], init())).toBeUndefined()
   })
 
-  it('trigger aria-haspopup set only for branches', () => {
+  // Finding 15: disclosure semantics, not application-menu roles. Branch
+  // triggers are disclosure buttons (aria-controls); no menuitem/haspopup roles.
+  it('trigger uses aria-controls for branches; no application-menu roles', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
-    expect(p.item('file', { isBranch: true }).trigger['aria-haspopup']).toBe('menu')
-    expect(p.item('home', { isBranch: false }).trigger['aria-haspopup']).toBeUndefined()
+    const branch = p.item('file', { isBranch: true }).trigger
+    const leaf = p.item('home', { isBranch: false }).trigger
+    expect(branch['aria-controls']).toBe('nav:content:file')
+    expect(leaf['aria-controls']).toBeUndefined()
+    expect('aria-haspopup' in branch).toBe(false)
+    expect('role' in branch).toBe(false)
+    expect('role' in p.item('file', { isBranch: true }).content).toBe(false)
+  })
+
+  it('root is a nav landmark, not a menubar', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    expect('role' in p.root).toBe(false)
+    expect(p.root['aria-label']).toBeDefined()
   })
 
   it('pointerEnter opens branch', () => {

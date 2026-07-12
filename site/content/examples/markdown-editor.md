@@ -14,8 +14,8 @@ description: 'A WYSIWYG Markdown editor on @llui/markdown-editor — toolbar, ca
 
 <p class="example-source"><a href="https://github.com/fponticelli/llui/tree/main/examples/markdown-editor" target="_blank" rel="noopener">View source on GitHub ↗</a></p>
 
-A live showcase of [`@llui/markdown-editor`](../../packages/markdown-editor) (built on
-[`@llui/lexical`](../../packages/lexical)): a WYSIWYG editor that hides Markdown behind a rich,
+A live showcase of [`@llui/markdown-editor`](/api/markdown-editor) (built on
+[`@llui/lexical`](/api/lexical)): a WYSIWYG editor that hides Markdown behind a rich,
 pluggable widget.
 
 ```bash

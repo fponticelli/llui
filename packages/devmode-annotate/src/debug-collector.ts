@@ -13,13 +13,22 @@
 
 import type {
   ComponentMetaRef,
+  ConsoleLogEntry,
+  LogLevel,
   MessageLogEntry,
   NoteBody,
   NoteRect,
   PendingEffectEntry,
   RecentEffectEntry,
   SourceMapEntry,
+  VerboseNoteBody,
 } from './note-types.js'
+import { uniqueSelectorFor } from './selector.js'
+
+// Re-exported so the debug collector's public surface (and its tests) keep a
+// stable `uniqueSelectorFor` import even though the implementation now lives in
+// the shared selector module.
+export { uniqueSelectorFor } from './selector.js'
 
 // Minimal subset of @llui/dom's LluiDebugAPI we depend on. Typed as a
 // structural interface so we don't have to take a runtime dep on
@@ -63,6 +72,19 @@ interface BindingSourceLike {
   column: number
 }
 
+interface LifetimeNodeLike {
+  scopeId: string
+  kind: string
+  active: boolean
+  children: LifetimeNodeLike[]
+}
+
+interface BindingDebugInfoLike {
+  index: number
+  kind: string
+  dead: boolean
+}
+
 interface DebugApiLike {
   getState(): unknown
   getMessageHistory?(opts?: { since?: number; limit?: number }): MessageRecordLike[]
@@ -71,6 +93,8 @@ interface DebugApiLike {
   getComponentInfo?(): ComponentInfoLike
   inspectElement?(selector: string): ElementReportLike | null
   getBindingSource?(bindingIndex: number): BindingSourceLike | null
+  getScopeTree?(opts?: { depth?: number; scopeId?: string }): LifetimeNodeLike
+  getBindings?(): BindingDebugInfoLike[]
 }
 
 interface ComponentsGlobal {
@@ -296,45 +320,6 @@ export function collectSourceMap(
 }
 
 /**
- * Synthesize a unique CSS selector for an element. Prefers id; falls
- * back to a chain of `tag:nth-child()` up to a parent with an id (or
- * the root). The result is querySelector-compatible.
- */
-export function uniqueSelectorFor(el: Element): string | null {
-  if (el.id) return `#${cssEscape(el.id)}`
-  const parts: string[] = []
-  let cur: Element | null = el
-  while (cur && cur.tagName !== 'HTML' && cur.tagName !== 'BODY') {
-    if (cur.id) {
-      parts.unshift(`#${cssEscape(cur.id)}`)
-      break
-    }
-    const parent: ParentNode | null = cur.parentNode
-    if (!parent) break
-    const children = parent.children
-    let index = -1
-    for (let k = 0; k < children.length; k++) {
-      if (children[k] === cur) {
-        index = k + 1
-        break
-      }
-    }
-    if (index <= 0) break
-    parts.unshift(`${cur.tagName.toLowerCase()}:nth-child(${index})`)
-    cur = parent instanceof Element ? parent : null
-  }
-  return parts.length > 0 ? parts.join(' > ') : null
-}
-
-function cssEscape(value: string): string {
-  // Browsers expose CSS.escape; node tests (jsdom) generally do too.
-  // Fall back to a manual escape for safety.
-  const css = (globalThis as { CSS?: { escape?: (s: string) => string } }).CSS
-  if (css?.escape) return css.escape(value)
-  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`)
-}
-
-/**
  * Collect identity information for every mounted component. Returns
  * `null` when no debug API is present so callers can keep their
  * existing fallback values.
@@ -362,4 +347,142 @@ export function collectComponentInfo(opts: CollectOptions = {}): ComponentInfoSn
     }
   }
   return { componentPath: names, componentMeta: meta }
+}
+
+// ── Verbose snapshot (captureLevel: 'verbose') ────────────────────────────
+
+/** Flatten a live scope-tree subtree into the serializable VerboseNoteBody
+ *  scopeTree shape, tagging each node with its owning component. */
+function flattenScope(
+  node: LifetimeNodeLike,
+  parent: string | null,
+  component: string,
+  out: NonNullable<VerboseNoteBody['scopeTree']>,
+): void {
+  out.push({ id: node.scopeId, parent, component })
+  for (const child of node.children ?? []) {
+    flattenScope(child, node.scopeId, component, out)
+  }
+}
+
+/**
+ * Collect the deep, verbose-only telemetry (scope tree + binding totals) that
+ * `captureLevel: 'verbose'` promises on top of the standard debug snapshot.
+ * Reads the signal runtime's optional `getScopeTree` / `getBindings` surfaces;
+ * returns `null` when no debug API is present or nothing verbose is derivable
+ * (e.g. production without devtools). Never throws at the callsite.
+ */
+export function collectVerboseSnapshot(opts: CollectOptions = {}): VerboseNoteBody | null {
+  const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
+  if (!components) return null
+  const entries = hostEntries(components)
+  if (entries.length === 0) return null
+
+  const scopeTree: NonNullable<VerboseNoteBody['scopeTree']> = []
+  let bindingTotal = 0
+  for (const [name, api] of entries) {
+    if (typeof api.getScopeTree === 'function') {
+      let root: LifetimeNodeLike | null
+      try {
+        root = api.getScopeTree() ?? null
+      } catch {
+        root = null
+      }
+      if (root) flattenScope(root, null, name, scopeTree)
+    }
+    if (typeof api.getBindings === 'function') {
+      let bindings: BindingDebugInfoLike[]
+      try {
+        bindings = api.getBindings() ?? []
+      } catch {
+        bindings = []
+      }
+      bindingTotal += bindings.filter((b) => !b.dead).length
+    }
+  }
+
+  const out: VerboseNoteBody = {}
+  if (scopeTree.length > 0) out.scopeTree = scopeTree
+  if (bindingTotal > 0) out.bindings = { total: bindingTotal, hottest: [], lastCycleMs: 0 }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+// ── Console capture (verbose consoleLog channel) ──────────────────────────
+
+const CONSOLE_LEVELS: readonly LogLevel[] = ['log', 'warn', 'error', 'info', 'debug']
+const CONSOLE_BUFFER_LIMIT = 200
+
+type ConsoleMethod = (...args: unknown[]) => void
+type ConsoleLike = Record<LogLevel, ConsoleMethod>
+
+export interface ConsoleCaptureHandle {
+  /** A copy of the captured console entries (oldest first). */
+  snapshot(): ConsoleLogEntry[]
+  /** Restore the original console methods. Idempotent. */
+  dispose(): void
+}
+
+function formatConsoleArg(arg: unknown): string {
+  if (typeof arg === 'string') return arg
+  if (arg instanceof Error) return arg.stack ?? `${arg.name}: ${arg.message}`
+  try {
+    return typeof arg === 'object' && arg !== null ? JSON.stringify(arg) : String(arg)
+  } catch {
+    return String(arg)
+  }
+}
+
+export interface ConsoleCaptureOptions {
+  /** Ring-buffer cap (oldest dropped past this). Default 200. */
+  limit?: number
+  /** Console to wrap — defaults to the global `console`. Tests inject a stub. */
+  target?: Partial<ConsoleLike>
+  /** Clock override for entry timestamps. */
+  now?: () => Date
+}
+
+/**
+ * Install a console interceptor that mirrors `console.{log,warn,error,info,
+ * debug}` into a bounded ring buffer, then chains to the original method so
+ * the developer still sees everything. The verbose capture level drains this
+ * buffer into `NoteBody.consoleLog`. Call `dispose()` (from the HUD's
+ * `destroy()`) to unpatch.
+ */
+export function createConsoleCapture(opts: ConsoleCaptureOptions = {}): ConsoleCaptureHandle {
+  const limit = opts.limit ?? CONSOLE_BUFFER_LIMIT
+  const now = opts.now ?? ((): Date => new Date())
+  const target = (opts.target ??
+    (typeof console !== 'undefined' ? (console as unknown as ConsoleLike) : undefined)) as
+    | Partial<ConsoleLike>
+    | undefined
+
+  const buffer: ConsoleLogEntry[] = []
+  const originals = new Map<LogLevel, ConsoleMethod>()
+
+  if (target) {
+    for (const level of CONSOLE_LEVELS) {
+      const orig = target[level]
+      if (typeof orig !== 'function') continue
+      const bound = orig.bind(target) as ConsoleMethod
+      originals.set(level, bound)
+      target[level] = (...args: unknown[]): void => {
+        if (buffer.length >= limit) buffer.shift()
+        buffer.push({
+          ts: now().toISOString(),
+          level,
+          text: args.map(formatConsoleArg).join(' '),
+        })
+        bound(...args)
+      }
+    }
+  }
+
+  return {
+    snapshot: () => buffer.slice(),
+    dispose: () => {
+      if (!target) return
+      for (const [level, orig] of originals) target[level] = orig
+      originals.clear()
+    },
+  }
 }

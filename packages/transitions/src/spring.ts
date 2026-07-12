@@ -40,6 +40,10 @@ function isSettled(state: SpringState, target: number, precision: number): boole
   return Math.abs(state.velocity) < precision && Math.abs(state.position - target) < precision
 }
 
+function isDocumentHidden(): boolean {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden'
+}
+
 function animateSpring(
   els: HTMLElement[],
   from: number,
@@ -52,11 +56,61 @@ function animateSpring(
 ): Promise<void> {
   if (els.length === 0) return Promise.resolve()
 
+  const rafAvailable = typeof requestAnimationFrame === 'function'
+
   return new Promise<void>((resolve) => {
+    let settled = false
+
+    const cleanup = (): void => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility)
+      }
+    }
+
+    // Snap to the exact target and resolve. Used both on natural settle and as
+    // the escape hatch when no rAF loop can run (hidden tab / rAF unavailable):
+    // without it the leave Promise would never resolve, deadlocking anything
+    // gated on it (e.g. route navigation via fromTransition(spring())).
+    const snap = (): void => {
+      if (settled) return
+      settled = true
+      for (const el of els) {
+        el.style.setProperty(property, String(to))
+      }
+      cleanup()
+      resolve()
+    }
+
+    const onVisibility = (): void => {
+      if (isDocumentHidden()) snap()
+    }
+
+    // Apply initial value
+    for (const el of els) {
+      el.style.setProperty(property, String(from))
+    }
+
+    // No animation loop available (SSR / minimal jsdom) or the tab is already
+    // hidden — settle immediately so the Promise always resolves.
+    if (!rafAvailable || isDocumentHidden()) {
+      snap()
+      return
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility)
+    }
+
     const state: SpringState = { position: from, velocity: 0 }
     let lastTime: number | null = null
 
     function step(time: number) {
+      if (settled) return
+      // If the tab was hidden mid-flight, rAF stalls — settle so we don't hang.
+      if (isDocumentHidden()) {
+        snap()
+        return
+      }
       if (lastTime === null) {
         lastTime = time
       }
@@ -72,20 +126,11 @@ function animateSpring(
       }
 
       if (isSettled(state, to, precision)) {
-        // Snap to exact target
-        for (const el of els) {
-          el.style.setProperty(property, String(to))
-        }
-        resolve()
+        snap()
         return
       }
 
       requestAnimationFrame(step)
-    }
-
-    // Apply initial value
-    for (const el of els) {
-      el.style.setProperty(property, String(from))
     }
 
     requestAnimationFrame(step)
@@ -96,10 +141,16 @@ function animateSpring(
  * Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
  * property using a damped spring simulation driven by `requestAnimationFrame`.
  *
- * ```ts
- * show({ when: (s) => s.open, render: () => content(), ...spring() })
- * show({ ...spring({ property: 'transform', from: 0, to: 1 }) })
- * ```
+ * When `requestAnimationFrame` can't drive the loop — server render, or a
+ * hidden/background tab where rAF is paused — the animation settles instantly
+ * to its target and the returned Promise still resolves. This matters for the
+ * `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
+ * not hang (e.g. `fromTransition(spring())` route navigation).
+ *
+ * Consumed at the route/container seam via `fromTransition` in
+ * `@llui/vike/client`. The signal `show`/`each`/`branch` primitives do **not**
+ * currently accept transition hooks, so `show({ ...spring() })` is not yet
+ * wired — that structural seam is a deferred cross-package change.
  */
 export function spring(opts: SpringOptions = {}): TransitionOptions {
   const stiffness = opts.stiffness ?? 170

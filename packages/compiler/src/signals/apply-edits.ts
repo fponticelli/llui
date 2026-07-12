@@ -2,12 +2,44 @@
 // transform (view lowering) and the lint autofix path, so the back-to-front
 // ordering logic lives in exactly one place.
 
+import MagicString from 'magic-string'
+import type { SourceMap } from 'magic-string'
+
 /** A text replacement expressed as a half-open `[start, end)` char-offset range
  * into the source, plus the text to put there (empty string = deletion). */
 export interface TextEdit {
   start: number
   end: number
   text: string
+}
+
+/** Code + a real source map produced by {@link applyEditsWithMap}. */
+export interface AppliedWithMap {
+  code: string
+  map: SourceMap
+}
+
+/**
+ * Apply `edits` (and an optional `prepend`, e.g. the injected runtime import)
+ * through ONE MagicString instance so the returned source map is coherent across
+ * every splice. Replacements map to the start of their original span; the prepend
+ * has no original counterpart (added content). Edits are assumed non-overlapping
+ * — the transform guarantees this (nested-component containment + pass1/pass2
+ * discipline). An insertion (`start === end`) is applied as a left-append.
+ */
+export function applyEditsWithMap(
+  source: string,
+  edits: readonly TextEdit[],
+  opts: { fileName: string; prepend?: string },
+): AppliedWithMap {
+  const ms = new MagicString(source)
+  for (const e of edits) {
+    if (e.start === e.end) ms.appendLeft(e.start, e.text)
+    else ms.overwrite(e.start, e.end, e.text)
+  }
+  if (opts.prepend) ms.prepend(opts.prepend)
+  const map = ms.generateMap({ source: opts.fileName, includeContent: true, hires: true })
+  return { code: ms.toString(), map }
 }
 
 /**

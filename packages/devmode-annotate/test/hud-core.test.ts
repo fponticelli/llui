@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BULLET_PREFIX,
-  NUMBER_PREFIX,
   clampOffset,
   computeModalAnchor,
   deriveSavedPosition,
@@ -12,8 +10,6 @@ import {
   isWorking,
   parseSavedPosition,
   statusLabel,
-  toggleLinePrefix,
-  toggleWrap,
 } from '../src/hud-core.js'
 
 describe('position math', () => {
@@ -93,52 +89,5 @@ describe('deriveKind', () => {
     expect(deriveKind({ selector: 'x', bbox: {} }, null)).toBe('element')
     expect(deriveKind(null, { x: 0, y: 0, w: 1, h: 1 })).toBe('rect')
     expect(deriveKind(null, null)).toBe('text')
-  })
-})
-
-describe('markdown toggleWrap', () => {
-  const sel = (value: string, start: number, end: number) => ({ value, start, end })
-
-  it('wraps a selection', () => {
-    expect(toggleWrap(sel('hello world', 0, 5), '**')).toEqual({
-      value: '**hello** world',
-      start: 2,
-      end: 7,
-    })
-  })
-  it('inserts a placeholder when nothing is selected', () => {
-    expect(toggleWrap(sel('', 0, 0), '*')).toEqual({ value: '*text*', start: 1, end: 5 })
-  })
-  it('strips when the selection itself is wrapped', () => {
-    expect(toggleWrap(sel('**bold**', 0, 8), '**')).toEqual({
-      value: 'bold',
-      start: 0,
-      end: 4,
-    })
-  })
-  it('strips flanking markers around the selection', () => {
-    // "a **b** c" — "b" is at index 4; select just it (4..5).
-    expect(toggleWrap(sel('a **b** c', 4, 5), '**')).toEqual({
-      value: 'a b c',
-      start: 2,
-      end: 3,
-    })
-  })
-})
-
-describe('markdown toggleLinePrefix', () => {
-  const sel = (value: string, start: number, end: number) => ({ value, start, end })
-
-  it('adds a bullet prefix to each line', () => {
-    const r = toggleLinePrefix(sel('a\nb', 0, 3), BULLET_PREFIX.add, BULLET_PREFIX.match)
-    expect(r.value).toBe('- a\n- b')
-  })
-  it('removes the prefix when every line already has it', () => {
-    const r = toggleLinePrefix(sel('- a\n- b', 0, 7), BULLET_PREFIX.add, BULLET_PREFIX.match)
-    expect(r.value).toBe('a\nb')
-  })
-  it('numbers lines incrementally', () => {
-    const r = toggleLinePrefix(sel('a\nb\nc', 0, 5), NUMBER_PREFIX.add, NUMBER_PREFIX.match)
-    expect(r.value).toBe('1. a\n2. b\n3. c')
   })
 })

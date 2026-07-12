@@ -285,13 +285,9 @@ describe('tree-view.connect', () => {
     expect(s2.renaming).toBeNull()
   })
 
-  it('root aria-owns lists visible item IDs', () => {
+  it('root does not emit aria-owns (treeitems are real DOM descendants)', () => {
     const pc = connect(rootSignal(), vi.fn(), { id: 'tv' })
-    // Empty visibleItems → undefined
-    expect(read(pc.root['aria-owns'], init())).toBeUndefined()
-    // With visible items → space-separated ids
-    const s = init({ visibleItems: ['a', 'b', 'c'] })
-    expect(read(pc.root['aria-owns'], s)).toBe('tv:item:a tv:item:b tv:item:c')
+    expect('aria-owns' in pc.root).toBe(false)
   })
 
   it('branchTrigger click sends toggleBranch', () => {

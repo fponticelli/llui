@@ -30,6 +30,14 @@ function pushBounded<T>(arr: T[], item: T, max: number): void {
 
 export class CdpSessionManager implements CdpTransport {
   private session: CdpSession | null = null
+  /**
+   * Memoized in-flight `ensureSession()` promise. Without this, two tool
+   * calls that both find `this.session === null` each launch their own
+   * headless Chromium — the second overwrites `this.session`, orphaning
+   * the first browser process (leak). Concurrent callers now await the
+   * same launch.
+   */
+  private inflight: Promise<CdpSession> | null = null
   private devUrl: string | null
   private headed: boolean
 
@@ -38,14 +46,29 @@ export class CdpSessionManager implements CdpTransport {
     this.headed = opts.headed ?? false
   }
 
+  /**
+   * Tear down the current session (if any) and close its browser handle so
+   * a discarded playwright-owned Chromium process does not leak. Nulls the
+   * session/in-flight state synchronously so `isAvailable()` reflects the
+   * reset immediately, then closes the captured browser in the background.
+   * For a connectOverCDP (user-chrome) session `close()` only drops the CDP
+   * connection — it never kills the user's browser.
+   */
+  private disposeSession(): void {
+    const stale = this.session
+    this.session = null
+    this.inflight = null
+    if (stale?.browser) void stale.browser.close().catch(() => {})
+  }
+
   setDevUrl(url: string): void {
     this.devUrl = url
-    this.session = null
+    this.disposeSession()
   }
 
   setHeaded(v: boolean): void {
     this.headed = v
-    this.session = null
+    this.disposeSession()
   }
 
   isAvailable(): boolean {
@@ -154,6 +177,7 @@ export class CdpSessionManager implements CdpTransport {
     }
     await this.session.browser!.close().catch(() => {})
     this.session = null
+    this.inflight = null
     return { closed: true }
   }
 
@@ -259,7 +283,21 @@ export class CdpSessionManager implements CdpTransport {
 
   async ensureSession(): Promise<CdpSession> {
     if (this.session) return this.session
+    // Coalesce concurrent launches onto a single promise so we never spawn
+    // (and then orphan) two browsers. Cleared on settle so a later call
+    // after a failure/teardown can retry.
+    if (this.inflight) return this.inflight
+    const p = this.buildOrAttachSession()
+    this.inflight = p
+    try {
+      const s = await p
+      return s
+    } finally {
+      if (this.inflight === p) this.inflight = null
+    }
+  }
 
+  private async buildOrAttachSession(): Promise<CdpSession> {
     const url = this.resolveDevUrl()
     if (!url)
       throw new CdpError(

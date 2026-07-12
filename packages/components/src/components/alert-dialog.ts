@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import {
   init,
   update,
@@ -13,25 +13,43 @@ import {
 } from './dialog.js'
 
 /**
- * Alert dialog — a variant of dialog for destructive confirmations or
- * blocking messages. Uses `role="alertdialog"` and defaults to:
- *   - `closeOnOutsideClick: false` (user must choose an action explicitly)
+ * Alert dialog — a variant of dialog for destructive confirmations or blocking
+ * messages. Uses `role="alertdialog"` and defaults `closeOnOutsideClick: false`
+ * so the user must choose an action explicitly.
  *
- * Shares state, messages, and part structure with `dialog`. Render a
- * `cancelTrigger` alongside the `closeTrigger` and let the application
- * dispatch a follow-up action after the dialog closes.
+ * Shares state, messages, and part structure with `dialog` — including the
+ * single `closeTrigger` part. There is no dedicated cancel/confirm part: render
+ * two buttons in the content and dispatch your own confirm/cancel messages
+ * (spread `parts.closeTrigger` onto the cancel button to also close the dialog).
+ *
+ * ```ts
+ * view: ({ state, send }) => {
+ *   const parts = alertDialog.connect(state.at('confirm'), send, { id: 'del' })
+ *   return [
+ *     button({ ...parts.trigger }, [text('Delete')]),
+ *     alertDialog.overlay({
+ *       state: state.at('confirm'),
+ *       send,
+ *       parts,
+ *       content: () => [
+ *         div({ ...parts.content }, [
+ *           h2({ ...parts.title }, [text('Delete file?')]),
+ *           button({ ...parts.closeTrigger }, [text('Cancel')]),
+ *           button({ onClick: () => send({ type: 'confirmDelete' }) }, [text('Delete')]),
+ *         ]),
+ *       ],
+ *     }),
+ *   ]
+ * }
+ * ```
  */
 
 export type { DialogState as AlertDialogState, DialogMsg as AlertDialogMsg }
 
 export { init, update, isMounted, isPresent }
 
-export interface AlertDialogConnectOptions extends Omit<DialogConnectOptions, 'role'> {
-  /** Accessible label for the cancel button (default: 'Cancel'). */
-  cancelLabel?: string
-  /** Accessible label for the confirm button (default: 'Confirm'). */
-  confirmLabel?: string
-}
+/** Connect options — the dialog options minus `role` (fixed to `alertdialog`). */
+export type AlertDialogConnectOptions = Omit<DialogConnectOptions, 'role'>
 
 export type AlertDialogParts = DialogParts
 
@@ -48,7 +66,6 @@ export interface AlertDialogOverlayOptions {
   send: Send<DialogMsg>
   parts: AlertDialogParts
   content: () => Renderable
-  transition?: TransitionOptions
   closeOnEscape?: boolean
   /** Whether outside-click should dismiss (default: false for alert dialogs). */
   closeOnOutsideClick?: boolean

@@ -87,17 +87,28 @@ The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path impo
 
 ## Functions
 
-### `onRenderHtml()`
+### `createNavigationProgress()`
 
-Default onRenderHtml hook — no layout, minimal document template,
-jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
-a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
-with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
-The lazy import below keeps jsdom out of the client bundle —
-Rollup's graph walker only pulls it when this server hook executes.
+Create a {@link NavigationProgress} handle. See the interface docs for the
+three-file wiring and binding patterns.
 
 ```typescript
-function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
+function createNavigationProgress(options?: NavigationProgressOptions): NavigationProgress
+```
+
+### `createOnRenderClient()`
+
+Factory to create a customized onRenderClient hook. See
+`RenderClientOptions` for the full option surface.
+**Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
+prefix for its own framework config conventions. Name the file
+`Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` that Vike
+won't scan, and import it here by path.
+
+```typescript
+function createOnRenderClient(
+  options: RenderClientOptions,
+): (pageContext: ClientPageContext) => Promise<void>
 ```
 
 ### `createOnRenderHtml()`
@@ -128,22 +139,61 @@ function createOnRenderHtml(
 ): (pageContext: PageContext) => Promise<RenderHtmlResult>
 ```
 
-### `_renderChain()`
+### `fromTransition()`
 
-Render every layer of the chain into one composed DOM tree, then
-serialize. At each non-innermost layer, consume the pending
-`pageSlot()` registration and insert the next layer's nodes as
-siblings after the anchor comment, bracketed by an end sentinel.
-Contexts provided above a slot are replayed into the nested layer's
-build so they reach the nested page.
-@internal — exported for unit testing only (`_renderChain`).
+Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
+expected by `createOnRenderClient`.
+
+```ts
+import { createOnRenderClient, fromTransition } from '@llui/vike/client'
+import { routeTransition } from '@llui/transitions'
+export const onRenderClient = createOnRenderClient({
+  Layout: AppLayout,
+  ...fromTransition(routeTransition({ duration: 200 })),
+})
+```
+
+The transition operates on the slot element — in a no-layout setup,
+the root container; in a layout setup, the innermost surviving layer's
+`pageSlot()` element.
+Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
+transition brackets the DOM _swap_, which runs after Vike has fetched the new
+page's `+data` — it does not animate over the network wait. For a
+during-fetch loading indicator, pair it with {@link createNavigationProgress}.
 
 ```typescript
-function _renderChain(
-  chain: LayoutChain,
-  chainData: readonly unknown[],
-  env: DomEnv,
-): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead }
+function fromTransition(t: TransitionOptions): Pick<RenderClientOptions, 'onLeave' | 'onEnter'>
+```
+
+### `getLayoutChain()`
+
+Public read of the current layout chain — live `LayerHandle`s for
+`[...layouts, page]`, outermost first. Empty before the first mount.
+
+```typescript
+function getLayoutChain(): readonly LayerHandle[]
+```
+
+### `onRenderClient()`
+
+Default onRenderClient hook — no layout, no animation hooks. Hydrates
+on first load, mounts fresh on subsequent navs.
+
+```typescript
+function onRenderClient(pageContext: ClientPageContext): Promise<void>
+```
+
+### `onRenderHtml()`
+
+Default onRenderHtml hook — no layout, minimal document template,
+jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
+a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
+with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
+The lazy import below keeps jsdom out of the client bundle —
+Rollup's graph walker only pulls it when this server hook executes.
+
+```typescript
+function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
 ```
 
 ### `pageSlot()`
@@ -208,133 +258,7 @@ view throws (when both are placed).
 function pageSlot(): Mountable
 ```
 
-### `createNavigationProgress()`
-
-Create a {@link NavigationProgress} handle. See the interface docs for the
-three-file wiring and binding patterns.
-
-```typescript
-function createNavigationProgress(options?: NavigationProgressOptions): NavigationProgress
-```
-
-### `fromTransition()`
-
-Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
-expected by `createOnRenderClient`.
-
-```ts
-import { createOnRenderClient, fromTransition } from '@llui/vike/client'
-import { routeTransition } from '@llui/transitions'
-export const onRenderClient = createOnRenderClient({
-  Layout: AppLayout,
-  ...fromTransition(routeTransition({ duration: 200 })),
-})
-```
-
-The transition operates on the slot element — in a no-layout setup,
-the root container; in a layout setup, the innermost surviving layer's
-`pageSlot()` element.
-Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
-transition brackets the DOM _swap_, which runs after Vike has fetched the new
-page's `+data` — it does not animate over the network wait. For a
-during-fetch loading indicator, pair it with {@link createNavigationProgress}.
-
-```typescript
-function fromTransition(t: TransitionOptions): Pick<RenderClientOptions, 'onLeave' | 'onEnter'>
-```
-
-### `_resetChainForTest()`
-
-@internal — test helper. Disposes every layer in the current chain and
-clears the module state so subsequent calls behave as a first mount.
-
-```typescript
-function _resetChainForTest(): void
-```
-
-### `_resetCurrentHandleForTest()`
-
-Back-compat alias for the pre-layout test helper name.
-@internal
-@deprecated — use `_resetChainForTest` instead.
-
-```typescript
-function _resetCurrentHandleForTest(): void
-```
-
-### `onRenderClient()`
-
-Default onRenderClient hook — no layout, no animation hooks. Hydrates
-on first load, mounts fresh on subsequent navs.
-
-```typescript
-function onRenderClient(pageContext: ClientPageContext): Promise<void>
-```
-
-### `createOnRenderClient()`
-
-Factory to create a customized onRenderClient hook. See
-`RenderClientOptions` for the full option surface.
-**Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
-prefix for its own framework config conventions. Name the file
-`Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` that Vike
-won't scan, and import it here by path.
-
-```typescript
-function createOnRenderClient(
-  options: RenderClientOptions,
-): (pageContext: ClientPageContext) => Promise<void>
-```
-
-### `getLayoutChain()`
-
-Public read of the current layout chain — live `LayerHandle`s for
-`[...layouts, page]`, outermost first. Empty before the first mount.
-
-```typescript
-function getLayoutChain(): readonly LayerHandle[]
-```
-
-### `_mountChainSuffix()`
-
-Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, replaying
-`initialContexts` into the first layer's build. Threads each layer's slot
-(anchor + captured contexts) into the next layer's target + contexts.
-`initialTarget` is an `HTMLElement` for the outermost layer (container mount/
-hydrate) and a `Comment` for inner layers mounting relative to a `pageSlot()`
-anchor.
-Fails loudly if a non-innermost layer forgot to call `pageSlot()`, or if the
-innermost layer called `pageSlot()` unnecessarily.
-@internal — test helper. Exported so `client-page-slot.test.ts` can exercise
-anchor-mount/dispose contracts directly with hand-built DOM.
-
-```typescript
-function _mountChainSuffix(
-  chain: LayoutChain,
-  chainData: readonly unknown[],
-  startAt: number,
-  initialTarget: HTMLElement | Comment,
-  initialContexts: ReadonlyMap<symbol, unknown> | undefined,
-  opts: MountOpts,
-): void
-```
-
 ## Types
-
-### `ServerLayoutResolverContext`
-
-The pageContext a server-side `Layout` **resolver function** receives.
-Identical to {@link PageContext} except Vike's routing fields (`urlPathname`,
-`routeParams`) are guaranteed present — the resolver only runs against a live
-page render, which always populates them. Mirrors the client's
-`LayoutResolverContext` so a single route-scoped resolver branches the same
-way on both sides, keeping the server-rendered chain in lockstep with the
-chain the client hydrates.
-
-```typescript
-export type ServerLayoutResolverContext = PageContext &
-  Required<Pick<PageContext, 'urlPathname' | 'routeParams'>>
-```
 
 ### `LayerHandle`
 
@@ -369,18 +293,35 @@ export type LayoutResolverContext = ClientPageContext &
   Required<Pick<ClientPageContext, 'urlPathname' | 'routeParams'>>
 ```
 
+### `ServerLayoutResolverContext`
+
+The pageContext a server-side `Layout` **resolver function** receives.
+Identical to {@link PageContext} except Vike's routing fields (`urlPathname`,
+`routeParams`) are guaranteed present — the resolver only runs against a live
+page render, which always populates them. Mirrors the client's
+`LayoutResolverContext` so a single route-scoped resolver branches the same
+way on both sides, keeping the server-rendered chain in lockstep with the
+chain the client hydrates.
+
+```typescript
+export type ServerLayoutResolverContext = PageContext &
+  Required<Pick<PageContext, 'urlPathname' | 'routeParams'>>
+```
+
 ## Interfaces
 
 ### `AnyLayer`
 
-Type-erased layer def at the adapter boundary. Declared with METHOD syntax and
-a single `unknown` view-bag param so a concrete `SignalComponentDef<S,M,E>`
-assigns in for ANY S/M/E — `SignalComponentDef<unknown,unknown,unknown>` can't
-be that erasure, because `view(bag: ComponentBag<S,M>)` couples covariant
-`state` with contravariant `send` and neither variance direction admits a
-heterogeneous chain. This interface is itself assignable to
-`SignalComponentDef<unknown,unknown,unknown>`, so `renderNodes(layer)` type-
-checks. Mirrors the legacy `AnyComponentDef`.
+A type-erased signal component as the adapter handles it. Layouts and pages are
+`SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter treats them
+uniformly with the type params erased — the runtime doesn't use them.
+Declared with METHOD syntax and a single `unknown` view-bag param so a concrete
+`SignalComponentDef<S,M,E>` assigns in for ANY S/M/E — `SignalComponentDef<
+unknown,unknown,unknown>` can't be that erasure, because `view(bag:
+ComponentBag<S,M>)` couples covariant `state` with contravariant `send` and
+neither variance direction admits a heterogeneous chain. This interface is
+itself assignable to `SignalComponentDef<unknown,unknown,unknown>`, so
+`renderNodes(layer)` / `mountSignalComponent(layer)` type-check.
 
 ```typescript
 export interface AnyLayer {
@@ -392,31 +333,33 @@ export interface AnyLayer {
 }
 ```
 
-### `PageContext`
+### `ClientPageContext`
 
-Page context shape as seen by `@llui/vike`'s server hook. `Page` and
-`data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
-current route; `lluiLayoutData` is an optional array of per-layer
-layout data matching the chain configured on `createOnRenderHtml`.
-`data` is derived from the global `Vike.PageContext` namespace so that
-consumer-side augmentations (the Vike convention for typing data) flow
-into this hook's callbacks without any cast. When the consumer hasn't
-augmented the namespace, `data` falls back to `unknown`.
+Page context shape as seen by `@llui/vike`'s client-side hooks. The
+`Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
+Vike resolved for the current route.
+`data` is derived from the global `Vike.PageContext` namespace — the
+convention users already know from Vike. Consumer augmentations flow
+through to every callback here without a cast; unaugmented projects
+fall back to `unknown`.
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
+`lluiLayoutData` is optional and carries per-layer data for the layout
+chain configured via `createOnRenderClient({ Layout })`. It's indexed
+outermost-to-innermost, one entry per layout layer.
 
 ```typescript
-export interface PageContext {
+export interface ClientPageContext {
   Page: AnyLayer
   data?: VikePageContextData
 
   /**
-   * Vike's resolved pathname for the current route (origin-, query- and
+   * Vike's resolved pathname for the current navigation (origin-, query- and
    * hash-stripped, e.g. `/docs/getting-started`). Vike always populates this on
    * the live pageContext; it's optional here only because not every test/SSR
    * construction site supplies it. Inside a `Layout` resolver it is guaranteed
-   * present — see {@link ServerLayoutResolverContext}.
+   * present — see {@link LayoutResolverContext}.
    */
   urlPathname?: string
 
@@ -424,12 +367,12 @@ export interface PageContext {
    * Vike's route params for the current route (e.g. `{ slug: 'intro' }` for a
    * `/docs/@slug` route). Empty object when the matched route has no params.
    * Guaranteed present inside a `Layout` resolver — see
-   * {@link ServerLayoutResolverContext}.
+   * {@link LayoutResolverContext}.
    */
   routeParams?: Record<string, string>
 
   lluiLayoutData?: readonly unknown[]
-  head?: string
+  isHydration?: boolean
 }
 ```
 
@@ -455,61 +398,6 @@ export interface DocumentContext {
   pageContext: PageContext
 }
 ```
-
-### `RenderHtmlResult`
-
-```typescript
-export interface RenderHtmlResult {
-  documentHtml: string | { _escaped: string }
-  pageContext: { lluiState: unknown }
-}
-```
-
-### `RenderHtmlOptions`
-
-Options for the customized `createOnRenderHtml` factory. Mirrors
-`@llui/vike/client`'s `RenderClientOptions.Layout` — the same chain
-shape is accepted for consistency between server and client render.
-
-````typescript
-export interface RenderHtmlOptions {
-  /** Custom HTML document template. Defaults to a minimal layout. */
-  document?: (ctx: DocumentContext) => string
-
-  /**
-   * Persistent layout chain. One of:
-   *
-   * - A single `SignalComponentDef` — becomes a one-layout chain.
-   * - An array of `SignalComponentDef`s — outermost first, innermost last.
-   *   Every layer except the innermost must call `pageSlot()` in its view.
-   * - A function that returns a chain from the current `pageContext` —
-   *   enables per-route chains (e.g. reading Vike's `urlPathname`).
-   *
-   * The server renders the full chain as one composed HTML tree. Client
-   * hydration reads the matching envelope and reconstructs the chain
-   * layer-by-layer.
-   */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: ServerLayoutResolverContext) => LayoutChain)
-
-  /**
-   * Factory that returns the `DomEnv` backing SSR render. Call with
-   * either `jsdomEnv` (from `@llui/dom/ssr/jsdom`) or `linkedomEnv`
-   * (from `@llui/dom/ssr/linkedom`). The factory is invoked once per
-   * page render, so each request gets a fresh DOM — safe under
-   * concurrency, no `globalThis` mutation.
-   *
-   * On Cloudflare Workers use `linkedomEnv` — jsdom's transitive deps
-   * (whatwg-url, tr46, punycode) don't resolve under workerd.
-   *
-   * @example
-   * ```ts
-   * import { jsdomEnv } from '@llui/dom/ssr/jsdom'
-   * createOnRenderHtml({ Layout: MyLayout, domEnv: jsdomEnv })
-   * ```
-   */
-  domEnv: () => DomEnv | Promise<DomEnv>
-}
-````
 
 ### `NavigationProgress`
 
@@ -604,33 +492,31 @@ export interface NavigationProgressOptions {
 }
 ```
 
-### `ClientPageContext`
+### `PageContext`
 
-Page context shape as seen by `@llui/vike`'s client-side hooks. The
-`Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
-Vike resolved for the current route.
-`data` is derived from the global `Vike.PageContext` namespace — the
-convention users already know from Vike. Consumer augmentations flow
-through to every callback here without a cast; unaugmented projects
-fall back to `unknown`.
+Page context shape as seen by `@llui/vike`'s server hook. `Page` and
+`data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
+current route; `lluiLayoutData` is an optional array of per-layer
+layout data matching the chain configured on `createOnRenderHtml`.
+`data` is derived from the global `Vike.PageContext` namespace so that
+consumer-side augmentations (the Vike convention for typing data) flow
+into this hook's callbacks without any cast. When the consumer hasn't
+augmented the namespace, `data` falls back to `unknown`.
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
-`lluiLayoutData` is optional and carries per-layer data for the layout
-chain configured via `createOnRenderClient({ Layout })`. It's indexed
-outermost-to-innermost, one entry per layout layer.
 
 ```typescript
-export interface ClientPageContext {
+export interface PageContext {
   Page: AnyLayer
   data?: VikePageContextData
 
   /**
-   * Vike's resolved pathname for the current navigation (origin-, query- and
+   * Vike's resolved pathname for the current route (origin-, query- and
    * hash-stripped, e.g. `/docs/getting-started`). Vike always populates this on
    * the live pageContext; it's optional here only because not every test/SSR
    * construction site supplies it. Inside a `Layout` resolver it is guaranteed
-   * present — see {@link LayoutResolverContext}.
+   * present — see {@link ServerLayoutResolverContext}.
    */
   urlPathname?: string
 
@@ -638,12 +524,12 @@ export interface ClientPageContext {
    * Vike's route params for the current route (e.g. `{ slug: 'intro' }` for a
    * `/docs/@slug` route). Empty object when the matched route has no params.
    * Guaranteed present inside a `Layout` resolver — see
-   * {@link LayoutResolverContext}.
+   * {@link ServerLayoutResolverContext}.
    */
   routeParams?: Record<string, string>
 
   lluiLayoutData?: readonly unknown[]
-  isHydration?: boolean
+  head?: string
 }
 ```
 
@@ -675,7 +561,7 @@ export interface RenderClientOptions {
    * Layers shared between the previous and next navigation stay mounted.
    * Only the divergent suffix is disposed and re-mounted.
    */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: LayoutResolverContext) => LayoutChain)
+  Layout?: LayoutOption<LayoutResolverContext>
 
   /**
    * Called on the slot element whose contents are about to be replaced,
@@ -729,14 +615,76 @@ export interface RenderClientOptions {
 
   /**
    * Forwarded to the signal hydrate path for every layer on initial
-   * hydration. When `true`, effects returned by each component's `init()`
-   * are dispatched post-swap on the client. When `false` (default), they
-   * are skipped — the SSR pass already ran them.
+   * hydration. When `true` (**the default for this adapter**), effects
+   * returned by each component's `init()` are dispatched post-swap on the
+   * client. Set `false` to skip them.
+   *
+   * The default is to RUN them because the SSR pass runs NO effects — the
+   * server render is pure (it only bakes initial state into HTML; see
+   * `renderNodes`). An init effect (data fetch, subscription, timer, focus)
+   * therefore never fired server-side, so skipping it on hydrate would drop
+   * it entirely on first load. Opt out only for an init effect that is
+   * genuinely first-paint-only and must not re-run on the client.
    *
    * Subsequent client-side navigation always uses a fresh mount, which
    * always fires init effects regardless of this flag.
    */
   runInitEffectsOnHydrate?: boolean
+}
+```
+
+### `RenderHtmlOptions`
+
+Options for the customized `createOnRenderHtml` factory. Mirrors
+`@llui/vike/client`'s `RenderClientOptions.Layout` — the same chain
+shape is accepted for consistency between server and client render.
+
+````typescript
+export interface RenderHtmlOptions {
+  /** Custom HTML document template. Defaults to a minimal layout. */
+  document?: (ctx: DocumentContext) => string
+
+  /**
+   * Persistent layout chain. One of:
+   *
+   * - A single `SignalComponentDef` — becomes a one-layout chain.
+   * - An array of `SignalComponentDef`s — outermost first, innermost last.
+   *   Every layer except the innermost must call `pageSlot()` in its view.
+   * - A function that returns a chain from the current `pageContext` —
+   *   enables per-route chains (e.g. reading Vike's `urlPathname`).
+   *
+   * The server renders the full chain as one composed HTML tree. Client
+   * hydration reads the matching manifest and reconstructs the chain
+   * layer-by-layer.
+   */
+  Layout?: LayoutOption<ServerLayoutResolverContext>
+
+  /**
+   * Factory that returns the `DomEnv` backing SSR render. Call with
+   * either `jsdomEnv` (from `@llui/dom/ssr/jsdom`) or `linkedomEnv`
+   * (from `@llui/dom/ssr/linkedom`). The factory is invoked once per
+   * page render, so each request gets a fresh DOM — safe under
+   * concurrency, no `globalThis` mutation.
+   *
+   * On Cloudflare Workers use `linkedomEnv` — jsdom's transitive deps
+   * (whatwg-url, tr46, punycode) don't resolve under workerd.
+   *
+   * @example
+   * ```ts
+   * import { jsdomEnv } from '@llui/dom/ssr/jsdom'
+   * createOnRenderHtml({ Layout: MyLayout, domEnv: jsdomEnv })
+   * ```
+   */
+  domEnv: () => DomEnv | Promise<DomEnv>
+}
+````
+
+### `RenderHtmlResult`
+
+```typescript
+export interface RenderHtmlResult {
+  documentHtml: DangerousHtml
+  pageContext: { lluiState: HydrationManifest }
 }
 ```
 

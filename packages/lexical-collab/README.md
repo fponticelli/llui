@@ -29,8 +29,13 @@ cannot do:
 - **Controlled `value`** → a markdown signal pushing into a CRDT fights
   convergence. Mutually exclusive with collab.
 
-So `@llui/lexical` exposes two small, general seam options — `history: false` and
-`seedMode: 'deferred'` — and this package supplies the scoped undo + bootstrap.
+So `@llui/lexical` exposes the seam options this package plugs into — most
+importantly **`externalUndo`**, which takes ownership of the undo stack AND forces
+the built-in `@lexical/history` stack off in one place, so the two can never both
+run and double-apply an undo — plus `seedMode: 'deferred'` for the sync-gated
+bootstrap. Pass `yjsCollab(...).register` as `externalUndo` (see below); prefer it
+over the older manual `history: false` + `register` pairing, where forgetting the
+`history: false` silently double-applies undo.
 
 ## Usage with the markdown editor (recommended)
 
@@ -77,11 +82,19 @@ lexicalForeign({
   serialize,
   deserialize,
   readonly,
-  history: false, // CRDT undo manager replaces the local stack
+  // `externalUndo` owns the undo stack AND force-disables the built-in
+  // @lexical/history stack — you can't accidentally run both and double-apply
+  // undo. `collab.register` wires the scoped CRDT undo manager + sync-gated
+  // bootstrap; its `(editor) => () => void` shape is exactly `externalUndo`'s.
+  externalUndo: collab.register,
   seedMode: 'deferred', // collab bootstrap replaces the boot-time seed
-  register: (editor) => collab.register(editor),
 })
 ```
+
+When you `yjsCollab(...)` created the document (you passed neither `doc` nor a
+factory that made its own), call `collab.destroy()` after the `lexicalForeign`
+unmount tears the binding down — it `destroy()`s the internally-created `YDoc` and
+removes it from the `docMap`. A `doc` you supplied is yours to destroy.
 
 ## Presence cursors
 

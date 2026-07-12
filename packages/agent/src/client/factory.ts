@@ -9,9 +9,12 @@ import type {
   MessageAnnotations,
   MessageSchemaEntry,
 } from '../protocol.js'
+import { LAP_VERSION } from '../protocol.js'
 import { attachWsClient, type WsLike, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
 import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } from '../codecs.js'
+import { resolvePath } from './rpc/query-state.js'
+import { computeStateDiff } from '../state-diff.js'
 
 /**
  * The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
@@ -127,6 +130,15 @@ export type CreateAgentClientOpts<State, Msg> = {
    * are sensitive — prefer it over any downstream/server-side filter.
    */
   redactState?: (state: State) => State
+  /**
+   * Payload-validation policy for agent `send_message` dispatches.
+   * `'strict'` rejects payload fields not in the compiled schema and
+   * warns on `'unknown'`-typed fields the agent supplied a value for;
+   * `'lenient'` (default) accepts extras silently. Wired through to the
+   * per-dispatch validator so strict mode is usable in production, not
+   * only in tests.
+   */
+  dispatchPolicy?: 'strict' | 'lenient'
   /**
    * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
    * the canonical paths in `@llui/vite-plugin`'s dev middleware and
@@ -271,9 +283,23 @@ export function createAgentClient<State, Msg>(
 ): AgentClient {
   let ws: WebSocket | null = null
   let wsClient: ReturnType<typeof attachWsClient> | null = null
-  let confirmPollTimer: ReturnType<typeof setInterval> | null = null
   let stateSubscription: (() => void) | null = null
   const resolvedConfirms = new Set<string>()
+
+  // Monotonic socket generation: each `openWs` bumps it and tags its
+  // socket. Close/open events from a superseded socket (which we closed
+  // ourselves during a reconnect) carry a stale generation and are
+  // ignored — otherwise closing the old socket would dispatch a spurious
+  // `WsClosed` and kick off a phantom reconnect (finding: second-WS
+  // spurious reconnect).
+  let wsGeneration = 0
+
+  // Active server-armed state watches (finding: subscription-driven
+  // state-watch). Empty ⇒ zero per-commit work. Each entry remembers the
+  // last resolved value under its pointer so we only emit a state-update
+  // when that value actually changes.
+  type Watch = { path: string | undefined; last: unknown }
+  const watches = new Map<string, Watch>()
 
   // Drain-error buffer: populated by persistent `window.error` and
   // `window.unhandledrejection` listeners installed on `start()`. The
@@ -330,16 +356,35 @@ export function createAgentClient<State, Msg>(
   let lastDispatchOutcome: import('./rpc/describe-context.js').LastDispatchOutcome | null = null
 
   // Single seam for state leaving the app toward the agent. `redactedState`
-  // applies the app's own `redactState` at the source; `stateForWire` then
-  // encodes it for the wire. Every outbound surface — wire reads AND the
-  // hello-frame affordances sample — goes through `redactedState`, so none
-  // can leak a redacted field.
+  // applies the app's own `redactState` at the source. Every outbound
+  // surface — wire reads, the state-update broadcast, and the hello-frame
+  // affordances sample — goes through this, so none can leak a redacted
+  // field. Codec (wire) encoding is applied separately, at the frame
+  // boundary (`encodeWire` in attachWsClient), so app callbacks see raw
+  // values.
   const redactedState = (state: unknown): unknown =>
     opts.redactState ? opts.redactState(state as State) : state
-  const stateForWire = (state: unknown): unknown => encodeForWire(redactedState(state), codecs)
+
+  // Resolve a watch's pointer against a state snapshot. `undefined` / `''`
+  // ⇒ the whole state. Change-DETECTION runs on the RAW (unredacted)
+  // state so a genuine change still resolves a `/wait` even when the
+  // app's `redactState` happens to mask that particular delta; the
+  // EMITTED snapshot is redacted separately (see emitWatchUpdates).
+  const resolveWatchValue = (state: unknown, path: string | undefined): unknown => {
+    if (path === undefined || path === '') return state
+    const r = resolvePath(state, path)
+    return r.found ? r.value : undefined
+  }
 
   const rpcHost: RpcHosts = {
-    getState: () => stateForWire(opts.handle.getState()),
+    // Raw, redacted-but-UNENCODED state. Every app callback (agentAffordances,
+    // agentContext, @routeGated predicates) and JSON-pointer resolution runs
+    // on this — so a predicate touching a Date field sees a real Date, not
+    // its wire-tagged form. Codec encoding happens once, at the frame
+    // boundary (see `encodeWire` passed to attachWsClient). Returning the
+    // raw reference (no per-call clone) also lets `computeStateDiff` prune
+    // unchanged subtrees via `Object.is` on the send_message path.
+    getState: () => redactedState(opts.handle.getState()),
     send: (m) => opts.handle.send(decodeFromWire(m, codecs)),
     flush: () => opts.handle.flush(),
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
@@ -364,6 +409,11 @@ export function createAgentClient<State, Msg>(
     getAgentAffordances: () => opts.def.agentAffordances ?? null,
     getAgentContext: () => opts.def.agentContext ?? null,
     getLastDispatchOutcome: () => lastDispatchOutcome,
+    // Payload-validation policy. Wired from the factory option so strict
+    // mode (reject unknown fields, warn on `'unknown'`-typed fields the
+    // agent supplied) is reachable in production, not just tests. Default
+    // lenient.
+    getDispatchPolicy: () => opts.dispatchPolicy ?? 'lenient',
     getRootElement: () => opts.rootElement,
     proposeConfirm: (entry) => {
       opts.handle.send(opts.slices.wrapConfirmMsg({ type: 'Propose', entry }))
@@ -388,6 +438,7 @@ export function createAgentClient<State, Msg>(
       : [],
     docs: opts.def.agentDocs ?? null,
     schemaHash: opts.def.__schemaHash ?? '',
+    lapVersion: LAP_VERSION,
   })
 
   // Storage adapter: opt-out with `null`, custom adapter, or default
@@ -411,9 +462,29 @@ export function createAgentClient<State, Msg>(
     agentBasePath: opts.agentBasePath,
     sessionStorage,
     openWs: (token, wsUrl) => {
+      // Bump the generation BEFORE closing the old socket, so the close
+      // event the `ws.close()` below triggers is already stale (myGen of
+      // the old listener !== wsGeneration) and is ignored.
+      const myGen = ++wsGeneration
       if (ws) ws.close()
+      // Re-pairing to a new socket: drop stale watch baselines so the next
+      // /wait re-arms cleanly.
+      watches.clear()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
       wsClient = attachWsClient(ws as unknown as WsLike, rpcHost, helloBuilder, {
+        encodeWire: (v) => encodeForWire(v, codecs),
+        onWatch: (id, path) => {
+          // Baseline against the RAW state, in wire-encoded form so the
+          // change detector can tell two Dates (etc.) apart — computeStateDiff
+          // sees a bare Date as a keyless object and would miss the change.
+          watches.set(id, {
+            path,
+            last: encodeForWire(resolveWatchValue(opts.handle.getState(), path), codecs),
+          })
+        },
+        onUnwatch: (id) => {
+          watches.delete(id)
+        },
         onActivated: () => {
           opts.handle.send(opts.slices.wrapConnectMsg({ type: 'ActivatedByClaude' }))
         },
@@ -432,11 +503,24 @@ export function createAgentClient<State, Msg>(
               }
             : undefined,
         onDispatchOutcome: recordDispatchOutcome,
+        onConfirmExpire: (confirmId) => {
+          // The server abandoned this confirm (told the agent it was
+          // rejected). Reject the local entry so a late Approve can't
+          // fire the dispatch. `Reject` is a no-op if already resolved,
+          // and marks a still-pending entry terminally rejected.
+          resolvedConfirms.add(confirmId)
+          opts.handle.send(opts.slices.wrapConfirmMsg({ type: 'Reject', id: confirmId }))
+        },
       })
       ws.addEventListener('open', () => {
+        if (myGen !== wsGeneration) return // superseded socket
         opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsOpened' }))
       })
       ws.addEventListener('close', () => {
+        // Ignore the close of a socket we already superseded — otherwise
+        // the deliberate `ws.close()` above would dispatch WsClosed and
+        // trigger a phantom reconnect against the live socket.
+        if (myGen !== wsGeneration) return
         opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsClosed' }))
       })
     },
@@ -447,31 +531,63 @@ export function createAgentClient<State, Msg>(
     },
   })
 
-  const pollConfirms = () => {
-    const state = opts.handle.getState() as State
+  // Confirm-resolution detection, folded into the state subscription
+  // (finding: delete the 200ms poll). Every confirm resolution is itself
+  // a state-changing dispatch (Approve/Reject), so the subscription fires
+  // exactly when there's something to detect. Resolved ids are tracked to
+  // avoid double-emitting, and pruned once their entry leaves `pending`
+  // so the set can't grow unbounded across a long session.
+  const detectConfirms = (state: State): void => {
     const confirm = opts.slices.getConfirm(state)
     for (const entry of confirm.pending) {
       if (entry.status === 'pending') continue
       if (resolvedConfirms.has(entry.id)) continue
       resolvedConfirms.add(entry.id)
       if (entry.status === 'approved') {
-        wsClient?.resolveConfirm(entry.id, 'confirmed', stateForWire(opts.handle.getState()))
+        // Raw redacted state; encoded at the wire boundary.
+        wsClient?.resolveConfirm(entry.id, 'confirmed', redactedState(opts.handle.getState()))
       } else if (entry.status === 'rejected') {
         wsClient?.resolveConfirm(entry.id, 'user-cancelled')
       }
+    }
+    // Prune ids whose entry is no longer present (GC'd / expired), so the
+    // bookkeeping set stays bounded.
+    if (resolvedConfirms.size > 0) {
+      const liveIds = new Set(confirm.pending.map((e) => e.id))
+      for (const id of resolvedConfirms) if (!liveIds.has(id)) resolvedConfirms.delete(id)
+    }
+  }
+
+  // Emit state-update frames only for currently-armed server watches
+  // (finding: subscription-driven). Idle session (no watch) ⇒ no work.
+  const emitWatchUpdates = (state: unknown): void => {
+    if (watches.size === 0) return
+    let redacted: unknown
+    let haveRedacted = false
+    for (const [id, w] of watches) {
+      // Compare on the wire-encoded resolved value (see onWatch): a
+      // zero-length diff means nothing the agent watches actually changed.
+      const cur = encodeForWire(resolveWatchValue(state, w.path), codecs)
+      if (computeStateDiff(w.last, cur).length === 0) continue
+      w.last = cur
+      // Emit the REDACTED whole-state snapshot as `stateAfter` (encoded at
+      // the wire boundary). Redact once per commit, lazily.
+      if (!haveRedacted) {
+        redacted = redactedState(state)
+        haveRedacted = true
+      }
+      wsClient?.emitStateUpdate(id, w.path ?? '', redacted)
     }
   }
 
   return {
     effectHandler,
     start() {
-      if (!confirmPollTimer) confirmPollTimer = setInterval(pollConfirms, 200)
       if (!stateSubscription) {
-        stateSubscription = opts.handle.subscribe((state) => {
-          // Same source-redact-then-encode seam as `getState`: outgoing
-          // snapshots are redacted (so secrets never broadcast) and
-          // non-JSON-safe values (Date, etc.) become tagged-wire form.
-          wsClient?.emitStateUpdate('/', stateForWire(state))
+        stateSubscription = opts.handle.subscribe(() => {
+          const state = opts.handle.getState() as State
+          detectConfirms(state)
+          emitWatchUpdates(state)
         })
       }
       // Auto-restore from storage. If a non-expired session blob is
@@ -510,12 +626,12 @@ export function createAgentClient<State, Msg>(
       })
     },
     stop() {
-      if (confirmPollTimer) clearInterval(confirmPollTimer)
-      confirmPollTimer = null
       if (stateSubscription) {
         stateSubscription()
         stateSubscription = null
       }
+      watches.clear()
+      resolvedConfirms.clear()
       removeErrorListeners()
       opts.handle.setOnBindingError(null)
       drainErrors.length = 0

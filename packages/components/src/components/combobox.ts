@@ -1,8 +1,9 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
@@ -290,6 +291,10 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
         [],
       ]
     case 'highlight':
+      // Pointer-move fires a highlight per mouse tick; when the target is
+      // already highlighted, return the SAME state reference so the reconciler
+      // sees no change and skips the commit entirely.
+      if (state.highlightedIndex === msg.index) return [state, []]
       return [{ ...state, highlightedIndex: msg.index }, []]
     case 'highlightNext':
       return [
@@ -420,10 +425,6 @@ export interface ComboboxGroupParts {
 
 export interface ComboboxParts {
   root: {
-    role: 'combobox'
-    'aria-expanded': Signal<boolean>
-    'aria-controls': string
-    'aria-haspopup': 'listbox'
     'data-scope': 'combobox'
     'data-part': 'root'
     'data-state': Signal<'open' | 'closed'>
@@ -513,14 +514,11 @@ export function connect(
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
 
-  const countText = (n: number): string => (n === 1 ? '1 result' : `${n} results`)
-
   return {
     root: {
-      role: 'combobox',
-      'aria-expanded': state.map((s) => s.open),
-      'aria-controls': contentId,
-      'aria-haspopup': 'listbox',
+      // The ARIA combobox lives on the INPUT (see `input` below). The root is a
+      // plain styling wrapper — duplicating role/aria-expanded/haspopup/controls
+      // here created a second, nested combobox that confuses assistive tech.
       'data-scope': 'combobox',
       'data-part': 'root',
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
@@ -637,7 +635,13 @@ export function connect(
           'data-value': value,
           'data-index': String(index),
           onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
-          onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
+          onPointerMove: tagSend(send, ['highlight'], () => {
+            // Guard the send too: skip dispatching entirely when the row is
+            // already highlighted, so a stationary pointer doesn't re-enter the
+            // reducer on every move event.
+            if (state.peek()?.highlightedIndex === index) return
+            send({ type: 'highlight', index })
+          }),
         },
       }
     },
@@ -667,7 +671,7 @@ export function connect(
         if (s.status === 'error') return s.error ?? ''
         if (s.status === 'loaded') {
           const n = s.filteredItems.filter((v) => v !== CREATE_OPTION_VALUE).length
-          return countText(n)
+          return locale.combobox.resultCount(n)
         }
         return ''
       }),
@@ -689,7 +693,6 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   sameWidth?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
@@ -709,9 +712,9 @@ export function overlay(opts: OverlayOptions): Mountable {
     opts.state.map((s) => s.open),
     () => [
       portal(() => {
-        const dismissable = onMount(() => {
-          const contentEl = document.getElementById(contentId)
-          const inputEl = document.getElementById(inputId)
+        const dismissable = onMount((root) => {
+          const contentEl = getElementByIdInScope(root, contentId)
+          const inputEl = getElementByIdInScope(root, inputId)
           if (!contentEl || !inputEl) return
 
           const cleanups: Array<() => void> = []

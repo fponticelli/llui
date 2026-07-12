@@ -185,19 +185,29 @@ describe('attachWsClient', () => {
     expect(frame.stateAfter).toBeUndefined()
   })
 
-  it('emitStateUpdate sends a state-update frame', () => {
+  it('emitStateUpdate sends a state-update frame (with watch id) when open', () => {
     const ws = new FakeWs()
     const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
     ws.emit('open')
     ws.sent.length = 0
 
-    client.emitStateUpdate('/', { x: 1 })
+    client.emitStateUpdate('w1', '/', { x: 1 })
 
     expect(ws.sent).toHaveLength(1)
     const frame = JSON.parse(ws.sent[0]!)
     expect(frame.t).toBe('state-update')
+    expect(frame.id).toBe('w1')
     expect(frame.path).toBe('/')
     expect(frame.stateAfter).toEqual({ x: 1 })
+  })
+
+  it('emitStateUpdate is dropped (does NOT throw) when the socket is not open', () => {
+    const ws = new FakeWs()
+    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    // Never emit 'open' — socket is CONNECTING from the client's POV.
+    expect(() => client.emitStateUpdate('w1', '/', { x: 1 })).not.toThrow()
+    expect(ws.sent).toHaveLength(0)
+    expect(client.isOpen()).toBe(false)
   })
 
   it('emitLogAppend sends a log-append frame', () => {
@@ -393,5 +403,17 @@ describe('log-push handling (server-originated narration)', () => {
     const echo = ws.sent.map((s) => JSON.parse(s)).find((f) => f.t === 'log-append')
     expect(echo).toBeDefined()
     expect(echo!.entry).toEqual(entry)
+  })
+
+  it('confirm-expire frame invokes onConfirmExpire with the confirmId', () => {
+    const ws = new FakeWs()
+    const onConfirmExpire = vi.fn()
+    attachWsClient(ws, makeRpcHosts(), makeHelloBuilder(), { onConfirmExpire })
+    ws.emit('open')
+
+    ws.emit('message', JSON.stringify({ t: 'confirm-expire', confirmId: 'c-42' }))
+
+    expect(onConfirmExpire).toHaveBeenCalledOnce()
+    expect(onConfirmExpire).toHaveBeenCalledWith('c-42')
   })
 })

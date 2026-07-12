@@ -1,14 +1,17 @@
-import { defineConfig } from 'vitest/config'
+import { mergeConfig, defineConfig } from 'vitest/config'
+import shared from '../../vitest.shared'
 
-export default defineConfig({
-  test: {
-    include: ['test/**/*.test.ts'],
-    environment: 'jsdom',
-    coverage: {
-      provider: 'v8',
-      include: ['src/**/*.ts'],
-      reporter: ['text', 'lcov'],
-      reportsDirectory: 'coverage',
+export default mergeConfig(
+  shared,
+  defineConfig({
+    test: {
+      environment: 'jsdom',
+      coverage: {
+        provider: 'v8',
+        include: ['src/**/*.ts'],
+        reporter: ['text', 'lcov'],
+        reportsDirectory: 'coverage',
+      },
     },
-  },
-})
+  }),
+)

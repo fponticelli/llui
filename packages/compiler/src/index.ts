@@ -4,14 +4,17 @@ export * from './emit-names.js'
 export * from './accessor-resolver.js'
 export * from './binding-descriptors.js'
 export * from './collect-deps.js'
-export * from './compiler-cache.js'
 export * from './cross-file-resolver.js'
 export * from './diagnostic.js'
 export * from './manifest.js'
 export * from './manifest-io.js'
 export * from './manifest-resolve.js'
 export * from './build-manifest.js'
-export { transformSignalComponentSource } from './signals/transform-component.js'
+export {
+  transformSignalComponentSource,
+  transformSignalComponentSourceWithMap,
+  type SignalTransformResult,
+} from './signals/transform-component.js'
 export { type LowerBail } from './signals/transform-view.js'
 export {
   lintSignalSource,

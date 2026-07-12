@@ -1,7 +1,9 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import {
   typeaheadAccumulate,
   typeaheadMatchByItems,
@@ -185,6 +187,9 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
     case 'clear':
       return [{ ...state, value: [] }, []]
     case 'highlight':
+      // No-op when already at the target: return the same reference so the
+      // pointer-move storm doesn't trigger a commit on every mouse tick.
+      if (state.highlightedIndex === msg.index) return [state, []]
       return [{ ...state, highlightedIndex: msg.index }, []]
     case 'highlightNext':
       return [
@@ -329,11 +334,21 @@ export interface SelectParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
+    /** Native form field name, or `undefined` when `name` was not supplied. */
+    name: string | undefined
     disabled: Signal<boolean>
     multiple: Signal<boolean>
     required: Signal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-select'
+  }
+  /** An `<option>` for the hidden native `<select>`. Render one per item inside
+   * `hiddenSelect` so the browser submits the selection under the form `name`. */
+  hiddenOption: (value: string) => {
+    value: string
+    selected: Signal<boolean>
+    'data-scope': 'select'
+    'data-part': 'hidden-option'
   }
   item: (value: string, index: number) => SelectItemParts
   /** Parts for a labelled option group (`<optgroup>`-style section). Pass the
@@ -351,6 +366,13 @@ export interface ConnectOptions {
   placeholder?: string
   /** Join multi-value labels with this separator. */
   separator?: string
+  /**
+   * Native form-field name. When set, the `hiddenSelect` part becomes a real
+   * form control that submits the current selection under this name — render
+   * `<select {...parts.hiddenSelect}>` with one `<option {...parts.hiddenOption(v)}>`
+   * per item. Without a `name`, the hidden select carries no value into a form.
+   */
+  name?: string
 }
 
 const HIDDEN_STYLE =
@@ -369,23 +391,29 @@ export function connect(
   const placeholder = opts.placeholder ?? ''
   const separator = opts.separator ?? ', '
 
-  const handleTriggerKey = (e: KeyboardEvent): void => {
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'Enter':
-      case ' ':
-        e.preventDefault()
-        send({ type: 'open' })
-        return
-      case 'ArrowUp':
-        e.preventDefault()
-        send({ type: 'open' })
-        send({ type: 'highlightLast' })
-        return
+  // Single keydown handler. DOM focus, aria-activedescendant, and this handler
+  // all live on the TRIGGER (the combobox element) — the trigger-focused ARIA
+  // pattern. Branch on open state: closed → open the popup; open → navigate the
+  // (virtually-focused) options without ever moving DOM focus off the trigger.
+  // Wired to BOTH trigger and content so it stays correct regardless of which
+  // element is focused.
+  const handleKey = (e: KeyboardEvent): void => {
+    if (!(state.peek()?.open ?? false)) {
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'Enter':
+        case ' ':
+          e.preventDefault()
+          send({ type: 'open' })
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          send({ type: 'open' })
+          send({ type: 'highlightLast' })
+          return
+      }
+      return
     }
-  }
-
-  const handleContentKey = (e: KeyboardEvent): void => {
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
@@ -437,7 +465,7 @@ export function connect(
       'data-scope': 'select',
       'data-part': 'trigger',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
-      onKeyDown: handleTriggerKey,
+      onKeyDown: handleKey,
     },
     positioner: {
       'data-scope': 'select',
@@ -455,18 +483,25 @@ export function connect(
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'select',
       'data-part': 'content',
-      onKeyDown: handleContentKey,
+      onKeyDown: handleKey,
     },
     hiddenSelect: {
       'aria-hidden': 'true',
       tabindex: -1,
       style: HIDDEN_STYLE,
+      name: opts.name,
       disabled: state.map((s) => s.disabled),
       multiple: state.map((s) => s.selectionMode === 'multiple'),
       required: state.map((s) => s.required),
       'data-scope': 'select',
       'data-part': 'hidden-select',
     },
+    hiddenOption: (value: string) => ({
+      value,
+      selected: state.map((s) => s.value.includes(value)),
+      'data-scope': 'select',
+      'data-part': 'hidden-option',
+    }),
     item: (value: string, index: number): SelectItemParts => ({
       item: {
         role: 'option',
@@ -481,7 +516,10 @@ export function connect(
         'data-value': value,
         'data-index': String(index),
         onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
-        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
+        onPointerMove: tagSend(send, ['highlight'], () => {
+          if (state.peek()?.highlightedIndex === index) return
+          send({ type: 'highlight', index })
+        }),
       },
     }),
     group: (id: string): SelectGroupParts => ({
@@ -519,12 +557,11 @@ export interface OverlayOptions {
   shift?: boolean
   /** Match content width to trigger width (default: true). */
   sameWidth?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -537,15 +574,11 @@ export function overlay(opts: OverlayOptions): Mountable {
   return show(
     opts.state.map((s) => s.open),
     () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
+          const dismissable = onMount((root) => {
+            const contentEl = getElementByIdInScope(root, contentId)
+            const triggerEl = getElementByIdInScope(root, triggerId)
             if (!contentEl || !triggerEl) return
 
             const cleanups: Array<() => void> = []
@@ -568,19 +601,32 @@ export function overlay(opts: OverlayOptions): Mountable {
               pushDismissable({
                 element: contentEl,
                 ignore: () => [triggerEl],
-                onDismiss: () => {
-                  opts.send({ type: 'close' })
-                  triggerEl.focus()
-                },
+                // Focus restoration lives in the cleanup below (runs on EVERY
+                // close, including option-select), so don't also focus here.
+                onDismiss: () => opts.send({ type: 'close' }),
               }),
             )
-            contentEl.focus({ preventScroll: true })
+            // Trigger-focused ARIA pattern: DOM focus stays on the trigger (which
+            // carries aria-activedescendant + the keydown handler); the listbox is
+            // never focused. This keeps the announced active option consistent
+            // with the focused element.
+            triggerEl.focus({ preventScroll: true })
             return () => {
+              // Restore focus to the trigger when it's still inside the overlay
+              // (e.g. after picking an option, which would otherwise drop focus
+              // to <body>). If the user moved focus elsewhere, respect that.
+              const active = document.activeElement
+              const focusInside =
+                contentEl.contains(active) ||
+                active === triggerEl ||
+                active === document.body ||
+                active === null
               for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+              if (focusInside) triggerEl.focus()
             }
           })
           return [dismissable, div(parts.positioner, opts.content())]
-        }, targetEl),
+        }, host),
       ]
     },
   )

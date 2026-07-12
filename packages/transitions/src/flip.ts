@@ -7,38 +7,38 @@ export interface FlipOptions {
 }
 
 /**
- * FLIP (First-Last-Invert-Play) reorder animation for `each()` lists.
+ * FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
  *
- * Attach to an `each()` alongside item enter/leave transitions. After each
- * reconcile, items whose positions changed animate smoothly from their
- * previous position to the new one.
+ * `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
+ * It compares each surviving child's last-known position (kept in a
+ * `WeakMap<Element, DOMRect>`) against its new one and, for any that moved,
+ * plays an inverse-then-identity transform so the row appears to glide.
+ *
+ * Element retention is deliberately weak: the tracked positions live in a
+ * `WeakMap` and the working set is derived from `parent`'s live children
+ * (minus `leaving`) on each pass, so bulk-removed rows are never held and are
+ * free to be garbage-collected. There is no independent strong Set.
+ *
+ * Combine with an item-level appear/disappear preset via `mergeTransitions`:
  *
  * ```ts
- * each({
- *   items: s => s.items,
- *   key: i => i.id,
- *   render,
- *   ...fade(),         // animates appear/disappear
- *   ...flip(),         // animates reorders
- * })
+ * mergeTransitions(fade(), flip())
  * ```
  *
- * Spreading two transition helpers merges their hooks: `fade()` provides
- * `enter`/`leave`, `flip()` provides `enter` (position capture) and
- * `onTransition` (apply inverse + play). The `enter` from `flip()` overrides
- * `fade()`'s only if spread after — put `flip()` last.
- *
- * Actually, to combine both, use `mergeTransitions(fade(), flip())` which
- * chains `enter` handlers.
+ * **Not yet wired:** the signal `each()` primitive does not currently invoke
+ * `onTransition`, so spreading `flip()` onto an `each({...})` has no effect.
+ * Wiring the structural reconcilers to call these hooks is a deferred
+ * cross-package change; `flip()` and `mergeTransitions()` are the building
+ * blocks that seam will consume.
  *
  * Requires WAAPI (`element.animate()`). In environments without it (old
- * browsers, minimal jsdom) the transforms are applied without animation.
+ * browsers, minimal jsdom) positions are still tracked but no animation runs.
  */
 export function flip(opts: FlipOptions = {}): TransitionOptions {
   const duration = opts.duration ?? 300
   const easing = opts.easing ?? 'ease-out'
+  // Weak: entries vanish with their elements. No strong retention of rows.
   const positions = new WeakMap<Element, DOMRect>()
-  const tracked = new Set<Element>()
 
   const captureAfterFrame = (els: HTMLElement[]): void => {
     const run = (): void => {
@@ -54,35 +54,38 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
   }
 
   return {
+    // Seed a baseline position for freshly entering rows.
     enter: (nodes: Node[]) => {
-      const els = asElements(nodes)
-      for (const el of els) tracked.add(el)
-      captureAfterFrame(els)
+      captureAfterFrame(asElements(nodes))
     },
-    leave: (nodes: Node[]) => {
-      for (const el of asElements(nodes)) tracked.delete(el)
-    },
-    onTransition: () => {
-      // Snapshot current set (tracked may mutate during iteration).
-      const current = Array.from(tracked)
-      for (const el of current) {
-        if (!el.isConnected) {
-          tracked.delete(el)
-          continue
-        }
-        const prev = positions.get(el)
-        const next = el.getBoundingClientRect()
-        if (prev && (prev.left !== next.left || prev.top !== next.top)) {
+    // No bookkeeping needed: leaving rows are excluded via `ctx.leaving`, and
+    // the WeakMap drops them once detached.
+    leave: () => {},
+    onTransition: (ctx) => {
+      const parent = ctx.parent as Element | null | undefined
+      if (!parent) return
+      const leaving = new Set<Element>(asElements(ctx.leaving))
+      const entering = new Set<Element>(asElements(ctx.entering))
+
+      for (const child of Array.from(parent.children)) {
+        if (!(child instanceof HTMLElement)) continue
+        if (leaving.has(child)) continue
+
+        const prev = positions.get(child)
+        const next = child.getBoundingClientRect()
+
+        // Entering rows have no meaningful "First" yet — just record a baseline.
+        if (prev && !entering.has(child) && (prev.left !== next.left || prev.top !== next.top)) {
           const dx = prev.left - next.left
           const dy = prev.top - next.top
-          if (typeof el.animate === 'function') {
-            el.animate(
+          if (typeof child.animate === 'function') {
+            child.animate(
               [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
               { duration, easing, fill: 'backwards' },
             )
           }
         }
-        positions.set(el, next)
+        positions.set(child, next)
       }
     },
   }
@@ -90,13 +93,17 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
 
 /**
  * Merge multiple TransitionOptions into one, chaining their `enter`,
- * `leave`, and `onTransition` handlers in order.
+ * `leave`, and `onTransition` handlers in order. `leave` waits for every
+ * part's returned Promise before resolving.
  *
  * Useful for combining an item-level animation (fade/slide/...) with flip():
  *
  * ```ts
- * each({ items, key, render, ...mergeTransitions(fade(), flip()) })
+ * mergeTransitions(fade(), flip())
  * ```
+ *
+ * (As with `flip()`, the `onTransition` half is only meaningful once the
+ * structural reconcilers invoke it — not yet wired. See `flip()`.)
  */
 export function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions {
   const enters = parts.map((p) => p.enter).filter((f): f is NonNullable<typeof f> => !!f)

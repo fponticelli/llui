@@ -150,6 +150,7 @@ describe('LAP types — sample value conformance', () => {
 
   it('describe-visible types', () => {
     const res: LapDescribeVisibleResponse = {
+      url: 'https://app.example/inbox',
       outline: [
         { kind: 'heading', level: 1, text: 'Inbox' },
         { kind: 'button', text: 'Compose', disabled: false, actionVariant: 'compose' },
@@ -432,7 +433,10 @@ describe('Token + pairing types', () => {
     }
     const resumeClaim: ResumeClaimResponse = {
       token: 'agt_resumed' as AgentToken,
+      tid: 't1',
       wsUrl: 'wss://app/agent/ws',
+      lapUrl: 'https://app/agent/lap/v1',
+      expiresAt: 86400,
     }
     const sessions: SessionsResponse = {
       sessions: [{ tid: 't1', label: 'x', status: 'active', createdAt: 0, lastSeenAt: 0 }],

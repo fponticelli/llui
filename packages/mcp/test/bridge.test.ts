@@ -52,7 +52,7 @@ function setupBrowserRelay(
 describe('MCP bridge (WebSocket)', () => {
   it('forwards tool calls to the connected browser and returns results', async () => {
     port = 5301
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
 
     const browser = await setupBrowserRelay(port, {
@@ -70,7 +70,7 @@ describe('MCP bridge (WebSocket)', () => {
 
   it('llui_send_message validates, sends, flushes, returns new state', async () => {
     port = 5302
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
 
     let count = 0
@@ -97,7 +97,7 @@ describe('MCP bridge (WebSocket)', () => {
 
   it('llui_send_message returns validation errors without sending', async () => {
     port = 5303
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
 
     let sendCalled = false
@@ -128,7 +128,7 @@ describe('MCP bridge (WebSocket)', () => {
 
   it('rejects calls whose args fail the Zod schema before they reach the handler', async () => {
     port = 5310
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
     let sendCalled = false
     const browser = await setupBrowserRelay(port, {
@@ -149,7 +149,7 @@ describe('MCP bridge (WebSocket)', () => {
 
   it('throws a RelayUnavailableError with a structured diagnostic when no browser is connected', async () => {
     port = 5304
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
 
     try {
@@ -170,7 +170,7 @@ describe('MCP bridge (WebSocket)', () => {
 
   it('times out if browser does not respond', async () => {
     port = 5305
-    server = new LluiMcpServer(port)
+    server = new LluiMcpServer({ bridgePort: port })
     server.startBridge()
 
     // Open a browser connection but don't respond to messages
@@ -206,7 +206,7 @@ describe('MCP active marker file', () => {
   })
 
   it('writes active.json on startBridge() with port + pid', async () => {
-    const s = new LluiMcpServer(5311)
+    const s = new LluiMcpServer({ bridgePort: 5311 })
     s.startBridge()
 
     expect(existsSync(path)).toBe(true)
@@ -218,7 +218,7 @@ describe('MCP active marker file', () => {
   })
 
   it('removes active.json on stopBridge()', async () => {
-    const s = new LluiMcpServer(5312)
+    const s = new LluiMcpServer({ bridgePort: 5312 })
     s.startBridge()
     expect(existsSync(path)).toBe(true)
 
@@ -231,7 +231,7 @@ describe('MCP active marker file', () => {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, JSON.stringify({ port: 9999, pid: 0 }))
 
-    const s = new LluiMcpServer(5313)
+    const s = new LluiMcpServer({ bridgePort: 5313 })
     s.startBridge()
 
     const data = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number }

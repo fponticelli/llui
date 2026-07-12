@@ -1,4 +1,4 @@
-export { testComponent } from './test-component.js'
+export { testComponent, type TestHarness, type TestComponentOptions } from './test-component.js'
 export { testView } from './test-view.js'
 export { defineTestComponent, type DefineTestComponentInput } from './defineTestComponent.js'
 export { assertEffects } from './assert-effects.js'

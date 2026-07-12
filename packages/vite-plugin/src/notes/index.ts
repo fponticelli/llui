@@ -70,6 +70,8 @@ export {
   type MiddlewareHandler,
   type NotesMiddlewareConfig,
 } from './middleware.js'
+export { createTrustedTaskRegistry, type TrustedTaskRegistry } from './trusted-tasks.js'
+export { checkSameOriginLoopback, isJsonContentType } from './request-guard.js'
 
 export type {
   AgentSchemaSummary,

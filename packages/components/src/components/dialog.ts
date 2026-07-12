@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
@@ -20,23 +20,23 @@ import type { PresenceStatus } from './presence.js'
  *     them down on close, restores focus to the trigger.
  *
  * ```ts
- * const parts = dialog.connect<State>(s => s.confirm, sendDialog, { id: 'confirm' })
- *
- * view: (send) => [
- *   button({ ...parts.trigger, class: 'btn' }, [text('Delete')]),
- *   ...dialog.overlay({
- *     get: s => s.confirm,
- *     send: sendDialog,
- *     parts,
- *     content: () => [
- *       div({ ...parts.content, class: 'dialog' }, [
- *         h2({ ...parts.title }, [text('Are you sure?')]),
- *         button({ ...parts.closeTrigger, class: 'btn' }, [text('Cancel')]),
- *       ]),
- *     ],
- *     transition: fade({ duration: 150 }),
- *   }),
- * ]
+ * view: ({ state, send }) => {
+ *   const parts = dialog.connect(state.at('confirm'), send, { id: 'confirm' })
+ *   return [
+ *     button({ ...parts.trigger, class: 'btn' }, [text('Delete')]),
+ *     dialog.overlay({
+ *       state: state.at('confirm'),
+ *       send,
+ *       parts,
+ *       content: () => [
+ *         div({ ...parts.content, class: 'dialog' }, [
+ *           h2({ ...parts.title }, [text('Are you sure?')]),
+ *           button({ ...parts.closeTrigger, class: 'btn' }, [text('Cancel')]),
+ *         ]),
+ *       ],
+ *     }),
+ *   ]
+ * }
  * ```
  */
 
@@ -279,8 +279,6 @@ export interface OverlayOptions {
   parts: DialogParts
   /** Content rendering. */
   content: () => Renderable
-  /** Optional transition to apply on open/close (from `@llui/transitions`). */
-  transition?: TransitionOptions
   /** Close on Escape key (default: true). */
   closeOnEscape?: boolean
   /** Close on click outside content (default: true). */

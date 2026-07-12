@@ -147,6 +147,45 @@ describe("scheduler: 'raf'", () => {
     expect(notified).toBe(0)
   })
 
+  it('flush() from inside an onEffect (during a drain) does not reenter drain (finding 7)', () => {
+    const raf = fakeRaf()
+    const container = document.createElement('div')
+    // onEffect for the FIRST effect flushes; the effect handler runs while the
+    // outer drain is active. Saving/restoring `draining` across the flush keeps the
+    // outer drain intact — a subsequent send stays queued (not a nested drain), so
+    // each message is processed exactly once.
+    const processed: string[] = []
+    let flushed = false
+    let handle: { flush(): void; send(m: Msg): void } | null = null
+    const app = component<S, Msg, Eff>({
+      name: 'sched-flush',
+      init: () => [{ n: 0, label: 'a' }, []],
+      update: (s, m) => {
+        processed.push(m.type)
+        if (m.type === 'inc') return [{ ...s, n: s.n + 1 }, [{ type: 'fx', n: s.n + 1 }]]
+        if (m.type === 'label') return [{ ...s, label: m.v }, []]
+        return [s, []]
+      },
+      onEffect: (_e) => {
+        if (!flushed) {
+          flushed = true
+          handle!.send({ type: 'label', v: 'b' })
+          handle!.flush() // re-entrant flush during the active drain
+        }
+      },
+      view: ({ state }) => [div({ class: 'out' }, [text(state.at('n').map((n) => String(n)))])],
+    })
+    handle = mountSignalComponent(container, app, { scheduler: 'raf' }) as unknown as typeof handle
+    handle!.send({ type: 'inc' })
+    // Each message ran exactly once, correct order — no reentrancy double-processing.
+    expect(processed).toEqual(['inc', 'label'])
+    expect((handle as unknown as { getState(): S }).getState().n).toBe(1)
+    expect((handle as unknown as { getState(): S }).getState().label).toBe('b')
+    expect(container.querySelector('.out')!.textContent).toBe('1') // flush committed
+    raf.runFrame() // any surviving frame is a harmless no-op
+    ;(handle as unknown as { dispose(): void }).dispose()
+  })
+
   it("default ('sync') mode is untouched: commit per send, flush() a no-op", () => {
     const raf = fakeRaf()
     const container = document.createElement('div')

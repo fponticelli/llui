@@ -9,20 +9,24 @@ import { LocaleContext } from '../locale.js'
  * pop-up relative to the target selector is done in the view layer
  * (typically via onMount + attachFloating).
  *
- * Typical shape:
+ * There is no `overlay()` helper: `connect()` returns the part bags and you
+ * render/position the pop-up yourself (typically `onMount` + `attachFloating`
+ * against the current step's `target`).
  *
- *   const t = tour.connect<State>(s => s.tour, m => send({type:'tour', msg:m}))
- *   ...tour.overlay<State>({
- *     get: s => s.tour,
- *     send: m => send({type:'tour', msg:m}),
- *     parts: t,
- *     content: (step) => [
+ * ```ts
+ * view: ({ state, send }) => {
+ *   const t = tour.connect(state.at('tour'), send, { id: 'tour' })
+ *   const step = tour.currentStep(state.peek().tour)
+ *   return [
+ *     div({ ...t.root }, [
  *       h3({ ...t.title }, [text(step.title)]),
  *       p({ ...t.description }, [text(step.description)]),
  *       button({ ...t.prevTrigger }, [text('Back')]),
  *       button({ ...t.nextTrigger }, [text('Next')]),
- *     ],
- *   })
+ *     ]),
+ *   ]
+ * }
+ * ```
  */
 
 export interface TourStep {

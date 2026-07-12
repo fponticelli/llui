@@ -81,10 +81,10 @@ describe('client pageSlot with comment anchor', () => {
       '<!--llui-mount-end-->' +
       '</div>'
 
-    // Set up the hydration state envelope that the adapter expects.
+    // Set up the hydration integrity manifest that the adapter expects.
     ;(window as Record<string, unknown>).__LLUI_STATE__ = {
-      layouts: [{ name: 'TestLayout', state: { count: 0 } }],
-      page: { name: 'PageA', state: { title: 'a' } },
+      v: 2,
+      layers: ['TestLayout', 'PageA'],
     }
 
     const render = createOnRenderClient({ Layout })

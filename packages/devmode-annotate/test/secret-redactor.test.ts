@@ -50,4 +50,41 @@ describe('defaultSecretRedactor (DA2 opt-in helper)', () => {
     const out = custom({ stateSnapshot: { x: 'value SECRET-42 end' } })
     expect((out.stateSnapshot as { x: string }).x).toBe('value *** end')
   })
+
+  // Finding 10 — the effects channel was previously skipped by the deep walk.
+  it('scrubs secrets inside pending + recent effects (Bearer header)', () => {
+    const body: NoteBody = {
+      effects: {
+        pending: [
+          {
+            id: 'e1',
+            component: 'App',
+            effect: {
+              type: 'http',
+              url: '/api',
+              headers: { Authorization: 'Bearer abc123.def-456_GHI' },
+            },
+            sinceMs: 12,
+          },
+        ],
+        recent: [
+          {
+            ts: '2026-01-01T00:00:00.000Z',
+            component: 'App',
+            effect: { type: 'http' },
+            outcome: 'error',
+            error: 'failed with token sk-ABCDEFGHIJKLMNOPQRSTUV',
+          },
+        ],
+      },
+    }
+    const out = redact(body)
+    const s = JSON.stringify(out.effects)
+    expect(s).not.toContain('Bearer abc123')
+    expect(s).not.toContain('sk-ABCDEFGHIJKLMNOPQRSTUV')
+    expect(s).toContain('[redacted]')
+    // Structural fields survive the scrub.
+    expect(out.effects!.pending[0]!.id).toBe('e1')
+    expect(out.effects!.recent[0]!.outcome).toBe('error')
+  })
 })

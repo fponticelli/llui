@@ -223,8 +223,21 @@ async function handleResumeClaim(
     })
     if (!res.ok) return
     const body = (await res.json()) as ResumeClaimResponse
-    host.openWs(body.token, body.wsUrl)
-    host.send(host.wrapAgentConnect({ type: 'WsOpened' }))
+    // Route through the reducer (ResumeSucceeded) exactly like the mint
+    // flow: the reducer emits AgentOpenWS + AgentSessionPersist, and the
+    // real socket `open` event drives WsOpened. This persists the ROTATED
+    // bearer — fabricating openWs + WsOpened here skipped persistence and
+    // left the stale pre-rotation token in storage.
+    host.send(
+      host.wrapAgentConnect({
+        type: 'ResumeSucceeded',
+        token: body.token,
+        tid: body.tid,
+        lapUrl: body.lapUrl,
+        wsUrl: body.wsUrl,
+        expiresAt: body.expiresAt,
+      }),
+    )
   } catch {
     /* quiet */
   }

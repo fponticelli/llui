@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { defaultSessionName } from '@llui/devmode-annotate/note-format'
+import { defaultSessionName } from '@llui/notes-format/note-format'
 
 // Re-exported for existing server call sites; canonical impl is fs-free
 // and shared with browser stores.

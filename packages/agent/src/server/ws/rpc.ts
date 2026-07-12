@@ -73,22 +73,37 @@ export async function rpc(
   })
 }
 
+/** Three-way result of awaiting a confirmation resolution. */
+export type ConfirmWaitResult =
+  | { outcome: 'confirmed'; stateAfter?: unknown }
+  | { outcome: 'user-cancelled' }
+  | { outcome: 'timeout' }
+
 /**
- * Await a `confirm-resolved` frame for the given `confirmId`.
- * Resolves with `{outcome: 'user-cancelled'}` on timeout or pairing
- * drop (approvals lapse when the user isn't present to act on them).
+ * Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
+ *   - `confirmed`      — the user approved (carries `stateAfter`).
+ *   - `user-cancelled` — the user explicitly rejected.
+ *   - `timeout`        — no resolution arrived in `timeoutMs`, or the
+ *     pairing dropped before one did.
+ *
+ * Timeout is reported HONESTLY as `timeout` (not as a fake
+ * `user-cancelled`): the confirm is still live in the browser and a
+ * later approval may still fire, so callers must surface
+ * `pending-confirmation` / `still-pending` rather than lie about a
+ * rejection. Pairing drop maps to `timeout` for the same reason — the
+ * user wasn't present to cancel, they simply weren't reachable.
  */
 export async function waitForConfirm(
   registry: PairingRegistry,
   tid: string,
   confirmId: string,
   timeoutMs: number,
-): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }> {
-  if (!registry.isPaired(tid)) return { outcome: 'user-cancelled' }
+): Promise<ConfirmWaitResult> {
+  if (!registry.isPaired(tid)) return { outcome: 'timeout' }
 
   return new Promise((resolve) => {
     let settled = false
-    const done = (result: { outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }) => {
+    const done = (result: ConfirmWaitResult) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -99,26 +114,37 @@ export async function waitForConfirm(
 
     const unsubFrame = registry.subscribe(tid, (frame) => {
       if (frame.t === 'confirm-resolved' && frame.confirmId === confirmId) {
-        done({ outcome: frame.outcome, stateAfter: frame.stateAfter })
+        if (frame.outcome === 'confirmed')
+          done({ outcome: 'confirmed', stateAfter: frame.stateAfter })
+        else done({ outcome: 'user-cancelled' })
         return true
       }
       return false
     })
 
     const unsubClose = registry.onClose(tid, () => {
-      done({ outcome: 'user-cancelled' })
+      done({ outcome: 'timeout' })
     })
 
     const timer = setTimeout(() => {
-      done({ outcome: 'user-cancelled' })
+      done({ outcome: 'timeout' })
     }, timeoutMs)
   })
 }
 
 /**
- * Await a `state-update` frame whose path matches (exact or prefix).
- * Used by the long-poll `/lap/v1/wait` endpoint for external state
+ * Long-poll for a state change under `path` (a JSON pointer; `undefined`
+ * watches the whole state). Used by `/lap/v1/wait` for external state
  * pushes (WebSocket messages, timers) arriving while the LLM is idle.
+ *
+ * Subscription-driven: the server ARMS a `watch { id, path }` on the
+ * browser, which then emits a `state-update` carrying that `id` only
+ * when the pointer's resolved value actually changes — so an idle
+ * session ships nothing per commit, and a path-scoped wait matches the
+ * right change (the old `/`-broadcast-plus-prefix scheme could never
+ * match a specific path). We correlate strictly by `id`, disarm the
+ * watch (`unwatch`) whichever way the poll settles, and return the full
+ * `stateAfter` snapshot the browser sent.
  */
 export async function waitForChange(
   registry: PairingRegistry,
@@ -128,6 +154,8 @@ export async function waitForChange(
 ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }> {
   if (!registry.isPaired(tid)) return { status: 'timeout', stateAfter: null }
 
+  const id = crypto.randomUUID()
+
   return new Promise((resolve) => {
     let settled = false
     const done = (result: { status: 'changed' | 'timeout'; stateAfter: unknown }) => {
@@ -136,12 +164,13 @@ export async function waitForChange(
       clearTimeout(timer)
       unsubFrame()
       unsubClose()
+      // Disarm the browser-side watch so it stops evaluating on commit.
+      registry.send(tid, { t: 'unwatch', id })
       resolve(result)
     }
 
     const unsubFrame = registry.subscribe(tid, (frame) => {
-      if (frame.t !== 'state-update') return false
-      if (path === undefined || frame.path === path || frame.path.startsWith(path)) {
+      if (frame.t === 'state-update' && frame.id === id) {
         done({ status: 'changed', stateAfter: frame.stateAfter })
         return true
       }
@@ -155,5 +184,9 @@ export async function waitForChange(
     const timer = setTimeout(() => {
       done({ status: 'timeout', stateAfter: null })
     }, timeoutMs)
+
+    // Arm the watch AFTER wiring the subscriber/close/timer so a very
+    // fast browser reply can't race an unsubscribed listener.
+    registry.send(tid, { t: 'watch', id, path })
   })
 }

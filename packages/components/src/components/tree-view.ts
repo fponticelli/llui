@@ -7,6 +7,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { focusRovingItem } from '../utils/roving.js'
 
 /**
  * Tree view — hierarchical list with expand/collapse. Items are identified
@@ -604,7 +605,6 @@ export interface TreeItemParts {
 export interface TreeViewParts {
   root: {
     role: 'tree'
-    'aria-owns': Signal<string | undefined>
     'aria-multiselectable': Signal<'true' | undefined>
     'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'tree-view'
@@ -635,11 +635,9 @@ export function connect(
   return {
     root: {
       role: 'tree',
-      'aria-owns': state.map((s) => {
-        const items = s.visibleItems
-        if (items.length === 0) return undefined
-        return items.map((id) => itemId(id)).join(' ')
-      }),
+      // No `aria-owns`: every treeitem is a real DOM descendant of the tree
+      // root, so ownership is already implied. Emitting it forced an O(n)
+      // id-string rebuild on every visible-set change for zero AT benefit.
       'aria-multiselectable': state.map((s) =>
         s.selectionMode === 'multiple' ? 'true' : undefined,
       ),
@@ -658,8 +656,11 @@ export function connect(
         role: 'treeitem',
         id: itemId(id),
         'aria-expanded': state.map((s) => (isBranch ? isExpanded(s, id) : undefined)),
+        // Selection is announced for single AND multiple selection. In
+        // checkbox mode the checked state is carried by the checkbox part's
+        // aria-checked, so aria-selected is omitted to avoid a double signal.
         'aria-selected': state.map((s) =>
-          s.selectionMode === 'single' ? isSelected(s, id) : undefined,
+          s.selectionMode === 'checkbox' ? undefined : isSelected(s, id),
         ),
         'aria-level': depth + 1,
         'aria-busy': state.map((s) => (isLoading(s, id) ? 'true' : undefined)),
@@ -691,15 +692,24 @@ export function connect(
             'typeahead',
           ],
           (e) => {
+            const origin = e.currentTarget as Element | null
             const key = flipArrow(e.key, e.currentTarget as Element)
+            // Move real DOM focus to the item the reducer focused. Roving
+            // tabindex tracks `focused` in state, but AT follows DOM focus.
+            const moveFocus = (): void => {
+              const focused = state.peek()?.focused
+              if (focused != null) focusRovingItem(origin, 'tree-view', focused)
+            }
             switch (key) {
               case 'ArrowDown':
                 e.preventDefault()
                 send({ type: 'focusNext' })
+                moveFocus()
                 return
               case 'ArrowUp':
                 e.preventDefault()
                 send({ type: 'focusPrev' })
+                moveFocus()
                 return
               case 'ArrowRight':
                 // WAI-ARIA: closed branch → expand (stay); open branch →
@@ -708,20 +718,24 @@ export function connect(
                 if (!isBranch) return
                 e.preventDefault()
                 send({ type: 'arrowRightFrom', id })
+                moveFocus()
                 return
               case 'ArrowLeft':
                 // WAI-ARIA: open branch → collapse (stay); closed branch or
                 // leaf → focus parent (if known). Root end-nodes → nothing.
                 e.preventDefault()
                 send({ type: 'arrowLeftFrom', id, isBranch, parentId })
+                moveFocus()
                 return
               case 'Home':
                 e.preventDefault()
                 send({ type: 'focusFirst' })
+                moveFocus()
                 return
               case 'End':
                 e.preventDefault()
                 send({ type: 'focusLast' })
+                moveFocus()
                 return
               case 'Enter':
               case ' ':
@@ -732,6 +746,7 @@ export function connect(
               default:
                 if (isTypeaheadKey(e)) {
                   send({ type: 'typeahead', char: e.key, now: Date.now() })
+                  moveFocus()
                 }
             }
           },

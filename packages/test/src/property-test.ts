@@ -1,19 +1,18 @@
-import type { SignalComponentDef } from '@llui/dom'
-import { mountApp } from '@llui/dom'
-
-/** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple. */
-function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
-  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
-    return r as [S, E[]]
-  }
-  return [r as S, []]
-}
+import { mountApp, normalizeUpdateResult, type SignalComponentDef } from '@llui/dom'
+import { mulberry32, randomSeed } from './internal/prng.js'
 
 export interface PropertyTestConfig<S, M, E> {
   invariants: Array<(state: S, effects: E[]) => boolean>
   messageGenerators: Record<string, ((state: S) => M) | (() => M)>
   runs?: number
   maxSequenceLength?: number
+  /**
+   * Seed for the pseudo-random sequence-length + generator-selection stream.
+   * When omitted a fresh random seed is chosen per call. The seed is ALWAYS
+   * printed in a failure's thrown message so you can pin it here to replay the
+   * exact same run sequence deterministically and reproduce the failure.
+   */
+  seed?: number
   /**
    * When set, propertyTest mounts the component into a real DOM
    * container (requires jsdom/happy-dom in the test environment) and
@@ -99,7 +98,7 @@ function runReducer<S, M, E>(
   next: NextMsg<S, M>,
 ): RunResult<M> {
   const msgs: Array<StepMsg<M>> = []
-  const [initState, initEffects] = normalize(def.init())
+  const [initState, initEffects] = normalizeUpdateResult(def.init())
   let state = initState
   const first = checkInvariants(config.invariants, state, initEffects)
   if (first) return { failure: first, msgs }
@@ -108,7 +107,7 @@ function runReducer<S, M, E>(
     const step = next(state, i)
     if (!step) break
     msgs.push(step)
-    const [nextState, effects] = normalize(def.update(state, step.msg))
+    const [nextState, effects] = normalizeUpdateResult(def.update(state, step.msg))
     state = nextState
     const f = checkInvariants(config.invariants, state, effects)
     if (f) return { failure: f, msgs }
@@ -149,6 +148,12 @@ function runMount<S, M, E>(
   }
   const handle = mountApp(container, collectingDef)
   try {
+    // A binding accessor can throw at MOUNT time (before any message), surfacing
+    // as a console.error inside `mountApp`. Check the capture immediately — the
+    // init-invariant check below reads state and would otherwise mask it.
+    if (errs.length > 0) {
+      return { failure: { kind: 'console-error', detail: `Captured: ${errs.join('\n')}` }, msgs }
+    }
     let curState = handle.getState()
     const initFail = checkInvariants(config.invariants, curState, stepEffects)
     if (initFail) return { failure: initFail, msgs }
@@ -199,6 +204,13 @@ function runMount<S, M, E>(
         return { failure: { kind: 'console-error', detail: `Captured: ${errs.join('\n')}` }, msgs }
       }
     }
+    // Final sweep before declaring success: a console.error can fire during a
+    // commit whose message emitted no state change (so the per-step check above
+    // ran, but an async/deferred binding error could still have landed) — catch
+    // it here so a mount-time or trailing error is never missed.
+    if (errs.length > 0) {
+      return { failure: { kind: 'console-error', detail: `Captured: ${errs.join('\n')}` }, msgs }
+    }
     return { failure: null, msgs }
   } finally {
     handle.dispose()
@@ -244,8 +256,16 @@ function formatAndThrow<M>(
   mode: 'reducer' | 'mount',
   failure: Failure,
   minimal: ReadonlyArray<StepMsg<M>>,
+  seed: number,
 ): never {
   const seqStr = minimal.map((s) => s.name).join(' → ')
+  // Full JSON of the minimal failing message payloads so the failure can be
+  // inspected + hand-replayed, not just read as generator names.
+  const payloads = JSON.stringify(
+    minimal.map((s) => s.msg),
+    null,
+    2,
+  )
   const prefix = mode === 'mount' ? 'propertyTest(mount)' : 'propertyTest'
   let headline: string
   switch (failure.kind) {
@@ -265,7 +285,12 @@ function formatAndThrow<M>(
       headline = 'console.error during commit'
       break
   }
-  throw new Error(`${prefix}: ${headline} after sequence: [${seqStr}]\n${failure.detail}`)
+  throw new Error(
+    `${prefix}: ${headline} after sequence: [${seqStr}]\n` +
+      `Seed: ${seed} (pass \`seed: ${seed}\` to replay this run)\n` +
+      `Minimal failing messages: ${payloads}\n` +
+      `${failure.detail}`,
+  )
 }
 
 export function propertyTest<S, M, E>(
@@ -283,14 +308,20 @@ export function propertyTest<S, M, E>(
   const mode: 'reducer' | 'mount' = config.mount ? 'mount' : 'reducer'
   const run = mode === 'mount' ? runMount : runReducer
 
+  // One seeded PRNG drives sequence lengths + generator selection for the WHOLE
+  // call, so a printed seed replays every run identically (and thus the exact
+  // failing run). Omitting `config.seed` picks a fresh random seed per call.
+  const seed = config.seed ?? randomSeed()
+  const rng = mulberry32(seed)
+
   for (let r = 0; r < runs; r++) {
-    const seqLen = 1 + Math.floor(Math.random() * maxLen)
+    const seqLen = 1 + rng.int(maxLen)
 
     // Generation: pick a random generator each step and build its message from
     // the live current state. Bounded to `seqLen` steps.
     const generate: NextMsg<S, M> = (state, i) => {
       if (i >= seqLen) return null
-      const genName = genNames[Math.floor(Math.random() * genNames.length)]!
+      const genName = genNames[rng.int(genNames.length)]!
       const gen = config.messageGenerators[genName]!
       const msg = gen.length === 0 ? (gen as () => M)() : (gen as (s: S) => M)(state)
       return { name: genName, msg }
@@ -306,6 +337,6 @@ export function propertyTest<S, M, E>(
       failure,
       (candidate) => run(def, config, replayNext(candidate)).failure,
     )
-    formatAndThrow(mode, failure, minimal)
+    formatAndThrow(mode, failure, minimal, seed)
   }
 }

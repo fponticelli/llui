@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
@@ -242,7 +242,6 @@ export interface OverlayOptions {
   send: Send<DrawerMsg>
   parts: DrawerParts
   content: () => Renderable
-  transition?: TransitionOptions
   closeOnEscape?: boolean
   closeOnOutsideClick?: boolean
   trapFocus?: boolean

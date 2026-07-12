@@ -68,10 +68,10 @@ Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
 ### propertyTest
 
 ```ts
-propertyTest(gen, prop) => void
+propertyTest(def, config) => void
 ```
 
-Property-based testing. Generates random inputs via `gen` and checks `prop` holds for all.
+Property-based testing over a component definition. `config.messageGenerators` produce random messages, and each generated sequence is checked against `config.invariants` (`(state, effects) => boolean`). Tune `runs` and `maxSequenceLength`; pass a `seed` to make the pseudo-random stream deterministic (the seed is always printed on failure, so you can pin it to replay the exact run). On failure the offending message sequence is automatically **shrunk** (delta-debugging) to a minimal reproducer. An optional `mount` block additionally mounts the component into a real DOM container and dispatches the sequence through `send`/`flush`, asserting no dev-mode panic, no `console.error`, and an optional `assertDom(state, container)` after every commit.
 
 ### replayTrace
 
@@ -94,19 +94,15 @@ Browser-faithful blur emulation for jsdom. When a focused element (or an ancesto
 
 ## Functions
 
-### `testComponent()`
+### `assertEffects()`
+
+Assert an effect list matches an expected list of partials. Length must be
+equal; each effect at index `i` must partial-match `expected[i]`. See
+{@link partialMatch} for the deep/array semantics (nested arrays match by
+index with a length check; `undefined` fields are wildcards).
 
 ```typescript
-function testComponent<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E>
-```
-
-### `testView()`
-
-Mount a component against a fresh container and return an interactive harness.
-Simulates events + auto-flushes so tests can chain assertions naturally.
-
-```typescript
-function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
+function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
 ```
 
 ### `defineTestComponent()`
@@ -114,44 +110,6 @@ function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarn
 ```typescript
 function defineTestComponent<S, M extends { type: string }, E extends { type: string } = never>(
   input: DefineTestComponentInput<S, M, E>,
-): SignalComponentDef<S, M, E>
-```
-
-### `assertEffects()`
-
-```typescript
-function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
-```
-
-### `propertyTest()`
-
-```typescript
-function propertyTest<S, M, E>(
-  def: SignalComponentDef<S, M, E>,
-  config: PropertyTestConfig<S, M, E>,
-): void
-```
-
-### `replayTrace()`
-
-```typescript
-function replayTrace<S, M, E>(def: SignalComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
-```
-
-### `reducer()`
-
-Builds a view-less `ComponentDef` from an init + update pair so reducer
-suites can drop a component definition into `testComponent()` without
-padding a no-op `view`. Use when a test only exercises pure state
-transitions (no DOM, no accessors).
-The default name `'__reducer__'` is intentionally unergonomic — it
-shows up in devtools/HMR registries if one ever leaks into a real
-mount, flagging the mistake. Override via `name` when you want the
-history trail to match your module.
-
-```typescript
-function reducer<S, M extends { type: string }, E extends { type: string } = never>(
-  opts: ReducerOptions<S, M, E>,
 ): SignalComponentDef<S, M, E>
 ```
 
@@ -181,13 +139,13 @@ prototypes, matching the single jsdom document under test.
 function emulateBlurOnRemoval(doc: Document = document): () => void
 ```
 
-### `withBlurOnRemoval()`
-
-Run `fn` with {@link emulateBlurOnRemoval} installed, uninstalling afterwards
-even if `fn` throws. Returns whatever `fn` returns.
+### `propertyTest()`
 
 ```typescript
-function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
+function propertyTest<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  config: PropertyTestConfig<S, M, E>,
+): void
 ```
 
 ### `recordAgentSession()`
@@ -221,6 +179,23 @@ sleep before `stop()`, or wrap individual sends in
 function recordAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>): AgentSessionRecorder
 ```
 
+### `reducer()`
+
+Builds a view-less `ComponentDef` from an init + update pair so reducer
+suites can drop a component definition into `testComponent()` without
+padding a no-op `view`. Use when a test only exercises pure state
+transitions (no DOM, no accessors).
+The default name `'__reducer__'` is intentionally unergonomic — it
+shows up in devtools/HMR registries if one ever leaks into a real
+mount, flagging the mistake. Override via `name` when you want the
+history trail to match your module.
+
+```typescript
+function reducer<S, M extends { type: string }, E extends { type: string } = never>(
+  opts: ReducerOptions<S, M, E>,
+): SignalComponentDef<S, M, E>
+```
+
 ### `replayAgentSession()`
 
 ```typescript
@@ -231,33 +206,40 @@ function replayAgentSession(
 ): ReplayResult
 ```
 
+### `replayTrace()`
+
+```typescript
+function replayTrace<S, M, E>(def: SignalComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+```
+
+### `testComponent()`
+
+```typescript
+function testComponent<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  options: TestComponentOptions = {},
+): TestHarness<S, M, E>
+```
+
+### `testView()`
+
+Mount a component against a fresh container and return an interactive harness.
+Simulates events + auto-flushes so tests can chain assertions naturally.
+
+```typescript
+function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
+```
+
+### `withBlurOnRemoval()`
+
+Run `fn` with {@link emulateBlurOnRemoval} installed, uninstalling afterwards
+even if `fn` throws. Returns whatever `fn` returns.
+
+```typescript
+function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
+```
+
 ## Interfaces
-
-### `DefineTestComponentInput`
-
-```typescript
-export interface DefineTestComponentInput<
-  S,
-  M extends { type: string },
-  E extends { type: string } = never,
-> {
-  name: string
-  init: () => [S, E[]] | S
-  update: (state: S, msg: M) => [S, E[]] | S
-  view: (bag: SignalViewBag<S, M>) => Renderable
-  onEffect?: SignalComponentDef<S, M, E>['onEffect']
-}
-```
-
-### `ReducerOptions`
-
-```typescript
-export interface ReducerOptions<S, M extends { type: string }, E extends { type: string } = never> {
-  init: () => [S, E[]]
-  update: (state: S, msg: M) => [S, E[]]
-  name?: string
-}
-```
 
 ### `AgentSessionFixture`
 
@@ -305,6 +287,46 @@ export interface AgentSessionRecorder {
 }
 ```
 
+### `DefineTestComponentInput`
+
+```typescript
+export interface DefineTestComponentInput<
+  S,
+  M extends { type: string },
+  E extends { type: string } = never,
+> {
+  name: string
+  init: () => [S, E[]] | S
+  update: (state: S, msg: M) => [S, E[]] | S
+  view: (bag: SignalViewBag<S, M>) => Renderable
+  onEffect?: SignalComponentDef<S, M, E>['onEffect']
+}
+```
+
+### `ReducerOptions`
+
+```typescript
+export interface ReducerOptions<S, M extends { type: string }, E extends { type: string } = never> {
+  init: () => [S, E[]]
+  update: (state: S, msg: M) => [S, E[]]
+  name?: string
+}
+```
+
+### `ReplayOptions`
+
+```typescript
+export interface ReplayOptions {
+  /**
+   * When true, also assert that the new handle's initial state
+   * matches `fixture.initialState`. Defaults to false — most apps
+   * have deterministic init, but ones that read time / random /
+   * environment shouldn't enforce this.
+   */
+  assertInitial?: boolean
+}
+```
+
 ### `ReplayResult`
 
 Replay a previously-recorded session against a fresh `handle`.
@@ -336,17 +358,66 @@ export interface ReplayResult {
 }
 ```
 
-### `ReplayOptions`
+### `TestComponentOptions`
 
 ```typescript
-export interface ReplayOptions {
+export interface TestComponentOptions {
   /**
-   * When true, also assert that the new handle's initial state
-   * matches `fixture.initialState`. Defaults to false — most apps
-   * have deterministic init, but ones that read time / random /
-   * environment shouldn't enforce this.
+   * Opt in to faithfully replicating the runtime's effect drain. In the default
+   * (pure-reducer) mode `testComponent` runs `update()` once per `send` and
+   * stops — effects are recorded but never dispatched. The real runtime instead
+   * dispatches every returned effect to `onEffect`, which commonly calls `send`
+   * synchronously; the terminal state after such a cascade differs from the
+   * pure-reducer state ("green tests lie").
+   *
+   * With `withEffects: true` the harness replicates the runtime loop exactly:
+   * a queue-based `send`, reducers run to quiescence, then the collected
+   * effects dispatch in order through the def's `onEffect` with a real
+   * {@link EffectApi} (including this mount's lifecycle `signal`); effect-driven
+   * `send`s re-enter the same queue, so a cascade settles to the same terminal
+   * state a real `mountApp` reaches.
    */
-  assertInitial?: boolean
+  withEffects?: boolean
+}
+```
+
+### `TestHarness`
+
+```typescript
+export interface TestHarness<S, M, E> {
+  /** Current state (after the most recent `send`/`sendAll`/`batch`). */
+  state: S
+  /**
+   * Effects produced by the MOST RECENT top-level `send` (or `batch`, or
+   * `init`). In `withEffects` mode a single `send` can run several reducers
+   * (the effect→send cascade); this holds every effect emitted across that
+   * whole drain, in emission order.
+   */
+  effects: E[]
+  /** Every effect emitted since construction (init effects first). */
+  allEffects: E[]
+  /**
+   * One entry per reducer run, in order. In `withEffects` mode a cascade adds
+   * several entries under one `send`.
+   */
+  history: Array<{ prevState: S; msg: M; nextState: S; effects: E[] }>
+  send: (msg: M) => void
+  sendAll: (msgs: M[]) => S
+  /**
+   * Coalesce a burst of `send`s (see the runtime handle's `batch`). Reducers
+   * and — in `withEffects` mode — effects still run per message in order; the
+   * harness has no DOM to commit, so `batch` here is a faithful structural
+   * mirror (it establishes one top-level `effects` window across the burst).
+   */
+  batch: (fn: () => void) => void
+  /**
+   * Tear down the harness: aborts the per-mount lifecycle `AbortSignal` handed
+   * to `onEffect` (so effect handlers keyed off `api.signal` clean up) and runs
+   * any cleanups returned by `onEffect`. After dispose, `send`/`batch` are
+   * inert (matching the runtime's after-dispose drop). No-op in the default
+   * pure-reducer mode beyond aborting the signal.
+   */
+  dispose: () => void
 }
 ```
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { handleEffects, type Effect } from '../src/index'
+import { handleEffects, http, type Effect, type ApiError } from '../src/index'
 
 describe('handleEffects().use()', () => {
   it('plugin handles matching effects and short-circuits', () => {
@@ -7,9 +7,9 @@ describe('handleEffects().use()', () => {
     const send = vi.fn()
 
     const handler = handleEffects<Effect | { type: 'custom'; data: string }>()
-      .use<{ type: string; data?: string }, unknown>(({ effect }) => {
+      .use<{ type: 'custom'; data: string }, unknown>(({ effect }) => {
         if (effect.type === 'custom') {
-          send({ type: 'handled', data: (effect as { data: string }).data })
+          send({ type: 'handled', data: effect.data })
           return true
         }
         return false
@@ -71,5 +71,38 @@ describe('handleEffects().use()', () => {
     handler({ effect: { type: 'x', id: 3 }, send, signal })
 
     expect(calls).toEqual(['plugin1', 'plugin2', 'else'])
+  })
+
+  it('a plugin runs BEFORE the built-in switch and can intercept http', () => {
+    // Regression: plugins used to run only in the `.else()` fallthrough, so they
+    // could never intercept a built-in kind. They now run first on every dispatch.
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const intercepted: string[] = []
+    const handler = handleEffects<Effect>()
+      .use<Effect, unknown>(({ effect }) => {
+        if (effect.type === 'http') {
+          intercepted.push((effect as { url: string }).url)
+          return true // claim it — the built-in fetch must NOT run
+        }
+        return false
+      })
+      .else(() => {})
+
+    handler({
+      effect: http<{ type: string; error?: ApiError }>({
+        url: '/api/intercept-me',
+        onSuccess: () => ({ type: 'ok' }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
+      send: vi.fn(),
+      signal: new AbortController().signal,
+    })
+
+    expect(intercepted).toEqual(['/api/intercept-me'])
+    expect(fetchMock).not.toHaveBeenCalled() // built-in http never fired
+
+    vi.unstubAllGlobals()
   })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import type { Router } from '../src/index'
 import { connectRouter } from '../src/connect'
@@ -22,6 +22,12 @@ function makeRouter() {
 }
 
 describe('router guards', () => {
+  // connectRouter now seeds currentRoute from the current location, so pin the
+  // location to '/' → seeded route is { page: 'home' } deterministically.
+  beforeEach(() => {
+    history.replaceState(null, '', '/')
+  })
+
   it('no guards configured — navigation works as before (backwards compat)', () => {
     const router = makeRouter()
     const routing = connectRouter(router)
@@ -32,7 +38,7 @@ describe('router guards', () => {
       send: vi.fn(),
       signal: new AbortController().signal,
     })
-    expect(pushSpy).toHaveBeenCalledWith(null, '', '/admin')
+    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/admin')
     pushSpy.mockRestore()
   })
 
@@ -48,8 +54,9 @@ describe('router guards', () => {
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(beforeEnter).toHaveBeenCalledWith({ page: 'admin' }, null)
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/admin')
+      // currentRoute is seeded from the current location (/), so `from` is home.
+      expect(beforeEnter).toHaveBeenCalledWith({ page: 'admin' }, { page: 'home' })
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/admin')
       pushSpy.mockRestore()
     })
 
@@ -74,6 +81,7 @@ describe('router guards', () => {
       const routing = connectRouter(router, {
         beforeEnter: (to) => {
           if (to.page === 'admin') return { page: 'login' as const }
+          return undefined
         },
       })
 
@@ -83,7 +91,7 @@ describe('router guards', () => {
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/login')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/login')
       pushSpy.mockRestore()
     })
   })
@@ -100,6 +108,7 @@ describe('router guards', () => {
         toPath,
         href: toPath,
         mode: 'history',
+        base: '',
         routes: [],
         fallback: 'home',
       }
@@ -117,7 +126,7 @@ describe('router guards', () => {
         signal: new AbortController().signal,
       })
       // Must land on the redirect target, NOT the original /admin.
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/login')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/login')
       pushSpy.mockRestore()
     })
 
@@ -132,7 +141,7 @@ describe('router guards', () => {
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/admin')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/admin')
       pushSpy.mockRestore()
     })
   })
@@ -144,17 +153,9 @@ describe('router guards', () => {
         beforeLeave: () => false,
       })
 
-      // First navigation succeeds (no current route to leave)
+      // currentRoute is seeded from the location (home), so beforeLeave now
+      // fires from the very first navigation and blocks it.
       const pushSpy = vi.spyOn(history, 'pushState')
-      routing.handleEffect({
-        effect: routing.push({ page: 'home' }),
-        send: vi.fn(),
-        signal: new AbortController().signal,
-      })
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/')
-
-      // Second navigation blocked by beforeLeave
-      pushSpy.mockClear()
       routing.handleEffect({
         effect: routing.push({ page: 'admin' }),
         send: vi.fn(),
@@ -184,7 +185,7 @@ describe('router guards', () => {
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/admin')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/admin')
       pushSpy.mockRestore()
     })
   })
@@ -225,6 +226,7 @@ describe('router guards', () => {
         beforeLeave: () => true,
         beforeEnter: (to) => {
           if (to.page === 'admin') return false
+          return undefined
         },
       })
 
@@ -252,6 +254,7 @@ describe('router guards', () => {
       const routing = connectRouter(router, {
         beforeEnter: (to) => {
           if (to.page === 'admin') return { page: 'login' } as const
+          return undefined
         },
       })
 
@@ -261,7 +264,7 @@ describe('router guards', () => {
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(replaceSpy).toHaveBeenCalledWith(null, '', '/login')
+      expect(replaceSpy).toHaveBeenCalledWith(expect.any(Object), '', '/login')
       replaceSpy.mockRestore()
     })
   })
@@ -274,13 +277,13 @@ describe('router guards', () => {
 
       const pushSpy = vi.spyOn(history, 'pushState')
 
-      // First navigation: from is null
+      // First navigation: from is the seeded route (home, from location /)
       routing.handleEffect({
         effect: routing.push({ page: 'home' }),
         send: vi.fn(),
         signal: new AbortController().signal,
       })
-      expect(beforeEnter).toHaveBeenCalledWith({ page: 'home' }, null)
+      expect(beforeEnter).toHaveBeenCalledWith({ page: 'home' }, { page: 'home' })
 
       // Second navigation: from is home
       routing.handleEffect({

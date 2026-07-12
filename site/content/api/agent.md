@@ -393,6 +393,30 @@ See [`@llui/agent-bridge`](/api/agent-bridge) for the full MCP tool list and CLI
 
 ## Functions
 
+### `computeStateDiff()`
+
+Compute the diff. Order of operations: removes first, then adds,
+then replaces. This is RFC 6902's recommended order — the receiver
+can apply ops sequentially without ambiguity.
+The implementation is a simple recursive walk; collection diffs
+are positional (index-based for arrays, key-based for objects)
+rather than structural (no LCS). Apps that pass identity-stable
+collections (`[...prev, item]`-style appends) get clean diffs;
+apps that rebuild arrays from scratch get noisy ones — same
+tradeoff a React reconciler makes, and the same fix (stable keys
+
+- push-don't-rebuild updates) applies.
+
+```typescript
+function computeStateDiff(prev: unknown, next: unknown): StateDiff
+```
+
+### `createAgentClient()`
+
+```typescript
+function createAgentClient<State, Msg>(opts: CreateAgentClientOpts<State, Msg>): AgentClient
+```
+
 ### `createLluiAgentCore()`
 
 Compose the runtime-neutral agent server. The returned handle has
@@ -418,110 +442,6 @@ Spec §10.1, §10.4.
 function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHandle
 ```
 
-### `mintToken()`
-
-Mint an opaque random bearer token + the SHA-256 hash the server
-stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
-bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
-The prefix is intentionally generic so LLM clients don't mistake the
-token format for a hint about which MCP tool namespace to use.
-The token itself never persists; only the hash does. A leaked store
-therefore does not compromise live tokens, since the bearer secret
-isn't recoverable from the hash. This matches the standard "session
-cookie / API key" pattern.
-The opaque form is the only token format the server understands as
-of 0.0.35. The previous HMAC-signed JWT format is gone; clients
-carrying old tokens will fail with `unknown` on first call and need
-to remint. See CHANGELOG.
-
-```typescript
-function mintToken(): Promise<{ token: AgentToken; tokenHash: string }>
-```
-
-### `tokenHashOf()`
-
-Compute the SHA-256 hash of a presented bearer token. Returns `null`
-when the prefix is missing — the verify path uses that to fail-fast
-on garbage-shaped Authorization headers without a crypto round-trip.
-Hash is hex-encoded for portability across stores (Postgres `text`,
-KV string, etc.).
-
-```typescript
-function tokenHashOf(token: string): Promise<string | null>
-```
-
-### `defaultIdentityResolver()`
-
-```typescript
-function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityResolver
-```
-
-### `signCookieValue()`
-
-Async because `crypto.subtle.sign` is the cross-runtime standard.
-Callers building a `Set-Cookie` header must `await` this.
-
-```typescript
-function signCookieValue(value: string, signingKey: string | Uint8Array): Promise<string>
-```
-
-### `defaultRateLimiter()`
-
-```typescript
-function defaultRateLimiter(cfg: RateLimitConfig, now: () => number = () => Date.now()): RateLimiter
-```
-
-### `rpc()`
-
-Send an `rpc` frame to the paired browser and await its
-matching `rpc-reply` / `rpc-error`. Runs its own one-shot frame
-subscription against the registry — no state stored on the
-registry itself, which keeps the registry small enough to
-implement in a Durable Object or other stateful primitive.
-Rejects with `{code: 'paused'}` when the pairing is absent,
-`{code: 'timeout'}` when the browser doesn't reply in time,
-or whatever the browser sent in its `rpc-error` frame otherwise.
-
-```typescript
-function rpc(
-  registry: PairingRegistry,
-  tid: string,
-  tool: string,
-  args: unknown,
-  opts: RpcOptions = {},
-): Promise<unknown>
-```
-
-### `waitForConfirm()`
-
-Await a `confirm-resolved` frame for the given `confirmId`.
-Resolves with `{outcome: 'user-cancelled'}` on timeout or pairing
-drop (approvals lapse when the user isn't present to act on them).
-
-```typescript
-function waitForConfirm(
-  registry: PairingRegistry,
-  tid: string,
-  confirmId: string,
-  timeoutMs: number,
-): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
-```
-
-### `waitForChange()`
-
-Await a `state-update` frame whose path matches (exact or prefix).
-Used by the long-poll `/lap/v1/wait` endpoint for external state
-pushes (WebSocket messages, timers) arriving while the LLM is idle.
-
-```typescript
-function waitForChange(
-  registry: PairingRegistry,
-  tid: string,
-  path: string | undefined,
-  timeoutMs: number,
-): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
-```
-
 ### `createWHATWGPairingConnection()`
 
 Wrap a WHATWG `WebSocket` in a `PairingConnection`. This is the
@@ -539,6 +459,57 @@ the `ws` library path.
 function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
 ```
 
+### `decodeFromWire()`
+
+Recursively walk `value`. For any tagged shape `{ __codec, wire }`,
+look up the codec by name and replace with the decoded runtime
+value. Tagged shapes whose codec name is unknown pass through
+untouched so the consumer can inspect them directly.
+
+```typescript
+function decodeFromWire(value: unknown, registry: CodecRegistry): unknown
+```
+
+### `defaultIdentityResolver()`
+
+```typescript
+function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityResolver
+```
+
+### `defaultRateLimiter()`
+
+```typescript
+function defaultRateLimiter(cfg: RateLimitConfig, now: () => number = () => Date.now()): RateLimiter
+```
+
+### `describeOp()`
+
+Per-op short verb + readable path. Useful for a flat detail view:
+
+- `{ op: 'replace', path: '/cart/total', value: 9 }` → `'changed cart.total'`
+- `{ op: 'add',     path: '/items/3' }` → `'added items.3'`
+- `{ op: 'remove',  path: '/items/3' }` → `'removed items.3'`
+- `{ op: 'replace', path: '/' }` → `'replaced state'`
+  The path is converted from JSON-Pointer to dotted form (with
+  `~0`/`~1` un-escaping) so it reads as a plain field accessor.
+
+```typescript
+function describeOp(op: JsonPatchOp): string
+```
+
+### `encodeForWire()`
+
+Recursively walk `value`. For any node a codec claims via
+`matchesRuntime`, replace it with `{ __codec, wire }`. Returns a
+fresh structure — never mutates the input.
+The codec match takes precedence over object/array recursion: a
+`Date` is technically `typeof === 'object'`, but the iso-date codec
+should claim it before the generic walker tries to enumerate keys.
+
+```typescript
+function encodeForWire(value: unknown, registry: CodecRegistry): unknown
+```
+
 ### `extractToken()`
 
 Extract the bearer token from a LAP WebSocket upgrade request.
@@ -548,6 +519,12 @@ arbitrary headers on WebSocket construction.
 
 ```typescript
 function extractToken(req: Request): string | null
+```
+
+### `groupDiff()`
+
+```typescript
+function groupDiff(diff: StateDiff | undefined | null): DiffGroup[]
 ```
 
 ### `handleCloudflareUpgrade()`
@@ -590,6 +567,32 @@ Deno.serve(async (req) => {
 function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
 ```
 
+### `makeDefaultCodecs()`
+
+```typescript
+function makeDefaultCodecs(): CodecRegistry
+```
+
+### `mintToken()`
+
+Mint an opaque random bearer token + the SHA-256 hash the server
+stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
+bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
+The prefix is intentionally generic so LLM clients don't mistake the
+token format for a hint about which MCP tool namespace to use.
+The token itself never persists; only the hash does. A leaked store
+therefore does not compromise live tokens, since the bearer secret
+isn't recoverable from the hash. This matches the standard "session
+cookie / API key" pattern.
+The opaque form is the only token format the server understands as
+of 0.0.35. The previous HMAC-signed JWT format is gone; clients
+carrying old tokens will fail with `unknown` on first call and need
+to remint. See CHANGELOG.
+
+```typescript
+function mintToken(): Promise<{ token: AgentToken; tokenHash: string }>
+```
+
 ### `routeToAgentDO()`
 
 Route an incoming Worker `fetch` request to the Durable Object
@@ -625,89 +628,418 @@ function routeToAgentDO(
 ): Promise<Response>
 ```
 
-### `defaultSessionStorage()`
+### `rpc()`
 
-The default `AgentSessionStorage` — wraps `window.sessionStorage`
-under a single key and treats parse / type-mismatch failures as
-"no session". Returns `null` from the factory when `window` is
-undefined (SSR/tests), so calling code never has to feature-detect
-the browser environment itself.
+Send an `rpc` frame to the paired browser and await its
+matching `rpc-reply` / `rpc-error`. Runs its own one-shot frame
+subscription against the registry — no state stored on the
+registry itself, which keeps the registry small enough to
+implement in a Durable Object or other stateful primitive.
+Rejects with `{code: 'paused'}` when the pairing is absent,
+`{code: 'timeout'}` when the browser doesn't reply in time,
+or whatever the browser sent in its `rpc-error` frame otherwise.
 
 ```typescript
-function defaultSessionStorage(
-  storageKey: string = 'llui-agent:session',
-): AgentSessionStorage | null
+function rpc(
+  registry: PairingRegistry,
+  tid: string,
+  tool: string,
+  args: unknown,
+  opts: RpcOptions = {},
+): Promise<unknown>
 ```
 
-### `createAgentClient()`
+### `signCookieValue()`
+
+Async because `crypto.subtle.sign` is the cross-runtime standard.
+Callers building a `Set-Cookie` header must `await` this.
 
 ```typescript
-function createAgentClient<State, Msg>(opts: CreateAgentClientOpts<State, Msg>): AgentClient
+function signCookieValue(value: string, signingKey: string | Uint8Array): Promise<string>
 ```
 
-### `init()`
+### `summarizeDiff()`
 
-Component shape is [State, Effect[]] — consistent with @llui/components.
+One-line summary of the entire diff. Examples:
+
+- `[{ op: 'replace', path: '/cart/total', value: 9 }]`
+  → "1 field changed"
+- `[{ op: 'add', path: '/items/-' }, { op: 'add', path: '/items/-' }]`
+  → "2 items added"
+- mixed adds/removes/replaces across multiple regions
+  → "5 changes across 3 regions"
+  The summary collapses multiple ops on the same logical path
+  (e.g. updating multiple fields on the same item) into a single
+  "change" — counting raw op entries would surface implementation
+  detail (which JSON-Patch ops the differ emitted), not user-relevant
+  counts.
 
 ```typescript
-function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]]
+function summarizeDiff(diff: StateDiff | undefined | null): string
 ```
 
-### `update()`
+### `tokenHashOf()`
+
+Compute the SHA-256 hash of a presented bearer token. Returns `null`
+when the prefix is missing — the verify path uses that to fail-fast
+on garbage-shaped Authorization headers without a crypto round-trip.
+Hash is hex-encoded for portability across stores (Postgres `text`,
+KV string, etc.).
 
 ```typescript
-function update(
-  state: AgentConnectState,
-  msg: AgentConnectMsg,
-  opts: AgentConnectInitOpts = {},
-): [AgentConnectState, AgentEffect[]]
+function tokenHashOf(token: string): Promise<string | null>
 ```
 
-### `connect()`
+### `waitForChange()`
 
-Builds prop bags for the view. Static-bag-with-Signal-handles shape
-(matches the @llui/components convention); spread directly into
-element helpers.
+Long-poll for a state change under `path` (a JSON pointer; `undefined`
+watches the whole state). Used by `/lap/v1/wait` for external state
+pushes (WebSocket messages, timers) arriving while the LLM is idle.
+Subscription-driven: the server ARMS a `watch { id, path }` on the
+browser, which then emits a `state-update` carrying that `id` only
+when the pointer's resolved value actually changes — so an idle
+session ships nothing per commit, and a path-scoped wait matches the
+right change (the old `/`-broadcast-plus-prefix scheme could never
+match a specific path). We correlate strictly by `id`, disarm the
+watch (`unwatch`) whichever way the poll settles, and return the full
+`stateAfter` snapshot the browser sent.
 
 ```typescript
-function connect(
-  state: Signal<AgentConnectState>,
-  send: Send<AgentConnectMsg>,
-  _opts: AgentConnectConnectOptions = {},
-): ConnectBag
+function waitForChange(
+  registry: PairingRegistry,
+  tid: string,
+  path: string | undefined,
+  timeoutMs: number,
+): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
 ```
 
-### `makeDefaultCodecs()`
+### `waitForConfirm()`
+
+Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
+
+- `confirmed` — the user approved (carries `stateAfter`).
+- `user-cancelled` — the user explicitly rejected.
+- `timeout` — no resolution arrived in `timeoutMs`, or the
+  pairing dropped before one did.
+  Timeout is reported HONESTLY as `timeout` (not as a fake
+  `user-cancelled`): the confirm is still live in the browser and a
+  later approval may still fire, so callers must surface
+  `pending-confirmation` / `still-pending` rather than lie about a
+  rejection. Pairing drop maps to `timeout` for the same reason — the
+  user wasn't present to cancel, they simply weren't reachable.
 
 ```typescript
-function makeDefaultCodecs(): CodecRegistry
-```
-
-### `encodeForWire()`
-
-Recursively walk `value`. For any node a codec claims via
-`matchesRuntime`, replace it with `{ __codec, wire }`. Returns a
-fresh structure — never mutates the input.
-The codec match takes precedence over object/array recursion: a
-`Date` is technically `typeof === 'object'`, but the iso-date codec
-should claim it before the generic walker tries to enumerate keys.
-
-```typescript
-function encodeForWire(value: unknown, registry: CodecRegistry): unknown
-```
-
-### `decodeFromWire()`
-
-Recursively walk `value`. For any tagged shape `{ __codec, wire }`,
-look up the codec by name and replace with the decoded runtime
-value. Tagged shapes whose codec name is unknown pass through
-untouched so the consumer can inspect them directly.
-
-```typescript
-function decodeFromWire(value: unknown, registry: CodecRegistry): unknown
+function waitForConfirm(
+  registry: PairingRegistry,
+  tid: string,
+  confirmId: string,
+  timeoutMs: number,
+): Promise<ConfirmWaitResult>
 ```
 
 ## Types
+
+### `AcceptResult`
+
+```typescript
+export type AcceptResult =
+  | { ok: true; tid: string }
+  | { ok: false; status: number; code: 'auth-failed' | 'revoked' }
+```
+
+### `ActiveFrame`
+
+```typescript
+export type ActiveFrame = { t: 'active' }
+```
+
+### `AgentClient`
+
+```typescript
+export type AgentClient = {
+  effectHandler: (effect: AgentEffect) => Promise<void>
+  start(): void
+  stop(): void
+}
+```
+
+### `AgentContext`
+
+```typescript
+export type AgentContext = {
+  summary: string
+  hints?: string[]
+  cautions?: string[]
+}
+```
+
+### `AgentCoreHandle`
+
+Handle returned by `createLluiAgentCore`. Purely runtime-neutral —
+`router` is a Fetch-style handler, `acceptConnection` is the
+primitive that runtime-specific WebSocket adapters call after
+accepting a socket in their native way.
+
+```typescript
+export type AgentCoreHandle = {
+  router: (req: Request) => Promise<Response | null>
+  registry: PairingRegistry
+  tokenStore: TokenStore
+  auditSink: AuditSink
+  /**
+   * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
+   * the `corsOrigins` core option. `undefined`/empty means same-origin
+   * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
+   * `wsUpgrade`) read this to validate the handshake `Origin`.
+   */
+  allowedOrigins?: readonly string[]
+  /**
+   * Sliding (inactivity) TTL in ms, mirroring the `slidingTtlMs` core
+   * option. The WS upgrade adapters apply this on acceptance via
+   * `acceptConnection`, which already enforces it server-side.
+   */
+  slidingTtlMs?: number
+  /**
+   * Validate an agent token and register a `PairingConnection` with
+   * the registry. Use this after accepting a WebSocket upgrade via
+   * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
+   * `Deno.upgradeWebSocket` on Deno, `server.upgrade` on Bun).
+   *
+   * On success: marks the token `awaiting-claude`, writes an audit
+   * entry, and returns `{ok: true, tid}`. On failure: returns an
+   * appropriate HTTP status for the caller to encode into the
+   * upgrade response (401 for auth failure, 403 for revoked).
+   */
+  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
+}
+```
+
+### `AgentDocs`
+
+```typescript
+export type AgentDocs = {
+  purpose: string
+  overview?: string
+  cautions?: string[]
+  /**
+   * Free-form idiomatic-usage examples authored by the app: typical
+   * sequences of dispatches the LLM should know about, like "to
+   * delete a saved matrix: dispatch Confirm/Ask first, then on
+   * approve dispatch Cloud/Delete." Each entry is one example;
+   * order is up to the author.
+   */
+  examples?: string[]
+}
+```
+
+### `AgentEffect`
+
+```typescript
+export type AgentEffect =
+  /**
+   * Mint a fresh agent token. `mintUrl` is optional — when omitted the
+   * effect handler derives it from `EffectHandlerHost.agentBasePath`
+   * (default `/agent`), producing `<agentBasePath>/mint`. Pass an
+   * explicit value when the mint endpoint lives outside the configured
+   * base path.
+   */
+  | { type: 'AgentMintRequest'; mintUrl?: string }
+  | { type: 'AgentOpenWS'; token: AgentToken; wsUrl: string }
+  | { type: 'AgentCloseWS' }
+  | { type: 'AgentResumeCheck'; tids: string[] }
+  | { type: 'AgentResumeClaim'; tid: string }
+  | { type: 'AgentRevoke'; tid: string }
+  | { type: 'AgentSessionsList' }
+  | { type: 'AgentForwardMsg'; payload: unknown }
+  // Handler reads `text` (no state lookup needed at handler time —
+  // update() resolved it from the current state.pendingToken). Lets
+  // the static-bag `connect()` shape avoid leaking state-reads into
+  // event handlers.
+  | { type: 'AgentClipboardWrite'; text: string }
+  /**
+   * Persist active session credentials so a page refresh can restore
+   * the same WS without re-minting (and without invalidating the
+   * agent's token via the rotate-on-resume path). Hosts typically
+   * write to `sessionStorage` so the credentials are tab-scoped:
+   * survive refresh, die on tab close. The framework emits this on
+   * `MintSucceeded`; the matching `AgentSessionClear` is emitted on
+   * `Revoke` of the active tid. Hosts that don't implement the
+   * persist/restore loop can ignore both — the rest of the connect
+   * lifecycle still works (the page just falls back to "mint a new
+   * session" after refresh, same as before this effect existed).
+   */
+  | {
+      type: 'AgentSessionPersist'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
+  | { type: 'AgentSessionClear' }
+  /**
+   * Schedule the next WS-reconnect attempt. The handler waits
+   * `delayMs` and dispatches `ReconnectAttempt { elapsedMs: delayMs }`
+   * back into the reducer, which decides whether to re-open the WS
+   * or transition to `failed` based on the cumulative wait. The
+   * delay schedule itself is computed reducer-side from
+   * `reconnectAttempt` — this effect is a thin setTimeout wrapper.
+   *
+   * The handler doesn't track cancellation: if the user dispatches
+   * `Disconnect` while the timer is pending, the reducer transitions
+   * to `idle` and the subsequent `ReconnectAttempt` becomes a no-op
+   * via the status guard. Simpler than coordinating cancel handles.
+   */
+  | { type: 'AgentReconnectSchedule'; delayMs: number }
+  /**
+   * Auto-clear the `agentAttention` spotlight after `delayMs`. The
+   * handler waits and dispatches `Clear { entryId }` back into the
+   * attention slice via `wrapAgentAttention`. The clear is conditional
+   * (matches `entryId` against `latestDispatch.entryId` in the reducer),
+   * so a fast follow-up dispatch isn't wiped by the previous dispatch's
+   * pending timer — same race-avoidance pattern as
+   * `AgentReconnectSchedule`'s status guard.
+   *
+   * No cancel handle: the handler is a thin `setTimeout` wrapper. If
+   * the host doesn't wire `wrapAttentionMsg` in the factory, the
+   * handler no-ops and the spotlight stays set until the next dispatch
+   * overwrites it (graceful degradation — the activity log still
+   * works, just without auto-clearing visual highlights).
+   */
+  | { type: 'AgentAttentionFlashTimeout'; entryId: string; delayMs: number }
+```
+
+### `AgentEffectHandler`
+
+```typescript
+export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
+```
+
+### `AgentServerHandle`
+
+Value returned by `createLluiAgentServer`. `router` matches any
+`/agent/*` request and returns a Response (or null to fall through).
+`wsUpgrade` handles Node HTTP upgrade events for `/agent/ws`.
+
+```typescript
+export type AgentServerHandle = {
+  router: (req: Request) => Promise<Response | null>
+  /**
+   * Handles Node HTTP upgrade events for `/agent/ws`. Returns a Promise
+   * because token verification uses WebCrypto (async). Node's
+   * `server.on('upgrade', handler)` fires the handler without awaiting,
+   * which is fine — the handler writes errors directly to the socket
+   * and never throws back to the caller.
+   */
+  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
+  /** The pairing registry. Runtime-neutral adapters may access it. */
+  registry: PairingRegistry
+  /** The active token store. */
+  tokenStore: TokenStore
+  /** The active audit sink. */
+  auditSink: AuditSink
+  /**
+   * Runtime-neutral WebSocket acceptance primitive. Validates a token
+   * and registers a `PairingConnection` with the registry. The Node
+   * `wsUpgrade` above calls this internally; web-runtime adapters
+   * (`@llui/agent/server/web`) use it after accepting a WebSocket via
+   * their native API.
+   */
+  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
+}
+```
+
+### `AgentSession`
+
+```typescript
+export type AgentSession = {
+  tid: string
+  label: string
+  status: 'active' | 'pending-resume' | 'revoked'
+  createdAt: number
+  lastSeenAt: number
+}
+```
+
+### `AgentToken`
+
+```typescript
+export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
+```
+
+### `AuditEntry`
+
+```typescript
+export type AuditEntry = {
+  at: number
+  tid: string | null
+  uid: string | null
+  event: AuditEvent
+  detail: object
+}
+```
+
+### `AuditEvent`
+
+```typescript
+export type AuditEvent =
+  | 'mint'
+  | 'claim'
+  | 'resume'
+  | 'revoke'
+  | 'lap-call'
+  | 'msg-dispatched'
+  | 'msg-blocked'
+  | 'confirm-proposed'
+  | 'confirm-approved'
+  | 'confirm-rejected'
+  | 'rate-limited'
+  | 'auth-failed'
+```
+
+### `AuditSink`
+
+```typescript
+export type AuditSink = {
+  write: (entry: AuditEntry) => void | Promise<void>
+}
+```
+
+### `ClientFrame`
+
+```typescript
+export type ClientFrame =
+  | HelloFrame
+  | RpcReplyFrame
+  | RpcErrorFrame
+  | ConfirmResolvedFrame
+  | StateUpdateFrame
+  | LogAppendFrame
+```
+
+### `ConfirmExpireFrame`
+
+Server → browser: abandon a pending confirmation. Sent when the server
+has told the agent a confirm is terminally `rejected` (user-cancelled)
+so a late user Approve on that same `confirmId` can no longer fire a
+dispatch the agent was told would never run. The browser marks the
+matching pending confirm entry rejected (idempotent — no-op if already
+resolved). Distinct from `revoked` (which kills the whole session).
+
+```typescript
+export type ConfirmExpireFrame = { t: 'confirm-expire'; confirmId: string }
+```
+
+### `ConfirmResolvedFrame`
+
+```typescript
+export type ConfirmResolvedFrame = {
+  t: 'confirm-resolved'
+  confirmId: string
+  outcome: 'confirmed' | 'user-cancelled'
+  stateAfter?: unknown
+}
+```
 
 ### `CoreOptions`
 
@@ -769,53 +1101,917 @@ export type CoreOptions = {
 }
 ```
 
-### `AcceptResult`
+### `CreateAgentClientOpts`
 
 ```typescript
-export type AcceptResult =
-  | { ok: true; tid: string }
-  | { ok: false; status: number; code: 'auth-failed' | 'revoked' }
+export type CreateAgentClientOpts<State, Msg> = {
+  handle: SignalComponentHandle<State, unknown>
+  def: ComponentMetadata
+  appVersion?: string
+  rootElement: Element | null
+  slices: {
+    getConnect: (s: State) => unknown
+    getConfirm: (s: State) => AgentConfirmState
+    wrapConnectMsg: (m: unknown) => Msg
+    wrapConfirmMsg: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentLog msg so the client-side activity feed
+     * mirrors what Claude is doing. If omitted, outbound log-append
+     * frames still go to the server, but the local agent.log slice
+     * stays empty (the UI won't show activity).
+     */
+    wrapLogMsg?: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentAttention msg so the visual-attention
+     * slice can clear its spotlight on the auto-clear timer. Hosts
+     * that wire `agentAttention` should set this; hosts that don't
+     * leave it unset and the spotlight (which they aren't rendering)
+     * never matters. The factory uses it for the reverse direction
+     * too: `onLogEntry` re-dispatches the same `Append { entry }`
+     * payload into the attention slice when wired, so a single
+     * incoming `log-append` frame fans out to both slices without
+     * the host needing to write the routing.
+     */
+    wrapAttentionMsg?: (m: unknown) => Msg
+  }
+  /**
+   * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
+   * crossing the LAP boundary. Defaults to `makeDefaultCodecs()`
+   * which ships `iso-date` and `epoch-millis`. Provide a custom
+   * registry to register additional codecs (e.g. `base64-blob` for
+   * file uploads). See `@llui/agent/codecs` for the convention.
+   */
+  codecs?: CodecRegistry
+  /**
+   * Redaction hook applied to app state **at the source**, before any
+   * snapshot leaves the browser for the agent/LLM. Runs on every
+   * wire-bound read — `get_state`/`observe`/`query_state`, the
+   * per-change `state-update` broadcast, and confirm-resolution
+   * snapshots — so a secret omitted here never transits the WS, the
+   * server, or the model. Return a redacted COPY (do not mutate the
+   * input); the reducer/app keep the real state. Omit fields, mask
+   * values, or return `{}` to withhold state entirely. This is the
+   * only place that can use the app's own knowledge of which fields
+   * are sensitive — prefer it over any downstream/server-side filter.
+   */
+  redactState?: (state: State) => State
+  /**
+   * Payload-validation policy for agent `send_message` dispatches.
+   * `'strict'` rejects payload fields not in the compiled schema and
+   * warns on `'unknown'`-typed fields the agent supplied a value for;
+   * `'lenient'` (default) accepts extras silently. Wired through to the
+   * per-dispatch validator so strict mode is usable in production, not
+   * only in tests.
+   */
+  dispatchPolicy?: 'strict' | 'lenient'
+  /**
+   * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
+   * the canonical paths in `@llui/vite-plugin`'s dev middleware and
+   * `@llui/agent/server`). The mint URL, resume URLs, and revoke URL
+   * derive from this so consumers don't have to keep them in sync.
+   *
+   * Override when:
+   *   - **Cross-origin agent server**: pass the full base, e.g.
+   *     `'https://api.example.com/agent'` or `'http://localhost:8787/agent'`.
+   *   - **`@cloudflare/vite-plugin` in dev**: pass `'/cdn-cgi/agent'`
+   *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
+   */
+  agentBasePath?: string
+  /**
+   * Storage adapter for the active session blob. When provided the
+   * framework owns the persist/restore loop end-to-end: writes on
+   * `MintSucceeded`, reads on `start()` (auto-dispatching
+   * `RestoreSession` when a non-expired blob is found), clears on
+   * `Disconnect` / `Revoke` / explicit clear effects.
+   *
+   * Default: `defaultSessionStorage()` — uses `window.sessionStorage`
+   * under the key `'llui-agent:session'`. Tab-scoped (survives
+   * refresh, dies on tab close), which matches how a single-tab
+   * agent connection should behave.
+   *
+   * Pass `null` to opt out entirely; the framework then emits the
+   * `AgentSessionPersist` / `AgentSessionClear` effects unchanged
+   * and the host owns storage. Useful for SSR builds where
+   * `sessionStorage` is undefined and the host wants to no-op the
+   * storage layer.
+   *
+   * Pass a custom adapter for tests, IndexedDB-backed apps, or
+   * environments where `sessionStorage` is unavailable but the
+   * persistence semantics are still wanted (e.g. Web Workers).
+   */
+  sessionStorage?: AgentSessionStorage | null
+}
 ```
 
-### `AgentCoreHandle`
+### `DiffGroup`
 
-Handle returned by `createLluiAgentCore`. Purely runtime-neutral —
-`router` is a Fetch-style handler, `acceptConnection` is the
-primitive that runtime-specific WebSocket adapters call after
-accepting a socket in their native way.
+Per-top-level-path breakdown. Returns an array (stable order) where
+each entry describes the changes affecting one top-level region.
+Useful for a sidecar that wants to render a row per region with the
+affected fields beneath it.
+The returned `paths` are the FULL JSON-Pointer paths of the ops, so
+a consumer can render "/items/3/name" verbatim or further humanize
+it. The renderer doesn't make policy choices about how deeply to
+label — that's the host's call.
 
 ```typescript
-export type AgentCoreHandle = {
-  router: (req: Request) => Promise<Response | null>
-  registry: PairingRegistry
-  tokenStore: TokenStore
-  auditSink: AuditSink
-  /**
-   * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
-   * the `corsOrigins` core option. `undefined`/empty means same-origin
-   * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
-   * `wsUpgrade`) read this to validate the handshake `Origin`.
-   */
-  allowedOrigins?: readonly string[]
-  /**
-   * Sliding (inactivity) TTL in ms, mirroring the `slidingTtlMs` core
-   * option. The WS upgrade adapters apply this on acceptance via
-   * `acceptConnection`, which already enforces it server-side.
-   */
-  slidingTtlMs?: number
-  /**
-   * Validate an agent token and register a `PairingConnection` with
-   * the registry. Use this after accepting a WebSocket upgrade via
-   * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
-   * `Deno.upgradeWebSocket` on Deno, `server.upgrade` on Bun).
-   *
-   * On success: marks the token `awaiting-claude`, writes an audit
-   * entry, and returns `{ok: true, tid}`. On failure: returns an
-   * appropriate HTTP status for the caller to encode into the
-   * upgrade response (401 for auth failure, 403 for revoked).
-   */
-  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
+export type DiffGroup = {
+  /** Top-level state field, or `'*'` for whole-state replace. */
+  region: string
+  adds: number
+  removes: number
+  replaces: number
+  /** Full op paths in arrival order. */
+  paths: string[]
 }
+```
+
+### `DispatchMode`
+
+Who can dispatch a Msg variant.
+
+- `'shared'` (default) — both UI bindings and the agent can dispatch.
+- `'human-only'` — UI-only. Agent calls to `/message` for these variants
+  are rejected with `LapMessageRejectReason: 'human-only'`. Use for
+  internal UI events (focus/blur, scroll, hover) the LLM has no business
+  triggering.
+- `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
+  like batch operations or "explain this state" introspection variants.
+  Lint warns if a view references one via `send({ type: 'X' })`.
+  JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
+  Absence of either tag → `'shared'`. The two tags are mutually exclusive
+  (enforced by `llui/agent-exclusive-annotations` ESLint rule).
+
+```typescript
+export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
+```
+
+### `DurableObjectOptions`
+
+```typescript
+export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
+  /**
+   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
+   * path). Pass `true` for all defaults, or an `McpRouterOptions`
+   * object to customise path, server name, and connect_session
+   * description.
+   */
+  mcp?: boolean | McpRouterOptions
+}
+```
+
+### `FrameSubscriber`
+
+A per-call frame subscriber. Return `true` to remove this
+subscriber (one-shot), or `false` to keep receiving. The registry
+dispatches every inbound `ClientFrame` to every active subscriber
+for the given `tid`; subscribers filter by `frame.t` + identifiers
+(correlation id, confirm id, state path) to find the one that
+belongs to their request.
+
+```typescript
+export type FrameSubscriber = (frame: ClientFrame) => boolean
+```
+
+### `HelloFrame`
+
+```typescript
+export type HelloFrame = {
+  t: 'hello'
+  appName: string
+  appVersion: string
+  msgSchema: Record<string, MessageSchemaEntry>
+  stateSchema: object
+  affordancesSample: object[]
+  docs: AgentDocs | null
+  schemaHash: string
+  /**
+   * LAP wire-protocol version the browser runtime speaks (see
+   * {@link LAP_VERSION}). Optional so an older client that predates
+   * versioning (which omits it) is still routable — the server treats a
+   * missing value as "unknown/legacy" and logs it.
+   */
+  lapVersion?: number
+}
+```
+
+### `IdentityResolver`
+
+```typescript
+export type IdentityResolver = (req: Request) => Promise<string | null>
+```
+
+### `JsonPatchOp`
+
+Compute a structural diff between two state snapshots and return it
+in JSON-Patch-shaped form (RFC 6902 subset: `add`, `remove`,
+`replace`).
+Why JSON Patch shape: LLMs see this exact format in their training
+data — it's the standard for describing object mutations on the
+wire. The agent learns the schema implicitly and can answer "what
+changed?" in a sentence by reading the ops.
+Why not unified-diff or per-binding dirty masks: the dirty mask
+tracks what bindings need re-rendering, which is a layout concern.
+The agent wants to know what _values_ changed, which is a state
+concern. Dirty masks miss field-level resolution; per-path JSON
+Patch gives it.
+Cost is O(state size) per dispatch. For typical app states (a few
+KB) that's microseconds. Apps with very large states (collections
+of thousands of items) should subscribe to specific slices via
+`query_state` / `wait_for_change` instead of reading full diffs.
+Path escaping follows JSON Pointer (RFC 6901): `/` becomes `~1`,
+`~` becomes `~0`. The escape happens per-segment.
+
+```typescript
+export type JsonPatchOp =
+  | { op: 'add'; path: string; value: unknown }
+  | { op: 'remove'; path: string }
+  | { op: 'replace'; path: string; value: unknown }
+```
+
+### `LapActionsResponse`
+
+```typescript
+export type LapActionsResponse = {
+  actions: Array<{
+    variant: string
+    /**
+     * Human-readable phrase from `@intent("…")`, or `null` when the
+     * variant has no `@intent` annotation. Callers that surface
+     * affordances to an LLM should treat `null` as "this action is
+     * undocumented" — neither synthesise a label from the variant name
+     * nor invent one. Pre-`@intent` variants would previously surface
+     * as `intent: "<variant>"` here, which made unannotated actions
+     * indistinguishable from properly-labelled ones; emitting `null`
+     * keeps the gap visible.
+     */
+    intent: string | null
+    requiresConfirm: boolean
+    /**
+     * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
+     * binding exists; the agent is the sole dispatcher. `'human-only'`
+     * variants never appear here (filtered before serialization).
+     */
+    dispatchMode: 'shared' | 'agent-only'
+    /**
+     * Where this affordance came from:
+     *   - `'binding'`           — a tagged event handler is currently
+     *     mounted in the rendered DOM.
+     *   - `'always-affordable'` — the app's `agentAffordances(state)`
+     *     hook listed it as available right now.
+     *   - `'schema'`            — neither of the above; the variant
+     *     is in the Msg union and annotated `@agentOnly`. The
+     *     `payloadHint` carries a synthesized example from the
+     *     compiler-derived field types — copy-paste-ready for
+     *     `send_message`. Bulk-edit operations land here.
+     */
+    source: 'binding' | 'always-affordable' | 'schema'
+    selectorHint: string | null
+    payloadHint: object | null
+    /**
+     * Whether the action can be dispatched right now. Omitted (treated as
+     * `true`) for reachable actions. `false` for a variant whose
+     * `@routeGated` predicate is currently falsy — it's surfaced (so the
+     * agent knows it exists and what unblocks it) rather than hidden.
+     * Pair with `unavailableReason`.
+     */
+    available?: boolean
+    /**
+     * Why an `available: false` action can't be dispatched now — from the
+     * `@routeGated` reason (its optional 2nd arg), or a generic fallback.
+     * Null/absent for available actions.
+     */
+    unavailableReason?: string | null
+    /** Cautionary text from `@warning` JSDoc, or null. */
+    warning: string | null
+    /** Concrete examples from `@example` JSDoc, in source order. */
+    examples: string[]
+    /**
+     * Effect kinds this variant emits, from `@emits("k1", "k2")`.
+     * Empty when not annotated.
+     */
+    emits: string[]
+    /**
+     * Per-field guidance lifted from `@should("…")` JSDoc on payload
+     * fields. Path is dot/bracket notation rooted at the payload (e.g.
+     * `"cells[].meta"`). Surfaces hints that would otherwise be buried
+     * inside the schema tree, so callers can read them alongside
+     * `examples` without diving into `description.messages.variants`.
+     */
+    fieldHints: Array<{ path: string; hint: string }>
+  }>
+}
+```
+
+### `LapConfirmResultRequest`
+
+```typescript
+export type LapConfirmResultRequest = { confirmId: string; timeoutMs?: number }
+```
+
+### `LapConfirmResultResponse`
+
+```typescript
+export type LapConfirmResultResponse =
+  // `still-pending` is the honest timeout outcome (the confirm is still
+  // live in the browser — poll again). `rejected` only ever carries
+  // `user-cancelled`; a plain timeout never fabricates a rejection.
+  | { status: 'confirmed'; stateAfter: unknown }
+  | { status: 'rejected'; reason: 'user-cancelled' }
+  | { status: 'still-pending' }
+```
+
+### `LapContextResponse`
+
+```typescript
+export type LapContextResponse = { context: AgentContext }
+```
+
+### `LapDescribeResponse`
+
+```typescript
+export type LapDescribeResponse = {
+  name: string
+  version: string
+  stateSchema: object
+  messages: Record<string, MessageSchemaEntry>
+  docs: AgentDocs | null
+  conventions: {
+    dispatchModel: 'TEA'
+    confirmationModel: 'runtime-mediated'
+    readSurfaces: readonly (
+      | 'state'
+      | 'query_dom'
+      | 'describe_visible_content'
+      | 'describe_context'
+    )[]
+  }
+  schemaHash: string
+}
+```
+
+### `LapDescribeVisibleResponse`
+
+```typescript
+export type LapDescribeVisibleResponse = {
+  /**
+   * The user's current URL (`window.location.href`), or `null` when the
+   * runtime has no `location` (SSR / non-browser). The client handler
+   * has always returned this; the type previously omitted it (drift).
+   */
+  url: string | null
+  outline: OutlineNode[]
+  /**
+   * Where the outline came from:
+   *   - `'data-agent'`: the app has `data-agent`-tagged zones and the
+   *     walker scoped the outline to them. The author chose what to
+   *     surface; trust the result.
+   *   - `'fallback'`: no `data-agent` tags exist; the walker fell back
+   *     to a depth- and count-limited semantic walk of the entire
+   *     root element. Useful for first-pass dogfood targets that
+   *     haven't tagged their views.
+   *   - `'truncated'`: same as `'fallback'` but the cap (200 nodes)
+   *     was hit before the walk finished. The visible content beyond
+   *     that point is not represented; reach for `query_dom` or state
+   *     reads if you need more.
+   */
+  source: 'data-agent' | 'fallback' | 'truncated'
+}
+```
+
+### `LapDrainMeta`
+
+Drain metadata attached to `dispatched` / `confirmed` responses.
+`effectsObserved` counts update-cycle commits (not individual effects) —
+it's a proxy for "how much activity happened during the drain window."
+`errors` surfaces sync throws from `onEffect` and unhandled rejections
+from effect handlers that fired during the drain window, so the LLM
+can see when an HTTP handler crashed silently.
+`warnings` surfaces non-blocking observations from the schema
+validator — typically `untyped-field` flags raised in strict mode
+when the agent provided a value for an `'unknown'`-typed field. The
+dispatch landed (we accepted the value) but the validator couldn't
+structurally check it, so the agent learns of the gap and can
+tighten the next try if needed. Lenient mode never emits warnings;
+the field is omitted in that case.
+
+```typescript
+export type LapDrainMeta = {
+  effectsObserved: number
+  durationMs: number
+  timedOut: boolean
+  errors: Array<{ kind: 'error' | 'unhandledrejection'; message: string; stack?: string }>
+  warnings?: Array<{ path: string; code: string; message: string }>
+}
+```
+
+### `LapEndpointMap`
+
+```typescript
+export type LapEndpointMap = {
+  '/lap/v1/describe': { req: null; res: LapDescribeResponse }
+  '/lap/v1/state': { req: LapStateRequest; res: LapStateResponse }
+  '/lap/v1/actions': { req: null; res: LapActionsResponse }
+  '/lap/v1/message': { req: LapMessageRequest; res: LapMessageResponse }
+  '/lap/v1/confirm-result': { req: LapConfirmResultRequest; res: LapConfirmResultResponse }
+  '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
+  '/lap/v1/narrate': { req: LapNarrateRequest; res: LapNarrateResponse }
+  '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
+  '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
+  '/lap/v1/context': { req: null; res: LapContextResponse }
+  '/lap/v1/observe': { req: null; res: LapObserveResponse }
+}
+```
+
+### `LapError`
+
+```typescript
+export type LapError = {
+  error: {
+    code: LapErrorCode
+    detail?: string
+    retryAfterMs?: number
+  }
+}
+```
+
+### `LapErrorCode`
+
+```typescript
+export type LapErrorCode =
+  | 'auth-failed'
+  | 'revoked'
+  | 'paused'
+  | 'rate-limited'
+  | 'invalid'
+  | 'schema-error'
+  | 'timeout'
+  | 'internal'
+```
+
+### `LapMessageRejectReason`
+
+```typescript
+export type LapMessageRejectReason =
+  | 'human-only'
+  | 'user-cancelled'
+  | 'invalid'
+  | 'schema-error'
+  | 'revoked'
+  | 'paused'
+```
+
+### `LapMessageRequest`
+
+```typescript
+export type LapMessageRequest = {
+  msg: { type: string; [k: string]: unknown }
+  reason?: string
+  /**
+   * Backpressure contract for how long `/message` waits before returning:
+   * - `drained` (default): dispatch, then loop until the message queue is
+   *   idle for `drainQuietMs` ms or the 5s hard cap trips. Captures any
+   *   effect round-trips (http/delay/debounce) that feed back as messages.
+   * - `idle`: dispatch + flush + one microtask yield. Captures the
+   *   synchronous update cycle but not async effects.
+   * - `none`: dispatch and return without flushing. For high-throughput
+   *   fire-and-forget dispatch.
+   */
+  waitFor?: 'drained' | 'idle' | 'none'
+  /**
+   * Quiescence window when `waitFor === 'drained'`. Drain completes when
+   * no new update cycle fires for this many ms. Default 100ms — long
+   * enough for a localhost HTTP round-trip, short enough to be
+   * imperceptible. Ignored for `idle` / `none`.
+   */
+  drainQuietMs?: number
+  /**
+   * Hard cap on total wait time. When `waitFor === 'drained'`, this is
+   * the upper bound on how long the drain loop can run; if reached, the
+   * response carries `drain.timedOut: true` with partial results. For
+   * `pending-confirmation` messages, this is how long to wait for
+   * the user's confirm/reject. Default 5_000ms.
+   */
+  timeoutMs?: number
+  /**
+   * Include the full post-drain `stateAfter` snapshot in the response.
+   * Default `false` — the response carries `stateDiff` only and the
+   * caller applies it to the prior snapshot (from connect/observe). For
+   * apps with non-trivial state, the diff is orders of magnitude
+   * smaller than the full state, and resending the snapshot on every
+   * dispatch wastes bandwidth and (for LLM callers) context budget.
+   *
+   * Set `true` when the caller doesn't track state incrementally and
+   * wants the snapshot back. The legacy `confirmed` and `wait` paths
+   * always carry `stateAfter` because their flow is asynchronous and
+   * a diff would be ambiguous.
+   */
+  includeState?: boolean
+}
+```
+
+### `LapMessageResponse`
+
+```typescript
+export type LapMessageResponse =
+  | {
+      status: 'dispatched'
+      /**
+       * Full post-drain state snapshot. Present only when the caller
+       * passed `includeState: true` in the request — by default,
+       * `stateDiff` is the only state-shaped field on the response
+       * because callers can apply the diff to the prior snapshot from
+       * `connect` / `observe`. See `LapMessageRequest.includeState`.
+       */
+      stateAfter?: unknown
+      /**
+       * Structural diff from pre-dispatch state to post-drain state,
+       * in JSON-Patch shape (RFC 6902 subset: `add`, `remove`,
+       * `replace`). Empty when the dispatch produced no observable
+       * state change. The default state surface for callers — apply
+       * incrementally to the snapshot from `connect`/`observe`.
+       */
+      stateDiff: import('./state-diff.js').StateDiff
+      actions: LapActionsResponse['actions']
+      drain: LapDrainMeta
+    }
+  | { status: 'pending-confirmation'; confirmId: string }
+  | {
+      /**
+       * The user approved a `pending-confirmation` message. `stateAfter`
+       * is the state snapshot captured when the approve was resolved;
+       * effects produced by the approved dispatch may still be in
+       * flight. The LLM should follow up with an `observe` call to
+       * pick up a drained view and fresh actions — by design the
+       * confirm path doesn't carry drain semantics because approval
+       * can arrive arbitrarily later than the original request.
+       */
+      status: 'confirmed'
+      stateAfter: unknown
+    }
+  | { status: 'rejected'; reason: LapMessageRejectReason; detail?: string }
+```
+
+### `LapNarrateRequest`
+
+Push narration prose into the activity feed without dispatching a
+Msg. The agent uses this for "I'm thinking…" / "About to do X
+because…" / "I noticed Y, going to investigate" — running commentary
+the user can read inline with agent actions.
+The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
+appends it to the per-tid recent-log buffer (visible to subsequent
+`describe_recent_actions` calls), AND pushes a `log-push` frame to
+the paired browser so the in-app activity feed renders it in real
+time. No client roundtrip — the agent gets `{ ok: true }` synchronously
+once the server has accepted the narration.
+
+```typescript
+export type LapNarrateRequest = {
+  text: string
+  /**
+   * Optional one-line label for the entry's `intent` field, e.g.
+   * "Thinking" / "Notice" / "Plan". Defaults to "Agent narrated"
+   * when omitted.
+   */
+  intent?: string
+}
+```
+
+### `LapNarrateResponse`
+
+```typescript
+export type LapNarrateResponse = { ok: true }
+```
+
+### `LapObserveResponse`
+
+```typescript
+export type LapObserveResponse = {
+  state: unknown
+  actions: LapActionsResponse['actions']
+  description: LapDescribeResponse
+  context: AgentContext | null
+}
+```
+
+### `LapPath`
+
+```typescript
+export type LapPath = keyof LapEndpointMap
+```
+
+### `LapQueryDomRequest`
+
+```typescript
+export type LapQueryDomRequest = { name: string; multiple?: boolean }
+```
+
+### `LapQueryDomResponse`
+
+```typescript
+export type LapQueryDomResponse = {
+  elements: Array<{ text: string; attrs: Record<string, string>; path: number[] }>
+}
+```
+
+### `LapRequest`
+
+```typescript
+export type LapRequest<P extends LapPath> = LapEndpointMap[P]['req']
+```
+
+### `LapResponse`
+
+```typescript
+export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
+```
+
+### `LapStateRequest`
+
+```typescript
+export type LapStateRequest = { path?: string }
+```
+
+### `LapStateResponse`
+
+```typescript
+export type LapStateResponse = { state: unknown }
+```
+
+### `LapWaitRequest`
+
+```typescript
+export type LapWaitRequest = { path?: string; timeoutMs?: number }
+```
+
+### `LapWaitResponse`
+
+```typescript
+export type LapWaitResponse =
+  | { status: 'changed'; stateAfter: unknown }
+  | { status: 'timeout'; stateAfter: unknown }
+```
+
+### `LogAppendFrame`
+
+```typescript
+export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
+```
+
+### `LogEntry`
+
+```typescript
+export type LogEntry = {
+  id: string
+  at: number
+  kind: LogKind
+  variant?: string
+  intent?: string
+  detail?: string
+  /**
+   * Structural diff from pre-dispatch state to post-drain state, in
+   * JSON-Patch shape. Populated only for `kind: 'dispatched'` entries
+   * — read entries (get_state / list_actions / observe / …) don't
+   * mutate state, and an empty diff would just be noise. Lets the
+   * agent reconstruct what each past action did without re-fetching
+   * state snapshots.
+   */
+  stateDiff?: import('./state-diff.js').StateDiff
+}
+```
+
+### `LogKind`
+
+```typescript
+export type LogKind =
+  | 'proposed'
+  | 'dispatched'
+  | 'confirmed'
+  | 'rejected'
+  | 'blocked'
+  | 'read'
+  | 'error'
+  /**
+   * The agent emitted prose into the activity feed via `/lap/v1/narrate`
+   * — narration like "thinking about your request…", "I'm about to add
+   * an alternative because…", or any out-of-band commentary that
+   * doesn't fit a `dispatched` / `read` lifecycle. Lets the agent talk
+   * to the user inside the app without inventing a fake `@agentOnly`
+   * Msg type.
+   */
+  | 'narrate'
+```
+
+### `LogPushFrame`
+
+Server-pushed log entry. Used today by the `narrate` LAP method:
+the agent calls `/lap/v1/narrate { text }`, the server synthesizes
+a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
+runtime so the in-app activity feed renders the narration in real
+time. Distinct from the browser-emitted `log-append` frame:
+`log-append` is browser → server (rpc-derived audit), `log-push`
+is server → browser (server-originated entries, no echo).
+
+```typescript
+export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
+```
+
+### `McpToolDescriptor`
+
+```typescript
+export type McpToolDescriptor = McpForwardedToolDescriptor | McpMetaToolDescriptor
+```
+
+### `MessageAnnotations`
+
+```typescript
+export type MessageAnnotations = {
+  intent: string | null
+  alwaysAffordable: boolean
+  requiresConfirm: boolean
+  dispatchMode: DispatchMode
+  /**
+   * Concrete copy-paste example dispatches authored as `@example`
+   * JSDoc tags. Multiple tags on one variant become multiple
+   * entries (mix typical / edge cases without nesting strings).
+   */
+  examples: string[]
+  /**
+   * Non-blocking caution authored as `@warning`. Distinct from
+   * `requiresConfirm` (runtime user gate); this informs the LLM at
+   * affordance time so it can decide whether the dispatch's
+   * downstream is acceptable.
+   */
+  warning: string | null
+  /**
+   * Effect kinds this variant emits when dispatched, declared via
+   * `@emits("kind1", "kind2")`. Lets the agent reason about side
+   * effects (cloud writes, analytics, persistent state changes)
+   * before dispatching, and chunk multi-step flows accordingly
+   * ("don't dispatch X 100 times — each one fires cloud/save").
+   * Empty when the variant doesn't emit effects or the author hasn't
+   * annotated it yet.
+   */
+  emits: string[]
+  /**
+   * Boolean predicate authored as `@routeGated("expr")` JSDoc, with
+   * `state` bound at evaluation time. The variant only surfaces in
+   * `list_actions` when the predicate returns true. Compile-time
+   * alternative to `agentAffordances(state) => Msg[]` for the common
+   * case of "this Msg is reachable when state.X looks like Y." Null
+   * when the variant has no `@routeGated` tag (default affordance
+   * behavior applies).
+   */
+  routeGate?: string | null
+  /**
+   * Human-readable reason surfaced when `routeGate` is FALSE — the
+   * optional 2nd argument of `@routeGated("expr", "reason")`. Becomes the
+   * `unavailableReason` on the gated action in `list_actions`. Null/absent
+   * when not authored (a generic reason is used instead).
+   */
+  routeGateReason?: string | null
+}
+```
+
+### `MessageSchemaEntry`
+
+```typescript
+export type MessageSchemaEntry = {
+  payloadSchema: object
+  annotations: MessageAnnotations
+}
+```
+
+### `MintRequest`
+
+```typescript
+export type MintRequest = Record<string, never>
+```
+
+### `MintResponse`
+
+```typescript
+export type MintResponse = {
+  token: AgentToken
+  tid: string
+  wsUrl: string
+  lapUrl: string
+  expiresAt: number
+  /** LAP wire-protocol version the server speaks (see {@link LAP_VERSION}). */
+  lapVersion?: number
+}
+```
+
+### `OutlineNode`
+
+```typescript
+export type OutlineNode =
+  | { kind: 'heading'; level: number; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'list'; items: OutlineNode[] }
+  | { kind: 'item'; text: string; children?: OutlineNode[] }
+  | { kind: 'button'; text: string; disabled: boolean; actionVariant: string | null }
+  | { kind: 'input'; label: string | null; value: string | null; type: string }
+  | { kind: 'link'; text: string; href: string }
+```
+
+### `ResumeClaimRequest`
+
+```typescript
+export type ResumeClaimRequest = { tid: string }
+```
+
+### `ResumeClaimResponse`
+
+The rotated bearer plus everything the client needs to persist a full
+session blob (mirrors `MintResponse`), so a resume survives a
+subsequent refresh the same way a fresh mint does. `expiresAt` is in
+seconds-since-epoch (same units as `MintResponse.expiresAt`).
+
+```typescript
+export type ResumeClaimResponse = {
+  token: AgentToken
+  tid: string
+  wsUrl: string
+  lapUrl: string
+  expiresAt: number
+}
+```
+
+### `ResumeListRequest`
+
+```typescript
+export type ResumeListRequest = { tids: string[] }
+```
+
+### `ResumeListResponse`
+
+```typescript
+export type ResumeListResponse = { sessions: AgentSession[] }
+```
+
+### `RevokedFrame`
+
+```typescript
+export type RevokedFrame = { t: 'revoked' }
+```
+
+### `RevokeRequest`
+
+```typescript
+export type RevokeRequest = { tid: string }
+```
+
+### `RevokeResponse`
+
+```typescript
+export type RevokeResponse = { status: 'revoked' }
+```
+
+### `RpcError`
+
+```typescript
+export type RpcError = {
+  code: 'paused' | 'invalid' | 'timeout' | 'schema-error' | 'internal' | string
+  detail?: string
+}
+```
+
+### `RpcErrorFrame`
+
+```typescript
+export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
+```
+
+### `RpcFrame`
+
+```typescript
+export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
+```
+
+### `RpcOptions`
+
+```typescript
+export type RpcOptions = { timeoutMs?: number }
+```
+
+### `RpcReplyFrame`
+
+```typescript
+export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
+```
+
+### `ServerFrame`
+
+```typescript
+export type ServerFrame =
+  | RpcFrame
+  | RevokedFrame
+  | ActiveFrame
+  | LogPushFrame
+  | ConfirmExpireFrame
+  | WatchFrame
+  | UnwatchFrame
 ```
 
 ### `ServerOptions`
@@ -908,1389 +2104,28 @@ export type ServerOptions = {
 }
 ```
 
-### `AgentServerHandle`
+### `SessionsResponse`
 
-Value returned by `createLluiAgentServer`. `router` matches any
-`/agent/*` request and returns a Response (or null to fall through).
-`wsUpgrade` handles Node HTTP upgrade events for `/agent/ws`.
-
-```typescript
-export type AgentServerHandle = {
-  router: (req: Request) => Promise<Response | null>
-  /**
-   * Handles Node HTTP upgrade events for `/agent/ws`. Returns a Promise
-   * because token verification uses WebCrypto (async). Node's
-   * `server.on('upgrade', handler)` fires the handler without awaiting,
-   * which is fine — the handler writes errors directly to the socket
-   * and never throws back to the caller.
-   */
-  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
-  /** The pairing registry. Runtime-neutral adapters may access it. */
-  registry: PairingRegistry
-  /** The active token store. */
-  tokenStore: TokenStore
-  /** The active audit sink. */
-  auditSink: AuditSink
-  /**
-   * Runtime-neutral WebSocket acceptance primitive. Validates a token
-   * and registers a `PairingConnection` with the registry. The Node
-   * `wsUpgrade` above calls this internally; web-runtime adapters
-   * (`@llui/agent/server/web`) use it after accepting a WebSocket via
-   * their native API.
-   */
-  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
-}
-```
-
-### `VerifyResult`
-
-Result of looking up a presented token. The `expired` reason is
-returned by the verify path when the token's record exists but its
-hard-expiry has passed; `unknown` covers both "no record" and
-"wrong hash" so a probe-by-hash leak surface is uniform.
-
-```typescript
-export type VerifyResult =
-  | { kind: 'ok'; tid: string }
-  | { kind: 'invalid'; reason: 'malformed' | 'unknown' | 'expired' }
-```
-
-### `IdentityResolver`
-
-```typescript
-export type IdentityResolver = (req: Request) => Promise<string | null>
-```
-
-### `IdentityCookieConfig`
-
-```typescript
-export type IdentityCookieConfig = {
-  name: string
-  signingKey: string | Uint8Array
-}
-```
-
-### `AuditSink`
-
-```typescript
-export type AuditSink = {
-  write: (entry: AuditEntry) => void | Promise<void>
-}
-```
-
-### `RateLimitResult`
-
-```typescript
-export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterMs: number }
-```
-
-### `RateLimitConfig`
-
-```typescript
-export type RateLimitConfig = {
-  perBucket: string
-}
-```
-
-### `FrameSubscriber`
-
-A per-call frame subscriber. Return `true` to remove this
-subscriber (one-shot), or `false` to keep receiving. The registry
-dispatches every inbound `ClientFrame` to every active subscriber
-for the given `tid`; subscribers filter by `frame.t` + identifiers
-(correlation id, confirm id, state path) to find the one that
-belongs to their request.
-
-```typescript
-export type FrameSubscriber = (frame: ClientFrame) => boolean
-```
-
-### `RpcError`
-
-```typescript
-export type RpcError = {
-  code: 'paused' | 'invalid' | 'timeout' | 'schema-error' | 'internal' | string
-  detail?: string
-}
-```
-
-### `RpcOptions`
-
-```typescript
-export type RpcOptions = { timeoutMs?: number }
-```
-
-### `DurableObjectOptions`
-
-```typescript
-export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
-  /**
-   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
-   * path). Pass `true` for all defaults, or an `McpRouterOptions`
-   * object to customise path, server name, and connect_session
-   * description.
-   */
-  mcp?: boolean | McpRouterOptions
-}
-```
-
-### `MsgSchemaBareType`
-
-The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
-from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
-
-1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
-   and bare enum: `{enum: [...]}` (values may be string, number,
-   or boolean — the compiler preserves the literal kind so JSON
-   round-trips don't lose type info).
-2. Bare nested types: `{kind: 'object', shape}` for inline /
-   followed-via-typeIndex shapes; `{kind: 'array', element}` for
-   `T[]` / `readonly T[]` / `Array<T>`; `{kind: 'discriminated-
-union', discriminant, variants}` for tagged unions of objects
-   (e.g. `Format = {kind:'exact'} | {kind:'range', min, max}`).
-   The synthesizer recurses to build copy-paste-ready nested
-   examples; the validator walks the same tree.
-3. Rich descriptor: wraps any of the above with `{optional?,
-priority?, hint?}` carrying TS optionality and `@should` hints.
-
-```typescript
-export type MsgSchemaBareType =
-  | string
-  | { enum: ReadonlyArray<string | number | boolean> }
-  | { kind: 'object'; shape: Record<string, MsgSchemaField> }
-  | { kind: 'array'; element: MsgSchemaBareType }
-  | {
-      kind: 'discriminated-union'
-      discriminant: string
-      variants: Record<string, Record<string, MsgSchemaField>>
-    }
-```
-
-### `MsgSchemaField`
-
-```typescript
-export type MsgSchemaField =
-  | MsgSchemaBareType
-  | {
-      type: MsgSchemaBareType
-      optional?: boolean
-      priority?: 'should'
-      hint?: string
-      /**
-       * Boolean JS expression authored with `@validates("expr")` JSDoc.
-       * Has `v` bound to the field value at runtime; the validator
-       * compiles it lazily with `new Function('v', 'return (' + src +
-       * ')')` and caches the function across calls. Use for invariants
-       * the type system can't express — numeric ranges, format
-       * predicates, length bounds.
-       */
-      validates?: string
-    }
-```
-
-### `MsgSchemaShape`
-
-```typescript
-export type MsgSchemaShape = {
-  discriminant: string
-  variants: Record<string, Record<string, MsgSchemaField>>
-}
-```
-
-### `CreateAgentClientOpts`
-
-```typescript
-export type CreateAgentClientOpts<State, Msg> = {
-  handle: SignalComponentHandle<State, unknown>
-  def: ComponentMetadata
-  appVersion?: string
-  rootElement: Element | null
-  slices: {
-    getConnect: (s: State) => unknown
-    getConfirm: (s: State) => AgentConfirmState
-    wrapConnectMsg: (m: unknown) => Msg
-    wrapConfirmMsg: (m: unknown) => Msg
-    /**
-     * Optional: wrap an agentLog msg so the client-side activity feed
-     * mirrors what Claude is doing. If omitted, outbound log-append
-     * frames still go to the server, but the local agent.log slice
-     * stays empty (the UI won't show activity).
-     */
-    wrapLogMsg?: (m: unknown) => Msg
-    /**
-     * Optional: wrap an agentAttention msg so the visual-attention
-     * slice can clear its spotlight on the auto-clear timer. Hosts
-     * that wire `agentAttention` should set this; hosts that don't
-     * leave it unset and the spotlight (which they aren't rendering)
-     * never matters. The factory uses it for the reverse direction
-     * too: `onLogEntry` re-dispatches the same `Append { entry }`
-     * payload into the attention slice when wired, so a single
-     * incoming `log-append` frame fans out to both slices without
-     * the host needing to write the routing.
-     */
-    wrapAttentionMsg?: (m: unknown) => Msg
-  }
-  /**
-   * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
-   * crossing the LAP boundary. Defaults to `makeDefaultCodecs()`
-   * which ships `iso-date` and `epoch-millis`. Provide a custom
-   * registry to register additional codecs (e.g. `base64-blob` for
-   * file uploads). See `@llui/agent/codecs` for the convention.
-   */
-  codecs?: CodecRegistry
-  /**
-   * Redaction hook applied to app state **at the source**, before any
-   * snapshot leaves the browser for the agent/LLM. Runs on every
-   * wire-bound read — `get_state`/`observe`/`query_state`, the
-   * per-change `state-update` broadcast, and confirm-resolution
-   * snapshots — so a secret omitted here never transits the WS, the
-   * server, or the model. Return a redacted COPY (do not mutate the
-   * input); the reducer/app keep the real state. Omit fields, mask
-   * values, or return `{}` to withhold state entirely. This is the
-   * only place that can use the app's own knowledge of which fields
-   * are sensitive — prefer it over any downstream/server-side filter.
-   */
-  redactState?: (state: State) => State
-  /**
-   * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
-   * the canonical paths in `@llui/vite-plugin`'s dev middleware and
-   * `@llui/agent/server`). The mint URL, resume URLs, and revoke URL
-   * derive from this so consumers don't have to keep them in sync.
-   *
-   * Override when:
-   *   - **Cross-origin agent server**: pass the full base, e.g.
-   *     `'https://api.example.com/agent'` or `'http://localhost:8787/agent'`.
-   *   - **`@cloudflare/vite-plugin` in dev**: pass `'/cdn-cgi/agent'`
-   *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
-   */
-  agentBasePath?: string
-  /**
-   * Storage adapter for the active session blob. When provided the
-   * framework owns the persist/restore loop end-to-end: writes on
-   * `MintSucceeded`, reads on `start()` (auto-dispatching
-   * `RestoreSession` when a non-expired blob is found), clears on
-   * `Disconnect` / `Revoke` / explicit clear effects.
-   *
-   * Default: `defaultSessionStorage()` — uses `window.sessionStorage`
-   * under the key `'llui-agent:session'`. Tab-scoped (survives
-   * refresh, dies on tab close), which matches how a single-tab
-   * agent connection should behave.
-   *
-   * Pass `null` to opt out entirely; the framework then emits the
-   * `AgentSessionPersist` / `AgentSessionClear` effects unchanged
-   * and the host owns storage. Useful for SSR builds where
-   * `sessionStorage` is undefined and the host wants to no-op the
-   * storage layer.
-   *
-   * Pass a custom adapter for tests, IndexedDB-backed apps, or
-   * environments where `sessionStorage` is unavailable but the
-   * persistence semantics are still wanted (e.g. Web Workers).
-   */
-  sessionStorage?: AgentSessionStorage | null
-}
-```
-
-### `AgentSessionStorage`
-
-Tab-lifetime persistence for the active agent session. Reads /
-writes a single blob; the framework synchronizes it with the
-connect lifecycle so refresh-survival is automatic. Implementations
-must be synchronous on the read path so `start()` can decide
-whether to dispatch `RestoreSession` before any UI mounts —
-otherwise the `idle`-only guard in the reducer might miss the
-restore when a `Mint` click races the async lookup.
-
-```typescript
-export type AgentSessionStorage = {
-  read(): PersistedAgentSession | null
-  write(session: PersistedAgentSession): void
-  clear(): void
-}
-```
-
-### `PersistedAgentSession`
-
-```typescript
-export type PersistedAgentSession = {
-  token: AgentToken
-  tid: string
-  lapUrl: string
-  wsUrl: string
-  expiresAt: number
-}
-```
-
-### `AgentClient`
-
-```typescript
-export type AgentClient = {
-  effectHandler: (effect: AgentEffect) => Promise<void>
-  start(): void
-  stop(): void
-}
-```
-
-### `AgentEffect`
-
-```typescript
-export type AgentEffect =
-  /**
-   * Mint a fresh agent token. `mintUrl` is optional — when omitted the
-   * effect handler derives it from `EffectHandlerHost.agentBasePath`
-   * (default `/agent`), producing `<agentBasePath>/mint`. Pass an
-   * explicit value when the mint endpoint lives outside the configured
-   * base path.
-   */
-  | { type: 'AgentMintRequest'; mintUrl?: string }
-  | { type: 'AgentOpenWS'; token: AgentToken; wsUrl: string }
-  | { type: 'AgentCloseWS' }
-  | { type: 'AgentResumeCheck'; tids: string[] }
-  | { type: 'AgentResumeClaim'; tid: string }
-  | { type: 'AgentRevoke'; tid: string }
-  | { type: 'AgentSessionsList' }
-  | { type: 'AgentForwardMsg'; payload: unknown }
-  // Handler reads `text` (no state lookup needed at handler time —
-  // update() resolved it from the current state.pendingToken). Lets
-  // the static-bag `connect()` shape avoid leaking state-reads into
-  // event handlers.
-  | { type: 'AgentClipboardWrite'; text: string }
-  /**
-   * Persist active session credentials so a page refresh can restore
-   * the same WS without re-minting (and without invalidating the
-   * agent's token via the rotate-on-resume path). Hosts typically
-   * write to `sessionStorage` so the credentials are tab-scoped:
-   * survive refresh, die on tab close. The framework emits this on
-   * `MintSucceeded`; the matching `AgentSessionClear` is emitted on
-   * `Revoke` of the active tid. Hosts that don't implement the
-   * persist/restore loop can ignore both — the rest of the connect
-   * lifecycle still works (the page just falls back to "mint a new
-   * session" after refresh, same as before this effect existed).
-   */
-  | {
-      type: 'AgentSessionPersist'
-      token: AgentToken
-      tid: string
-      lapUrl: string
-      wsUrl: string
-      expiresAt: number
-    }
-  | { type: 'AgentSessionClear' }
-  /**
-   * Schedule the next WS-reconnect attempt. The handler waits
-   * `delayMs` and dispatches `ReconnectAttempt { elapsedMs: delayMs }`
-   * back into the reducer, which decides whether to re-open the WS
-   * or transition to `failed` based on the cumulative wait. The
-   * delay schedule itself is computed reducer-side from
-   * `reconnectAttempt` — this effect is a thin setTimeout wrapper.
-   *
-   * The handler doesn't track cancellation: if the user dispatches
-   * `Disconnect` while the timer is pending, the reducer transitions
-   * to `idle` and the subsequent `ReconnectAttempt` becomes a no-op
-   * via the status guard. Simpler than coordinating cancel handles.
-   */
-  | { type: 'AgentReconnectSchedule'; delayMs: number }
-  /**
-   * Auto-clear the `agentAttention` spotlight after `delayMs`. The
-   * handler waits and dispatches `Clear { entryId }` back into the
-   * attention slice via `wrapAgentAttention`. The clear is conditional
-   * (matches `entryId` against `latestDispatch.entryId` in the reducer),
-   * so a fast follow-up dispatch isn't wiped by the previous dispatch's
-   * pending timer — same race-avoidance pattern as
-   * `AgentReconnectSchedule`'s status guard.
-   *
-   * No cancel handle: the handler is a thin `setTimeout` wrapper. If
-   * the host doesn't wire `wrapAttentionMsg` in the factory, the
-   * handler no-ops and the spotlight stays set until the next dispatch
-   * overwrites it (graceful degradation — the activity log still
-   * works, just without auto-clearing visual highlights).
-   */
-  | { type: 'AgentAttentionFlashTimeout'; entryId: string; delayMs: number }
-```
-
-### `AgentEffectHandler`
-
-```typescript
-export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
-```
-
-### `AgentConnectStatus`
-
-```typescript
-export type AgentConnectStatus =
-  | 'idle'
-  | 'minting'
-  | 'pending-claude'
-  | 'active'
-  | 'reconnecting'
-  | 'failed'
-  | 'error'
-```
-
-### `AgentConnectPendingToken`
-
-```typescript
-export type AgentConnectPendingToken = {
-  token: AgentToken
-  tid: string
-  lapUrl: string
-  /**
-   * Natural-language connect instruction the user copies into Claude.
-   * Includes URL, token, and the explicit `connect_session` tool
-   * call. Works in any Claude client (Desktop, CC CLI, etc.) — the
-   * Desktop-specific `/llui-connect` slash command is sugar over the
-   * same tool call.
-   */
-  connectSnippet: string
-  expiresAt: number
-  /**
-   * Cached so the auto-reconnect path can re-open the WS without
-   * re-minting. The MintSucceeded → AgentOpenWS path stores it; the
-   * RestoreSession path also fills it in. Cleared by `Disconnect`.
-   */
-  wsUrl: string
-}
-```
-
-### `AgentConnectState`
-
-```typescript
-export type AgentConnectState = {
-  status: AgentConnectStatus
-  pendingToken: AgentConnectPendingToken | null
-  sessions: AgentSession[]
-  resumable: AgentSession[]
-  error: { code: string; detail: string } | null
-  /**
-   * Reconnect attempt counter. Incremented on each WS-close that
-   * triggers an auto-reconnect; reset on `WsOpened` and on user
-   * actions (`Disconnect`, fresh `Mint`). Drives the backoff schedule
-   * (1s, 2s, 4s, 8s, 16s, 30s, 30s, …) and surfaces to UI as
-   * "reconnecting (attempt 3 / next in 4s)".
-   */
-  reconnectAttempt: number
-  /**
-   * Total cumulative ms spent in `reconnecting` for the current
-   * outage. Compared against `reconnectGiveUpMs` (effect-side option,
-   * default 5 min) to decide when to surface `failed` to the user.
-   * Reset whenever a WS opens successfully.
-   */
-  reconnectElapsedMs: number
-}
-```
-
-### `AgentConnectMsg`
-
-```typescript
-export type AgentConnectMsg =
-  /** @intent("Mint a new agent token and open the pairing WebSocket") */
-  | { type: 'Mint' }
-  /**
-   * @humanOnly — internal: dispatched by the AgentMintRequest effect
-   * handler when the mint endpoint replies success. Carries the token
-   * and connection URLs into state.
-   */
-  | {
-      type: 'MintSucceeded'
-      token: AgentToken
-      tid: string
-      lapUrl: string
-      wsUrl: string
-      expiresAt: number
-    }
-  /** @humanOnly — internal: dispatched by the AgentMintRequest handler on failure. */
-  | { type: 'MintFailed'; error: { code: string; detail: string } }
-  /** @humanOnly — internal: WS adapter signalled the pairing socket is open. */
-  | { type: 'WsOpened' }
-  /** @humanOnly — internal: WS adapter signalled the pairing socket is closed. */
-  | { type: 'WsClosed' }
-  /** @humanOnly — internal: Claude bound the session via /agent/claim. */
-  | { type: 'ActivatedByClaude' }
-  /** @intent("Check which previously-issued agent sessions can be resumed") */
-  | { type: 'ResumeList'; tids: string[] }
-  /** @humanOnly — internal: AgentResumeCheck effect handler returned the list. */
-  | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
-  /** @intent("Resume an existing agent session by tid") */
-  | { type: 'Resume'; tid: string }
-  /** @intent("Revoke an agent session by tid") */
-  | { type: 'Revoke'; tid: string }
-  /** @intent("Dismiss the current agent connect error") */
-  | { type: 'ClearError' }
-  /** @humanOnly — internal: AgentSessionsList effect handler returned the list. */
-  | { type: 'SessionsLoaded'; sessions: AgentSession[] }
-  /** @intent("Refresh the list of active agent sessions") */
-  | { type: 'RefreshSessions' }
-  /**
-   * @intent("Copy the agent connect snippet to the clipboard")
-   * Resolves the pendingToken's snippet in update() (state-reading is
-   * what update() is for) and dispatches a clipboard-write effect.
-   */
-  | { type: 'CopyConnectSnippet' }
-  /**
-   * @humanOnly — internal: app boot dispatches this with credentials
-   * read from sessionStorage to skip the mint round-trip after page
-   * refresh. The agent's token (still alive on the server) keeps
-   * working since we don't go through the rotate-on-resume path. The
-   * reducer is idempotent against an in-flight Mint — only fires from
-   * `idle`.
-   */
-  | {
-      type: 'RestoreSession'
-      token: AgentToken
-      tid: string
-      lapUrl: string
-      wsUrl: string
-      expiresAt: number
-    }
-  /**
-   * @intent("Disconnect the active agent session and clear all
-   * persisted credentials. Stops any in-flight reconnect attempt;
-   * subsequent WS closures stay in `idle` instead of triggering
-   * auto-reconnect. Use when the user explicitly clicks Disconnect
-   * in the panel — for transient drops, do nothing and let the
-   * reconnect loop run.")
-   */
-  | { type: 'Disconnect' }
-  /**
-   * @humanOnly — internal: scheduler effect dispatched this when the
-   * backoff timer fired. The reducer increments the attempt counter,
-   * adds the just-elapsed delay to `reconnectElapsedMs`, and emits
-   * `AgentOpenWS` with the cached pendingToken/wsUrl so the WS can
-   * reattach without minting.
-   */
-  | { type: 'ReconnectAttempt'; elapsedMs: number }
-  /**
-   * @humanOnly — internal: scheduler effect dispatched this when the
-   * give-up ceiling was reached without a successful WS open.
-   * Reducer flips status to `failed` so the UI can surface a clear
-   * error and offer a manual reconnect.
-   */
-  | { type: 'ReconnectGaveUp' }
-```
-
-### `AgentConnectInitOpts`
-
-Options threaded through `init()` and `update()`. `mintUrl` is
-optional — when omitted the agent effect handler derives it from
-`EffectHandlerHost.agentBasePath` (default `/agent` → `/agent/mint`).
-Set explicitly only when the mint endpoint lives outside the
-configured base path.
-
-```typescript
-export type AgentConnectInitOpts = { mintUrl?: string }
-```
-
-### `AgentConnectConnectOptions`
-
-```typescript
-export type AgentConnectConnectOptions = {
-  id?: string // optional DOM id prefix
-}
-```
-
-### `ConnectBag`
-
-Static prop bag with reactive (Signal-handle) values. Mirrors the
-@llui/components pattern (e.g. `dialog.connect`): callers spread bag
-keys directly into element helpers, and handle-valued props re-evaluate
-per binding-mask hit. The caller passes the `agent-connect` state slice
-as a `Signal`; reactive props are derived from it via `state.map(...)`.
-
-```typescript
-export type ConnectBag = {
-  root: { 'data-scope': 'agent-connect'; 'data-state': Signal<AgentConnectStatus> }
-  mintTrigger: { onClick: () => void; disabled: Signal<boolean> }
-  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': Signal<boolean> }
-  copyConnectSnippetButton: { onClick: () => void; disabled: Signal<boolean> }
-  sessionsList: { 'data-part': 'sessions-list' }
-  sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
-  revokeButton: (tid: string) => { onClick: () => void }
-  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': Signal<boolean> }
-  resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
-  resumeButton: (tid: string) => { onClick: () => void }
-  dismissButton: (tid: string) => { onClick: () => void }
-  error: {
-    'data-part': 'error'
-    'data-visible': Signal<boolean>
-    onClick: () => void
-  }
-}
-```
-
-### `ConfirmEntry`
-
-```typescript
-export type ConfirmEntry = {
-  id: string
-  variant: string
-  payload: unknown
-  intent: string
-  reason: string | null
-  proposedAt: number
-  status: 'pending' | 'approved' | 'rejected'
-}
-```
-
-### `AgentConfirmState`
-
-```typescript
-export type AgentConfirmState = { pending: ConfirmEntry[] }
-```
-
-### `AgentConfirmMsg`
-
-```typescript
-export type AgentConfirmMsg =
-  /**
-   * @humanOnly — internal: dispatched by `handleSendMessage` on the
-   * @llui/dom side when an agent message is gated by @requiresConfirm.
-   * Adds a pending entry to state; the user (not the agent) decides
-   * with Approve / Reject.
-   */
-  | { type: 'Propose'; entry: ConfirmEntry }
-  /** @intent("Approve a pending agent action") */
-  | { type: 'Approve'; id: string }
-  /** @intent("Reject a pending agent action") */
-  | { type: 'Reject'; id: string }
-  /**
-   * @humanOnly — internal: the host app dispatches this on a timer to
-   * garbage-collect entries that have been pending past `maxAgeMs`.
-   * Agents have no business poking at the timer wheel directly.
-   */
-  | { type: 'ExpireStale'; now: number; maxAgeMs: number }
-```
-
-### `AgentLogFilter`
-
-```typescript
-export type AgentLogFilter = { kinds?: LogKind[]; since?: number }
-```
-
-### `AgentLogState`
-
-```typescript
-export type AgentLogState = {
-  entries: LogEntry[]
-  filter: AgentLogFilter
-}
-```
-
-### `AgentLogInitOpts`
-
-```typescript
-export type AgentLogInitOpts = { maxEntries?: number }
-```
-
-### `AgentLogMsg`
-
-```typescript
-export type AgentLogMsg =
-  /**
-   * @humanOnly — internal: WS frame router dispatches this on every
-   * `log-append` frame from the runtime. Agents observe the log via
-   * the LAP read surface, not by emitting Append themselves.
-   */
-  | { type: 'Append'; entry: LogEntry }
-  /** @intent("Clear the agent activity log") */
-  | { type: 'Clear' }
-  /** @intent("Set the visibility filter for the agent log") */
-  | { type: 'SetFilter'; filter: AgentLogFilter }
-```
-
-### `LapErrorCode`
-
-```typescript
-export type LapErrorCode =
-  | 'auth-failed'
-  | 'revoked'
-  | 'paused'
-  | 'rate-limited'
-  | 'invalid'
-  | 'schema-error'
-  | 'timeout'
-  | 'internal'
-```
-
-### `LapError`
-
-```typescript
-export type LapError = {
-  error: {
-    code: LapErrorCode
-    detail?: string
-    retryAfterMs?: number
-  }
-}
-```
-
-### `DispatchMode`
-
-Who can dispatch a Msg variant.
-
-- `'shared'` (default) — both UI bindings and the agent can dispatch.
-- `'human-only'` — UI-only. Agent calls to `/message` for these variants
-  are rejected with `LapMessageRejectReason: 'human-only'`. Use for
-  internal UI events (focus/blur, scroll, hover) the LLM has no business
-  triggering.
-- `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
-  like batch operations or "explain this state" introspection variants.
-  Lint warns if a view references one via `send({ type: 'X' })`.
-  JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
-  Absence of either tag → `'shared'`. The two tags are mutually exclusive
-  (enforced by `llui/agent-exclusive-annotations` ESLint rule).
-
-```typescript
-export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
-```
-
-### `MessageAnnotations`
-
-```typescript
-export type MessageAnnotations = {
-  intent: string | null
-  alwaysAffordable: boolean
-  requiresConfirm: boolean
-  dispatchMode: DispatchMode
-  /**
-   * Concrete copy-paste example dispatches authored as `@example`
-   * JSDoc tags. Multiple tags on one variant become multiple
-   * entries (mix typical / edge cases without nesting strings).
-   */
-  examples: string[]
-  /**
-   * Non-blocking caution authored as `@warning`. Distinct from
-   * `requiresConfirm` (runtime user gate); this informs the LLM at
-   * affordance time so it can decide whether the dispatch's
-   * downstream is acceptable.
-   */
-  warning: string | null
-  /**
-   * Effect kinds this variant emits when dispatched, declared via
-   * `@emits("kind1", "kind2")`. Lets the agent reason about side
-   * effects (cloud writes, analytics, persistent state changes)
-   * before dispatching, and chunk multi-step flows accordingly
-   * ("don't dispatch X 100 times — each one fires cloud/save").
-   * Empty when the variant doesn't emit effects or the author hasn't
-   * annotated it yet.
-   */
-  emits: string[]
-  /**
-   * Boolean predicate authored as `@routeGated("expr")` JSDoc, with
-   * `state` bound at evaluation time. The variant only surfaces in
-   * `list_actions` when the predicate returns true. Compile-time
-   * alternative to `agentAffordances(state) => Msg[]` for the common
-   * case of "this Msg is reachable when state.X looks like Y." Null
-   * when the variant has no `@routeGated` tag (default affordance
-   * behavior applies).
-   */
-  routeGate?: string | null
-  /**
-   * Human-readable reason surfaced when `routeGate` is FALSE — the
-   * optional 2nd argument of `@routeGated("expr", "reason")`. Becomes the
-   * `unavailableReason` on the gated action in `list_actions`. Null/absent
-   * when not authored (a generic reason is used instead).
-   */
-  routeGateReason?: string | null
-}
-```
-
-### `MessageSchemaEntry`
-
-```typescript
-export type MessageSchemaEntry = {
-  payloadSchema: object
-  annotations: MessageAnnotations
-}
-```
-
-### `LapDescribeResponse`
-
-```typescript
-export type LapDescribeResponse = {
-  name: string
-  version: string
-  stateSchema: object
-  messages: Record<string, MessageSchemaEntry>
-  docs: AgentDocs | null
-  conventions: {
-    dispatchModel: 'TEA'
-    confirmationModel: 'runtime-mediated'
-    readSurfaces: readonly (
-      | 'state'
-      | 'query_dom'
-      | 'describe_visible_content'
-      | 'describe_context'
-    )[]
-  }
-  schemaHash: string
-}
-```
-
-### `LapStateRequest`
-
-```typescript
-export type LapStateRequest = { path?: string }
-```
-
-### `LapStateResponse`
-
-```typescript
-export type LapStateResponse = { state: unknown }
-```
-
-### `LapActionsResponse`
-
-```typescript
-export type LapActionsResponse = {
-  actions: Array<{
-    variant: string
-    /**
-     * Human-readable phrase from `@intent("…")`, or `null` when the
-     * variant has no `@intent` annotation. Callers that surface
-     * affordances to an LLM should treat `null` as "this action is
-     * undocumented" — neither synthesise a label from the variant name
-     * nor invent one. Pre-`@intent` variants would previously surface
-     * as `intent: "<variant>"` here, which made unannotated actions
-     * indistinguishable from properly-labelled ones; emitting `null`
-     * keeps the gap visible.
-     */
-    intent: string | null
-    requiresConfirm: boolean
-    /**
-     * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
-     * binding exists; the agent is the sole dispatcher. `'human-only'`
-     * variants never appear here (filtered before serialization).
-     */
-    dispatchMode: 'shared' | 'agent-only'
-    /**
-     * Where this affordance came from:
-     *   - `'binding'`           — a tagged event handler is currently
-     *     mounted in the rendered DOM.
-     *   - `'always-affordable'` — the app's `agentAffordances(state)`
-     *     hook listed it as available right now.
-     *   - `'schema'`            — neither of the above; the variant
-     *     is in the Msg union and annotated `@agentOnly`. The
-     *     `payloadHint` carries a synthesized example from the
-     *     compiler-derived field types — copy-paste-ready for
-     *     `send_message`. Bulk-edit operations land here.
-     */
-    source: 'binding' | 'always-affordable' | 'schema'
-    selectorHint: string | null
-    payloadHint: object | null
-    /**
-     * Whether the action can be dispatched right now. Omitted (treated as
-     * `true`) for reachable actions. `false` for a variant whose
-     * `@routeGated` predicate is currently falsy — it's surfaced (so the
-     * agent knows it exists and what unblocks it) rather than hidden.
-     * Pair with `unavailableReason`.
-     */
-    available?: boolean
-    /**
-     * Why an `available: false` action can't be dispatched now — from the
-     * `@routeGated` reason (its optional 2nd arg), or a generic fallback.
-     * Null/absent for available actions.
-     */
-    unavailableReason?: string | null
-    /** Cautionary text from `@warning` JSDoc, or null. */
-    warning: string | null
-    /** Concrete examples from `@example` JSDoc, in source order. */
-    examples: string[]
-    /**
-     * Effect kinds this variant emits, from `@emits("k1", "k2")`.
-     * Empty when not annotated.
-     */
-    emits: string[]
-    /**
-     * Per-field guidance lifted from `@should("…")` JSDoc on payload
-     * fields. Path is dot/bracket notation rooted at the payload (e.g.
-     * `"cells[].meta"`). Surfaces hints that would otherwise be buried
-     * inside the schema tree, so callers can read them alongside
-     * `examples` without diving into `description.messages.variants`.
-     */
-    fieldHints: Array<{ path: string; hint: string }>
-  }>
-}
-```
-
-### `LapMessageRequest`
-
-```typescript
-export type LapMessageRequest = {
-  msg: { type: string; [k: string]: unknown }
-  reason?: string
-  /**
-   * Backpressure contract for how long `/message` waits before returning:
-   * - `drained` (default): dispatch, then loop until the message queue is
-   *   idle for `drainQuietMs` ms or the 5s hard cap trips. Captures any
-   *   effect round-trips (http/delay/debounce) that feed back as messages.
-   * - `idle`: dispatch + flush + one microtask yield. Captures the
-   *   synchronous update cycle but not async effects.
-   * - `none`: dispatch and return without flushing. For high-throughput
-   *   fire-and-forget dispatch.
-   */
-  waitFor?: 'drained' | 'idle' | 'none'
-  /**
-   * Quiescence window when `waitFor === 'drained'`. Drain completes when
-   * no new update cycle fires for this many ms. Default 100ms — long
-   * enough for a localhost HTTP round-trip, short enough to be
-   * imperceptible. Ignored for `idle` / `none`.
-   */
-  drainQuietMs?: number
-  /**
-   * Hard cap on total wait time. When `waitFor === 'drained'`, this is
-   * the upper bound on how long the drain loop can run; if reached, the
-   * response carries `drain.timedOut: true` with partial results. For
-   * `pending-confirmation` messages, this is how long to wait for
-   * the user's confirm/reject. Default 5_000ms.
-   */
-  timeoutMs?: number
-  /**
-   * Include the full post-drain `stateAfter` snapshot in the response.
-   * Default `false` — the response carries `stateDiff` only and the
-   * caller applies it to the prior snapshot (from connect/observe). For
-   * apps with non-trivial state, the diff is orders of magnitude
-   * smaller than the full state, and resending the snapshot on every
-   * dispatch wastes bandwidth and (for LLM callers) context budget.
-   *
-   * Set `true` when the caller doesn't track state incrementally and
-   * wants the snapshot back. The legacy `confirmed` and `wait` paths
-   * always carry `stateAfter` because their flow is asynchronous and
-   * a diff would be ambiguous.
-   */
-  includeState?: boolean
-}
-```
-
-### `LapMessageRejectReason`
-
-```typescript
-export type LapMessageRejectReason =
-  | 'human-only'
-  | 'user-cancelled'
-  | 'timeout'
-  | 'invalid'
-  | 'schema-error'
-  | 'revoked'
-  | 'paused'
-```
-
-### `LapDrainMeta`
-
-Drain metadata attached to `dispatched` / `confirmed` responses.
-`effectsObserved` counts update-cycle commits (not individual effects) —
-it's a proxy for "how much activity happened during the drain window."
-`errors` surfaces sync throws from `onEffect` and unhandled rejections
-from effect handlers that fired during the drain window, so the LLM
-can see when an HTTP handler crashed silently.
-`warnings` surfaces non-blocking observations from the schema
-validator — typically `untyped-field` flags raised in strict mode
-when the agent provided a value for an `'unknown'`-typed field. The
-dispatch landed (we accepted the value) but the validator couldn't
-structurally check it, so the agent learns of the gap and can
-tighten the next try if needed. Lenient mode never emits warnings;
-the field is omitted in that case.
-
-```typescript
-export type LapDrainMeta = {
-  effectsObserved: number
-  durationMs: number
-  timedOut: boolean
-  errors: Array<{ kind: 'error' | 'unhandledrejection'; message: string; stack?: string }>
-  warnings?: Array<{ path: string; code: string; message: string }>
-}
-```
-
-### `LapMessageResponse`
-
-```typescript
-export type LapMessageResponse =
-  | {
-      status: 'dispatched'
-      /**
-       * Full post-drain state snapshot. Present only when the caller
-       * passed `includeState: true` in the request — by default,
-       * `stateDiff` is the only state-shaped field on the response
-       * because callers can apply the diff to the prior snapshot from
-       * `connect` / `observe`. See `LapMessageRequest.includeState`.
-       */
-      stateAfter?: unknown
-      /**
-       * Structural diff from pre-dispatch state to post-drain state,
-       * in JSON-Patch shape (RFC 6902 subset: `add`, `remove`,
-       * `replace`). Empty when the dispatch produced no observable
-       * state change. The default state surface for callers — apply
-       * incrementally to the snapshot from `connect`/`observe`.
-       */
-      stateDiff: import('./state-diff.js').StateDiff
-      actions: LapActionsResponse['actions']
-      drain: LapDrainMeta
-    }
-  | { status: 'pending-confirmation'; confirmId: string }
-  | {
-      /**
-       * The user approved a `pending-confirmation` message. `stateAfter`
-       * is the state snapshot captured when the approve was resolved;
-       * effects produced by the approved dispatch may still be in
-       * flight. The LLM should follow up with an `observe` call to
-       * pick up a drained view and fresh actions — by design the
-       * confirm path doesn't carry drain semantics because approval
-       * can arrive arbitrarily later than the original request.
-       */
-      status: 'confirmed'
-      stateAfter: unknown
-    }
-  | { status: 'rejected'; reason: LapMessageRejectReason; detail?: string }
-```
-
-### `LapConfirmResultRequest`
-
-```typescript
-export type LapConfirmResultRequest = { confirmId: string; timeoutMs?: number }
-```
-
-### `LapConfirmResultResponse`
-
-```typescript
-export type LapConfirmResultResponse =
-  | { status: 'confirmed'; stateAfter: unknown }
-  | { status: 'rejected'; reason: 'user-cancelled' | 'timeout' }
-  | { status: 'still-pending' }
-```
-
-### `LapNarrateRequest`
-
-Push narration prose into the activity feed without dispatching a
-Msg. The agent uses this for "I'm thinking…" / "About to do X
-because…" / "I noticed Y, going to investigate" — running commentary
-the user can read inline with agent actions.
-The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
-appends it to the per-tid recent-log buffer (visible to subsequent
-`describe_recent_actions` calls), AND pushes a `log-push` frame to
-the paired browser so the in-app activity feed renders it in real
-time. No client roundtrip — the agent gets `{ ok: true }` synchronously
-once the server has accepted the narration.
-
-```typescript
-export type LapNarrateRequest = {
-  text: string
-  /**
-   * Optional one-line label for the entry's `intent` field, e.g.
-   * "Thinking" / "Notice" / "Plan". Defaults to "Agent narrated"
-   * when omitted.
-   */
-  intent?: string
-}
-```
-
-### `LapNarrateResponse`
-
-```typescript
-export type LapNarrateResponse = { ok: true }
-```
-
-### `LapWaitRequest`
-
-```typescript
-export type LapWaitRequest = { path?: string; timeoutMs?: number }
-```
-
-### `LapWaitResponse`
-
-```typescript
-export type LapWaitResponse =
-  | { status: 'changed'; stateAfter: unknown }
-  | { status: 'timeout'; stateAfter: unknown }
-```
-
-### `LapQueryDomRequest`
-
-```typescript
-export type LapQueryDomRequest = { name: string; multiple?: boolean }
-```
-
-### `LapQueryDomResponse`
-
-```typescript
-export type LapQueryDomResponse = {
-  elements: Array<{ text: string; attrs: Record<string, string>; path: number[] }>
-}
-```
-
-### `OutlineNode`
-
-```typescript
-export type OutlineNode =
-  | { kind: 'heading'; level: number; text: string }
-  | { kind: 'text'; text: string }
-  | { kind: 'list'; items: OutlineNode[] }
-  | { kind: 'item'; text: string; children?: OutlineNode[] }
-  | { kind: 'button'; text: string; disabled: boolean; actionVariant: string | null }
-  | { kind: 'input'; label: string | null; value: string | null; type: string }
-  | { kind: 'link'; text: string; href: string }
-```
-
-### `LapDescribeVisibleResponse`
-
-```typescript
-export type LapDescribeVisibleResponse = {
-  outline: OutlineNode[]
-  /**
-   * Where the outline came from:
-   *   - `'data-agent'`: the app has `data-agent`-tagged zones and the
-   *     walker scoped the outline to them. The author chose what to
-   *     surface; trust the result.
-   *   - `'fallback'`: no `data-agent` tags exist; the walker fell back
-   *     to a depth- and count-limited semantic walk of the entire
-   *     root element. Useful for first-pass dogfood targets that
-   *     haven't tagged their views.
-   *   - `'truncated'`: same as `'fallback'` but the cap (200 nodes)
-   *     was hit before the walk finished. The visible content beyond
-   *     that point is not represented; reach for `query_dom` or state
-   *     reads if you need more.
-   */
-  source: 'data-agent' | 'fallback' | 'truncated'
-}
-```
-
-### `AgentDocs`
-
-```typescript
-export type AgentDocs = {
-  purpose: string
-  overview?: string
-  cautions?: string[]
-  /**
-   * Free-form idiomatic-usage examples authored by the app: typical
-   * sequences of dispatches the LLM should know about, like "to
-   * delete a saved matrix: dispatch Confirm/Ask first, then on
-   * approve dispatch Cloud/Delete." Each entry is one example;
-   * order is up to the author.
-   */
-  examples?: string[]
-}
-```
-
-### `AgentContext`
-
-```typescript
-export type AgentContext = {
-  summary: string
-  hints?: string[]
-  cautions?: string[]
-}
-```
-
-### `LapContextResponse`
-
-```typescript
-export type LapContextResponse = { context: AgentContext }
-```
-
-### `LapObserveResponse`
-
-```typescript
-export type LapObserveResponse = {
-  state: unknown
-  actions: LapActionsResponse['actions']
-  description: LapDescribeResponse
-  context: AgentContext | null
-}
-```
-
-### `LapEndpointMap`
-
-```typescript
-export type LapEndpointMap = {
-  '/lap/v1/describe': { req: null; res: LapDescribeResponse }
-  '/lap/v1/state': { req: LapStateRequest; res: LapStateResponse }
-  '/lap/v1/actions': { req: null; res: LapActionsResponse }
-  '/lap/v1/message': { req: LapMessageRequest; res: LapMessageResponse }
-  '/lap/v1/confirm-result': { req: LapConfirmResultRequest; res: LapConfirmResultResponse }
-  '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
-  '/lap/v1/narrate': { req: LapNarrateRequest; res: LapNarrateResponse }
-  '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
-  '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
-  '/lap/v1/context': { req: null; res: LapContextResponse }
-  '/lap/v1/observe': { req: null; res: LapObserveResponse }
-}
-```
-
-### `LapPath`
-
-```typescript
-export type LapPath = keyof LapEndpointMap
-```
-
-### `LapRequest`
-
-```typescript
-export type LapRequest<P extends LapPath> = LapEndpointMap[P]['req']
-```
-
-### `LapResponse`
-
-```typescript
-export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
-```
-
-### `LogKind`
-
-```typescript
-export type LogKind =
-  | 'proposed'
-  | 'dispatched'
-  | 'confirmed'
-  | 'rejected'
-  | 'blocked'
-  | 'read'
-  | 'error'
-  /**
-   * The agent emitted prose into the activity feed via `/lap/v1/narrate`
-   * — narration like "thinking about your request…", "I'm about to add
-   * an alternative because…", or any out-of-band commentary that
-   * doesn't fit a `dispatched` / `read` lifecycle. Lets the agent talk
-   * to the user inside the app without inventing a fake `@agentOnly`
-   * Msg type.
-   */
-  | 'narrate'
-```
-
-### `LogEntry`
-
-```typescript
-export type LogEntry = {
-  id: string
-  at: number
-  kind: LogKind
-  variant?: string
-  intent?: string
-  detail?: string
-  /**
-   * Structural diff from pre-dispatch state to post-drain state, in
-   * JSON-Patch shape. Populated only for `kind: 'dispatched'` entries
-   * — read entries (get_state / list_actions / observe / …) don't
-   * mutate state, and an empty diff would just be noise. Lets the
-   * agent reconstruct what each past action did without re-fetching
-   * state snapshots.
-   */
-  stateDiff?: import('./state-diff.js').StateDiff
-}
-```
-
-### `HelloFrame`
-
-```typescript
-export type HelloFrame = {
-  t: 'hello'
-  appName: string
-  appVersion: string
-  msgSchema: Record<string, MessageSchemaEntry>
-  stateSchema: object
-  affordancesSample: object[]
-  docs: AgentDocs | null
-  schemaHash: string
-}
-```
-
-### `RpcReplyFrame`
-
-```typescript
-export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
-```
-
-### `RpcErrorFrame`
-
 ```typescript
-export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
+export type SessionsResponse = { sessions: AgentSession[] }
 ```
 
-### `ConfirmResolvedFrame`
+### `StateDiff`
 
 ```typescript
-export type ConfirmResolvedFrame = {
-  t: 'confirm-resolved'
-  confirmId: string
-  outcome: 'confirmed' | 'user-cancelled'
-  stateAfter?: unknown
-}
+export type StateDiff = JsonPatchOp[]
 ```
 
 ### `StateUpdateFrame`
 
-```typescript
-export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: unknown }
-```
-
-### `LogAppendFrame`
-
-```typescript
-export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
-```
-
-### `ClientFrame`
+Browser → server: a watched sub-path changed. `id` correlates to the
+server `watch` frame that armed it (a specific `/wait` long-poll);
+the browser only emits these for currently-armed watches, so idle
+sessions cost nothing per commit. `path` echoes the watched pointer
+for debugging; `stateAfter` is the full redacted+encoded snapshot.
 
 ```typescript
-export type ClientFrame =
-  | HelloFrame
-  | RpcReplyFrame
-  | RpcErrorFrame
-  | ConfirmResolvedFrame
-  | StateUpdateFrame
-  | LogAppendFrame
-```
-
-### `RpcFrame`
-
-```typescript
-export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
-```
-
-### `RevokedFrame`
-
-```typescript
-export type RevokedFrame = { t: 'revoked' }
-```
-
-### `ActiveFrame`
-
-```typescript
-export type ActiveFrame = { t: 'active' }
-```
-
-### `LogPushFrame`
-
-Server-pushed log entry. Used today by the `narrate` LAP method:
-the agent calls `/lap/v1/narrate { text }`, the server synthesizes
-a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
-runtime so the in-app activity feed renders the narration in real
-time. Distinct from the browser-emitted `log-append` frame:
-`log-append` is browser → server (rpc-derived audit), `log-push`
-is server → browser (server-originated entries, no echo).
-
-```typescript
-export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
-```
-
-### `ServerFrame`
-
-```typescript
-export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame | LogPushFrame
-```
-
-### `AgentToken`
-
-```typescript
-export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
-```
-
-### `TokenStatus`
-
-```typescript
-export type TokenStatus =
-  | 'awaiting-ws'
-  | 'awaiting-claude'
-  | 'active'
-  | 'pending-resume'
-  | 'revoked'
+export type StateUpdateFrame = { t: 'state-update'; id?: string; path: string; stateAfter: unknown }
 ```
 
 ### `TokenRecord`
@@ -2325,151 +2160,124 @@ export type TokenRecord = {
 }
 ```
 
-### `AgentSession`
+### `TokenStatus`
 
 ```typescript
-export type AgentSession = {
-  tid: string
-  label: string
-  status: 'active' | 'pending-resume' | 'revoked'
-  createdAt: number
-  lastSeenAt: number
-}
+export type TokenStatus =
+  | 'awaiting-ws'
+  | 'awaiting-claude'
+  | 'active'
+  | 'pending-resume'
+  | 'revoked'
 ```
 
-### `MintRequest`
+### `UnwatchFrame`
+
+Server → browser: disarm a previously-armed watch (`id`).
 
 ```typescript
-export type MintRequest = Record<string, never>
+export type UnwatchFrame = { t: 'unwatch'; id: string }
 ```
 
-### `MintResponse`
+### `VerifyResult`
+
+Result of looking up a presented token. The `expired` reason is
+returned by the verify path when the token's record exists but its
+hard-expiry has passed; `unknown` covers both "no record" and
+"wrong hash" so a probe-by-hash leak surface is uniform.
 
 ```typescript
-export type MintResponse = {
-  token: AgentToken
-  tid: string
-  wsUrl: string
-  lapUrl: string
-  expiresAt: number
-}
+export type VerifyResult =
+  | { kind: 'ok'; tid: string }
+  | { kind: 'invalid'; reason: 'malformed' | 'unknown' | 'expired' }
 ```
 
-### `ResumeListRequest`
+### `WatchFrame`
+
+Server → browser: arm a state watch. Sent when a `/wait` long-poll
+begins. The browser resolves `path` (a JSON pointer; `undefined` /
+`''` watches the whole state) against each commit and emits a
+`state-update` carrying this `id` only when the resolved value
+changes. This makes the per-commit broadcast subscription-driven —
+an idle session with no armed watch ships nothing.
 
 ```typescript
-export type ResumeListRequest = { tids: string[] }
-```
-
-### `ResumeListResponse`
-
-```typescript
-export type ResumeListResponse = { sessions: AgentSession[] }
-```
-
-### `ResumeClaimRequest`
-
-```typescript
-export type ResumeClaimRequest = { tid: string }
-```
-
-### `ResumeClaimResponse`
-
-```typescript
-export type ResumeClaimResponse = { token: AgentToken; wsUrl: string }
-```
-
-### `RevokeRequest`
-
-```typescript
-export type RevokeRequest = { tid: string }
-```
-
-### `RevokeResponse`
-
-```typescript
-export type RevokeResponse = { status: 'revoked' }
-```
-
-### `SessionsResponse`
-
-```typescript
-export type SessionsResponse = { sessions: AgentSession[] }
-```
-
-### `AuditEvent`
-
-```typescript
-export type AuditEvent =
-  | 'mint'
-  | 'claim'
-  | 'resume'
-  | 'revoke'
-  | 'lap-call'
-  | 'msg-dispatched'
-  | 'msg-blocked'
-  | 'confirm-proposed'
-  | 'confirm-approved'
-  | 'confirm-rejected'
-  | 'rate-limited'
-  | 'auth-failed'
-```
-
-### `AuditEntry`
-
-```typescript
-export type AuditEntry = {
-  at: number
-  tid: string | null
-  uid: string | null
-  event: AuditEvent
-  detail: object
-}
+export type WatchFrame = { t: 'watch'; id: string; path?: string }
 ```
 
 ## Interfaces
 
-### `TokenStore`
-
-Append-only, read-friendly storage for token records.
-Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
-value) on every authenticated request. The `tid` index is kept for
-the resume / revoke / sessions surfaces — those operate on session
-IDs the user can see and copy.
+### `AgentCodec`
 
 ```typescript
-export interface TokenStore {
-  create(record: TokenRecord): Promise<void>
-  findByTid(tid: string): Promise<TokenRecord | null>
+export interface AgentCodec<TWire = unknown, TRuntime = unknown> {
+  /** Stable identifier used as the value of the `__codec` tag. */
+  readonly name: string
+  /** Convert a runtime value to its wire representation. */
+  encode(value: TRuntime): TWire
+  /** Convert a wire representation back to the runtime value. */
+  decode(wire: TWire): TRuntime
   /**
-   * Look up a record by the SHA-256 hash of its bearer token. Returns
-   * `null` when the hash isn't in the store (the typical "this token
-   * isn't ours / has been revoked / never existed" case).
+   * Predicate identifying runtime values this codec should handle. The
+   * universal encoder calls this on every value it walks; the first
+   * codec to return `true` claims the value.
    */
-  findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
-  listByIdentity(uid: string): Promise<TokenRecord[]>
-  touch(tid: string, now: number): Promise<void>
-  markPendingResume(tid: string, until: number): Promise<void>
-  /** Transition to awaiting-claude: browser WS is connected, waiting for Claude's first call. */
-  markAwaitingClaude(tid: string, now: number): Promise<void>
-  markActive(tid: string, label: string, now: number): Promise<void>
-  revoke(tid: string): Promise<void>
-  /**
-   * Replace the bearer token's hash and bump expiry. Used by the
-   * resume-claim flow: the old token is invalidated (its hash is no
-   * longer indexed) and a freshly-minted opaque token takes its
-   * place. The `tid` stays stable so existing audit / pairing state
-   * carries over.
-   */
-  rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
+  matchesRuntime(value: unknown): boolean
 }
 ```
 
-### `RateLimiter`
+### `McpForwardedToolDescriptor`
 
 ```typescript
-export interface RateLimiter {
-  check(key: string, bucket: 'token' | 'identity'): Promise<RateLimitResult>
+export interface McpForwardedToolDescriptor {
+  kind: 'forward'
+  name: string
+  description: string
+  schema: z.ZodObject<z.ZodRawShape>
+  /** LAP endpoint path relative to the base path, e.g. '/observe'. */
+  lapPath: string
+}
+```
+
+### `McpMetaToolDescriptor`
+
+```typescript
+export interface McpMetaToolDescriptor {
+  kind: 'meta'
+  name: string
+  description: string
+  schema: z.ZodObject<z.ZodRawShape>
+}
+```
+
+### `MinimalDurableObjectId`
+
+```typescript
+export interface MinimalDurableObjectId {
+  // Opaque, but DO ids are passed back into `namespace.get()`.
+  readonly name?: string
+}
+```
+
+### `MinimalDurableObjectNamespace`
+
+Minimal DurableObjectNamespace surface we need — `idFromName` +
+`get` returning a `Stub` with `fetch(req)`. Kept structural so we
+don't depend on `@cloudflare/workers-types` (the user's project has
+them; we shouldn't duplicate).
+
+```typescript
+export interface MinimalDurableObjectNamespace {
+  idFromName(name: string): MinimalDurableObjectId
+  get(id: MinimalDurableObjectId): MinimalDurableObjectStub
+}
+```
+
+### `MinimalDurableObjectStub`
+
+```typescript
+export interface MinimalDurableObjectStub {
+  fetch(req: Request): Promise<Response>
 }
 ```
 
@@ -2549,12 +2357,8 @@ export interface PairingRegistry {
    * `./rpc.ts::rpc` for the full contract.
    */
   rpc(tid: string, tool: string, args: unknown, opts?: RpcOptions): Promise<unknown>
-  /** See `./rpc.ts::waitForConfirm`. */
-  waitForConfirm(
-    tid: string,
-    confirmId: string,
-    timeoutMs: number,
-  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+  /** See `./rpc.ts::waitForConfirm`. Three-way: confirmed | user-cancelled | timeout. */
+  waitForConfirm(tid: string, confirmId: string, timeoutMs: number): Promise<ConfirmWaitResult>
   /** See `./rpc.ts::waitForChange`. */
   waitForChange(
     tid: string,
@@ -2564,113 +2368,59 @@ export interface PairingRegistry {
 }
 ```
 
-### `MinimalDurableObjectNamespace`
-
-Minimal DurableObjectNamespace surface we need — `idFromName` +
-`get` returning a `Stub` with `fetch(req)`. Kept structural so we
-don't depend on `@cloudflare/workers-types` (the user's project has
-them; we shouldn't duplicate).
+### `RateLimiter`
 
 ```typescript
-export interface MinimalDurableObjectNamespace {
-  idFromName(name: string): MinimalDurableObjectId
-  get(id: MinimalDurableObjectId): MinimalDurableObjectStub
+export interface RateLimiter {
+  check(key: string, bucket: 'token' | 'identity'): Promise<RateLimitResult>
 }
 ```
 
-### `MinimalDurableObjectId`
+### `TokenStore`
+
+Append-only, read-friendly storage for token records.
+Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
+value) on every authenticated request. The `tid` index is kept for
+the resume / revoke / sessions surfaces — those operate on session
+IDs the user can see and copy.
 
 ```typescript
-export interface MinimalDurableObjectId {
-  // Opaque, but DO ids are passed back into `namespace.get()`.
-  readonly name?: string
-}
-```
-
-### `MinimalDurableObjectStub`
-
-```typescript
-export interface MinimalDurableObjectStub {
-  fetch(req: Request): Promise<Response>
-}
-```
-
-### `AgentCodec`
-
-```typescript
-export interface AgentCodec<TWire = unknown, TRuntime = unknown> {
-  /** Stable identifier used as the value of the `__codec` tag. */
-  readonly name: string
-  /** Convert a runtime value to its wire representation. */
-  encode(value: TRuntime): TWire
-  /** Convert a wire representation back to the runtime value. */
-  decode(wire: TWire): TRuntime
-  /**
-   * Predicate identifying runtime values this codec should handle. The
-   * universal encoder calls this on every value it walks; the first
-   * codec to return `true` claims the value.
-   */
-  matchesRuntime(value: unknown): boolean
-}
-```
-
-## Classes
-
-### `InMemoryTokenStore`
-
-```typescript
-class InMemoryTokenStore implements TokenStore {
-  byTid
-  tidByTokenHash
+export interface TokenStore {
   create(record: TokenRecord): Promise<void>
   findByTid(tid: string): Promise<TokenRecord | null>
+  /**
+   * Look up a record by the SHA-256 hash of its bearer token. Returns
+   * `null` when the hash isn't in the store (the typical "this token
+   * isn't ours / has been revoked / never existed" case).
+   */
   findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
   listByIdentity(uid: string): Promise<TokenRecord[]>
   touch(tid: string, now: number): Promise<void>
   markPendingResume(tid: string, until: number): Promise<void>
+  /** Transition to awaiting-claude: browser WS is connected, waiting for Claude's first call. */
   markAwaitingClaude(tid: string, now: number): Promise<void>
   markActive(tid: string, label: string, now: number): Promise<void>
   revoke(tid: string): Promise<void>
+  /**
+   * Replace the bearer token's hash and bump expiry. Used by the
+   * resume-claim flow: the old token is invalidated (its hash is no
+   * longer indexed) and a freshly-minted opaque token takes its
+   * place. The `tid` stays stable so existing audit / pairing state
+   * carries over.
+   */
   rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
+  /**
+   * Evict records whose hard expiry lapsed more than `retentionMs` ago —
+   * bounding memory for long-lived, high-churn deployments (every mint
+   * creates a record; nothing removed them before). Optional: stores
+   * backed by a database with row-level TTL manage this themselves and
+   * can leave it unimplemented. Returns the number of records evicted.
+   */
+  sweepExpired?(now: number, retentionMs: number): Promise<number>
 }
 ```
 
-### `InMemoryPairingRegistry`
-
-```typescript
-class InMemoryPairingRegistry implements PairingRegistry {
-  pairings
-  onLogAppend: ((tid: string, entry: LogEntry) => void) | null
-  recentLog
-  constructor(
-    opts: {
-      onLogAppend?: (tid: string, entry: LogEntry) => void
-    } = {},
-  )
-  getRecentLog(tid: string, n: number): LogEntry[]
-  register(tid: string, conn: PairingConnection): void
-  unregister(tid: string): void
-  isPaired(tid: string): boolean
-  getHello(tid: string): HelloFrame | null
-  send(tid: string, frame: ServerFrame): void
-  subscribe(tid: string, handler: FrameSubscriber): () => void
-  onClose(tid: string, handler: () => void): () => void
-  dispatch(tid: string, frame: ClientFrame): void
-  rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown>
-  waitForConfirm(
-    tid: string,
-    confirmId: string,
-    timeoutMs: number,
-  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
-  waitForChange(
-    tid: string,
-    path: string | undefined,
-    timeoutMs: number,
-  ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
-  notify(tid: string, frame: ServerFrame): void
-  handleClose(tid: string): void
-}
-```
+## Classes
 
 ### `AgentPairingDurableObject`
 
@@ -2705,16 +2455,78 @@ class CodecRegistry {
 }
 ```
 
-## Constants
-
-### `WsPairingRegistry`
-
-Back-compat alias for the prior class name. New code should use
-`InMemoryPairingRegistry`. Removed in a future major.
-@deprecated Use `InMemoryPairingRegistry` directly.
+### `InMemoryPairingRegistry`
 
 ```typescript
-const WsPairingRegistry
+class InMemoryPairingRegistry implements PairingRegistry {
+  pairings
+  onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  recentLog
+  constructor(
+    opts: {
+      onLogAppend?: (tid: string, entry: LogEntry) => void
+    } = {},
+  )
+  getRecentLog(tid: string, n: number): LogEntry[]
+  register(tid: string, conn: PairingConnection): void
+  unregister(tid: string): void
+  isPaired(tid: string): boolean
+  getHello(tid: string): HelloFrame | null
+  send(tid: string, frame: ServerFrame): void
+  subscribe(tid: string, handler: FrameSubscriber): () => void
+  onClose(tid: string, handler: () => void): () => void
+  dispatch(tid: string, frame: ClientFrame): void
+  rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown>
+  waitForConfirm(tid: string, confirmId: string, timeoutMs: number): Promise<ConfirmWaitResult>
+  waitForChange(
+    tid: string,
+    path: string | undefined,
+    timeoutMs: number,
+  ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+  notify(tid: string, frame: ServerFrame): void
+  handleClose(tid: string, conn?: PairingConnection): void
+}
+```
+
+### `InMemoryTokenStore`
+
+```typescript
+class InMemoryTokenStore implements TokenStore {
+  byTid
+  tidByTokenHash
+  create(record: TokenRecord): Promise<void>
+  findByTid(tid: string): Promise<TokenRecord | null>
+  findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
+  listByIdentity(uid: string): Promise<TokenRecord[]>
+  touch(tid: string, now: number): Promise<void>
+  markPendingResume(tid: string, until: number): Promise<void>
+  markAwaitingClaude(tid: string, now: number): Promise<void>
+  markActive(tid: string, label: string, now: number): Promise<void>
+  revoke(tid: string): Promise<void>
+  rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
+  sweepExpired(now: number, retentionMs: number): Promise<number>
+}
+```
+
+## Constants
+
+### `FORWARDED_TOOL_DESCRIPTORS`
+
+```typescript
+const FORWARDED_TOOL_DESCRIPTORS: McpForwardedToolDescriptor[]
+```
+
+### `LAP_VERSION`
+
+LAP wire-protocol version. Bumped on a breaking change to frame
+shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
+and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
+ends can detect a mismatch (see the version check in the pairing
+registry, which logs — rather than hard-fails — an unknown version so
+a newer client against an older server degrades loudly, not silently).
+
+```typescript
+const LAP_VERSION
 ```
 
 ### `WIRE_TAG`

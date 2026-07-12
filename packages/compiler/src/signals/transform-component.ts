@@ -22,7 +22,8 @@ import {
   type LowerBail,
 } from './transform-view.js'
 import { singleRoot, type Roots } from './extract-deps.js'
-import { applyTextEdits, type TextEdit } from './apply-edits.js'
+import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
+import type { SourceMap } from 'magic-string'
 import { perfDiagnosticsForFile } from './perf-diagnostics.js'
 import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
@@ -78,8 +79,58 @@ const RUNTIME_HELPERS = [
   'signalBranch',
   'signalForeign',
 ]
+const RUNTIME_HELPER_SET = new Set(RUNTIME_HELPERS)
 
 type Edit = TextEdit
+
+/** The runtime helpers ACTUALLY emitted by the transform, collected by parsing the
+ * edit replacement texts (compiler-generated code) and walking for calls to a known
+ * helper. AST-based — so a helper name appearing in a user comment or string literal
+ * (which lives in the untouched source, never in an edit text) is NOT a false match,
+ * unlike the old `\bhelper\(` regex over the whole output. */
+function collectEmittedHelpers(edits: readonly Edit[]): Set<string> {
+  const found = new Set<string>()
+  for (const e of edits) {
+    if (!e.text.includes('(')) continue // no call — nothing to collect (metadata, `batch,`)
+    const probe = ts.createSourceFile(
+      '__probe.tsx',
+      `const __x = [${e.text}]`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    )
+    const walk = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        RUNTIME_HELPER_SET.has(n.expression.text)
+      ) {
+        found.add(n.expression.text)
+      }
+      n.forEachChild(walk)
+    }
+    walk(probe)
+  }
+  return found
+}
+
+/** Local binding names already imported from '@llui/dom' in this file — so the
+ * injected import doesn't re-declare one the user already imported (a duplicate
+ * binding is a SyntaxError). */
+function domImportedNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>()
+  for (const st of sf.statements) {
+    if (
+      ts.isImportDeclaration(st) &&
+      ts.isStringLiteral(st.moduleSpecifier) &&
+      st.moduleSpecifier.text === '@llui/dom'
+    ) {
+      const nb = st.importClause?.namedBindings
+      if (nb && ts.isNamedImports(nb)) for (const spec of nb.elements) out.add(spec.name.text)
+    }
+  }
+  return out
+}
 
 /** The `state` (and any extra) root names a signal view destructures from its
  * bag parameter, or null if this isn't a signal view. */
@@ -137,14 +188,38 @@ function returnedArray(
   return body && ts.isArrayLiteralExpression(body) ? body : null
 }
 
+/** Result of {@link transformSignalComponentSourceWithMap}: the rewritten code and
+ * a source map (null when the file had no signal component and was returned as-is). */
+export interface SignalTransformResult {
+  code: string
+  map: SourceMap | null
+}
+
 /**
  * Rewrite signal `view`s in a source file and inject the runtime import.
  * Returns the source unchanged if it contains no signal components.
+ *
+ * String-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
+ * — kept for the many callers (mcp, dom codegen tests) that only need the code.
  */
 export function transformSignalComponentSource(
   source: string,
   opts: SignalTransformOptions = {},
 ): string {
+  return transformSignalComponentSourceWithMap(source, opts).code
+}
+
+/**
+ * The map-returning form. Every splice (view rewrites, metadata, `batch,` bag
+ * injection) plus the injected runtime import compose through ONE MagicString
+ * instance, so the returned {@link SourceMap} is coherent. The vite-plugin threads
+ * this map (and can compose the lint-autofix pass, which shares the same
+ * {@link applyEditsWithMap} splicer) in a later stage.
+ */
+export function transformSignalComponentSourceWithMap(
+  source: string,
+  opts: SignalTransformOptions = {},
+): SignalTransformResult {
   const sf = ts.createSourceFile('m.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const edits: Edit[] = []
   let transformedAny = false
@@ -244,6 +319,17 @@ export function transformSignalComponentSource(
     setLowerBailHook(userBailHook)
   }
 
+  // A component is "covered" when it sits inside a view-array rewrite already
+  // pushed for an OUTER component — its source is emitted VERBATIM inside that
+  // outer edit, so lowering it separately would push an edit overlapping the outer
+  // one (applyTextEdits assumes non-overlap → corrupt output). Pass-1 gets the same
+  // containment discipline pass 2 already has: process outermost-first (the visitor
+  // reaches the outer component before descending into the inner), and skip any
+  // component already covered by a pushed edit. (Insertions — metadata / `batch,` —
+  // are zero-width, so `start < end` excludes them.)
+  const coveredByEdit = (node: ts.Node): boolean =>
+    edits.some((e) => e.start < e.end && e.start <= node.getStart(sf) && node.getEnd() <= e.end)
+
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
@@ -252,6 +338,7 @@ export function transformSignalComponentSource(
       node.arguments[0] &&
       ts.isObjectLiteralExpression(node.arguments[0])
     ) {
+      if (coveredByEdit(node)) return // nested inside an already-lowered outer view
       for (const prop of node.arguments[0].properties) {
         if (
           ts.isPropertyAssignment(prop) &&
@@ -348,15 +435,17 @@ export function transformSignalComponentSource(
     setEachLoweredHook(null)
   }
 
-  if (!transformedAny) return source
+  if (!transformedAny) return { code: source, map: null }
 
-  // apply edits back-to-front so offsets stay valid
-  let out = applyTextEdits(source, edits)
+  // inject import for the helpers actually EMITTED (collected from the edit texts,
+  // AST-based), minus any the file already imports from '@llui/dom' (avoids a
+  // duplicate-binding SyntaxError and comment/string false positives).
+  const emitted = collectEmittedHelpers(edits)
+  const alreadyImported = domImportedNames(sf)
+  const used = RUNTIME_HELPERS.filter((h) => emitted.has(h) && !alreadyImported.has(h))
+  const prepend = used.length > 0 ? `import { ${used.join(', ')} } from '@llui/dom'\n` : undefined
 
-  // inject import for the helpers actually used
-  const used = RUNTIME_HELPERS.filter((h) => new RegExp(`\\b${h}\\(`).test(out))
-  if (used.length > 0) {
-    out = `import { ${used.join(', ')} } from '@llui/dom'\n${out}`
-  }
-  return out
+  // Every edit + the import prepend compose through one MagicString instance → a
+  // coherent source map.
+  return applyEditsWithMap(source, edits, { fileName: opts.fileName ?? 'm.tsx', prepend })
 }

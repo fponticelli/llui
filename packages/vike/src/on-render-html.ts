@@ -1,35 +1,20 @@
 import { renderNodes, serializeNodes, collectHeadSink, mergeStaticHead, HEAD_SINK } from '@llui/dom'
-import type { Renderable, CollectedHead } from '@llui/dom'
+import type { CollectedHead } from '@llui/dom'
 import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
+import {
+  resolveLayoutChain as resolveChain,
+  buildManifest,
+  seedFor,
+  type AnyLayer,
+  type LayoutChain,
+  type LayoutOption,
+  type HydrationManifest,
+} from './chain.js'
+import { toDocumentHtml, type DangerousHtml } from './document-html.js'
 
-/**
- * A type-erased signal component as the adapter sees it. Layouts and pages are
- * `SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter handles them
- * uniformly with the type params erased — the runtime doesn't use them. Unlike
- * the legacy `ComponentDef`, the signal `init()` takes NO data argument, so
- * per-layer data flows in as a seed-STATE override (see `renderPage`).
- */
-/**
- * Type-erased layer def at the adapter boundary. Declared with METHOD syntax and
- * a single `unknown` view-bag param so a concrete `SignalComponentDef<S,M,E>`
- * assigns in for ANY S/M/E — `SignalComponentDef<unknown,unknown,unknown>` can't
- * be that erasure, because `view(bag: ComponentBag<S,M>)` couples covariant
- * `state` with contravariant `send` and neither variance direction admits a
- * heterogeneous chain. This interface is itself assignable to
- * `SignalComponentDef<unknown,unknown,unknown>`, so `renderNodes(layer)` type-
- * checks. Mirrors the legacy `AnyComponentDef`.
- */
-export interface AnyLayer {
-  readonly name?: string
-  init(): unknown
-  update(state: unknown, msg: unknown): unknown
-  view(bag: unknown): Renderable
-  onEffect?(effect: unknown, api: unknown): void | (() => void)
-}
-
-type LayoutChain = ReadonlyArray<AnyLayer>
+export type { AnyLayer } from './chain.js'
 
 /**
  * Page context shape as seen by `@llui/vike`'s server hook. `Page` and
@@ -103,8 +88,8 @@ export interface DocumentContext {
 }
 
 export interface RenderHtmlResult {
-  documentHtml: string | { _escaped: string }
-  pageContext: { lluiState: unknown }
+  documentHtml: DangerousHtml
+  pageContext: { lluiState: HydrationManifest }
 }
 
 const DEFAULT_DOCUMENT = ({
@@ -144,10 +129,10 @@ export interface RenderHtmlOptions {
    *   enables per-route chains (e.g. reading Vike's `urlPathname`).
    *
    * The server renders the full chain as one composed HTML tree. Client
-   * hydration reads the matching envelope and reconstructs the chain
+   * hydration reads the matching manifest and reconstructs the chain
    * layer-by-layer.
    */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: ServerLayoutResolverContext) => LayoutChain)
+  Layout?: LayoutOption<ServerLayoutResolverContext>
 
   /**
    * Factory that returns the `DomEnv` backing SSR render. Call with
@@ -166,22 +151,6 @@ export interface RenderHtmlOptions {
    * ```
    */
   domEnv: () => DomEnv | Promise<DomEnv>
-}
-
-function resolveLayoutChain(
-  layoutOption: RenderHtmlOptions['Layout'],
-  pageContext: PageContext,
-): LayoutChain {
-  if (!layoutOption) return []
-  if (typeof layoutOption === 'function') {
-    // The resolver only runs against a live page render, which always populates
-    // `urlPathname`/`routeParams`. Our base type marks them optional (test/SSR
-    // construction sites needn't supply them), so narrow to the resolver's
-    // required view at this single boundary.
-    return layoutOption(pageContext as ServerLayoutResolverContext) ?? []
-  }
-  if (Array.isArray(layoutOption)) return layoutOption
-  return [layoutOption as AnyLayer]
 }
 
 /**
@@ -228,28 +197,18 @@ export function createOnRenderHtml(
 }
 
 /**
- * Hydration envelope emitted into `window.__LLUI_STATE__`. Chain-aware
- * by default — every layer (layouts + page) is represented by its own
- * entry, keyed by component name so server/client mismatches fail loud.
- */
-interface HydrationEnvelope {
-  layouts: Array<{ name: string; state: unknown }>
-  page: { name: string; state: unknown }
-}
-
-/**
- * Serialize the hydration envelope for safe embedding inside an inline
- * `<script>` tag. `JSON.stringify` alone is NOT script-safe: a state string
+ * Serialize the hydration manifest for safe embedding inside an inline
+ * `<script>` tag. `JSON.stringify` alone is NOT script-safe: a value
  * containing `</script>` (or `<!--`, `<script`) breaks out of the script
  * element, and the JSON-legal raw line separators U+2028 / U+2029 are invalid
  * inside a JS string literal. Escaping `<` to its `<` form neutralizes
- * every HTML-sensitive sequence (`</script>`, `<!--`, `<script`) while
- * remaining valid JSON, since `<` never appears in JSON syntax outside string
- * contents. The document template is trusted; the serialized STATE is data and
- * must be treated as untrusted.
+ * every HTML-sensitive sequence while remaining valid JSON, since `<` never
+ * appears in JSON syntax outside string contents. The manifest carries only
+ * layer names (see chain.ts) — no state — but a component name is still data
+ * and is escaped defensively.
  */
-function serializeStateForScript(envelope: HydrationEnvelope): string {
-  return JSON.stringify(envelope)
+function serializeManifestForScript(manifest: HydrationManifest): string {
+  return JSON.stringify(manifest)
     .replace(/</g, '\\u003c')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029')
@@ -261,7 +220,7 @@ async function renderPage(
 ): Promise<RenderHtmlResult> {
   const env = await options.domEnv()
 
-  const layoutChain = resolveLayoutChain(options.Layout, pageContext)
+  const layoutChain = resolveChain(options.Layout, pageContext as ServerLayoutResolverContext)
   const layoutData = pageContext.lluiLayoutData ?? []
 
   // Full chain: every layout, then the page. Always at least one entry
@@ -269,13 +228,13 @@ async function renderPage(
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
   const chainData: readonly unknown[] = [...layoutData, pageContext.data]
 
-  const { html, envelope, collectedHead } = _renderChain(chain, chainData, env)
+  const { html, manifest, collectedHead } = _renderChain(chain, chainData, env)
 
   const document = options.document ?? DEFAULT_DOCUMENT
   // Static +Head.ts head, with component head merged in (components override
   // colliding title/meta so the document never carries two <title>s).
   const head = mergeStaticHead(pageContext.head ?? '', collectedHead)
-  const state = serializeStateForScript(envelope)
+  const state = serializeManifestForScript(manifest)
   const documentHtml = document({
     html,
     state,
@@ -286,18 +245,11 @@ async function renderPage(
   })
 
   return {
-    // Vike's dangerouslySkipEscape format — the document template is
-    // trusted (authored by the developer, not user input)
-    documentHtml: { _escaped: documentHtml },
-    pageContext: { lluiState: envelope },
+    // The document template is trusted (authored by the developer, not user
+    // input); mark it already-escaped via Vike's public `dangerouslySkipEscape`.
+    documentHtml: await toDocumentHtml(documentHtml),
+    pageContext: { lluiState: manifest },
   }
-}
-
-/** Resolve a layer's seed state. In the signal runtime `init()` takes no data,
- * so a present data slice IS the seed state; an absent slice falls back to the
- * layer's own `init()` (renderNodes does this when given `undefined`). */
-function seedFor(data: unknown): unknown | undefined {
-  return data === undefined ? undefined : data
 }
 
 /**
@@ -314,7 +266,7 @@ export function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
   env: DomEnv,
-): { html: string; envelope: HydrationEnvelope; collectedHead: CollectedHead } {
+): { html: string; manifest: HydrationManifest; collectedHead: CollectedHead } {
   if (chain.length === 0) {
     throw new Error('[llui/vike] renderChain called with empty chain')
   }
@@ -329,108 +281,84 @@ export function _renderChain(
   const headSink = collectHeadSink()
   const rootContexts: ReadonlyMap<symbol, unknown> = new Map([[HEAD_SINK.id, headSink]])
 
-  const envelopeLayouts: HydrationEnvelope['layouts'] = []
-  let envelopePage: HydrationEnvelope['page'] | null = null
-
   let outermostNodes: readonly Node[] = []
+  // Collected up-front so a throw anywhere in the layer loop or the
+  // serialization still runs EVERY layer's teardown (no leaked build state /
+  // head writers on the error path).
   const disposers: Array<() => void> = []
   let currentSlotAnchor: Comment | null = null
   // Seed the outermost layer with the head collector; subsequent layers inherit
   // it via their parent's captured pageSlot() contexts.
   let currentSlotContexts: ReadonlyMap<symbol, unknown> | undefined = rootContexts
 
-  for (let i = 0; i < chain.length; i++) {
-    const def = chain[i]!
-    const layerData = chainData[i]
-    const isInnermost = i === chain.length - 1
+  try {
+    for (let i = 0; i < chain.length; i++) {
+      const def = chain[i]!
+      const layerData = chainData[i]
+      const isInnermost = i === chain.length - 1
 
-    // Build this layer's tree against the server DomEnv. Per-layer data is the
-    // seed state (signal init() takes no data); contexts captured at the parent
-    // layer's pageSlot() are replayed so providers above the slot reach here.
-    const { nodes, dispose } = renderNodes(def, seedFor(layerData), env, currentSlotContexts)
-    disposers.push(dispose)
+      // Build this layer's tree against the server DomEnv. Per-layer data is the
+      // seed state (signal init() takes no data) — the SINGLE init()/build for this
+      // layer, so the HTML and any recorded seed can never disagree. Contexts
+      // captured at the parent layer's pageSlot() are replayed so providers above
+      // the slot reach here.
+      const { nodes, dispose } = renderNodes(def, seedFor(layerData), env, currentSlotContexts)
+      disposers.push(dispose)
 
-    if (i === 0) {
-      outermostNodes = nodes
-    } else {
-      if (!currentSlotAnchor) {
-        // Unreachable given the error checks below, but defensive.
-        throw new Error(`[llui/vike] internal: chain layer ${i} (<${def.name}>) has no slot anchor`)
+      if (i === 0) {
+        outermostNodes = nodes
+      } else {
+        if (!currentSlotAnchor) {
+          // Unreachable given the error checks below, but defensive.
+          throw new Error(
+            `[llui/vike] internal: chain layer ${i} (<${def.name}>) has no slot anchor`,
+          )
+        }
+        const parentNode = currentSlotAnchor.parentNode
+        if (!parentNode) {
+          throw new Error(
+            `[llui/vike] internal: slot anchor for layer ${i} (<${def.name}>) is detached`,
+          )
+        }
+        // Insert this layer's nodes immediately after the anchor, then an end
+        // sentinel — preserving any trailing siblings of the anchor.
+        const insertPoint = currentSlotAnchor.nextSibling
+        for (const node of nodes) {
+          parentNode.insertBefore(node, insertPoint)
+        }
+        const endSentinel = env.createComment('llui-mount-end')
+        parentNode.insertBefore(endSentinel, insertPoint)
       }
-      const parentNode = currentSlotAnchor.parentNode
-      if (!parentNode) {
+
+      // Consume this layer's pending slot registration (if any). Every
+      // non-innermost layer MUST declare a slot; the innermost MUST NOT.
+      const slot = _consumePendingSlot()
+      if (isInnermost && slot !== null) {
         throw new Error(
-          `[llui/vike] internal: slot anchor for layer ${i} (<${def.name}>) is detached`,
+          `[llui/vike] <${def.name}> is the innermost component in the chain ` +
+            `but called pageSlot(). pageSlot() only belongs in layout components.`,
         )
       }
-      // Insert this layer's nodes immediately after the anchor, then an end
-      // sentinel — preserving any trailing siblings of the anchor.
-      const insertPoint = currentSlotAnchor.nextSibling
-      for (const node of nodes) {
-        parentNode.insertBefore(node, insertPoint)
+      if (!isInnermost && slot === null) {
+        throw new Error(
+          `[llui/vike] <${def.name}> is a layout layer at depth ${i} but did not ` +
+            `call pageSlot() in its view(). There are ${chain.length - i - 1} more ` +
+            `layer(s) to mount and no slot to mount them into.`,
+        )
       }
-      const endSentinel = env.createComment('llui-mount-end')
-      parentNode.insertBefore(endSentinel, insertPoint)
+
+      currentSlotAnchor = slot?.anchor ?? null
+      currentSlotContexts = slot?.contexts
     }
 
-    // Record this layer's seed state in the envelope. Page goes under `page`,
-    // everything else under `layouts[]` ordered outer-to-inner.
-    const layerState = seedFor(layerData) ?? normalizeInitState(def)
-    if (isInnermost) {
-      envelopePage = { name: def.name ?? 'Page', state: layerState }
-    } else {
-      envelopeLayouts.push({ name: def.name ?? 'Layout', state: layerState })
-    }
+    const html = serializeNodes(outermostNodes)
+    // Serialize collected head BEFORE disposing (dispose releases the writers).
+    const collectedHead = headSink.serialize(env)
 
-    // Consume this layer's pending slot registration (if any). Every
-    // non-innermost layer MUST declare a slot; the innermost MUST NOT.
-    const slot = _consumePendingSlot()
-    if (isInnermost && slot !== null) {
-      throw new Error(
-        `[llui/vike] <${def.name}> is the innermost component in the chain ` +
-          `but called pageSlot(). pageSlot() only belongs in layout components.`,
-      )
-    }
-    if (!isInnermost && slot === null) {
-      throw new Error(
-        `[llui/vike] <${def.name}> is a layout layer at depth ${i} but did not ` +
-          `call pageSlot() in its view(). There are ${chain.length - i - 1} more ` +
-          `layer(s) to mount and no slot to mount them into.`,
-      )
-    }
-
-    currentSlotAnchor = slot?.anchor ?? null
-    currentSlotContexts = slot?.contexts
+    return { html, manifest: buildManifest(chain), collectedHead }
+  } finally {
+    // Dispose every layer's build — on the success path after serialization, and
+    // on ANY error path so a failed render never leaks build state or head writers.
+    for (const d of disposers) d()
   }
-
-  const html = serializeNodes(outermostNodes)
-  // Serialize collected head BEFORE disposing (dispose releases the writers).
-  const collectedHead = headSink.serialize(env)
-
-  // Dispose every layer's build now that the composed tree is serialized.
-  for (const d of disposers) d()
-
-  if (envelopePage === null) {
-    // Unreachable — chain is non-empty so the last iteration sets this.
-    throw new Error('[llui/vike] internal: renderChain produced no page entry')
-  }
-
-  return {
-    html,
-    envelope: {
-      layouts: envelopeLayouts,
-      page: envelopePage,
-    },
-    collectedHead,
-  }
-}
-
-/** The seed state a layer's `init()` produces (used for the envelope when no
- * data slice overrides it). `init()` may return `S` or `[S, E[]]`. */
-function normalizeInitState(def: AnyLayer): unknown {
-  const r = def.init()
-  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [unknown, unknown[]])[1])) {
-    return (r as [unknown, unknown[]])[0]
-  }
-  return r
 }

@@ -39,4 +39,4 @@ export type {
   StatusTransition,
   StructuralSnapshot,
   VerboseNoteBody,
-} from '@llui/devmode-annotate/note-types'
+} from '@llui/notes-format/note-types'

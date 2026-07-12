@@ -14,7 +14,7 @@ import { createSignalScope, type SignalScope } from './runtime.js'
 import {
   buildPathTable,
   bindingMask,
-  resolvePath,
+  resolveSegments,
   type PathTable,
   type SparseMask,
 } from './mask.js'
@@ -66,6 +66,15 @@ export interface BindingSpec {
   // themselves row-aware at build time (see `c.inRow`), so the enclosing `each`'s
   // value-spec rebasing must SKIP them rather than rewrite their identity produce.
   structural?: boolean
+  // Root discriminant for row rebasing — set from the ORIGIN handle, so row
+  // locality never depends on string-inferring `item`/`index`/`state` prefixes
+  // (which collide with a component-state field literally named that). `true` ⇒
+  // the produce reads the COMPONENT state (rebase to `ctx.state` inside a row);
+  // `false` ⇒ it already reads the row ctx (an item/index handle, or an
+  // already-rebased spec — leave it). `undefined` ⇒ a compiler-emitted spec with
+  // no handle origin: fall back to the legacy `isRowLocalDep` string inference
+  // (compiled rows use the `item.*`/`state.*` ctx convention, so this is sound).
+  componentRooted?: boolean
 }
 
 interface BuildCtx {
@@ -102,6 +111,14 @@ interface BuildCtx {
    * so `each`/`show`/`branch` registrations and their teardowns all affect the
    * one registry the handle's `getBindingDescriptors` reads. */
   descriptors: Map<string, number>
+  /** Per-render ordinal source for ANONYMOUS head entries (a `style`/`script`/
+   * `meta`/… with no static identity). SHARED by reference across the whole render
+   * (root + every nested build), so the Nth anonymous head entry gets the same
+   * ordinal on the server render AND the client hydrate of the same view — which
+   * is what lets hydration ADOPT the server tag by its `data-llui-head` key instead
+   * of accumulating a duplicate. A module-global counter drifted across renders in
+   * one process and broke that match. */
+  headAnon: { n: number }
   /** True when this build is part of a server render (`renderNodes`/`renderToString`).
    * Inherited into every nested build (each rows, show/branch arms). The mount
    * lifecycle is a client-DOM concern, so `onMount` skips REGISTERING its callback
@@ -124,9 +141,16 @@ export interface Reactive {
   readonly [REACT]: true
   readonly produce: Producer
   readonly deps: readonly string[]
+  /** See {@link BindingSpec.componentRooted}: `true` when this reactive reads the
+   * component state (set from the origin handle by the authoring layer). */
+  readonly componentRooted?: boolean
 }
-export function react(produce: Producer, deps: readonly string[]): Reactive {
-  return { [REACT]: true, produce, deps }
+export function react(
+  produce: Producer,
+  deps: readonly string[],
+  componentRooted?: boolean,
+): Reactive {
+  return { [REACT]: true, produce, deps, componentRooted }
 }
 function isReactive(v: unknown): v is Reactive {
   return typeof v === 'object' && v !== null && (v as Record<symbol, unknown>)[REACT] === true
@@ -229,6 +253,7 @@ class SignalTextMountable extends MountableNode {
   constructor(
     private readonly produce: Producer,
     private readonly deps: readonly string[],
+    private readonly componentRooted?: boolean,
   ) {
     super()
   }
@@ -238,6 +263,7 @@ class SignalTextMountable extends MountableNode {
     c.specs.push({
       deps: this.deps,
       produce: this.produce,
+      componentRooted: this.componentRooted,
       commit: (v) => {
         node.data = v == null ? '' : String(v)
       },
@@ -257,9 +283,15 @@ class StaticTextMountable extends MountableNode {
 }
 
 /** A reactive text node bound to a signal accessor. Returns a `Mountable` that
- * builds the text node and registers its binding when placed. */
-export function signalText(produce: Producer, deps: readonly string[]): Mountable {
-  return new SignalTextMountable(produce, deps)
+ * builds the text node and registers its binding when placed. `componentRooted`
+ * (set by the authoring layer from the origin handle) drives correct row rebasing;
+ * compiler-emitted calls omit it and rely on dep-string inference. */
+export function signalText(
+  produce: Producer,
+  deps: readonly string[],
+  componentRooted?: boolean,
+): Mountable {
+  return new SignalTextMountable(produce, deps, componentRooted)
 }
 
 /** A static text node. */
@@ -282,7 +314,17 @@ export type ChildNode = Mountable | string | number
  * placement by `populate`/`runBuild`. */
 export type Renderable = readonly Mountable[]
 
-const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
+// Memoized camelCase→kebab for `style.*` prop names. A reactive `style.transform`
+// binding commits on every tick; without the cache each commit re-ran the regex.
+// The set of distinct style-prop names an app uses is tiny, so a module cache
+// resolves each name's kebab form exactly once (precomputed on first commit,
+// O(1) thereafter) instead of per commit.
+const kebabCache = new Map<string, string>()
+const toKebab = (s: string): string => {
+  let k = kebabCache.get(s)
+  if (k === undefined) kebabCache.set(s, (k = s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())))
+  return k
+}
 
 // Curated set of names the DOM only honours as live IDL properties, NOT as
 // content attributes: <textarea>/<select> have no `value` content attribute,
@@ -344,6 +386,7 @@ function applyProp(c: BuildCtx, node: Element, name: string, value: PropValue): 
     c.specs.push({
       deps: value.deps,
       produce: value.produce,
+      componentRooted: value.componentRooted,
       commit: (out) => applyAttr(node, name, out),
     })
   } else if (isSignalHandle(value)) {
@@ -356,6 +399,7 @@ function applyProp(c: BuildCtx, node: Element, name: string, value: PropValue): 
     c.specs.push({
       deps: value.deps,
       produce: value.produce as (s: unknown) => unknown,
+      componentRooted: value.rowLocal !== true,
       commit: (out) => applyAttr(node, name, out),
     })
   } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
@@ -504,6 +548,9 @@ function runBuild(
   const inRow = forceInRow || parent?.inRow || false
   // Inherit SSR from the parent build; the root build seeds it from `rootSsr`.
   const ssr = parent?.ssr ?? rootSsr
+  // Share the per-render anon-head ordinal by reference (root seeds a fresh {n:0}),
+  // so head anon keys are stable across a server render and its client hydrate.
+  const headAnon = parent?.headAnon ?? { n: 0 }
   // Inherit the state getter from the parent build; the root build seeds it.
   const getState = parent?.getState ?? rootGetState
   ctx = {
@@ -516,6 +563,7 @@ function runBuild(
     ownContexts: false,
     inRow,
     descriptors,
+    headAnon,
     ssr,
     getState,
   }
@@ -722,22 +770,58 @@ export function __inRowBuild(): boolean {
   return ctx?.inRow ?? false
 }
 
+// Module fallback for anon-head ordinals requested OUTSIDE a build (a head helper
+// called eagerly, no live render context). Best-effort only — such usage can't be
+// hydration-matched anyway; the in-build path (the norm) uses the per-render box.
+let anonHeadFallback = 0
+
+/** Next ordinal for an ANONYMOUS head entry, from the CURRENT render's shared
+ * counter (see `BuildCtx.headAnon`). Stable across a server render and its client
+ * hydrate of the same view, so anon `<style>`/`<script>`/… keys match and
+ * hydration adopts rather than duplicating. Public for the head module. */
+export function __nextHeadAnon(): number {
+  return ctx ? ++ctx.headAnon.n : ++anonHeadFallback
+}
+
 /** Re-root a single dependency path from the component state onto the combined
  * row ctx: a non-row-local component path `p` becomes `state.p` (and the whole
- * state `''` becomes `state`); row-local paths (`item`/`index`/`state.*`) keep. */
+ * state `''` becomes `state`); row-local paths (`item`/`index`/`state.*`) keep.
+ * Used for UNBRANDED (compiler-emitted) deps, where locality is string-inferred. */
 export const rebaseRowDep = (d: string): string =>
   isRowLocalDep(d) ? d : d === '' ? 'state' : `state.${d}`
+
+/** Re-root a KNOWN component-state dep onto the combined row ctx UNCONDITIONALLY:
+ * every path becomes `ctx.state.<path>` (whole state `''` → `state`). Used when the
+ * origin handle is branded component-rooted, so a component field literally named
+ * `state`/`item`/`index` is rebased (to `state.state`/…) instead of being mistaken
+ * for a row-ctx slot by `rebaseRowDep`'s string inference. */
+export const rebaseComponentDep = (d: string): string => (d === '' ? 'state' : `state.${d}`)
+
+/** Does a VALUE spec need re-rooting onto `ctx.state` inside a row? Prefers the
+ * `componentRooted` brand (set from the origin handle — collision-proof); falls
+ * back to `isRowLocalDep` string inference only for unbranded compiler specs. */
+function specNeedsRebase(spec: BindingSpec): boolean {
+  if (spec.structural) return false
+  if (spec.componentRooted === true) return true
+  if (spec.componentRooted === false) return false
+  return spec.deps.some((d) => !isRowLocalDep(d))
+}
 
 /** Re-root a component-state-rooted VALUE row spec so it reads `ctx.state` (the
  * component state) instead of the combined row ctx — the fix that lets a
  * `connect()` part (or any enclosing-view signal) compose inside an authoring
- * `each` row. Row-local specs (and all compiled rows) pass through untouched. */
+ * `each` row. Row-local specs (and all compiled rows) pass through untouched. A
+ * BRANDED component-rooted spec rebases ALL its deps (via `rebaseComponentDep`),
+ * so a component field named `state`/`item`/`index` resolves correctly; an
+ * unbranded spec keeps the legacy `rebaseRowDep` (string inference). */
 function rebaseRowSpec(spec: BindingSpec): BindingSpec {
-  if (spec.deps.every(isRowLocalDep)) return spec
+  if (!specNeedsRebase(spec)) return spec
+  const rebaseDep = spec.componentRooted === true ? rebaseComponentDep : rebaseRowDep
   return {
-    deps: spec.deps.map(rebaseRowDep),
+    deps: spec.deps.map(rebaseDep),
     produce: (ctx) => spec.produce((ctx as { state: unknown }).state),
     commit: spec.commit,
+    componentRooted: false, // now reads the row ctx
   }
 }
 
@@ -824,6 +908,10 @@ function depsSignatureMatches(
 export interface EachSource<T> {
   items: (state: unknown) => readonly T[]
   deps: readonly string[]
+  /** See {@link BindingSpec.componentRooted}: `true` when the items accessor reads
+   * the COMPONENT state (so a nested each reads `ctx.state`, not the enclosing row
+   * ctx). Set by the authoring layer from the items handle; unbranded → inference. */
+  componentRooted?: boolean
 }
 
 /** The per-row context a row scope mounts on: its `item` plus the current
@@ -1007,7 +1095,12 @@ function buildSignalEach<T>(
   // but not displayMode). `stateGatable` is false when the row has a structural
   // child / a rebased connect-part / a whole-`state` read — then we sweep always.
   let stateGatable = false
-  let rowStatePaths: string[] = []
+  // Pre-split segment arrays for the captured state paths (resolved via
+  // `resolveSegments`, no per-reconcile `String.split`). Lockstep with the
+  // captured path set; rebuilt only when a newly-seen path grows the set.
+  let rowStateSegs: string[][] = []
+  // Reused across reconciles (sized to `rowStateSegs`) — filled in place instead of
+  // `rowStatePaths.map(...)` allocating a fresh array every reconcile.
   let prevStateVals: unknown[] | null = null
   // State-fanout gating stays viable only while every state-reading row is cheaply
   // gatable (no structural child, no rebased connect-part, no whole-`state` read).
@@ -1022,10 +1115,9 @@ function buildSignalEach<T>(
   // (no row reads component state), a row whose `item` + `index` are unchanged
   // needs no re-evaluation even though the component-state ref changed, so we skip
   // its `scope.update` — turning an N-row in-place update into work proportional to
-  // the rows that actually changed. `templateSeen` guards one-time setup below;
-  // the correctness-affecting flags accumulate per row and are NOT latched.
+  // the rows that actually changed. The correctness-affecting flags accumulate per
+  // row and are NOT latched.
   let templateReadsState = false
-  let templateSeen = false
 
   // When this each is nested in an enclosing row, the scope hands `reconcile`
   // the COMBINED row ctx (`{ item, state, index }`). Rows must always mount with
@@ -1034,7 +1126,12 @@ function buildSignalEach<T>(
   // the combined ctx so `item`/`index` resolve; a component-state source
   // (`state.map(…)`) reads `ctx.state`. For a top-level each the input IS the
   // component state and both coincide.
-  const itemsRowLocal = source.deps.length > 0 && source.deps.every(isRowLocalDep)
+  const itemsRowLocal =
+    source.componentRooted === true
+      ? false
+      : source.componentRooted === false
+        ? true
+        : source.deps.length > 0 && source.deps.every(isRowLocalDep)
   // Direct-construction rows from a `rowFactory` share one template, so every
   // row's specs carry identical deps → identical PathTable + masks. Build that
   // shape once (from the first row) and reuse it for all rows, skipping per-row
@@ -1066,14 +1163,20 @@ function buildSignalEach<T>(
     if (stateGatable) {
       if (prevStateVals !== null) {
         sweepAll = false
-        for (let j = 0; j < rowStatePaths.length; j++) {
-          if (!Object.is(resolvePath(rowState, rowStatePaths[j]!), prevStateVals[j])) {
+        for (let j = 0; j < rowStateSegs.length; j++) {
+          if (!Object.is(resolveSegments(rowState, rowStateSegs[j]!), prevStateVals[j])) {
             sweepAll = true
             break
           }
         }
       }
-      prevStateVals = rowStatePaths.map((p) => resolvePath(rowState, p))
+      // Fill the reused buffer in place (resize only when the path set grew).
+      if (prevStateVals === null || prevStateVals.length !== rowStateSegs.length) {
+        prevStateVals = new Array<unknown>(rowStateSegs.length)
+      }
+      for (let j = 0; j < rowStateSegs.length; j++) {
+        prevStateVals[j] = resolveSegments(rowState, rowStateSegs[j]!)
+      }
     }
 
     // ── Same-structure fast path ──────────────────────────────────────────
@@ -1126,6 +1229,21 @@ function buildSignalEach<T>(
     for (let index = 0; index < n; index++) {
       const item = items[index]!
       const k = String(key(item))
+      // Dev-only: a key already claimed THIS pass is a duplicate. Duplicates
+      // silently corrupt the list — two items collapse onto one keyed row (one
+      // scope, one set of nodes), so the second item never renders and reorder /
+      // removal then walks a phantom position (NotFoundError). Fail loudly in dev
+      // with the offending key + each-site deps; prod keeps the tolerant path
+      // (last write wins for the shared row).
+      if (import.meta.env?.DEV === true && seen.has(k)) {
+        const msg =
+          `each: duplicate key ${JSON.stringify(k)} at index ${index} — every row's ` +
+          `key must be unique. Duplicate keys corrupt the keyed reconcile (the rows ` +
+          `share one live scope, so reorder/removal misbehaves). ` +
+          `(each items deps: ${JSON.stringify(source.deps)})`
+        console.error(msg)
+        throw new Error(msg)
+      }
       newKeys[index] = k
       if (sameOrder && order[index] !== k) sameOrder = false
       seen.add(k)
@@ -1166,11 +1284,10 @@ function buildSignalEach<T>(
         // as a bare row root it leaves the row with no stable handle to move or
         // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it to
         // be wrapped in an element, which becomes the row's stable boundary. Checked
-        // once (the template shape governs the root node type).
-        if (
-          !templateSeen &&
-          created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)
-        ) {
+        // for EVERY created row, not just the first: a data-conditional render can
+        // make a LATER row's root a bare fragment even when the first row was an
+        // element, and that divergent row must be caught too.
+        if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
           throw new Error(
             'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
               'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
@@ -1178,19 +1295,16 @@ function buildSignalEach<T>(
               `(each items deps: ${JSON.stringify(source.deps)})`,
           )
         }
-        templateSeen = true
 
         // Per-row probe — accumulated across EVERY row built, never latched from
         // one row, because a data-conditional render can make rows heterogeneous
         // (the first row row-local, a later row reading component state).
         //
-        // `rowNeedsRebase`: does THIS row have a VALUE spec with a non-row-local dep
-        // (a bare component-state read that must be re-rooted to `ctx.state`)? Used
-        // locally below to decide whether to rebase this row's specs. Structural
-        // specs make themselves row-aware, so they're excluded.
-        const rowNeedsRebase = builtSpecs.some(
-          (s) => !s.structural && s.deps.some((d) => !isRowLocalDep(d)),
-        )
+        // `rowNeedsRebase`: does THIS row have a VALUE spec that reads the COMPONENT
+        // state (a bare component read that must be re-rooted to `ctx.state`)? Uses
+        // the `componentRooted` brand (collision-proof) with the legacy string
+        // fallback. Structural specs make themselves row-aware, so they're excluded.
+        const rowNeedsRebase = builtSpecs.some(specNeedsRebase)
         const rowStructural = builtSpecs.some((s) => s.structural)
         // A row reads component state if any binding has a `state.*`/`state` dep,
         // needs rebasing, OR has a STRUCTURAL child (show/branch/each) whose arms are
@@ -1227,7 +1341,7 @@ function buildSignalEach<T>(
             // A newly-seen path invalidates the captured baseline (sized for the old
             // path set); force one conservative sweep + recapture next reconcile.
             if (statePathSet.size !== before) {
-              rowStatePaths = [...statePathSet]
+              rowStateSegs = [...statePathSet].map((p) => p.split('.'))
               prevStateVals = null
             }
           }
@@ -1371,9 +1485,15 @@ function buildSignalEach<T>(
   // structural binding: fires when the list deps change; produce returns the
   // component state so reconcile can build each row's combined ctx. Nested in an
   // enclosing row, it reads `ctx.state` and its deps rebase onto that combined ctx.
-  const specDeps = extraDeps && extraDeps.length > 0 ? [...source.deps, ...extraDeps] : source.deps
+  // Nested in a row, rebase the gating deps onto the combined ctx: the items deps
+  // per the source's locality (row-local items keep, component-rooted items →
+  // `state.*`), and the extra component-state deps always → `state.*`.
+  const rebaseItems = itemsRowLocal ? rebaseRowDep : rebaseComponentDep
+  const baseDeps = inRow ? source.deps.map(rebaseItems) : source.deps
+  const hasExtra = extraDeps !== undefined && extraDeps.length > 0
+  const extra = hasExtra ? (inRow ? extraDeps!.map(rebaseComponentDep) : extraDeps!) : undefined
   c.specs.push({
-    deps: inRow ? specDeps.map(rebaseRowDep) : specDeps,
+    deps: extra ? [...baseDeps, ...extra] : baseDeps,
     // Pass the scope state straight through: the combined row ctx when nested in
     // a row, the component state at top level. `reconcile` derives the items
     // source's state (row-local vs component) and the rows' mount state from it.
@@ -1398,6 +1518,10 @@ function buildSignalEach<T>(
 export interface ShowCond {
   produce: (state: unknown) => unknown
   deps: readonly string[]
+  /** See {@link BindingSpec.componentRooted}: `true` when the condition reads the
+   * COMPONENT state (so inside a row it's fed `ctx.state`, not the combined ctx).
+   * Set by the authoring layer from the cond handle; unbranded → string inference. */
+  componentRooted?: boolean
 }
 
 /**
@@ -1436,7 +1560,15 @@ function buildSignalShow(
   // `ctx.state`. (A mixed `derived([state, item], …)` cond is rebased per-input in
   // the authoring layer so its deps are all row-local by the time it reaches here.)
   const inRow = c.inRow
-  const condReadsCtx = !inRow || cond.deps.every(isRowLocalDep)
+  // Row locality from the brand (collision-proof), falling back to string inference
+  // for an unbranded (compiler-emitted) cond.
+  const condIsComponentRooted =
+    cond.componentRooted === true
+      ? true
+      : cond.componentRooted === false
+        ? false
+        : !cond.deps.every(isRowLocalDep)
+  const condReadsCtx = !inRow || !condIsComponentRooted
   const evalCond = (s: unknown): unknown =>
     cond.produce(condReadsCtx ? s : (s as { state: unknown }).state)
   const start = doc.createComment('show')
@@ -1470,8 +1602,13 @@ function buildSignalShow(
       const built = runBuild(doc, arm, c)
       if (inRow) built.specs = rebaseRowSpecs(built.specs) // value reads → ctx.state
       const scope = buildAndPublishScope(built)
-      scope.mount(state) // mount on the same (combined-ctx) state child-prop will feed
+      // Insert FIRST, then mount (bindings commit + first structural reconcile),
+      // then run onMount — matching each's phase-3 and the top-level mount contract.
+      // Committing a binding on a still-detached node silently drops selection-style
+      // props (e.g. `<option selected>` needs its controlling <select> as a parent),
+      // with no re-commit (output-equality holds the stale value).
       for (const n of built.nodes) parent.insertBefore(n, end)
+      scope.mount(state) // mount on the same (combined-ctx) state child-prop will feed
       ownerHost.scope?.addChild(scope) // receive future state updates while mounted
       runMounts(built.mounts, parent as Element, built.teardowns)
       mounted = { on, scope, nodes: built.nodes, teardowns: built.teardowns }
@@ -1483,7 +1620,9 @@ function buildSignalShow(
   // row, the deps are rebased onto the combined ctx so gating fires on `ctx.state`
   // changes; `structural: true` keeps the enclosing each from rewriting `produce`.
   c.specs.push({
-    deps: inRow ? cond.deps.map(rebaseRowDep) : cond.deps,
+    deps: inRow
+      ? cond.deps.map(condIsComponentRooted ? rebaseComponentDep : rebaseRowDep)
+      : cond.deps,
     produce: (s) => s,
     commit: (s) => reconcile(s),
     structural: true,
@@ -1524,11 +1663,19 @@ function parseFragment(doc: SignalDoc, html: string): DocumentFragment {
  * NO reactive bindings — `unsafeHtml` is an escape hatch for pre-rendered markup
  * (markdown, syntax highlighting). The caller is responsible for trust/sanitization.
  */
-export function signalUnsafeHtml(produce: Producer, deps: readonly string[]): Mountable {
-  return mountable(() => buildSignalUnsafeHtml(produce, deps))
+export function signalUnsafeHtml(
+  produce: Producer,
+  deps: readonly string[],
+  componentRooted?: boolean,
+): Mountable {
+  return mountable(() => buildSignalUnsafeHtml(produce, deps, componentRooted))
 }
 
-function buildSignalUnsafeHtml(produce: Producer, deps: readonly string[]): Node {
+function buildSignalUnsafeHtml(
+  produce: Producer,
+  deps: readonly string[],
+  componentRooted?: boolean,
+): Node {
   const c = requireCtx()
   const doc = c.doc
   const start = doc.createComment('unsafe-html')
@@ -1540,6 +1687,7 @@ function buildSignalUnsafeHtml(produce: Producer, deps: readonly string[]): Node
   c.specs.push({
     deps,
     produce,
+    componentRooted,
     commit: (value) => {
       const parent = end.parentNode
       if (!parent) return
@@ -1603,10 +1751,15 @@ function buildSignalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
   if (c.ssr) return anchor
   c.mounts.push(() => {
     // Anchor is attached now; mount the isolated instance as siblings after it.
+    // Presence check mirrors mountSignalComponent: only forward `initialState`
+    // when the spec actually carries one, so a subApp def whose `init()` seeds a
+    // legit falsy/null state isn't clobbered by an implicit `undefined` seed.
     const handle = mountSignalComponent<S, M, E>(
       { anchor: anchor as Comment, mode: 'append' },
       spec.def,
-      { initialState: spec.initialState, contexts: spec.contexts },
+      'initialState' in spec
+        ? { initialState: spec.initialState, contexts: spec.contexts }
+        : { contexts: spec.contexts },
     )
     spec.onHandle?.(handle)
     return () => handle.dispose()
@@ -1636,7 +1789,13 @@ function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => R
   // deps — all-row-local (compiled `ctx.*`, or an item/index handle) reads the full
   // ctx; a non-row-local enclosing-view handle reads `ctx.state`.
   const inRow = c.inRow
-  const discReadsCtx = !inRow || disc.deps.every(isRowLocalDep)
+  const discIsComponentRooted =
+    disc.componentRooted === true
+      ? true
+      : disc.componentRooted === false
+        ? false
+        : !disc.deps.every(isRowLocalDep)
+  const discReadsCtx = !inRow || !discIsComponentRooted
   const evalDisc = (s: unknown): unknown =>
     disc.produce(discReadsCtx ? s : (s as { state: unknown }).state)
   const start = doc.createComment('branch')
@@ -1670,8 +1829,9 @@ function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => R
       const built = runBuild(doc, render, c)
       if (inRow) built.specs = rebaseRowSpecs(built.specs)
       const scope = buildAndPublishScope(built)
-      scope.mount(state)
+      // Insert FIRST, then mount, then onMount (see signalShow for the rationale).
       for (const n of built.nodes) parent.insertBefore(n, end)
+      scope.mount(state)
       ownerHost.scope?.addChild(scope)
       runMounts(built.mounts, parent as Element, built.teardowns)
       mounted = { key, scope, nodes: built.nodes, teardowns: built.teardowns }
@@ -1679,7 +1839,9 @@ function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => R
   }
 
   c.specs.push({
-    deps: inRow ? disc.deps.map(rebaseRowDep) : disc.deps,
+    deps: inRow
+      ? disc.deps.map(discIsComponentRooted ? rebaseComponentDep : rebaseRowDep)
+      : disc.deps,
     produce: (s) => s,
     commit: (s) => reconcile(s),
     structural: true,
@@ -2005,6 +2167,14 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   const doc = c.doc
   const anchor = doc.createComment('lazy')
 
+  // SSR: the async loader can't settle within a synchronous server render, and
+  // mounting the loaded (client) component is a client-DOM concern — mirror
+  // `signalSubApp` and emit a BARE anchor. Running the loader here would leave a
+  // dangling promise on the server and, worse, invoke `mountSignalComponent` in a
+  // DOM-less env. The client mount/hydrate pass (atomic-swap rebuild) runs the
+  // loader and paints fallback → component.
+  if (c.ssr) return anchor
+
   // Build the fallback in the CURRENT build so its bindings join the surrounding
   // scope and stay reactive. Bracket it with an end sentinel so the region can be
   // removed wholesale on swap.
@@ -2026,39 +2196,43 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
     if (fallbackEnd.parentNode === parent) parent.removeChild(fallbackEnd)
   }
 
-  void opts
-    .loader()
-    .then((def) => {
-      if (cancelled) return
-      removeFallback()
-      mounted = mountSignalComponent<LS, LM, LE>(
-        { anchor: anchor as Comment, mode: 'append' },
-        def,
-        opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,
-      )
-    })
-    .catch((err: unknown) => {
-      if (cancelled) return
-      removeFallback()
-      if (!opts.error) return
-      const e = err instanceof Error ? err : new Error(String(err))
-      const parent = anchor.parentNode
-      if (!parent) return
-      const built = runBuild(doc, () => opts.error!(e), c)
-      errorScope = buildAndPublishScope(built)
-      errorNodes = built.nodes
-      errorTeardowns = built.teardowns
-      const insertPoint = anchor.nextSibling
-      for (const n of errorNodes) parent.insertBefore(n, insertPoint)
-      // Mount against the host's CURRENT state (snapshotted via the threaded
-      // getter), and register the arm as a child of the host scope so component
-      // state changes propagate to it — the error arm may read component state
-      // (e.g. a localized message or a retry button reading `state`), not just the
-      // captured `err`. Falls back to null outside a component mount.
-      errorScope.mount(c.getState ? c.getState() : null)
-      c.host.scope?.addChild(errorScope)
-      runMounts(built.mounts, parent as Element, built.teardowns)
-    })
+  // Use `.then(onLoaded, onLoadError)` — NOT `.then(onLoaded).catch(...)`. The
+  // two-arg form only routes a LOADER rejection to the error arm; a throw from
+  // inside `onLoaded` (a mount-time error building the loaded component's view)
+  // propagates as an unhandled rejection instead of being swallowed and silently
+  // rendered as the "load failed" arm — which would mask a real component bug.
+  const onLoaded = (def: SignalComponentDef<LS, LM, LE>): void => {
+    if (cancelled) return
+    removeFallback()
+    mounted = mountSignalComponent<LS, LM, LE>(
+      { anchor: anchor as Comment, mode: 'append' },
+      def,
+      opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,
+    )
+  }
+  const onLoadError = (err: unknown): void => {
+    if (cancelled) return
+    removeFallback()
+    if (!opts.error) return
+    const e = err instanceof Error ? err : new Error(String(err))
+    const parent = anchor.parentNode
+    if (!parent) return
+    const built = runBuild(doc, () => opts.error!(e), c)
+    errorScope = buildAndPublishScope(built)
+    errorNodes = built.nodes
+    errorTeardowns = built.teardowns
+    const insertPoint = anchor.nextSibling
+    for (const n of errorNodes) parent.insertBefore(n, insertPoint)
+    // Mount against the host's CURRENT state (snapshotted via the threaded
+    // getter), and register the arm as a child of the host scope so component
+    // state changes propagate to it — the error arm may read component state
+    // (e.g. a localized message or a retry button reading `state`), not just the
+    // captured `err`. Falls back to null outside a component mount.
+    errorScope.mount(c.getState ? c.getState() : null)
+    c.host.scope?.addChild(errorScope)
+    runMounts(built.mounts, parent as Element, built.teardowns)
+  }
+  void opts.loader().then(onLoaded, onLoadError)
 
   // On host dispose: cancel any in-flight load, dispose a mounted child, tear
   // down an error arm.
@@ -2097,6 +2271,12 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
   overscan?: number
   /** optional class on the scroll container */
   class?: string
+  /** Additional COMPONENT-STATE dep paths the rows read, merged into the
+   * structural binding's deps so a state-only change (items unchanged) still fires
+   * the reconcile and refreshes visible rows. The authoring `virtualEach` passes
+   * `['']` (whole state); a compiled tier could pass precise paths. Without it, a
+   * row reading component state was frozen out of state-only changes (stale DOM). */
+  extraDeps?: readonly string[]
   /** build a row; `getCtx` exposes the row's live `{ item, state, index }` ctx
    * (same shape as `signalEach`) for runtime item/index handles. */
   renderRow: (getCtx: () => RowCtx<T>) => Renderable
@@ -2160,6 +2340,45 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
 
   let lastState: unknown = null
   let scrollTop = 0
+
+  // State-fanout gating (mirrors signalEach): capture which component-state paths
+  // the visible rows read (after rebasing to `state.*`), so a state change that
+  // touches NONE of them skips the per-row `scope.update` sweep instead of
+  // re-running every windowed row. `rowsReadState` gates whether any state fanout
+  // is needed at all; `stateGatable` drops to false (always-sweep) when a row reads
+  // whole `state` or nests a structural child whose inner reads we can't see here.
+  let rowsReadState = false
+  let stateGatable = true
+  const statePathSet = new Set<string>()
+  let rowStateSegs: string[][] = []
+  let prevStateVals: unknown[] | null = null
+
+  // Fold one built row's rebased specs into the state-read profile above.
+  const captureRowStateReads = (specs: readonly BindingSpec[]): void => {
+    const before = statePathSet.size
+    for (const s of specs) {
+      if (s.structural) {
+        // A structural child (show/branch/each) builds arms lazily — its inner
+        // state reads are invisible here, so we can't gate; sweep on any change.
+        stateGatable = false
+        rowsReadState = true
+        continue
+      }
+      for (const d of s.deps) {
+        if (d === 'state') {
+          stateGatable = false
+          rowsReadState = true
+        } else if (d.startsWith('state.')) {
+          rowsReadState = true
+          statePathSet.add(d.slice(6))
+        }
+      }
+    }
+    if (statePathSet.size !== before) {
+      rowStateSegs = [...statePathSet].map((p) => p.split('.'))
+      prevStateVals = null // baseline sized for the old set — force a recapture
+    }
+  }
 
   // Height metrics. Fixed height → O(1) formulas. Per-item height → a prefix-sum
   // array (`prefix[i]` = cumulative top of row i, `prefix[n]` = total height),
@@ -2239,6 +2458,28 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     ensureMetrics(items)
     spacer.style.setProperty('height', `${totalHeight(items.length)}px`)
 
+    // State-fanout gate: must existing windowed rows re-run for a state change?
+    // Only when a component-state path they read changed since the last reconcile;
+    // a scroll (same state) or an unrelated-field change skips the sweep.
+    let sweepState = rowsReadState
+    if (stateGatable && rowsReadState) {
+      if (prevStateVals !== null && prevStateVals.length === rowStateSegs.length) {
+        sweepState = false
+        for (let j = 0; j < rowStateSegs.length; j++) {
+          if (!Object.is(resolveSegments(state, rowStateSegs[j]!), prevStateVals[j])) {
+            sweepState = true
+            break
+          }
+        }
+      }
+      if (prevStateVals === null || prevStateVals.length !== rowStateSegs.length) {
+        prevStateVals = new Array<unknown>(rowStateSegs.length)
+      }
+      for (let j = 0; j < rowStateSegs.length; j++) {
+        prevStateVals[j] = resolveSegments(state, rowStateSegs[j]!)
+      }
+    }
+
     const [start, end] = computeRange(items.length)
     const seen = new Set<string>()
 
@@ -2268,10 +2509,14 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         // signalEach), so component-state reads in a virtual row resolve correctly.
         const built = runBuild(doc, () => spec.renderRow(() => created.ctx), c, undefined, true)
         built.specs = rebaseRowSpecs(built.specs)
+        captureRowStateReads(built.specs)
         const scope = buildAndPublishScope(built)
-        scope.mount(rowCtx)
+        // Insert FIRST (row nodes → wrapper → spacer), THEN mount, THEN onMount —
+        // matching each's phase-3 so selection-style bindings commit on attached
+        // nodes (fixes the dropped-commit-on-detached-node class).
         for (const n of built.nodes) wrapper.appendChild(n)
         spacer.appendChild(wrapper)
+        scope.mount(rowCtx)
         runMounts(built.mounts, wrapper, built.teardowns)
         created.scope = scope
         created.nodes = built.nodes
@@ -2280,15 +2525,19 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         continue
       }
       // existing row: re-run only the bindings whose part of the ctx changed.
+      // Gate the scope update — skip it when neither item/index nor any read
+      // state path changed (a scroll, or a state change the row doesn't read).
       // lazy spare (first update allocates; reused after); the row is the
       // live-ctx box, so swapping row.ctx keeps handles' .peek() current.
-      const next = row.spare ?? { item, state, index }
-      next.item = item
-      next.state = state
-      next.index = index
-      row.scope!.update(row.ctx, next)
-      row.spare = row.ctx
-      row.ctx = next
+      if (sweepState || item !== row.ctx.item || index !== row.ctx.index) {
+        const next = row.spare ?? { item, state, index }
+        next.item = item
+        next.state = state
+        next.index = index
+        row.scope!.update(row.ctx, next)
+        row.spare = row.ctx
+        row.ctx = next
+      }
       // Reposition on index change; in variable-height mode also reposition every
       // pass, since an earlier item's height change shifts this row's offset even
       // when its own index is unchanged.
@@ -2313,10 +2562,14 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   }
   scroll.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions)
 
-  // Structural binding gated on the list deps: re-window + resize when items
-  // change. produce returns the whole state so reconcile can build row ctxs.
+  // Structural binding gated on the list deps PLUS any extra component-state deps
+  // (so a state-only change still fires the reconcile and refreshes visible rows
+  // reading component state). produce returns the component state so reconcile can
+  // build row ctxs; the state-fanout gate above keeps the per-change cost bounded.
+  const specDeps =
+    spec.extraDeps && spec.extraDeps.length > 0 ? [...spec.deps, ...spec.extraDeps] : spec.deps
   c.specs.push({
-    deps: inRow ? spec.deps.map(rebaseRowDep) : spec.deps,
+    deps: inRow ? specDeps.map(rebaseRowDep) : specDeps,
     produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
     commit: (s) => reconcile(s),
     structural: true,

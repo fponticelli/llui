@@ -113,7 +113,7 @@ describe('LluiMcpServer', () => {
   })
 
   it('writes devUrl to the marker file when provided', () => {
-    const server = new LluiMcpServer(5299)
+    const server = new LluiMcpServer({ bridgePort: 5299 })
     server.setDevUrl('http://localhost:5173')
     server.startBridge()
     const path = mcpActiveFilePath()
@@ -129,7 +129,7 @@ describe('LluiMcpServer', () => {
   })
 
   it('omits devUrl from the marker file when not set', () => {
-    const server = new LluiMcpServer(5298)
+    const server = new LluiMcpServer({ bridgePort: 5298 })
     server.startBridge()
     const marker = JSON.parse(readFileSync(mcpActiveFilePath(), 'utf8')) as {
       port: number
@@ -141,21 +141,20 @@ describe('LluiMcpServer', () => {
 })
 
 describe('llui_lint tool', () => {
-  // ESLint cold-start: loading the flat config + the full @llui/eslint-plugin
-  // ruleset + the typescript-eslint parser typically lands ~3.5–4.5s locally,
-  // and the GitHub Actions runner pushes that past the 5s default. The test
-  // is a single-shot smoke test, so the cost is paid once. Bump generously.
+  // llui_lint runs @llui/compiler's in-process signal lint rules
+  // (lintSignalSource) — no ESLint, no child process. It's fast; the
+  // generous timeout is retained only as CI headroom.
   it('lints a file via the path argument', async () => {
     const { writeFileSync, mkdirSync, rmSync } = await import('node:fs')
     const { join, resolve } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
 
-    // Write the temp file inside the project tree so ESLint finds the root flat
-    // config (walking up from the linted file). A FIXED, gitignored dir name —
-    // rather than a random `mkdtemp` — means at most one ever exists: it's swept
-    // before use and removed after, so a run killed mid-test (e.g. turbo aborting
-    // on another package's failure, which skips the `finally`) leaves a single
-    // gitignored dir that the next run overwrites, never a pile of stray dirs.
+    // Write the temp file inside the project tree (within the workspace root, so
+    // the tool's workspace-containment guard accepts it). A FIXED, gitignored dir
+    // name — rather than a random `mkdtemp` — means at most one ever exists: it's
+    // swept before use and removed after, so a run killed mid-test (e.g. turbo
+    // aborting on another package's failure, which skips the `finally`) leaves a
+    // single gitignored dir that the next run overwrites, never a pile of stray dirs.
     const projectRoot = resolve(fileURLToPath(import.meta.url), '../../../../')
     const dir = join(projectRoot, 'tmp-lint-test')
     rmSync(dir, { recursive: true, force: true })

@@ -21,8 +21,8 @@ import {
   readStatusHistory,
   resolveCurrentSession,
   rotateSession,
-  serializeNote,
 } from '@llui/vite-plugin/notes'
+import { serializeNote } from '@llui/notes-format/note-serialize'
 import type {
   CaptureLevel,
   NoteBody,
@@ -30,10 +30,32 @@ import type {
   NoteStatus,
   ProposedDiff,
   StatusTransition,
-} from '@llui/vite-plugin'
-import { join } from 'node:path'
+} from '@llui/notes-format/note-types'
+import { resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { CdpTransport, ToolRegistry } from '../tool-registry.js'
+
+/**
+ * Resolve `<notesRoot>/<sessionId>` and verify it stays within `notesRoot`.
+ *
+ * The task-mode tools (`llui_queue`, `llui_claim_note`, `llui_reply_to_note`)
+ * accept a caller-supplied `sessionId` and hand the joined directory straight
+ * to the status/queue helpers (`listQueue`, `currentStatus`, `appendStatus`,
+ * `readStatusHistory`), which do unguarded fs access. Without this check a
+ * value like `../../etc` escapes the notes root and reaches arbitrary
+ * directories. `@llui/vite-plugin/notes` guards its own `readNote`/`listNotes`
+ * with an equivalent internal `resolveSessionDir`, but does NOT export it, so
+ * we mirror the guard here for the status helpers that take a pre-joined dir.
+ * Throw on any traversal rather than touching anything outside the root.
+ */
+function resolveSessionDir(notesRoot: string, sessionId: string): string {
+  const root = resolve(notesRoot)
+  const dir = resolve(root, sessionId)
+  if (dir !== root && !dir.startsWith(root + sep)) {
+    throw new Error(`invalid sessionId: ${JSON.stringify(sessionId)}`)
+  }
+  return dir
+}
 
 /**
  * Create a note via the dev server's POST /_llui/notes endpoint when
@@ -532,7 +554,7 @@ export function registerNotesTools(registry: ToolRegistry): void {
     'notes',
     async (args, ctx) => {
       const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
-      const sessionDir = join(ctx.notesRoot, sessionId)
+      const sessionDir = resolveSessionDir(ctx.notesRoot, sessionId)
       const statusFilter = args.status
       const queue = listQueue(
         sessionDir,
@@ -556,7 +578,7 @@ export function registerNotesTools(registry: ToolRegistry): void {
     'notes',
     async (args, ctx) => {
       const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
-      const sessionDir = join(ctx.notesRoot, sessionId)
+      const sessionDir = resolveSessionDir(ctx.notesRoot, sessionId)
       const before = currentStatus(sessionDir, args.noteId)
       if (before !== null && before !== 'open') {
         const history = readStatusHistory(sessionDir, args.noteId)
@@ -610,7 +632,7 @@ export function registerNotesTools(registry: ToolRegistry): void {
     'notes',
     async (args, ctx) => {
       const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
-      const sessionDir = join(ctx.notesRoot, sessionId)
+      const sessionDir = resolveSessionDir(ctx.notesRoot, sessionId)
       const replyId = `reply-${randomUUID().slice(0, 8)}`
       const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
         author: 'llm',

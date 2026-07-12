@@ -1,6 +1,8 @@
 # LLui v2 Compiler Architecture
 
-> **Status (2026-06-02): LARGELY REALIZED.** v2a (extraction → standalone `@llui/compiler`, `@llui/eslint-plugin` removed) and v2b (cross-file analysis `cross-file-walker.ts`, `manifest.ts`, `__compilerVersion`, the `track({ deps })` escape hatch) shipped. v2c's _internal_ `CompilerModule`/`ModuleRegistry` (`module.ts`) and package decomposition (`compiler-introspection`/`-devtools`/`-ssr`) shipped; only the _public cross-package library ABI_ (`__llui_deps.json` emit/consume) remains deferred. These sub-docs are retained as design rationale, not open work.
+> **Status (2026-07): CORRECTION.** The 2026-06-02 note below overstated what shipped and named artifacts that have since been **deleted**. Ground truth (see root `CLAUDE.md` "Active proposals"): v2a landed — `@llui/compiler` is a standalone package (extracted from `@llui/vite-plugin`) and `@llui/eslint-plugin` is gone. Cross-file analysis is live, but via `cross-file-resolver.ts` (+ the signal transform's own `signals/analyze-deps.ts` / `extract-deps.ts`), **not** a `cross-file-walker.ts` — that walker was deleted. v2c's `CompilerModule`/`ModuleRegistry` (`module.ts`), `introspection-factory.ts`, and the `@llui/compiler-introspection` / `@llui/compiler-devtools` packages were **never shipped and are deleted** (only `@llui/compiler` and `@llui/compiler-ssr` exist). The live transform is `transformSignalComponentSource`, which emits agent/devtools metadata **inline** (`signals/transform-component.ts` `sharedMetaProps`), not through a module registry. There is no runtime `track()` primitive in `@llui/dom` — only a compiler annotation. The cross-package `__llui_deps.json` ABI is **dormant**: the producer ships manifests but the consumer narrowing is not wired into the live transform. Read the sub-docs as historical design rationale.
+
+> **Status (2026-06-02): LARGELY REALIZED.** _(Superseded by the 2026-07 correction above — the walker, module registry, and introspection/devtools packages named here were deleted, not shipped.)_ v2a (extraction → standalone `@llui/compiler`, `@llui/eslint-plugin` removed) and v2b (cross-file analysis, `manifest.ts`, `__compilerVersion`, the `track({ deps })` escape hatch) landed. Only the _public cross-package library ABI_ (`__llui_deps.json` emit/consume) remains deferred. These sub-docs are retained as design rationale, not open work.
 
 **Status:** Proposal. Open for revision until adopted.
 **Last revised:** 2026-05-17
@@ -57,12 +59,7 @@ A fresh agent picking up implementation work should read in this order:
 2. **This file** — the sub-proposal map and sequencing decision.
 3. **[`shared.md`](./shared.md)** — engineering principles, problem statement, system architecture, data flow, source-map composition, resilience design, testing strategy, versioning, definition of done, open questions, and gaps. This is the _background_ every phase needs.
 4. **Your phase's file** — [`v2a.md`](./v2a.md), [`v2b.md`](./v2b.md), or [`v2c.md`](./v2c.md). Each contains the phase-specific design content _plus_ a sequenced implementation roadmap (spike phase, production steps, exit gates, failure paths).
-5. **Selected design docs** as needed:
-   - `docs/designs/01 Architecture.md` — runtime mental model (mandatory for v2b's `__compilerVersion` work).
-   - `docs/designs/02 Compiler.md` — superseded sections to be retracted (see [`shared.md`](./shared.md) §20.13); skim for context only.
-   - `docs/designs/03 Runtime DOM.md` — `mountApp`, two-phase update, binding system (mandatory for v2b).
-   - `docs/designs/04 Test Strategy.md` — runtime test philosophy (mandatory for v2b's test migration).
-   - `docs/designs/07 LLM Friendliness.md` — LLM authoring philosophy (mandatory for surface design — `llui.config.ts`, `track()`).
+5. **Selected design docs** as needed. _(The numbered `docs/designs/01`–`13` spec files referenced here were **removed** with the pre-signal runtime; that directory no longer exists. The authoritative docs now live in `site/content/` and are published to [llui.dev](https://llui.dev) — Architecture, API Reference, etc. — with in-flight design under `docs/proposals/`.)_ Formerly-cited topics: runtime mental model (→ [Architecture](https://llui.dev/architecture)); the compiler and its superseded sections; `mountApp` / update model / binding system (→ [Architecture](https://llui.dev/architecture)); runtime test philosophy; and LLM authoring philosophy.
 
 Do not read other phases' files unless cross-referenced. The split exists specifically so each phase is self-contained from an implementation standpoint.
 

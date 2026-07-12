@@ -117,4 +117,44 @@ describe('asOnEffect', () => {
     cleanup1?.()
     expect(mount2Signal!.aborted).toBe(false)
   })
+
+  // The signal runtime now hands `onEffect` a per-mount `api.signal`. When present,
+  // asOnEffect passes it straight through (each mount owns a distinct signal, so
+  // two concurrent mounts of one definition never interfere) and does NOT own /
+  // abort it — teardown is the runtime's job (it aborts api.signal on dispose).
+  it('passes the runtime-provided per-mount signal straight to the chain', () => {
+    let seen: AbortSignal | null = null
+    const chain = handleEffects<CustomEffect, Msg>().else(({ effect, signal }) => {
+      if (effect.type === 'watch') seen = signal
+    })
+    const onEffect = asOnEffect(chain)
+    const mount = new AbortController()
+    onEffect({ type: 'watch' }, { send: vi.fn(), signal: mount.signal })
+    expect(seen).toBe(mount.signal) // the runtime's signal, not an adapter-owned one
+  })
+
+  it('does not abort the runtime signal from the returned cleanup', () => {
+    const chain = handleEffects<CustomEffect, Msg>().else(() => {})
+    const onEffect = asOnEffect(chain)
+    const mount = new AbortController()
+    const cleanup = onEffect({ type: 'watch' }, { send: vi.fn(), signal: mount.signal })
+    cleanup?.() // must be a no-op — the runtime owns api.signal
+    expect(mount.signal.aborted).toBe(false)
+  })
+
+  it('gives two concurrent mounts independent runtime signals', () => {
+    const seen: AbortSignal[] = []
+    const chain = handleEffects<CustomEffect, Msg>().else(({ signal }) => {
+      seen.push(signal)
+    })
+    const onEffect = asOnEffect(chain)
+    const a = new AbortController()
+    const b = new AbortController()
+    onEffect({ type: 'watch' }, { send: vi.fn(), signal: a.signal })
+    onEffect({ type: 'watch' }, { send: vi.fn(), signal: b.signal })
+    expect(seen[0]).toBe(a.signal)
+    expect(seen[1]).toBe(b.signal)
+    a.abort()
+    expect(b.signal.aborted).toBe(false) // disposing A leaves B untouched
+  })
 })

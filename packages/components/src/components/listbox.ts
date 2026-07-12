@@ -119,6 +119,9 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
     case 'clear':
       return [{ ...state, value: [] }, []]
     case 'highlight':
+      // No-op when already highlighted: return the same reference so the
+      // pointer-move storm doesn't trigger a commit on every mouse tick.
+      if (state.highlightedIndex === msg.index) return [state, []]
       return [{ ...state, highlightedIndex: msg.index }, []]
     case 'highlightNext': {
       const to = nextEnabledIndex(state.items, state.disabledItems, state.highlightedIndex, 1)
@@ -192,7 +195,6 @@ export interface ListboxItemParts {
 export interface ListboxParts {
   root: {
     role: 'listbox'
-    'aria-owns': Signal<string | undefined>
     'aria-multiselectable': Signal<'true' | undefined>
     'aria-disabled': Signal<'true' | undefined>
     'aria-activedescendant': Signal<string | undefined>
@@ -221,11 +223,9 @@ export function connect(
   return {
     root: {
       role: 'listbox',
-      'aria-owns': state.map((s) => {
-        const items = s.items
-        if (items.length === 0) return undefined
-        return items.map((_, i) => itemId(i)).join(' ')
-      }),
+      // No `aria-owns`: options are real DOM children of the listbox, so
+      // ownership is implicit. Emitting it churned an O(n) id string on every
+      // items change for no AT benefit.
       'aria-multiselectable': state.map((s) =>
         s.selectionMode === 'multiple' ? 'true' : undefined,
       ),
@@ -294,7 +294,10 @@ export function connect(
         'data-value': value,
         'data-index': String(index),
         onClick: tagSend(send, ['select'], () => send({ type: 'select', value })),
-        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
+        onPointerMove: tagSend(send, ['highlight'], () => {
+          if (state.peek()?.highlightedIndex === index) return
+          send({ type: 'highlight', index })
+        }),
       },
     }),
   }

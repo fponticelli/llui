@@ -158,6 +158,8 @@ export interface UploadEffect<M = unknown> {
   method?: string
   body: FormData | Blob
   headers?: Record<string, string>
+  /** Abort the upload after this many milliseconds (wires `xhr.timeout`). */
+  timeout?: number
   onProgress: (loaded: number, total: number) => M
   onSuccess: (data: unknown, status: number) => M
   onError: (error: ApiError) => M
@@ -165,7 +167,8 @@ export interface UploadEffect<M = unknown> {
 
 export interface RetryEffect {
   type: 'retry'
-  inner: BuiltinEffect
+  /** Only `http` effects are retriable — retry re-issues the request on failure. */
+  inner: HttpEffect
   maxAttempts: number
   delayMs: number
 }
@@ -354,7 +357,7 @@ export function wsSend(key: string, data: unknown): WebSocketSendEffect {
 // ── Retry ────────────────────────────────────────────────────────
 
 export function retry(
-  inner: BuiltinEffect,
+  inner: HttpEffect,
   opts: { maxAttempts: number; delayMs: number },
 ): RetryEffect {
   return { type: 'retry', inner, maxAttempts: opts.maxAttempts, delayMs: opts.delayMs }
@@ -367,6 +370,7 @@ export function upload<M>(opts: {
   method?: string
   body: FormData | Blob
   headers?: Record<string, string>
+  timeout?: number
   onProgress: (loaded: number, total: number) => M
   onSuccess: (data: unknown, status: number) => M
   onError: (error: ApiError) => M
@@ -439,30 +443,88 @@ export interface EffectCtx<E, M> {
 export type EffectPlugin<E, M> = (ctx: EffectCtx<E, M>) => boolean
 
 interface EffectChain<E extends { type: string }, M> {
-  /** Add a plugin that handles specific effects. Returns true if handled, false to pass through. */
-  use<E2, M2>(plugin: EffectPlugin<E2, M2>): EffectChain<E, M>
+  /**
+   * Add a plugin that handles specific effects. Returns true if handled, false to
+   * pass through. Plugins run BEFORE the built-in switch on every dispatch, so a
+   * plugin can intercept even a built-in kind (e.g. `http`) — the first plugin to
+   * return `true` wins and the built-in handler never runs. `E2` is constrained to
+   * a subtype of the chain's effect type `E`.
+   */
+  use<E2 extends E, M2 = M>(plugin: EffectPlugin<E2, M2>): EffectChain<E, M>
   /** Terminal handler for remaining effects. Returns the final onEffect function. */
   else(handler: (ctx: EffectCtx<E, M>) => void): (ctx: EffectCtx<E, M>) => void
 }
 
+/**
+ * Per-mount registry of stateful effect resources. One is created lazily per
+ * distinct `AbortSignal` (i.e. per mount — each mount owns its own signal) and is
+ * torn down exactly once when that signal aborts. Keying off the signal (rather
+ * than a chain- or definition-level closure) is what keeps two concurrent mounts
+ * of the same component isolated: disposing one mount never cancels the other's
+ * in-flight http / intervals / debounces / websockets, and there is no one-shot
+ * `cleanupRegistered` latch to starve a later mount of its teardown.
+ */
+interface Registry {
+  cancelControllers: Map<string, AbortController>
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>
+  websockets: Map<string, WebSocket>
+}
+
+type PluginFn = (ctx: EffectCtx<unknown, unknown>) => boolean
+
+/** Shared, per-mount context threaded through every (recursive) dispatch. */
+interface Deps {
+  registry: Registry
+  custom: InternalHandler
+  plugins: readonly PluginFn[]
+}
+
 export function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M> {
-  const cancelControllers = new Map<string, AbortController>()
-  const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const websockets = new Map<string, WebSocket>()
-  const plugins: Array<(ctx: EffectCtx<unknown, unknown>) => boolean> = []
-  let cleanupRegistered = false
+  // Per-mount registries, keyed off each mount's lifecycle signal. A WeakMap so a
+  // torn-down mount's registry is collectible once its signal is unreachable.
+  const registries = new WeakMap<AbortSignal, Registry>()
+  const plugins: PluginFn[] = []
+
+  function registryFor(signal: AbortSignal): Registry {
+    const cached = registries.get(signal)
+    if (cached) return cached
+    const registry: Registry = {
+      cancelControllers: new Map(),
+      debounceTimers: new Map(),
+      websockets: new Map(),
+    }
+    registries.set(signal, registry)
+    if (!signal.aborted) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          for (const ctrl of registry.cancelControllers.values()) ctrl.abort()
+          registry.cancelControllers.clear()
+          for (const timer of registry.debounceTimers.values()) clearTimeout(timer)
+          registry.debounceTimers.clear()
+          for (const ws of registry.websockets.values()) {
+            ws.onclose = null // don't dispatch app onClose after unmount
+            ws.close()
+          }
+          registry.websockets.clear()
+          registries.delete(signal)
+        },
+        { once: true },
+      )
+    }
+    return registry
+  }
 
   const chain: EffectChain<E, M> = {
     use(plugin) {
-      plugins.push(plugin as (ctx: EffectCtx<unknown, unknown>) => boolean)
+      plugins.push(plugin as PluginFn)
       return chain
     },
     else(handler) {
+      // Terminal handler for effects that no plugin and no built-in claimed.
+      // Plugins have already run (at the top of `dispatchEffect`), so this only
+      // ever forwards genuinely custom effects to the user handler.
       const custom: InternalHandler = (effect, send, signal) => {
-        const ctx = { effect, send: send as unknown as (msg: unknown) => void, signal }
-        for (const plugin of plugins) {
-          if (plugin(ctx)) return
-        }
         handler({
           effect: effect as E,
           send: send as unknown as (msg: M) => void,
@@ -470,32 +532,8 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
         })
       }
       return ({ effect, send, signal }: EffectCtx<E, M>) => {
-        if (!cleanupRegistered) {
-          signal.addEventListener(
-            'abort',
-            () => {
-              for (const ctrl of cancelControllers.values()) ctrl.abort()
-              cancelControllers.clear()
-              for (const timer of debounceTimers.values()) clearTimeout(timer)
-              debounceTimers.clear()
-              for (const ws of websockets.values()) ws.close()
-              websockets.clear()
-            },
-            { once: true },
-          )
-          cleanupRegistered = true
-        }
-        // Widen send for internal dispatch — built-in effects create dynamic messages
-        const internalSend = send as unknown as InternalSend
-        dispatchEffect(
-          effect,
-          internalSend,
-          signal,
-          cancelControllers,
-          debounceTimers,
-          websockets,
-          custom,
-        )
+        const deps: Deps = { registry: registryFor(signal), custom, plugins }
+        dispatchEffect(effect, send as unknown as InternalSend, signal, deps)
       }
     },
   }
@@ -505,170 +543,143 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
 
 /**
  * Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
- * the signal-runtime `onEffect` shape: `(effect, { send }) => cleanup`.
+ * the signal-runtime `onEffect` shape: `(effect, api) => cleanup`.
  *
- * The signal component's `onEffect` takes the effect + a `{ send }` api and may
- * return a cleanup (run on unmount) — there is no ambient `AbortSignal` like the
- * legacy runtime passed. This adapter owns one AbortController per MOUNT: every
- * effect dispatched during a mount shares that mount's `signal`, and the returned
- * cleanup aborts it, so in-flight http / debounce / interval / websocket effects
- * tear down when the component unmounts (the chain's own abort listener clears its
- * pending registries).
+ * The signal runtime now hands `onEffect` a per-mount `api.signal` (an
+ * `AbortSignal` aborted exactly once, on THIS mount's `dispose()`). When present,
+ * this adapter passes that signal straight through to the chain: every mount owns
+ * a distinct signal, so the chain keys its per-mount registries off it and two
+ * concurrent mounts of one definition never interfere. Teardown is driven by the
+ * runtime aborting `api.signal`, so the returned cleanup is a no-op — the chain's
+ * own abort listener clears the mount's pending http / debounce / interval /
+ * websocket resources. We must NOT abort `api.signal` ourselves (it is the
+ * runtime's, shared with everything else on the mount).
  *
- * Lifetime is per-mount, not per-definition. `asOnEffect(chain)` is evaluated once
- * at the component literal, so the returned `onEffect` is reused across every mount
- * of that definition (the runtime reads `def.onEffect`). A client-side re-mount
- * (e.g. @llui/vike disposing + re-mounting a page on SPA navigation) must therefore
- * get a FRESH, non-aborted controller — otherwise the previous unmount's abort
- * leaks into the next mount and any async effect that guards on `signal.aborted`
- * before its `send` silently drops its result, leaving state stuck mid-transition.
+ * FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
+ * caller), the adapter owns one AbortController per mount and the returned cleanup
+ * aborts it. It is (re)created lazily — never at factory-call time, since
+ * `asOnEffect` typically runs at module top-level where constructing an
+ * AbortController throws on Cloudflare Workers — and recreated once aborted so a
+ * re-mount of the same definition never inherits a dead signal. The cleanup is
+ * memoized per generation so it always targets the controller live at its dispatch.
  *
- * Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
+ * Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
  */
 export function asOnEffect<E extends { type: string }, M>(
   chain: (ctx: EffectCtx<E, M>) => void,
-): (effect: E, api: { send: (msg: M) => void }) => () => void {
-  // Lazily (re)create the AbortController, NOT at factory-call time. `asOnEffect`
-  // typically runs at component-literal (module top-level) scope; constructing an
-  // AbortController there throws on Cloudflare Workers ("Disallowed operation called
-  // within global scope"). Deferring it to the first effect — which only runs inside
-  // the update cycle / a handler — keeps this a pure factory safe to call during
-  // module evaluation.
+): (effect: E, api: { send: (msg: M) => void; signal?: AbortSignal }) => () => void {
+  const noop = (): void => {}
   let controller: AbortController | null = null
-  return (effect, { send }) => {
-    // A fresh controller for a fresh mount: recreate once the current one has been
-    // aborted by a prior unmount's cleanup, so a re-mount never inherits a dead
-    // signal. Effects within the same mount keep sharing the live controller.
-    if (controller === null || controller.signal.aborted) controller = new AbortController()
-    // Capture THIS dispatch's controller in the cleanup so a stale cleanup (e.g. a
-    // delayed unmount of a prior mount) aborts only the controller that was live at
-    // its dispatch — never a successor mount's live signal.
-    const active = controller
-    chain({ effect, send, signal: active.signal })
-    return () => active.abort()
+  let cleanup: (() => void) | null = null
+  return (effect, { send, signal }) => {
+    if (signal) {
+      // Per-mount signal from the runtime — teardown is the runtime's job.
+      chain({ effect, send, signal })
+      return noop
+    }
+    // Fallback: own a controller per mount, recreating once aborted.
+    if (controller === null || controller.signal.aborted) {
+      const ctrl = new AbortController()
+      controller = ctrl
+      cleanup = () => ctrl.abort() // memoized per generation
+    }
+    chain({ effect, send, signal: controller.signal })
+    return cleanup!
   }
 }
 
 // ── Internal dispatch ────────────────────────────────────────────
 
+/**
+ * Dispatch one effect. Returns whether the effect COMPLETES WITHOUT DISPATCHING a
+ * message — i.e. it is fire-and-forget and will never call `send`. `sequence` uses
+ * this to advance past such a step immediately (waiting on a message it will never
+ * emit would stall the chain forever). Everything that dispatches (now or async),
+ * subscribes, or recurses returns `false`.
+ *
+ * Plugins registered via `.use()` run FIRST, on every dispatch level (including
+ * effects nested in `sequence`/`race`/`retry`/`cancel`), so a plugin can intercept
+ * a built-in kind. A plugin that claims an effect returns `false` here (we can't
+ * know whether it dispatched).
+ */
 function dispatchEffect(
   effect: { type: string },
   send: InternalSend,
   signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void {
+  deps: Deps,
+): boolean {
+  for (const plugin of deps.plugins) {
+    if (plugin({ effect, send: send as unknown as (msg: unknown) => void, signal })) return false
+  }
   switch (effect.type) {
     case 'http':
       runHttp(effect as HttpEffect, send, signal)
-      break
+      return false
     case 'cancel':
-      runCancel(
-        effect as CancelEffect | CancelReplaceEffect,
-        send,
-        signal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-      break
+      return runCancel(effect as CancelEffect | CancelReplaceEffect, send, signal, deps)
     case 'debounce':
-      runDebounce(
-        effect as DebounceEffect,
-        send,
-        signal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-      break
+      runDebounce(effect as DebounceEffect, send, signal, deps)
+      return false
     case 'timeout':
       runTimeout(effect as TimeoutEffect, send, signal)
-      break
+      return false
     case 'interval':
-      runInterval(effect as IntervalEffect, send, signal, cancelControllers)
-      break
+      runInterval(effect as IntervalEffect, send, signal, deps)
+      return false
     case 'log':
       runLog(effect as LogEffect)
-      break
+      return true
     case 'storage-set':
       runStorageSet(effect as StorageSetEffect)
-      break
+      return true
     case 'storage-remove':
       runStorageRemove(effect as StorageRemoveEffect)
-      break
+      return true
     case 'storage-get':
       runStorageGet(effect as StorageGetEffect, send)
-      break
+      return false
     case 'storage-watch':
       runStorageWatch(effect as StorageWatchEffect, send, signal)
-      break
+      return false
     case 'broadcast':
       runBroadcast(effect as BroadcastEffect)
-      break
+      return true
     case 'broadcast-listen':
       runBroadcastListen(effect as BroadcastListenEffect, send, signal)
-      break
+      return false
     case 'sequence':
-      runSequence(
-        effect as SequenceEffect,
-        send,
-        signal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-      break
+      runSequence(effect as SequenceEffect, send, signal, deps)
+      return false
     case 'race':
-      runRace(
-        effect as RaceEffect,
-        send,
-        signal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-      break
+      runRace(effect as RaceEffect, send, signal, deps)
+      return false
     case 'websocket':
-      runWebSocket(effect as WebSocketEffect, send, signal, websockets)
-      break
+      runWebSocket(effect as WebSocketEffect, send, signal, deps)
+      return false
     case 'ws-send':
-      runWsSend(effect as WebSocketSendEffect, websockets)
-      break
+      runWsSend(effect as WebSocketSendEffect, deps)
+      return true
     case 'retry':
-      runRetry(
-        effect as RetryEffect,
-        send,
-        signal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-      break
+      runRetry(effect as RetryEffect, send, signal, deps)
+      return false
     case 'upload':
       runUpload(effect as UploadEffect, send, signal)
-      break
+      return false
     case 'clipboard-read':
       runClipboardRead(effect as ClipboardReadEffect, send, signal)
-      break
+      return false
     case 'clipboard-write':
       runClipboardWrite(effect as ClipboardWriteEffect)
-      break
+      return true
     case 'notification':
       runNotification(effect as NotificationEffect, send, signal)
-      break
+      return false
     case 'geolocation':
       runGeolocation(effect as GeolocationEffect, send, signal)
-      break
+      return false
     default:
-      custom(effect, send, signal)
+      deps.custom(effect, send, signal)
+      return false
   }
 }
 
@@ -681,12 +692,15 @@ function isPassThroughBody(body: unknown): body is FormData | Blob | URLSearchPa
   )
 }
 
-function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): void {
-  const fetchSignal = effect.timeout
-    ? AbortSignal.any([signal, AbortSignal.timeout(effect.timeout)])
-    : signal
-
-  const opts: RequestInit = { signal: fetchSignal }
+/**
+ * Build the `RequestInit` (method + body + content-type headers) for an http
+ * effect, WITHOUT a signal. Shared by the live `runHttp` and the SSR
+ * `resolveEffects` so both derive identical requests. Callers add `signal`
+ * (and any timeout) themselves.
+ * @internal
+ */
+export function buildRequest(effect: HttpEffect): RequestInit {
+  const opts: RequestInit = {}
   if (effect.method) opts.method = effect.method
 
   if (effect.body !== undefined) {
@@ -712,37 +726,64 @@ function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): v
     }
   }
   if (Object.keys(headers).length > 0) opts.headers = headers
-
-  fetch(effect.url, opts)
-    .then(async (res) => {
-      if (signal.aborted) return
-
-      if (res.ok) {
-        const data = await parseResponseBody(res, effect.responseType)
-        send(effect.onSuccess(data, res.headers))
-        return
-      }
-
-      // Map HTTP status to ApiError
-      const error = await httpStatusToApiError(res)
-      send(effect.onError(error))
-    })
-    .catch((err: unknown) => {
-      if (signal.aborted) return
-      if (err instanceof DOMException && err.name === 'AbortError') return
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        send(effect.onError({ kind: 'timeout' }))
-        return
-      }
-      const error: ApiError =
-        err instanceof TypeError && err.message.includes('fetch')
-          ? { kind: 'network', message: err.message }
-          : { kind: 'network', message: String(err) }
-      send(effect.onError(error))
-    })
+  return opts
 }
 
-async function parseResponseBody(
+function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): void {
+  const opts = buildRequest(effect)
+  opts.signal = effect.timeout
+    ? AbortSignal.any([signal, AbortSignal.timeout(effect.timeout)])
+    : signal
+  // Fire-and-forget; `httpRequest` guards every send on `signal.aborted`.
+  void httpRequest(effect, opts, signal, send)
+}
+
+async function httpRequest(
+  effect: HttpEffect,
+  opts: RequestInit,
+  signal: AbortSignal,
+  send: InternalSend,
+): Promise<void> {
+  // GUARDED REGION: only fetch + body-parse + status mapping run here. The
+  // success/error message is COMPUTED but the `onSuccess`/`onError` callback and
+  // the `send` are deliberately kept OUT of this try, so a throw from the reducer
+  // or a message factory is never miscaught and rebranded as a network error.
+  let outcome: { ok: true; data: unknown; headers: Headers } | { ok: false; error: ApiError }
+  try {
+    const res = await fetch(effect.url, opts)
+    if (res.ok) {
+      const data = await parseResponse(res, effect.responseType)
+      outcome = { ok: true, data, headers: res.headers }
+    } else {
+      outcome = { ok: false, error: await httpStatusToApiError(res) }
+    }
+  } catch (err: unknown) {
+    if (signal.aborted) return
+    if (err instanceof DOMException && err.name === 'AbortError') return
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      if (!signal.aborted) send(effect.onError({ kind: 'timeout' }))
+      return
+    }
+    // A fetch network failure (TypeError) or a body-parse failure (SyntaxError).
+    if (err instanceof TypeError || err instanceof SyntaxError) {
+      if (!signal.aborted) send(effect.onError({ kind: 'network', message: err.message }))
+      return
+    }
+    // Anything else is genuinely unexpected — surface it rather than swallow it.
+    throw err
+  }
+
+  // Re-check abort AFTER the body await, immediately before dispatching.
+  if (signal.aborted) return
+  send(outcome.ok ? effect.onSuccess(outcome.data, outcome.headers) : effect.onError(outcome.error))
+}
+
+/**
+ * Parse a response body by explicit `responseType`, else auto-detect from the
+ * `content-type` header. Shared by `runHttp` and `resolveEffects`.
+ * @internal
+ */
+export async function parseResponse(
   res: Response,
   responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer',
 ): Promise<unknown> {
@@ -763,45 +804,64 @@ async function parseResponseBody(
   return ct.includes('application/json') ? res.json() : res.text()
 }
 
-export async function httpStatusToApiError(res: Response): Promise<ApiError> {
-  switch (res.status) {
+/**
+ * Map an HTTP status to an {@link ApiError}, without needing a `Response` — shared
+ * by the fetch (`http`) and XHR (`upload`) paths. For 400/422 a parsed JSON body
+ * (if any) is inspected for a `{ errors }` validation map.
+ */
+function statusToApiError(
+  status: number,
+  statusText: string,
+  extra: { retryAfter?: string | null; jsonBody?: unknown } = {},
+): ApiError {
+  switch (status) {
     case 401:
       return { kind: 'unauthorized' }
     case 403:
       return { kind: 'forbidden' }
     case 404:
       return { kind: 'notfound' }
-    case 429: {
-      const retry = res.headers.get('retry-after')
-      return { kind: 'ratelimit', retryAfter: retry ? parseInt(retry, 10) : undefined }
-    }
+    case 429:
+      return {
+        kind: 'ratelimit',
+        retryAfter: extra.retryAfter ? parseInt(extra.retryAfter, 10) : undefined,
+      }
     case 400:
     case 422: {
-      try {
-        const body = await res.json()
-        if (body && typeof body === 'object' && 'errors' in body) {
-          const errors = body.errors as Record<string, string[]>
-          return { kind: 'validation', fields: errors }
-        }
-      } catch {
-        /* fall through */
+      const body = extra.jsonBody
+      if (body && typeof body === 'object' && 'errors' in body) {
+        const errors = (body as { errors: Record<string, string[]> }).errors
+        return { kind: 'validation', fields: errors }
       }
-      return { kind: 'server', status: res.status, message: res.statusText }
+      return { kind: 'server', status, message: statusText }
     }
     default:
-      return { kind: 'server', status: res.status, message: res.statusText }
+      return { kind: 'server', status, message: statusText }
   }
+}
+
+export async function httpStatusToApiError(res: Response): Promise<ApiError> {
+  let jsonBody: unknown
+  if (res.status === 400 || res.status === 422) {
+    try {
+      jsonBody = await res.json()
+    } catch {
+      /* no JSON body — fall through to a plain server error */
+    }
+  }
+  return statusToApiError(res.status, res.statusText, {
+    retryAfter: res.headers.get('retry-after'),
+    jsonBody,
+  })
 }
 
 function runCancel(
   effect: CancelEffect | CancelReplaceEffect,
   send: InternalSend,
   componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void {
+  deps: Deps,
+): boolean {
+  const { cancelControllers, debounceTimers, websockets } = deps.registry
   const existing = cancelControllers.get(effect.token)
   if (existing) {
     existing.abort()
@@ -816,6 +876,7 @@ function runCancel(
 
   const ws = websockets.get(effect.token)
   if (ws) {
+    ws.onclose = null // programmatic cancel — don't dispatch app onClose
     ws.close()
     websockets.delete(effect.token)
   }
@@ -823,24 +884,24 @@ function runCancel(
   if ('inner' in effect && effect.inner) {
     const ctrl = new AbortController()
     cancelControllers.set(effect.token, ctrl)
-    componentSignal.addEventListener('abort', () => ctrl.abort(), { once: true })
-    dispatchEffect(
-      effect.inner,
-      send,
-      ctrl.signal,
-      cancelControllers,
-      debounceTimers,
-      websockets,
-      custom,
-    )
+    // `AbortSignal.any` ties the inner's lifetime to BOTH the mount and this
+    // token's controller without hanging a growing listener off `componentSignal`.
+    const innerSignal = AbortSignal.any([componentSignal, ctrl.signal])
+    dispatchEffect(effect.inner, send, innerSignal, deps)
+    return false // the inner effect may dispatch
   }
+  return true // bare cancel completes without dispatching
 }
 
 function runTimeout(effect: TimeoutEffect, send: InternalSend, signal: AbortSignal): void {
+  const onAbort = (): void => clearTimeout(timer)
   const timer = setTimeout(() => {
+    // Drop the abort listener now that the timer has fired — it would otherwise
+    // linger on the mount signal until unmount, accumulating per delay().
+    signal.removeEventListener('abort', onAbort)
     if (!signal.aborted) send(effect.msg as Record<string, unknown>)
   }, effect.ms)
-  signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+  signal.addEventListener('abort', onAbort, { once: true })
 }
 
 function runLog(effect: LogEffect): void {
@@ -853,29 +914,32 @@ function runInterval(
   effect: IntervalEffect,
   send: InternalSend,
   componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
+  deps: Deps,
 ): void {
+  const { cancelControllers } = deps.registry
   // Clear any existing interval on the same key
   const existing = cancelControllers.get(effect.key)
   if (existing) existing.abort()
 
   const ctrl = new AbortController()
   cancelControllers.set(effect.key, ctrl)
-  componentSignal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  // Stop when EITHER the mount aborts or this interval's controller aborts, via a
+  // single derived signal (no manual listener retained on `componentSignal`).
+  const stopSignal = AbortSignal.any([componentSignal, ctrl.signal])
 
   const timer = setInterval(() => {
-    if (ctrl.signal.aborted || componentSignal.aborted) {
+    if (stopSignal.aborted) {
       clearInterval(timer)
       return
     }
     send(effect.msg as Record<string, unknown>)
   }, effect.ms)
 
-  ctrl.signal.addEventListener(
+  stopSignal.addEventListener(
     'abort',
     () => {
       clearInterval(timer)
-      cancelControllers.delete(effect.key)
+      if (cancelControllers.get(effect.key) === ctrl) cancelControllers.delete(effect.key)
     },
     { once: true },
   )
@@ -885,27 +949,33 @@ function runDebounce(
   effect: DebounceEffect,
   send: InternalSend,
   componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
+  deps: Deps,
 ): void {
+  const { debounceTimers, cancelControllers } = deps.registry
   const existing = debounceTimers.get(effect.key)
   if (existing !== undefined) clearTimeout(existing)
 
   const timer = setTimeout(() => {
     debounceTimers.delete(effect.key)
-    if (!componentSignal.aborted) {
-      dispatchEffect(
-        effect.inner,
-        send,
-        componentSignal,
-        cancelControllers,
-        debounceTimers,
-        websockets,
-        custom,
-      )
-    }
+    if (componentSignal.aborted) return
+
+    // Register an abort controller under the debounce key so a later `cancel(key)`
+    // can abort the now in-flight inner effect (e.g. the debounced http request),
+    // not merely clear a timer that has already fired. Abort any prior in-flight
+    // inner under the same key first.
+    const prior = cancelControllers.get(effect.key)
+    if (prior) prior.abort()
+    const ctrl = new AbortController()
+    cancelControllers.set(effect.key, ctrl)
+    const innerSignal = AbortSignal.any([componentSignal, ctrl.signal])
+    ctrl.signal.addEventListener(
+      'abort',
+      () => {
+        if (cancelControllers.get(effect.key) === ctrl) cancelControllers.delete(effect.key)
+      },
+      { once: true },
+    )
+    dispatchEffect(effect.inner, send, innerSignal, deps)
   }, effect.ms)
 
   debounceTimers.set(effect.key, timer)
@@ -1009,11 +1079,20 @@ function runWebSocket(
   effect: WebSocketEffect,
   send: InternalSend,
   signal: AbortSignal,
-  websockets: Map<string, WebSocket>,
+  deps: Deps,
 ): void {
-  // Close existing websocket on the same key
+  const { websockets } = deps.registry
+  // Replace any existing websocket on the same key. Detach its handlers FIRST so
+  // its async `onclose` can neither dispatch a spurious app `onClose` nor delete
+  // the replacement from the registry (the replacement-race bug).
   const existing = websockets.get(effect.key)
-  if (existing) existing.close()
+  if (existing) {
+    existing.onopen = null
+    existing.onmessage = null
+    existing.onclose = null
+    existing.onerror = null
+    existing.close()
+  }
 
   const ws = effect.protocols
     ? new WebSocket(effect.url, effect.protocols)
@@ -1035,7 +1114,9 @@ function runWebSocket(
   }
 
   ws.onclose = (e: CloseEvent) => {
-    websockets.delete(effect.key)
+    // Only clear the registry slot if it still points at THIS socket — a
+    // replacement may already own the key.
+    if (websockets.get(effect.key) === ws) websockets.delete(effect.key)
     if (effect.onClose) send(effect.onClose(e.code, e.reason))
   }
 
@@ -1046,36 +1127,23 @@ function runWebSocket(
   signal.addEventListener(
     'abort',
     () => {
+      ws.onclose = null // unmount — don't dispatch app onClose
       ws.close()
-      websockets.delete(effect.key)
+      if (websockets.get(effect.key) === ws) websockets.delete(effect.key)
     },
     { once: true },
   )
 }
 
-function runWsSend(effect: WebSocketSendEffect, websockets: Map<string, WebSocket>): void {
-  const ws = websockets.get(effect.key)
+function runWsSend(effect: WebSocketSendEffect, deps: Deps): void {
+  const ws = deps.registry.websockets.get(effect.key)
   if (!ws || ws.readyState !== WebSocket.OPEN) return
   ws.send(typeof effect.data === 'string' ? effect.data : JSON.stringify(effect.data))
 }
 
-function runRetry(
-  effect: RetryEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void {
-  const inner = effect.inner
-  // Retry only works for http effects
-  if (inner.type !== 'http') {
-    dispatchEffect(inner, send, signal, cancelControllers, debounceTimers, websockets, custom)
-    return
-  }
-
-  const httpEffect = inner as HttpEffect
+function runRetry(effect: RetryEffect, send: InternalSend, signal: AbortSignal, deps: Deps): void {
+  // `RetryEffect.inner` is typed as `HttpEffect` — retry re-issues the request.
+  const httpEffect = effect.inner
   let attempt = 0
 
   function tryOnce(): void {
@@ -1088,10 +1156,12 @@ function runRetry(
         attempt++
         if (attempt < effect.maxAttempts) {
           const delay = effect.delayMs * Math.pow(2, attempt - 1)
+          const onAbort = (): void => clearTimeout(timer)
           const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort) // fired — drop the listener
             if (!signal.aborted) tryOnce()
           }, delay)
-          signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+          signal.addEventListener('abort', onAbort, { once: true })
           return undefined as unknown // message is suppressed
         }
         return httpEffect.onError(error)
@@ -1103,15 +1173,7 @@ function runRetry(
       if (msg !== undefined) send(msg)
     }
 
-    dispatchEffect(
-      wrapped,
-      retrySend,
-      signal,
-      cancelControllers,
-      debounceTimers,
-      websockets,
-      custom,
-    )
+    dispatchEffect(wrapped, retrySend, signal, deps)
   }
 
   tryOnce()
@@ -1124,6 +1186,7 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
   const method = effect.method ?? 'POST'
 
   xhr.open(method, effect.url)
+  if (effect.timeout) xhr.timeout = effect.timeout
 
   if (effect.headers) {
     for (const [key, value] of Object.entries(effect.headers)) {
@@ -1144,7 +1207,20 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
     } catch {
       data = xhr.responseText
     }
-    send(effect.onSuccess(data, xhr.status))
+    // Match the http() contract: only 2xx is success; non-2xx maps through the
+    // same status→ApiError table and routes to onError.
+    if (xhr.status >= 200 && xhr.status < 300) {
+      send(effect.onSuccess(data, xhr.status))
+    } else {
+      send(
+        effect.onError(
+          statusToApiError(xhr.status, xhr.statusText, {
+            retryAfter: xhr.getResponseHeader('retry-after'),
+            jsonBody: data,
+          }),
+        ),
+      )
+    }
   }
 
   xhr.onerror = () => {
@@ -1162,26 +1238,11 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
   xhr.send(effect.body)
 }
 
-// Effect kinds that complete synchronously without ever dispatching a message.
-// Inside a `sequence` these would otherwise stall the chain forever (the next
-// step only runs once the current one sends), so the sequence advances past
-// them as soon as they've been dispatched.
-const NON_DISPATCHING_EFFECTS = new Set<string>([
-  'log',
-  'storage-set',
-  'storage-remove',
-  'broadcast',
-  'ws-send',
-])
-
 function runSequence(
   effect: SequenceEffect,
   send: InternalSend,
   signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
+  deps: Deps,
 ): void {
   const effects = effect.effects.slice()
 
@@ -1192,8 +1253,14 @@ function runSequence(
     // A step advances the sequence exactly once — on its first emitted message
     // (the common terminal-message case, e.g. http's onSuccess/onError). A step
     // that emits several messages (interval ticks, upload progress) advances on
-    // the first and must not fast-forward the remaining steps; a step that emits
-    // none (see NON_DISPATCHING_EFFECTS) advances synchronously below.
+    // the first and must NOT fast-forward the remaining steps. A step that emits
+    // NO message advances synchronously, driven by the `completesWithoutDispatch`
+    // signal returned from `dispatchEffect` (rather than a hardcoded name-set) —
+    // bare `cancel`, `clipboard-write`, `log`, `storage-set`/`-remove`,
+    // `broadcast`, and `ws-send` all report this. A step that SUBSCRIBES
+    // (interval, websocket, storage-watch, broadcast-listen) advances on its
+    // first dispatched message, so a subscription mid-sequence gates the rest of
+    // the chain on its first event.
     let advanced = false
     const advance = (): void => {
       if (advanced || signal.aborted) return
@@ -1206,52 +1273,29 @@ function runSequence(
       advance()
     }
 
-    dispatchEffect(
-      current,
-      wrappedSend,
-      signal,
-      cancelControllers,
-      debounceTimers,
-      websockets,
-      custom,
-    )
-
-    if (NON_DISPATCHING_EFFECTS.has(current.type)) advance()
+    const completesWithoutDispatch = dispatchEffect(current, wrappedSend, signal, deps)
+    if (completesWithoutDispatch) advance()
   }
 
   next()
 }
 
-function runRace(
-  effect: RaceEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void {
+function runRace(effect: RaceEffect, send: InternalSend, signal: AbortSignal, deps: Deps): void {
   const ctrl = new AbortController()
-  signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  const onAbort = (): void => ctrl.abort()
+  signal.addEventListener('abort', onAbort, { once: true })
   let settled = false
 
   const raceSend: InternalSend = (msg) => {
     if (settled) return
     settled = true
+    signal.removeEventListener('abort', onAbort) // settled — drop the parent listener
     ctrl.abort()
     send(msg)
   }
 
   for (const inner of effect.effects) {
-    dispatchEffect(
-      inner,
-      raceSend,
-      ctrl.signal,
-      cancelControllers,
-      debounceTimers,
-      websockets,
-      custom,
-    )
+    dispatchEffect(inner, raceSend, ctrl.signal, deps)
   }
 }
 

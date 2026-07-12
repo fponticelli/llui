@@ -49,10 +49,17 @@ export type WsClient = {
     outcome: 'confirmed' | 'user-cancelled',
     stateAfter?: unknown,
   ): void
-  /** Emit a state-update frame so the server can resolve waitForChange promises. */
-  emitStateUpdate(path: string, stateAfter: unknown): void
+  /**
+   * Emit a state-update frame answering a specific server watch (`id`).
+   * The server correlates by `id`, so only an armed `/wait` receives it.
+   * Dropped silently if the socket isn't OPEN (see finding: never let a
+   * send during CONNECTING throw into the host commit cycle).
+   */
+  emitStateUpdate(id: string, path: string, stateAfter: unknown): void
   /** Emit a log-append frame so the server can mirror client-observed actions to the audit sink. */
   emitLogAppend(entry: LogEntry): void
+  /** Whether the underlying socket has fired `open` and not yet `close`. */
+  isOpen(): boolean
   /** Close the socket cleanly. */
   close(): void
 }
@@ -77,6 +84,31 @@ export type WsClientOpts = {
    * `lastDispatchError` state field.
    */
   onDispatchOutcome?: (outcome: LastDispatchOutcome | null) => void
+  /**
+   * Called when the server sends a `confirm-expire` frame — the server
+   * has told the agent a confirm is terminally rejected, so the browser
+   * must expire the matching pending confirm entry to prevent a late
+   * user Approve from firing a now-dead dispatch. Idempotent.
+   */
+  onConfirmExpire?: (confirmId: string) => void
+  /**
+   * Called when the server arms a state watch (`/wait` began). The
+   * factory records a baseline for `path` and, on each subsequent
+   * commit, emits a `state-update` for `id` iff the resolved value
+   * changed. Absent → no state-update traffic is ever produced.
+   */
+  onWatch?: (id: string, path: string | undefined) => void
+  /** Called when the server disarms a watch (`/wait` resolved / timed out). */
+  onUnwatch?: (id: string) => void
+  /**
+   * Encode a value for the wire at the frame boundary — applied to
+   * every state-bearing OUTBOUND frame (rpc-reply, state-update,
+   * log-append, confirm-resolved). App callbacks and pointer resolution
+   * run on the raw (redacted-but-unencoded) state; codec encoding
+   * (Date → tagged form, etc.) happens ONLY here, once, as the frame
+   * leaves. Defaults to identity when omitted (tests / no codecs).
+   */
+  encodeWire?: (value: unknown) => unknown
 }
 
 /**
@@ -89,8 +121,36 @@ export function attachWsClient(
   opts: WsClientOpts = {},
 ): WsClient {
   let activated = false
+  let open = false
+  const encodeWire = opts.encodeWire ?? ((v: unknown) => v)
+
+  // Single outbound seam. Encodes state-bearing frames at the wire
+  // boundary and never throws into the caller — a send attempted while
+  // the socket is CONNECTING / CLOSING would otherwise raise
+  // `InvalidStateError` straight into whatever drove the send (e.g. the
+  // host's state-commit cycle for state-update).
+  const sendFrame = (frame: ClientFrame): void => {
+    try {
+      ws.send(JSON.stringify(encodeWire(frame)))
+    } catch {
+      // Socket not open / already closing — drop. State-update is the
+      // only frame emitted outside an inbound-message handler, and a
+      // dropped update just means the next armed watch re-reads.
+    }
+  }
+
   ws.addEventListener('open', () => {
-    ws.send(JSON.stringify(hello()))
+    open = true
+    // Hello is sent raw (its affordances sample is already redacted; it
+    // carries no state that needs codec encoding on this path).
+    try {
+      ws.send(JSON.stringify(hello()))
+    } catch {
+      /* extremely unlikely on the open event itself */
+    }
+  })
+  ws.addEventListener('close', () => {
+    open = false
   })
   ws.addEventListener('message', async (ev) => {
     let frame: ServerFrame
@@ -111,6 +171,18 @@ export function attachWsClient(
       }
       return
     }
+    if (frame.t === 'confirm-expire') {
+      opts.onConfirmExpire?.(frame.confirmId)
+      return
+    }
+    if (frame.t === 'watch') {
+      opts.onWatch?.(frame.id, frame.path)
+      return
+    }
+    if (frame.t === 'unwatch') {
+      opts.onUnwatch?.(frame.id)
+      return
+    }
     if (frame.t === 'log-push') {
       // Server-originated log entry (today: agent narration). Mirror
       // it via the same `onLogEntry` channel as locally-emitted entries
@@ -119,16 +191,25 @@ export function attachWsClient(
       // it through the existing browser → server path — no special
       // server-side persistence for narration.
       opts.onLogEntry?.(frame.entry)
-      ws.send(JSON.stringify({ t: 'log-append', entry: frame.entry } satisfies ClientFrame))
+      sendFrame({ t: 'log-append', entry: frame.entry })
       return
     }
-    if (frame.t !== 'rpc') return
+    if (frame.t !== 'rpc') {
+      // Unknown / unhandled server frame type. Log once so drift between
+      // the server's frame vocabulary and this client is visible instead
+      // of being silently ignored.
+      console.warn(
+        `[llui-agent] ignoring unknown server frame type: ${String((frame as { t?: unknown }).t)}`,
+      )
+      return
+    }
     let result: unknown
     let rpcErr: { code?: string; detail?: string } | null = null
     try {
       result = await dispatch(frame.tool, frame.args, rpc)
-      const reply: ClientFrame = { t: 'rpc-reply', id: frame.id, result }
-      ws.send(JSON.stringify(reply))
+      // encodeWire runs inside sendFrame: the handler produced raw
+      // (redacted-but-unencoded) state, encoded to wire form here.
+      sendFrame({ t: 'rpc-reply', id: frame.id, result })
     } catch (e: unknown) {
       rpcErr = e as { code?: string; detail?: string }
       // When a plain JS exception bubbles up (TypeError, RangeError, etc.),
@@ -139,13 +220,12 @@ export function attachWsClient(
         (e instanceof Error
           ? `${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(0, 5).join('\n') : ''}`
           : undefined)
-      const errFrame: ClientFrame = {
+      sendFrame({
         t: 'rpc-error',
         id: frame.id,
         code: rpcErr.code ?? 'internal',
         detail,
-      }
-      ws.send(JSON.stringify(errFrame))
+      })
       // Also log to the browser console so operators see the real cause even
       // when the server/Claude just show "internal".
       console.error(`[llui-agent] rpc handler threw for ${frame.tool}:`, e)
@@ -175,27 +255,29 @@ export function attachWsClient(
       const outcome = extractDispatchOutcome(frame.args, result, rpcErr)
       if (outcome !== null) opts.onDispatchOutcome?.(outcome)
     }
+    // Local slices receive the RAW entry (real Date values render better
+    // in the in-app log than tagged wire form); the wire copy is encoded
+    // inside sendFrame.
     opts.onLogEntry?.(logEntry)
-    ws.send(JSON.stringify({ t: 'log-append', entry: logEntry } satisfies ClientFrame))
+    sendFrame({ t: 'log-append', entry: logEntry })
   })
 
   return {
     resolveConfirm(confirmId, outcome, stateAfter) {
-      const frame: ClientFrame = {
-        t: 'confirm-resolved',
-        confirmId,
-        outcome,
-        stateAfter,
-      }
-      ws.send(JSON.stringify(frame))
+      sendFrame({ t: 'confirm-resolved', confirmId, outcome, stateAfter })
     },
-    emitStateUpdate(path, stateAfter) {
-      const frame: ClientFrame = { t: 'state-update', path, stateAfter }
-      ws.send(JSON.stringify(frame))
+    emitStateUpdate(id, path, stateAfter) {
+      // Guard: never send while CONNECTING/CLOSING (finding 8). sendFrame
+      // also try/catches, but the explicit open-check avoids the throw
+      // path entirely and documents intent.
+      if (!open) return
+      sendFrame({ t: 'state-update', id, path, stateAfter })
     },
     emitLogAppend(entry) {
-      const frame: ClientFrame = { t: 'log-append', entry }
-      ws.send(JSON.stringify(frame))
+      sendFrame({ t: 'log-append', entry })
+    },
+    isOpen() {
+      return open
     },
     close() {
       ws.close()

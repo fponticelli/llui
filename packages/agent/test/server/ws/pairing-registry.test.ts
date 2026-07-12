@@ -133,17 +133,37 @@ describe('WsPairingRegistry', () => {
     expect(await p).toEqual({ outcome: 'confirmed', stateAfter: { ok: true } })
   })
 
-  it('waitForChange() resolves when a matching state-update arrives (path prefix match)', async () => {
+  it('waitForChange() arms a watch and resolves on the matching (id-correlated) state-update', async () => {
     const f = mkFake()
-    reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
+    reg.register('t1', getConn(f))
     const p = reg.waitForChange('t1', '/count', 1000)
-    f.emit({ t: 'state-update', path: '/count', stateAfter: { count: 2 } })
+    // The server arms the browser with a `watch { id, path }` frame.
+    const watch = f.send.mock.calls.map((c) => c[0] as ServerFrame).find((fr) => fr.t === 'watch')
+    expect(watch).toBeDefined()
+    if (!watch || watch.t !== 'watch') throw new Error('unreachable')
+    expect(watch.path).toBe('/count')
+    // The browser answers with a state-update carrying that watch id.
+    f.emit({ t: 'state-update', id: watch.id, path: '/count', stateAfter: { count: 2 } })
     expect(await p).toEqual({ status: 'changed', stateAfter: { count: 2 } })
+    // And the watch is disarmed on resolution.
+    const unwatch = f.send.mock.calls
+      .map((c) => c[0] as ServerFrame)
+      .find((fr) => fr.t === 'unwatch')
+    expect(unwatch).toMatchObject({ t: 'unwatch', id: watch.id })
+  })
+
+  it('waitForChange() ignores a state-update whose id does NOT match the armed watch', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const p = reg.waitForChange('t1', '/count', 20)
+    // A state-update for a DIFFERENT watch id must not resolve this poll.
+    f.emit({ t: 'state-update', id: 'some-other-id', path: '/count', stateAfter: { count: 9 } })
+    expect(await p).toEqual({ status: 'timeout', stateAfter: null })
   })
 
   it('waitForChange() returns timeout if no matching update arrives', async () => {
     const f = mkFake()
-    reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
+    reg.register('t1', getConn(f))
     const res = await reg.waitForChange('t1', '/count', 1)
     expect(res).toEqual({ status: 'timeout', stateAfter: null })
   })
@@ -154,6 +174,54 @@ describe('WsPairingRegistry', () => {
     const p = reg.rpc('t1', 'get_state', {}, { timeoutMs: 10000 })
     f.emitClose()
     await expect(p).rejects.toMatchObject({ code: 'paused' })
+  })
+
+  it('a stale conn close does NOT tear down the replacement pairing (connection-scoped close)', () => {
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    // Replacement pairing arrives (reconnect) before the stale close fires.
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    expect(reg.isPaired('t1')).toBe(true)
+    // Stale close from the OLD socket fires late — must be a no-op.
+    a.emitClose()
+    expect(reg.isPaired('t1')).toBe(true)
+    // The live pairing still routes to conn B.
+    reg.send('t1', { t: 'active' })
+    expect(b.send).toHaveBeenCalledWith({ t: 'active' })
+  })
+
+  it('register explicitly closes a superseded live conn before replacing it', () => {
+    const a = mkFake()
+    const closeSpy = vi.fn()
+    const connA = getConn(a) as unknown as { close: () => void }
+    connA.close = closeSpy
+    reg.register('t1', connA as never)
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    expect(closeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('a stale close does NOT wipe the replacement pairing recent-log buffer', () => {
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    b.emit({ t: 'log-append', entry: { id: 'e1', at: 1, kind: 'read' } })
+    // Late stale close from A must not drop B's recent-log.
+    a.emitClose()
+    expect(reg.getRecentLog('t1', 10)).toHaveLength(1)
+  })
+
+  it('recent-log survives a legit close so a reconnect within the grace window keeps history', () => {
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit({ t: 'log-append', entry: { id: 'e1', at: 1, kind: 'read' } })
+    a.emitClose()
+    // Reconnect within grace: recent-log history is still readable.
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    expect(reg.getRecentLog('t1', 10)).toHaveLength(1)
   })
 
   it('onLogAppend callback is called with (tid, entry) when a log-append frame arrives', () => {

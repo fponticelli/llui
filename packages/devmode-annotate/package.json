@@ -26,7 +26,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "prepack": "pnpm run build",
@@ -47,10 +48,10 @@
     "@llui/components": "workspace:^",
     "@llui/lexical": "workspace:^",
     "@llui/markdown-editor": "workspace:^",
+    "@llui/notes-format": "workspace:^",
     "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
-    "lexical": "^0.46.0",
-    "yaml": "^2.9.0"
+    "lexical": "^0.46.0"
   },
   "peerDependencies": {
     "@llui/dom": "^0.11.5"
@@ -81,5 +82,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/devmode-annotate#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/devmode-annotate#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

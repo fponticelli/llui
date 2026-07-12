@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { type MessageAnnotations } from '@llui/compiler'
+import { type MessageAnnotations } from './msg-annotations.js'
 import {
   type MsgSchema,
   type MsgField,

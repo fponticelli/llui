@@ -100,4 +100,65 @@ describe('render security', () => {
     const root = body(mounted.container)
     expect(root.querySelector('a')?.getAttribute('href')).toBe('https://site.test/rel')
   })
+
+  it('applies transformLink to REFERENCE-style links (not just inline)', () => {
+    mounted = mountStatic('[t][ref]\n\n[ref]: /rel', {
+      transformLink: (href) => `https://site.test${href}`,
+    })
+    const root = body(mounted.container)
+    expect(root.querySelector('a')?.getAttribute('href')).toBe('https://site.test/rel')
+  })
+
+  it('applies transformLink to REFERENCE-style images', () => {
+    mounted = mountStatic('![a][ref]\n\n[ref]: /pic.png', {
+      transformLink: (href) => `https://cdn.test${href}`,
+    })
+    const root = body(mounted.container)
+    expect(root.querySelector('img')?.getAttribute('src')).toBe('https://cdn.test/pic.png')
+  })
+
+  it('drops a reference-style link when transformLink returns null', () => {
+    mounted = mountStatic('[t][ref]\n\n[ref]: https://example.com', {
+      transformLink: () => null,
+    })
+    const root = body(mounted.container)
+    expect(root.querySelector('a')).toBeNull()
+    expect(root.textContent).toContain('t') // label text kept
+  })
+})
+
+describe('raw HTML grouping (split inline fragments)', () => {
+  it('sanitizes a split inline `<b>hi</b>` as ONE run (not empty <b></b>)', () => {
+    // mdast emits `<b>`, text `hi`, `</b>` as separate nodes. Sanitizing each
+    // fragment alone corrupts it; grouping joins them into `<b>hi</b>`.
+    mounted = mountStatic('<b>hi</b>', { sanitizeHtml: (h) => h })
+    const root = body(mounted.container)
+    const b = root.querySelector('b')
+    expect(b).toBeTruthy()
+    expect(b?.textContent).toBe('hi') // text is INSIDE the <b>, not orphaned
+  })
+
+  it('keeps surrounding text outside the raw-HTML run', () => {
+    mounted = mountStatic('a <b>hi</b> b', { sanitizeHtml: (h) => h })
+    const root = body(mounted.container)
+    expect(root.querySelector('b')?.textContent).toBe('hi')
+    expect(root.textContent).toContain('a ')
+    expect(root.textContent).toContain(' b')
+  })
+
+  it('escapes folded text so it cannot inject markup', () => {
+    mounted = mountStatic('<b>1 < 2</b>', { sanitizeHtml: (h) => h })
+    const root = body(mounted.container)
+    expect(root.querySelector('b')?.textContent).toBe('1 < 2')
+  })
+
+  it('renders interleaved block-level HTML nodes independently', () => {
+    mounted = mountStatic('<div class="a">A</div>\n\ntext\n\n<div class="b">B</div>', {
+      sanitizeHtml: (h) => h,
+    })
+    const root = body(mounted.container)
+    expect(root.querySelector('.a')?.textContent).toBe('A')
+    expect(root.querySelector('.b')?.textContent).toBe('B')
+    expect(root.textContent).toContain('text')
+  })
 })

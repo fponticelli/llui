@@ -1,6 +1,8 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import { flipArrow } from '../utils/direction.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
@@ -265,13 +267,20 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
     case 'close':
       return [{ ...state, ...closedPatch(state) }, []]
     case 'highlight':
+      // Open-only + same-ref no-op guards (mirrors menu.ts): a queued pointer
+      // event after close must not resurrect state, and a highlight already at
+      // the target returns the SAME reference so the reconciler skips it.
+      if (!state.open) return [state, []]
       if (msg.value !== null && isDisabled(state.items, msg.value)) return [state, []]
+      if ((state.highlights[msg.level] ?? null) === msg.value) return [state, []]
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, msg.value) }, []]
     case 'highlightNext': {
+      if (!state.open) return [state, []]
       const to = nextNav(levelItems(state.items, msg.level), state.highlights[msg.level] ?? null, 1)
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
     }
     case 'highlightPrev': {
+      if (!state.open) return [state, []]
       const to = nextNav(
         levelItems(state.items, msg.level),
         state.highlights[msg.level] ?? null,
@@ -280,6 +289,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
     }
     case 'highlightFirst':
+      if (!state.open) return [state, []]
       return [
         {
           ...state,
@@ -292,6 +302,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         [],
       ]
     case 'highlightLast':
+      if (!state.open) return [state, []]
       return [
         {
           ...state,
@@ -304,6 +315,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         [],
       ]
     case 'openSub': {
+      if (!state.open) return [state, []]
       const parent = findItem(state.items, msg.value)
       if (!parent || !parent.children || parent.disabled) return [state, []]
       return [
@@ -332,6 +344,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
     case 'setItems':
       return [{ ...state, items: msg.items }, []]
     case 'typeahead': {
+      if (!state.open) return [state, []]
       const nav = navigable(levelItems(state.items, msg.level))
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       const current = state.highlights[msg.level] ?? null
@@ -487,6 +500,8 @@ export interface ContextMenuSubContentParts {
   role: 'menu'
   id: string
   'aria-labelledby': string
+  /** Virtually-focused item id at this submenu level. */
+  'aria-activedescendant': Signal<string | undefined>
   tabindex: -1
   'data-state': Signal<'open' | 'closed'>
   'data-scope': 'context-menu'
@@ -511,6 +526,8 @@ export interface ContextMenuParts {
   content: {
     role: 'menu'
     id: string
+    /** Virtually-focused (highlighted) item id at the root level. */
+    'aria-activedescendant': Signal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
@@ -524,7 +541,7 @@ export interface ContextMenuParts {
   item: (value: string) => ContextMenuItemParts
   checkboxItem: (value: string) => ContextMenuCheckItemParts
   radioItem: (value: string) => ContextMenuCheckItemParts
-  group: (label: string) => ContextMenuGroupParts
+  group: (id: string) => ContextMenuGroupParts
   separator: () => ContextMenuSeparatorParts
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
@@ -550,7 +567,8 @@ export function connect(
   const itemId = (v: string): string => `${base}:item:${v}`
   const subContentId = (v: string): string => `${base}:sub:${v}:content`
   const subTriggerId = (v: string): string => `${base}:sub:${v}:trigger`
-  const groupLabelId = (label: string): string => `${base}:group:${label}`
+  // Opaque id, not display text: multi-word label text would yield invalid ids.
+  const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const hoverDelay = opts.hoverDelay ?? 200
   const hoverCloseDelay = opts.hoverCloseDelay ?? 300
 
@@ -584,23 +602,31 @@ export function connect(
     clearCloseTimer(value)
     closeTimers[value] = setTimeout(() => {
       delete closeTimers[value]
-      send({ type: 'closeSub' })
+      // Only close when THIS submenu is the deepest open one — otherwise a
+      // shallower level's pointerleave would collapse a deeper, still-open one.
+      const openPath = state.peek()?.openPath ?? []
+      if (openPath[openPath.length - 1] === value) send({ type: 'closeSub' })
     }, hoverCloseDelay)
   }
 
+  // Memoized per items-array reference: turns the per-pointer-move O(n) tree
+  // walk into an O(1) lookup (rebuilt only when `items` changes).
+  let levelCacheItems: ContextMenuItem[] | null = null
+  let levelCache = new Map<string, string>()
   function levelOf(value: string): string {
-    const s = state.peek()
-    const walk = (list: ContextMenuItem[], level: string): string | null => {
-      for (const it of list) {
-        if (it.value === value) return level
-        if (it.children) {
-          const nested = walk(it.children, it.value)
-          if (nested !== null) return nested
+    const items = state.peek()?.items ?? []
+    if (items !== levelCacheItems) {
+      levelCacheItems = items
+      levelCache = new Map()
+      const walk = (list: ContextMenuItem[], level: string): void => {
+        for (const it of list) {
+          levelCache.set(it.value, level)
+          if (it.children) walk(it.children, it.value)
         }
       }
-      return null
+      walk(items, '')
     }
-    return walk(s.items, '') ?? ''
+    return levelCache.get(value) ?? ''
   }
 
   const itemAttrs = (
@@ -629,9 +655,11 @@ export function connect(
       send({ type: 'select', value })
       opts.onSelect?.(value)
     }),
-    onPointerMove: tagSend(send, ['highlight'], () =>
-      send({ type: 'highlight', level: levelOf(value), value }),
-    ),
+    onPointerMove: tagSend(send, ['highlight'], () => {
+      const level = levelOf(value)
+      if ((state.peek()?.highlights[level] ?? null) === value) return
+      send({ type: 'highlight', level, value })
+    }),
   })
 
   return {
@@ -651,6 +679,10 @@ export function connect(
     content: {
       role: 'menu',
       id: contentId,
+      'aria-activedescendant': state.map((s) => {
+        const v = s.highlights['']
+        return v == null ? undefined : itemId(v)
+      }),
       tabindex: -1,
       'data-state': state.map((s) => (s.status === 'closed' && s.open ? 'open' : s.status)),
       'data-scope': 'context-menu',
@@ -718,15 +750,15 @@ export function connect(
         'aria-checked': Signal<'true' | 'false'>
       },
     }),
-    group: (label: string): ContextMenuGroupParts => ({
+    group: (id: string): ContextMenuGroupParts => ({
       group: {
         role: 'group',
-        'aria-labelledby': groupLabelId(label),
+        'aria-labelledby': groupLabelId(id),
         'data-scope': 'context-menu',
         'data-part': 'group',
       },
       label: {
-        id: groupLabelId(label),
+        id: groupLabelId(id),
         'data-scope': 'context-menu',
         'data-part': 'group-label',
       },
@@ -786,6 +818,10 @@ export function connect(
       role: 'menu',
       id: subContentId(value),
       'aria-labelledby': subTriggerId(value),
+      'aria-activedescendant': state.map((s) => {
+        const v = s.highlights[value]
+        return v == null ? undefined : itemId(v)
+      }),
       tabindex: -1,
       'data-state': state.map((s) => (s.openPath.includes(value) ? 'open' : 'closed')),
       'data-scope': 'context-menu',
@@ -848,12 +884,11 @@ export interface OverlayOptions {
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
   content: () => Renderable
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const parts = opts.parts
   const contentId = parts.content.id
 
@@ -865,15 +900,11 @@ export function overlay(opts: OverlayOptions): Mountable {
   return show(
     opts.state.map((s) => isPresent(s)),
     () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
       return [
         portal(() => {
           const interaction = show(opts.state.map(isVisible), () => [
-            onMount(() => {
-              const contentEl = document.getElementById(contentId)
+            onMount((root) => {
+              const contentEl = getElementByIdInScope(root, contentId)
               if (!contentEl) return
               contentEl.focus({ preventScroll: true })
               return pushDismissable({
@@ -883,7 +914,7 @@ export function overlay(opts: OverlayOptions): Mountable {
             }),
           ])
           return [interaction, div(parts.positioner, opts.content())]
-        }, targetEl),
+        }, host),
       ]
     },
   )

@@ -2,10 +2,9 @@ import { z } from 'zod'
 
 /**
  * External-facing tool definition. Kept JSON-Schema-shaped on the
- * outside so back-compat consumers (`getTools()`, the
- * `mcpToolDefinitions` snapshot, tests asserting `inputSchema.properties`)
- * keep working unchanged. The JSON Schema is derived from the Zod
- * schema via `z.toJSONSchema` at registration time.
+ * outside so consumers (`getTools()`, tests asserting
+ * `inputSchema.properties`) keep working unchanged. The JSON Schema is
+ * derived from the Zod schema via `z.toJSONSchema` at registration time.
  */
 export interface ToolDefinition {
   name: string

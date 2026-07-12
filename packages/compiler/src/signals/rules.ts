@@ -52,6 +52,7 @@
 import ts from 'typescript'
 import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
+import { ELEMENT_HELPERS as ELEMENT_TAGS } from './element-helpers.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -88,36 +89,10 @@ const SIDE_EFFECT_CALLS = new Set([
   'queueMicrotask',
 ])
 const NONDET_CALLS = new Set(['now', 'random']) // Date.now / Math.random (member calls)
-const ELEMENT_HELPERS = new Set([
-  'div',
-  'span',
-  'p',
-  'a',
-  'button',
-  'input',
-  'label',
-  'ul',
-  'ol',
-  'li',
-  'section',
-  'header',
-  'footer',
-  'nav',
-  'main',
-  'h1',
-  'h2',
-  'h3',
-  'img',
-  'table',
-  'tr',
-  'td',
-  'select',
-  'option',
-  'textarea',
-  'text',
-  'el',
-  'signalText',
-])
+// Callees that construct a DOM node inside a .map/derived body (no-node-construction):
+// every element tag plus the text-node helpers. `ELEMENT_TAGS` is the shared set
+// (element-helpers.ts) so this can't drift from the transform's lowering list.
+const NODE_HELPERS = new Set<string>([...ELEMENT_TAGS, 'text', 'el', 'signalText'])
 const REACTIVE_METHODS = new Set(['peek', 'at', 'map'])
 // Elements that are natively focusable/clickable — an onClick on these needs no
 // extra role/tabIndex for keyboard accessibility.
@@ -161,7 +136,7 @@ const ATTR_CORRECTIONS = new Map<string, AttrCorrection>([
   ['htmlfor', { to: 'for', kind: 'broken' }],
 ])
 // Canonical `on*` event-handler names the runtime binds. Mirrors `@llui/dom`'s
-// `ElEventMap` — kept here independently (like `ELEMENT_HELPERS`) so the compiler
+// `ElEventMap` — kept here independently (like `ELEMENT_TAGS`) so the compiler
 // needs no `@llui/dom` dependency. The binder only treats `/^on[A-Z]/` as a
 // listener, so a miscased `onclick`/`onkeydown` silently never binds — caught by
 // the `event-handler-casing` rule, which renames to the canonical form below.
@@ -210,8 +185,8 @@ const EVENT_HANDLER_BY_LOWER = new Map<string, string>(
     ] as const
   ).map((h) => [h.toLowerCase(), h]),
 )
-// ELEMENT_HELPERS entries that don't produce a DOM *element* with attributes.
-const NON_ELEMENT_HELPERS = new Set(['text', 'el', 'signalText'])
+// No signal roots — used to lint reducer/effect bodies, whose params are plain values.
+const EMPTY_ROOTS: Roots = new Map()
 
 /** True when an arrow/function expression carries the `async` modifier. */
 function isAsyncFunction(node: ts.Node): boolean {
@@ -329,6 +304,38 @@ function updateSwitchCases(
 function fnParamNames(fn: ts.Node): string[] {
   if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return []
   return fn.parameters.flatMap((p) => (ts.isIdentifier(p.name) ? [p.name.text] : []))
+}
+
+/** All identifier names introduced by a (possibly destructured) binding. */
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text]
+  const out: string[] = []
+  for (const el of name.elements) {
+    if (ts.isBindingElement(el)) out.push(...bindingNames(el.name))
+  }
+  return out
+}
+
+/** Names a node introduces into its child scope that would SHADOW an outer root:
+ * a function-like node's parameters, and a block's local variable declarations.
+ * Rooting is scope-aware — when a param/local rebinds a root name (e.g. a reducer
+ * `update: (state, msg) => …`, where `state` is a PLAIN value), the root is
+ * dropped for that subtree so the lint doesn't treat the plain value as a signal.
+ * Mirrors the scope-shadowing the accessor analyzer (analyze-deps.ts) already does. */
+function scopeShadowedNames(node: ts.Node): string[] {
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+    return node.parameters.flatMap((p) => bindingNames(p.name))
+  }
+  if (ts.isBlock(node)) {
+    const out: string[] = []
+    for (const st of node.statements) {
+      if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) out.push(...bindingNames(d.name))
+      }
+    }
+    return out
+  }
+  return []
 }
 
 function fnBody(fn: ts.Node): ts.Node | undefined {
@@ -483,7 +490,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       if (ts.isCallExpression(n)) {
         const callee = n.expression
         if (ts.isIdentifier(callee)) {
-          if (ELEMENT_HELPERS.has(callee.text)) {
+          if (NODE_HELPERS.has(callee.text)) {
             push(
               'no-node-construction-in-body',
               `Building DOM (${callee.text}()) inside a .map/derived body; use a structural primitive (each/branch/show) instead.`,
@@ -608,11 +615,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     node: ts.CallExpression,
   ): { tag: string; props: ts.ObjectLiteralExpression | null } | null => {
     const callee = node.expression
-    if (
-      ts.isIdentifier(callee) &&
-      ELEMENT_HELPERS.has(callee.text) &&
-      !NON_ELEMENT_HELPERS.has(callee.text)
-    ) {
+    if (ts.isIdentifier(callee) && ELEMENT_TAGS.has(callee.text)) {
       const a0 = node.arguments[0]
       return { tag: callee.text, props: a0 && ts.isObjectLiteralExpression(a0) ? a0 : null }
     }
@@ -657,6 +660,17 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   }
   const hasSpread = (obj: ts.ObjectLiteralExpression): boolean =>
     obj.properties.some((p) => ts.isSpreadAssignment(p))
+  // A prop present with a value that is NOT the literal `false` — used to exempt
+  // readonly/disabled inputs from controlled-input (an un-typeable input's reactive
+  // value legitimately re-asserts state). A shorthand (`{ readonly }`) counts as truthy.
+  const hasTruthyProp = (obj: ts.ObjectLiteralExpression, name: string): boolean =>
+    obj.properties.some((p) => {
+      if (ts.isShorthandPropertyAssignment(p)) return p.name.getText(sf) === name
+      if (ts.isPropertyAssignment(p) && p.name.getText(sf) === name) {
+        return p.initializer.kind !== ts.SyntaxKind.FalseKeyword
+      }
+      return false
+    })
   // The key node + its unquoted text for a (shorthand) property assignment, or
   // null for spreads / computed / numeric keys (not renameable name props).
   const propKey = (p: ts.ObjectLiteralElementLike): { node: ts.Node; text: string } | null => {
@@ -771,7 +785,10 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         value &&
         isReactiveSignal(value.initializer, roots) &&
         !hasProp(props, 'onInput') &&
-        !hasProp(props, 'onChange')
+        !hasProp(props, 'onChange') &&
+        // readonly / disabled inputs can't be typed into, so re-asserting state is fine
+        !hasTruthyProp(props, 'readonly') &&
+        !hasTruthyProp(props, 'disabled')
       ) {
         push(
           'controlled-input',
@@ -823,8 +840,15 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
               continue
             }
           }
+          // Reducer/effect bodies operate on PLAIN values (their params are the
+          // current state / message / effect, not signals) — lint them with NO
+          // signal roots so a param named `state` isn't treated as a signal.
+          if (propName === 'init' || propName === 'update' || propName === 'onEffect') {
+            visit(prop, EMPTY_ROOTS, false)
+            continue
+          }
         }
-        visit(prop, roots, false) // init/update/onEffect etc.: plain values
+        visit(prop, roots, false) // other config props: plain values
       }
 
       // exhaustive-update: when the Msg union is fully resolvable in this file
@@ -954,6 +978,16 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       }
     }
 
+    // Scope-aware rooting: drop any root name this node's params/locals rebind,
+    // so a plain value that happens to be named like a root isn't linted as a signal.
+    let childRoots = roots
+    const shadowed = scopeShadowedNames(node)
+    if (shadowed.some((n) => roots.has(n))) {
+      const m = new Map(roots)
+      for (const n of shadowed) m.delete(n)
+      childRoots = m
+    }
+
     node.forEachChild((c) => {
       // `.peek()` is allowed inside event-handler functions and .map/derived
       // callback bodies — flip peekOk true when descending into them.
@@ -972,7 +1006,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           childPeek = true
         }
       }
-      visit(c, roots, childPeek)
+      visit(c, childRoots, childPeek)
     })
   }
   visit(sf, STATE_ROOTS, false)

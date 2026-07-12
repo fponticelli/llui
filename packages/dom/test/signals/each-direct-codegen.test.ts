@@ -14,7 +14,7 @@ import {
   applyAttr,
 } from '../../src/signals/dom'
 import { ul, li, button, span, text, show, eachDirect, eachArm } from '../../src/signals/authoring'
-import { derived, pathHandle } from '../../src/signals/handle'
+import { derived, rowHandle } from '../../src/signals/handle'
 
 /** Compile + load a source that uses view-HELPER functions (authoring ul/li/text +
  * the handle-consuming eachDirect), for the cross-function transform-coverage tests.
@@ -46,7 +46,7 @@ function compileAndLoadWithHelpers(
     signalEachDirect,
     eachDirect,
     eachArm,
-    pathHandle,
+    rowHandle,
     applyAttr,
     ul,
     li,

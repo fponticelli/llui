@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { signalText, el, signalVirtualEach, type RowCtx } from '../../src/signals/dom'
+import { component, div, text, virtualEach } from '../../src/signals/authoring'
 
 interface Item {
   id: number
@@ -194,5 +195,91 @@ describe('signalVirtualEach — variable row heights (itemHeight function)', () 
     // row containing 120 is index 4 (offset 120); viewport bottom 220 → up to row 7
     // (offset 200 < 220, row 8 offset 240 ≥ 220). Window [4, 8).
     expect(keys).toEqual(['4', '5', '6', '7'])
+  })
+})
+
+// ── Finding 1: a virtual row reading component state updates on a state-only change ──
+describe('signalVirtualEach — component-state reads in a row (finding 1)', () => {
+  interface Item {
+    id: number
+    label: string
+  }
+  interface S {
+    items: Item[]
+    highlight: number
+  }
+  type M = { type: 'highlight'; id: number }
+
+  it('updates a row bound to a component-state field when only that field changes', () => {
+    const container = document.createElement('div')
+    const app = component<S, M>({
+      init: () => ({ items: makeItems(20), highlight: -1 }),
+      update: (s, m) => (m.type === 'highlight' ? { ...s, highlight: m.id } : s),
+      view: ({ state }) =>
+        [
+          virtualEach<Item>({
+            items: state.map((s) => s.items),
+            key: (it) => it.id,
+            itemHeight: ITEM_HEIGHT,
+            containerHeight: CONTAINER_HEIGHT,
+            overscan: OVERSCAN,
+            // each row's `data-hl` reads the COMPONENT `highlight` field
+            render: (item) => [
+              div(
+                {
+                  class: 'vrow',
+                  'data-hl': state.at('highlight').map((h) => (h === item.peek().id ? 'on' : '')),
+                },
+                [text(item.at('label'))],
+              ),
+            ],
+          }),
+        ] as never,
+    })
+    const h = mountSignalComponent(container, app)
+    const rowFor = (id: number): HTMLElement | null =>
+      [...container.querySelectorAll('.vrow')].find(
+        (r) => r.textContent === `row-${id}`,
+      ) as HTMLElement | null
+    expect(rowFor(2)!.getAttribute('data-hl')).toBe('')
+    // State-ONLY change (items array untouched) must still reach the visible row.
+    h.send({ type: 'highlight', id: 2 })
+    expect(rowFor(2)!.getAttribute('data-hl')).toBe('on')
+    expect(rowFor(3)!.getAttribute('data-hl')).toBe('')
+    h.dispose()
+  })
+})
+
+// ── Finding 14: variable row heights reachable from the authoring virtualEach ──
+describe('virtualEach authoring — variable itemHeight (finding 14)', () => {
+  interface VItem {
+    id: number
+    h: number
+  }
+  it('accepts an itemHeight function and sizes the spacer to the height sum', () => {
+    const container = document.createElement('div')
+    const items: VItem[] = Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      h: i % 2 === 0 ? 20 : 40,
+    }))
+    const app = component<{ items: VItem[] }, { type: 'x' }>({
+      init: () => ({ items }),
+      update: (s) => s,
+      view: ({ state }) =>
+        [
+          virtualEach<VItem>({
+            items: state.map((s) => s.items),
+            key: (it) => it.id,
+            itemHeight: (it) => it.h, // per-item height via the authoring tier
+            containerHeight: 100,
+            overscan: 0,
+            render: (item) => [div({ class: 'vrow' }, [text(item.map((r) => String(r.id)))])],
+          }),
+        ] as never,
+    })
+    const h = mountSignalComponent(container, app)
+    const spacer = container.querySelector('[data-virtual-spacer]') as HTMLElement
+    expect(spacer.style.height).toBe('300px') // 5*20 + 5*40
+    h.dispose()
   })
 })

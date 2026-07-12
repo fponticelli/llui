@@ -1,13 +1,15 @@
 import type { ClientFrame, ServerFrame, HelloFrame, LogEntry } from '../../protocol.js'
+import { LAP_VERSION } from '../../protocol.js'
 import {
   rpc as rpcHelper,
   waitForConfirm as waitForConfirmHelper,
   waitForChange as waitForChangeHelper,
   type RpcOptions,
   type RpcError,
+  type ConfirmWaitResult,
 } from './rpc.js'
 
-export type { RpcOptions, RpcError }
+export type { RpcOptions, RpcError, ConfirmWaitResult }
 
 /**
  * Thin abstraction over a single paired WebSocket. Consumed by the
@@ -91,12 +93,8 @@ export interface PairingRegistry {
    * `./rpc.ts::rpc` for the full contract.
    */
   rpc(tid: string, tool: string, args: unknown, opts?: RpcOptions): Promise<unknown>
-  /** See `./rpc.ts::waitForConfirm`. */
-  waitForConfirm(
-    tid: string,
-    confirmId: string,
-    timeoutMs: number,
-  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+  /** See `./rpc.ts::waitForConfirm`. Three-way: confirmed | user-cancelled | timeout. */
+  waitForConfirm(tid: string, confirmId: string, timeoutMs: number): Promise<ConfirmWaitResult>
   /** See `./rpc.ts::waitForChange`. */
   waitForChange(
     tid: string,
@@ -163,20 +161,48 @@ export class InMemoryPairingRegistry implements PairingRegistry {
   }
 
   register(tid: string, conn: PairingConnection): void {
+    // Supersede any still-live pairing for this tid (reconnect while the
+    // old socket hasn't finished closing). We tear the old pairing down
+    // SILENTLY — its close handlers are dropped WITHOUT firing so the
+    // core's `markPendingResume` transition does NOT run mid-re-pair
+    // (the caller, `acceptConnection`, re-marks the record active right
+    // after). The recent-log ring buffer is deliberately preserved so
+    // history survives the re-pair. Then we explicitly close the old
+    // socket so a half-open connection doesn't linger.
+    const existing = this.pairings.get(tid)
+    if (existing && !existing.closed && existing.conn !== conn) {
+      existing.closed = true
+      existing.subscribers.clear()
+      existing.closeHandlers.clear()
+      try {
+        existing.conn.close()
+      } catch {
+        // Best-effort — the socket may already be tearing down.
+      }
+    }
     const p: Pairing = {
       conn,
-      hello: null,
+      // Preserve the last-known hello across a re-pair; the browser
+      // re-sends hello on WS open, but keeping it avoids a null window.
+      hello: existing?.hello ?? null,
       subscribers: new Set(),
       closeHandlers: new Set(),
       closed: false,
     }
     this.pairings.set(tid, p)
     conn.onFrame((frame) => this.dispatch(tid, frame))
-    conn.onClose(() => this.handleClose(tid))
+    // Connection-scoped close: the handler carries the identity of THIS
+    // conn, so a late close event from a superseded socket is a no-op
+    // (it won't tear down the replacement pairing or wipe its log).
+    conn.onClose(() => this.handleClose(tid, conn))
   }
 
   unregister(tid: string): void {
-    this.handleClose(tid)
+    // Hard teardown (e.g. revoke): fire close handlers for the current
+    // conn AND drop the recent-log buffer — unlike a plain WS close,
+    // this session is gone for good, so retaining history would leak.
+    this.handleClose(tid, this.pairings.get(tid)?.conn)
+    this.recentLog.delete(tid)
   }
 
   isPaired(tid: string): boolean {
@@ -228,6 +254,14 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // here so no per-call subscriber has to pick them up.
     if (frame.t === 'hello') {
       p.hello = frame
+      // LAP version negotiation: log (don't hard-fail) a client whose
+      // wire-protocol version we don't recognise, so a version skew is
+      // diagnosable instead of surfacing as mysterious frame errors.
+      if (frame.lapVersion !== undefined && frame.lapVersion !== LAP_VERSION) {
+        console.warn(
+          `[llui-agent] LAP version skew for tid=${tid}: client speaks v${frame.lapVersion}, server speaks v${LAP_VERSION}`,
+        )
+      }
       return
     }
     if (frame.t === 'log-append') {
@@ -245,6 +279,21 @@ export class InMemoryPairingRegistry implements PairingRegistry {
         buf.splice(0, buf.length - RECENT_LOG_CAP)
       }
       this.onLogAppend?.(tid, frame.entry)
+      return
+    }
+    // Guard against genuinely unknown client frame types (protocol drift /
+    // a newer client). The known correlated types are consumed by
+    // per-call subscribers below; anything else is logged, not silently
+    // dropped.
+    if (
+      frame.t !== 'rpc-reply' &&
+      frame.t !== 'rpc-error' &&
+      frame.t !== 'confirm-resolved' &&
+      frame.t !== 'state-update'
+    ) {
+      console.warn(
+        `[llui-agent] ignoring unknown client frame type: ${String((frame as { t?: unknown }).t)}`,
+      )
       return
     }
     // Iterate over a snapshot because subscribers may self-remove
@@ -273,11 +322,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     return rpcHelper(this, tid, tool, args, opts)
   }
 
-  waitForConfirm(
-    tid: string,
-    confirmId: string,
-    timeoutMs: number,
-  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }> {
+  waitForConfirm(tid: string, confirmId: string, timeoutMs: number): Promise<ConfirmWaitResult> {
     return waitForConfirmHelper(this, tid, confirmId, timeoutMs)
   }
 
@@ -294,9 +339,13 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     this.send(tid, frame)
   }
 
-  private handleClose(tid: string): void {
+  private handleClose(tid: string, conn?: PairingConnection): void {
     const p = this.pairings.get(tid)
     if (!p || p.closed) return
+    // Connection-scoped: only the pairing's CURRENT conn may close it.
+    // A late close from a superseded socket (reconnect race) is ignored
+    // so it can't tear down the replacement pairing.
+    if (conn !== undefined && p.conn !== conn) return
     p.closed = true
     for (const h of Array.from(p.closeHandlers)) {
       try {
@@ -308,11 +357,10 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     p.closeHandlers.clear()
     p.subscribers.clear()
     this.pairings.delete(tid)
-    // Drop the recent-log ring buffer — once the pairing is gone,
-    // `describe_recent_actions` will reject anyway (paused/revoked
-    // gates run before the registry lookup), but holding the entries
-    // would leak memory across reconnects.
-    this.recentLog.delete(tid)
+    // The recent-log ring buffer is intentionally NOT dropped here: a
+    // brief WS drop followed by a reconnect within the pending-resume
+    // grace window should keep `describe_recent_actions` history intact.
+    // Hard teardown (revoke) goes through `unregister`, which drops it.
   }
 }
 

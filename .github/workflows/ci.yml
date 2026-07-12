@@ -52,6 +52,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Persist turbo's local cache (`.turbo/cache`, turbo 2's default dir)
+      # across runs so unchanged packages replay from cache instead of
+      # rebuilding the world. Keyed on the lockfile + turbo.json so a dep or
+      # pipeline change busts it; the commit sha makes each run save a fresh
+      # entry, and restore-keys fall back to the newest compatible cache. The
+      # key prefix is shared with deploy-docs.yml so both workflows reuse it.
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-
+            turbo-${{ runner.os }}-
+
       - name: Format check
         run: pnpm format:check
 
@@ -86,3 +101,44 @@ jobs:
       # pre-installed in the container image (PLAYWRIGHT_BROWSERS_PATH).
       - name: Smoke-test example bundles
         run: pnpm smoke:examples
+
+  # Drift gate: the API reference and example pages under site/content are
+  # GENERATED (see site/src/generate-*.ts) and committed. If a source change
+  # (a JSDoc edit, a new export, a new package in the registry, an example
+  # tweak) isn't accompanied by a regenerate, the committed pages silently go
+  # stale. This job regenerates them and fails if the working tree changes —
+  # forcing the generated output to be committed alongside its source.
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-
+            turbo-${{ runner.os }}-
+
+      # The generators read each package's built types, so build first (replays
+      # from the shared turbo cache when unchanged).
+      - name: Build packages
+        run: pnpm turbo build --filter=!@llui/site
+
+      - name: Regenerate site content
+        run: pnpm --filter @llui/site run generate
+
+      - name: Fail on drift in generated pages
+        run: git diff --exit-code site/content/api site/content/examples

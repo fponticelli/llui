@@ -96,6 +96,9 @@ export interface BrowseViewHandle {
   /** Called when the view becomes visible. Triggers an immediate fetch if
    *  it hasn't loaded yet. */
   onShow: () => void
+  /** Tear down the browse component: cancel the debounced refresh timer and
+   *  dispose the mounted signal component (bindings, subscriptions). Idempotent. */
+  dispose: () => void
 }
 
 export interface BrowseViewOptions {
@@ -108,6 +111,10 @@ export interface BrowseViewOptions {
    *  toolbar shows an export button. Omitted when the store can't export
    *  (e.g. the dev-server store — its notes already live on disk). */
   onExport?: () => Promise<void> | void
+  /** Portal target for the filter/session dropdown overlays. In shadow-DOM
+   *  isolate mode the host passes an element inside the shadow so the popups
+   *  land there (styles apply, contained) instead of document.body. */
+  overlayTarget?: HTMLElement
 }
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
@@ -950,7 +957,12 @@ function rowView(
 
 // ── View: root ───────────────────────────────────────────────────────────
 
-function makeView(store: NotesStore, onReplay: boolean, canExport: boolean) {
+function makeView(
+  store: NotesStore,
+  onReplay: boolean,
+  canExport: boolean,
+  overlayTarget?: HTMLElement,
+) {
   return ({ state, send }: SignalViewBag<BrowseState, BrowseMsg>): Renderable => [
     div(
       {
@@ -962,7 +974,7 @@ function makeView(store: NotesStore, onReplay: boolean, canExport: boolean) {
       [
         // Header: session select + refresh (+ export when supported).
         div({ 'style.display': 'flex', 'style.gap': '8px', 'style.alignItems': 'center' }, [
-          ...sessionSelectCmp(state, send),
+          ...sessionSelectCmp(state, send, overlayTarget),
           button(
             {
               type: 'button',
@@ -995,9 +1007,30 @@ function makeView(store: NotesStore, onReplay: boolean, canExport: boolean) {
             'style.gap': '4px',
           },
           [
-            ...filterSelectCmp(state, send, 'kindSelect', 'llui-browse-kind', KIND_OPTIONS),
-            ...filterSelectCmp(state, send, 'authorSelect', 'llui-browse-author', AUTHOR_OPTIONS),
-            ...filterSelectCmp(state, send, 'statusSelect', 'llui-browse-status', STATUS_OPTIONS),
+            ...filterSelectCmp(
+              state,
+              send,
+              'kindSelect',
+              'llui-browse-kind',
+              KIND_OPTIONS,
+              overlayTarget,
+            ),
+            ...filterSelectCmp(
+              state,
+              send,
+              'authorSelect',
+              'llui-browse-author',
+              AUTHOR_OPTIONS,
+              overlayTarget,
+            ),
+            ...filterSelectCmp(
+              state,
+              send,
+              'statusSelect',
+              'llui-browse-status',
+              STATUS_OPTIONS,
+              overlayTarget,
+            ),
             input({
               type: 'search',
               placeholder: 'Search prose…',
@@ -1147,6 +1180,7 @@ function filterSelectCmp(
   sliceKey: FilterSliceKey,
   id: string,
   options: ReadonlyArray<readonly [string, string]>,
+  overlayTarget?: HTMLElement,
 ): Renderable {
   const slice = state.at(sliceKey)
   const parts = select.connect(slice, (m) => send({ type: sliceKey, msg: m }), { id })
@@ -1159,6 +1193,7 @@ function filterSelectCmp(
       send: (m) => send({ type: sliceKey, msg: m }),
       parts,
       sameWidth: true,
+      ...(overlayTarget ? { target: overlayTarget } : {}),
       content: () => [
         div(
           { ...parts.content, style: LISTBOX_STYLE },
@@ -1172,7 +1207,11 @@ function filterSelectCmp(
 }
 
 /** The session dropdown (dynamic items) backed by @llui/components/select. */
-function sessionSelectCmp(state: Signal<BrowseState>, send: (m: BrowseMsg) => void): Renderable {
+function sessionSelectCmp(
+  state: Signal<BrowseState>,
+  send: (m: BrowseMsg) => void,
+  overlayTarget?: HTMLElement,
+): Renderable {
   const slice = state.at('sessionSelect')
   const parts = select.connect(slice, (m) => send({ type: 'sessionSelect', msg: m }), {
     id: 'llui-browse-session',
@@ -1193,6 +1232,7 @@ function sessionSelectCmp(state: Signal<BrowseState>, send: (m: BrowseMsg) => vo
       send: (m) => send({ type: 'sessionSelect', msg: m }),
       parts,
       sameWidth: true,
+      ...(overlayTarget ? { target: overlayTarget } : {}),
       content: () => [
         div({ ...parts.content, style: LISTBOX_STYLE }, [
           each(
@@ -1232,7 +1272,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
       name: 'llui-devmode-annotate:browse',
       init: browseInit,
       update: browseReduce,
-      view: makeView(opts.store, onReplay, canExport),
+      view: makeView(opts.store, onReplay, canExport, opts.overlayTarget),
       onEffect: (eff, { send }) => runEffect(eff, send, opts, reportError),
     }),
     { devtools: false },
@@ -1247,8 +1287,18 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     }, 100)
   }
   const onShow = (): void => handle.send({ type: 'show' })
+  let disposed = false
+  const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    handle.dispose()
+  }
 
-  return { el: host, refresh, onShow }
+  return { el: host, refresh, onShow, dispose }
 }
 
 function runEffect(

@@ -1,8 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { createBridgeServer } from '../src/bridge.js'
+import { createBridgeServer, detectSchemaChange } from '../src/bridge.js'
 import { BindingMap } from '../src/binding.js'
+import type { LapDescribeResponse } from '@llui/agent/protocol'
+
+function makeDescribe(schemaHash: string): LapDescribeResponse {
+  return {
+    name: 'TestApp',
+    version: '1.0',
+    stateSchema: {},
+    messages: {},
+    docs: null,
+    conventions: {
+      dispatchModel: 'TEA',
+      confirmationModel: 'runtime-mediated',
+      readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context'],
+    },
+    schemaHash,
+  }
+}
 
 let lapServer: Server
 let lapUrl: string
@@ -104,5 +121,38 @@ describe('bridge — integration with fake LAP server', () => {
 
     // Auth header was set correctly on both calls
     expect(lapCalls.every((c) => c.auth === 'Bearer tok')).toBe(true)
+  })
+})
+
+describe('detectSchemaChange — describe-cache invalidation (finding 15)', () => {
+  it('no prior cache → not a change (first observe/connect)', () => {
+    const r = detectSchemaChange(null, makeDescribe('h1'))
+    expect(r.changed).toBe(false)
+    expect(r.note).toBeNull()
+  })
+
+  it('same schemaHash → not a change', () => {
+    const r = detectSchemaChange(makeDescribe('h1'), makeDescribe('h1'))
+    expect(r.changed).toBe(false)
+    expect(r.note).toBeNull()
+  })
+
+  it('different schemaHash → change with an actionable note naming both hashes', () => {
+    const r = detectSchemaChange(makeDescribe('h1'), makeDescribe('h2'))
+    expect(r.changed).toBe(true)
+    expect(r.note).toContain('h1')
+    expect(r.note).toContain('h2')
+    expect(r.note).toMatch(/stale/i)
+  })
+})
+
+describe('BindingMap — setDescribe replaces the cached description', () => {
+  it('a second setDescribe overwrites the first', () => {
+    const bindings = new BindingMap()
+    bindings.set('s1', 'https://app/agent/lap/v1', 'tok')
+    bindings.setDescribe('s1', makeDescribe('h1'))
+    expect(bindings.get('s1')?.describe?.schemaHash).toBe('h1')
+    bindings.setDescribe('s1', makeDescribe('h2'))
+    expect(bindings.get('s1')?.describe?.schemaHash).toBe('h2')
   })
 })

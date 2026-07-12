@@ -39,7 +39,7 @@ function fail(msg) {
 async function main() {
   // ── 1. Start MCP server (writes active.json) ────────────────────
   log(`starting MCP server on port ${MCP_PORT}`)
-  const mcp = new LluiMcpServer(MCP_PORT)
+  const mcp = new LluiMcpServer({ bridgePort: MCP_PORT })
   mcp.startBridge()
 
   // ── 2. Start vite dev server in the example ─────────────────────

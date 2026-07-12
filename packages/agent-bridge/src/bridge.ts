@@ -6,6 +6,30 @@ import { forwardLap } from './forwarder.js'
 import type { LapDescribeResponse, LapObserveResponse } from '@llui/agent/protocol'
 import { registerPrompts } from './prompts.js'
 
+/**
+ * Compare a freshly-fetched app description against the cached one and
+ * decide whether the bridge's cached schema is now stale. A changed
+ * `schemaHash` means the app's Msg/State schema was recompiled — cached
+ * affordances/examples/payload shapes may no longer be valid, so the
+ * caller is told to re-read before dispatching. Exported so the
+ * invalidation policy is unit-testable without wiring an MCP transport.
+ */
+export function detectSchemaChange(
+  prev: LapDescribeResponse | null,
+  next: Pick<LapDescribeResponse, 'schemaHash'>,
+): { changed: boolean; note: string | null } {
+  if (prev === null || prev.schemaHash === next.schemaHash) {
+    return { changed: false, note: null }
+  }
+  return {
+    changed: true,
+    note:
+      `App schema changed (was ${prev.schemaHash}, now ${next.schemaHash}). ` +
+      `The previously cached description is stale — re-read actions/description ` +
+      `before dispatching, as payload shapes and affordances may have changed.`,
+  }
+}
+
 export type BridgeDeps = {
   /** Injectable for tests. */
   fetch?: typeof fetch
@@ -142,16 +166,37 @@ function registerForwardedTool(
         )
       }
 
-      // Cache describe_app responses after the first call too.
+      // Cache describe_app responses after the first call too. (Only
+      // reached on a cache miss — a warm cache short-circuits above — so
+      // there's no prior hash to diff against, but route it through the
+      // same detector for uniformity/future-proofing.)
       if (desc.name === 'describe_app') {
-        deps.bindings.setDescribe(deps.sessionId, res.body as LapDescribeResponse)
+        const d = res.body as LapDescribeResponse
+        const change = detectSchemaChange(binding.describe, d)
+        deps.bindings.setDescribe(deps.sessionId, d)
+        if (change.changed) {
+          return okResult({ ...(d as object), schemaChanged: true, schemaChangedNote: change.note })
+        }
       }
 
-      // observe returns description on every call; cache it so a later
-      // describe_app can short-circuit the LAP round-trip.
+      // observe returns description on every call; it's the invalidation
+      // path for the describe cache. Diff the incoming schemaHash against
+      // the cached one, replace the cache, and surface a note when the
+      // app's schema changed under a live session so the LLM re-reads
+      // before trusting stale affordances.
       if (desc.name === 'observe') {
         const obs = res.body as LapObserveResponse
-        if (obs?.description) deps.bindings.setDescribe(deps.sessionId, obs.description)
+        if (obs?.description) {
+          const change = detectSchemaChange(binding.describe, obs.description)
+          deps.bindings.setDescribe(deps.sessionId, obs.description)
+          if (change.changed) {
+            return okResult({
+              ...(obs as object),
+              schemaChanged: true,
+              schemaChangedNote: change.note,
+            })
+          }
+        }
       }
 
       return okResult(res.body)

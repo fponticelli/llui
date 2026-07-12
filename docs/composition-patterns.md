@@ -195,7 +195,7 @@ content. Each page's call site fills the slots with bindings for its own state s
 
 If the chrome itself has local UI state (`isOpen`, `expanded`), model it as a slice the
 host owns and pass the sliced signal in (Pattern 1), or — for genuine isolation — use a
-full `child()` boundary.
+full `subApp()` boundary.
 
 > **Structural primitives are lazy descriptions — capture and reuse freely.** `each`/`show`/
 > `branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal` return a `Mountable`: a recipe
@@ -225,7 +225,7 @@ state, delegates to the component's `update`, and routes the component's message
 its own `Msg` union.
 
 ```ts
-import { toggle } from '@llui/components/toggle'
+import * as toggle from '@llui/components/toggle'
 import { button, text } from '@llui/dom'
 
 type State = { bold: toggle.ToggleState; /* … */ }
@@ -289,14 +289,15 @@ depends only on what it uses, keep derives returning primitives or stable refere
 
 ---
 
-## When to reach for `child()`
+## When to reach for `subApp()`
 
 For genuine isolation — embedding an independent app whose lifetime is distinct from the
 host's, a library bundle shipping its own complete TEA loop, or an independent effect
-lifecycle — use a full `child()` boundary (its own scope tree and update loop; `lazy()`
-loads one asynchronously over the same machinery).
+lifecycle — use a full `subApp()` boundary (imported from `@llui/dom/escape-hatch`; its
+own scope tree and update loop; `lazy()` loads one asynchronously over the same
+machinery). Splice its returned nodes with a spread: `...subApp({ name, init, update, view })`.
 
-Use it sparingly. A child boundary is a region the unified reactivity model can't see
+Use it sparingly. A sub-app boundary is a region the unified reactivity model can't see
 across. The chunked-mask reactivity scales precisely with the number of paths read, not
 with state depth, so a large flat state shared through sliced signals is fine — reach for
 view functions first.

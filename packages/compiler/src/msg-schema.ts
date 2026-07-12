@@ -484,9 +484,9 @@ function tryExtractDiscriminatedUnion(
   // Resolve each branch to its underlying object literal node, chasing
   // through type-alias references in the local index. Returns null if
   // any branch isn't an object-literal-shaped type.
-  const branches: ts.TypeLiteralNode[] = []
+  const branches: (readonly ts.TypeElement[])[] = []
   for (const member of union.types) {
-    const lit = resolveToTypeLiteral(member, typeIndex)
+    const lit = resolveToMembers(member, typeIndex)
     if (lit === null) return null
     branches.push(lit)
   }
@@ -500,7 +500,7 @@ function tryExtractDiscriminatedUnion(
   if (!first) return null
   let discriminant: string | null = null
   let firstBranchValue: string | null = null
-  for (const member of first.members) {
+  for (const member of first) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     if (!member.type) continue
     if (!ts.isLiteralTypeNode(member.type) || !ts.isStringLiteral(member.type.literal)) continue
@@ -542,7 +542,7 @@ function tryExtractDiscriminatedUnion(
     const value = literalDiscriminantValue(branch, discriminant)
     if (value === null) return null
     const fields: Record<string, MsgField> = {}
-    for (const member of branch.members) {
+    for (const member of branch) {
       if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
       const name = member.name.text
       if (name === discriminant) continue
@@ -562,37 +562,18 @@ function tryExtractDiscriminatedUnion(
  * needs a depth budget to terminate, and discriminated-union detection
  * is bounded by the outer caller's budget already.
  */
-function resolveToTypeLiteral(t: ts.TypeNode, typeIndex: TypeIndex): ts.TypeLiteralNode | null {
-  if (ts.isTypeLiteralNode(t)) return t
+function resolveToMembers(t: ts.TypeNode, typeIndex: TypeIndex): readonly ts.TypeElement[] | null {
+  if (ts.isTypeLiteralNode(t)) return t.members
   if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
     const target = typeIndex.get(t.typeName.text)
     if (!target) return null
-    if (ts.isInterfaceDeclaration(target)) {
-      // Synthesize a TypeLiteralNode-like shape from the interface
-      // members. Cheaper than reconstructing the AST: we only need
-      // the members to drive collectInlineShape semantics, but the
-      // discriminated-union detector reads property signatures, which
-      // interfaces have directly. We shim via a property-list view.
-      return interfaceToTypeLiteralLike(target)
-    }
-    if (ts.isTypeNode(target)) {
-      // Type alias: recurse one level.
-      return resolveToTypeLiteral(target, typeIndex)
-    }
+    // A TypeLiteralNode and an InterfaceDeclaration both expose a `members`
+    // TypeElement list — the only thing the discriminated-union detector needs —
+    // so return the list directly instead of fabricating a fake node.
+    if (ts.isInterfaceDeclaration(target)) return target.members
+    if (ts.isTypeNode(target)) return resolveToMembers(target, typeIndex) // type alias: one hop
   }
   return null
-}
-
-/**
- * Adapter for interface declarations: discriminated-union detection
- * and field iteration only need the members list, which both
- * `TypeLiteralNode` and `InterfaceDeclaration` expose. We return the
- * interface cast as a TypeLiteralNode-shaped object so the rest of
- * this file's helpers (which check `ts.isPropertySignature(member)`)
- * work uniformly across both node kinds.
- */
-function interfaceToTypeLiteralLike(iface: ts.InterfaceDeclaration): ts.TypeLiteralNode {
-  return { members: iface.members } as unknown as ts.TypeLiteralNode
 }
 
 /**
@@ -670,8 +651,8 @@ function tryExtractBrandedPrimitive(intersection: ts.IntersectionTypeNode): MsgF
  * member list, or null if the named property isn't present, isn't a
  * property signature, or isn't typed as a string literal.
  */
-function literalDiscriminantValue(lit: ts.TypeLiteralNode, name: string): string | null {
-  for (const member of lit.members) {
+function literalDiscriminantValue(members: readonly ts.TypeElement[], name: string): string | null {
+  for (const member of members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     if (member.name.text !== name) continue
     if (!member.type) return null

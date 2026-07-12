@@ -42,6 +42,25 @@ export function singleRoot(name: string): Roots {
   return new Map([[name, { value: 's', dep: '' }]])
 }
 
+/** Peel semantically-transparent wrappers — parentheses and the type-only casts
+ * `as`/`!`/`satisfies` — so signal recognition/lowering sees the underlying
+ * expression. A cast like `state.at('b') as any` denotes the SAME signal as
+ * `state.at('b')`; treating it opaquely (the old behavior) leaked a handle into
+ * a produce body. Shared by signalPathOf/isSignalExpr/analyzeSignalExpr (here)
+ * and valueSrc (lower.ts) so all four agree on what is a signal. */
+export function unwrapCasts(expr: ts.Expression): ts.Expression {
+  let e = expr
+  while (
+    ts.isParenthesizedExpression(e) ||
+    ts.isAsExpression(e) ||
+    ts.isNonNullExpression(e) ||
+    ts.isSatisfiesExpression(e)
+  ) {
+    e = e.expression
+  }
+  return e
+}
+
 /** Rebase a relative dep path onto an absolute source prefix. */
 function rebaseOne(rel: string, base: string): string {
   if (base === REL_ROOT) return rel
@@ -63,16 +82,16 @@ function unionInto(target: Set<string>, src: Iterable<string>): void {
  * other than a known signal root).
  */
 export function signalPathOf(expr: ts.Expression, roots: Roots): string | null {
-  if (ts.isIdentifier(expr)) return roots.get(expr.text)?.dep ?? null
-  if (ts.isParenthesizedExpression(expr)) return signalPathOf(expr.expression, roots)
+  const e = unwrapCasts(expr)
+  if (ts.isIdentifier(e)) return roots.get(e.text)?.dep ?? null
   if (
-    ts.isCallExpression(expr) &&
-    ts.isPropertyAccessExpression(expr.expression) &&
-    expr.expression.name.text === 'at'
+    ts.isCallExpression(e) &&
+    ts.isPropertyAccessExpression(e.expression) &&
+    e.expression.name.text === 'at'
   ) {
-    const base = signalPathOf(expr.expression.expression, roots)
+    const base = signalPathOf(e.expression.expression, roots)
     if (base === null) return null
-    const arg = expr.arguments[0]
+    const arg = e.arguments[0]
     if (arg && ts.isStringLiteral(arg)) return base === REL_ROOT ? arg.text : `${base}.${arg.text}`
     return null
   }
@@ -87,18 +106,14 @@ export function signalPathOf(expr: ts.Expression, roots: Roots): string | null {
  * from handlers/static values in the view transform.
  */
 export function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): boolean {
-  if (ts.isParenthesizedExpression(expr)) return isSignalExpr(expr.expression, roots)
-  if (signalPathOf(expr, roots) !== null) return true
-  if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
-    const m = expr.expression.name.text
+  const e = unwrapCasts(expr)
+  if (signalPathOf(e, roots) !== null) return true
+  if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+    const m = e.expression.name.text
     if (m === 'map' || m === 'at' || m === 'peek')
-      return isSignalExpr(expr.expression.expression, roots)
+      return isSignalExpr(e.expression.expression, roots)
   }
-  if (
-    ts.isCallExpression(expr) &&
-    ts.isIdentifier(expr.expression) &&
-    expr.expression.text === 'derived'
-  ) {
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'derived') {
     return true
   }
   return false
@@ -107,8 +122,8 @@ export function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): b
 /**
  * The set of absolute dependency paths a signal-valued expression reads.
  */
-export function analyzeSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string> {
-  if (ts.isParenthesizedExpression(expr)) return analyzeSignalExpr(expr.expression, roots)
+export function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string> {
+  const expr = unwrapCasts(rawExpr)
 
   // A bare signal or `.at()` chain used directly in a reactive slot.
   const direct = signalPathOf(expr, roots)

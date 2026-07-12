@@ -155,24 +155,20 @@ each({
 
 ## Functions
 
-### `transition()`
+### `collapse()`
 
-Build a `TransitionOptions` bundle ({ enter, leave }) from a spec.
-Pass the result into `branch`, `show`, or `each` to animate the enter/leave
-of that structural block.
-Lifecycle:
-
-- **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
-  → wait for duration → remove all transient values (element rests on its base styles).
-- **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
-  → wait for duration (Promise-resolved so DOM removal is deferred).
-  Duration:
-- If `duration` is given, it is used verbatim.
-- Otherwise, computed `transition-duration + transition-delay` is read after
-  the active/from classes are applied, taking the max across properties.
+Animate an element open/closed along the y-axis (height) or x-axis (width).
+Unlike CSS-only presets, `collapse()` measures the element's natural size
+at runtime — the animation works regardless of content size. Only the
+first element in each `nodes` group is animated.
+Because it mutates `overflow` / `height` / `transition` inline, collapse
+registers a per-element restore that runs the moment a later phase supersedes
+it — so an interrupted open/close never leaves stale inline styles behind.
+Like the other presets, these hooks are consumed at the route/container seam
+(`fromTransition`), not by the not-yet-wired structural primitives.
 
 ```typescript
-function transition(spec: TransitionSpec): TransitionOptions
+function collapse(opts: CollapseOptions = {}): TransitionOptions
 ```
 
 ### `fade()`
@@ -181,68 +177,30 @@ function transition(spec: TransitionSpec): TransitionOptions
 function fade(opts: FadeOptions = {}): TransitionOptions
 ```
 
-### `slide()`
-
-```typescript
-function slide(opts: SlideOptions = {}): TransitionOptions
-```
-
-### `scale()`
-
-```typescript
-function scale(opts: ScaleOptions = {}): TransitionOptions
-```
-
-### `collapse()`
-
-Animate an element open/closed along the y-axis (height) or x-axis (width).
-Unlike CSS-only presets, `collapse()` measures the element's natural size
-at runtime — the animation works regardless of content size. Only the
-first element in each `nodes` group is animated.
-
-```typescript
-function collapse(opts: CollapseOptions = {}): TransitionOptions
-```
-
-### `spring()`
-
-Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
-property using a damped spring simulation driven by `requestAnimationFrame`.
-
-```ts
-show({ when: (s) => s.open, render: () => content(), ...spring() })
-show({ ...spring({ property: 'transform', from: 0, to: 1 }) })
-```
-
-```typescript
-function spring(opts: SpringOptions = {}): TransitionOptions
-```
-
 ### `flip()`
 
-FLIP (First-Last-Invert-Play) reorder animation for `each()` lists.
-Attach to an `each()` alongside item enter/leave transitions. After each
-reconcile, items whose positions changed animate smoothly from their
-previous position to the new one.
+FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
+`onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
+It compares each surviving child's last-known position (kept in a
+`WeakMap<Element, DOMRect>`) against its new one and, for any that moved,
+plays an inverse-then-identity transform so the row appears to glide.
+Element retention is deliberately weak: the tracked positions live in a
+`WeakMap` and the working set is derived from `parent`'s live children
+(minus `leaving`) on each pass, so bulk-removed rows are never held and are
+free to be garbage-collected. There is no independent strong Set.
+Combine with an item-level appear/disappear preset via `mergeTransitions`:
 
 ```ts
-each({
-  items: (s) => s.items,
-  key: (i) => i.id,
-  render,
-  ...fade(), // animates appear/disappear
-  ...flip(), // animates reorders
-})
+mergeTransitions(fade(), flip())
 ```
 
-Spreading two transition helpers merges their hooks: `fade()` provides
-`enter`/`leave`, `flip()` provides `enter` (position capture) and
-`onTransition` (apply inverse + play). The `enter` from `flip()` overrides
-`fade()`'s only if spread after — put `flip()` last.
-Actually, to combine both, use `mergeTransitions(fade(), flip())` which
-chains `enter` handlers.
+**Not yet wired:** the signal `each()` primitive does not currently invoke
+`onTransition`, so spreading `flip()` onto an `each({...})` has no effect.
+Wiring the structural reconcilers to call these hooks is a deferred
+cross-package change; `flip()` and `mergeTransitions()` are the building
+blocks that seam will consume.
 Requires WAAPI (`element.animate()`). In environments without it (old
-browsers, minimal jsdom) the transforms are applied without animation.
+browsers, minimal jsdom) positions are still tracked but no animation runs.
 
 ```typescript
 function flip(opts: FlipOptions = {}): TransitionOptions
@@ -251,12 +209,16 @@ function flip(opts: FlipOptions = {}): TransitionOptions
 ### `mergeTransitions()`
 
 Merge multiple TransitionOptions into one, chaining their `enter`,
-`leave`, and `onTransition` handlers in order.
+`leave`, and `onTransition` handlers in order. `leave` waits for every
+part's returned Promise before resolving.
 Useful for combining an item-level animation (fade/slide/...) with flip():
 
 ```ts
-each({ items, key, render, ...mergeTransitions(fade(), flip()) })
+mergeTransitions(fade(), flip())
 ```
+
+(As with `flip()`, the `onTransition` half is only meaningful once the
+structural reconcilers invoke it — not yet wired. See `flip()`.)
 
 ```typescript
 function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions
@@ -265,24 +227,12 @@ function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions
 ### `routeTransition()`
 
 Convenience wrapper that returns `{ enter, leave }` hooks suitable for
-animating page-to-page transitions. Used in two ways:
-**Manual branch-based routing:** spread the result into a `branch()`
-call that switches on the current route key. The runtime invokes
-`enter` / `leave` as the branch swaps cases.
-
-```ts
-branch({
-  on: (s) => s.route,
-  cases: { '/': home, '/about': about },
-  ...routeTransition({ duration: 200 }),
-})
-```
-
-**Vike filesystem routing (`@llui/vike`):** Vike's `onRenderClient`
-doesn't consume `{ enter, leave }` directly because each page is its
-own component and the swap goes through dispose + clear + mount. Use
-`fromTransition` from `@llui/vike/client` to adapt the transition to
-the `onLeave` / `onEnter` hook shape:
+animating page-to-page transitions.
+**Vike filesystem routing (`@llui/vike`):** this is the wired consumer.
+Vike's `onRenderClient` doesn't take `{ enter, leave }` directly — each page
+is its own component and the swap goes through dispose + clear + mount — so
+`fromTransition` from `@llui/vike/client` adapts the bundle to the
+`onLeave` / `onEnter` hook shape:
 
 ```ts
 // pages/+onRenderClient.ts
@@ -293,15 +243,51 @@ export const onRenderClient = createOnRenderClient({
 })
 ```
 
-The vike variant operates on the container element itself (the `#app`
-div) — its opacity / transform fades out the whole page, then the new
-page fades in when it mounts.
-Both call forms also accept a pre-built `TransitionOptions` from any
-preset (`fade`, `slide`, `scale`, …) — `routeTransition` will pass it
-through unchanged.
+The vike variant operates on the container / page-slot element itself — its
+opacity / transform fades out the whole page, then the new page fades in when
+it mounts.
+
+> Note: spreading the result directly into a `branch()`/`show()` call does
+> **not** animate anything today — the signal structural primitives don't yet
+> accept transition hooks. Route-level animation goes through
+> `fromTransition`, not the structural primitives.
+> The call form also accepts a pre-built `TransitionOptions` from any preset or
+> composition (`fade`, `slide`, `scale`, `flip`, `mergeTransitions`, …) —
+> detected by the presence of an `enter`, `leave`, or `onTransition` hook — and
+> passes it through unchanged.
 
 ```typescript
 function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): TransitionOptions
+```
+
+### `scale()`
+
+```typescript
+function scale(opts: ScaleOptions = {}): TransitionOptions
+```
+
+### `slide()`
+
+```typescript
+function slide(opts: SlideOptions = {}): TransitionOptions
+```
+
+### `spring()`
+
+Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
+property using a damped spring simulation driven by `requestAnimationFrame`.
+When `requestAnimationFrame` can't drive the loop — server render, or a
+hidden/background tab where rAF is paused — the animation settles instantly
+to its target and the returned Promise still resolves. This matters for the
+`leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
+not hang (e.g. `fromTransition(spring())` route navigation).
+Consumed at the route/container seam via `fromTransition` in
+`@llui/vike/client`. The signal `show`/`each`/`branch` primitives do **not**
+currently accept transition hooks, so `show({ ...spring() })` is not yet
+wired — that structural seam is a deferred cross-package change.
+
+```typescript
+function spring(opts: SpringOptions = {}): TransitionOptions
 ```
 
 ### `stagger()`
@@ -312,16 +298,46 @@ sequential delays (`index * delayPerItem`). The counter resets after the
 microtask, so the next batch starts from 0.
 
 ```ts
-each({
-  items: s => s.items,
-  key: i => i.id,
-  render: ({ item }) => [...],
-  ...stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
-})
+stagger(fade({ duration: 150 }), { delayPerItem: 30 })
 ```
+
+**Not yet wired for lists:** staggering only produces visible per-item delays
+once the structural `each()` primitive invokes the `enter`/`leave` hooks per
+row, which it does not do today. Until that runtime seam lands, `stagger`
+wraps a bundle but there is no `each()` call site feeding it batched rows.
 
 ```typescript
 function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions
+```
+
+### `transition()`
+
+Build a `TransitionOptions` bundle (`{ enter, leave }`) from a class/style spec.
+The returned hooks operate on raw DOM `Node`s. Today the only place the
+runtime actually invokes them is the **route/container** seam:
+`fromTransition(...)` in `@llui/vike/client` adapts the bundle onto the page
+slot element (see `routeTransition`). Element-level structural transitions —
+animating individual `show`/`branch`/`each` arms — are **not yet wired**: the
+signal `show`/`each`/`branch` primitives do not currently accept transition
+hooks, so `show({ ...fade() })` / `each({ ...fade() })` do nothing. That
+runtime seam is a deferred cross-package change; until it lands, drive these
+bundles through the route-level adapter, not the structural primitives.
+Lifecycle:
+
+- **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
+  → wait for `transitionend` (timer fallback) → remove all transient values.
+- **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
+  → resolve on `transitionend` (timer fallback) so DOM removal is deferred.
+  Interruption: enter/leave on a reused element are guarded by a per-element run
+  token — a new phase first rolls back the previous phase's transient values,
+  and a superseded phase's delayed cleanup is skipped.
+  Duration (used only for the fallback timer / when no CSS transition fires):
+- If `duration` is given, it is used verbatim.
+- Otherwise, computed `transition-duration + transition-delay` is read after
+  the active/from values are applied, taking the max across properties.
+
+```typescript
+function transition(spec: TransitionSpec): TransitionOptions
 ```
 
 ## Types
@@ -356,48 +372,6 @@ export type TransitionValue = string | Styles | Array<string | Styles>
 
 ## Interfaces
 
-### `FadeOptions`
-
-```typescript
-export interface FadeOptions {
-  duration?: number
-  easing?: string
-  appear?: boolean
-}
-```
-
-### `SlideOptions`
-
-```typescript
-export interface SlideOptions {
-  /** The direction the element slides IN from (default: 'down' — enters from below). */
-  direction?: SlideDirection
-  /** Pixel distance to slide (default: 20). */
-  distance?: number
-  duration?: number
-  easing?: string
-  /** Also animate opacity (default: true). */
-  fade?: boolean
-  appear?: boolean
-}
-```
-
-### `ScaleOptions`
-
-```typescript
-export interface ScaleOptions {
-  /** Starting scale factor (default: 0.95). */
-  from?: number
-  duration?: number
-  easing?: string
-  /** Also animate opacity (default: true). */
-  fade?: boolean
-  /** Transform origin (default: 'center'). */
-  origin?: string
-  appear?: boolean
-}
-```
-
 ### `CollapseOptions`
 
 ```typescript
@@ -410,24 +384,13 @@ export interface CollapseOptions {
 }
 ```
 
-### `SpringOptions`
+### `FadeOptions`
 
 ```typescript
-export interface SpringOptions {
-  /** Spring stiffness (default: 170). */
-  stiffness?: number
-  /** Damping coefficient (default: 26). */
-  damping?: number
-  /** Mass (default: 1). */
-  mass?: number
-  /** Stop threshold for velocity and position (default: 0.01). */
-  precision?: number
-  /** CSS property to animate (default: 'opacity'). */
-  property?: string
-  /** Start value (default: 0). */
-  from?: number
-  /** End value (default: 1). */
-  to?: number
+export interface FadeOptions {
+  duration?: number
+  easing?: string
+  appear?: boolean
 }
 ```
 
@@ -452,6 +415,59 @@ export interface RouteTransitionOptions {
   slide?: boolean
   /** Slide distance in pixels (default: 12). */
   slideDistance?: number
+}
+```
+
+### `ScaleOptions`
+
+```typescript
+export interface ScaleOptions {
+  /** Starting scale factor (default: 0.95). */
+  from?: number
+  duration?: number
+  easing?: string
+  /** Also animate opacity (default: true). */
+  fade?: boolean
+  /** Transform origin (default: 'center'). */
+  origin?: string
+  appear?: boolean
+}
+```
+
+### `SlideOptions`
+
+```typescript
+export interface SlideOptions {
+  /** The direction the element slides IN from (default: 'down' — enters from below). */
+  direction?: SlideDirection
+  /** Pixel distance to slide (default: 20). */
+  distance?: number
+  duration?: number
+  easing?: string
+  /** Also animate opacity (default: true). */
+  fade?: boolean
+  appear?: boolean
+}
+```
+
+### `SpringOptions`
+
+```typescript
+export interface SpringOptions {
+  /** Spring stiffness (default: 170). */
+  stiffness?: number
+  /** Damping coefficient (default: 26). */
+  damping?: number
+  /** Mass (default: 1). */
+  mass?: number
+  /** Stop threshold for velocity and position (default: 0.01). */
+  precision?: number
+  /** CSS property to animate (default: 'opacity'). */
+  property?: string
+  /** Start value (default: 0). */
+  from?: number
+  /** End value (default: 1). */
+  to?: number
 }
 ```
 

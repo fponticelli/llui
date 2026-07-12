@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync, strToU8 } from 'fflate'
-import { NOTE_SCHEMA_VERSION } from '@llui/devmode-annotate/note-format'
-import { serializeNote } from '@llui/devmode-annotate/note-serialize'
+import { NOTE_SCHEMA_VERSION } from '@llui/notes-format/note-format'
+import { serializeNote } from '@llui/notes-format/note-serialize'
 import { importBundle, listNotes, listSessions } from '../src/notes/index.js'
 import type { NoteFrontmatter } from '../src/notes/types.js'
 

@@ -47,6 +47,7 @@ describe('handleResumeList', () => {
       identityResolver: async () => 'u1',
       auditSink: audit,
       now: () => 5000,
+      lapBasePath: '/agent/lap/v1',
     })
     expect(res.status).toBe(200)
     const body = (await res.json()) as ResumeListResponse
@@ -66,6 +67,7 @@ describe('handleResumeList', () => {
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: audit,
+      lapBasePath: '/agent/lap/v1',
       now: () => 10_000,
     })
     const body = (await res.json()) as ResumeListResponse
@@ -86,12 +88,18 @@ describe('handleResumeClaim', () => {
       identityResolver: async () => 'u1',
       auditSink: audit,
       now: () => 5000,
+      lapBasePath: '/agent/lap/v1',
       hardExpiryMs: 3600_000,
     })
     expect(res.status).toBe(200)
     const body = (await res.json()) as ResumeClaimResponse
     expect(body.token).toBeDefined()
     expect(body.wsUrl).toMatch(/\/agent\/ws$/)
+    // Finding: resume now returns the full session shape so the rotated
+    // bearer can be persisted (mirrors MintResponse).
+    expect(body.tid).toBe('t1')
+    expect(body.lapUrl).toMatch(/\/agent\/lap\/v1$/)
+    expect(body.expiresAt).toBe(Math.floor((5000 + 3600_000) / 1000))
 
     // The new bearer's hash matches the rotated record's tokenHash.
     const newHash = await tokenHashOf(body.token)
@@ -113,6 +121,7 @@ describe('handleResumeClaim', () => {
       tokenStore: store,
       identityResolver: async () => 'u-someone-else',
       auditSink: audit,
+      lapBasePath: '/agent/lap/v1',
       now: () => 5000,
       hardExpiryMs: 3600_000,
     })
@@ -131,6 +140,7 @@ describe('handleResumeClaim', () => {
       identityResolver: async () => 'u1',
       auditSink: audit,
       now: () => 5000,
+      lapBasePath: '/agent/lap/v1',
       hardExpiryMs: 3600_000,
     })
     expect(res.status).toBe(403)

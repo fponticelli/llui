@@ -19,6 +19,12 @@ import {
   type SignalViewBag,
 } from '@llui/dom'
 import type { NoteRect } from './note-types.js'
+import { buildSelector } from './selector.js'
+
+// Re-exported so the element-picker's public surface (and its tests) keep a
+// stable `buildSelector` import even though the implementation now lives in the
+// shared selector module.
+export { buildSelector } from './selector.js'
 
 export interface PickResult {
   reason: 'submit' | 'cancel'
@@ -33,36 +39,6 @@ export interface PickResult {
 
 const PICKER_OVERLAY_ATTR = 'data-llui-element-picker'
 const HUD_ROOT = '#llui-devmode-annotate-root'
-
-/**
- * Build a short, stable CSS selector for the given element. Prefers `#id`,
- * then `tag.class` (first non-Llui class), then `tag:nth-of-type`. Walks up
- * at most 4 ancestors to give the LLM enough context to locate the element.
- */
-export function buildSelector(el: Element): string {
-  const parts: string[] = []
-  let cur: Element | null = el
-  for (let depth = 0; cur && depth < 4; depth++, cur = cur.parentElement) {
-    if (cur.id) {
-      parts.unshift(`#${cur.id}`)
-      break // id is unique; nothing above matters
-    }
-    const tag = cur.tagName.toLowerCase()
-    const classes = Array.from(cur.classList).filter((c) => !c.startsWith('llui-'))
-    if (classes.length > 0) {
-      parts.unshift(`${tag}.${classes[0]}`)
-    } else if (cur.parentElement) {
-      const siblings = Array.from(cur.parentElement.children).filter(
-        (c) => c.tagName === cur!.tagName,
-      )
-      const idx = siblings.indexOf(cur) + 1
-      parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${idx})` : tag)
-    } else {
-      parts.unshift(tag)
-    }
-  }
-  return parts.join(' > ')
-}
 
 // ── TEA shapes (exported for component tests) ────────────────────────────
 
@@ -200,8 +176,21 @@ const pickView = ({ state, send }: SignalViewBag<PickState, PickMsg>): Renderabl
     ),
   ]),
   // Document-level listeners reading the host app's live DOM (the one
-  // imperative boundary). Torn down on dispose via the returned cleanup.
+  // imperative boundary). The three INTERACTION listeners
+  // (mousemove/click/keydown) capture-phase-swallow host input while picking,
+  // so they must be torn down the instant the pick settles — otherwise every
+  // host click stays preventDefault+stopPropagation'd until dispose(), leaving
+  // the app click-dead while the outline lingers. Only the passive
+  // pointer-events:none outline nodes remain until the caller dismisses.
   onMount(() => {
+    let interactionsLive = false
+    const teardownInteractions = (): void => {
+      if (!interactionsLive) return
+      interactionsLive = false
+      document.removeEventListener('mousemove', onMove, true)
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
     const onMove = (e: MouseEvent): void => {
       const el = document.elementFromPoint(e.clientX, e.clientY)
       if (!el || el.closest(HUD_ROOT)) return
@@ -227,22 +216,23 @@ const pickView = ({ state, send }: SignalViewBag<PickState, PickMsg>): Renderabl
       e.preventDefault()
       e.stopPropagation()
       send({ type: 'pick' })
+      // The pick has settled — stop intercepting host input immediately. The
+      // outline stays (its nodes are pointer-events:none) until dismiss().
+      teardownInteractions()
     }
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
         send({ type: 'cancel' })
+        teardownInteractions()
       }
     }
     document.addEventListener('mousemove', onMove, true)
     document.addEventListener('click', onClick, true)
     document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('mousemove', onMove, true)
-      document.removeEventListener('click', onClick, true)
-      document.removeEventListener('keydown', onKey, true)
-    }
+    interactionsLive = true
+    return teardownInteractions
   }),
 ]
 

@@ -144,6 +144,66 @@ describe('CdpSessionManager.getNetworkBuffer urlPattern', () => {
   })
 })
 
+describe('CdpSessionManager session lifecycle', () => {
+  interface FakeBrowser {
+    close: ReturnType<typeof vi.fn>
+  }
+  function injectSession(mgr: CdpSessionManager, browser: FakeBrowser | null): void {
+    ;(mgr as unknown as { session: unknown }).session = {
+      mode: 'playwright-owned',
+      browser,
+      page: {},
+      consoleBuffer: [],
+      networkBuffer: [],
+      errorBuffer: [],
+    }
+  }
+
+  it('setDevUrl closes the discarded browser instead of leaking it', () => {
+    const mgr = new CdpSessionManager()
+    const browser: FakeBrowser = { close: vi.fn().mockResolvedValue(undefined) }
+    injectSession(mgr, browser)
+    expect(mgr.isAvailable()).toBe(true)
+    mgr.setDevUrl('http://localhost:3000')
+    // Session is reset synchronously and the old browser handle is closed.
+    expect(mgr.isAvailable()).toBe(false)
+    expect(browser.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('setHeaded closes the discarded browser', () => {
+    const mgr = new CdpSessionManager()
+    const browser: FakeBrowser = { close: vi.fn().mockResolvedValue(undefined) }
+    injectSession(mgr, browser)
+    mgr.setHeaded(true)
+    expect(mgr.isAvailable()).toBe(false)
+    expect(browser.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('ensureSession memoizes the in-flight launch so concurrent callers share one browser', async () => {
+    const mgr = new CdpSessionManager()
+    let builds = 0
+    let resolveBuild!: (s: unknown) => void
+    const gate = new Promise<unknown>((r) => {
+      resolveBuild = r
+    })
+    ;(mgr as unknown as { buildOrAttachSession: () => Promise<unknown> }).buildOrAttachSession =
+      () => {
+        builds++
+        return gate.then((s) => {
+          ;(mgr as unknown as { session: unknown }).session = s
+          return s
+        })
+      }
+    const p1 = mgr.ensureSession()
+    const p2 = mgr.ensureSession()
+    const fakeSession = { mode: 'playwright-owned', browser: null }
+    resolveBuild(fakeSession)
+    const [s1, s2] = await Promise.all([p1, p2])
+    expect(builds).toBe(1)
+    expect(s1).toBe(s2)
+  })
+})
+
 describe('tool list', () => {
   it('exposes all 6 CDP tools', () => {
     const server = new LluiMcpServer()

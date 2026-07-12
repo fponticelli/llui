@@ -6,8 +6,8 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {
@@ -57,6 +57,10 @@
   },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/lexical#readme",
   "files": [
-    "dist"
-  ]
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

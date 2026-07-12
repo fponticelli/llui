@@ -11,9 +11,12 @@ const _domEnv = () => env
  * Verifies the `RenderClientOptions.runInitEffectsOnHydrate` plumbing:
  * the option must flow through to the signal hydrate path for both the
  * outermost layer (container hydrate) and inner layers (anchor hydrate).
- * The @llui/dom signal side defaults to skipping init effects on
- * hydration; the vike adapter forwards the option verbatim, so this
- * exercises the chain wiring rather than the underlying behavior.
+ *
+ * The vike adapter DEFAULTS to running init effects on hydration (the server
+ * render runs none — it's pure — so an init effect would otherwise be dropped
+ * on first load). The `@llui/dom` hydrate primitive defaults the other way
+ * (skip); the adapter overrides that default to `true` and forwards an explicit
+ * opt-out verbatim.
  */
 
 type LayoutEffect = { type: 'layoutInit' }
@@ -69,17 +72,18 @@ beforeEach(() => {
 })
 
 describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () => {
-  it('skips init effects by default on hydration (page-only chain)', async () => {
+  it('runs init effects BY DEFAULT on hydration (page-only chain)', async () => {
     const seenPage: PageEffect[] = []
     const PageDef = makePageWithInitEffect(seenPage)
     const render = createOnRenderClient({})
     // No Layout — the page is the only layer, so it hydrates at the root
-    // container via hydrateSignalApp; no anchor mount is involved.
-    const envelope = { layouts: [], page: { name: 'PageWithInit', state: { m: 5 } } }
+    // container via hydrateSignalApp; no anchor mount is involved. The default
+    // now RUNS init effects because SSR ran none.
+    const envelope = { v: 2, layers: ['PageWithInit'] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
-    expect(seenPage).toEqual([])
+    expect(seenPage).toEqual([{ type: 'pageInit' }])
   })
 
   it('dispatches init effects on hydration when runInitEffectsOnHydrate=true (page-only chain)', async () => {
@@ -88,7 +92,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
     const render = createOnRenderClient({
       runInitEffectsOnHydrate: true,
     })
-    const envelope = { layouts: [], page: { name: 'PageWithInit', state: { m: 5 } } }
+    const envelope = { v: 2, layers: ['PageWithInit'] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -105,10 +109,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       Layout: LayoutDef,
       runInitEffectsOnHydrate: true,
     })
-    const envelope = {
-      layouts: [{ name: 'LayoutWithInit', state: { n: 0 } }],
-      page: { name: 'PageWithInit', state: { m: 5 } },
-    }
+    const envelope = { v: 2, layers: ['LayoutWithInit', 'PageWithInit'] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -130,10 +131,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       Layout: LayoutDef,
       runInitEffectsOnHydrate: false,
     })
-    const envelope = {
-      layouts: [{ name: 'LayoutWithInit', state: { n: 0 } }],
-      page: { name: 'PageWithInit', state: { m: 5 } },
-    }
+    const envelope = { v: 2, layers: ['LayoutWithInit', 'PageWithInit'] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -152,8 +150,8 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       runInitEffectsOnHydrate: false,
     })
 
-    // Simulate hydration first (no effects).
-    const envelope = { layouts: [], page: { name: 'PageWithInit', state: { m: 5 } } }
+    // Simulate hydration first (opt-out → no effects).
+    const envelope = { v: 2, layers: ['PageWithInit'] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
     await render({ Page: PageDef, isHydration: true })
     expect(seenPage).toEqual([])

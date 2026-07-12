@@ -96,6 +96,17 @@ describe('no-node-construction-in-body', () => {
       'no-node-construction-in-body',
     )
   })
+  // Shared-constants unification: tags that were missing from rules' drifted copy
+  // of the element set (strong/tbody/em/…) are now recognized, so building them in
+  // a derive body is no longer a false NEGATIVE.
+  it('flags previously-missing element tags (strong/tbody) built in a derive body', () => {
+    expect(rules("state.at('x').map((v) => strong([text(v)]))")).toContain(
+      'no-node-construction-in-body',
+    )
+    expect(rules("state.at('x').map((v) => tbody([text(v)]))")).toContain(
+      'no-node-construction-in-body',
+    )
+  })
 })
 
 describe('prefer-at-over-map', () => {
@@ -400,6 +411,43 @@ describe('controlled-input', () => {
     expect(rules("input({ ...attrs, value: state.at('name') }, [])")).not.toContain(
       'controlled-input',
     )
+  })
+  // Finding 8: a readonly / disabled input can't be typed into, so a reactive
+  // value re-asserting state is correct — not a controlled-input bug.
+  it('does NOT flag a readonly input', () => {
+    expect(rules("input({ value: state.at('name'), readonly: true }, [])")).not.toContain(
+      'controlled-input',
+    )
+  })
+  it('does NOT flag a disabled input', () => {
+    expect(rules("input({ value: state.at('name'), disabled: true }, [])")).not.toContain(
+      'controlled-input',
+    )
+  })
+  it('still flags when readonly is explicitly false', () => {
+    expect(rules("input({ value: state.at('name'), readonly: false }, [])")).toContain(
+      'controlled-input',
+    )
+  })
+})
+
+describe('scope-aware rooting (finding 7)', () => {
+  it('does NOT flag a reducer param named `state` (plain value) in update', () => {
+    const src = `const C = component({ update: (state, msg) => [msg.v ?? state, []] })`
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+  it('does NOT flag arithmetic on a reducer `state` param', () => {
+    const src = `const C = component({ update: (state, msg) => [{ n: state.n + 1 }, []] })`
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+  it('does NOT flag a param that shadows the state root inside a handler', () => {
+    // an arrow whose own param reuses the name `state` operates on a plain value
+    const src = `const f = (state) => state.count + 1`
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+  it('still flags a genuine signal operator misuse in a view body', () => {
+    const src = `const C = component({ view: ({ state }) => [text(state.at('n') + 1)] })`
+    expect(rules(src)).toContain('operator-on-signal')
   })
 })
 

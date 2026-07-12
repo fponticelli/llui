@@ -63,6 +63,11 @@ export const PACKAGES: PackageMeta[] = [
     blurb: 'Dev HUD — annotate into a shared notebook',
   },
   {
+    slug: 'notes-format',
+    category: 'ai',
+    blurb: 'Devmode notebook on-disk format — note types + YAML serialization',
+  },
+  {
     slug: 'a2ui',
     category: 'ai',
     blurb: "Renderer for Google's A2UI agent-driven UI protocol",

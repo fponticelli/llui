@@ -85,6 +85,10 @@ type ReloadCb = (doc: YDoc) => void
 export class TestProvider implements CollabProvider {
   readonly awareness: TestAwareness
   connected = false
+  /** Mirrors a real provider's `synced` flag: true once the initial handshake
+   * (our synchronous `connect()`) has completed. Lets tests exercise the
+   * already-synced bootstrap path. */
+  synced = false
   private readonly syncCbs = new Set<SyncCb>()
   private readonly statusCbs = new Set<StatusCb>()
   private readonly updateCbs = new Set<UpdateCb>()
@@ -124,6 +128,7 @@ export class TestProvider implements CollabProvider {
       this.awareness.receiveRemote(p.awareness.clientID, p.awareness.getLocalState())
       p.awareness.receiveRemote(this.awareness.clientID, this.awareness.getLocalState())
     }
+    this.synced = true
     for (const cb of [...this.statusCbs]) cb({ status: 'connected' })
     for (const cb of [...this.syncCbs]) cb(true)
   }

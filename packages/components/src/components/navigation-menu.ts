@@ -106,9 +106,10 @@ export function isOpen(state: NavMenuState, id: string): boolean {
 export interface NavItemParts {
   trigger: {
     type: 'button'
-    role: 'menuitem'
     id: string
-    'aria-haspopup': 'menu' | undefined
+    /** For a branch item this is the disclosure button controlling its panel;
+     * `undefined` for a plain link trigger. */
+    'aria-controls': string | undefined
     'aria-expanded': Signal<boolean | undefined>
     'data-scope': 'navigation-menu'
     'data-part': 'trigger'
@@ -121,7 +122,6 @@ export interface NavItemParts {
     onKeyDown: (e: KeyboardEvent) => void
   }
   content: {
-    role: 'menu'
     id: string
     'aria-labelledby': string
     'data-scope': 'navigation-menu'
@@ -134,7 +134,9 @@ export interface NavItemParts {
 
 export interface NavMenuParts {
   root: {
-    role: 'menubar'
+    // Site navigation is NOT an application menu: it uses a `nav` landmark with
+    // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
+    // `<nav>` element; `aria-label` names the landmark.
     'aria-label': string
     'data-scope': 'navigation-menu'
     'data-part': 'root'
@@ -167,12 +169,23 @@ export function connect(
   const closeOnLeave = opts.closeOnLeave !== false
   let closeTimer: ReturnType<typeof setTimeout> | null = null
 
+  // A pending close timer must not act after the menu unmounts, or it dispatches
+  // to a disposed handle. Capture a trigger at schedule time; if it was live
+  // then but is detached when the timer fires, the menu unmounted — drop it.
+  // (No trigger in the DOM at all, e.g. a unit test → no guard.)
+  const detached = (el: Element | null): boolean => el !== null && !el.isConnected
+  const anyTrigger = (): Element | null =>
+    typeof document === 'undefined'
+      ? null
+      : document.querySelector('[data-scope="navigation-menu"][data-part="trigger"]')
+
   const scheduleClose = (): void => {
     if (!closeOnLeave) return
     if (closeTimer) clearTimeout(closeTimer)
+    const trigger = anyTrigger()
     closeTimer = setTimeout(() => {
-      send({ type: 'closeAll' })
       closeTimer = null
+      if (!detached(trigger)) send({ type: 'closeAll' })
     }, 150)
   }
 
@@ -185,7 +198,6 @@ export function connect(
 
   return {
     root: {
-      role: 'menubar',
       'aria-label': opts.label ?? locale.navigationMenu.label,
       'data-scope': 'navigation-menu',
       'data-part': 'root',
@@ -198,9 +210,9 @@ export function connect(
       return {
         trigger: {
           type: 'button',
-          role: 'menuitem',
           id: triggerId(id),
-          'aria-haspopup': options.isBranch ? 'menu' : undefined,
+          // Disclosure button: aria-expanded + aria-controls tie it to its panel.
+          'aria-controls': options.isBranch ? contentId(id) : undefined,
           'aria-expanded': state.map((st) => (options.isBranch ? isOpen(st, id) : undefined)),
           'data-scope': 'navigation-menu',
           'data-part': 'trigger',
@@ -236,7 +248,6 @@ export function connect(
           }),
         },
         content: {
-          role: 'menu',
           id: contentId(id),
           'aria-labelledby': triggerId(id),
           'data-scope': 'navigation-menu',

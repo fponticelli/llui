@@ -6,8 +6,12 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./commonmark": {
+      "types": "./dist/commonmark.d.ts",
+      "import": "./dist/commonmark.js"
     },
     "./styles/theme.css": "./dist/styles/theme.css",
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css"
@@ -32,13 +36,16 @@
     "@llui/dom": "workspace:*",
     "@types/mdast": "^4.0.4",
     "@types/unist": "^3.0.3",
-    "jsdom": "^25.0.1",
+    "jsdom": "^29.0.1",
     "mdast-util-gfm-strikethrough": "^2.0.0",
     "micromark-extension-gfm-strikethrough": "^2.1.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/styles/theme.css",
+    "./dist/styles/theme-dark.css"
+  ],
   "description": "LLui reactive Markdown rendering — parse to mdast, render real reactive DOM with custom per-node renderers and streaming-friendly keyed reuse",
   "keywords": [
     "llui",
@@ -60,6 +67,10 @@
   },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/markdown#readme",
   "files": [
-    "dist"
-  ]
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

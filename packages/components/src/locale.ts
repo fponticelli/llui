@@ -21,7 +21,7 @@ export interface Locale {
   cascadeSelect: { clear: string }
   clipboard: { copy: string }
   colorPicker: { hue: string; saturation: string; lightness: string; hex: string }
-  combobox: { toggle: string }
+  combobox: { toggle: string; resultCount: (n: number) => string }
   dateInput: { clear: string }
   datePicker: {
     prev: string
@@ -43,6 +43,7 @@ export interface Locale {
   progress: { loading: string }
   qrCode: { label: string; download: string }
   signaturePad: { label: string; clear: string; undo: string }
+  sortable: { handle: string }
   steps: { label: string }
   tagsInput: { input: string; remove: string; clear: string }
   timePicker: { label: string; hours: string; minutes: string; period: string }
@@ -81,7 +82,10 @@ export const en: Locale = {
   cascadeSelect: { clear: 'Clear selection' },
   clipboard: { copy: 'Copy to clipboard' },
   colorPicker: { hue: 'Hue', saturation: 'Saturation', lightness: 'Lightness', hex: 'Hex color' },
-  combobox: { toggle: 'Toggle options' },
+  combobox: {
+    toggle: 'Toggle options',
+    resultCount: (n) => (n === 1 ? '1 result' : `${n} results`),
+  },
   dateInput: { clear: 'Clear date' },
   datePicker: {
     prev: 'Previous month',
@@ -113,6 +117,10 @@ export const en: Locale = {
   progress: { loading: 'Loading\u2026' },
   qrCode: { label: 'QR code', download: 'Download QR code' },
   signaturePad: { label: 'Signature pad', clear: 'Clear signature', undo: 'Undo last stroke' },
+  sortable: {
+    handle:
+      'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
+  },
   steps: { label: 'Progress' },
   tagsInput: { input: 'Add tag', remove: 'Remove tag', clear: 'Clear all tags' },
   timePicker: { label: 'Time', hours: 'Hours', minutes: 'Minutes', period: 'Toggle AM/PM' },

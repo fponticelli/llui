@@ -1,9 +1,11 @@
-import type { Send, Signal, TransitionOptions, Renderable } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -223,8 +225,6 @@ export interface OverlayOptions {
   flip?: boolean
   /** Shift to keep in viewport (default: true). */
   shift?: boolean
-  /** Optional transition. */
-  transition?: TransitionOptions
   /** Close on Escape (default: true). */
   closeOnEscape?: boolean
   /** Close on outside click (default: true). */
@@ -240,7 +240,7 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Renderable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom'
   const offset = opts.offset ?? 8
   const flip = opts.flip !== false
@@ -260,17 +260,13 @@ export function overlay(opts: OverlayOptions): Renderable {
     show(
       opts.state.map((st) => isMounted(st)),
       () => {
-        const targetEl =
-          typeof rawTarget === 'string'
-            ? (document.querySelector(rawTarget) ?? document.body)
-            : rawTarget
         return [
           portal(() => {
             // Floating positioning lives with the mounted node so the content
             // stays anchored while the exit animation plays.
-            const floating = onMount(() => {
-              const contentEl = document.getElementById(contentId)
-              const triggerEl = document.getElementById(triggerId)
+            const floating = onMount((root) => {
+              const contentEl = getElementByIdInScope(root, contentId)
+              const triggerEl = getElementByIdInScope(root, triggerId)
               if (!contentEl || !triggerEl) return
               const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
               const floatingEl = positioner ?? contentEl
@@ -292,9 +288,9 @@ export function overlay(opts: OverlayOptions): Renderable {
             const interaction = show(
               opts.state.map((st) => st.open),
               () => [
-                onMount(() => {
-                  const contentEl = document.getElementById(contentId)
-                  const triggerEl = document.getElementById(triggerId)
+                onMount((root) => {
+                  const contentEl = getElementByIdInScope(root, contentId)
+                  const triggerEl = getElementByIdInScope(root, triggerId)
                   if (!contentEl || !triggerEl) return
 
                   const cleanups: Array<() => void> = []
@@ -330,7 +326,7 @@ export function overlay(opts: OverlayOptions): Renderable {
               ],
             )
             return [floating, interaction, div(parts.positioner, opts.content())]
-          }, targetEl),
+          }, host),
         ]
       },
     ),

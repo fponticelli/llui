@@ -115,6 +115,11 @@ export function defaultSecretRedactor(
     ...(body.stateSnapshot !== undefined ? { stateSnapshot: scrub(body.stateSnapshot, 0) } : {}),
     ...(body.messageLog ? { messageLog: scrub(body.messageLog, 0) as NoteBody['messageLog'] } : {}),
     ...(body.consoleLog ? { consoleLog: scrub(body.consoleLog, 0) as NoteBody['consoleLog'] } : {}),
+    // Effects carry request payloads / headers (e.g. an in-flight `http`
+    // effect with an `Authorization: Bearer …` header) — scrub the pending +
+    // recent lists with the same deep walk so tokens don't leak through the
+    // one channel the redactor previously skipped.
+    ...(body.effects ? { effects: scrub(body.effects, 0) as NoteBody['effects'] } : {}),
   })
 }
 

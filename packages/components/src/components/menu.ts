@@ -1,7 +1,9 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import { flipArrow } from '../utils/direction.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
@@ -310,19 +312,28 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         [],
       ]
     case 'highlight':
+      // Open-only: a highlight arriving after close (e.g. a queued pointer
+      // event) must not resurrect state on a closed menu.
+      if (!state.open) return [state, []]
       if (msg.value !== null && isDisabled(state.items, msg.value)) return [state, []]
+      // Pointer-move fires per tick — when the target is already highlighted,
+      // return the SAME reference so the reconciler skips the commit.
+      if ((state.highlights[msg.level] ?? null) === msg.value) return [state, []]
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, msg.value) }, []]
     case 'highlightNext': {
+      if (!state.open) return [state, []]
       const items = levelItems(state.items, msg.level)
       const to = nextNav(items, state.highlights[msg.level] ?? null, 1)
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
     }
     case 'highlightPrev': {
+      if (!state.open) return [state, []]
       const items = levelItems(state.items, msg.level)
       const to = nextNav(items, state.highlights[msg.level] ?? null, -1)
       return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
     }
     case 'highlightFirst':
+      if (!state.open) return [state, []]
       return [
         {
           ...state,
@@ -335,6 +346,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         [],
       ]
     case 'highlightLast':
+      if (!state.open) return [state, []]
       return [
         {
           ...state,
@@ -347,6 +359,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         [],
       ]
     case 'openSub': {
+      if (!state.open) return [state, []]
       const parent = findItem(state.items, msg.value)
       if (!parent || !parent.children || parent.disabled) return [state, []]
       const openPath = [...state.openPath, msg.value]
@@ -377,6 +390,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
     case 'setItems':
       return [{ ...state, items: msg.items }, []]
     case 'typeahead': {
+      if (!state.open) return [state, []]
       const items = levelItems(state.items, msg.level)
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       const nav = navigable(items)
@@ -536,6 +550,8 @@ export interface MenuSubContentParts {
   role: 'menu'
   id: string
   'aria-labelledby': string
+  /** Virtually-focused item id at this submenu level. */
+  'aria-activedescendant': Signal<string | undefined>
   tabindex: -1
   'data-state': Signal<'open' | 'closed'>
   'data-scope': 'menu'
@@ -567,6 +583,9 @@ export interface MenuParts {
     role: 'menu'
     id: string
     'aria-labelledby': string
+    /** The id of the virtually-focused (highlighted) item at the root level, so
+     * assistive tech announces it while DOM focus stays on the container. */
+    'aria-activedescendant': Signal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
@@ -580,7 +599,7 @@ export interface MenuParts {
   item: (value: string) => MenuItemParts
   checkboxItem: (value: string) => MenuCheckItemParts
   radioItem: (value: string) => MenuCheckItemParts
-  group: (label: string) => MenuGroupParts
+  group: (id: string) => MenuGroupParts
   separator: () => MenuSeparatorParts
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
@@ -608,7 +627,10 @@ export function connect(
   const itemId = (v: string): string => `${base}:item:${v}`
   const subContentId = (v: string): string => `${base}:sub:${v}:content`
   const subTriggerId = (v: string): string => `${base}:sub:${v}:trigger`
-  const groupLabelId = (label: string): string => `${base}:group:${label}`
+  // `group()` takes an OPAQUE id, not display text: interpolating multi-word
+  // label text into an element id produced invalid ids / broken
+  // aria-labelledby references.
+  const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const hoverDelay = opts.hoverDelay ?? 200
   const hoverCloseDelay = opts.hoverCloseDelay ?? 300
 
@@ -645,8 +667,11 @@ export function connect(
     clearCloseTimer(value)
     closeTimers[value] = setTimeout(() => {
       delete closeTimers[value]
-      // Close one level only if this submenu is the deepest open one.
-      send({ type: 'closeSub' })
+      // `closeSub` pops the DEEPEST open submenu. Only fire it when THIS submenu
+      // is the deepest open one — otherwise a shallower level's pointerleave
+      // would wrongly collapse a deeper, still-hovered submenu.
+      const openPath = state.peek()?.openPath ?? []
+      if (openPath[openPath.length - 1] === value) send({ type: 'closeSub' })
     }, hoverCloseDelay)
   }
 
@@ -728,6 +753,10 @@ export function connect(
       role: 'menu',
       id: contentId,
       'aria-labelledby': triggerId,
+      'aria-activedescendant': state.map((s) => {
+        const v = s.highlights['']
+        return v == null ? undefined : itemId(v)
+      }),
       tabindex: -1,
       'data-state': state.map((s) => s.status),
       'data-scope': 'menu',
@@ -753,9 +782,11 @@ export function connect(
           send({ type: 'select', value })
           opts.onSelect?.(value)
         }),
-        onPointerMove: tagSend(send, ['highlight'], () =>
-          send({ type: 'highlight', level: levelOf(value), value }),
-        ),
+        onPointerMove: tagSend(send, ['highlight'], () => {
+          const level = levelOf(value)
+          if ((state.peek()?.highlights[level] ?? null) === value) return
+          send({ type: 'highlight', level, value })
+        }),
       },
     }),
     checkboxItem: (value: string): MenuCheckItemParts => ({
@@ -776,9 +807,11 @@ export function connect(
           send({ type: 'select', value })
           opts.onSelect?.(value)
         }),
-        onPointerMove: tagSend(send, ['highlight'], () =>
-          send({ type: 'highlight', level: levelOf(value), value }),
-        ),
+        onPointerMove: tagSend(send, ['highlight'], () => {
+          const level = levelOf(value)
+          if ((state.peek()?.highlights[level] ?? null) === value) return
+          send({ type: 'highlight', level, value })
+        }),
       },
     }),
     radioItem: (value: string): MenuCheckItemParts => ({
@@ -799,20 +832,22 @@ export function connect(
           send({ type: 'select', value })
           opts.onSelect?.(value)
         }),
-        onPointerMove: tagSend(send, ['highlight'], () =>
-          send({ type: 'highlight', level: levelOf(value), value }),
-        ),
+        onPointerMove: tagSend(send, ['highlight'], () => {
+          const level = levelOf(value)
+          if ((state.peek()?.highlights[level] ?? null) === value) return
+          send({ type: 'highlight', level, value })
+        }),
       },
     }),
-    group: (label: string): MenuGroupParts => ({
+    group: (id: string): MenuGroupParts => ({
       group: {
         role: 'group',
-        'aria-labelledby': groupLabelId(label),
+        'aria-labelledby': groupLabelId(id),
         'data-scope': 'menu',
         'data-part': 'group',
       },
       label: {
-        id: groupLabelId(label),
+        id: groupLabelId(id),
         'data-scope': 'menu',
         'data-part': 'group-label',
       },
@@ -872,6 +907,10 @@ export function connect(
       role: 'menu',
       id: subContentId(value),
       'aria-labelledby': subTriggerId(value),
+      'aria-activedescendant': state.map((s) => {
+        const v = s.highlights[value]
+        return v == null ? undefined : itemId(v)
+      }),
       tabindex: -1,
       'data-state': state.map((s) => (s.openPath.includes(value) ? 'open' : 'closed')),
       'data-scope': 'menu',
@@ -928,21 +967,26 @@ export function connect(
     }),
   }
 
-  // Resolve which level an item lives at, by walking the tree. Used by
-  // pointer highlight so the highlight lands in the correct level bucket.
+  // Resolve which level an item lives at. Used by pointer highlight (which
+  // fires per mouse tick) so the highlight lands in the correct level bucket.
+  // Memoized per items-array reference: the value→level map is rebuilt only
+  // when `items` changes, turning a per-move O(n) tree walk into an O(1) lookup.
+  let levelCacheItems: MenuItem[] | null = null
+  let levelCache = new Map<string, string>()
   function levelOf(value: string): string {
-    const s = state.peek()
-    const walk = (list: MenuItem[], level: string): string | null => {
-      for (const it of list) {
-        if (it.value === value) return level
-        if (it.children) {
-          const nested = walk(it.children, it.value)
-          if (nested !== null) return nested
+    const items = state.peek()?.items ?? []
+    if (items !== levelCacheItems) {
+      levelCacheItems = items
+      levelCache = new Map()
+      const walk = (list: MenuItem[], level: string): void => {
+        for (const it of list) {
+          levelCache.set(it.value, level)
+          if (it.children) walk(it.children, it.value)
         }
       }
-      return null
+      walk(items, '')
     }
-    return walk(s.items, '') ?? ''
+    return levelCache.get(value) ?? ''
   }
 }
 
@@ -955,12 +999,11 @@ export interface OverlayOptions {
   offset?: number
   flip?: boolean
   shift?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -978,16 +1021,12 @@ export function overlay(opts: OverlayOptions): Mountable {
   return show(
     opts.state.map((s) => isPresent(s)),
     () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
       return [
         portal(() => {
           const interaction = show(opts.state.map(isVisible), () => [
-            onMount(() => {
-              const contentEl = document.getElementById(contentId)
-              const triggerEl = document.getElementById(triggerId)
+            onMount((root) => {
+              const contentEl = getElementByIdInScope(root, contentId)
+              const triggerEl = getElementByIdInScope(root, triggerId)
               if (!contentEl || !triggerEl) return
 
               const cleanups: Array<() => void> = []
@@ -1010,22 +1049,30 @@ export function overlay(opts: OverlayOptions): Mountable {
                 pushDismissable({
                   element: contentEl,
                   ignore: () => [triggerEl],
-                  onDismiss: () => {
-                    opts.send({ type: 'close' })
-                    triggerEl.focus()
-                  },
+                  // Focus restoration lives in the cleanup below (which runs on
+                  // EVERY close, not just dismiss); focusing here too would
+                  // fight it and steal focus when the user clicked elsewhere.
+                  onDismiss: () => opts.send({ type: 'close' }),
                 }),
               )
 
               contentEl.focus({ preventScroll: true })
 
               return () => {
+                // Capture BEFORE tearing down (focus trap etc. may move focus).
+                // Only pull focus back to the trigger when it is still inside the
+                // overlay — if the user clicked another control, respect that.
+                const focusInside =
+                  contentEl.contains(document.activeElement) ||
+                  document.activeElement === document.body ||
+                  document.activeElement === null
                 for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+                if (focusInside) triggerEl.focus()
               }
             }),
           ])
           return [interaction, div(parts.positioner, opts.content())]
-        }, targetEl),
+        }, host),
       ]
     },
   )

@@ -121,13 +121,23 @@ export interface YjsCollab {
   connect: () => void
   /** Disconnect the provider. */
   disconnect: () => void
+  /** Release resources this handle OWNS. Call AFTER the `register` disposer has
+   * run. If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
+   * provider factory didn't substitute one), the document is `destroy()`d and its
+   * `docMap` entry removed. A caller-supplied `doc` is caller-owned and left
+   * untouched — you destroy it yourself once every binding over it is gone. */
+  destroy: () => void
 }
 
-/** Resolve doc + provider from the config, honouring mutual exclusivity. */
+/** Resolve doc + provider from the config, honouring mutual exclusivity.
+ * `ownsDoc` is true only when THIS call created the `YDoc` (no `config.doc`, and
+ * the factory didn't substitute its own) — the signal {@link yjsCollab}'s
+ * `destroy()` uses to know whether it may tear the document down. */
 function resolveTransport(config: YjsCollabConfig): {
   doc: YDoc
   docMap: Map<string, YDoc>
   provider: CollabProvider
+  ownsDoc: boolean
 } {
   if (config.provider && config.providerFactory) {
     throw new Error('yjsCollab: pass either `provider` or `providerFactory`, not both')
@@ -137,20 +147,49 @@ function resolveTransport(config: YjsCollabConfig): {
   }
   const docMap = config.docMap ?? new Map<string, YDoc>()
   let doc = config.doc ?? docMap.get(config.id)
+  let ownsDoc = false
   if (!doc) {
     doc = new YDoc()
+    ownsDoc = true
   }
   docMap.set(config.id, doc)
   const provider = config.provider ?? config.providerFactory!(config.id, docMap)
   // The factory may have created/registered its own doc for the id; adopt it so
-  // the binding and the provider share one document.
-  doc = docMap.get(config.id) ?? doc
-  return { doc, docMap, provider }
+  // the binding and the provider share one document. If it replaced ours, the
+  // one we speculatively created is now orphaned — destroy it, and treat the
+  // adopted (factory-created) doc as caller-owned.
+  const adopted = docMap.get(config.id) ?? doc
+  if (adopted !== doc) {
+    if (ownsDoc) doc.destroy()
+    ownsDoc = false
+    doc = adopted
+  }
+  return { doc, docMap, provider, ownsDoc }
+}
+
+/** Read the length of the shared root's backing Yjs XML text. `@lexical/yjs`
+ * exposes no public "is the shared doc empty?" query, and `binding.root.isEmpty()`
+ * only reflects the mapped Lexical tree — a doc holding text inserted by a peer
+ * before this binding mapped it can still report `isEmpty()`. Guarding the
+ * bootstrap on the raw CRDT length as well prevents a late-joining bootstrapper
+ * from double-seeding. Isolated here so the single private-field reach is named,
+ * commented, and easy to revisit if `@lexical/yjs` grows a public accessor. */
+function sharedRootYTextLength(binding: Binding): number {
+  return binding.root._xmlText._length
+}
+
+/** Structural probe for a provider that has already completed its initial sync
+ * handshake. `@lexical/yjs`'s `Provider` type doesn't declare `synced`, but the
+ * real providers (`y-websocket`, `@hocuspocus/provider`) expose it — so a
+ * provider handed to us already-synced can be detected without reaching into a
+ * concrete implementation. */
+function isProviderSynced(provider: CollabProvider): boolean {
+  return (provider as { synced?: boolean }).synced === true
 }
 
 /** Build (but do not yet bind) a collaborative editing handle. */
 export function yjsCollab(config: YjsCollabConfig): YjsCollab {
-  const { doc, docMap, provider } = resolveTransport(config)
+  const { doc, docMap, provider, ownsDoc } = resolveTransport(config)
   const shouldBootstrap = config.shouldBootstrap ?? true
   const autoConnect = config.autoConnect ?? true
   const user = config.user
@@ -257,7 +296,8 @@ export function yjsCollab(config: YjsCollabConfig): YjsCollab {
     const bootstrap = (): void => {
       if (bootstrapped) return
       // Only the designated peer seeds, and only while the shared doc is empty.
-      if (!shouldBootstrap || !binding.root.isEmpty() || binding.root._xmlText._length !== 0) return
+      if (!shouldBootstrap || !binding.root.isEmpty() || sharedRootYTextLength(binding) !== 0)
+        return
       bootstrapped = true
       editor.update(
         () => {
@@ -308,6 +348,13 @@ export function yjsCollab(config: YjsCollabConfig): YjsCollab {
 
     if (autoConnect) provider.connect()
 
+    // An already-synced provider (a ready provider passed in, or a remount
+    // against a long-lived one) will never re-fire 'sync' now that our listener
+    // is wired, so the empty shared doc would never be seeded. Seed it now if the
+    // handshake is already past; `bootstrapped` keeps this idempotent with the
+    // event path above.
+    if (isProviderSynced(provider)) bootstrap()
+
     // ── Clear awareness immediately on tab close (avoids ghost cursors) ───────
     const clearAwareness = (): void => {
       try {
@@ -353,6 +400,12 @@ export function yjsCollab(config: YjsCollabConfig): YjsCollab {
     provider,
     connect: () => provider.connect(),
     disconnect: () => provider.disconnect(),
+    destroy: () => {
+      // Only tear down a document we created; caller-supplied docs are caller-owned.
+      if (!ownsDoc) return
+      doc.destroy()
+      if (docMap.get(config.id) === doc) docMap.delete(config.id)
+    },
   }
 }
 

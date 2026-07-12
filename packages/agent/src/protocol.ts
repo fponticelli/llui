@@ -4,6 +4,16 @@
 // This file is the authoritative definition of the LAP wire protocol;
 // see also the Agents doc at https://llui.dev/agents.
 
+/**
+ * LAP wire-protocol version. Bumped on a breaking change to frame
+ * shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
+ * and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
+ * ends can detect a mismatch (see the version check in the pairing
+ * registry, which logs — rather than hard-fails — an unknown version so
+ * a newer client against an older server degrades loudly, not silently).
+ */
+export const LAP_VERSION = 1
+
 export type LapErrorCode =
   | 'auth-failed'
   | 'revoked'
@@ -232,7 +242,6 @@ export type LapMessageRequest = {
 export type LapMessageRejectReason =
   | 'human-only'
   | 'user-cancelled'
-  | 'timeout'
   | 'invalid'
   | 'schema-error'
   | 'revoked'
@@ -302,8 +311,11 @@ export type LapMessageResponse =
 
 export type LapConfirmResultRequest = { confirmId: string; timeoutMs?: number }
 export type LapConfirmResultResponse =
+  // `still-pending` is the honest timeout outcome (the confirm is still
+  // live in the browser — poll again). `rejected` only ever carries
+  // `user-cancelled`; a plain timeout never fabricates a rejection.
   | { status: 'confirmed'; stateAfter: unknown }
-  | { status: 'rejected'; reason: 'user-cancelled' | 'timeout' }
+  | { status: 'rejected'; reason: 'user-cancelled' }
   | { status: 'still-pending' }
 
 /**
@@ -350,6 +362,12 @@ export type OutlineNode =
   | { kind: 'link'; text: string; href: string }
 
 export type LapDescribeVisibleResponse = {
+  /**
+   * The user's current URL (`window.location.href`), or `null` when the
+   * runtime has no `location` (SSR / non-browser). The client handler
+   * has always returned this; the type previously omitted it (drift).
+   */
+  url: string | null
   outline: OutlineNode[]
   /**
    * Where the outline came from:
@@ -480,6 +498,13 @@ export type HelloFrame = {
   affordancesSample: object[]
   docs: AgentDocs | null
   schemaHash: string
+  /**
+   * LAP wire-protocol version the browser runtime speaks (see
+   * {@link LAP_VERSION}). Optional so an older client that predates
+   * versioning (which omits it) is still routable — the server treats a
+   * missing value as "unknown/legacy" and logs it.
+   */
+  lapVersion?: number
 }
 
 export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
@@ -490,7 +515,14 @@ export type ConfirmResolvedFrame = {
   outcome: 'confirmed' | 'user-cancelled'
   stateAfter?: unknown
 }
-export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: unknown }
+/**
+ * Browser → server: a watched sub-path changed. `id` correlates to the
+ * server `watch` frame that armed it (a specific `/wait` long-poll);
+ * the browser only emits these for currently-armed watches, so idle
+ * sessions cost nothing per commit. `path` echoes the watched pointer
+ * for debugging; `stateAfter` is the full redacted+encoded snapshot.
+ */
+export type StateUpdateFrame = { t: 'state-update'; id?: string; path: string; stateAfter: unknown }
 export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
 
 export type ClientFrame =
@@ -515,7 +547,37 @@ export type ActiveFrame = { t: 'active' }
  */
 export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
 
-export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame | LogPushFrame
+/**
+ * Server → browser: abandon a pending confirmation. Sent when the server
+ * has told the agent a confirm is terminally `rejected` (user-cancelled)
+ * so a late user Approve on that same `confirmId` can no longer fire a
+ * dispatch the agent was told would never run. The browser marks the
+ * matching pending confirm entry rejected (idempotent — no-op if already
+ * resolved). Distinct from `revoked` (which kills the whole session).
+ */
+export type ConfirmExpireFrame = { t: 'confirm-expire'; confirmId: string }
+
+/**
+ * Server → browser: arm a state watch. Sent when a `/wait` long-poll
+ * begins. The browser resolves `path` (a JSON pointer; `undefined` /
+ * `''` watches the whole state) against each commit and emits a
+ * `state-update` carrying this `id` only when the resolved value
+ * changes. This makes the per-commit broadcast subscription-driven —
+ * an idle session with no armed watch ships nothing.
+ */
+export type WatchFrame = { t: 'watch'; id: string; path?: string }
+
+/** Server → browser: disarm a previously-armed watch (`id`). */
+export type UnwatchFrame = { t: 'unwatch'; id: string }
+
+export type ServerFrame =
+  | RpcFrame
+  | RevokedFrame
+  | ActiveFrame
+  | LogPushFrame
+  | ConfirmExpireFrame
+  | WatchFrame
+  | UnwatchFrame
 
 // ── Tokens + pairing ─────────────────────────────────────────────
 
@@ -574,13 +636,27 @@ export type MintResponse = {
   wsUrl: string
   lapUrl: string
   expiresAt: number
+  /** LAP wire-protocol version the server speaks (see {@link LAP_VERSION}). */
+  lapVersion?: number
 }
 
 export type ResumeListRequest = { tids: string[] }
 export type ResumeListResponse = { sessions: AgentSession[] }
 
 export type ResumeClaimRequest = { tid: string }
-export type ResumeClaimResponse = { token: AgentToken; wsUrl: string }
+/**
+ * The rotated bearer plus everything the client needs to persist a full
+ * session blob (mirrors `MintResponse`), so a resume survives a
+ * subsequent refresh the same way a fresh mint does. `expiresAt` is in
+ * seconds-since-epoch (same units as `MintResponse.expiresAt`).
+ */
+export type ResumeClaimResponse = {
+  token: AgentToken
+  tid: string
+  wsUrl: string
+  lapUrl: string
+  expiresAt: number
+}
 
 export type RevokeRequest = { tid: string }
 export type RevokeResponse = { status: 'revoked' }
@@ -629,3 +705,13 @@ export {
   decodeFromWire,
   type AgentCodec,
 } from './codecs.js'
+
+// ── State-diff exports ────────────────────────────────────────────
+//
+// Re-exported from the public `@llui/agent/protocol` subpath so
+// consumers (notably `@llui/test`, which had to replicate the
+// algorithm for its diff-parity checks) can import the SAME
+// `computeStateDiff` the runtime uses. The implementation stays in
+// `./state-diff.ts`; this is the public seam.
+
+export { computeStateDiff, type StateDiff, type JsonPatchOp } from './state-diff.js'

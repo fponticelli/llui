@@ -161,18 +161,12 @@ geolocation({
 
 ## Functions
 
-### `resolveEffects()`
+### `_getEffectInterceptor()`
 
-Execute all HTTP effects from the effect list, apply responses
-to state via update(), return the final loaded state.
+@internal consumed by `@llui/dom`'s effect-dispatch wrapper.
 
 ```typescript
-function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
-  state: S,
-  effects: E[],
-  update: UpdateFn<S, M, E>,
-  maxDepth = 3,
-): Promise<S>
+function _getEffectInterceptor(): EffectInterceptor
 ```
 
 ### `_setEffectInterceptor()`
@@ -192,12 +186,103 @@ wrapper doesn't reach.
 function _setEffectInterceptor(hook: EffectInterceptor): void
 ```
 
-### `_getEffectInterceptor()`
+### `asOnEffect()`
 
-@internal consumed by `@llui/dom`'s effect-dispatch wrapper.
+Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
+the signal-runtime `onEffect` shape: `(effect, api) => cleanup`.
+The signal runtime now hands `onEffect` a per-mount `api.signal` (an
+`AbortSignal` aborted exactly once, on THIS mount's `dispose()`). When present,
+this adapter passes that signal straight through to the chain: every mount owns
+a distinct signal, so the chain keys its per-mount registries off it and two
+concurrent mounts of one definition never interfere. Teardown is driven by the
+runtime aborting `api.signal`, so the returned cleanup is a no-op — the chain's
+own abort listener clears the mount's pending http / debounce / interval /
+websocket resources. We must NOT abort `api.signal` ourselves (it is the
+runtime's, shared with everything else on the mount).
+FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
+caller), the adapter owns one AbortController per mount and the returned cleanup
+aborts it. It is (re)created lazily — never at factory-call time, since
+`asOnEffect` typically runs at module top-level where constructing an
+AbortController throws on Cloudflare Workers — and recreated once aborted so a
+re-mount of the same definition never inherits a dead signal. The cleanup is
+memoized per generation so it always targets the controller live at its dispatch.
+Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
 
 ```typescript
-function _getEffectInterceptor(): EffectInterceptor
+function asOnEffect<E extends { type: string }, M>(
+  chain: (ctx: EffectCtx<E, M>) => void,
+): (effect: E, api: { send: (msg: M) => void; signal?: AbortSignal }) => () => void
+```
+
+### `broadcast()`
+
+```typescript
+function broadcast(channel: string, data: unknown): BroadcastEffect
+```
+
+### `broadcastListen()`
+
+```typescript
+function broadcastListen<M>(
+  channel: string,
+  onMessage: (data: unknown) => M,
+): BroadcastListenEffect<M>
+```
+
+### `buildRequest()`
+
+Build the `RequestInit` (method + body + content-type headers) for an http
+effect, WITHOUT a signal. Shared by the live `runHttp` and the SSR
+`resolveEffects` so both derive identical requests. Callers add `signal`
+(and any timeout) themselves.
+@internal
+
+```typescript
+function buildRequest(effect: HttpEffect): RequestInit
+```
+
+### `cancel()`
+
+```typescript
+export function cancel(token: string): CancelEffect
+export function cancel(token: string, inner: BuiltinEffect): CancelReplaceEffect
+```
+
+### `clipboardRead()`
+
+```typescript
+function clipboardRead<M>(opts: {
+  onSuccess: (text: string) => M
+  onError: (error: string) => M
+}): ClipboardReadEffect<M>
+```
+
+### `clipboardWrite()`
+
+```typescript
+function clipboardWrite(text: string): ClipboardWriteEffect
+```
+
+### `debounce()`
+
+```typescript
+function debounce(key: string, ms: number, inner: BuiltinEffect): DebounceEffect
+```
+
+### `geolocation()`
+
+```typescript
+function geolocation<M>(opts: {
+  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
+  onError: (error: string) => M
+  enableHighAccuracy?: boolean
+}): GeolocationEffect<M>
+```
+
+### `handleEffects()`
+
+```typescript
+function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M>
 ```
 
 ### `http()`
@@ -216,23 +301,10 @@ function http<M>(opts: {
 }): HttpEffect<M>
 ```
 
-### `cancel()`
+### `httpStatusToApiError()`
 
 ```typescript
-export function cancel(token: string): CancelEffect
-export function cancel(token: string, inner: BuiltinEffect): CancelReplaceEffect
-```
-
-### `debounce()`
-
-```typescript
-function debounce(key: string, ms: number, inner: BuiltinEffect): DebounceEffect
-```
-
-### `timeout()`
-
-```typescript
-function timeout<M>(ms: number, msg: M): TimeoutEffect
+function httpStatusToApiError(res: Response): Promise<ApiError>
 ```
 
 ### `interval()`
@@ -249,24 +321,71 @@ Log to the console as an effect. Replaces the old core `log` effect.
 function log(message: string, opts?: { level?: LogEffect['level']; data?: unknown }): LogEffect
 ```
 
-### `storageLoad()`
-
-Synchronous read from storage. Use at init time to seed state. Returns `null` on miss or invalid JSON.
+### `notification()`
 
 ```typescript
-function storageLoad<T = unknown>(key: string, scope: StorageScope = 'local'): T | null
+function notification<M>(
+  title: string,
+  opts?: {
+    body?: string
+    icon?: string
+    tag?: string
+    onClick?: () => M
+    onClose?: () => M
+    onError?: () => M
+  },
+): NotificationEffect<M>
 ```
 
-### `storageSet()`
+### `parseResponse()`
+
+Parse a response body by explicit `responseType`, else auto-detect from the
+`content-type` header. Shared by `runHttp` and `resolveEffects`.
+@internal
 
 ```typescript
-function storageSet(key: string, value: unknown, scope: StorageScope = 'local'): StorageSetEffect
+function parseResponse(
+  res: Response,
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer',
+): Promise<unknown>
 ```
 
-### `storageRemove()`
+### `race()`
 
 ```typescript
-function storageRemove(key: string, scope: StorageScope = 'local'): StorageRemoveEffect
+function race(effects: BuiltinEffect[]): RaceEffect
+```
+
+### `resolveEffects()`
+
+Execute all HTTP effects from the effect list, apply responses
+to state via update(), return the final loaded state.
+Requests are built with the SAME `buildRequest`/`parseResponse` core the live
+`http` runner uses, so SSR pre-loading derives identical requests (real headers,
+content-type, pass-through bodies, `responseType`) and passes the response's real
+`Headers` to `onSuccess`. A rejected fetch (network failure / timeout) is mapped
+through the effect's `onError` rather than silently dropped, so SSR and the client
+converge on the same failure state.
+
+```typescript
+function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
+  state: S,
+  effects: E[],
+  update: UpdateFn<S, M, E>,
+  maxDepth = 3,
+): Promise<S>
+```
+
+### `retry()`
+
+```typescript
+function retry(inner: HttpEffect, opts: { maxAttempts: number; delayMs: number }): RetryEffect
+```
+
+### `sequence()`
+
+```typescript
+function sequence(effects: BuiltinEffect[]): SequenceEffect
 ```
 
 ### `storageGet()`
@@ -279,6 +398,26 @@ function storageGet<M>(
 ): StorageGetEffect<M>
 ```
 
+### `storageLoad()`
+
+Synchronous read from storage. Use at init time to seed state. Returns `null` on miss or invalid JSON.
+
+```typescript
+function storageLoad<T = unknown>(key: string, scope: StorageScope = 'local'): T | null
+```
+
+### `storageRemove()`
+
+```typescript
+function storageRemove(key: string, scope: StorageScope = 'local'): StorageRemoveEffect
+```
+
+### `storageSet()`
+
+```typescript
+function storageSet(key: string, value: unknown, scope: StorageScope = 'local'): StorageSetEffect
+```
+
 ### `storageWatch()`
 
 ```typescript
@@ -289,19 +428,25 @@ function storageWatch<M>(
 ): StorageWatchEffect<M>
 ```
 
-### `broadcast()`
+### `timeout()`
 
 ```typescript
-function broadcast(channel: string, data: unknown): BroadcastEffect
+function timeout<M>(ms: number, msg: M): TimeoutEffect
 ```
 
-### `broadcastListen()`
+### `upload()`
 
 ```typescript
-function broadcastListen<M>(
-  channel: string,
-  onMessage: (data: unknown) => M,
-): BroadcastListenEffect<M>
+function upload<M>(opts: {
+  url: string
+  method?: string
+  body: FormData | Blob
+  headers?: Record<string, string>
+  timeout?: number
+  onProgress: (loaded: number, total: number) => M
+  onSuccess: (data: unknown, status: number) => M
+  onError: (error: ApiError) => M
+}): UploadEffect<M>
 ```
 
 ### `websocket()`
@@ -324,118 +469,70 @@ function websocket<M>(opts: {
 function wsSend(key: string, data: unknown): WebSocketSendEffect
 ```
 
-### `retry()`
-
-```typescript
-function retry(inner: BuiltinEffect, opts: { maxAttempts: number; delayMs: number }): RetryEffect
-```
-
-### `upload()`
-
-```typescript
-function upload<M>(opts: {
-  url: string
-  method?: string
-  body: FormData | Blob
-  headers?: Record<string, string>
-  onProgress: (loaded: number, total: number) => M
-  onSuccess: (data: unknown, status: number) => M
-  onError: (error: ApiError) => M
-}): UploadEffect<M>
-```
-
-### `clipboardRead()`
-
-```typescript
-function clipboardRead<M>(opts: {
-  onSuccess: (text: string) => M
-  onError: (error: string) => M
-}): ClipboardReadEffect<M>
-```
-
-### `clipboardWrite()`
-
-```typescript
-function clipboardWrite(text: string): ClipboardWriteEffect
-```
-
-### `notification()`
-
-```typescript
-function notification<M>(
-  title: string,
-  opts?: {
-    body?: string
-    icon?: string
-    tag?: string
-    onClick?: () => M
-    onClose?: () => M
-    onError?: () => M
-  },
-): NotificationEffect<M>
-```
-
-### `geolocation()`
-
-```typescript
-function geolocation<M>(opts: {
-  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
-  onError: (error: string) => M
-  enableHighAccuracy?: boolean
-}): GeolocationEffect<M>
-```
-
-### `sequence()`
-
-```typescript
-function sequence(effects: BuiltinEffect[]): SequenceEffect
-```
-
-### `race()`
-
-```typescript
-function race(effects: BuiltinEffect[]): RaceEffect
-```
-
-### `handleEffects()`
-
-```typescript
-function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M>
-```
-
-### `asOnEffect()`
-
-Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
-the signal-runtime `onEffect` shape: `(effect, { send }) => cleanup`.
-The signal component's `onEffect` takes the effect + a `{ send }` api and may
-return a cleanup (run on unmount) — there is no ambient `AbortSignal` like the
-legacy runtime passed. This adapter owns one AbortController per MOUNT: every
-effect dispatched during a mount shares that mount's `signal`, and the returned
-cleanup aborts it, so in-flight http / debounce / interval / websocket effects
-tear down when the component unmounts (the chain's own abort listener clears its
-pending registries).
-Lifetime is per-mount, not per-definition. `asOnEffect(chain)` is evaluated once
-at the component literal, so the returned `onEffect` is reused across every mount
-of that definition (the runtime reads `def.onEffect`). A client-side re-mount
-(e.g. @llui/vike disposing + re-mounting a page on SPA navigation) must therefore
-get a FRESH, non-aborted controller — otherwise the previous unmount's abort
-leaks into the next mount and any async effect that guards on `signal.aborted`
-before its `send` silently drops its result, leaving state stuck mid-transition.
-Usage: `onEffect: asOnEffect(handleEffects<E, M>().http(…).else(…))`.
-
-```typescript
-function asOnEffect<E extends { type: string }, M>(
-  chain: (ctx: EffectCtx<E, M>) => void,
-): (effect: E, api: { send: (msg: M) => void }) => () => void
-```
-
-### `httpStatusToApiError()`
-
-```typescript
-function httpStatusToApiError(res: Response): Promise<ApiError>
-```
-
 ## Types
+
+### `ApiError`
+
+Standard API error type produced by the http() effect.
+
+```typescript
+export type ApiError =
+  | { kind: 'network'; message: string }
+  | { kind: 'timeout' }
+  | { kind: 'notfound' }
+  | { kind: 'unauthorized' }
+  | { kind: 'forbidden' }
+  | { kind: 'ratelimit'; retryAfter?: number }
+  | { kind: 'validation'; fields: Record<string, string[]> }
+  | { kind: 'server'; status: number; message: string }
+```
+
+### `Async`
+
+Models the lifecycle of an async operation.
+
+```typescript
+export type Async<T, E> =
+  | { type: 'idle' }
+  | { type: 'loading'; stale?: T }
+  | { type: 'success'; data: T }
+  | { type: 'failure'; error: E }
+```
+
+### `Effect`
+
+```typescript
+type BuiltinEffect =
+  | HttpEffect
+  | CancelEffect
+  | CancelReplaceEffect
+  | DebounceEffect
+  | TimeoutEffect
+  | IntervalEffect
+  | LogEffect
+  | StorageSetEffect
+  | StorageRemoveEffect
+  | StorageGetEffect
+  | StorageWatchEffect
+  | BroadcastEffect
+  | BroadcastListenEffect
+  | SequenceEffect
+  | RaceEffect
+  | WebSocketEffect
+  | WebSocketSendEffect
+  | RetryEffect
+  | UploadEffect
+  | ClipboardReadEffect
+  | ClipboardWriteEffect
+  | NotificationEffect
+  | GeolocationEffect
+```
+
+### `EffectInterceptor`
+
+```typescript
+export type EffectInterceptor = ((effect: unknown, id: string) => EffectInterceptorResult) | null
+```
 
 ### `EffectInterceptorResult`
 
@@ -456,46 +553,6 @@ Contract:
 export type EffectInterceptorResult = { mocked: true; response: unknown } | { mocked: false }
 ```
 
-### `EffectInterceptor`
-
-```typescript
-export type EffectInterceptor = ((effect: unknown, id: string) => EffectInterceptorResult) | null
-```
-
-### `Async`
-
-Models the lifecycle of an async operation.
-
-```typescript
-export type Async<T, E> =
-  | { type: 'idle' }
-  | { type: 'loading'; stale?: T }
-  | { type: 'success'; data: T }
-  | { type: 'failure'; error: E }
-```
-
-### `ApiError`
-
-Standard API error type produced by the http() effect.
-
-```typescript
-export type ApiError =
-  | { kind: 'network'; message: string }
-  | { kind: 'timeout' }
-  | { kind: 'notfound' }
-  | { kind: 'unauthorized' }
-  | { kind: 'forbidden' }
-  | { kind: 'ratelimit'; retryAfter?: number }
-  | { kind: 'validation'; fields: Record<string, string[]> }
-  | { kind: 'server'; status: number; message: string }
-```
-
-### `StorageScope`
-
-```typescript
-export type StorageScope = 'local' | 'session'
-```
-
 ### `EffectPlugin`
 
 Plugin handler — returns true if the effect was handled, false to pass through.
@@ -504,22 +561,35 @@ Plugin handler — returns true if the effect was handled, false to pass through
 export type EffectPlugin<E, M> = (ctx: EffectCtx<E, M>) => boolean
 ```
 
-## Interfaces
-
-### `HttpEffect`
+### `StorageScope`
 
 ```typescript
-export interface HttpEffect<M = unknown> {
-  type: 'http'
-  url: string
-  method?: string
-  body?: unknown
-  contentType?: string
-  headers?: Record<string, string>
-  timeout?: number
-  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
-  onSuccess: (data: unknown, headers: Headers) => M
-  onError: (error: ApiError) => M
+export type StorageScope = 'local' | 'session'
+```
+
+## Interfaces
+
+### `BroadcastEffect`
+
+Post a message to a BroadcastChannel. Fire-and-forget.
+
+```typescript
+export interface BroadcastEffect {
+  type: 'broadcast'
+  channel: string
+  data: unknown
+}
+```
+
+### `BroadcastListenEffect`
+
+Subscribe to a BroadcastChannel. Fires the message returned by `onMessage(data)` per incoming message.
+
+```typescript
+export interface BroadcastListenEffect<M = unknown> {
+  type: 'broadcast-listen'
+  channel: string
+  onMessage: (data: unknown) => M
 }
 ```
 
@@ -542,6 +612,25 @@ export interface CancelReplaceEffect {
 }
 ```
 
+### `ClipboardReadEffect`
+
+```typescript
+export interface ClipboardReadEffect<M = unknown> {
+  type: 'clipboard-read'
+  onSuccess: (text: string) => M
+  onError: (error: string) => M
+}
+```
+
+### `ClipboardWriteEffect`
+
+```typescript
+export interface ClipboardWriteEffect {
+  type: 'clipboard-write'
+  text: string
+}
+```
+
 ### `DebounceEffect`
 
 ```typescript
@@ -553,15 +642,41 @@ export interface DebounceEffect {
 }
 ```
 
-### `TimeoutEffect`
-
-Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts.
+### `EffectCtx`
 
 ```typescript
-export interface TimeoutEffect {
-  type: 'timeout'
-  ms: number
-  msg: unknown
+export interface EffectCtx<E, M> {
+  effect: E
+  send: (msg: M) => void
+  signal: AbortSignal
+}
+```
+
+### `GeolocationEffect`
+
+```typescript
+export interface GeolocationEffect<M = unknown> {
+  type: 'geolocation'
+  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
+  onError: (error: string) => M
+  enableHighAccuracy?: boolean
+}
+```
+
+### `HttpEffect`
+
+```typescript
+export interface HttpEffect<M = unknown> {
+  type: 'http'
+  url: string
+  method?: string
+  body?: unknown
+  contentType?: string
+  headers?: Record<string, string>
+  timeout?: number
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
+  onSuccess: (data: unknown, headers: Headers) => M
+  onError: (error: ApiError) => M
 }
 ```
 
@@ -593,15 +708,60 @@ export interface LogEffect {
 }
 ```
 
-### `StorageSetEffect`
-
-Write a JSON value to localStorage/sessionStorage. Fire-and-forget.
+### `NotificationEffect`
 
 ```typescript
-export interface StorageSetEffect {
-  type: 'storage-set'
+export interface NotificationEffect<M = unknown> {
+  type: 'notification'
+  title: string
+  body?: string
+  icon?: string
+  tag?: string
+  onClick?: () => M
+  onClose?: () => M
+  onError?: () => M
+}
+```
+
+### `RaceEffect`
+
+```typescript
+export interface RaceEffect {
+  type: 'race'
+  effects: BuiltinEffect[]
+}
+```
+
+### `RetryEffect`
+
+```typescript
+export interface RetryEffect {
+  type: 'retry'
+  /** Only `http` effects are retriable — retry re-issues the request on failure. */
+  inner: HttpEffect
+  maxAttempts: number
+  delayMs: number
+}
+```
+
+### `SequenceEffect`
+
+```typescript
+export interface SequenceEffect {
+  type: 'sequence'
+  effects: BuiltinEffect[]
+}
+```
+
+### `StorageGetEffect`
+
+Read a key from storage, dispatch the message returned by `onLoad(value)`.
+
+```typescript
+export interface StorageGetEffect<M = unknown> {
+  type: 'storage-get'
   key: string
-  value: unknown
+  onLoad: (value: unknown) => M
   scope: StorageScope
 }
 ```
@@ -618,15 +778,15 @@ export interface StorageRemoveEffect {
 }
 ```
 
-### `StorageGetEffect`
+### `StorageSetEffect`
 
-Read a key from storage, dispatch the message returned by `onLoad(value)`.
+Write a JSON value to localStorage/sessionStorage. Fire-and-forget.
 
 ```typescript
-export interface StorageGetEffect<M = unknown> {
-  type: 'storage-get'
+export interface StorageSetEffect {
+  type: 'storage-set'
   key: string
-  onLoad: (value: unknown) => M
+  value: unknown
   scope: StorageScope
 }
 ```
@@ -644,45 +804,32 @@ export interface StorageWatchEffect<M = unknown> {
 }
 ```
 
-### `BroadcastEffect`
+### `TimeoutEffect`
 
-Post a message to a BroadcastChannel. Fire-and-forget.
+Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts.
 
 ```typescript
-export interface BroadcastEffect {
-  type: 'broadcast'
-  channel: string
-  data: unknown
+export interface TimeoutEffect {
+  type: 'timeout'
+  ms: number
+  msg: unknown
 }
 ```
 
-### `BroadcastListenEffect`
-
-Subscribe to a BroadcastChannel. Fires the message returned by `onMessage(data)` per incoming message.
+### `UploadEffect`
 
 ```typescript
-export interface BroadcastListenEffect<M = unknown> {
-  type: 'broadcast-listen'
-  channel: string
-  onMessage: (data: unknown) => M
-}
-```
-
-### `SequenceEffect`
-
-```typescript
-export interface SequenceEffect {
-  type: 'sequence'
-  effects: BuiltinEffect[]
-}
-```
-
-### `RaceEffect`
-
-```typescript
-export interface RaceEffect {
-  type: 'race'
-  effects: BuiltinEffect[]
+export interface UploadEffect<M = unknown> {
+  type: 'upload'
+  url: string
+  method?: string
+  body: FormData | Blob
+  headers?: Record<string, string>
+  /** Abort the upload after this many milliseconds (wires `xhr.timeout`). */
+  timeout?: number
+  onProgress: (loaded: number, total: number) => M
+  onSuccess: (data: unknown, status: number) => M
+  onError: (error: ApiError) => M
 }
 ```
 
@@ -708,87 +855,6 @@ export interface WebSocketSendEffect {
   type: 'ws-send'
   key: string
   data: unknown
-}
-```
-
-### `UploadEffect`
-
-```typescript
-export interface UploadEffect<M = unknown> {
-  type: 'upload'
-  url: string
-  method?: string
-  body: FormData | Blob
-  headers?: Record<string, string>
-  onProgress: (loaded: number, total: number) => M
-  onSuccess: (data: unknown, status: number) => M
-  onError: (error: ApiError) => M
-}
-```
-
-### `RetryEffect`
-
-```typescript
-export interface RetryEffect {
-  type: 'retry'
-  inner: BuiltinEffect
-  maxAttempts: number
-  delayMs: number
-}
-```
-
-### `ClipboardReadEffect`
-
-```typescript
-export interface ClipboardReadEffect<M = unknown> {
-  type: 'clipboard-read'
-  onSuccess: (text: string) => M
-  onError: (error: string) => M
-}
-```
-
-### `ClipboardWriteEffect`
-
-```typescript
-export interface ClipboardWriteEffect {
-  type: 'clipboard-write'
-  text: string
-}
-```
-
-### `NotificationEffect`
-
-```typescript
-export interface NotificationEffect<M = unknown> {
-  type: 'notification'
-  title: string
-  body?: string
-  icon?: string
-  tag?: string
-  onClick?: () => M
-  onClose?: () => M
-  onError?: () => M
-}
-```
-
-### `GeolocationEffect`
-
-```typescript
-export interface GeolocationEffect<M = unknown> {
-  type: 'geolocation'
-  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
-  onError: (error: string) => M
-  enableHighAccuracy?: boolean
-}
-```
-
-### `EffectCtx`
-
-```typescript
-export interface EffectCtx<E, M> {
-  effect: E
-  send: (msg: M) => void
-  signal: AbortSignal
 }
 ```
 

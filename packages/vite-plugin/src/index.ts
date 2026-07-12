@@ -8,23 +8,25 @@ interface ServerResponseLike {
   end(body?: string): void
 }
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
-  transformSignalComponentSource,
+  transformSignalComponentSourceWithMap,
   lintSignalSource,
   applyLintFixes,
   COMPILER_RENAMEABLE_KEYS,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
+import MagicString from 'magic-string'
+import type { SourceMap } from 'magic-string'
 import { transformUseClientSsr, hasUseClientDirective } from '@llui/compiler-ssr'
 import { createCaptureRegistry } from './notes/capture-registry.js'
 import { createEventBus } from './notes/event-bus.js'
 import { createNotesMiddleware } from './notes/middleware.js'
+import { createTrustedTaskRegistry } from './notes/trusted-tasks.js'
 import type { NoteFormatConfig } from './notes/store.js'
 import {
   isCliAvailable,
@@ -41,129 +43,64 @@ import {
 } from '@llui/compiler'
 import ts from 'typescript'
 
+/** Combined output of {@link preResolveAll}. */
+interface PreResolveResult {
+  typeSources?: ExternalTypeSources
+  preExtracted?: PreExtractedSchemas
+}
+
 /**
- * Pre-resolution step run before the signal transform. Scans the source
- * for `component<State, Msg, Effect>(...)` calls; for each type argument
- * that is an identifier (the common case), walks imports and re-exports
- * to find the source file declaring that alias. The result is plumbed
- * into `transformSignalComponentSource` so the schema/annotation
- * extractors operate on the declaring file's source instead of silently
- * returning `null` when the type lives in a separate file.
+ * Single pre-resolution pass run before the signal transform. Parses the
+ * focal file ONCE, finds the first `component<State, Msg, Effect>()` call,
+ * and resolves everything the transform's schema/annotation extractors need
+ * from sibling files in one shot:
  *
- * Returns `undefined` (no external sources) when:
- *   - No `component<...>()` call is in the file
- *   - No type arguments are identifiers we can chase
- *   - All type arguments are declared locally (the resolver returns the
- *     same source we already have, so external sources are redundant)
+ *   - `typeSources` — the declaring-file source for each type arg that
+ *     lives in another module (the transform's file-local extractors would
+ *     otherwise emit `null`). Only `state` is consumed downstream, but msg/
+ *     effect are resolved too for completeness.
+ *   - `preExtracted` — composition-aware msg annotations + discriminated-
+ *     union schemas for Msg/Effect (following `type Msg = Imported | {…}`).
  *
- * `resolveModule` comes from Rollup's `this.resolve()`; we wrap it to
- * return the absolute id (or null when unresolved) and read the source
- * via `fs/promises.readFile`.
+ * Merges the previously-separate `preResolveTypeSources` +
+ * `preExtractCompositional`, which each re-parsed the focal file and rebuilt
+ * a `ResolveContext`. The caller now owns the `ctx` (so it can cache reads
+ * and register watch/reverse-edge bookkeeping in one place).
  */
-async function preResolveTypeSources(
+async function preResolveAll(
   source: string,
   filePath: string,
-  rollupResolve: (
-    spec: string,
-    importer: string,
-  ) => Promise<{ id: string; external?: boolean | 'absolute' | 'relative' } | null>,
-): Promise<ExternalTypeSources | undefined> {
+  ctx: ResolveContext,
+): Promise<PreResolveResult> {
   // Cheap filter: nothing to resolve unless the file contains a
   // component<...>() call. Avoids parsing every TS file in the project.
-  if (!/\bcomponent\s*</.test(source)) return undefined
+  if (!/\bcomponent\s*</.test(source)) return {}
 
-  // Find the first component<...>() call and read its type arg names.
-  // Multiple component() calls in one file would each technically need
-  // their own type-arg lookup; we resolve based on the first call and
-  // accept the (rare) edge case where two component() calls in one file
-  // use different non-local Msg types. The lint rule catches divergence.
+  // Parse once. Multiple component() calls in one file would each
+  // technically need their own type-arg lookup; we resolve based on the
+  // first call and accept the (rare) edge case where two calls use
+  // different non-local Msg types. The lint rule catches divergence.
   const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
   const args = findFirstComponentTypeArgs(sf)
-  if (!args) return undefined
+  if (!args) return {}
 
-  const ctx: ResolveContext = {
-    resolveModule: async (spec, importer) => {
-      const result = await rollupResolve(spec, importer)
-      if (!result || result.external) return null
-      // Rollup ids can include query/hash suffixes for virtual modules;
-      // strip those so fs.readFile sees a real path. Also skip files
-      // outside our control (node_modules) — we don't want to follow
-      // imports into third-party packages just to scrape types.
-      const idStripped = result.id.split('?')[0]?.split('#')[0]
-      if (!idStripped) return null
-      if (idStripped.includes('/node_modules/')) return null
-      return idStripped
-    },
-    readSource: async (p) => {
-      return await readFile(p, 'utf8')
-    },
-  }
-
-  // Helper to resolve one type-arg name into an external source if it
-  // isn't declared locally (or if the resolver chases through imports).
-  const resolve = async (
+  // Resolve one type-arg name into an external source if it isn't declared
+  // locally (or if the resolver chases through imports).
+  const resolveTypeSource = async (
     typeName: string | null,
   ): Promise<{ source: string; typeName: string } | undefined> => {
     if (!typeName) return undefined
     const found = await findTypeSource(typeName, source, filePath, ctx)
     if (!found) return undefined
-    // If the alias was declared locally, the existing extractor path
-    // already handles it — no need to populate external sources.
+    // Declared locally → the transform's own extractor path handles it.
     if (found.filePath === filePath) return undefined
     return { source: found.source, typeName: found.localName }
   }
 
-  const [state, msg, effect] = await Promise.all([
-    resolve(args.state),
-    resolve(args.msg),
-    resolve(args.effect),
-  ])
-
-  if (!state && !msg && !effect) return undefined
-  return { state, msg, effect }
-}
-
-/**
- * Cross-file + composition-aware schema extraction. The extractors
- * follow imports/re-exports AND walk into TypeReferences inside Msg /
- * Effect unions, so a developer who organises types as
- * `type Msg = ImportedFoo | { type: 'extra' }` gets every variant in
- * `__msgAnnotations` and `__msgSchema`. Without this step the
- * file-local sync extractors would silently emit half-annotations
- * (only the inline TypeLiteral members) — the worst kind of failure
- * mode because the build appears to succeed.
- *
- * Returns `undefined` (no pre-extraction) when there's no
- * `component()` call to resolve types for.
- */
-async function preExtractCompositional(
-  source: string,
-  filePath: string,
-  rollupResolve: (
-    spec: string,
-    importer: string,
-  ) => Promise<{ id: string; external?: boolean | 'absolute' | 'relative' } | null>,
-): Promise<PreExtractedSchemas | undefined> {
-  if (!/\bcomponent\s*</.test(source)) return undefined
-  const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
-  const args = findFirstComponentTypeArgs(sf)
-  if (!args) return undefined
-  // No identifier type args at all → nothing for the resolver to chase.
-  if (!args.msg && !args.effect && !args.state) return undefined
-
-  const ctx: ResolveContext = {
-    resolveModule: async (spec, importer) => {
-      const result = await rollupResolve(spec, importer)
-      if (!result || result.external) return null
-      const idStripped = result.id.split('?')[0]?.split('#')[0]
-      if (!idStripped) return null
-      if (idStripped.includes('/node_modules/')) return null
-      return idStripped
-    },
-    readSource: async (p) => readFile(p, 'utf8'),
-  }
-
-  const [msgAnnotations, msgSchema, effectSchema] = await Promise.all([
+  const [state, msg, effect, msgAnnotations, msgSchema, effectSchema] = await Promise.all([
+    resolveTypeSource(args.state),
+    resolveTypeSource(args.msg),
+    resolveTypeSource(args.effect),
     args.msg
       ? extractMsgAnnotationsCrossFile(source, args.msg, filePath, ctx)
       : Promise.resolve(null),
@@ -175,22 +112,16 @@ async function preExtractCompositional(
       : Promise.resolve(null),
   ])
 
-  // Only return a populated payload when we actually extracted
-  // something useful. Returning `undefined` lets transformLlui fall
-  // back to its file-local extractors, which is the right behavior
-  // for the (rare) case where every type the resolver sees is
-  // unreachable.
-  if (msgAnnotations === null && msgSchema === null && effectSchema === null) return undefined
-
-  // Note: state schema isn't a discriminated union, so composition
-  // doesn't apply. We leave state on the simpler `typeSources` path
-  // (already plumbed through preResolveTypeSources) which the
-  // file-local `extractStateSchema` consumes.
-  const out: PreExtractedSchemas = {}
-  if (msgAnnotations !== null) out.msgAnnotations = msgAnnotations
-  if (msgSchema !== null) out.msgSchema = msgSchema
-  if (effectSchema !== null) out.effectSchema = effectSchema
-  return out
+  const result: PreResolveResult = {}
+  if (state || msg || effect) result.typeSources = { state, msg, effect }
+  if (msgAnnotations !== null || msgSchema !== null || effectSchema !== null) {
+    const pe: PreExtractedSchemas = {}
+    if (msgAnnotations !== null) pe.msgAnnotations = msgAnnotations
+    if (msgSchema !== null) pe.msgSchema = msgSchema
+    if (effectSchema !== null) pe.effectSchema = effectSchema
+    result.preExtracted = pe
+  }
+  return result
 }
 
 function findFirstComponentTypeArgs(
@@ -240,6 +171,36 @@ function findWorkspaceRoot(start: string = process.cwd()): string {
   }
 }
 
+/** Serializable v3 source map handed back to Vite's transform hook. */
+interface EncodedSourceMap {
+  version: 3
+  file?: string
+  sources: (string | null)[]
+  sourcesContent?: (string | null)[]
+  names: string[]
+  mappings: string
+}
+
+/**
+ * Shift a source map down by the number of NEWLINES in `prepend`. Prepending
+ * full lines of un-mapped content (e.g. the dev relay bootstrap) moves every
+ * generated line down by K without changing any column, so the exact map
+ * transform is to prefix K empty generated-line groups (`;`) to `mappings`.
+ * Keeps the map coherent so a token in the original file still resolves.
+ */
+function prependLinesToMap(map: SourceMap, prepend: string): EncodedSourceMap {
+  let lines = 0
+  for (let i = 0; i < prepend.length; i++) if (prepend.charCodeAt(i) === 10) lines++
+  return {
+    version: 3,
+    ...(map.file ? { file: map.file } : {}),
+    sources: map.sources,
+    ...(map.sourcesContent ? { sourcesContent: map.sourcesContent } : {}),
+    names: map.names,
+    mappings: ';'.repeat(lines) + map.mappings,
+  }
+}
+
 export interface LluiPluginOptions {
   /**
    * Port for the MCP debug bridge. In dev mode, the runtime relay connects
@@ -256,15 +217,6 @@ export interface LluiPluginOptions {
    * silently skips the connection — no retry noise.
    */
   mcpPort?: number | false
-
-  /**
-   * Emit `[llui]`-prefixed `console.info` logs for every transformed
-   * component file — the dependency paths discovered per binding and the
-   * view-lowering compile/bail counts. Useful when diagnosing why a binding
-   * isn't gated the way you expect, or why a view expression fell back to the
-   * runtime authoring helpers instead of being lowered. Off by default.
-   */
-  verbose?: boolean
 
   /**
    * Enables two things together when set:
@@ -314,38 +266,6 @@ export interface LluiPluginOptions {
    * build.** Pass `false` to silence, `true` to also warn during builds.
    */
   perfDiagnostics?: boolean
-
-  /**
-   * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
-   * cross-file walker). When enabled, the plugin builds a `ts.Program`
-   * over the project at `configResolved` and feeds each `transform` call
-   * the cross-file paths read through in-repo view-helpers — replacing
-   * the v0.x sentinel-`show()` workaround for helpers in sibling files.
-   *
-   * Prototype-grade caveats:
-   *   - The Program builds once at startup; it does NOT refresh on file
-   *     change. HMR-edited files see stale cross-file edges until the
-   *     next dev-server restart. (v2c's module decomposition lands the
-   *     proper incremental Program; this is the v2b pipeline-integration
-   *     deferral.)
-   *   - The Program covers `.ts` / `.tsx` files reachable from the Vite
-   *     project root's `tsconfig.json`. Out-of-project imports are not
-   *     followed; manifest-driven library helpers cover those in
-   *     `@llui/cli publish-deps` (v2c, deferred).
-   *   - The walker emits `llui/opaque-view-call` diagnostics for helpers
-   *     it can't classify; in dev these surface as Vite warnings. Set
-   *     `crossFile: 'silent'` to suppress the diagnostics while still
-   *     getting the path merging.
-   *
-   * Default `'silent'` — paths read through in-file-graph helpers
-   * (`(s) => s.route.kind` from a predicate helper, etc.) are folded
-   * into the host component's `__prefixes` automatically, without
-   * polluting dev logs with opaque-call diagnostics. Set `crossFile:
-   * true` to surface the diagnostics in dev, or `false` to disable
-   * cross-file resolution entirely (saves the startup Program build
-   * cost on very large repos; falls back to per-file analysis).
-   */
-  crossFile?: boolean | 'silent'
 
   /**
    * Controls the devmode-annotate notebook surface — a single Connect
@@ -539,20 +459,37 @@ function hasMcpPackage(root: string): boolean {
 }
 
 /**
- * Resolve `@llui/devmode-annotate`'s ESM entry point against the plugin's
- * own location, so it works without the consumer adding it to their
- * package.json — it ships as a direct dep of `@llui/vite-plugin` and we
- * inject an absolute file path into the dev HTML. Uses ESM's
- * `import.meta.resolve` (sync, Node 20+) so the package's `exports`
- * map only needs an `import` condition. Returns null only when the
- * install is broken (the dep is declared but the file isn't there).
+ * Resolve `@llui/devmode-annotate`'s ESM entry point so we can inject an
+ * absolute file path into the dev HTML. The HUD is an OPTIONAL, consumer-
+ * provided package: `@llui/vite-plugin` no longer depends on it (that would
+ * drag the HUD's editor stack — lexical + friends, ~18 MB — into every app
+ * that installs the plugin; only the zero-dependency `@llui/notes-format`
+ * is a hard dep now). Consumers who want the in-app HUD add
+ * `@llui/devmode-annotate` to their own devDependencies, so we resolve it
+ * from the CONSUMER's `root` (not the plugin's own location): walk up the
+ * `node_modules` chain and read the ESM entry from the package's `exports`
+ * map. Returns null when it isn't installed — the caller logs a hint and
+ * skips injection.
  */
-function resolveDevmodeAnnotateEntry(): string | null {
-  try {
-    const url = import.meta.resolve('@llui/devmode-annotate')
-    return fileURLToPath(url)
-  } catch {
-    return null
+function resolveDevmodeAnnotateEntry(root: string): string | null {
+  let dir = resolve(root)
+  for (;;) {
+    const pkgDir = resolve(dir, 'node_modules', '@llui', 'devmode-annotate')
+    const pkgJsonPath = resolve(pkgDir, 'package.json')
+    if (existsSync(pkgJsonPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as {
+          exports?: { '.'?: { import?: string } }
+        }
+        const entry = pkg.exports?.['.']?.import
+        return entry ? resolve(pkgDir, entry) : null
+      } catch {
+        return null
+      }
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
   }
 }
 
@@ -580,34 +517,6 @@ function resolveRouterInput(
     return { ...router, timeoutMs: legacyTimeoutMs }
   }
   return router
-}
-
-/**
- * Detects when the consumer has `@llui/devmode-annotate` listed in their
- * own package.json. The HUD now ships with `@llui/vite-plugin`, so a
- * direct declaration is redundant — and worse, it pins a possibly-
- * older version that diverges from what the plugin loads. Logged once
- * during `configResolved` as a removal hint.
- */
-function declaresDevmodeAnnotateDirectly(root: string): boolean {
-  try {
-    const pkgPath = resolve(root, 'package.json')
-    if (!existsSync(pkgPath)) return false
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
-      dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
-      peerDependencies?: Record<string, string>
-      optionalDependencies?: Record<string, string>
-    }
-    return (
-      Boolean(pkg.dependencies?.['@llui/devmode-annotate']) ||
-      Boolean(pkg.devDependencies?.['@llui/devmode-annotate']) ||
-      Boolean(pkg.peerDependencies?.['@llui/devmode-annotate']) ||
-      Boolean(pkg.optionalDependencies?.['@llui/devmode-annotate'])
-    )
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -799,10 +708,41 @@ const HUD_VMOD_RESOLVED_ID = '\0' + HUD_VMOD_ID
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
-  // Set when the transform hook lowers a signal component (which routes around
-  // the legacy compiler, so it never carries the `__lluiCompilerEmitted` marker).
-  // The build-time integrity check uses this so a pure-signal bundle passes.
+  // Set when the transform hook lowers a signal component. The build-time
+  // integrity check (in generateBundle) reads this to confirm the plugin
+  // actually compiled at least one component; a build that reaches
+  // generateBundle with it unset failed closed.
   let sawSignalComponent = false
+  // Module ids the signal transform actually compiled. The post-bundle
+  // property-rename pass keys off this so it only rewrites chunks that carry
+  // LLui-emitted code — a third-party module that happens to use a `__`-name
+  // is never touched (provenance, not bare name matching).
+  const compiledModuleIds = new Set<string>()
+
+  // Cross-file resolution caches (avoid re-reading sibling type files on
+  // every component transform / watch rebuild). Keyed by path; validated by
+  // mtime so an on-disk edit busts the entry.
+  const sourceContentCache = new Map<string, { mtimeMs: number; content: string }>()
+  // Dev reverse edges: sibling type file → component module ids that read it
+  // during pre-resolution, so editing a Msg/State union re-transforms every
+  // importing component (they carry that type's schema in their metadata).
+  const typeFileImporters = new Map<string, Set<string>>()
+
+  /** Read a file, serving the mtime-matched cached content when possible. */
+  async function readSourceCached(p: string): Promise<string> {
+    try {
+      const st = await stat(p)
+      const cached = sourceContentCache.get(p)
+      if (cached && cached.mtimeMs === st.mtimeMs) return cached.content
+      const content = await readFile(p, 'utf8')
+      sourceContentCache.set(p, { mtimeMs: st.mtimeMs, content })
+      return content
+    } catch {
+      // stat failed (race/permissions) — fall back to a direct read so the
+      // caller's own error handling sees any ENOENT.
+      return readFile(p, 'utf8')
+    }
+  }
   // `mcpPort` + `mcpMode` are resolved lazily in `configResolved` so we
   // can check for @llui/mcp in the consuming project's node_modules.
   //   - `options.mcpPort === false`  → disabled
@@ -866,7 +806,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   // event so the browser can call __lluiConnect() automatically — without
   // retry spam, regardless of whether MCP or Vite started first.
   const activeFilePath = resolve(findWorkspaceRoot(), 'node_modules/.cache/llui-mcp/active.json')
-  let mcpWatcher: FSWatcher | null = null
   let dirWatcher: FSWatcher | null = null
   // Cached once Vite's HTTP server emits `listening`. `stampDevUrl()`
   // uses this to write the URL into the marker file — either immediately
@@ -954,11 +893,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       }
 
       // ── HUD auto-injection (devmode-annotate) ─────────────────────
-      // The floating-button HUD ships as a direct dep of this plugin.
-      // In dev mode we resolve its entry against the plugin's own
-      // location and inject a <script type="module"> that mounts it
-      // against the running app — the consumer doesn't add anything
-      // to their package.json. Disable via `devmodeAnnotate: false`
+      // The floating-button HUD is an OPTIONAL, consumer-provided package
+      // (`@llui/devmode-annotate`) — it is NOT a dependency of this plugin,
+      // so its heavy editor stack never lands in apps that only want the
+      // compiler + notes API. When the consumer has it installed, we resolve
+      // its entry in dev and inject a <script type="module"> that mounts it
+      // against the running app; when it isn't installed we skip injection
+      // (the notes API still works). Disable via `devmodeAnnotate: false`
       // (turn the whole subsystem off) or `devmodeAnnotate: { hud:
       // false }` (keep the notes API; skip just the HUD).
       if (devMode && options.devmodeAnnotate !== false) {
@@ -987,7 +928,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
 
         const hudCfg = annotateCfg.hud
         if (hudCfg !== false) {
-          hudEntryPath = resolveDevmodeAnnotateEntry()
+          hudEntryPath = resolveDevmodeAnnotateEntry(config.root)
           if (hudEntryPath) {
             hudInjectEnabled = true
             // Vike intercepts the HTML pipeline; injecting our HUD tag via
@@ -1022,21 +963,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             })
           } else {
             process.stderr.write(
-              '[llui:devmode-annotate] HUD not injected — `@llui/devmode-annotate` could not be resolved\n' +
-                '                        from the plugin location. Reinstall or set `devmodeAnnotate: { hud: false }`.\n',
+              '[llui:devmode-annotate] HUD not injected — `@llui/devmode-annotate` is not installed.\n' +
+                '                        Run `pnpm add -D @llui/devmode-annotate` to enable the in-app HUD,\n' +
+                '                        or set `devmodeAnnotate: { hud: false }` to silence this hint.\n',
             )
           }
-        }
-        // Warn when the consumer redundantly lists `@llui/devmode-annotate`
-        // in their own package.json. The HUD ships with this plugin now;
-        // a direct entry pins a (possibly older) duplicate version and
-        // adds nothing.
-        if (declaresDevmodeAnnotateDirectly(config.root)) {
-          process.stderr.write(
-            '[llui:devmode-annotate] `@llui/devmode-annotate` is listed in your package.json — remove it.\n' +
-              '                        It ships with `@llui/vite-plugin`; a direct entry is redundant and\n' +
-              '                        risks pinning a stale version. Drop the dep and run install again.\n',
-          )
         }
       }
       if (options.mcpPort === false) {
@@ -1086,10 +1017,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           : notesConfig.captureTimeoutMs
         const notesBus = createEventBus()
         const notesRegistry = createCaptureRegistry()
+        // Shared provenance registry: the middleware marks task notes it
+        // accepts from authenticated same-origin requests; the router only
+        // spawns agents for tasks so marked. See notes/trusted-tasks.ts.
+        const notesTrustedTasks = createTrustedTaskRegistry()
         const notesHandler = createNotesMiddleware({
           notesRoot,
           bus: notesBus,
           registry: notesRegistry,
+          trustedTasks: notesTrustedTasks,
           defaultCaptureTimeoutMs: captureTimeoutMs,
           ...(notesConfig.format ? { format: notesConfig.format } : {}),
         })
@@ -1107,6 +1043,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             notesRoot,
             projectRoot,
             bus: notesBus,
+            trustedTasks: notesTrustedTasks,
             ...resolvedRouter,
           })
           server.httpServer?.on('close', () => routerHandle.stop())
@@ -1243,9 +1180,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       })
 
       server.httpServer?.on('close', () => {
-        mcpWatcher?.close()
         dirWatcher?.close()
-        mcpWatcher = null
         dirWatcher = null
       })
 
@@ -1316,6 +1251,29 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       },
     },
 
+    // Dev reverse-edge invalidation. Type-only imports (a component's Msg /
+    // State union living in a sibling file) are erased by TS and never become
+    // real module-graph dependencies, so editing them wouldn't otherwise
+    // re-transform the importing components — their embedded schema metadata
+    // would go stale. During pre-resolution we recorded which components read
+    // each type file (`typeFileImporters`); when one of those files changes,
+    // invalidate + re-transform its importers.
+    handleHotUpdate(hmr) {
+      if (!devMode) return
+      const importers = typeFileImporters.get(hmr.file)
+      if (!importers || importers.size === 0) return
+      const invalidated = []
+      for (const importerId of importers) {
+        const mod = hmr.server.moduleGraph.getModuleById(importerId)
+        if (mod) {
+          hmr.server.moduleGraph.invalidateModule(mod)
+          invalidated.push(mod)
+        }
+      }
+      if (invalidated.length === 0) return
+      return [...hmr.modules, ...invalidated]
+    },
+
     async transform(code, id, options) {
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
 
@@ -1332,7 +1290,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           for (const warning of result.warnings) {
             this.warn(`${display}: ${warning}`)
           }
-          return { code: result.output, map: { mappings: '' } }
+          // The SSR stub replaces the module wholesale, so there's no
+          // token-level correspondence to preserve — but emit a real,
+          // coherent map (whole output ← source start) rather than the
+          // invalid `{ mappings: '' }` sentinel, so Vite's map chain
+          // stays valid downstream.
+          const ms = new MagicString(code)
+          ms.overwrite(0, code.length, result.output)
+          const map = ms.generateMap({ source: id, includeContent: true, hires: true })
+          return { code: result.output, map }
         }
       }
 
@@ -1357,6 +1323,10 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         // The build-integrity scan ("did anything compile?") keys off real
         // component files only — a helper-only match must not arm it.
         if (hasComponentCall) sawSignalComponent = true
+        // Record provenance for the post-bundle rename pass: this module ran
+        // through the signal transform, so its chunk may carry renameable
+        // LLui-emitted property names.
+        compiledModuleIds.add(id)
         // Enforce signal lint rules. Lint the AUTHORED source. Two channels:
         //  - `convention` diagnostics carry a runtime-neutral rename fix (e.g.
         //    `tabIndex` → `tabindex`); auto-apply them to the emitted code and
@@ -1399,10 +1369,43 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         let signalPreExtracted: PreExtractedSchemas | undefined
         if (wantMeta && typeof this.resolve === 'function') {
           const rr = this.resolve.bind(this)
-          ;[signalTypeSources, signalPreExtracted] = await Promise.all([
-            preResolveTypeSources(code, id, rr),
-            preExtractCompositional(code, id, rr),
-          ])
+          const addWatch =
+            typeof this.addWatchFile === 'function' ? this.addWatchFile.bind(this) : undefined
+          const ctx: ResolveContext = {
+            resolveModule: async (spec, importer) => {
+              const result = await rr(spec, importer)
+              if (!result || result.external) return null
+              // Rollup ids can carry query/hash suffixes for virtual modules;
+              // strip them so fs sees a real path. Skip node_modules — we
+              // don't chase third-party types.
+              const idStripped = result.id.split('?')[0]?.split('#')[0]
+              if (!idStripped) return null
+              if (idStripped.includes('/node_modules/')) return null
+              return idStripped
+            },
+            readSource: async (p) => {
+              const content = await readSourceCached(p)
+              // Watch every sibling the transform reads, so a Vite dev server
+              // re-runs THIS transform when the type file changes (without
+              // this the schema/annotation metadata goes stale on edit).
+              addWatch?.(p)
+              // Record the reverse edge so a change to `p` can invalidate the
+              // importing component modules (type-only imports are erased and
+              // never enter the module graph as dependencies otherwise).
+              if (devMode) {
+                let set = typeFileImporters.get(p)
+                if (!set) {
+                  set = new Set()
+                  typeFileImporters.set(p, set)
+                }
+                set.add(id)
+              }
+              return content
+            },
+          }
+          const resolved = await preResolveAll(code, id, ctx)
+          signalTypeSources = resolved.typeSources
+          signalPreExtracted = resolved.preExtracted
         }
         // Perf diagnostics (llui/each-verbatim): advisory warnings for each
         // sites that render via the authoring path. Default on in dev only.
@@ -1415,7 +1418,12 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
               this.warn(`${display}:${line + 1}:${column + 1}  [${d.id}] ${d.message}`)
             }
           : undefined
-        let out = transformSignalComponentSource(code, {
+        // The map-returning transform composes every splice (view rewrites,
+        // metadata, `batch` bag injection, the injected runtime import)
+        // through one MagicString instance, so its map is coherent against
+        // `code` (which already carries any convention autofixes applied
+        // above; the map's sourcesContent reflects that post-fix text).
+        const transformed = transformSignalComponentSourceWithMap(code, {
           emitAgentMetadata: Boolean(agent),
           devMode,
           fileName: id,
@@ -1423,16 +1431,25 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           preExtracted: signalPreExtracted,
           typeSources: signalTypeSources?.state ? { state: signalTypeSources.state } : undefined,
         })
+        let out = transformed.code
         // Dev + MCP: signal files bypass the legacy compiler that injects the
         // relay, so inject startRelay (guarded to fire once) + the HMR handshake.
+        // The bootstrap is prepended AFTER the transform, so shift the map down
+        // by its line count to keep offsets aligned.
+        let bootstrap = ''
         if (devMode && mcpPort !== null) {
-          out =
+          bootstrap =
             `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
             `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
-            `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n` +
-            out
+            `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n`
+          out = bootstrap + out
         }
-        return { code: out, map: { mappings: '' } }
+        // `transformed.map` is non-null here: the string pre-check guaranteed a
+        // signal component, so the transform actually rewrote something.
+        const map: EncodedSourceMap | null = transformed.map
+          ? prependLinesToMap(transformed.map, bootstrap)
+          : null
+        return { code: out, map }
       }
 
       // Non-signal `.ts`/`.tsx` files pass through untouched. The legacy
@@ -1441,11 +1458,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       return undefined
     },
 
-    // Build-time integrity check (v2a §2.4; shared.md §20.12). Every
-    // compiled component carries `__lluiCompilerEmitted: 1`; we scan the
-    // final bundle for that literal text. Zero occurrences in a production
-    // build means the project routed its TS through some other pipeline
-    // and the runtime would silently degrade to FULL_MASK — fail closed.
+    // Build-time integrity check. The signal transform is the ONLY
+    // compilation path; it sets `sawSignalComponent` the moment it lowers a
+    // `component()` file. If a production build reaches `generateBundle`
+    // without that flag ever being set, another transform consumed the TS
+    // ahead of us (plugin-order bug) or the project genuinely has no LLui
+    // components — either way, fail closed. (The old `__lluiCompilerEmitted`
+    // marker was a legacy-compiler artifact; the signal transform never
+    // emits it, so scanning the bundle for it counted nothing. The flag is
+    // the live signal.)
     //
     // Dev mode skips the check: dev users have HMR + warnings to find
     // misconfiguration interactively. SSR builds also skip — the SSR
@@ -1470,85 +1491,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // The `ssr` flag on the output options is the cleanest signal for
       // SSR builds; rollup adds it when Vite's build.ssr is set.
       if ((opts as { ssr?: boolean }).ssr) return
-      let markerCount = 0
-      let viewCount = 0
-      for (const chunk of Object.values(bundle)) {
-        if (chunk.type !== 'chunk') continue
-        // Count literal occurrences of the marker. `__lluiCompilerEmitted`
-        // is unique enough that false positives from user source are
-        // implausible.
-        const code = chunk.code
-        let from = 0
-        while (true) {
-          const i = code.indexOf('__lluiCompilerEmitted', from)
-          if (i < 0) break
-          markerCount++
-          from = i + '__lluiCompilerEmitted'.length
-        }
-        // Count `__view` companion-marker occurrences in the same pass.
-        // The compiler injects exactly one `__view: ...` per stamped
-        // component. A stamped call missing `__view` would otherwise
-        // crash at mount with the "missing __view despite being compiled"
-        // throw from `getInstanceViewBag` — catching it here surfaces the
-        // problem at build, with the file context that produced it still
-        // in scope. Anchored on `__view:` to exclude prose mentions and
-        // the `__view$` rename-allow-list entry.
-        from = 0
-        while (true) {
-          const i = code.indexOf('__view:', from)
-          if (i < 0) break
-          viewCount++
-          from = i + '__view:'.length
-        }
-      }
-      if (markerCount === 0 && !sawSignalComponent) {
+      if (!sawSignalComponent) {
         // `this.error` throws — no statements below this line execute.
         this.error(
           '[llui] integrity check failed: no compiled `component()` calls found in ' +
-            'this bundle. Either the project has no LLui components (remove ' +
+            'this build. Either the project has no LLui components (remove ' +
             '`@llui/vite-plugin` from vite.config.ts), or the plugin order is wrong ' +
             'and another transform is consuming TS before `@llui/vite-plugin` runs ' +
-            "(check `enforce: 'pre'`). The check looks for the `__lluiCompilerEmitted` " +
-            'property the compiler injects into every component. See ' +
-            'docs/proposals/v2-compiler/v2a.md §2.4.',
+            "(check `enforce: 'pre'`). The signal transform sets an internal " +
+            'flag whenever it lowers a `component()` file; that flag was never set.',
         )
-      }
-      if (viewCount < markerCount) {
-        // Stamped-but-incomplete: a component() call carries the
-        // `__lluiCompilerEmitted` / `__compilerVersion` markers but is
-        // missing its `__view` synthesis. Pre-fix this happened when
-        // `view:` was shorthand or an identifier reference that
-        // `injectViewBag` couldn't introspect; the bug surfaced as a
-        // runtime throw at mount. The symmetric check fails the build
-        // instead so any future regression of the same shape is caught
-        // before it reaches users.
-        this.error(
-          `[llui] integrity check failed: ${markerCount} compiled \`component()\` ` +
-            `call(s) but only ${viewCount} \`__view\` synthesis marker(s) — ` +
-            `${markerCount - viewCount} component(s) were stamped without a ` +
-            `\`__view\` factory. This usually means a \`component()\` call was ` +
-            'missing a `view` property, or the compiler bailed on an unexpected ' +
-            'view-property shape. File a bug at @llui/compiler.',
-        )
-      }
-      // Integrity check passed. The marker is a build-time signal only —
-      // no runtime path reads it — so strip it from the final chunks to
-      // reclaim ~25 bytes per compiled `component()`. Handles both the
-      // `, __lluiCompilerEmitted: 1` (preceded-by-comma) and
-      // `__lluiCompilerEmitted: 1,` (followed-by-comma) shapes; a bare
-      // marker on its own (no surrounding comma) falls through to the
-      // standalone replacement. The regex is anchored on the literal
-      // property name + colon + 1 so it can't accidentally match other
-      // identifiers that contain the substring.
-      const STRIP_WITH_PRECEDING_COMMA = /,\s*__lluiCompilerEmitted:\s*1/g
-      const STRIP_WITH_TRAILING_COMMA = /__lluiCompilerEmitted:\s*1\s*,/g
-      const STRIP_STANDALONE = /__lluiCompilerEmitted:\s*1/g
-      for (const chunk of Object.values(bundle)) {
-        if (chunk.type !== 'chunk') continue
-        chunk.code = chunk.code
-          .replace(STRIP_WITH_PRECEDING_COMMA, '')
-          .replace(STRIP_WITH_TRAILING_COMMA, '')
-          .replace(STRIP_STANDALONE, '')
       }
 
       // Compiler-emit property rename pass. The compiler injects
@@ -1588,11 +1540,28 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // `/internal` subpath; the rename invariant keeps them off the
       // rename list. A type-level disjointness assertion in
       // emit-names.ts enforces "renameable" ∩ "internal-import" = ∅.
-      const RENAME_TARGETS = new Set<string>(COMPILER_RENAMEABLE_KEYS)
+      //
+      // TWO safety layers guard against rewriting foreign identifiers:
+      //  1. Provenance — only chunks that contain a module the signal
+      //     transform actually compiled are scanned/rewritten. A chunk of
+      //     pure third-party code is skipped even if it uses a `__`-name.
+      //  2. Generic-name exclusion — `__update` / `__dirty` are dropped
+      //     from the target set. They read as ordinary user/library field
+      //     names (unlike `__msgSchema` / `__prefixes`), and the signal
+      //     transform doesn't emit them anyway, so renaming them is all
+      //     risk and no benefit.
+      const GENERIC_EXCLUDE = new Set(['__update', '__dirty'])
+      const RENAME_TARGETS = new Set<string>(
+        COMPILER_RENAMEABLE_KEYS.filter((k) => !GENERIC_EXCLUDE.has(k)),
+      )
       const RENAME_PATTERN = /\b__[A-Za-z_][A-Za-z0-9_]*\b/g
+      // Provenance filter: the chunks we're allowed to rewrite.
+      const isCompiledChunk = (moduleIds: readonly string[] | undefined): boolean =>
+        moduleIds !== undefined && moduleIds.some((mid) => compiledModuleIds.has(mid))
       const counts = new Map<string, number>()
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue
+        if (!isCompiledChunk(chunk.moduleIds)) continue
         for (const m of chunk.code.matchAll(RENAME_PATTERN)) {
           const name = m[0]
           if (!RENAME_TARGETS.has(name)) continue
@@ -1636,7 +1605,49 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         const replacer = new RegExp(`\\b(${alternation})\\b`, 'g')
         for (const chunk of Object.values(bundle)) {
           if (chunk.type !== 'chunk') continue
-          chunk.code = chunk.code.replace(replacer, (match) => renames.get(match) ?? match)
+          if (!isCompiledChunk(chunk.moduleIds)) continue
+          // Rewrite through MagicString so the chunk's source map is
+          // regenerated in step with the edits instead of being silently
+          // desynced by a raw `String.replace`. When the build has source
+          // maps enabled (`chunk.map` present) we hand back a coherent map:
+          // renaming shifts columns, and the regenerated map reflects that.
+          // (A full remap back through the original TS would need a
+          // remapping dependency the plugin doesn't ship; the honest fix at
+          // that depth is to shorten these names at compiler-emit time.)
+          const ms = new MagicString(chunk.code)
+          let touched = false
+          for (const m of chunk.code.matchAll(replacer)) {
+            const idx = m.index
+            const name = m[0]
+            const short = renames.get(name)
+            if (idx === undefined || short === undefined) continue
+            ms.overwrite(idx, idx + name.length, short)
+            touched = true
+          }
+          if (!touched) continue
+          chunk.code = ms.toString()
+          if (chunk.map) {
+            // Regenerate the chunk map so it stays coherent with the edits
+            // (a raw String.replace would leave it silently desynced). The
+            // map's source is the pre-rename chunk text — one hop shallower
+            // than the original TS, which a full remap would need a
+            // remapping dependency the plugin doesn't ship.
+            const gen = ms.generateMap({
+              hires: true,
+              source: chunk.fileName,
+              includeContent: true,
+            })
+            chunk.map = {
+              version: gen.version,
+              file: chunk.map.file,
+              sources: gen.sources,
+              sourcesContent: gen.sourcesContent ?? [],
+              names: gen.names,
+              mappings: gen.mappings,
+              toString: () => gen.toString(),
+              toUrl: () => gen.toUrl(),
+            }
+          }
         }
       }
     },

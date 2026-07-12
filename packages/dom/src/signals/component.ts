@@ -53,6 +53,13 @@ export interface EffectApi<S, M> {
   state: Signal<S>
   /** Coalesce a burst of `send`s into ONE reconcile (see {@link ComponentBag.batch}). */
   batch: (fn: () => void) => void
+  /** This mount's lifecycle {@link AbortSignal}. Aborted exactly once, on THIS
+   * mount's `dispose()`. Each mount of a definition owns a distinct signal, so an
+   * effect handler can key per-mount resources off it — pass it to `fetch`, or
+   * `signal.addEventListener('abort', cleanup)` — and disposing one mount never
+   * aborts a concurrent mount of the same definition. Prefer this over a
+   * definition-level controller for anything whose lifetime is the mount's. */
+  signal: AbortSignal
 }
 
 export interface SignalComponentDef<S, M, E = never> {
@@ -126,7 +133,23 @@ export interface SignalComponentHandle<S, M> {
   setOnBindingError(hook: ((e: BindingError) => void) | null): void
 }
 
-function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
+/**
+ * Normalize an `init()` / `update()` result — a `[state, effects]` tuple or a
+ * bare `state` (the convenience return) — to a `[state, effects]` pair. This is
+ * the ONE place the `[S, E[]] | S` heuristic lives; component, SSR, and (later)
+ * `@llui/test` / `@llui/vike` all route through it so the shape decision never
+ * diverges.
+ *
+ * The heuristic: a 2-element array whose SECOND element is itself an array is
+ * read as `[state, effects]`; anything else is a bare state with no effects.
+ *
+ * KNOWN AMBIGUITY (deliberately unchanged — dropping the bare-`S` convenience is
+ * a repo-wide breaking ripple, out of scope here): a state that is ITSELF a
+ * 2-tuple whose second element is an array (e.g. the whole state is
+ * `[number, string[]]`) is mis-read as `[state, effects]`. Such a state must be
+ * returned explicitly as `[state, []]`.
+ */
+export function normalizeUpdateResult<S, E>(r: [S, E[]] | S): [S, E[]] {
   if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
     return r as [S, E[]]
   }
@@ -182,11 +205,24 @@ export function mountSignalComponent<S, M, E = never>(
 ): SignalComponentHandle<S, M> {
   // init() runs either way so its effects are captured; on hydrate the returned
   // state is discarded in favour of serverState.
-  const [seedState, initialEffects] = normalize<S, E>(def.init())
+  const [seedState, initialEffects] = normalizeUpdateResult<S, E>(def.init())
   const hy = opts?.hydrate
-  let state = hy ? hy.serverState : (opts?.initialState ?? seedState)
+  // Presence check, NOT `?? seedState`: `initialState` may legitimately be a
+  // falsy/null seed (`null`, `0`, `''`) that a nullish-coalesce would silently
+  // discard in favour of `init()`'s state. Only an explicitly-provided key
+  // overrides the seed.
+  let state = hy
+    ? hy.serverState
+    : opts && 'initialState' in opts
+      ? (opts.initialState as S)
+      : seedState
   let mount: SignalMount | null = null
   let disposed = false
+  // Per-mount lifecycle: one AbortController owned by THIS mount, aborted exactly
+  // once on dispose. Handed to `onEffect` via `api.signal` so effect handlers key
+  // per-mount resources off it (see EffectApi.signal). Distinct per mount, so two
+  // concurrent mounts of one definition get independent signals.
+  const lifecycle = new AbortController()
   // Swappable via swapUpdate (HMR); runReducer/send read these, not def.* .
   let updateFn = def.update
   let onEffectFn = def.onEffect
@@ -217,8 +253,15 @@ export function mountSignalComponent<S, M, E = never>(
       }
       return
     }
-    const cleanup = onEffectFn(effect, { send, batch, state: handle })
-    if (typeof cleanup === 'function') cleanups.push(cleanup)
+    const cleanup = onEffectFn(effect, { send, batch, state: handle, signal: lifecycle.signal })
+    if (typeof cleanup === 'function') {
+      // If the mount was torn down while this effect ran (e.g. an async handler
+      // whose continuation returns after dispose), `dispose` has already drained
+      // `cleanups` — pushing now would strand this cleanup forever. Run it at once
+      // so a subscription/timer the effect opened is still released.
+      if (disposed) cleanup()
+      else cleanups.push(cleanup)
+    }
   }
 
   // `send` is reentrancy-safe AND reconcile-coalescing: a message dispatched WHILE
@@ -258,14 +301,21 @@ export function mountSignalComponent<S, M, E = never>(
     frameScheduled = false
     rafId = null
     if (disposed) return
+    // SAVE/RESTORE the prior flags rather than force them false on exit: a
+    // `flush()` can be called from inside an `onEffect` that is ITSELF running
+    // under an active drain (raf mode). Blindly clearing `draining` on the way out
+    // would leave the still-running outer drain thinking it isn't draining, so its
+    // next `send` would start a NESTED drain and reorder/double-process the queue.
+    const prevFlushing = flushing
+    const prevDraining = draining
     flushing = true
     draining = true
     try {
       commitPending()
       if (queue.length > 0) drain() // commit-induced messages settle synchronously
     } finally {
-      draining = false
-      flushing = false
+      draining = prevDraining
+      flushing = prevFlushing
     }
   }
 
@@ -322,7 +372,7 @@ export function mountSignalComponent<S, M, E = never>(
       while (queue.length > 0) {
         const m = queue.shift() as M
         const before = state
-        const [next, effects] = normalize<S, E>(updateFn(state, m))
+        const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, m))
         if (!Object.is(next, state)) {
           state = next
           pendingCommit = true
@@ -352,6 +402,18 @@ export function mountSignalComponent<S, M, E = never>(
   }
 
   function send(msg: M): void {
+    if (disposed) {
+      // The mount is torn down: no reducer, no commit to a detached tree. Drop the
+      // message (a stale async continuation, a fired listener on a node being
+      // removed) and warn in dev so a genuine after-dispose dispatch is visible.
+      if (dev) {
+        console.warn(
+          `[llui] ${def.name ?? 'component'}: send() after dispose() was ignored ` +
+            `(the component is unmounted).`,
+        )
+      }
+      return
+    }
     queue.push(msg)
     if (draining) return
     draining = true
@@ -369,6 +431,15 @@ export function mountSignalComponent<S, M, E = never>(
   // commit to that drain's loop. Flushes even if `fn` throws — state already
   // advanced, so the DOM must catch up to stay consistent.
   function batch(fn: () => void): void {
+    if (disposed) {
+      if (dev) {
+        console.warn(
+          `[llui] ${def.name ?? 'component'}: batch() after dispose() was ignored ` +
+            `(the component is unmounted).`,
+        )
+      }
+      return
+    }
     batchDepth++
     try {
       fn()
@@ -419,11 +490,17 @@ export function mountSignalComponent<S, M, E = never>(
       name: def.name ?? 'SignalComponent',
       getState: () => state,
       setState: (s) => {
+        // Route devtools state pokes (setState / restoreState / time-travel)
+        // through the NORMAL commit path — pendingCommit + commitPending — so the
+        // reconcile AND subscriber notification fire exactly as a real `send`
+        // would. Poking `mount.update` directly skipped subscribers, so the agent
+        // protocol's state-update frames missed devtools-driven changes.
         state = s as S
-        mount?.update(state)
+        pendingCommit = true
+        commitPending()
       },
       send: (m) => send(m as M),
-      pureUpdate: (s, m) => normalize<S, E>(def.update(s as S, m as M)),
+      pureUpdate: (s, m) => normalizeUpdateResult<S, E>(updateFn(s as S, m as M)),
       history,
       clearHistory: () => {
         history.length = 0
@@ -448,13 +525,22 @@ export function mountSignalComponent<S, M, E = never>(
       flushFrame()
     },
     dispose: () => {
+      if (disposed) return
       disposed = true
+      // Abort this mount's lifecycle signal exactly once (per-mount, so concurrent
+      // mounts of the same def are unaffected) — before running cleanups, so an
+      // effect's `signal.addEventListener('abort', …)` fires as part of teardown.
+      lifecycle.abort()
       if (rafId !== null && typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(rafId)
         rafId = null
       }
       subscribers.clear()
-      mount?.dispose() // foreign unmounts, subscriptions
+      const m = mount
+      // Null `mount` FIRST so any commit re-entered during teardown (a `blur` from
+      // a removed focused node) can't write to the torn-down tree.
+      mount = null
+      m?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()
       uninstallDebug?.()
     },
@@ -464,7 +550,7 @@ export function mountSignalComponent<S, M, E = never>(
       return () => subscribers.delete(listener)
     },
     runReducer: (msg: M): { state: S; effects: unknown[] } | null => {
-      const [next, effects] = normalize<S, E>(updateFn(state, msg))
+      const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, msg))
       return { state: next, effects }
     },
     getBindingDescriptors: (): Array<{ variant: string }> => mount?.getDescriptors() ?? [],

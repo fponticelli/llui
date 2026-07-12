@@ -97,6 +97,38 @@ describe('bakeAnnotations', () => {
     expect(canvas.width).toBe(50)
   })
 
+  // Finding 2 — annotation coords must map viewport→canvas on retina + scrolled
+  // pages. jsdom's documentElement.clientWidth is 0, so `scale` falls back to
+  // the supplied dpr; scrollX/scrollY shift the anchor into document space.
+  it('scales + offsets rect coords by dpr and scroll', async () => {
+    const canvas = makeMockCanvas()
+    const ann: Annotation[] = [{ type: 'rect', x: 10, y: 20, w: 100, h: 50 }]
+    await bakeAnnotations('AAA', ann, {
+      createCanvas: () => canvas,
+      loadImage: async () => fakeImage(1600, 1200),
+      dpr: 2,
+      scrollX: 100,
+      scrollY: 50,
+    })
+    const strokes = canvas.__calls.filter((c) => c.op === 'strokeRect')
+    expect(strokes).toHaveLength(1)
+    // (x+scrollX)*scale, (y+scrollY)*scale, w*scale, h*scale
+    expect(strokes[0]!.args).toEqual([(10 + 100) * 2, (20 + 50) * 2, 100 * 2, 50 * 2])
+  })
+
+  it('leaves coords untouched at dpr 1 with no scroll (default)', async () => {
+    const canvas = makeMockCanvas()
+    const ann: Annotation[] = [
+      { type: 'element', selector: '#x', bbox: { x: 5, y: 6, w: 7, h: 8 } },
+    ]
+    await bakeAnnotations('AAA', ann, {
+      createCanvas: () => canvas,
+      loadImage: async () => fakeImage(800, 600),
+    })
+    const strokes = canvas.__calls.filter((c) => c.op === 'strokeRect')
+    expect(strokes[0]!.args).toEqual([5, 6, 7, 8])
+  })
+
   it('throws when the 2d context is unavailable', async () => {
     const broken = {
       width: 0,

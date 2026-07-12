@@ -211,6 +211,80 @@ describe('yjsCollab — presence', () => {
   })
 })
 
+describe('yjsCollab — already-synced bootstrap', () => {
+  it('seeds immediately when the provider is already synced at register time', async () => {
+    const hub = new TestHub()
+    const editor = makeEditor()
+    const doc = new YDoc()
+    const provider = new TestProvider(doc, hub)
+    // The provider completes its handshake BEFORE register wires the sync
+    // listener, so 'sync' will never fire again — the old gate would leave the
+    // empty shared doc un-seeded.
+    provider.connect()
+    expect(provider.synced).toBe(true)
+
+    const collab = yjsCollab({
+      id: 'room',
+      doc,
+      provider,
+      shouldBootstrap: true,
+      seed: seedText('ready'),
+    })
+    const dispose = collab.register(editor)
+    await flush()
+    expect(readText(editor)).toBe('ready')
+    dispose()
+  })
+})
+
+describe('yjsCollab — document ownership', () => {
+  it('destroys an internally-created doc and drops it from the docMap', () => {
+    const hub = new TestHub()
+    const docMap = new Map<string, YDoc>()
+    const collab = yjsCollab({
+      id: 'owned',
+      docMap,
+      providerFactory: (id, dm) => new TestProvider(dm.get(id)!, hub),
+    })
+    // yjsCollab created the doc and registered it.
+    expect(docMap.get('owned')).toBe(collab.doc)
+    let destroyed = false
+    collab.doc.on('destroy', () => {
+      destroyed = true
+    })
+
+    const dispose = collab.register(makeEditor())
+    dispose()
+    collab.destroy()
+
+    expect(destroyed).toBe(true)
+    expect(docMap.has('owned')).toBe(false)
+  })
+
+  it('leaves a caller-supplied doc untouched on destroy', () => {
+    const hub = new TestHub()
+    const doc = new YDoc()
+    const docMap = new Map<string, YDoc>([['given', doc]])
+    const collab = yjsCollab({
+      id: 'given',
+      doc,
+      docMap,
+      provider: new TestProvider(doc, hub),
+    })
+    let destroyed = false
+    doc.on('destroy', () => {
+      destroyed = true
+    })
+
+    const dispose = collab.register(makeEditor())
+    dispose()
+    collab.destroy()
+
+    expect(destroyed).toBe(false)
+    expect(docMap.get('given')).toBe(doc)
+  })
+})
+
 describe('yjsCollab — config guards', () => {
   it('rejects both provider and providerFactory', () => {
     const doc = new YDoc()

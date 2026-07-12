@@ -5,6 +5,8 @@ import type { NodeRenderer, Renderers, ResolvedRenderers } from '../types.js'
 import { blockRenderers } from './block.js'
 import { inlineRenderers } from './inline.js'
 
+export { renderHtmlRun } from './inline.js'
+
 // Each built-in is authored with a precise node type (`NodeRenderer<Heading>`, …).
 // Dispatch only ever invokes the renderer whose key equals `node.type`, so viewing
 // each as a uniform `NodeRenderer<Node>` is sound. `NodeRenderer<N>` is assignable

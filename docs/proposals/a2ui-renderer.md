@@ -1,5 +1,7 @@
 # A2UI Renderer (`@llui/a2ui`)
 
+> **Status (2026-07): SHIPPED.** `@llui/a2ui` is a real, published package (0.1.x) — `packages/a2ui/` with `state.ts`, `render.ts`, `catalog.ts`, `transport.ts`, `protocol.ts`, `pointer.ts`, `binding.ts` and tests. `mountA2ui()` renders A2UI v0.9 on the signal runtime; the Basic catalog reuses `@llui/components`. Read this as design rationale for a landed package, not a speculative proposal.
+
 Status: **v0.1 landed** (core + Basic catalog, tested). Phased roadmap below.
 
 `@llui/a2ui` renders Google's [A2UI](https://a2ui.org) (Agent-to-UI) protocol

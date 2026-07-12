@@ -1,9 +1,39 @@
-import { WebSocketServer, type WebSocket } from 'ws'
-import type { Server as HttpServer } from 'node:http'
+import { WebSocketServer, WebSocket } from 'ws'
+import type { Server as HttpServer, IncomingMessage } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { LluiDebugAPI } from '@llui/dom'
 import type { RelayTransport } from '../tool-registry.js'
+
+/** Constant-time compare of two ASCII tokens (length-safe). */
+function tokensMatch(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+/** Collapse a possibly-multi-valued header to a single string. */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * A bridge WS upgrade is same-origin/local when the Origin header is either
+ * absent (a native, non-browser ws client sends none) or a loopback host. A
+ * cross-origin browser page (CSWSH / drive-by hijack) presents a non-loopback
+ * Origin and is rejected. A literal `Origin: null` (sandboxed/`file:` context)
+ * fails `new URL` below and is likewise rejected.
+ */
+function isLoopbackOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true
+  try {
+    const { hostname } = new URL(origin)
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
 
 /**
  * Structured snapshot of the bridge state at a single point in time.
@@ -96,6 +126,15 @@ export interface RelayTransportOptions {
    * it's opted in) and to read back the `devUrl` it stamped.
    */
   markerPath?: string
+  /**
+   * Path to the per-launch HTTP bearer-token file (`mcpHttpTokenPath()`).
+   * Enforced ONLY for the shared-HTTP-port bridge (`attachTo` mode): when
+   * this file exists, a `/bridge` upgrade must present the token (via the
+   * `?token=` query param or a `Sec-WebSocket-Protocol` value) or be
+   * rejected. In standalone (`port`) mode no token file is written, so the
+   * bridge is gated by the loopback-origin + single-client checks alone.
+   */
+  authTokenPath?: string
   onBrowserConnect?: () => void
   onBrowserDisconnect?: () => void
 }
@@ -113,6 +152,7 @@ export class WebSocketRelayTransport implements RelayTransport {
   private readonly port: number | undefined
   private readonly attachTo: HttpServer | undefined
   private readonly markerPath: string
+  private readonly authTokenPath: string | undefined
   private readonly onConnect?: () => void
   private readonly onDisconnect?: () => void
 
@@ -120,8 +160,72 @@ export class WebSocketRelayTransport implements RelayTransport {
     this.port = opts.port
     this.attachTo = opts.attachTo
     this.markerPath = opts.markerPath ?? ''
+    this.authTokenPath = opts.authTokenPath
     this.onConnect = opts.onBrowserConnect
     this.onDisconnect = opts.onBrowserDisconnect
+  }
+
+  /** Expected bridge token, or null when none is configured/written. */
+  private expectedToken(): string | null {
+    if (!this.authTokenPath) return null
+    try {
+      const t = readFileSync(this.authTokenPath, 'utf8').trim()
+      return t.length > 0 ? t : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Token presented on the upgrade — from `?token=` or `Sec-WebSocket-Protocol`. */
+  private presentedToken(req: IncomingMessage): string | null {
+    try {
+      const q = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('token')
+      if (q) return q
+    } catch {
+      // malformed url — fall through to the subprotocol header
+    }
+    const proto = firstHeader(req.headers['sec-websocket-protocol'])
+    if (proto) {
+      for (const part of proto
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)) {
+        if (part !== 'llui-bridge') return part
+      }
+    }
+    return null
+  }
+
+  /** True when a live browser bridge client is already attached. */
+  private hasLiveClient(): boolean {
+    return this.browserWs !== null && this.browserWs.readyState === WebSocket.OPEN
+  }
+
+  /**
+   * Validate a bridge WS upgrade before accepting it. Rejects cross-origin
+   * hijack attempts, enforces the per-launch token on the shared HTTP port,
+   * and refuses a second concurrent client so an attacker cannot supersede
+   * the legitimately-attached browser.
+   */
+  private validateUpgrade(
+    req: IncomingMessage,
+  ): { ok: true } | { ok: false; code: number; reason: string } {
+    if (!isLoopbackOrigin(firstHeader(req.headers.origin))) {
+      return { ok: false, code: 403, reason: 'cross-origin bridge upgrade rejected' }
+    }
+    if (this.attachTo) {
+      const expected = this.expectedToken()
+      if (expected) {
+        const presented = this.presentedToken(req)
+        if (!presented || !tokensMatch(presented, expected)) {
+          return { ok: false, code: 401, reason: 'missing or invalid bridge token' }
+        }
+      }
+    }
+    if (this.hasLiveClient()) {
+      return { ok: false, code: 409, reason: 'a browser bridge client is already connected' }
+    }
+    return { ok: true }
   }
 
   connectDirect(api: LluiDebugAPI): void {
@@ -167,36 +271,58 @@ export class WebSocketRelayTransport implements RelayTransport {
     if (this.attachTo) {
       this.wsServer = new WebSocketServer({ noServer: true })
       this.attachTo.on('upgrade', (req, socket, head) => {
-        if (req.url !== '/bridge') return
+        // Only `/bridge` upgrades are ours. Anything else on this server is
+        // unexpected (the MCP Streamable-HTTP transport never upgrades) —
+        // destroy the socket instead of leaving it dangling as a leaked
+        // half-open handle.
+        let pathname: string
+        try {
+          pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname
+        } catch {
+          pathname = req.url ?? ''
+        }
+        if (pathname !== '/bridge') {
+          socket.destroy()
+          return
+        }
+        const check = this.validateUpgrade(req)
+        if (!check.ok) {
+          socket.write(`HTTP/1.1 ${check.code} ${check.reason}\r\nConnection: close\r\n\r\n`)
+          socket.destroy()
+          return
+        }
         this.wsServer!.handleUpgrade(req, socket, head, (ws) => {
           this.wsServer!.emit('connection', ws, req)
         })
       })
     } else if (this.port !== undefined) {
-      this.wsServer = new WebSocketServer({ port: this.port, host: '127.0.0.1' })
+      this.wsServer = new WebSocketServer({
+        port: this.port,
+        host: '127.0.0.1',
+        // Reject cross-origin / superseding upgrades before the WS handshake
+        // completes (token is not enforced in standalone mode — no token
+        // file is written there).
+        verifyClient: (info, cb) => {
+          const check = this.validateUpgrade(info.req)
+          if (check.ok) cb(true)
+          else cb(false, check.code, check.reason)
+        },
+      })
     } else {
       throw new Error('WebSocketRelayTransport: provide either `port` or `attachTo`.')
     }
     this.wsServer.on('connection', (ws) => {
-      // Single-client bridge: a new connection supersedes any previous one.
-      // The `pending` map is keyed by request id, not per-socket, so any
-      // in-flight requests belong to the socket we're replacing and will
-      // never be answered now — reject them and close the stale socket so
-      // they fail fast instead of hanging until the per-request timeout.
-      // (The stale socket's `close` handler is a no-op here because
-      // `browserWs` already points at the new socket.)
-      if (this.browserWs !== null && this.browserWs !== ws) {
-        const stale = this.browserWs
-        this.browserWs = null
-        for (const p of this.pending.values()) {
-          p.reject(new Error('superseded by new browser connection'))
-        }
-        this.pending.clear()
+      // Single-client bridge, first-come-first-served: `validateUpgrade`
+      // already rejected a second client, but a rare simultaneous race could
+      // let two upgrades pass the pre-handshake check. Close the loser here so
+      // the legitimately-attached browser is never superseded by a hijacker.
+      if (this.browserWs !== null && this.browserWs !== ws && this.hasLiveClient()) {
         try {
-          stale.close()
+          ws.close(1013, 'bridge busy')
         } catch {
           // already closing/closed; nothing to do
         }
+        return
       }
       this.browserWs = ws
       this.onConnect?.()
@@ -308,11 +434,23 @@ export class WebSocketRelayTransport implements RelayTransport {
     }
     const id = randomUUID()
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.browserWs!.send(JSON.stringify({ id, method, args }))
-      setTimeout(() => {
+      // Clear the timeout when the request settles (reply arrives or the
+      // relay is torn down) so a resolved call doesn't leave a 5s timer
+      // pinning the event loop / keeping the process alive.
+      const timer = setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`timeout: ${method}`))
       }, 5000)
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer)
+          resolve(v)
+        },
+        reject: (e) => {
+          clearTimeout(timer)
+          reject(e)
+        },
+      })
+      this.browserWs!.send(JSON.stringify({ id, method, args }))
     })
   }
 }

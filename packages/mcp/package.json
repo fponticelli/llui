@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "prepack": "pnpm run build",
@@ -24,6 +25,7 @@
   },
   "dependencies": {
     "@llui/compiler": "workspace:^",
+    "@llui/notes-format": "workspace:^",
     "@llui/vite-plugin": "workspace:^",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0",
@@ -62,5 +64,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/mcp#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/mcp#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

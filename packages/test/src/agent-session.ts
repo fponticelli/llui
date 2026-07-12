@@ -1,4 +1,5 @@
 import type { SignalComponentHandle } from '@llui/dom'
+import { jsonDiff } from './internal/json.js'
 
 /** Agent-session msgs are JSON objects with a `type` discriminant. */
 type AgentMsg = { type: string; [k: string]: unknown }
@@ -140,7 +141,7 @@ export function replayAgentSession(
   options: ReplayOptions = {},
 ): ReplayResult {
   if (options.assertInitial === true) {
-    const initialDiff = simpleDiff(fixture.initialState, handle.getState())
+    const initialDiff = jsonDiff(fixture.initialState, handle.getState())
     if (initialDiff.length > 0) {
       return { matches: false, diff: initialDiff }
     }
@@ -150,73 +151,6 @@ export function replayAgentSession(
     handle.flush()
   }
   const actualFinal = handle.getState()
-  const diff = simpleDiff(fixture.finalState, actualFinal)
+  const diff = jsonDiff(fixture.finalState, actualFinal)
   return { matches: diff.length === 0, diff }
-}
-
-/**
- * Local copy of the JSON-Patch diff algorithm. Duplicated rather
- * than imported from `@llui/agent` to avoid a runtime dependency
- * cycle: `@llui/test` is small and core, agent is an optional
- * package, and we don't want test fixtures to drag agent code in.
- *
- * If `@llui/agent`'s `computeStateDiff` ever changes shape, this
- * needs to track. Tests that assert exact diff content will catch
- * the drift; the contract surface is small (3 ops × {add, remove,
- * replace}) and stable.
- */
-function simpleDiff(prev: unknown, next: unknown): ReplayResult['diff'] {
-  const ops: ReplayResult['diff'] = []
-  walk(prev, next, '', ops)
-  return ops
-}
-
-function walk(prev: unknown, next: unknown, base: string, ops: ReplayResult['diff']): void {
-  if (Object.is(prev, next)) return
-  if (
-    prev === null ||
-    next === null ||
-    prev === undefined ||
-    next === undefined ||
-    typeof prev !== 'object' ||
-    typeof next !== 'object'
-  ) {
-    ops.push({ op: 'replace', path: base, value: next })
-    return
-  }
-  const prevIsArr = Array.isArray(prev)
-  const nextIsArr = Array.isArray(next)
-  if (prevIsArr !== nextIsArr) {
-    ops.push({ op: 'replace', path: base, value: next })
-    return
-  }
-  if (prevIsArr && nextIsArr) {
-    const minLen = Math.min(prev.length, next.length)
-    for (let i = 0; i < minLen; i++) walk(prev[i], next[i], `${base}/${i}`, ops)
-    if (prev.length > next.length) {
-      for (let i = prev.length - 1; i >= next.length; i--) {
-        ops.push({ op: 'remove', path: `${base}/${i}` })
-      }
-    }
-    if (next.length > prev.length) {
-      for (let i = prev.length; i < next.length; i++) {
-        ops.push({ op: 'add', path: `${base}/${i}`, value: next[i] })
-      }
-    }
-    return
-  }
-  const a = prev as Record<string, unknown>
-  const b = next as Record<string, unknown>
-  for (const k in a) {
-    if (!(k in b)) ops.push({ op: 'remove', path: `${base}/${escapeSeg(k)}` })
-  }
-  for (const k in b) {
-    const path = `${base}/${escapeSeg(k)}`
-    if (!(k in a)) ops.push({ op: 'add', path, value: b[k] })
-    else walk(a[k], b[k], path, ops)
-  }
-}
-
-function escapeSeg(s: string): string {
-  return s.replace(/~/g, '~0').replace(/\//g, '~1')
 }

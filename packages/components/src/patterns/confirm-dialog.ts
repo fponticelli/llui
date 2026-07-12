@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions, Mountable } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 import { button, text, div, h2, p } from '@llui/dom'
 import {
   init as dialogInit,
@@ -114,7 +114,6 @@ export interface ConfirmDialogViewOptions {
   state: Signal<ConfirmDialogState>
   send: Send<ConfirmDialogMsg>
   id: string
-  transition?: TransitionOptions
   /** Custom class for content root. */
   contentClass?: string
   /** Custom class for destructive confirm button. */
@@ -167,7 +166,6 @@ export function view(opts: ConfirmDialogViewOptions): Mountable {
         ]),
       ]),
     ],
-    transition: opts.transition,
     closeOnOutsideClick: false, // alertdialog default
   })
 }

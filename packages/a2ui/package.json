@@ -6,8 +6,8 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./styles/theme.css": "./dist/styles/theme.css"
   },
@@ -23,11 +23,11 @@
     "@llui/dom": "^0.11.5"
   },
   "dependencies": {
-    "@llui/components": "^0.12.2"
+    "@llui/components": "workspace:^"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
-    "jsdom": "^25.0.1",
+    "jsdom": "^29.0.1",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
@@ -55,6 +55,10 @@
   },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/a2ui#readme",
   "files": [
-    "dist"
-  ]
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -75,6 +75,31 @@ describe('handleLapMessage', () => {
     if (body.status === 'rejected') expect(body.reason).toBe('user-cancelled')
   })
 
+  it('returns pending-confirmation (NOT rejected) when the confirm wait times out', async () => {
+    // Regression: the old code fabricated a `rejected: user-cancelled` on
+    // timeout, while a later user Approve still fired the dispatch — a lie.
+    vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'pending-confirmation', confirmId: 'c1' })
+    vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'timeout' })
+    const sendSpy = vi.spyOn(registry, 'send')
+    const res = await handleLapMessage(mkReq({ msg: { type: 'delete' } }), deps())
+    const body = (await res.json()) as LapMessageResponse
+    expect(body.status).toBe('pending-confirmation')
+    if (body.status === 'pending-confirmation') expect(body.confirmId).toBe('c1')
+    // Must NOT expire the browser entry on a timeout — a genuine slow
+    // approval should still be able to fire.
+    expect(sendSpy).not.toHaveBeenCalledWith('t1', { t: 'confirm-expire', confirmId: 'c1' })
+  })
+
+  it('expires the browser confirm entry when the user genuinely cancels', async () => {
+    vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'pending-confirmation', confirmId: 'c1' })
+    vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'user-cancelled' })
+    const sendSpy = vi.spyOn(registry, 'send')
+    const res = await handleLapMessage(mkReq({ msg: { type: 'delete' } }), deps())
+    const body = (await res.json()) as LapMessageResponse
+    expect(body.status).toBe('rejected')
+    expect(sendSpy).toHaveBeenCalledWith('t1', { t: 'confirm-expire', confirmId: 'c1' })
+  })
+
   it('rejects missing msg.type with 400', async () => {
     const res = await handleLapMessage(mkReq({}), deps())
     expect(res.status).toBe(400)

@@ -1,16 +1,53 @@
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
+import { lintSignalSource } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
-import { domDiff, diffState } from '../util/diff.js'
+import { diffState } from '../util/diff.js'
 import { assertWithinWorkspace } from '../util/workspace.js'
 import { findWorkspaceRoot } from '../index.js'
 
 /**
- * Register the 33 debug-API-backed tools. Every handler routes through
- * `ctx.relay!.call(method, args)` — which transparently dispatches to
- * either an in-process `LluiDebugAPI` or the WebSocket bridge,
- * depending on how the transport was wired.
+ * The debug-API methods the LLui **signal runtime** (`installSignalDebug` in
+ * `@llui/dom`) actually implements. This is the ground-truth capability set:
+ * the signal runtime is the only runtime, and it registers exactly these
+ * methods. The `LluiDebugAPI` interface also declares a raft of OPTIONAL
+ * binding/scope/effect/DOM-introspection methods (`getBindings`,
+ * `getScopeTree`, `inspectElement`, `mockEffect`, `stepBack`, …) that are
+ * legacy-runtime concepts — the signal runtime does NOT implement them, so a
+ * relay call to any of them fails with "unknown method". We therefore only
+ * register tools backed by a servable method (plus the pure/local tools that
+ * need no relay), rather than advertising tools no runtime can honour.
+ *
+ * (The registry-level pseudo-methods `__listComponents` / `__selectComponent`
+ * are resolved by the relay itself against `globalThis.__lluiComponents`, so
+ * they are always servable.)
+ */
+export const SERVABLE_DEBUG_METHODS = [
+  'getState',
+  'send',
+  'flush',
+  'getMessageHistory',
+  'evalUpdate',
+  'exportTrace',
+  'clearLog',
+  'validateMessage',
+  'searchState',
+  'getMessageSchema',
+  'getStateSchema',
+  'getEffectSchema',
+  'getComponentInfo',
+  'snapshotState',
+  'restoreState',
+] as const
+
+/**
+ * Register the servable debug-API tools. Every handler routes through
+ * `ctx.relay!.call(method, args)` — which transparently dispatches to either
+ * an in-process `LluiDebugAPI` or the WebSocket bridge, depending on how the
+ * transport was wired — and every relay method used here is in
+ * {@link SERVABLE_DEBUG_METHODS} (or is a pure/local computation).
  *
  * Zod schemas drive both runtime input validation (the registry's
  * `dispatch()` calls `schema.safeParse()` before invoking the handler)
@@ -50,10 +87,8 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     {
       name: 'llui_get_state',
       description:
-        'Get the current state of the LLui component. Returns a JSON-serializable state object.',
-      schema: z.object({
-        component: z.string().optional().describe('Component name (defaults to root)'),
-      }),
+        'Get the current state of the active LLui component. Returns a JSON-serializable state object. (Switch which component is targeted with llui_select_component.)',
+      schema: z.object({}),
     },
     'debug-api',
     async (_args, ctx) => ctx.relay!.call('getState', []),
@@ -63,7 +98,7 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     {
       name: 'llui_send_message',
       description:
-        'Send a message to the component and return the new state and effects. Validates the message first. Calls flush() automatically.',
+        'Send a message to the component and return the new state and effects. Validates the message first. send() is synchronous in the signal runtime.',
       schema: z.object({
         msg: z
           .object({})
@@ -111,7 +146,7 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     {
       name: 'llui_get_message_history',
       description:
-        'Get the chronological message history with state transitions, effects, and dirty masks. Supports pagination via `since` (exclusive, return entries with index > since) and `limit` (return at most N most-recent entries). Use both together for tail-fetching.',
+        'Get the chronological message history with state transitions and effects. Supports pagination via `since` (exclusive, return entries with index > since) and `limit` (return at most N most-recent entries). Use both together for tail-fetching.',
       schema: z.object({
         since: z
           .number()
@@ -122,10 +157,10 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     },
     'debug-api',
     async (args, ctx) => {
-      const opts: { since?: number; limit?: number } = {}
-      if (typeof args.since === 'number') opts.since = args.since
-      if (typeof args.limit === 'number') opts.limit = args.limit
-      return ctx.relay!.call('getMessageHistory', [opts])
+      const opts2: { since?: number; limit?: number } = {}
+      if (typeof args.since === 'number') opts2.since = args.since
+      if (typeof args.limit === 'number') opts2.limit = args.limit
+      return ctx.relay!.call('getMessageHistory', [opts2])
     },
   )
 
@@ -137,32 +172,6 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     },
     'debug-api',
     async (_args, ctx) => ctx.relay!.call('exportTrace', []),
-  )
-
-  registry.register(
-    {
-      name: 'llui_get_bindings',
-      description:
-        'Get all active reactive bindings with their masks, last values, and DOM targets.',
-      schema: z.object({
-        filter: z.string().optional().describe('Filter by DOM selector or mask value'),
-      }),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getBindings', []),
-  )
-
-  registry.register(
-    {
-      name: 'llui_why_did_update',
-      description:
-        'Explain why a specific binding re-evaluated: which mask bits were dirty, what the accessor returned, what the previous value was.',
-      schema: z.object({
-        bindingIndex: z.number().describe('The binding index to inspect'),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('whyDidUpdate', [args.bindingIndex]),
   )
 
   registry.register(
@@ -204,30 +213,6 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
 
   registry.register(
     {
-      name: 'llui_decode_mask',
-      description:
-        "Decode a dirty-mask value from llui_get_message_history (the 'dirtyMask' field) into the list of top-level state fields that changed. Requires 'mask' param.",
-      schema: z.object({
-        mask: z.number().describe('The dirtyMask value to decode'),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('decodeMask', [args.mask]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_mask_legend',
-      description:
-        'Return the compiler-generated bit→field map for this component. Example: { todos: 1, filter: 2, nextId: 4 } means bit 0 represents `todos`, etc.',
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getMaskLegend', []),
-  )
-
-  registry.register(
-    {
       name: 'llui_component_info',
       description:
         'Get component name and source location (file + line) of the component() declaration. Lets you find where to read or edit the component.',
@@ -261,19 +246,6 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
 
   registry.register(
     {
-      name: 'llui_trace_element',
-      description:
-        "Find all bindings targeting a DOM element matched by a CSS selector. Returns { bindingIndex, kind, key, mask, lastValue, relation }[] so you can answer 'why is this element wrong?' — combine with llui_why_did_update(bindingIndex) for a full narrative.",
-      schema: z.object({
-        selector: z.string().describe('CSS selector (e.g. `.todo.active`, `#submit`)'),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('getBindingsFor', [args.selector]),
-  )
-
-  registry.register(
-    {
       name: 'llui_snapshot_state',
       description:
         'Capture the current state (deep clone). Returns the snapshot — store it, then call llui_restore_state later to roll back. Useful for safely exploring transitions during a debugging session.',
@@ -287,7 +259,7 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
     {
       name: 'llui_restore_state',
       description:
-        'Overwrite the current state with a previously-captured snapshot. Triggers a full re-render (FULL_MASK). Bypasses update() — snap must already be a valid state value.',
+        'Overwrite the current state with a previously-captured snapshot and re-render. Bypasses update() — snap must already be a valid state value.',
       schema: z.object({
         snapshot: z.unknown().describe('The state object returned by llui_snapshot_state.'),
       }),
@@ -359,86 +331,15 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
 
   registry.register(
     {
-      name: 'llui_inspect_element',
-      description:
-        'Get a rich report for a DOM element: tag, attributes, classes, data-*, text, bounding box, a computed-style subset (display/visibility/position/dimensions), and the bindings targeting this node. Pass a CSS selector. Returns null if no element matches.',
-      schema: z.object({ selector: z.string().describe('CSS selector') }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('inspectElement', [args.selector]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_get_rendered_html',
-      description:
-        "Get the outerHTML of the mounted component or a specific element. Pass 'selector' for a specific node (defaults to the mount root). Pass 'maxlength' to truncate output.",
-      schema: z.object({
-        selector: z.string().optional(),
-        maxlength: z.number().optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('getRenderedHtml', [args.selector, args.maxlength]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_dispatch_event',
-      description:
-        "Synthesize and dispatch a browser event at a DOM element. Returns the history indices of any Msgs the handler produced plus the resulting state. 'type' is the event name (e.g. 'click', 'input', 'keydown'). 'init' is an EventInit object (e.g. { key: 'Enter' } for keydown).",
-      schema: z.object({
-        selector: z.string(),
-        type: z.string(),
-        init: z.record(z.string(), z.unknown()).optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('dispatchDomEvent', [args.selector, args.type, args.init]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_dom_diff',
-      description:
-        'Compare expected HTML against the currently rendered HTML (from selector, or the mount root). Returns { match, differences }. Pass ignoreWhitespace=true to normalize whitespace.',
-      schema: z.object({
-        expected: z.string(),
-        selector: z.string().optional(),
-        ignoreWhitespace: z.boolean().optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => {
-      const actual = (await ctx.relay!.call('getRenderedHtml', [args.selector])) as string
-      return domDiff(args.expected, actual, {
-        ignoreWhitespace: Boolean(args.ignoreWhitespace),
-      })
-    },
-  )
-
-  registry.register(
-    {
-      name: 'llui_get_focus',
-      description:
-        'Return info about the currently focused element: { selector (if it has an id), tagName, selectionStart, selectionEnd }. Useful for catching "focus lost on re-render" bugs.',
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getFocus', []),
-  )
-
-  registry.register(
-    {
       name: 'llui_lint',
       description:
-        "Lint LLui source code against ESLint LLui rules. Returns violations grouped by rule. Pass 'path' (absolute file path on the dev machine).",
+        'Lint an LLui source file against the @llui/compiler SIGNAL lint rules — the SAME non-bypassable rules the vite-plugin enforces as build errors (peek-in-slot, operator-on-signal, pure-derive-body, no-node-construction-in-body, plus the shared convention / event-handler-casing / attr-name checks). This does NOT run ESLint. Pass an absolute file path on the dev machine. Returns { file, score, violations, summary } where each violation is { rule, message, line, column, fix? } and score is max(0, 20 - violations.length) (20 = clean). For a whole-directory scan use llui_compiler_diagnostics.',
       schema: z.object({
-        path: z.string().describe('Absolute file path to read and lint.'),
+        path: z.string().describe('Absolute file path to read and lint (.ts/.tsx).'),
       }),
     },
     'debug-api',
-    async (args, _ctx) => {
+    async (args) => {
       if (!args.path.endsWith('.ts') && !args.path.endsWith('.tsx')) {
         throw new Error(`llui_lint: only .ts/.tsx files are supported, got: ${args.path}`)
       }
@@ -450,207 +351,42 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
       if (!existsSync(safePath)) {
         throw new Error(`llui_lint: file not found: ${args.path}`)
       }
-
-      const { execFileSync } = await import('node:child_process')
+      const source = await readFile(safePath, 'utf8')
+      let msgs: ReturnType<typeof lintSignalSource>
       try {
-        // Discrete argv — no shell — so a path containing `"`, `$(...)`,
-        // backticks, or `;` is passed to eslint verbatim, never executed.
-        const output = execFileSync('pnpm', ['exec', 'eslint', '--format', 'json', safePath], {
-          encoding: 'utf8',
-        })
-        const results = JSON.parse(output)
-        const violations = results[0]?.messages || []
-        return {
-          file: args.path,
-          score: Math.max(0, 20 - violations.length),
-          violations,
-          summary: `${violations.length} violation(s)`,
-        }
-      } catch (err: unknown) {
-        const e = err as { stdout?: string; message?: string }
-        if (e.stdout) {
-          try {
-            const results = JSON.parse(e.stdout)
-            const violations = results[0]?.messages || []
-            return {
-              file: args.path,
-              score: Math.max(0, 20 - violations.length),
-              violations,
-              summary: `${violations.length} violation(s)`,
+        msgs = lintSignalSource(source, safePath)
+      } catch (err) {
+        throw new Error(
+          `llui_lint: lintSignalSource threw: ${(err as Error).message ?? String(err)}`,
+          { cause: err },
+        )
+      }
+      const violations = msgs.map((m) => ({
+        rule: m.rule,
+        message: m.message,
+        line: m.line,
+        column: m.column + 1,
+        ...(m.fix
+          ? {
+              fix: {
+                title: m.fix.title,
+                edits: m.fix.edits.map((e) => ({
+                  start: e.start,
+                  end: e.end,
+                  oldText: source.slice(e.start, e.end),
+                  newText: e.newText,
+                })),
+              },
             }
-          } catch {
-            // fall through to throw below
-          }
-        }
-        throw new Error(`ESLint failed: ${e.message}`, { cause: err })
+          : {}),
+      }))
+      return {
+        file: args.path,
+        score: Math.max(0, 20 - violations.length),
+        violations,
+        summary: `${violations.length} violation(s)`,
       }
     },
-  )
-
-  registry.register(
-    {
-      name: 'llui_force_rerender',
-      description:
-        "Re-evaluate every binding's accessor against the current state, apply changed values to the DOM, and return the indices of bindings that changed. If a binding's DOM value corrects itself after this call but not after a real message, the mask for that binding is wrong.",
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('forceRerender', []),
-  )
-
-  registry.register(
-    {
-      name: 'llui_each_diff',
-      description:
-        "Per-each-site reconciliation diffs (added/removed/moved/reused keys) from the dev-time diff log. Pass 'sinceIndex' to filter to entries after a specific message history index.",
-      schema: z.object({ sinceIndex: z.number().optional() }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('getEachDiff', [args.sinceIndex]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_scope_tree',
-      description:
-        "Walk the scope tree starting at the component root (or a specific scopeId). Returns a LifetimeNode tree with kind (root/show/each/branch/child/portal/foreign) and children. Pass 'depth' to limit traversal, 'scopeId' to start elsewhere.",
-      schema: z.object({
-        depth: z.number().optional(),
-        scopeId: z.string().optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) =>
-      ctx.relay!.call('getScopeTree', [{ depth: args.depth, scopeId: args.scopeId }]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_disposer_log',
-      description:
-        "Recent onDispose firings with scope id and cause. Pass 'limit' to cap results to the N most recent entries. Catches 'leak on branch swap' class bugs.",
-      schema: z.object({ limit: z.number().optional() }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('getDisposerLog', [args.limit]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_list_dead_bindings',
-      description:
-        "Bindings that are inactive (scope disposed) OR never matched a dirty mask OR never changed value. Useful for finding wasted work and 'this never updates' bugs. Returns the subset of get_bindings with an annotation on why it's flagged.",
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => {
-      const bindings = (await ctx.relay!.call('getBindings', [])) as Array<{
-        index: number
-        mask: number
-        lastValue: unknown
-        kind: string
-        key: string | undefined
-        dead: boolean
-        perItem: boolean
-      }>
-      return bindings
-        .filter((b) => b.dead || b.lastValue === undefined)
-        .map((b) => ({
-          ...b,
-          reason: b.dead ? 'scope_disposed' : 'never_changed',
-        }))
-    },
-  )
-
-  registry.register(
-    {
-      name: 'llui_binding_graph',
-      description:
-        'Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes.',
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getBindingGraph', []),
-  )
-
-  registry.register(
-    {
-      name: 'llui_mock_effect',
-      description:
-        "Register a mock for an effect matching 'match' ({ type?, payloadPath?, payloadEquals? }). The next matching effect resolves with 'response' instead of running. Mocks are one-shot; pass { persist: true } to keep across matches. Returns { mockId } for later reference.",
-      schema: z.object({
-        match: z.record(z.string(), z.unknown()),
-        response: z.unknown(),
-        opts: z.record(z.string(), z.unknown()).optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('mockEffect', [args.match, args.response, args.opts]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_resolve_effect',
-      description:
-        "Manually resolve a pending effect with a given response. The effect's onSuccess callback (if any) runs as if it had actually resolved. Pass effectId from llui_pending_effects.",
-      schema: z.object({
-        effectId: z.string(),
-        response: z.unknown(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('resolveEffect', [args.effectId, args.response]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_pending_effects',
-      description:
-        "Current queued and in-flight effects. Each entry has { id, type, dispatchedAt, status, payload }. Use 'id' with llui_resolve_effect to manually resolve one.",
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getPendingEffects', []),
-  )
-
-  registry.register(
-    {
-      name: 'llui_effect_timeline',
-      description:
-        "Phased log of effect events: dispatched -> in-flight -> resolved/cancelled/resolved-mocked. Each entry has { effectId, type, phase, timestamp, durationMs? }. Pass 'limit' to cap the tail.",
-      schema: z.object({ limit: z.number().optional() }),
-    },
-    'debug-api',
-    async (args, ctx) => ctx.relay!.call('getEffectTimeline', [args.limit]),
-  )
-
-  registry.register(
-    {
-      name: 'llui_step_back',
-      description:
-        "Rewind state by replaying from init() with the last N messages excluded. 'mode' is 'pure' (default; suppresses effects) or 'live' (re-fires effects from replay). Returns the new state and rewindDepth.",
-      schema: z.object({
-        n: z.number().optional(),
-        mode: z.enum(['pure', 'live']).optional(),
-      }),
-    },
-    'debug-api',
-    async (args, ctx) => {
-      const n = typeof args.n === 'number' ? args.n : 1
-      const mode = args.mode === 'live' ? 'live' : 'pure'
-      return ctx.relay!.call('stepBack', [n, mode])
-    },
-  )
-
-  registry.register(
-    {
-      name: 'llui_coverage',
-      description:
-        "Per-Msg-variant coverage for the current session: { fired: { variant: { count, lastIndex } }, neverFired: [variants] }. Shows which message types have run and which haven't — useful for finding untested paths.",
-      schema: z.object({}),
-    },
-    'debug-api',
-    async (_args, ctx) => ctx.relay!.call('getCoverage', []),
   )
 
   registry.register(
@@ -731,7 +467,6 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
         stateBefore: unknown
         stateAfter: unknown
         effects: unknown[]
-        dirtyMask: number
       }
       const history = (await ctx.relay!.call('getMessageHistory', [{}])) as HRecord[]
       const f = args.filter
@@ -769,7 +504,10 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
   // SECURITY: `llui_eval` is arbitrary RCE against the user's live
   // browser session — gated behind an explicit opt-in (OFF by default).
   // When disabled it is never registered, so it cannot appear in
-  // `tools/list` or be dispatched.
+  // `tools/list` or be dispatched. NOTE: `evalInPage` is an OPTIONAL
+  // debug-API method the signal runtime does not implement; the tool
+  // remains for rich/legacy debug APIs and surfaces the relay's
+  // "unknown method" error otherwise.
   if (evalEnabled(opts)) {
     registry.register(
       {

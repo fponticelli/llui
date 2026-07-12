@@ -57,35 +57,51 @@ The Markdown ⇄ editor mapping is a transformer registry. `GFM_TRANSFORMERS` / 
 
 ## Functions
 
-### `markdownEditor()`
+### `$insertCallout()`
 
-Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(...))`
-or compose it inside a larger component.
+Insert a fresh callout at the current selection; returns the created node.
 
 ```typescript
-function markdownEditor(
-  config: EditorConfig = {},
-): SignalComponentDef<EditorState, EditorMsg, EditorEffect>
+function $insertCallout(kind: CalloutKind = 'note', textValue = 'New callout'): LLuiDecoratorNode
 ```
 
-### `init()`
+### `$insertHorizontalRule()`
+
+Insert a horizontal rule at the current selection.
 
 ```typescript
-function init(opts: InitOptions): [EditorState, EditorEffect[]]
+function $insertHorizontalRule(): void
 ```
 
-### `update()`
+### `$insertMarkdownAtSelection()`
+
+Parse `markdown` with `transformers` and insert the produced nodes at the
+current range selection. The document is parsed into a detached scratch
+container (so the live root is never cleared) and the selection captured
+before the import — which moves the caret into the scratch node — is restored
+before the nodes are spliced in. Returns `true` only when nodes were actually
+inserted; `false` (a no-op) when there is no range selection to insert into or
+the markdown parsed to nothing — letting the caller fall back to the default
+paste behaviour instead of silently swallowing the event.
 
 ```typescript
-function update(state: EditorState, msg: EditorMsg): [EditorState, EditorEffect[]]
+function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
-### `countWords()`
+### `buildTransformers()`
 
-Count whitespace-delimited words (shared by init and the format handler).
+Collect every plugin's transformers (de-duplicated by reference) and order
+them. The result is passed to `$convertTo/FromMarkdownString` and
+`registerMarkdownShortcuts`.
 
 ```typescript
-function countWords(text: string): number
+function buildTransformers(plugins: readonly MarkdownPlugin[]): Transformer[]
+```
+
+### `calloutPlugin()`
+
+```typescript
+function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin
 ```
 
 ### `computeFormatState()`
@@ -97,128 +113,6 @@ function computeFormatState(
   editor: LexicalEditor,
   history: Pick<SelectionContext, 'canUndo' | 'canRedo'>,
 ): FormatState
-```
-
-### `definePluginUI()`
-
-Author a plugin UI module with full `State`/`Msg`/`Effect` types, erased for
-storage. The casts are confined to this boundary (the host only knows
-`unknown`), exactly like the decorator bridge.
-
-```typescript
-function definePluginUI<S, M, E = never>(spec: PluginUISpec<S, M, E>): PluginUI
-```
-
-### `corePlugin()`
-
-```typescript
-function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin
-```
-
-### `linkPlugin()`
-
-```typescript
-function linkPlugin(opts: LinkPluginOptions = {}): MarkdownPlugin
-```
-
-### `$insertCallout()`
-
-Insert a fresh callout at the current selection; returns the created node.
-
-```typescript
-function $insertCallout(kind: CalloutKind = 'note', textValue = 'New callout'): LLuiDecoratorNode
-```
-
-### `calloutPlugin()`
-
-```typescript
-function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin
-```
-
-### `$insertHorizontalRule()`
-
-Insert a horizontal rule at the current selection.
-
-```typescript
-function $insertHorizontalRule(): void
-```
-
-### `hrPlugin()`
-
-```typescript
-function hrPlugin(): MarkdownPlugin
-```
-
-### `slashPlugin()`
-
-```typescript
-function slashPlugin(): MarkdownPlugin
-```
-
-### `contextMenuPlugin()`
-
-```typescript
-function contextMenuPlugin(): MarkdownPlugin
-```
-
-### `floatingToolbarPlugin()`
-
-```typescript
-function floatingToolbarPlugin(): MarkdownPlugin
-```
-
-### `mathPlugin()`
-
-```typescript
-function mathPlugin(opts: MathPluginOptions = {}): MarkdownPlugin
-```
-
-### `mermaidPlugin()`
-
-```typescript
-function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin
-```
-
-### `mentionPlugin()`
-
-```typescript
-function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
-```
-
-### `emojiPlugin()`
-
-```typescript
-function emojiPlugin(opts: EmojiPluginOptions = {}): MarkdownPlugin
-```
-
-### `imagePlugin()`
-
-```typescript
-function imagePlugin(opts: ImagePluginOptions = {}): MarkdownPlugin
-```
-
-### `tablePlugin()`
-
-```typescript
-function tablePlugin(): MarkdownPlugin
-```
-
-### `orderTransformers()`
-
-Stable-sort transformers into the order Lexical expects.
-
-```typescript
-function orderTransformers(transformers: readonly Transformer[]): Transformer[]
-```
-
-### `buildTransformers()`
-
-Collect every plugin's transformers (de-duplicated by reference) and order
-them. The result is passed to `$convertTo/FromMarkdownString` and
-`registerMarkdownShortcuts`.
-
-```typescript
-function buildTransformers(plugins: readonly MarkdownPlugin[]): Transformer[]
 ```
 
 ### `connectToolbar()`
@@ -234,12 +128,64 @@ function connectToolbar(
 ): ToolbarParts
 ```
 
-### `toolbar()`
-
-A ready-made grouped toolbar. Items not surfaced to `'toolbar'` are dropped.
+### `contextMenuPlugin()`
 
 ```typescript
-function toolbar(opts: ToolbarOptions): Mountable
+function contextMenuPlugin(): MarkdownPlugin
+```
+
+### `corePlugin()`
+
+```typescript
+function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin
+```
+
+### `countWords()`
+
+Count whitespace-delimited words (shared by init and the format handler).
+
+```typescript
+function countWords(text: string): number
+```
+
+### `definePluginUI()`
+
+Author a plugin UI module with full `State`/`Msg`/`Effect` types, erased for
+storage. The casts are confined to this boundary (the host only knows
+`unknown`), exactly like the decorator bridge.
+
+```typescript
+function definePluginUI<S, M, E = never>(spec: PluginUISpec<S, M, E>): PluginUI
+```
+
+### `emojiPlugin()`
+
+```typescript
+function emojiPlugin(opts: EmojiPluginOptions = {}): MarkdownPlugin
+```
+
+### `floatingToolbarPlugin()`
+
+```typescript
+function floatingToolbarPlugin(): MarkdownPlugin
+```
+
+### `hrPlugin()`
+
+```typescript
+function hrPlugin(): MarkdownPlugin
+```
+
+### `imagePlugin()`
+
+```typescript
+function imagePlugin(opts: ImagePluginOptions = {}): MarkdownPlugin
+```
+
+### `init()`
+
+```typescript
+function init(opts: InitOptions): [EditorState, EditorEffect[]]
 ```
 
 ### `linkDialog()`
@@ -250,15 +196,106 @@ Render the link dialog. Hidden (portal, nothing inline) until `dialog.open`.
 function linkDialog(opts: LinkDialogOptions): Mountable
 ```
 
-## Types
-
-### `CollabFactory`
-
-Builds the collab binding from the editor-supplied hooks.
+### `linkPlugin()`
 
 ```typescript
-export type CollabFactory = (hooks: CollabHooks) => CollabBinding
+function linkPlugin(opts: LinkPluginOptions = {}): MarkdownPlugin
 ```
+
+### `markdownEditor()`
+
+Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(...))`
+or compose it inside a larger component.
+
+```typescript
+function markdownEditor(
+  config: EditorConfig = {},
+): SignalComponentDef<EditorState, EditorMsg, EditorEffect>
+```
+
+### `mathPlugin()`
+
+```typescript
+function mathPlugin(opts: MathPluginOptions = {}): MarkdownPlugin
+```
+
+### `mentionPlugin()`
+
+```typescript
+function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
+```
+
+### `mergeTheme()`
+
+Merge a consumer theme over the default. `text` is merged per-key so a
+consumer overriding (say) `strikethrough` keeps the default `underline`.
+Always returns a FRESH theme (never the shared `defaultTheme` singleton):
+Lexical caches resolved class arrays by MUTATING the `text` object it is
+handed (`text.__lexicalClassNameCache`). Handing it a fresh copy keeps the
+exported singleton clean, and stripping any inherited cache prevents a stale
+entry from a previously-used theme object shadowing an overridden class.
+
+```typescript
+function mergeTheme(theme?: EditorThemeClasses): EditorThemeClasses
+```
+
+### `mermaidPlugin()`
+
+```typescript
+function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin
+```
+
+### `orderTransformers()`
+
+Stable-sort transformers into the order Lexical expects.
+
+```typescript
+function orderTransformers(transformers: readonly Transformer[]): Transformer[]
+```
+
+### `registerMarkdownPaste()`
+
+Register the markdown-on-paste handler on `editor`. Returns a disposer.
+Plain-text pastes are converted as Markdown. Pastes that also carry
+`text/html` are ignored so Lexical's richer HTML import handles them.
+
+```typescript
+function registerMarkdownPaste(editor: LexicalEditor, transformers: Array<Transformer>): () => void
+```
+
+### `singleBlockPlugin()`
+
+```typescript
+function singleBlockPlugin(opts: SingleBlockPluginOptions = {}): MarkdownPlugin
+```
+
+### `slashPlugin()`
+
+```typescript
+function slashPlugin(): MarkdownPlugin
+```
+
+### `tablePlugin()`
+
+```typescript
+function tablePlugin(): MarkdownPlugin
+```
+
+### `toolbar()`
+
+A ready-made grouped toolbar. Items not surfaced to `'toolbar'` are dropped.
+
+```typescript
+function toolbar(opts: ToolbarOptions): Mountable
+```
+
+### `update()`
+
+```typescript
+function update(state: EditorState, msg: EditorMsg): [EditorState, EditorEffect[]]
+```
+
+## Types
 
 ### `BlockType`
 
@@ -282,12 +319,30 @@ export type BlockType =
   | 'other'
 ```
 
-### `OverlayKind`
-
-Which floating surface is currently open.
+### `CalloutKind`
 
 ```typescript
-export type OverlayKind = 'none' | 'floating' | 'slash' | 'context' | 'link'
+export type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+```
+
+### `CollabFactory`
+
+Builds the collab binding from the editor-supplied hooks.
+
+```typescript
+export type CollabFactory = (hooks: CollabHooks) => CollabBinding
+```
+
+### `EditorEffect`
+
+```typescript
+export type EditorEffect =
+  | { type: 'execCommand'; id: string }
+  | { type: 'applyValue'; value: string }
+  | { type: 'emitChange'; value: string }
+  | { type: 'emitFormat'; format: FormatState }
+  /** An effect produced by a plugin's UI reducer (see {@link PluginUI}). */
+  | { type: 'pluginEffect'; name: string; effect: unknown }
 ```
 
 ### `EditorMsg`
@@ -321,16 +376,12 @@ export type EditorOutMsg = Extract<
 >
 ```
 
-### `EditorEffect`
+### `InlineFormat`
+
+An inline text-format surfaced as a toolbar command item.
 
 ```typescript
-export type EditorEffect =
-  | { type: 'execCommand'; id: string }
-  | { type: 'applyValue'; value: string }
-  | { type: 'emitChange'; value: string }
-  | { type: 'emitFormat'; format: FormatState }
-  /** An effect produced by a plugin's UI reducer (see {@link PluginUI}). */
-  | { type: 'pluginEffect'; name: string; effect: unknown }
+export type InlineFormat = 'bold' | 'italic' | 'strikethrough' | 'code'
 ```
 
 ### `ItemSurface`
@@ -341,21 +392,120 @@ Which surfaces a command item appears in (default: all).
 export type ItemSurface = 'toolbar' | 'floating' | 'slash' | 'context'
 ```
 
-### `HostEmit`
+### `OverlayKind`
 
-The host message type a plugin effect may emit (the editor's full Msg).
-
-```typescript
-export type HostEmit = (msg: unknown) => void
-```
-
-### `CalloutKind`
+Which floating surface is currently open.
 
 ```typescript
-export type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+export type OverlayKind = 'none' | 'floating' | 'slash' | 'context' | 'link'
 ```
 
 ## Interfaces
+
+### `CalloutData`
+
+```typescript
+export interface CalloutData {
+  kind: CalloutKind
+  text: string
+}
+```
+
+### `CalloutPluginOptions`
+
+```typescript
+export interface CalloutPluginOptions {
+  /** Default kind for the toolbar/slash insert action. */
+  defaultKind?: CalloutKind
+}
+```
+
+### `CollabBinding`
+
+Disposer-returning binding the collab layer installs on the live editor.
+`@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
+`@llui/markdown-editor` needs no Yjs dependency of its own.
+
+```typescript
+export interface CollabBinding {
+  register: (editor: LexicalEditor) => () => void
+}
+```
+
+### `CollabHooks`
+
+Hooks the editor injects into the {@link CollabFactory}: a markdown `seed`
+(run once by the bootstrapping peer to fill an empty shared doc from
+`defaultValue`) plus status sinks the editor mirrors into `state.collab`.
+Spread straight into `yjsCollab({ id, provider, user, ...hooks })`.
+
+```typescript
+export interface CollabHooks {
+  seed: (editor: LexicalEditor) => void
+  onStatus: (connected: boolean) => void
+  onSync: (synced: boolean) => void
+  onPeers: (count: number) => void
+}
+```
+
+### `CollabStatus`
+
+Live collaborative-session status (mirror of the CRDT provider state).
+`enabled` is false unless the editor was created with a `collab` factory.
+
+```typescript
+export interface CollabStatus {
+  enabled: boolean
+  connected: boolean
+  synced: boolean
+  /** Remote peers currently present (excludes this client). */
+  peers: number
+}
+```
+
+### `CommandContext`
+
+Handed to a command item's `run` so it can talk back to the host (e.g. open
+the link dialog) instead of only mutating the editor.
+
+```typescript
+export interface CommandContext {
+  send: (msg: EditorMsg) => void
+}
+```
+
+### `CommandItem`
+
+A user-invokable editor command surfaced to the chrome. Its reactive
+active/disabled state is read from {@link FormatState}; `run` mutates the
+live editor.
+
+```typescript
+export interface CommandItem {
+  /** Stable id (also the `runCommand` payload). */
+  id: string
+  label: string
+  /** Optional icon hint (class / svg id); rendering is the consumer's CSS. */
+  icon?: string
+  /** Grouping key for menu sectioning. */
+  group?: string
+  /** Keyword aliases for slash/command-palette filtering. */
+  keywords?: readonly string[]
+  isActive?: (format: FormatState) => boolean
+  isDisabled?: (format: FormatState) => boolean
+  run: (editor: LexicalEditor, ctx: CommandContext) => void
+  surfaces?: readonly ItemSurface[]
+}
+```
+
+### `CorePluginOptions`
+
+```typescript
+export interface CorePluginOptions {
+  /** Reserved for future core options. */
+  readonly _?: never
+}
+```
 
 ### `EditorConfig`
 
@@ -397,34 +547,6 @@ export interface EditorConfig {
 }
 ```
 
-### `CollabBinding`
-
-Disposer-returning binding the collab layer installs on the live editor.
-`@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
-`@llui/markdown-editor` needs no Yjs dependency of its own.
-
-```typescript
-export interface CollabBinding {
-  register: (editor: LexicalEditor) => () => void
-}
-```
-
-### `CollabHooks`
-
-Hooks the editor injects into the {@link CollabFactory}: a markdown `seed`
-(run once by the bootstrapping peer to fill an empty shared doc from
-`defaultValue`) plus status sinks the editor mirrors into `state.collab`.
-Spread straight into `yjsCollab({ id, provider, user, ...hooks })`.
-
-```typescript
-export interface CollabHooks {
-  seed: (editor: LexicalEditor) => void
-  onStatus: (connected: boolean) => void
-  onSync: (synced: boolean) => void
-  onPeers: (count: number) => void
-}
-```
-
 ### `EditorParts`
 
 Hooks the chrome layer (toolbar/menus) uses to compose around the editor.
@@ -435,39 +557,6 @@ export interface EditorParts {
   items: readonly CommandItem[]
   /** Reactive format signal for `connect`-style toolbars. */
   format: Signal<FormatState>
-}
-```
-
-### `FormatState`
-
-The toolbar-facing format surface at the current selection (all primitives).
-
-```typescript
-export interface FormatState {
-  bold: boolean
-  italic: boolean
-  strikethrough: boolean
-  code: boolean
-  link: boolean
-  blockType: BlockType
-  alignment: Alignment
-  canUndo: boolean
-  canRedo: boolean
-}
-```
-
-### `CollabStatus`
-
-Live collaborative-session status (mirror of the CRDT provider state).
-`enabled` is false unless the editor was created with a `collab` factory.
-
-```typescript
-export interface CollabStatus {
-  enabled: boolean
-  connected: boolean
-  synced: boolean
-  /** Remote peers currently present (excludes this client). */
-  peers: number
 }
 ```
 
@@ -494,6 +583,43 @@ export interface EditorState {
 }
 ```
 
+### `EmojiPluginOptions`
+
+```typescript
+export interface EmojiPluginOptions {
+  /** Extra/override shortcode → emoji entries (merged over the defaults). */
+  emoji?: Readonly<Record<string, string>>
+}
+```
+
+### `FormatState`
+
+The toolbar-facing format surface at the current selection (all primitives).
+
+```typescript
+export interface FormatState {
+  bold: boolean
+  italic: boolean
+  strikethrough: boolean
+  code: boolean
+  link: boolean
+  blockType: BlockType
+  alignment: Alignment
+  canUndo: boolean
+  canRedo: boolean
+}
+```
+
+### `ImagePluginOptions`
+
+```typescript
+export interface ImagePluginOptions {
+  /** Upload a chosen file and resolve to its URL. When omitted, the file picker
+   * is hidden and only URL entry is offered. */
+  upload?: (file: File) => Promise<string>
+}
+```
+
 ### `InitOptions`
 
 ```typescript
@@ -505,38 +631,31 @@ export interface InitOptions {
 }
 ```
 
-### `CommandContext`
-
-Handed to a command item's `run` so it can talk back to the host (e.g. open
-the link dialog) instead of only mutating the editor.
+### `LinkDialogOptions`
 
 ```typescript
-export interface CommandContext {
-  send: (msg: EditorMsg) => void
+export interface LinkDialogOptions {
+  /** The `{ open }` slice driving the modal. */
+  dialog: Signal<DialogState>
+  /** The URL input value. */
+  url: Signal<string>
+  /** Called as the user edits the URL. */
+  onInput: (url: string) => void
+  /** Called on Apply / Enter. */
+  onSubmit: () => void
+  /** Called when the dialog requests open/close (dismiss, close button). */
+  onDialog: (msg: DialogMsg) => void
+  /** Dialog instance id for ARIA wiring (default 'md-link-dialog'). */
+  id?: string
 }
 ```
 
-### `CommandItem`
-
-A user-invokable editor command surfaced to the chrome. Its reactive
-active/disabled state is read from {@link FormatState}; `run` mutates the
-live editor.
+### `LinkPluginOptions`
 
 ```typescript
-export interface CommandItem {
-  /** Stable id (also the `runCommand` payload). */
-  id: string
-  label: string
-  /** Optional icon hint (class / svg id); rendering is the consumer's CSS. */
-  icon?: string
-  /** Grouping key for menu sectioning. */
-  group?: string
-  /** Keyword aliases for slash/command-palette filtering. */
-  keywords?: readonly string[]
-  isActive?: (format: FormatState) => boolean
-  isDisabled?: (format: FormatState) => boolean
-  run: (editor: LexicalEditor, ctx: CommandContext) => void
-  surfaces?: readonly ItemSurface[]
+export interface LinkPluginOptions {
+  /** Default URL pre-filled when there's no existing link (default ''). */
+  defaultUrl?: string
 }
 ```
 
@@ -559,99 +678,6 @@ export interface MarkdownPlugin extends LexicalPlugin<EditorOutMsg> {
 }
 ```
 
-### `PluginEffectContext`
-
-Context for a plugin's `onEffect` — reach the live editor and dispatch back.
-
-```typescript
-export interface PluginEffectContext<M> {
-  /** The live Lexical editor (null before mount). */
-  editor: () => LexicalEditor | null
-  /** Dispatch a message back into this plugin. */
-  send: (msg: M) => void
-  /** Dispatch a host editor message (e.g. `{type:'runCommand', id}`). */
-  emit: (msg: unknown) => void
-}
-```
-
-### `PluginViewArgs`
-
-Args for a plugin's `view` — its reactive state slice + a scoped dispatcher.
-
-```typescript
-export interface PluginViewArgs<S, M> {
-  state: Signal<S>
-  send: (msg: M) => void
-  editor: () => LexicalEditor | null
-}
-```
-
-### `PluginUISpec`
-
-A typed plugin UI module (authored via {@link definePluginUI}).
-
-```typescript
-export interface PluginUISpec<S, M, E = never> {
-  /** Initial slice state (JSON-serializable). */
-  init: () => S
-  /** Pure reducer over the slice; may return effects. */
-  update?: (state: S, msg: M) => S | [S, E[]]
-  /** View contribution (overlays/panels), rendered by the host. */
-  view?: (args: PluginViewArgs<S, M>) => Renderable
-  /** Effect handler with live-editor access + host dispatch. */
-  onEffect?: (effect: E, ctx: PluginEffectContext<M>) => void
-}
-```
-
-### `PluginUI`
-
-The type-erased form stored on a plugin and consumed by the host.
-
-```typescript
-export interface PluginUI {
-  init: () => unknown
-  update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
-  view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
-  onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
-}
-```
-
-### `CorePluginOptions`
-
-```typescript
-export interface CorePluginOptions {
-  /** Reserved for future core options. */
-  readonly _?: never
-}
-```
-
-### `LinkPluginOptions`
-
-```typescript
-export interface LinkPluginOptions {
-  /** Default URL pre-filled when there's no existing link (default ''). */
-  defaultUrl?: string
-}
-```
-
-### `CalloutData`
-
-```typescript
-export interface CalloutData {
-  kind: CalloutKind
-  text: string
-}
-```
-
-### `CalloutPluginOptions`
-
-```typescript
-export interface CalloutPluginOptions {
-  /** Default kind for the toolbar/slash insert action. */
-  defaultKind?: CalloutKind
-}
-```
-
 ### `MathPluginOptions`
 
 ```typescript
@@ -659,20 +685,6 @@ export interface MathPluginOptions {
   /** Typeset TeX to an HTML string (e.g. via KaTeX). When omitted, the raw TeX is
    * shown in a styled box. */
   /** Render the TeX source to a preview. Return a DOM `Node` (mounted
-   * directly, no sanitization) or a **trusted HTML string** (injected as-is
-   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
-   * content). See `renderedPreview`. */
-  render?: PreviewRender
-}
-```
-
-### `MermaidPluginOptions`
-
-```typescript
-export interface MermaidPluginOptions {
-  /** Render the diagram source to an HTML string (e.g. mermaid). When omitted,
-   * the raw source is shown in a styled box. */
-  /** Render the mermaid source to a preview. Return a DOM `Node` (mounted
    * directly, no sanitization) or a **trusted HTML string** (injected as-is
    * — sanitize it yourself, e.g. via DOMPurify, since it carries document
    * content). See `renderedPreview`. */
@@ -698,22 +710,95 @@ export interface MentionPluginOptions {
 }
 ```
 
-### `EmojiPluginOptions`
+### `MermaidPluginOptions`
 
 ```typescript
-export interface EmojiPluginOptions {
-  /** Extra/override shortcode → emoji entries (merged over the defaults). */
-  emoji?: Readonly<Record<string, string>>
+export interface MermaidPluginOptions {
+  /** Render the diagram source to an HTML string (e.g. mermaid). When omitted,
+   * the raw source is shown in a styled box. */
+  /** Render the mermaid source to a preview. Return a DOM `Node` (mounted
+   * directly, no sanitization) or a **trusted HTML string** (injected as-is
+   * — sanitize it yourself, e.g. via DOMPurify, since it carries document
+   * content). See `renderedPreview`. */
+  render?: PreviewRender
 }
 ```
 
-### `ImagePluginOptions`
+### `PluginEffectContext`
+
+Context for a plugin's `onEffect` — reach the live editor and dispatch back.
 
 ```typescript
-export interface ImagePluginOptions {
-  /** Upload a chosen file and resolve to its URL. When omitted, the file picker
-   * is hidden and only URL entry is offered. */
-  upload?: (file: File) => Promise<string>
+export interface PluginEffectContext<M> {
+  /** The live Lexical editor (null before mount). */
+  editor: () => LexicalEditor | null
+  /** Dispatch a message back into this plugin. */
+  send: (msg: M) => void
+  /** Dispatch a host editor message (e.g. `{type:'runCommand', id}`). */
+  emit: (msg: unknown) => void
+}
+```
+
+### `PluginUI`
+
+The type-erased form stored on a plugin and consumed by the host.
+
+```typescript
+export interface PluginUI {
+  init: () => unknown
+  update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
+  view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
+  onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
+}
+```
+
+### `PluginUISpec`
+
+A typed plugin UI module (authored via {@link definePluginUI}).
+
+```typescript
+export interface PluginUISpec<S, M, E = never> {
+  /** Initial slice state (JSON-serializable). */
+  init: () => S
+  /** Pure reducer over the slice; may return effects. */
+  update?: (state: S, msg: M) => S | [S, E[]]
+  /** View contribution (overlays/panels), rendered by the host. */
+  view?: (args: PluginViewArgs<S, M>) => Renderable
+  /** Effect handler with live-editor access + host dispatch. */
+  onEffect?: (effect: E, ctx: PluginEffectContext<M>) => void
+}
+```
+
+### `PluginViewArgs`
+
+Args for a plugin's `view` — its reactive state slice + a scoped dispatcher.
+
+```typescript
+export interface PluginViewArgs<S, M> {
+  state: Signal<S>
+  send: (msg: M) => void
+  editor: () => LexicalEditor | null
+}
+```
+
+### `SingleBlockPluginOptions`
+
+```typescript
+export interface SingleBlockPluginOptions {
+  /** Inline formats surfaced as toolbar items.
+   * Default `['bold', 'italic', 'strikethrough', 'code']`. NOTE: this limits the
+   * toolbar buttons only — markdown syntax (`*x*`) and Ctrl/⌘ shortcuts still
+   * apply every inline format, and all inline markdown round-trips regardless. */
+  formats?: readonly InlineFormat[]
+  /** Allow soft line breaks within the single paragraph. When `false` (default)
+   * Enter is inert and pasted/seeded line breaks collapse to spaces — a strict
+   * single-line field. When `true`, Enter inserts a `\n` and merged lines are
+   * joined with a line break instead of a space. A new paragraph is never made. */
+  allowLineBreaks?: boolean
+  /** Register `LinkNode` + the markdown link transformer so inline links
+   * round-trip. Default `false`. Compose with `linkPlugin()` for the toolbar
+   * button + insert dialog. */
+  link?: boolean
 }
 ```
 
@@ -732,20 +817,6 @@ export interface ToolbarItemParts {
   disabled: Signal<boolean>
   'data-active': Signal<'' | undefined>
   onClick: (e: MouseEvent) => void
-}
-```
-
-### `ToolbarParts`
-
-```typescript
-export interface ToolbarParts {
-  root: {
-    role: 'toolbar'
-    'aria-label': string
-    'data-scope': 'md-toolbar'
-    'data-part': 'root'
-  }
-  item: (id: string) => ToolbarItemParts
 }
 ```
 
@@ -770,22 +841,17 @@ export interface ToolbarOptions {
 }
 ```
 
-### `LinkDialogOptions`
+### `ToolbarParts`
 
 ```typescript
-export interface LinkDialogOptions {
-  /** The `{ open }` slice driving the modal. */
-  dialog: Signal<DialogState>
-  /** The URL input value. */
-  url: Signal<string>
-  /** Called as the user edits the URL. */
-  onInput: (url: string) => void
-  /** Called on Apply / Enter. */
-  onSubmit: () => void
-  /** Called when the dialog requests open/close (dismiss, close button). */
-  onDialog: (msg: DialogMsg) => void
-  /** Dialog instance id for ARIA wiring (default 'md-link-dialog'). */
-  id?: string
+export interface ToolbarParts {
+  root: {
+    role: 'toolbar'
+    'aria-label': string
+    'data-scope': 'md-toolbar'
+    'data-part': 'root'
+  }
+  item: (id: string) => ToolbarItemParts
 }
 ```
 
@@ -799,22 +865,30 @@ Node classes required to render the GFM superset.
 const GFM_NODES: ReadonlyArray<Klass<LexicalNode>>
 ```
 
-### `INLINE_TEXT_TRANSFORMERS`
-
-Inline text-format transformers (no block nodes, no node registration). These
-are the only transformers a single-block / inline-only editor needs; `LINK` is
-kept separate since it requires `LinkNode` to be registered.
-
-```typescript
-const INLINE_TEXT_TRANSFORMERS: readonly Transformer[]
-```
-
 ### `GFM_TRANSFORMERS`
 
 Markdown ↔ node transformers for the GFM superset.
 
 ```typescript
 const GFM_TRANSFORMERS: readonly Transformer[]
+```
+
+### `STRIKETHROUGH_CLASS`
+
+```typescript
+const STRIKETHROUGH_CLASS
+```
+
+### `UNDERLINE_CLASS`
+
+```typescript
+const UNDERLINE_CLASS
+```
+
+### `UNDERLINE_STRIKETHROUGH_CLASS`
+
+```typescript
+const UNDERLINE_STRIKETHROUGH_CLASS
 ```
 
 <!-- auto-api:end -->

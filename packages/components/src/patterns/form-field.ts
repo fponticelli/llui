@@ -150,8 +150,7 @@ function applyIssues(
     if (name) invalidNames.add(name)
   }
   const next: Record<string, FormFieldSlice> = {}
-  for (const name of Object.keys(fields)) {
-    const slice = fields[name]
+  for (const [name, slice] of Object.entries(fields)) {
     next[name] = { ...slice, invalid: invalidNames.has(name), pending: false }
   }
   return next
@@ -170,8 +169,8 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       // resolves. We do not run the promise here — effects-as-data keeps the
       // reducer pure and JSON-serializable.
       const fields: Record<string, FormFieldSlice> = {}
-      for (const name of Object.keys(state.fields)) {
-        fields[name] = { ...state.fields[name], pending: true }
+      for (const [name, slice] of Object.entries(state.fields)) {
+        fields[name] = { ...slice, pending: true }
       }
       return [{ ...state, fields }, []]
     }
@@ -203,8 +202,8 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       return [{ ...state, form: { ...state.form, status: 'error', submitError: msg.error } }, []]
     case 'reset': {
       const fields: Record<string, FormFieldSlice> = {}
-      for (const name of Object.keys(state.fields)) {
-        fields[name] = { ...fieldInit({ id: state.fields[name].id }), pending: false }
+      for (const [name, slice] of Object.entries(state.fields)) {
+        fields[name] = { ...fieldInit({ id: slice.id }), pending: false }
       }
       return [{ form: formInit(), fields, issues: [] }, []]
     }

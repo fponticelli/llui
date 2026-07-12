@@ -52,7 +52,7 @@ describe('connectedRouter.navigate', () => {
         signal: new AbortController().signal,
       })
 
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/article/x')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
       expect(send).toHaveBeenCalledTimes(1)
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
@@ -76,7 +76,7 @@ describe('connectedRouter.navigate', () => {
         signal: new AbortController().signal,
       })
 
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/article/x')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
         route: { page: 'article', slug: 'x' },
@@ -110,6 +110,7 @@ describe('connectedRouter.navigate', () => {
       const routing = connectRouter(makeRouter(), {
         beforeEnter: (to) => {
           if (to.page === 'admin') return { page: 'home' } as const
+          return undefined
         },
       })
       const send = vi.fn()
@@ -122,7 +123,7 @@ describe('connectedRouter.navigate', () => {
       })
 
       // URL goes to /, the redirect target — not /admin
-      expect(pushSpy).toHaveBeenCalledWith(null, '', '/')
+      expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/')
       // Message reflects the redirect target, not the requested route
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',

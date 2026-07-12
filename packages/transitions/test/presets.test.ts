@@ -124,4 +124,32 @@ describe('collapse()', () => {
     void t.leave!([el])
     expect(el.style.width).toBe('0px')
   })
+
+  // ── Finding 2: collapse restores inline styles instead of leaking them ──
+  it('restores inline overflow/transition after enter completes', async () => {
+    const el = makeEl()
+    el.style.overflow = 'scroll'
+    el.style.transition = 'color 1s'
+    const t = collapse({ duration: 100 })
+    t.enter!([el])
+    expect(el.style.overflow).toBe('hidden')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(el.style.overflow).toBe('scroll')
+    expect(el.style.transition).toBe('color 1s')
+  })
+
+  it('a superseding leave rolls back enter and gates enter’s stale restore', async () => {
+    const el = makeEl()
+    el.style.overflow = 'scroll'
+    const t = collapse({ duration: 100 })
+    t.enter!([el])
+    // Interrupt the open with a close on the same element.
+    void t.leave!([el])
+    expect(el.style.overflow).toBe('hidden') // leave's mutation is live
+    // Past enter's duration: enter's delayed restore must NOT fire (it would
+    // wrongly reset overflow to 'scroll' mid-close).
+    await vi.advanceTimersByTimeAsync(300)
+    expect(el.style.overflow).toBe('hidden')
+    expect(el.style.height).toBe('0px')
+  })
 })

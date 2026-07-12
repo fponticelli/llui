@@ -33,7 +33,7 @@ export function handleQueryState(host: QueryStateHost, args: { path: string }): 
  * segment is unescaped before the lookup; the unescape order matters
  * (`~1` first, then `~0`) to avoid double-decoding.
  */
-function resolvePath(root: unknown, path: string): QueryStateResult {
+export function resolvePath(root: unknown, path: string): QueryStateResult {
   if (path === '') return { found: true, value: root }
   if (!path.startsWith('/')) {
     return { found: false, detail: `path must be empty or start with '/' (got: ${quote(path)})` }

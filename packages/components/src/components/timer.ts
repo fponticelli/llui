@@ -9,15 +9,23 @@ import { LocaleContext } from '../locale.js'
  * (or whatever granularity) while the timer is running, and dispatches
  * `start` / `pause` / `reset` in response to user input.
  *
- * Typical display:
- *
- *   const t = timer.connect<State>(s => s.timer, msg => send({type: 'timer', msg}))
- *   div({ ...t.root }, [
- *     div({ ...t.display }, [text(s => timer.formatMs(timer.display(s.timer), 'mm:ss'))]),
- *     button({ ...t.startTrigger }, [text('Start')]),
- *     button({ ...t.pauseTrigger }, [text('Pause')]),
- *     button({ ...t.resetTrigger }, [text('Reset')]),
- *   ])
+ * ```ts
+ * // `div`, `button`, `text` are imports from '@llui/dom'.
+ * view: ({ state, send }) => {
+ *   const timerState = state.at('timer')
+ *   const t = timer.connect(timerState, (msg) => send({ type: 'timer', msg }))
+ *   return [
+ *     div({ ...t.root }, [
+ *       div({ ...t.display }, [
+ *         text(timerState.map((s) => timer.formatMs(timer.display(s), 'mm:ss'))),
+ *       ]),
+ *       button({ ...t.startTrigger }, [text('Start')]),
+ *       button({ ...t.pauseTrigger }, [text('Pause')]),
+ *       button({ ...t.resetTrigger }, [text('Reset')]),
+ *     ]),
+ *   ]
+ * }
+ * ```
  */
 
 export type Direction = 'up' | 'down'

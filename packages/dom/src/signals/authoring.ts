@@ -9,7 +9,7 @@
 // `component` and `mountApp` route to the signal runtime.
 
 import type { Signal, LiveSignal } from './types.js'
-import { isSignalHandle, pathHandle } from './handle.js'
+import { isSignalHandle, rowHandle } from './handle.js'
 import {
   signalText,
   staticText,
@@ -59,7 +59,7 @@ const compiledAway = (name: string): never => {
 
 // ── Text ────────────────────────────────────────────────────────────
 export function text(value: Reactive<string | number>): Mountable {
-  if (isSignalHandle(value)) return signalText(value.produce, value.deps)
+  if (isSignalHandle(value)) return signalText(value.produce, value.deps, value.rowLocal !== true)
   return staticText(value == null ? '' : String(value))
 }
 
@@ -68,7 +68,8 @@ export function text(value: Reactive<string | number>): Mountable {
  * plain string renders once. The HTML is inserted as-is — the caller owns
  * trust/sanitization. */
 export function unsafeHtml(value: Reactive<string>): Mountable {
-  if (isSignalHandle(value)) return signalUnsafeHtml(value.produce, value.deps)
+  if (isSignalHandle(value))
+    return signalUnsafeHtml(value.produce, value.deps, value.rowLocal !== true)
   return signalUnsafeHtml(() => value, [])
 }
 
@@ -153,8 +154,12 @@ function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
   if (props) {
     for (const k of Object.keys(props)) {
       const v = props[k]
-      // a signal handle -> reactive binding; handler/static value pass through
-      lowered[k] = isSignalHandle(v) ? react(v.produce, v.deps) : (v as PropValue)
+      // a signal handle -> reactive binding (carry its row-locality brand so a
+      // component-state prop placed in an each row rebases correctly); handler/
+      // static value pass through
+      lowered[k] = isSignalHandle(v)
+        ? react(v.produce, v.deps, v.rowLocal !== true)
+        : (v as PropValue)
     }
   }
   return lowered
@@ -267,12 +272,13 @@ export function each<T>(
   if (!isSignalHandle(items)) return compiledAway('each')
   const produce = items.produce as (s: unknown) => readonly T[]
   return signalEach(
-    { items: produce, deps: items.deps },
+    { items: produce, deps: items.deps, componentRooted: items.rowLocal !== true },
     opts.key,
     (getCtx) => {
-      // item/index handles read the row's live combined ctx ({ item, state })
-      const itemH = pathHandle<T>(getCtx, 'item')
-      const indexH = pathHandle<number>(getCtx, 'index')
+      // item/index handles read the row's live combined ctx ({ item, state });
+      // `rowHandle` brands them row-local so their reads aren't rebased.
+      const itemH = rowHandle<T>(getCtx, 'item')
+      const indexH = rowHandle<number>(getCtx, 'index')
       return opts.render(itemH, indexH)
     },
     WHOLE_STATE_DEPS,
@@ -303,7 +309,7 @@ export function eachArm<T>(
   // Default to whole-state: this tier exists FOR rows with verbatim residue
   // (structural children / helper calls), whose state reads are unknowable.
   return signalEach(
-    { items: produce, deps: items.deps },
+    { items: produce, deps: items.deps, componentRooted: items.rowLocal !== true },
     key,
     render,
     stateDeps ?? WHOLE_STATE_DEPS,
@@ -326,7 +332,7 @@ export function eachDirect<T>(
   if (!isSignalHandle(items)) return compiledAway('eachDirect')
   const produce = items.produce as (s: unknown) => readonly T[]
   return signalEachDirect(
-    { items: produce, deps: items.deps },
+    { items: produce, deps: items.deps, componentRooted: items.rowLocal !== true },
     key,
     row,
     stateDeps ?? WHOLE_STATE_DEPS,
@@ -342,7 +348,11 @@ export function show<T>(
   // the arm reads component state; the cond handle (path-rooted) IS the narrowed
   // signal — its `.at()` resolves against the same state the arm scope receives.
   const narrowed = cond as Signal<NonNullable<T>>
-  return signalShow({ produce: cond.produce, deps: cond.deps }, () => render(narrowed), orElse)
+  return signalShow(
+    { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
+    () => render(narrowed),
+    orElse,
+  )
 }
 
 /** Discriminated-union render. `discriminant` selects the union's tag field
@@ -369,13 +379,23 @@ export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): M
     const armMap = arms as Record<string, (v: Signal<unknown>) => Renderable>
     const lowered: Record<string, () => Renderable> = {}
     for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
-    return signalBranch({ produce: (s) => discFn(value.produce(s)), deps: value.deps }, lowered)
+    return signalBranch(
+      {
+        produce: (s) => discFn(value.produce(s)),
+        deps: value.deps,
+        componentRooted: value.rowLocal !== true,
+      },
+      lowered,
+    )
   }
   // 2-arg: the value IS the discriminant (string/number)
   const armMap = arg1 as Record<string, () => Renderable>
   const lowered: Record<string, () => Renderable> = {}
   for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!()
-  return signalBranch({ produce: value.produce, deps: value.deps }, lowered)
+  return signalBranch(
+    { produce: value.produce, deps: value.deps, componentRooted: value.rowLocal !== true },
+    lowered,
+  )
 }
 
 // ── Lazy (async component loading) ─────────────────────────────────
@@ -392,11 +412,14 @@ export function lazy<LS = unknown, LM = unknown, LE = unknown>(
 // ── VirtualEach (windowed list) ─────────────────────────────────────
 /** Virtualized keyed list — only the rows in the scroll viewport (+overscan)
  * exist in the DOM. `items` is a signal handle (like `each`); the render callback
- * receives per-row `item` + `index` signal handles. Fixed `itemHeight` only. */
+ * receives per-row `item` + `index` signal handles. `itemHeight` is either a
+ * uniform `number` (O(1) windowing) or a per-item `(item, index) => number` for
+ * variable-height rows (cumulative offsets via a prefix sum, rebuilt when `items`
+ * changes). Heights come from the data — measured/auto heights are not supported. */
 export function virtualEach<T>(opts: {
   items: Signal<readonly T[]>
   key: (item: T) => string | number
-  itemHeight: number
+  itemHeight: number | ((item: T, index: number) => number)
   containerHeight: number
   overscan?: number
   class?: string
@@ -407,14 +430,19 @@ export function virtualEach<T>(opts: {
   return signalVirtualEach<T>({
     items: produce,
     deps: opts.items.deps,
+    // Rows may read component state through the enclosing view's handles (invisible
+    // at runtime), so fire the structural binding on ANY state change — same
+    // whole-state channel `each`/`eachArm` use. The reconcile's state-fanout gating
+    // keeps the per-change cost proportional to the visible rows that changed.
+    extraDeps: WHOLE_STATE_DEPS,
     key: opts.key,
     itemHeight: opts.itemHeight,
     containerHeight: opts.containerHeight,
     overscan: opts.overscan,
     class: opts.class,
     renderRow: (getCtx) => {
-      const itemH = pathHandle<T>(getCtx, 'item')
-      const indexH = pathHandle<number>(getCtx, 'index')
+      const itemH = rowHandle<T>(getCtx, 'item')
+      const indexH = rowHandle<number>(getCtx, 'index')
       return opts.render(itemH, indexH)
     },
   })
@@ -469,7 +497,13 @@ export interface SignalComponentSpec<S, M, E = never> {
   view: (bag: SignalViewBag<S, M>) => Renderable
   onEffect?: (
     effect: E,
-    api: { send: Send<M>; state: Signal<S>; batch: (fn: () => void) => void },
+    api: {
+      send: Send<M>
+      state: Signal<S>
+      batch: (fn: () => void) => void
+      /** This mount's lifecycle {@link AbortSignal} — aborted on dispose. */
+      signal: AbortSignal
+    },
   ) => void | (() => void)
 }
 

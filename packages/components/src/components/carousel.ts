@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext, en } from '../locale.js'
+import { LocaleContext } from '../locale.js'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -281,7 +281,7 @@ export function connect(
   const indicatorLabel = opts.indicatorLabel ?? locale.carousel.indicators
   const nextLabel = opts.nextLabel ?? locale.carousel.next
   const prevLabel = opts.prevLabel ?? locale.carousel.prev
-  const slideLabelFn = opts.slideLabel ?? en.carousel.slide
+  const slideLabelFn = opts.slideLabel ?? locale.carousel.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
 
   return {
@@ -371,7 +371,7 @@ export function connect(
       indicator: {
         type: 'button',
         role: 'tab',
-        'aria-label': en.carousel.goToSlide(index),
+        'aria-label': locale.carousel.goToSlide(index),
         'aria-selected': state.map((s) => s.current === index),
         'aria-controls': slideId(index),
         'data-scope': 'carousel',

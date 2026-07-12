@@ -295,4 +295,26 @@ describe('combobox creatable', () => {
     expect(p.item(CREATE_OPTION_VALUE, 0).item['data-create']).toBe('')
     expect(p.item('apple', 0).item['data-create']).toBe(undefined)
   })
+
+  // Finding 8: the ARIA combobox role belongs on the input only.
+  it('root part carries no combobox role/aria (only the input does)', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
+    expect('role' in p.root).toBe(false)
+    expect('aria-expanded' in p.root).toBe(false)
+    expect('aria-haspopup' in p.root).toBe(false)
+    expect('aria-controls' in p.root).toBe(false)
+    expect(p.input.role).toBe('combobox')
+    expect(p.input['aria-controls']).toBe('cb:content')
+  })
+
+  // Finding 18: a highlight at the already-highlighted index is a no-op that
+  // returns the SAME state reference so the reconciler skips the commit.
+  it('highlight to the current index returns the same state reference', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 1, open: true }
+    const [s1] = update(s0, { type: 'highlight', index: 1 })
+    expect(s1).toBe(s0)
+    const [s2] = update(s0, { type: 'highlight', index: 2 })
+    expect(s2).not.toBe(s0)
+    expect(s2.highlightedIndex).toBe(2)
+  })
 })

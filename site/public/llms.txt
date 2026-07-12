@@ -1,6 +1,6 @@
 # LLui
 
-> A compile-time-optimized web framework built on The Elm Architecture (TEA), designed for LLM-first authoring. No virtual DOM — view() runs once at mount, builds real DOM nodes with reactive bindings. State changes drive a two-phase update with bitmask gating.
+> A compile-time-optimized web framework built on The Elm Architecture (TEA), designed for LLM-first authoring. No virtual DOM — view() runs once at mount, building real DOM nodes with reactive bindings. State changes drive a chunked-mask reconciler: each binding carries a sparse mask of the dependency-path chunks it reads, and only the bindings whose paths actually changed re-commit.
 
 ## Packages
 
@@ -11,7 +11,7 @@
 - @llui/effects — Effect builders: http, cancel, debounce, websocket, retry, upload
 - @llui/router — Routing: structured path matching, guards, history/hash mode
 - @llui/transitions — Animation: transition(), fade, slide, scale, collapse, flip, spring
-- @llui/components — 58 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
+- @llui/components — 66 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools

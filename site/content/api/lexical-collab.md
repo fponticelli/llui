@@ -63,6 +63,33 @@ export interface CollabUser {
 }
 ```
 
+### `YjsCollab`
+
+Live handle returned by {@link yjsCollab}.
+
+```typescript
+export interface YjsCollab {
+  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
+   * Returns a disposer that tears down every listener, the provider connection,
+   * and the cursors overlay. */
+  register: (editor: LexicalEditor) => () => void
+  /** The shared Yjs document. */
+  readonly doc: YDoc
+  /** The network provider. */
+  readonly provider: CollabProvider
+  /** Connect the provider (no-op if `autoConnect` already connected). */
+  connect: () => void
+  /** Disconnect the provider. */
+  disconnect: () => void
+  /** Release resources this handle OWNS. Call AFTER the `register` disposer has
+   * run. If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
+   * provider factory didn't substitute one), the document is `destroy()`d and its
+   * `docMap` entry removed. A caller-supplied `doc` is caller-owned and left
+   * untouched — you destroy it yourself once every binding over it is gone. */
+  destroy: () => void
+}
+```
+
 ### `YjsCollabConfig`
 
 ```typescript
@@ -100,27 +127,6 @@ export interface YjsCollabConfig {
   onSync?: (synced: boolean) => void
   /** Remote peer count changed (distinct awareness states, excluding self). */
   onPeers?: (count: number) => void
-}
-```
-
-### `YjsCollab`
-
-Live handle returned by {@link yjsCollab}.
-
-```typescript
-export interface YjsCollab {
-  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
-   * Returns a disposer that tears down every listener, the provider connection,
-   * and the cursors overlay. */
-  register: (editor: LexicalEditor) => () => void
-  /** The shared Yjs document. */
-  readonly doc: YDoc
-  /** The network provider. */
-  readonly provider: CollabProvider
-  /** Connect the provider (no-op if `autoConnect` already connected). */
-  connect: () => void
-  /** Disconnect the provider. */
-  disconnect: () => void
 }
 ```
 

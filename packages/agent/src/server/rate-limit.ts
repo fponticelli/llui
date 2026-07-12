@@ -32,11 +32,26 @@ export function defaultRateLimiter(
 
   type BucketState = { tokens: number; lastCheck: number }
   const state = new Map<string, BucketState>()
+  let lastSweep = now()
+
+  // Lazy TTL discipline for the bucket map: it otherwise grows one entry
+  // per distinct key ever seen (per token / identity / IP) and never
+  // shrinks. A bucket idle for a full window is fully refilled, so a
+  // fresh `check` would recreate it at max tokens anyway — dropping it
+  // changes nothing but bounds memory. Runs at most once per window.
+  const sweep = (nowMs: number): void => {
+    if (nowMs - lastSweep < windowMs) return
+    lastSweep = nowMs
+    for (const [k, b] of state) {
+      if (nowMs - b.lastCheck >= windowMs) state.delete(k)
+    }
+  }
 
   return {
     async check(key, bucket) {
       const k = `${bucket}:${key}`
       const nowMs = now()
+      sweep(nowMs)
       let b = state.get(k)
       if (!b) {
         b = { tokens: count, lastCheck: nowMs }

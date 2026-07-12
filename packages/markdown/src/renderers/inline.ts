@@ -16,8 +16,9 @@ import type {
   LinkReference,
   ImageReference,
 } from 'mdast'
-import type { NodeRenderer } from '../types.js'
-import { resolveUrl, sanitizeUrl } from '../security.js'
+import type { NodeRenderer, RenderContext } from '../types.js'
+import type { Renderable } from '@llui/dom'
+import { resolveUrl } from '../security.js'
 
 /** Generic element helper for tags @llui/dom doesn't export by name (e.g. `del`). */
 function tag(name: string) {
@@ -55,21 +56,26 @@ const renderImage: NodeRenderer<Image> = (node, ctx) => {
   return [img(props)]
 }
 
-const renderHtml: NodeRenderer<Html> = (node, ctx) => {
-  // Raw HTML is dropped by default (safe for untrusted/LLM content). It
-  // renders only when the consumer supplies a `sanitizeHtml` hook, which
-  // sees the raw string and returns the safe HTML to inject — there is
-  // no unsanitized passthrough.
-  const sanitize = ctx.options.sanitizeHtml
+/** Render one already-joined run of raw HTML (see {@link renderHtmlRun}).
+ * Raw HTML is dropped by default (safe for untrusted/LLM content). It renders
+ * only when the consumer supplies a `sanitizeHtml` hook, which sees the raw
+ * string and returns the safe HTML to inject — there is no unsanitized
+ * passthrough. */
+export function renderHtmlRun(html: string, options: RenderContext['options']): Renderable {
+  const sanitize = options.sanitizeHtml
   if (!sanitize) return []
-  return [unsafeHtml(sanitize(node.value))]
+  return [unsafeHtml(sanitize(html))]
 }
+
+const renderHtml: NodeRenderer<Html> = (node, ctx) => renderHtmlRun(node.value, ctx.options)
 
 const renderLinkReference: NodeRenderer<LinkReference> = (node, ctx) => {
   const def = ctx.definitions.get(node.identifier.toLowerCase())
   const children = ctx.renderChildren(node)
   if (!def) return children // unresolved reference → render its label text
-  const href = sanitizeUrl(def.url, ctx.options.allowedProtocols)
+  // Route through the SAME policy (transformLink → sanitize) as inline links,
+  // so a consumer's transformLink governs reference-style links too.
+  const href = resolveUrl(def.url, node, ctx.options)
   if (href === null) return [span(children)]
   const props: Record<string, string> = { href }
   if (def.title) props.title = def.title
@@ -79,7 +85,7 @@ const renderLinkReference: NodeRenderer<LinkReference> = (node, ctx) => {
 const renderImageReference: NodeRenderer<ImageReference> = (node, ctx) => {
   const def = ctx.definitions.get(node.identifier.toLowerCase())
   if (!def) return [text(node.alt ?? '')]
-  const src = sanitizeUrl(def.url, ctx.options.allowedProtocols)
+  const src = resolveUrl(def.url, node, ctx.options)
   if (src === null) return []
   const props: Record<string, string> = { src, alt: node.alt ?? '' }
   if (def.title) props.title = def.title

@@ -14,13 +14,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js'
-import {
-  listNotes,
-  listSessions,
-  readNote,
-  resolveCurrentSession,
-  serializeNote,
-} from '@llui/vite-plugin/notes'
+import { listNotes, listSessions, readNote, resolveCurrentSession } from '@llui/vite-plugin/notes'
+import { serializeNote } from '@llui/notes-format/note-serialize'
 
 interface RegisterOpts {
   /** Returns the current notesRoot path. Captured as a getter so the

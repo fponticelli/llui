@@ -16,7 +16,7 @@ import {
   buildQueue,
   currentStatusFromHistory,
   type QueueEntry,
-} from '@llui/devmode-annotate/note-format'
+} from '@llui/notes-format/note-format'
 
 import type { NoteStatus, StatusTransition } from './types.js'
 

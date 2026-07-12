@@ -1,3 +1,11 @@
+import { partialMatch } from './internal/json.js'
+
+/**
+ * Assert an effect list matches an expected list of partials. Length must be
+ * equal; each effect at index `i` must partial-match `expected[i]`. See
+ * {@link partialMatch} for the deep/array semantics (nested arrays match by
+ * index with a length check; `undefined` fields are wildcards).
+ */
 export function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void {
   if (actual.length !== expected.length) {
     throw new Error(
@@ -17,21 +25,4 @@ export function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
       )
     }
   }
-}
-
-function partialMatch(actual: unknown, expected: unknown): boolean {
-  if (expected === undefined) return true
-  if (actual === expected) return true
-  if (expected === null || actual === null) return actual === expected
-
-  if (typeof expected === 'object' && typeof actual === 'object') {
-    const expObj = expected as Record<string, unknown>
-    const actObj = actual as Record<string, unknown>
-    for (const key of Object.keys(expObj)) {
-      if (!partialMatch(actObj[key], expObj[key])) return false
-    }
-    return true
-  }
-
-  return false
 }

@@ -31,6 +31,29 @@ pnpm add @llui/lexical @llui/dom lexical
 
 ## Functions
 
+### `$createLLuiDecoratorNode()`
+
+Create a decorator node for `bridgeType` carrying `data`.
+
+```typescript
+function $createLLuiDecoratorNode(bridgeType: string, data: unknown): LLuiDecoratorNode
+```
+
+### `$isLLuiDecoratorNode()`
+
+```typescript
+function $isLLuiDecoratorNode(node: LexicalNode | null | undefined): node is LLuiDecoratorNode
+```
+
+### `$readBaseFormat()`
+
+Read the base format at the current selection. Must run inside a Lexical
+read/update context (it calls `$`-prefixed APIs).
+
+```typescript
+function $readBaseFormat(): BaseFormat
+```
+
 ### `decoratorBridge()`
 
 Author-facing constructor for a {@link DecoratorBridge}. Preserves the
@@ -46,57 +69,12 @@ function decoratorBridge<Data, S, M extends { type: string }, E extends { type: 
 ): DecoratorBridge
 ```
 
-### `parseCombo()`
-
-Parse a chord like `Mod-Shift-7` into its parts. Case-insensitive on
-modifiers; the final segment is the key (lower-cased for letters).
-
-```typescript
-function parseCombo(combo: string): ParsedCombo
-```
-
-### `matchesCombo()`
-
-Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
-Ctrl elsewhere; all declared modifiers must match exactly (no extras).
-
-```typescript
-function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean
-```
-
 ### `isMacPlatform()`
 
 Best-effort macOS detection (browser only; defaults to false off-DOM).
 
 ```typescript
 function isMacPlatform(): boolean
-```
-
-### `registerShortcuts()`
-
-Register a set of shortcuts on the editor through one KEY_DOWN handler.
-Returns a disposer. The first matching shortcut whose `run` returns `true`
-wins and the event is consumed.
-
-```typescript
-function registerShortcuts(editor: LexicalEditor, shortcuts: readonly ShortcutSpec[]): () => void
-```
-
-### `$readBaseFormat()`
-
-Read the base format at the current selection. Must run inside a Lexical
-read/update context (it calls `$`-prefixed APIs).
-
-```typescript
-function $readBaseFormat(): BaseFormat
-```
-
-### `readBaseFormat()`
-
-Convenience wrapper that opens a read context on `editor`.
-
-```typescript
-function readBaseFormat(editor: LexicalEditor): BaseFormat
 ```
 
 ### `lexicalForeign()`
@@ -108,18 +86,31 @@ array; Lexical is created on mount and destroyed on the component's dispose.
 function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>): Mountable
 ```
 
-### `$createLLuiDecoratorNode()`
+### `matchesCombo()`
 
-Create a decorator node for `bridgeType` carrying `data`.
+Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
+Ctrl elsewhere; all four modifier keys must match the resolved requirement
+exactly (no extras held).
 
 ```typescript
-function $createLLuiDecoratorNode(bridgeType: string, data: unknown): LLuiDecoratorNode
+function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean
 ```
 
-### `$isLLuiDecoratorNode()`
+### `parseCombo()`
+
+Parse a chord like `Mod-Shift-7` into its parts. Case-insensitive on
+modifiers; the final segment is the key (lower-cased for letters).
 
 ```typescript
-function $isLLuiDecoratorNode(node: LexicalNode | null | undefined): node is LLuiDecoratorNode
+function parseCombo(combo: string): ParsedCombo
+```
+
+### `readBaseFormat()`
+
+Convenience wrapper that opens a read context on `editor`.
+
+```typescript
+function readBaseFormat(editor: LexicalEditor): BaseFormat
 ```
 
 ### `registerDecoratorBridges()`
@@ -136,7 +127,23 @@ function registerDecoratorBridges(
 ): () => void
 ```
 
+### `registerShortcuts()`
+
+Register a set of shortcuts on the editor through one KEY_DOWN handler.
+Returns a disposer. The first matching shortcut whose `run` returns `true`
+wins and the event is consumed.
+
+```typescript
+function registerShortcuts(editor: LexicalEditor, shortcuts: readonly ShortcutSpec[]): () => void
+```
+
 ## Types
+
+### `Alignment`
+
+```typescript
+export type Alignment = 'left' | 'center' | 'right' | 'justify' | 'start' | 'end' | null
+```
 
 ### `BaseBlockType`
 
@@ -156,12 +163,6 @@ export type BaseBlockType =
   | 'other'
 ```
 
-### `Alignment`
-
-```typescript
-export type Alignment = 'left' | 'center' | 'right' | 'justify' | 'start' | 'end' | null
-```
-
 ### `SerializedLLuiDecoratorNode`
 
 ```typescript
@@ -173,30 +174,23 @@ export type SerializedLLuiDecoratorNode = Spread<
 
 ## Interfaces
 
-### `ShortcutSpec`
+### `BaseFormat`
 
-A keyboard shortcut bound to an editor action.
-`combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
-elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
-when it handled the event (which stops propagation / prevents default).
+The generic format surface at the current selection.
 
 ```typescript
-export interface ShortcutSpec {
-  combo: string
-  run: (editor: LexicalEditor) => boolean
-}
-```
-
-### `PluginContext`
-
-Context handed to `plugin.register` so a plugin can talk back to the host
-(e.g. open a slash menu) without owning the host's `send`. `Emit` is the
-host message type; `@llui/lexical` leaves it `unknown`, hosts narrow it.
-
-```typescript
-export interface PluginContext<Emit = unknown> {
-  /** Emit a host message into the embedding component's update loop. */
-  emit: (msg: Emit) => void
+export interface BaseFormat {
+  bold: boolean
+  italic: boolean
+  strikethrough: boolean
+  underline: boolean
+  code: boolean
+  blockType: BaseBlockType
+  alignment: Alignment
+  /** The resolved top-level block element key (lets the markdown layer refine). */
+  blockKey: string | null
+  hasSelection: boolean
+  isCollapsed: boolean
 }
 ```
 
@@ -227,71 +221,6 @@ export interface DecoratorBridge {
   type: string
   /** Mount the sub-view for a node's (deserialized) data; returns a disposer. */
   mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => () => void
-}
-```
-
-### `LexicalPlugin`
-
-A composable unit of editor behaviour.
-
-```typescript
-export interface LexicalPlugin<Emit = unknown> {
-  /** Stable identifier (also used for de-duplication and overrides). */
-  name: string
-  /** Lexical node classes registered on the editor config. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
-  /** Imperative registration (commands, listeners). Returns a disposer. */
-  register?: (editor: LexicalEditor, ctx: PluginContext<Emit>) => () => void
-  /** Keyboard shortcuts wired through a single KEY_DOWN command. */
-  shortcuts?: readonly ShortcutSpec[]
-  /** Decorator bridges this plugin owns. */
-  decorators?: readonly DecoratorBridge[]
-}
-```
-
-### `ParsedCombo`
-
-A parsed chord. `mod` means ⌘ on macOS / Ctrl elsewhere.
-
-```typescript
-export interface ParsedCombo {
-  key: string
-  mod: boolean
-  shift: boolean
-  alt: boolean
-  ctrl: boolean
-}
-```
-
-### `BaseFormat`
-
-The generic format surface at the current selection.
-
-```typescript
-export interface BaseFormat {
-  bold: boolean
-  italic: boolean
-  strikethrough: boolean
-  underline: boolean
-  code: boolean
-  blockType: BaseBlockType
-  alignment: Alignment
-  /** The resolved top-level block element key (lets the markdown layer refine). */
-  blockKey: string | null
-  hasSelection: boolean
-  isCollapsed: boolean
-}
-```
-
-### `SelectionContext`
-
-Context handed to the selection callback on every commit.
-
-```typescript
-export interface SelectionContext {
-  editor: LexicalEditor
-  canUndo: boolean
-  canRedo: boolean
 }
 ```
 
@@ -349,6 +278,78 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
   register?: (editor: LexicalEditor) => () => void
   onError?: (error: Error) => void
+}
+```
+
+### `LexicalPlugin`
+
+A composable unit of editor behaviour.
+
+```typescript
+export interface LexicalPlugin<Emit = unknown> {
+  /** Stable identifier (also used for de-duplication and overrides). */
+  name: string
+  /** Lexical node classes registered on the editor config. */
+  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  /** Imperative registration (commands, listeners). Returns a disposer. */
+  register?: (editor: LexicalEditor, ctx: PluginContext<Emit>) => () => void
+  /** Keyboard shortcuts wired through a single KEY_DOWN command. */
+  shortcuts?: readonly ShortcutSpec[]
+  /** Decorator bridges this plugin owns. */
+  decorators?: readonly DecoratorBridge[]
+}
+```
+
+### `ParsedCombo`
+
+A parsed chord. `mod` means ⌘ on macOS / Ctrl elsewhere.
+
+```typescript
+export interface ParsedCombo {
+  key: string
+  mod: boolean
+  shift: boolean
+  alt: boolean
+  ctrl: boolean
+}
+```
+
+### `PluginContext`
+
+Context handed to `plugin.register` so a plugin can talk back to the host
+(e.g. open a slash menu) without owning the host's `send`. `Emit` is the
+host message type; `@llui/lexical` leaves it `unknown`, hosts narrow it.
+
+```typescript
+export interface PluginContext<Emit = unknown> {
+  /** Emit a host message into the embedding component's update loop. */
+  emit: (msg: Emit) => void
+}
+```
+
+### `SelectionContext`
+
+Context handed to the selection callback on every commit.
+
+```typescript
+export interface SelectionContext {
+  editor: LexicalEditor
+  canUndo: boolean
+  canRedo: boolean
+}
+```
+
+### `ShortcutSpec`
+
+A keyboard shortcut bound to an editor action.
+`combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
+elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
+when it handled the event (which stops propagation / prevents default).
+
+```typescript
+export interface ShortcutSpec {
+  combo: string
+  run: (editor: LexicalEditor) => boolean
 }
 ```
 

@@ -1,6 +1,9 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
+import { pushDismissable } from '../utils/dismissable.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -80,8 +83,8 @@ export function isPresent(state: HoverCardState): boolean {
 export interface HoverCardParts {
   trigger: {
     id: string
-    'aria-haspopup': 'dialog'
     'aria-controls': string
+    'aria-expanded': Signal<boolean>
     'data-state': Signal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'trigger'
@@ -96,7 +99,6 @@ export interface HoverCardParts {
     style: string
   }
   content: {
-    role: 'dialog'
     id: string
     'data-state': Signal<PresenceStatus>
     'data-scope': 'hover-card'
@@ -145,27 +147,39 @@ export function connect(
     }
   }
 
+  // A hover-intent timer must not act after the component unmounts (its trigger
+  // leaves the DOM), or it dispatches to a disposed handle. Capture the trigger
+  // when the timer is scheduled; if it was live then but is detached when the
+  // timer fires, the component unmounted — drop the message. (When there is no
+  // trigger element at all, e.g. a unit test, no guard is applied.)
+  const detached = (el: Element | null): boolean => el !== null && !el.isConnected
+
   const scheduleOpen = (): void => {
     clearTimers()
+    const trigger = getTrigger()
     openTimer = setTimeout(() => {
       openTimer = null
-      send({ type: 'show' })
+      if (!detached(trigger)) send({ type: 'show' })
     }, openDelay)
   }
 
   const scheduleClose = (): void => {
     clearTimers()
+    const trigger = getTrigger()
     closeTimer = setTimeout(() => {
       closeTimer = null
-      send({ type: 'hide' })
+      if (!detached(trigger)) send({ type: 'hide' })
     }, closeDelay)
   }
+
+  const getTrigger = (): Element | null =>
+    typeof document === 'undefined' ? null : document.getElementById(triggerId)
 
   return {
     trigger: {
       id: triggerId,
-      'aria-haspopup': 'dialog',
       'aria-controls': contentId,
+      'aria-expanded': state.map((s) => s.open),
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'hover-card',
       'data-part': 'trigger',
@@ -180,7 +194,9 @@ export function connect(
       style: 'position:absolute;top:0;left:0;',
     },
     content: {
-      role: 'dialog',
+      // No role: a hover-card is supplementary, non-modal, non-focusable
+      // content surfaced on hover/focus. `role="dialog"` wrongly implied a modal
+      // dialog (with the focus-management contract AT expects of one).
       id: contentId,
       'data-state': state.map((s) => s.status),
       'data-scope': 'hover-card',
@@ -211,13 +227,12 @@ export interface OverlayOptions {
   offset?: number
   flip?: boolean
   shift?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
   arrowSelector?: string
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom'
   const offset = opts.offset ?? 8
   const flip = opts.flip !== false
@@ -231,33 +246,45 @@ export function overlay(opts: OverlayOptions): Mountable {
   return show(
     opts.state.map((s) => isMounted(s)),
     () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
+          const dismissable = onMount((root) => {
+            const contentEl = getElementByIdInScope(root, contentId)
+            const triggerEl = getElementByIdInScope(root, triggerId)
             if (!contentEl || !triggerEl) return
             const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
             const floatingEl = positioner ?? contentEl
             const arrow = opts.arrowSelector
               ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
               : null
-            return attachFloating({
-              anchor: triggerEl,
-              floating: floatingEl,
-              placement,
-              offset,
-              flip,
-              shift,
-              arrow: arrow ?? undefined,
-            })
+            const cleanups: Array<() => void> = []
+            cleanups.push(
+              attachFloating({
+                anchor: triggerEl,
+                floating: floatingEl,
+                placement,
+                offset,
+                flip,
+                shift,
+                arrow: arrow ?? undefined,
+              }),
+            )
+            // Escape dismisses the card (WAI-ARIA). Outside-click dismissal is
+            // disabled — a hover-card closes on pointer-leave, not on click.
+            cleanups.push(
+              pushDismissable({
+                element: contentEl,
+                ignore: () => [triggerEl],
+                disableOutside: true,
+                onDismiss: () => opts.send({ type: 'hide' }),
+              }),
+            )
+            return () => {
+              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+            }
           })
           return [dismissable, div(parts.positioner, opts.content())]
-        }, targetEl),
+        }, host),
       ]
     },
   )

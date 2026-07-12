@@ -6,12 +6,12 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./connect": {
-      "import": "./dist/connect.js",
-      "types": "./dist/connect.d.ts"
+      "types": "./dist/connect.d.ts",
+      "import": "./dist/connect.js"
     }
   },
   "scripts": {
@@ -50,6 +50,10 @@
   },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/router#readme",
   "files": [
-    "dist"
-  ]
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

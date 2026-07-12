@@ -99,20 +99,16 @@ Each check prints `✓` or `✗` with a one-line detail. Exit code is 0 when eve
 | `export_trace`        | Export message trace for `replayTrace` |
 | `replay_trace`        | Replay a trace and compare states      |
 
-### Bindings and DOM
-
-| Tool             | Description                                    |
-| ---------------- | ---------------------------------------------- |
-| `get_bindings`   | List all active bindings and their masks       |
-| `why_did_update` | Explain which state change triggered a binding |
-| `trace_element`  | Trace a DOM element back to its binding        |
-
-### Bitmask Debugging
-
-| Tool          | Description                            |
-| ------------- | -------------------------------------- |
-| `decode_mask` | Decode a bitmask into state path names |
-| `mask_legend` | Show the full bit-to-path mapping      |
+> **Runtime surface.** The signal runtime's debug API (`installSignalDebug`)
+> implements the state / message / schema / snapshot methods above. The legacy
+> per-binding introspection tools (get_bindings, why_did_update, decode_mask,
+> mask_legend, scope_tree, force_rerender, each_diff, inspect_element,
+> get_rendered_html, dispatch_event, dom_diff, get_focus, mock_effect,
+> step_back, coverage, …) and the two-word-bitmask model they described belong
+> to the deleted legacy runtime and are **not** registered — no runtime can
+> serve them. Reactivity is a chunked mask with no per-binding legend. For
+> compile-time rule checks use `llui_lint` (single file) or
+> `llui_compiler_diagnostics` (a directory).
 
 ### Snapshots
 
@@ -128,42 +124,10 @@ Each check prints `✓` or `✗` with a one-line detail. Exit code is 0 when eve
 | `list_components`  | List all mounted component instances       |
 | `select_component` | Select a component for subsequent commands |
 
-### View and DOM
-
-| Tool                | Description                                                              |
-| ------------------- | ------------------------------------------------------------------------ |
-| `inspect_element`   | Rich report: tag, attrs, classes, data-\*, text, computed, box, bindings |
-| `get_rendered_html` | outerHTML of a selector (default = mount root), truncatable              |
-| `dom_diff`          | Compare expected HTML against rendered HTML                              |
-| `dispatch_event`    | Synthesize a browser event; returns Msgs produced + resulting state      |
-| `get_focus`         | Active element info: selector, tag, selection range                      |
-
-### Bindings and Scope
-
-| Tool                 | Description                                                    |
-| -------------------- | -------------------------------------------------------------- |
-| `force_rerender`     | Re-evaluate all bindings; returns indices that changed         |
-| `each_diff`          | Per-each-site add/remove/move/reuse per update                 |
-| `scope_tree`         | Scope hierarchy with kind (root/show/each/branch/child/portal) |
-| `disposer_log`       | Recent scope disposals with cause                              |
-| `list_dead_bindings` | Bindings that are dead or have never changed value             |
-| `binding_graph`      | state path -> binding indices (inverts compiler mask legend)   |
-
-### Effects
-
-| Tool              | Description                                                            |
-| ----------------- | ---------------------------------------------------------------------- |
-| `pending_effects` | Queued and in-flight effects                                           |
-| `effect_timeline` | Phased log: dispatched -> in-flight -> resolved/cancelled              |
-| `mock_effect`     | Register match->response mock; next matching effect resolves with mock |
-| `resolve_effect`  | Manually resolve a specific pending effect                             |
-
-### Time Travel and Utilities
+### Utilities
 
 | Tool             | Description                                                    |
 | ---------------- | -------------------------------------------------------------- |
-| `step_back`      | Rewind N messages by replaying from init (pure mode default)   |
-| `coverage`       | Per-Msg variant fire counts + list of never-fired variants     |
 | `diff_state`     | Structured JSON diff between two state values                  |
 | `assert`         | Evaluate eq/neq/exists/gt/lt/in against a state path           |
 | `search_history` | Filter history by type, statePath change, effectType, or range |

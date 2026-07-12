@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { firstEnabled, nextEnabled } from '../utils/roving.js'
+import { firstEnabled, nextEnabled, focusRovingItem } from '../utils/roving.js'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces
@@ -197,14 +197,22 @@ export function connect(
           const key = flipArrow(e.key, state.peek().dir)
           const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
           const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
+          // After a roving state move, move real DOM focus to match — arrow
+          // keys are otherwise silent for assistive tech.
+          const moveFocus = (): void => {
+            const focused = state.peek()?.focused
+            if (focused != null) focusRovingItem(target, 'toggle-group', focused)
+          }
           switch (key) {
             case nextKey:
               e.preventDefault()
               send({ type: 'focusNext', from: value })
+              moveFocus()
               return
             case prevKey:
               e.preventDefault()
               send({ type: 'focusPrev', from: value })
+              moveFocus()
               return
             case ' ':
             case 'Enter':

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { routeTransition } from '../src/route-transition'
 import { fade } from '../src/presets'
+import { flip } from '../src/flip'
 
 function makeEl(): HTMLElement {
   const el = document.createElement('div')
@@ -69,6 +70,17 @@ describe('routeTransition()', () => {
     const preset = fade({ duration: 150 })
     const t = routeTransition(preset)
     expect(t).toBe(preset)
+  })
+
+  // ── Finding 5: an onTransition-only bundle must pass through, not be dropped ──
+  it('passes through an onTransition-only bundle', () => {
+    const bundle = { onTransition: () => {} }
+    expect(routeTransition(bundle)).toBe(bundle)
+  })
+
+  it('passes through a flip() bundle unchanged', () => {
+    const f = flip()
+    expect(routeTransition(f)).toBe(f)
   })
 
   it('applies custom easing', () => {

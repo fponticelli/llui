@@ -96,4 +96,25 @@ describe('InMemoryTokenStore', () => {
     await store.revoke('missing')
     expect(await store.findByTid('missing')).toBeNull()
   })
+
+  it('sweepExpired evicts records past expiry + retention (and drops the hash index)', async () => {
+    await store.create(baseRecord({ tid: 'live', expiresAt: 10_000 }))
+    await store.create(baseRecord({ tid: 'lapsed', expiresAt: 1_000 }))
+
+    // now=5_000, retention=1_000 → 'lapsed' (1000+1000 <= 5000) is evicted,
+    // 'live' (10000+1000 > 5000) is kept.
+    const evicted = await store.sweepExpired(5_000, 1_000)
+    expect(evicted).toBe(1)
+    expect(await store.findByTid('lapsed')).toBeNull()
+    expect(await store.findByTokenHash('hash-lapsed')).toBeNull()
+    expect(await store.findByTid('live')).not.toBeNull()
+  })
+
+  it('sweepExpired keeps a just-expired record inside the retention window', async () => {
+    await store.create(baseRecord({ tid: 'recent', expiresAt: 4_500 }))
+    // now=5_000, retention=1_000 → 4500+1000=5500 > 5000, still retained.
+    const evicted = await store.sweepExpired(5_000, 1_000)
+    expect(evicted).toBe(0)
+    expect(await store.findByTid('recent')).not.toBeNull()
+  })
 })

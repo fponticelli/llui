@@ -1,7 +1,8 @@
-import { tagSend } from '@llui/dom'
+import { tagSend, useContext } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { en } from '../locale.js'
+import { focusRovingItem } from '../utils/roving.js'
+import { LocaleContext } from '../locale.js'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.
@@ -154,8 +155,21 @@ export function connect(
   opts: ConnectOptions,
 ): PinInputParts {
   const labelId = `${opts.id}:label`
-  const inputLabel = opts.inputLabel ?? en.pinInput.input
+  const locale = useContext(LocaleContext)
+  const inputLabel = opts.inputLabel ?? locale.pinInput.input
   const validate = opts.validate
+
+  // Move real DOM focus to the field the reducer just made active. Roving
+  // focus lives in `focusedIndex`; without this, auto-advance and arrow keys
+  // never move the caret (silent for AT, and typing stalls on one field).
+  const moveFocus = (origin: Element | null): void => {
+    const s = state.peek()
+    if (s == null) return
+    focusRovingItem(origin, 'pin-input', String(s.focusedIndex), {
+      itemPart: 'input',
+      attr: 'data-index',
+    })
+  }
 
   return {
     root: {
@@ -198,17 +212,23 @@ export function connect(
           if (errors && errors.length > 0) return
         }
         send({ type: 'setValue', index, value })
+        // Auto-advance: move DOM focus to the field the reducer advanced to.
+        moveFocus(e.currentTarget as Element | null)
       }),
       onKeyDown: tagSend(send, ['backspace', 'focus'], (e) => {
+        const origin = e.currentTarget as Element | null
         const key = flipArrow(e.key, e.currentTarget as Element)
         if (key === 'Backspace') {
           send({ type: 'backspace', index })
+          moveFocus(origin)
         } else if (key === 'ArrowLeft') {
           e.preventDefault()
           send({ type: 'focus', index: index - 1 })
+          moveFocus(origin)
         } else if (key === 'ArrowRight') {
           e.preventDefault()
           send({ type: 'focus', index: index + 1 })
+          moveFocus(origin)
         }
       }),
       onFocus: tagSend(send, ['focus'], () => send({ type: 'focus', index })),

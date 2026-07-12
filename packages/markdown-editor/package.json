@@ -6,20 +6,20 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./plugins/core": {
-      "import": "./dist/plugins/core.js",
-      "types": "./dist/plugins/core.d.ts"
+      "types": "./dist/plugins/core.d.ts",
+      "import": "./dist/plugins/core.js"
     },
     "./plugins/callout": {
-      "import": "./dist/plugins/callout.js",
-      "types": "./dist/plugins/callout.d.ts"
+      "types": "./dist/plugins/callout.d.ts",
+      "import": "./dist/plugins/callout.js"
     },
     "./surfaces/toolbar": {
-      "import": "./dist/surfaces/toolbar.js",
-      "types": "./dist/surfaces/toolbar.d.ts"
+      "types": "./dist/surfaces/toolbar.d.ts",
+      "import": "./dist/surfaces/toolbar.js"
     },
     "./styles/editor.css": "./dist/styles/editor.css"
   },
@@ -85,6 +85,10 @@
   },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/markdown-editor#readme",
   "files": [
-    "dist"
-  ]
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

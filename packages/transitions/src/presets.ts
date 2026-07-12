@@ -2,6 +2,7 @@ import type { TransitionOptions } from '@llui/dom'
 import type { Styles } from './types.js'
 import { transition } from './transition.js'
 import { asElements, forceReflow } from './style-utils.js'
+import { waitForEnd, createRunScope } from './anim.js'
 
 export interface FadeOptions {
   duration?: number
@@ -140,6 +141,13 @@ export interface CollapseOptions {
  * Unlike CSS-only presets, `collapse()` measures the element's natural size
  * at runtime — the animation works regardless of content size. Only the
  * first element in each `nodes` group is animated.
+ *
+ * Because it mutates `overflow` / `height` / `transition` inline, collapse
+ * registers a per-element restore that runs the moment a later phase supersedes
+ * it — so an interrupted open/close never leaves stale inline styles behind.
+ *
+ * Like the other presets, these hooks are consumed at the route/container seam
+ * (`fromTransition`), not by the not-yet-wired structural primitives.
  */
 export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const axis = opts.axis ?? 'y'
@@ -147,20 +155,34 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const easing = opts.easing ?? 'ease-out'
   const appear = opts.appear !== false
   const sizeProp = axis === 'y' ? 'height' : 'width'
+  const runs = createRunScope()
+
+  // Snapshot the element's clean baseline (after rolling back any in-flight
+  // run) and return a restore closure for it.
+  const snapshotRestore = (el: HTMLElement): (() => void) => {
+    runs.supersede(el)
+    const style = el.style
+    const prevOverflow = style.overflow
+    const prevSize = style[sizeProp]
+    const prevTransition = style.transition
+    return () => {
+      style.overflow = prevOverflow
+      style[sizeProp] = prevSize
+      style.transition = prevTransition
+    }
+  }
 
   const runEnter = (nodes: Node[]): Promise<void> => {
     const els = asElements(nodes)
     if (els.length === 0) return Promise.resolve()
     const el = els[0]!
 
+    const restore = snapshotRestore(el)
+    const token = runs.register(el, restore)
+
     // Measure natural size with content visible.
     const naturalSize = axis === 'y' ? el.scrollHeight : el.scrollWidth
     const style = el.style
-
-    // Save values to restore.
-    const prevOverflow = style.overflow
-    const prevSize = style[sizeProp]
-    const prevTransition = style.transition
 
     style.overflow = 'hidden'
     style[sizeProp] = '0px'
@@ -168,10 +190,10 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     forceReflow(el)
     style[sizeProp] = `${naturalSize}px`
 
-    return wait(duration).then(() => {
-      style.overflow = prevOverflow
-      style[sizeProp] = prevSize
-      style.transition = prevTransition
+    return waitForEnd(el, duration).then(() => {
+      if (!runs.isCurrent(el, token)) return
+      restore()
+      runs.end(el, token)
     })
   }
 
@@ -180,6 +202,9 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     if (els.length === 0) return Promise.resolve()
     const el = els[0]!
 
+    const restore = snapshotRestore(el)
+    const token = runs.register(el, restore)
+
     const naturalSize = axis === 'y' ? el.scrollHeight : el.scrollWidth
     const style = el.style
     style.overflow = 'hidden'
@@ -188,7 +213,11 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     forceReflow(el)
     style[sizeProp] = '0px'
 
-    return wait(duration)
+    return waitForEnd(el, duration).then(() => {
+      // Leave finished — the runtime removes the element next, so keep the
+      // collapsed state; just release the token if still ours.
+      runs.end(el, token)
+    })
   }
 
   const out: TransitionOptions = { leave: runLeave }
@@ -198,9 +227,4 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     }
   }
   return out
-}
-
-function wait(ms: number): Promise<void> {
-  if (ms <= 0) return Promise.resolve()
-  return new Promise((resolve) => setTimeout(resolve, ms + 16))
 }

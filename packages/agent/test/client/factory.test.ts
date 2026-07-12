@@ -167,6 +167,8 @@ describe('createAgentClient', () => {
     expect(hello.t).toBe('hello')
     expect(hello.appName).toBe('test-app')
     expect(hello.appVersion).toBe('1.0.0')
+    // LAP version negotiation: the client advertises its wire version.
+    expect(hello.lapVersion).toBe(1)
   })
 
   it('AgentOpenWS effect dispatches WsOpened msg via handle.send on open event', async () => {
@@ -203,6 +205,46 @@ describe('createAgentClient', () => {
     expect(handle.send).toHaveBeenCalledWith({ type: 'AgentMsg', inner: { type: 'WsClosed' } })
   })
 
+  it('ignores the close of a socket superseded by a reconnect (no spurious WsClosed)', async () => {
+    // Finding 7: opening a second WS closes the first; the first socket's
+    // close event must NOT dispatch WsClosed (which would kick off a
+    // phantom reconnect against the live socket).
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok1' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    const first = lastFakeWs!
+
+    // Second open supersedes the first (openWs calls first.close()).
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok2' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    expect(first.closed).toBe(true)
+
+    // The superseded socket's close must NOT have produced a WsClosed msg.
+    const wsClosedCalls = handle.send.mock.calls.filter((c) => {
+      const m = c[0] as { inner?: { type?: string } }
+      return m?.inner?.type === 'WsClosed'
+    })
+    expect(wsClosedCalls).toHaveLength(0)
+
+    // The LIVE (second) socket closing DOES dispatch WsClosed.
+    lastFakeWs!.emit('close')
+    const afterLive = handle.send.mock.calls.filter((c) => {
+      const m = c[0] as { inner?: { type?: string } }
+      return m?.inner?.type === 'WsClosed'
+    })
+    expect(afterLive).toHaveLength(1)
+
+    client.stop()
+  })
+
   it('AgentForwardMsg effect dispatches payload via handle.send', async () => {
     const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
     const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
@@ -213,9 +255,7 @@ describe('createAgentClient', () => {
     expect(handle.send).toHaveBeenCalledWith(payload)
   })
 
-  it('start() polls confirm state; when entry transitions approved → emits confirm-resolved', async () => {
-    vi.useFakeTimers()
-
+  it('detects an approved confirm on the state subscription (no interval) → emits confirm-resolved', async () => {
     const approvedEntry: ConfirmEntry = {
       id: 'conf-1',
       variant: 'Delete',
@@ -241,17 +281,16 @@ describe('createAgentClient', () => {
 
     client.start()
 
-    // Advance time before entry appears — nothing should happen
-    vi.advanceTimersByTime(200)
+    // A commit with no resolved confirm emits nothing.
+    handle.setState({ connect: {}, confirm: { pending: [] } })
     expect(lastFakeWs!.sent.filter((s) => s.includes('confirm-resolved'))).toHaveLength(0)
 
-    // Now transition state to have an approved entry
+    // The confirm transitions to approved; the next commit (Approve is
+    // itself a state-changing dispatch) drives detection via the
+    // subscription — no 200ms poll involved.
     confirmState = { pending: [approvedEntry] }
+    handle.setState({ connect: {}, confirm: { pending: [approvedEntry] } })
 
-    // Advance timer to trigger poll
-    vi.advanceTimersByTime(200)
-
-    // confirm-resolved should now have been sent (after hello)
     const confirmFrames = lastFakeWs!.sent.filter((s) => {
       try {
         return JSON.parse(s).t === 'confirm-resolved'
@@ -264,11 +303,14 @@ describe('createAgentClient', () => {
     expect(frame.confirmId).toBe('conf-1')
     expect(frame.outcome).toBe('confirmed')
 
+    // A further commit does NOT re-emit for the same resolved entry.
+    handle.setState({ connect: {}, confirm: { pending: [approvedEntry] } })
+    expect(lastFakeWs!.sent.filter((s) => s.includes('confirm-resolved'))).toHaveLength(1)
+
     client.stop()
-    vi.useRealTimers()
   })
 
-  it('start() subscribes to handle and emits state-update frames when state changes', async () => {
+  it('emits a state-update ONLY for an armed watch, and NOT for an idle session', async () => {
     const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
     const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
 
@@ -282,24 +324,59 @@ describe('createAgentClient', () => {
     lastFakeWs!.emit('open')
 
     client.start()
-
-    // Clear frames sent so far (hello)
     lastFakeWs!.sent.length = 0
 
-    // Trigger a state change via handle.setState
-    handle.setState({ connect: {}, confirm: { pending: [] } })
+    // No watch armed → a state change ships nothing (idle session costs 0).
+    handle.setState({ connect: { a: 1 }, confirm: { pending: [] } })
+    expect(lastFakeWs!.sent.filter((s) => JSON.parse(s).t === 'state-update')).toHaveLength(0)
 
-    // Should emit a state-update frame
-    const stateFrames = lastFakeWs!.sent.filter((s) => {
-      try {
-        return JSON.parse(s).t === 'state-update'
-      } catch {
-        return false
-      }
-    })
+    // Server arms a whole-state watch.
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'watch', id: 'w1' }))
+
+    // A genuine change now emits exactly one state-update for that watch.
+    handle.setState({ connect: { a: 2 }, confirm: { pending: [] } })
+    const stateFrames = lastFakeWs!.sent
+      .map((s) => JSON.parse(s))
+      .filter((f) => f.t === 'state-update')
     expect(stateFrames).toHaveLength(1)
-    const frame = JSON.parse(stateFrames[0]!)
-    expect(frame.path).toBe('/')
+    expect(stateFrames[0].id).toBe('w1')
+
+    // Disarm — subsequent changes ship nothing again.
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'unwatch', id: 'w1' }))
+    handle.setState({ connect: { a: 3 }, confirm: { pending: [] } })
+    expect(
+      lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update'),
+    ).toHaveLength(1)
+
+    client.stop()
+  })
+
+  it('a path-scoped watch fires only when the watched sub-path changes', async () => {
+    const handle = makeHandle({ connect: { count: 0 }, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    client.start()
+    lastFakeWs!.sent.length = 0
+
+    // Watch /connect/count specifically.
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'watch', id: 'wc', path: '/connect/count' }))
+
+    // A change to an UNwatched field emits nothing.
+    handle.setState({ connect: { count: 0, other: 1 }, confirm: { pending: [] } })
+    expect(
+      lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update'),
+    ).toHaveLength(0)
+
+    // A change to the watched field fires.
+    handle.setState({ connect: { count: 5, other: 1 }, confirm: { pending: [] } })
+    const frames = lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update')
+    expect(frames).toHaveLength(1)
+    expect(frames[0].id).toBe('wc')
 
     client.stop()
   })
@@ -351,6 +428,9 @@ describe('createAgentClient', () => {
     client.start()
     lastFakeWs!.sent.length = 0
 
+    // Arm a whole-state watch so the change is broadcast.
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'watch', id: 'w1' }))
+
     handle.setState({
       connect: {},
       confirm: { pending: [] },
@@ -361,10 +441,94 @@ describe('createAgentClient', () => {
       .map((s) => JSON.parse(s))
       .find((f) => f.t === 'state-update')
     expect(stateFrame).toBeDefined()
+    // Codec encoding is applied at the wire boundary (encodeWire), not at
+    // getState — but the emitted frame still carries the tagged form.
     expect(stateFrame.stateAfter.when).toEqual({
       __codec: 'iso-date',
       wire: '2026-04-26T12:34:56.000Z',
     })
+
+    client.stop()
+  })
+
+  it('app callbacks (routeGate predicate) receive RAW unencoded state — a Date stays a Date', async () => {
+    // Finding 9: getState feeds app callbacks / pointer resolution the
+    // redacted-but-UNENCODED state, so a @routeGated predicate touching a
+    // Date field sees a real Date (not its wire-tagged form, which would
+    // fail-closed). Codec encoding happens only at the frame boundary.
+    type S = { connect: unknown; confirm: AgentConfirmState; publishAt: Date }
+    let state: S = {
+      connect: {},
+      confirm: { pending: [] },
+      publishAt: new Date('2030-01-01T00:00:00.000Z'),
+    }
+    const handle = {
+      getState: () => state,
+      send: vi.fn(),
+      batch: vi.fn((fn: () => void) => fn()),
+      flush: vi.fn(),
+      dispose: vi.fn(),
+      subscribe: () => () => {},
+      setState: (s: S) => {
+        state = s
+      },
+      // A live binding for the gated variant so list_actions surfaces it.
+      getBindingDescriptors: () => [{ variant: 'Publish' }],
+      runReducer: () => null,
+      setOnBindingError: () => {},
+    }
+    const opts: CreateAgentClientOpts<S, unknown> = {
+      handle: handle as never,
+      def: {
+        name: 'pub-app',
+        __schemaHash: 'h',
+        __msgAnnotations: {
+          Publish: {
+            intent: 'Publish now',
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+            // Predicate calls a Date method — throws on wire-tagged form.
+            routeGate: 'state.publishAt instanceof Date && state.publishAt.getTime() > 0',
+          },
+        },
+      },
+      appVersion: '1.0.0',
+      rootElement: null,
+      slices: {
+        getConnect: (s) => s.connect,
+        getConfirm: (s) => s.confirm,
+        wrapConnectMsg: (m) => ({ type: 'AgentMsg', inner: m }),
+        wrapConfirmMsg: (m) => ({ type: 'ConfirmMsg', inner: m }),
+      },
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    lastFakeWs!.sent.length = 0
+
+    // Drive a list_actions RPC through the ws.
+    lastFakeWs!.emit(
+      'message',
+      JSON.stringify({ t: 'rpc', id: 'r1', tool: 'list_actions', args: {} }),
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const reply = lastFakeWs!.sent.map((s) => JSON.parse(s)).find((f) => f.t === 'rpc-reply')
+    expect(reply).toBeDefined()
+    const publish = reply.result.actions.find((a: { variant: string }) => a.variant === 'Publish')
+    expect(publish).toBeDefined()
+    // Predicate evaluated on the real Date → truthy → available (no
+    // `available: false`). With wire-encoded state it would fail-closed.
+    expect(publish.available).not.toBe(false)
 
     client.stop()
   })
@@ -518,6 +682,7 @@ describe('createAgentClient — source-side state redaction (S6)', () => {
     })
     lastFakeWs!.emit('open')
     client.start()
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'watch', id: 'w1' }))
     handle.setState({ connect: { secret: 'sk-STILL-SECRET' }, confirm: { pending: [] } })
     const frames = lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update')
     expect(frames.length).toBeGreaterThan(0)
@@ -558,7 +723,8 @@ describe('createAgentClient — source-side state redaction (S6)', () => {
     })
     lastFakeWs!.emit('open')
     client.start()
-    handle.setState({ connect: { token: 'visible' }, confirm: { pending: [] } })
+    lastFakeWs!.emit('message', JSON.stringify({ t: 'watch', id: 'w1' }))
+    handle.setState({ connect: { token: 'visible-changed' }, confirm: { pending: [] } })
     const frames = lastFakeWs!.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'state-update')
     expect(JSON.stringify(frames[frames.length - 1])).toContain('visible')
     client.stop()

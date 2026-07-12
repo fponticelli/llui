@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { computeStateDiff } from '../src/state-diff.js'
+import {
+  computeStateDiff as computeStateDiffPublic,
+  type StateDiff as StateDiffPublic,
+} from '../src/protocol.js'
+
+describe('computeStateDiff public export (@llui/agent/protocol)', () => {
+  it('re-exports the SAME implementation from the public protocol subpath', () => {
+    // Finding 17: consumers (e.g. @llui/test) import this instead of
+    // replicating the algorithm. Parity is by identity — same function.
+    expect(computeStateDiffPublic).toBe(computeStateDiff)
+    const diff: StateDiffPublic = computeStateDiffPublic({ a: 1 }, { a: 2 })
+    expect(diff).toEqual([{ op: 'replace', path: '/a', value: 2 }])
+  })
+})
 
 describe('computeStateDiff', () => {
   it('empty diff for identical states (Object.is)', () => {

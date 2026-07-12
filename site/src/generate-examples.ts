@@ -10,9 +10,10 @@
  * Run as part of the build: `tsx src/generate-examples.ts`.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import { EXAMPLES, type ExampleMeta } from './examples-data'
+import { PACKAGE_SLUGS } from '../pages/api/@pkg/packages.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
@@ -20,12 +21,39 @@ const projectRoot = resolve(root, '..')
 const examplesDir = resolve(projectRoot, 'examples')
 const contentDir = resolve(root, 'content')
 
-const REPO_TREE = 'https://github.com/fponticelli/llui/tree/main/examples'
+const REPO = 'https://github.com/fponticelli/llui'
+const REPO_TREE = `${REPO}/tree/main/examples`
 
-/** Read a README and drop its leading `# Title` (the page renders a title itself). */
+/**
+ * README files use links relative to `examples/<slug>/` (e.g.
+ * `../../packages/markdown`). Those paths 404 once the prose is served from
+ * `/examples/<slug>` on the site, so rewrite every in-repo relative link to a
+ * stable absolute target: a documented `packages/<pkg>` folder becomes its
+ * on-site `/api/<pkg>` page; everything else becomes a GitHub `blob`/`tree` URL.
+ * Links that escape the repo (or are already absolute) are left untouched.
+ */
+function rewriteReadmeLinks(md: string, slug: string): string {
+  const exampleDir = resolve(examplesDir, slug)
+  return md.replace(/\]\((\.[^)\s]*)\)/g, (whole, target: string) => {
+    const hashIdx = target.indexOf('#')
+    const pathPart = hashIdx >= 0 ? target.slice(0, hashIdx) : target
+    const frag = hashIdx >= 0 ? target.slice(hashIdx) : ''
+    const repoRel = relative(projectRoot, resolve(exampleDir, pathPart))
+    if (repoRel.startsWith('..')) return whole // escapes the repo — leave as-is
+
+    const pkgMatch = /^packages\/([^/]+)$/.exec(repoRel)
+    if (pkgMatch && PACKAGE_SLUGS.includes(pkgMatch[1]!)) return `](/api/${pkgMatch[1]}${frag})`
+
+    const kind = /\.[a-zA-Z0-9]+$/.test(repoRel) ? 'blob' : 'tree'
+    return `](${REPO}/${kind}/main/${repoRel}${frag})`
+  })
+}
+
+/** Read a README, drop its leading `# Title`, and fix repo-relative links. */
 function readmeBody(slug: string): string {
   const raw = readFileSync(resolve(examplesDir, slug, 'README.md'), 'utf-8')
-  return raw.replace(/^\s*#\s+.*(?:\r?\n)+/, '').trimStart()
+  const body = raw.replace(/^\s*#\s+.*(?:\r?\n)+/, '').trimStart()
+  return rewriteReadmeLinks(body, slug)
 }
 
 /** A framed, lazy-loaded iframe embed of the live app at `/apps/<slug>/`. */

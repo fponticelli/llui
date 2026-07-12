@@ -31,6 +31,7 @@ import {
   onTeardown,
   registerBinding,
   useContext,
+  __nextHeadAnon,
   type Context,
   type Mountable,
   type SignalDoc,
@@ -477,9 +478,6 @@ export interface MetaAttrs {
   [attr: string]: HeadValue<string> | undefined
 }
 
-let anonMeta = 0
-let anonLink = 0
-
 function metaKey(attrs: MetaAttrs): string {
   const name = staticStr(attrs.name)
   if (name !== undefined) return `meta:name=${name}`
@@ -488,7 +486,7 @@ function metaKey(attrs: MetaAttrs): string {
   const httpEquiv = staticStr(attrs.httpEquiv)
   if (httpEquiv !== undefined) return `meta:http-equiv=${httpEquiv}`
   if ('charset' in attrs) return 'meta:charset'
-  return `meta:#${++anonMeta}` // no static identity → no dedup
+  return `meta:#${__nextHeadAnon()}` // no static identity → no dedup (per-render ordinal)
 }
 
 /** Add a `<meta>` tag. Dedups by `name`/`property`/`httpEquiv`/`charset`. */
@@ -510,7 +508,7 @@ export interface LinkAttrs {
 
 function linkKey(attrs: LinkAttrs): string {
   const rel = staticStr(attrs.rel)
-  if (rel === undefined) return `link:#${++anonLink}`
+  if (rel === undefined) return `link:#${__nextHeadAnon()}`
   const href = staticStr(attrs.href)
   return href === undefined ? `link:rel=${rel}` : `link:rel=${rel}:href=${href}`
 }
@@ -532,10 +530,6 @@ export function htmlAttr(attrs: Record<string, HeadValue<string | boolean | null
 export function bodyAttr(attrs: Record<string, HeadValue<string | boolean | null>>): Mountable {
   return attrHead('body', attrs)
 }
-
-let anonStyle = 0
-let anonScript = 0
-let anonNoscript = 0
 
 function pickAttrs(attrs: object): Record<string, HeadValue<unknown>> {
   const out: Record<string, HeadValue<unknown>> = {}
@@ -566,7 +560,7 @@ export interface StyleAttrs {
 /** Add an inline `<style>` with `css` as its text content. */
 export function style(css: HeadValue<string>, attrs: StyleAttrs = {}): Mountable {
   const id = staticStr(attrs.id)
-  const key = id !== undefined ? `style:id=${id}` : `style:#${++anonStyle}`
+  const key = id !== undefined ? `style:id=${id}` : `style:#${__nextHeadAnon()}`
   return elementHead(key, 'style', pickAttrs(attrs), css)
 }
 
@@ -590,11 +584,11 @@ export function script(attrs: ScriptAttrs = {}, body?: HeadValue<string>): Mount
       ? `script:id=${id}`
       : src !== undefined
         ? `script:src=${src}`
-        : `script:#${++anonScript}`
+        : `script:#${__nextHeadAnon()}`
   return elementHead(key, 'script', pickAttrs(attrs), body)
 }
 
 /** Add a `<noscript>` with `body` as its text content. */
 export function noscript(body: HeadValue<string>): Mountable {
-  return elementHead(`noscript:#${++anonNoscript}`, 'noscript', {}, body)
+  return elementHead(`noscript:#${__nextHeadAnon()}`, 'noscript', {}, body)
 }

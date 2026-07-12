@@ -1,8 +1,9 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import { isTypeaheadKey } from '../utils/typeahead.js'
 import {
   init as comboboxInit,
@@ -609,7 +610,6 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   sameWidth?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
@@ -619,7 +619,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // open we focus the input; Esc / outside-click dismiss to `close` (which
   // resets the filter). This mirrors the combobox/select overlay shape but
   // anchors to the trigger rather than the input.
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -633,13 +633,12 @@ export function overlay(opts: OverlayOptions): Mountable {
   return show(
     opts.state.map((s) => s.open),
     () => {
-      const host = resolvePortalTarget(rawTarget) ?? document.body
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
-            const inputEl = document.getElementById(inputId)
+          const dismissable = onMount((root) => {
+            const contentEl = getElementByIdInScope(root, contentId)
+            const triggerEl = getElementByIdInScope(root, triggerId)
+            const inputEl = getElementByIdInScope(root, inputId)
             if (!contentEl || !triggerEl) return
 
             const cleanups: Array<() => void> = []
@@ -666,10 +665,9 @@ export function overlay(opts: OverlayOptions): Mountable {
                 // count as an outside interaction and dismiss the overlay.
                 element: floatingEl,
                 ignore: () => [triggerEl],
-                onDismiss: () => {
-                  opts.send({ type: 'close' })
-                  triggerEl.focus()
-                },
+                // Focus restoration lives in the cleanup below (runs on EVERY
+                // close, including commit), so don't also focus here.
+                onDismiss: () => opts.send({ type: 'close' }),
               }),
             )
             if (inputEl instanceof HTMLInputElement) {
@@ -680,7 +678,14 @@ export function overlay(opts: OverlayOptions): Mountable {
               if (seed !== '') inputEl.setSelectionRange(0, seed.length)
             }
             return () => {
+              // Restore focus to the trigger when focus is still inside the
+              // popup (e.g. after committing a selection, which would otherwise
+              // drop focus to <body>). Respect focus the user moved elsewhere.
+              const active = document.activeElement
+              const focusInside =
+                floatingEl.contains(active) || active === document.body || active === null
               for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+              if (focusInside) triggerEl.focus()
             }
           })
           return [dismissable, div(parts.positioner, opts.content())]

@@ -35,22 +35,42 @@ export function parseCombo(combo: string): ParsedCombo {
   return result
 }
 
+/** The exact modifier-key state a chord requires on a given platform. */
+interface RequiredModifiers {
+  meta: boolean
+  ctrl: boolean
+  shift: boolean
+  alt: boolean
+}
+
+/** Resolve a chord's declared modifiers to the concrete key states an event
+ * must present, per platform.
+ *
+ * On macOS `Mod` → ⌘ (meta) and an explicit `Ctrl` → ⌃ (control), which are
+ * distinct keys. Off-mac there is no such distinction: both `Mod` AND an
+ * explicit `Ctrl` fold onto the physical Ctrl key (so `Ctrl-b` ≡ `Mod-b`, and a
+ * literal `Ctrl-` chord actually fires — it was dead before). The Windows/meta
+ * key is never a target off-mac, so it must be absent. */
+function requiredModifiers(combo: ParsedCombo, isMac: boolean): RequiredModifiers {
+  if (isMac) {
+    return { meta: combo.mod, ctrl: combo.ctrl, shift: combo.shift, alt: combo.alt }
+  }
+  return { meta: false, ctrl: combo.mod || combo.ctrl, shift: combo.shift, alt: combo.alt }
+}
+
 /** Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
- * Ctrl elsewhere; all declared modifiers must match exactly (no extras). */
+ * Ctrl elsewhere; all four modifier keys must match the resolved requirement
+ * exactly (no extras held). */
 export function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean {
   const eventKey = event.key.length === 1 ? event.key.toLowerCase() : event.key
   if (eventKey !== combo.key) return false
-  const modActive = isMac ? event.metaKey : event.ctrlKey
-  const otherCtrl = isMac ? event.ctrlKey : event.metaKey
-  if (combo.mod !== modActive) return false
-  // An explicit `ctrl` on macOS targets the control key specifically.
-  if (combo.ctrl !== (isMac ? event.ctrlKey : false)) {
-    if (!(combo.mod && !isMac)) return false
-  }
-  if (!combo.mod && !combo.ctrl && otherCtrl) return false
-  if (combo.shift !== event.shiftKey) return false
-  if (combo.alt !== event.altKey) return false
-  return true
+  const req = requiredModifiers(combo, isMac)
+  return (
+    event.metaKey === req.meta &&
+    event.ctrlKey === req.ctrl &&
+    event.shiftKey === req.shift &&
+    event.altKey === req.alt
+  )
 }
 
 /** Best-effort macOS detection (browser only; defaults to false off-DOM). */

@@ -52,6 +52,15 @@ describe('hover-card.connect', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
+  // Finding 15: a hover-card is not a modal dialog — no role="dialog" on the
+  // content and no aria-haspopup="dialog" on the trigger.
+  it('content has no dialog role; trigger uses aria-expanded not haspopup', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect('role' in p.content).toBe(false)
+    expect('aria-haspopup' in p.trigger).toBe(false)
+    expect('aria-expanded' in p.trigger).toBe(true)
+  })
+
   it('pointerEnter schedules open after delay', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send, { id: 'x', openDelay: 500 })

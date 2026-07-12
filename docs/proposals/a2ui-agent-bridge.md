@@ -1,6 +1,8 @@
 # Proposal: A2UI ↔ LLui agent integration
 
-Status: **proposal** (design only — prototype pending buy-in). Depends on
+> **Status (2026-07): PARTIALLY REAL.** The dependency `@llui/a2ui` has **shipped** (0.1.x, `packages/a2ui/`). Direction A's transport seam + WebSocket adapter have **landed** in `packages/a2ui/src/transport.ts` (`A2uiTransport`, `connectA2ui`, `webSocketTransport`) — see the Progress section. The remaining integrations (A2A / AG-UI / MCP adapters, Direction B LAP introspection, Direction C) are still proposal/design. So this is no longer purely speculative.
+
+Status: **proposal** (transport seam landed; broader integration design-only — prototype pending buy-in). Depends on
 `@llui/a2ui` (Phases 0–2, landed).
 
 ## Motivation

@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 
-import { NOTE_SCHEMA_VERSION } from '@llui/devmode-annotate/note-format'
+import { NOTE_SCHEMA_VERSION } from '@llui/notes-format/note-format'
 import { strFromU8, unzipSync } from 'fflate'
 
 interface BundleManifest {

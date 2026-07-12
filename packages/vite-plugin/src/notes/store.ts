@@ -16,12 +16,7 @@ import {
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 
-import {
-  deriveFilename,
-  deriveSlug,
-  nextId,
-  parseFilename,
-} from '@llui/devmode-annotate/note-format'
+import { deriveFilename, deriveSlug, nextId, parseFilename } from '@llui/notes-format/note-format'
 
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 import { resolveCurrentSession } from './session.js'
@@ -140,7 +135,7 @@ export function createNote(
  * escape the notes root and let a request read or delete arbitrary files.
  * Throw on any traversal rather than touching anything outside the root.
  */
-function resolveSessionDir(notesRoot: string, sessionId: string): string {
+export function resolveSessionDir(notesRoot: string, sessionId: string): string {
   const root = resolve(notesRoot)
   const dir = resolve(root, sessionId)
   if (dir !== root && !dir.startsWith(root + sep)) {

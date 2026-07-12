@@ -32,18 +32,25 @@ export interface UseClientTransformResult {
  * `{ ssr: false }` there, and the plugin checks that before invoking
  * this function.
  *
- * Shapes this v1 does NOT handle (emits a warning + leaves them out of
- * the stub output):
+ * Every export with a statically-known name is stubbed uniformly:
  *
- *   - `export function foo() {}` and `export class Foo {}` — rewritten
- *     as stubs but the caller may be surprised that `foo` and `Foo` are
- *     ComponentDef-shaped objects during SSR.
- *   - `export { a, b } from './other.js'` — re-export forms are not
- *     detected; they pass through and will still pull `./other` into
- *     the SSR graph.
- *   - `export * from './other.js'` — same as above.
- *   - `export type ...` — type exports are erased by TS so nothing to
- *     stub; left untouched.
+ *   - `export const/let NAME = …`, `export function NAME()`, `export class
+ *     NAME` — each becomes `export const NAME = __clientOnlyStub('NAME')`.
+ *     (A stubbed function/class is a value, not a callable/constructable —
+ *     SSR must not invoke it; the client build ships the real one.)
+ *   - `export { a, b }` and `export { a as b } from './other.js'` — the
+ *     names are known, so each is stubbed (the `from './other.js'` source
+ *     module is DROPPED, never pulled into the SSR graph).
+ *   - `export default …` — stubbed as `export default __clientOnlyStub("default")`.
+ *
+ * NOT stubbable (dropped from the output, WITH a warning):
+ *
+ *   - `export * from './other.js'` — its re-exported names can't be
+ *     enumerated statically, so they can't be stubbed. Any client-only
+ *     value it re-exported is undefined during SSR; move the 'use client'
+ *     directive to the source module.
+ *
+ * Left untouched: `export type …` / `interface` (erased by TS anyway).
  */
 export function transformUseClientSsr(
   source: string,
@@ -114,16 +121,18 @@ export function transformUseClientSsr(
       continue
     }
 
-    // `export { a, b }` / `export { a } from './x.js'` / `export * from './x.js'`
+    // `export { a, b }` / `export { a as b } from './x.js'` / `export * from './x.js'`
     if (ts.isExportDeclaration(stmt)) {
-      if (stmt.moduleSpecifier) {
+      if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+        // Named (re-)exports have statically-known outward names — stub each,
+        // dropping any `from './x.js'` (so the source module never enters the
+        // SSR graph). `spec.name` is the OUTWARD name for `a as b`.
+        for (const spec of stmt.exportClause.elements) namedExports.push(spec.name.text)
+      } else if (stmt.moduleSpecifier) {
+        // `export * from './x.js'` — names can't be enumerated, so can't be stubbed.
         warnings.push(
-          "[llui/use-client] `export ... from '...'` re-export forms still pull the source module into the SSR graph and bypass stubbing. Either drop the re-export or move the 'use client' directive to the source module.",
+          "[llui/use-client] `export * from '...'` cannot be stubbed (its re-exported names aren't statically known); it is dropped from the SSR output, so any value it re-exports will be undefined during SSR. Move the 'use client' directive to the source module.",
         )
-      } else if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
-        for (const spec of stmt.exportClause.elements) {
-          namedExports.push((spec.name ?? spec.propertyName!).text)
-        }
       }
       continue
     }

@@ -50,23 +50,296 @@ The signal transform also enforces the agent annotation rules
 
 ## Functions
 
-### `resolveLocalConstInitializer()`
+### `annotationsToObjectLiteral()`
 
-Walk parent chains to find a `const X = ...` declaration matching
-`use.text`, or a hoisted `function X(...)` declaration. Returns the
-resolved declaration or `null` for unresolvable references (imports,
-parameters, this-bindings, etc.).
-Limitations:
-
-- Only `const`. `let` resolution is unsafe — we can't track later
-  reassignments without a type checker.
-- Only single-binding declarations (`const a = …`, not `const a = …, b = …`).
-- The declaration must dominate the use (lexical scope).
+Build a TS object-literal expression for the annotation map. Used by
+`msgAnnotationsModule` for `__msgAnnotations` emission. Variant
+names are emitted as string literals (not identifiers) so
+discriminants containing `/`, `-`, reserved words, etc. produce
+valid JS.
 
 ```typescript
-function resolveLocalConstInitializer(
-  use: ts.Identifier,
-): ts.Expression | ts.FunctionDeclaration | null
+function annotationsToObjectLiteral(
+  a: Record<string, MessageAnnotations>,
+): ts.ObjectLiteralExpression
+```
+
+### `applyLintFixes()`
+
+Apply the fixes carried by `messages` to `source`, returning the rewritten
+code and how many fixes applied vs. were skipped (overlapping with one already
+applied). Messages without a `fix` are ignored, so a caller can pass a filtered
+subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
+not re-lint; the caller decides whether a second pass is warranted.
+
+```typescript
+function applyLintFixes(
+  source: string,
+  messages: ReadonlyArray<{ fix?: LintFix }>,
+): { code: string; applied: number; skipped: number }
+```
+
+### `buildFieldDescriptor()`
+
+Build a single field descriptor from a property signature: type,
+optionality, and any `@should("…")` JSDoc hint. Emits the compact
+bare form when there's nothing extra to communicate; otherwise the
+rich `{type, optional?, priority?, hint?}` shape.
+Exported so the cross-file resolver (which walks the same property
+signatures when the Msg type lives in a different file from the
+`component()` call) can produce identical descriptors. Without
+sharing this helper, JSDoc hints would silently disappear whenever
+a Msg union got resolved across module boundaries.
+
+```typescript
+function buildFieldDescriptor(
+  member: ts.PropertySignature,
+  source: string,
+  typeIndex: TypeIndex = new Map(),
+): MsgField
+```
+
+### `buildFieldDescriptorExpr()`
+
+Build a TS expression for a single field descriptor in a MsgSchema's
+variant map. Used by `msgSchemaToLiteral` (this file) for the
+`__msgSchema` / `__effectSchema` emissions. Migrated from inline
+`buildFieldDescriptorExpr` in transform.ts (v2c/decomp-5).
+
+```typescript
+function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression
+```
+
+### `buildManifest()`
+
+Build a manifest from a package's source program. Only emits entries that
+carry useful narrowing info (at least one `state-value` param with reads);
+helpers that would contribute nothing are omitted (a missing entry coarsens
+identically, so this just keeps the manifest lean).
+
+```typescript
+function buildManifest(program: ts.Program, opts: BuildManifestOptions): Manifest
+```
+
+### `clearManifestCache()`
+
+```typescript
+function clearManifestCache(): void
+```
+
+### `collectDeps()`
+
+String-input convenience over {@link collectStatePathsFromSource}: parse a
+source file and return the sorted set of unique state dependency paths read
+by its reactive accessors, plus the opaque-flow flag. These are the paths
+the runtime's chunked-mask reconciler gates each binding on.
+Files that don't import from `@llui/dom` return an empty set. `extraPaths`
+(paths discovered through in-repo view-helpers in _other_ files, via the
+cross-file walker) are unioned in so cross-file helpers contribute to the
+consumer's dependency set.
+
+```typescript
+function collectDeps(
+  source: string,
+  extraPaths?: ReadonlySet<string>,
+): {
+  paths: string[]
+  opaque: boolean
+  /** AST node that first triggered the opaque-flow flag (if any). */
+  opaqueNode?: ts.Node
+  /** Short human label for the opaque shape. */
+  opaqueShape?: string
+}
+```
+
+### `collectStatePathsFromSource()`
+
+Walk the AST and collect every unique state access path referenced by
+a reactive accessor. A reactive accessor is one of:
+
+- An inline arrow / function expression at a reactive position
+  (`text(s => s.count)`, `div({ title: s => s.title })`,
+  `show({ when: s => s.gated })`, etc.).
+- An Identifier at a reactive position that resolves to a callable
+  in this file — a const-bound arrow / function expression,
+  a hoisted function declaration, or `const x = memo(arrow)`.
+  The second case lets authors refactor a literal arrow into a named
+  helper without the analyzer losing its dependency paths. When a reactive
+  accessor can't be resolved, the file is marked opaque and the runtime
+  coarsens those bindings to the whole-state sentinel (correct, but every
+  such binding fires on every state change).
+  The emitted dependency paths feed the runtime's chunked-mask reconciler
+  (each binding's `deps` array). `collectDeps` (below) is the string-input
+  convenience wrapper.
+
+```typescript
+function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
+  paths: Set<string>
+  opaque: boolean
+  opaqueNode?: ts.Node
+  opaqueShape?: string
+}
+```
+
+### `computeSchemaHash()`
+
+Stable hex SHA-256 (first 32 chars) over a normalized JSON serialization
+of msgSchema + stateSchema + msgAnnotations. Object key order is
+normalized so equivalent inputs always produce equal hashes.
+Used by the runtime to detect when the browser-to-server `hello` frame
+needs to re-send its schema payload (dev hot-reload).
+
+```typescript
+function computeSchemaHash(input: SchemaHashInput): string
+```
+
+### `detectOpaqueStateFlow()`
+
+```typescript
+function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void
+```
+
+### `extractDiscriminatedUnionSchemaCrossFile()`
+
+Cross-file companion to `extractMsgSchema` / `extractEffectSchema`.
+Discriminated-union schema extractor that follows composed
+TypeReferences through the resolver. Same recursion shape as
+`extractMsgAnnotationsCrossFile`, just collecting field shapes
+instead of JSDoc annotations.
+
+```typescript
+function extractDiscriminatedUnionSchemaCrossFile(
+  source: string,
+  typeName: string,
+  filePath: string,
+  ctx: ResolveContext,
+): Promise<MsgSchema | null>
+```
+
+### `extractEffectSchema()`
+
+```typescript
+function extractEffectSchema(source: string, typeName: string = 'Effect'): MsgSchema | null
+```
+
+### `extractMsgAnnotations()`
+
+Walk a Msg-like discriminated-union type alias and extract JSDoc
+annotations attached to each union member. Returns null if no
+recognizable union is found so callers can skip emission cleanly.
+Expected JSDoc grammar (order-independent):
+@intent("human readable")
+@alwaysAffordable
+@requiresConfirm
+@humanOnly — sugar for dispatchMode: 'human-only'
+@agentOnly — sugar for dispatchMode: 'agent-only'
+Unknown tags are ignored; malformed @intent (no quoted string) is
+treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
+exclusive — if both are present (which the ESLint rule
+`agent-exclusive-annotations` reports as an error), the parser
+falls back to `'shared'` so a misconfigured Msg variant doesn't
+silently lock out one audience.
+
+```typescript
+function extractMsgAnnotations(
+  source: string,
+  typeName: string = 'Msg',
+): Record<string, MessageAnnotations> | null
+```
+
+### `extractMsgAnnotationsCrossFile()`
+
+Annotation extractor that walks composed Msg unions across files.
+Given a Msg type that may be a union of inline `{ type: 'literal' }`
+objects AND TypeReferences (e.g.
+`type Msg = ImportedFoo | { type: 'extra' }`), recursively follow
+each TypeReference via `findTypeSource` and merge its variants into
+the returned map.
+Composition + cross-file is the union of two failure modes the
+file-local sync extractor silently mishandles. This function
+produces the same map the runtime expects regardless of how the
+developer organized the type declarations.
+Conflict policy: if two composed branches contribute the same
+discriminant string (e.g. both halves declare `{ type: 'inc' }`),
+the first one walked wins. The lint rule `agent-msg-resolvable`
+fires before this point on most pathological cases; ESLint's
+type-checker would flag the duplicate independently.
+
+```typescript
+function extractMsgAnnotationsCrossFile(
+  source: string,
+  typeName: string,
+  filePath: string,
+  ctx: ResolveContext,
+): Promise<Record<string, MessageAnnotations> | null>
+```
+
+### `extractMsgSchema()`
+
+```typescript
+function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null
+```
+
+### `extractPaths()`
+
+Extract state access paths from an expression body.
+Handles:
+
+- Direct property access: param.field, param.field.subfield
+- Bracket notation with string literal: param['field']
+
+```typescript
+function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void
+```
+
+### `extractStateSchema()`
+
+```typescript
+function extractStateSchema(source: string, typeName = 'State'): StateSchema | null
+```
+
+### `fieldType()`
+
+Extracts the bare type from either descriptor form.
+
+```typescript
+function fieldType(f: MsgField): MsgFieldType
+```
+
+### `findTypeSource()`
+
+Walk imports + re-exports to find where a type alias is actually
+declared. Returns the source string and local name of the alias in
+its declaring file. Returns `null` if the chain leads to an unresolved
+module, a re-export through `export *`, a namespace import, or a
+dead-end (alias not declared anywhere we can see).
+
+```typescript
+function findTypeSource(
+  typeName: string,
+  source: string,
+  filePath: string,
+  ctx: ResolveContext,
+  visited: Set<string> = new Set(),
+): Promise<ResolvedTypeSource | null>
+```
+
+### `hasNonDefaultAnnotation()`
+
+Whether the annotation map carries any non-default values. Used to
+gate `__msgAnnotations` emission — annotations whose every field is
+default are emission-redundant (the runtime treats absence as the
+same defaults). Saves ~50 bytes per component for un-annotated Msg
+unions, which dominates the corpus.
+
+```typescript
+function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
+```
+
+### `injectScopeVariantRegistrations()`
+
+```typescript
+function injectScopeVariantRegistrations(node: ts.SourceFile, f: ts.NodeFactory): InjectResult
 ```
 
 ### `isMemoCallWithArrowArg()`
@@ -80,6 +353,124 @@ not the call site.
 function isMemoCallWithArrowArg(expr: ts.Expression): expr is ts.CallExpression & {
   arguments: readonly [ts.ArrowFunction | ts.FunctionExpression, ...ts.Expression[]]
 }
+```
+
+### `isReactiveAccessor()`
+
+Determines if a node is at a reactive-accessor position — either an
+inline arrow / function expression OR an identifier that's about to
+be resolved to one. The check is identity-based on `parent.arguments[0]`
+etc., so the same logic works for both shapes.
+Exported so the cross-file walker can use the same gate. Without this
+gate the walker descends into every 1-param arrow in the file —
+including `onEffect: (bag) => bag.send(...)` — and pollutes
+`__prefixes` with non-state property names (issue #5, bug 3).
+
+```typescript
+function isReactiveAccessor(node: ts.Node): boolean
+```
+
+### `isRichField()`
+
+True when `f` is a rich descriptor (object with `type` key).
+
+```typescript
+function isRichField(f: MsgField): f is MsgFieldRich
+```
+
+### `lintSignalSource()`
+
+Parse `source` and run the signal lint rules, returning diagnostics with
+resolved line/column. The adapter (vite plugin) surfaces these as build
+errors. Call only on confirmed signal components.
+
+```typescript
+function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[]
+```
+
+### `lookupHelperFromSymbol()`
+
+Resolve the manifest helper entry for a call-site callee symbol.
+@param sym the (possibly aliased) symbol of the call target
+@param checker the program's type checker
+
+```typescript
+function lookupHelperFromSymbol(sym: ts.Symbol, checker: ts.TypeChecker): ManifestLookupResult
+```
+
+### `msgSchemaToLiteral()`
+
+Build the full `{ discriminant, variants }` object literal for a
+MsgSchema. Symmetric for `__msgSchema` and `__effectSchema` emission
+(both use the discriminated-union shape).
+
+```typescript
+function msgSchemaToLiteral(schema: MsgSchema, f: ts.NodeFactory): ts.ObjectLiteralExpression
+```
+
+### `parseAnnotations()`
+
+Parse a JSDoc comment string into `MessageAnnotations`. The single
+source of truth for the annotation grammar — used both for same-file
+Msg unions (here) and for cross-file resolution
+(`cross-file-resolver.ts` imports this rather than re-implementing it,
+so the two paths can't drift).
+
+```typescript
+function parseAnnotations(comment: string): MessageAnnotations
+```
+
+### `parseManifest()`
+
+Parse + validate a manifest JSON string. Validation is intentionally shallow
+but covers everything the substitution engine iterates (`helpers[*].kind`,
+`.viaParams[*].shape`, `.index`) so a malformed third-party manifest can't
+crash the consumer's compile. Schema `version` must equal the current
+`MANIFEST_SCHEMA_VERSION` and the emitting `compilerVersion`'s major must
+match this compiler.
+
+```typescript
+function parseManifest(json: string): ParseManifestResult
+```
+
+### `rangeFromOffsets()`
+
+Convert a TS Compiler API `(start, end)` offset pair against a source
+file into the canonical `Range` shape. Used by emitters that have AST
+node positions but not pre-computed line/column.
+
+```typescript
+function rangeFromOffsets(sourceText: string, start: number, end: number): Range
+```
+
+### `readComponentTypeArgNames()`
+
+Inspect the type arguments of a `component<...>()` call and return
+the textual identifier for each known position. Returns `null` for
+positions whose type argument isn't a plain identifier (e.g.
+inline literal types, generic instantiations, namespace-qualified
+names). Identifiers are what the resolver can chase; everything else
+we leave to the local extractor's existing behavior.
+Order: `[State, Msg, Effect]` matching `component<State, Msg, Effect>`.
+
+```typescript
+function readComponentTypeArgNames(call: ts.CallExpression): {
+  state: string | null
+  msg: string | null
+  effect: string | null
+}
+```
+
+### `relativizeFile()`
+
+Project-relative path helper. Adapters pass the project root resolved
+from `llui.config.ts` / Vite's `config.root`; emitters that have an
+absolute path use this to canonicalize before placing into a
+Diagnostic. Falls back to the absolute path if `root` is empty or
+the file isn't a descendant.
+
+```typescript
+function relativizeFile(absoluteFile: string, root: string): string
 ```
 
 ### `resolveAccessorBody()`
@@ -108,6 +499,114 @@ function resolveAccessorBody(
   value: ts.Expression,
   checker?: ts.TypeChecker,
 ): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null
+```
+
+### `resolveFieldType()`
+
+```typescript
+function resolveFieldType(
+  type: ts.TypeNode,
+  typeIndex: TypeIndex = new Map(),
+  depth = MAX_FIELD_DEPTH,
+): MsgFieldType
+```
+
+### `resolveLocalConstInitializer()`
+
+Walk parent chains to find a `const X = ...` declaration matching
+`use.text`, or a hoisted `function X(...)` declaration. Returns the
+resolved declaration or `null` for unresolvable references (imports,
+parameters, this-bindings, etc.).
+Limitations:
+
+- Only `const`. `let` resolution is unsafe — we can't track later
+  reassignments without a type checker.
+- Only single-binding declarations (`const a = …`, not `const a = …, b = …`).
+- The declaration must dominate the use (lexical scope).
+
+```typescript
+function resolveLocalConstInitializer(
+  use: ts.Identifier,
+): ts.Expression | ts.FunctionDeclaration | null
+```
+
+### `serializeManifest()`
+
+Serialize a manifest to stable, diff-friendly JSON: object keys sorted
+(so re-emits are byte-identical regardless of insertion order), arrays left
+in their meaningful order (e.g. `viaParams` is index-ordered). 2-space indent
+
+- trailing newline to match the repo's prettier output.
+
+```typescript
+function serializeManifest(manifest: Manifest): string
+```
+
+### `shadowsStateParam()`
+
+Returns true when one of the function's parameter bindings would
+shadow an outer identifier named `stateParam`. Covers identifier
+params (`(s) => …`), simple destructured patterns (`({s}) => …`),
+and array patterns (`([s]) => …`). Tracking shadowing avoids a
+common false positive where a nested arrow's `s` is mis-attributed
+to the outer accessor's state parameter — most notably bites the
+`track({ deps: (s) => [...] })` escape hatch when the outer
+accessor is also `(s) => …`.
+
+```typescript
+function shadowsStateParam(
+  parameters: ts.NodeArray<ts.ParameterDeclaration>,
+  stateParam: string,
+): boolean
+```
+
+### `stateTypeToLiteral()`
+
+Build a TypeScript expression representing the given StateType as a
+runtime-readable literal. The emission shape mirrors the StateType
+tagged union — `string`/`number`/`boolean`/`unknown` become string
+literals; the structural kinds become object literals with a `kind`
+field plus the appropriate payload (`of`/`fields`/`values`).
+Used by `stateSchemaModule` for `__stateSchema` emission. The shape
+is the runtime/agent contract; downstream tools (MCP introspection,
+agent's "what type is this field?") consume it.
+
+```typescript
+function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression
+```
+
+### `substituteHelperCall()`
+
+Substitute a manifest helper call against its call-site arguments.
+Given a helper's manifest entry and the argument expressions at one call
+site, returns the set of host-state paths the call contributes to the
+consumer's \_\_prefixes table.
+§4.4 substitution rules:
+
+1. For each ViaParams entry, resolve the call-site argument.
+2. `shape: 'accessor'` parameters are walked via `extractPaths`.
+3. `shape: 'options-bag'` parameters are unpacked field-by-field
+   against the call site's object-literal argument.
+4. `innerReads` are composed against the resolved accessors:
+   - rooted: helper-local, contributed verbatim
+   - param-result: paths from param N's body
+   - param-result-path: lift + sub-path composition
+5. `readsThroughResultOf: N` — param's body operates on param N's
+   result; substitution composes through N's accessor.
+6. `contextReads` — resolved against `providers`; provider.accessor +
+   subPaths compose to host-state paths.
+7. Depth bounded at 8; cycles caught by `(helper-symbol, param-index)`
+   visited set.
+
+```typescript
+function substituteHelperCall(
+  entry: HelperEntry,
+  callArgs: ReadonlyArray<ts.Expression>,
+  ctx: SubstitutionContext,
+  helperKey = 'anonymous',
+  visited = new Set<string>(),
+  depth = 0,
+): SubstitutionResult
 ```
 
 ### `tagDispatchHandlers()`
@@ -156,521 +655,33 @@ variants without the app author having to think about it:
 function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile
 ```
 
-### `injectScopeVariantRegistrations()`
-
-```typescript
-function injectScopeVariantRegistrations(node: ts.SourceFile, f: ts.NodeFactory): InjectResult
-```
-
-### `shadowsStateParam()`
-
-Returns true when one of the function's parameter bindings would
-shadow an outer identifier named `stateParam`. Covers identifier
-params (`(s) => …`), simple destructured patterns (`({s}) => …`),
-and array patterns (`([s]) => …`). Tracking shadowing avoids a
-common false positive where a nested arrow's `s` is mis-attributed
-to the outer accessor's state parameter — most notably bites the
-`track({ deps: (s) => [...] })` escape hatch when the outer
-accessor is also `(s) => …`.
-
-```typescript
-function shadowsStateParam(
-  parameters: ts.NodeArray<ts.ParameterDeclaration>,
-  stateParam: string,
-): boolean
-```
-
-### `detectOpaqueStateFlow()`
-
-```typescript
-function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void
-```
-
-### `collectStatePathsFromSource()`
-
-Walk the AST and collect every unique state access path referenced by
-a reactive accessor. A reactive accessor is one of:
-
-- An inline arrow / function expression at a reactive position
-  (`text(s => s.count)`, `div({ title: s => s.title })`,
-  `show({ when: s => s.gated })`, etc.).
-- An Identifier at a reactive position that resolves to a callable
-  in this file — a const-bound arrow / function expression,
-  a hoisted function declaration, or `const x = memo(arrow)`.
-  The second case lets authors refactor a literal arrow into a named
-  helper without the analyzer losing its dependency paths. When a reactive
-  accessor can't be resolved, the file is marked opaque and the runtime
-  coarsens those bindings to the whole-state sentinel (correct, but every
-  such binding fires on every state change).
-  The emitted dependency paths feed the runtime's chunked-mask reconciler
-  (each binding's `deps` array). `collectDeps` (below) is the string-input
-  convenience wrapper.
-
-```typescript
-function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
-  paths: Set<string>
-  opaque: boolean
-  opaqueNode?: ts.Node
-  opaqueShape?: string
-}
-```
-
-### `collectDeps()`
-
-String-input convenience over {@link collectStatePathsFromSource}: parse a
-source file and return the sorted set of unique state dependency paths read
-by its reactive accessors, plus the opaque-flow flag. These are the paths
-the runtime's chunked-mask reconciler gates each binding on.
-Files that don't import from `@llui/dom` return an empty set. `extraPaths`
-(paths discovered through in-repo view-helpers in _other_ files, via the
-cross-file walker) are unioned in so cross-file helpers contribute to the
-consumer's dependency set.
-
-```typescript
-function collectDeps(
-  source: string,
-  extraPaths?: ReadonlySet<string>,
-): {
-  paths: string[]
-  opaque: boolean
-  /** AST node that first triggered the opaque-flow flag (if any). */
-  opaqueNode?: ts.Node
-  /** Short human label for the opaque shape. */
-  opaqueShape?: string
-}
-```
-
-### `isReactiveAccessor()`
-
-Determines if a node is at a reactive-accessor position — either an
-inline arrow / function expression OR an identifier that's about to
-be resolved to one. The check is identity-based on `parent.arguments[0]`
-etc., so the same logic works for both shapes.
-Exported so the cross-file walker can use the same gate. Without this
-gate the walker descends into every 1-param arrow in the file —
-including `onEffect: (bag) => bag.send(...)` — and pollutes
-`__prefixes` with non-state property names (issue #5, bug 3).
-
-```typescript
-function isReactiveAccessor(node: ts.Node): boolean
-```
-
-### `extractPaths()`
-
-Extract state access paths from an expression body.
-Handles:
-
-- Direct property access: param.field, param.field.subfield
-- Bracket notation with string literal: param['field']
-
-```typescript
-function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void
-```
-
-### `findTypeSource()`
-
-Walk imports + re-exports to find where a type alias is actually
-declared. Returns the source string and local name of the alias in
-its declaring file. Returns `null` if the chain leads to an unresolved
-module, a re-export through `export *`, a namespace import, or a
-dead-end (alias not declared anywhere we can see).
-
-```typescript
-function findTypeSource(
-  typeName: string,
-  source: string,
-  filePath: string,
-  ctx: ResolveContext,
-  visited: Set<string> = new Set(),
-): Promise<ResolvedTypeSource | null>
-```
-
-### `extractMsgAnnotationsCrossFile()`
-
-Annotation extractor that walks composed Msg unions across files.
-Given a Msg type that may be a union of inline `{ type: 'literal' }`
-objects AND TypeReferences (e.g.
-`type Msg = ImportedFoo | { type: 'extra' }`), recursively follow
-each TypeReference via `findTypeSource` and merge its variants into
-the returned map.
-Composition + cross-file is the union of two failure modes the
-file-local sync extractor silently mishandles. This function
-produces the same map the runtime expects regardless of how the
-developer organized the type declarations.
-Conflict policy: if two composed branches contribute the same
-discriminant string (e.g. both halves declare `{ type: 'inc' }`),
-the first one walked wins. The lint rule `agent-msg-resolvable`
-fires before this point on most pathological cases; ESLint's
-type-checker would flag the duplicate independently.
-
-```typescript
-function extractMsgAnnotationsCrossFile(
-  source: string,
-  typeName: string,
-  filePath: string,
-  ctx: ResolveContext,
-): Promise<Record<string, MessageAnnotations> | null>
-```
-
-### `extractDiscriminatedUnionSchemaCrossFile()`
-
-Cross-file companion to `extractMsgSchema` / `extractEffectSchema`.
-Discriminated-union schema extractor that follows composed
-TypeReferences through the resolver. Same recursion shape as
-`extractMsgAnnotationsCrossFile`, just collecting field shapes
-instead of JSDoc annotations.
-
-```typescript
-function extractDiscriminatedUnionSchemaCrossFile(
-  source: string,
-  typeName: string,
-  filePath: string,
-  ctx: ResolveContext,
-): Promise<MsgSchema | null>
-```
-
-### `readComponentTypeArgNames()`
-
-Inspect the type arguments of a `component<...>()` call and return
-the textual identifier for each known position. Returns `null` for
-positions whose type argument isn't a plain identifier (e.g.
-inline literal types, generic instantiations, namespace-qualified
-names). Identifiers are what the resolver can chase; everything else
-we leave to the local extractor's existing behavior.
-Order: `[State, Msg, Effect]` matching `component<State, Msg, Effect>`.
-
-```typescript
-function readComponentTypeArgNames(call: ts.CallExpression): {
-  state: string | null
-  msg: string | null
-  effect: string | null
-}
-```
-
-### `rangeFromOffsets()`
-
-Convert a TS Compiler API `(start, end)` offset pair against a source
-file into the canonical `Range` shape. Used by emitters that have AST
-node positions but not pre-computed line/column.
-
-```typescript
-function rangeFromOffsets(sourceText: string, start: number, end: number): Range
-```
-
-### `relativizeFile()`
-
-Project-relative path helper. Adapters pass the project root resolved
-from `llui.config.ts` / Vite's `config.root`; emitters that have an
-absolute path use this to canonicalize before placing into a
-Diagnostic. Falls back to the absolute path if `root` is empty or
-the file isn't a descendant.
-
-```typescript
-function relativizeFile(absoluteFile: string, root: string): string
-```
-
-### `substituteHelperCall()`
-
-Substitute a manifest helper call against its call-site arguments.
-Given a helper's manifest entry and the argument expressions at one call
-site, returns the set of host-state paths the call contributes to the
-consumer's \_\_prefixes table.
-§4.4 substitution rules:
-
-1. For each ViaParams entry, resolve the call-site argument.
-2. `shape: 'accessor'` parameters are walked via `extractPaths`.
-3. `shape: 'options-bag'` parameters are unpacked field-by-field
-   against the call site's object-literal argument.
-4. `innerReads` are composed against the resolved accessors:
-   - rooted: helper-local, contributed verbatim
-   - param-result: paths from param N's body
-   - param-result-path: lift + sub-path composition
-5. `readsThroughResultOf: N` — param's body operates on param N's
-   result; substitution composes through N's accessor.
-6. `contextReads` — resolved against `providers`; provider.accessor +
-   subPaths compose to host-state paths.
-7. Depth bounded at 8; cycles caught by `(helper-symbol, param-index)`
-   visited set.
-
-```typescript
-function substituteHelperCall(
-  entry: HelperEntry,
-  callArgs: ReadonlyArray<ts.Expression>,
-  ctx: SubstitutionContext,
-  helperKey = 'anonymous',
-  visited = new Set<string>(),
-  depth = 0,
-): SubstitutionResult
-```
-
-### `serializeManifest()`
-
-Serialize a manifest to stable, diff-friendly JSON: object keys sorted
-(so re-emits are byte-identical regardless of insertion order), arrays left
-in their meaningful order (e.g. `viaParams` is index-ordered). 2-space indent
-
-- trailing newline to match the repo's prettier output.
-
-```typescript
-function serializeManifest(manifest: Manifest): string
-```
-
-### `parseManifest()`
-
-Parse + validate a manifest JSON string. Validation is intentionally shallow
-but covers everything the substitution engine iterates (`helpers[*].kind`,
-`.viaParams[*].shape`, `.index`) so a malformed third-party manifest can't
-crash the consumer's compile. Schema `version` must equal the current
-`MANIFEST_SCHEMA_VERSION` and the emitting `compilerVersion`'s major must
-match this compiler.
-
-```typescript
-function parseManifest(json: string): ParseManifestResult
-```
-
-### `clearManifestCache()`
-
-```typescript
-function clearManifestCache(): void
-```
-
-### `lookupHelperFromSymbol()`
-
-Resolve the manifest helper entry for a call-site callee symbol.
-@param sym the (possibly aliased) symbol of the call target
-@param checker the program's type checker
-
-```typescript
-function lookupHelperFromSymbol(sym: ts.Symbol, checker: ts.TypeChecker): ManifestLookupResult
-```
-
-### `buildManifest()`
-
-Build a manifest from a package's source program. Only emits entries that
-carry useful narrowing info (at least one `state-value` param with reads);
-helpers that would contribute nothing are omitted (a missing entry coarsens
-identically, so this just keeps the manifest lean).
-
-```typescript
-function buildManifest(program: ts.Program, opts: BuildManifestOptions): Manifest
-```
-
 ### `transformSignalComponentSource()`
 
 Rewrite signal `view`s in a source file and inject the runtime import.
 Returns the source unchanged if it contains no signal components.
+String-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
+— kept for the many callers (mcp, dom codegen tests) that only need the code.
 
 ```typescript
 function transformSignalComponentSource(source: string, opts: SignalTransformOptions = {}): string
 ```
 
-### `lintSignalSource()`
+### `transformSignalComponentSourceWithMap()`
 
-Parse `source` and run the signal lint rules, returning diagnostics with
-resolved line/column. The adapter (vite plugin) surfaces these as build
-errors. Call only on confirmed signal components.
-
-```typescript
-function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[]
-```
-
-### `applyLintFixes()`
-
-Apply the fixes carried by `messages` to `source`, returning the rewritten
-code and how many fixes applied vs. were skipped (overlapping with one already
-applied). Messages without a `fix` are ignored, so a caller can pass a filtered
-subset (e.g. only `convention` diagnostics) to apply just those. Pure — does
-not re-lint; the caller decides whether a second pass is warranted.
+The map-returning form. Every splice (view rewrites, metadata, `batch,` bag
+injection) plus the injected runtime import compose through ONE MagicString
+instance, so the returned {@link SourceMap} is coherent. The vite-plugin threads
+this map (and can compose the lint-autofix pass, which shares the same
+{@link applyEditsWithMap} splicer) in a later stage.
 
 ```typescript
-function applyLintFixes(
+function transformSignalComponentSourceWithMap(
   source: string,
-  messages: ReadonlyArray<{ fix?: LintFix }>,
-): { code: string; applied: number; skipped: number }
-```
-
-### `hasNonDefaultAnnotation()`
-
-Whether the annotation map carries any non-default values. Used to
-gate `__msgAnnotations` emission — annotations whose every field is
-default are emission-redundant (the runtime treats absence as the
-same defaults). Saves ~50 bytes per component for un-annotated Msg
-unions, which dominates the corpus.
-
-```typescript
-function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
-```
-
-### `annotationsToObjectLiteral()`
-
-Build a TS object-literal expression for the annotation map. Used by
-`msgAnnotationsModule` for `__msgAnnotations` emission. Variant
-names are emitted as string literals (not identifiers) so
-discriminants containing `/`, `-`, reserved words, etc. produce
-valid JS.
-
-```typescript
-function annotationsToObjectLiteral(
-  a: Record<string, MessageAnnotations>,
-): ts.ObjectLiteralExpression
-```
-
-### `extractMsgAnnotations()`
-
-Walk a Msg-like discriminated-union type alias and extract JSDoc
-annotations attached to each union member. Returns null if no
-recognizable union is found so callers can skip emission cleanly.
-Expected JSDoc grammar (order-independent):
-@intent("human readable")
-@alwaysAffordable
-@requiresConfirm
-@humanOnly — sugar for dispatchMode: 'human-only'
-@agentOnly — sugar for dispatchMode: 'agent-only'
-Unknown tags are ignored; malformed @intent (no quoted string) is
-treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
-exclusive — if both are present (which the ESLint rule
-`agent-exclusive-annotations` reports as an error), the parser
-falls back to `'shared'` so a misconfigured Msg variant doesn't
-silently lock out one audience.
-
-```typescript
-function extractMsgAnnotations(
-  source: string,
-  typeName: string = 'Msg',
-): Record<string, MessageAnnotations> | null
-```
-
-### `parseAnnotations()`
-
-Parse a JSDoc comment string into `MessageAnnotations`. The single
-source of truth for the annotation grammar — used both for same-file
-Msg unions (here) and for cross-file resolution
-(`cross-file-resolver.ts` imports this rather than re-implementing it,
-so the two paths can't drift).
-
-```typescript
-function parseAnnotations(comment: string): MessageAnnotations
-```
-
-### `isRichField()`
-
-True when `f` is a rich descriptor (object with `type` key).
-
-```typescript
-function isRichField(f: MsgField): f is MsgFieldRich
-```
-
-### `buildFieldDescriptorExpr()`
-
-Build a TS expression for a single field descriptor in a MsgSchema's
-variant map. Used by `msgSchemaToLiteral` (this file) for the
-`__msgSchema` / `__effectSchema` emissions. Migrated from inline
-`buildFieldDescriptorExpr` in transform.ts (v2c/decomp-5).
-
-```typescript
-function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression
-```
-
-### `msgSchemaToLiteral()`
-
-Build the full `{ discriminant, variants }` object literal for a
-MsgSchema. Symmetric for `__msgSchema` and `__effectSchema` emission
-(both use the discriminated-union shape).
-
-```typescript
-function msgSchemaToLiteral(schema: MsgSchema, f: ts.NodeFactory): ts.ObjectLiteralExpression
-```
-
-### `fieldType()`
-
-Extracts the bare type from either descriptor form.
-
-```typescript
-function fieldType(f: MsgField): MsgFieldType
-```
-
-### `extractMsgSchema()`
-
-```typescript
-function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null
-```
-
-### `extractEffectSchema()`
-
-```typescript
-function extractEffectSchema(source: string, typeName: string = 'Effect'): MsgSchema | null
-```
-
-### `buildFieldDescriptor()`
-
-Build a single field descriptor from a property signature: type,
-optionality, and any `@should("…")` JSDoc hint. Emits the compact
-bare form when there's nothing extra to communicate; otherwise the
-rich `{type, optional?, priority?, hint?}` shape.
-Exported so the cross-file resolver (which walks the same property
-signatures when the Msg type lives in a different file from the
-`component()` call) can produce identical descriptors. Without
-sharing this helper, JSDoc hints would silently disappear whenever
-a Msg union got resolved across module boundaries.
-
-```typescript
-function buildFieldDescriptor(
-  member: ts.PropertySignature,
-  source: string,
-  typeIndex: TypeIndex = new Map(),
-): MsgField
-```
-
-### `resolveFieldType()`
-
-```typescript
-function resolveFieldType(
-  type: ts.TypeNode,
-  typeIndex: TypeIndex = new Map(),
-  depth = MAX_FIELD_DEPTH,
-): MsgFieldType
-```
-
-### `computeSchemaHash()`
-
-Stable hex SHA-256 (first 32 chars) over a normalized JSON serialization
-of msgSchema + stateSchema + msgAnnotations. Object key order is
-normalized so equivalent inputs always produce equal hashes.
-Used by the runtime to detect when the browser-to-server `hello` frame
-needs to re-send its schema payload (dev hot-reload).
-
-```typescript
-function computeSchemaHash(input: SchemaHashInput): string
-```
-
-### `stateTypeToLiteral()`
-
-Build a TypeScript expression representing the given StateType as a
-runtime-readable literal. The emission shape mirrors the StateType
-tagged union — `string`/`number`/`boolean`/`unknown` become string
-literals; the structural kinds become object literals with a `kind`
-field plus the appropriate payload (`of`/`fields`/`values`).
-Used by `stateSchemaModule` for `__stateSchema` emission. The shape
-is the runtime/agent contract; downstream tools (MCP introspection,
-agent's "what type is this field?") consume it.
-
-```typescript
-function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression
-```
-
-### `extractStateSchema()`
-
-```typescript
-function extractStateSchema(source: string, typeName = 'State'): StateSchema | null
+  opts: SignalTransformOptions = {},
+): SignalTransformResult
 ```
 
 ## Types
-
-### `CompilerRenameableKey`
-
-```typescript
-export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
-```
 
 ### `CompilerDomInternalImport`
 
@@ -678,10 +689,10 @@ export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
 export type CompilerDomInternalImport = (typeof COMPILER_DOM_INTERNAL_IMPORTS)[number]
 ```
 
-### `DiagnosticSeverity`
+### `CompilerRenameableKey`
 
 ```typescript
-export type DiagnosticSeverity = 'error' | 'warning' | 'info'
+export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
 ```
 
 ### `DiagnosticCategory`
@@ -704,30 +715,16 @@ export type DiagnosticCategory =
   | 'internal'
 ```
 
-### `ParamSpec`
+### `DiagnosticSeverity`
 
 ```typescript
-export type ParamSpec =
-  | { index: number; shape: 'accessor'; innerReads: InnerRead[] }
-  | {
-      index: number
-      shape: 'accessor'
-      /** This parameter's body operates on the result of parameter N. */
-      readsThroughResultOf: number
-      innerReads: InnerRead[]
-    }
-  /**
-   * The parameter is the STATE VALUE itself, passed directly (not via an
-   * accessor function): `helper(s)` inside `state.map(s => helper(s))`. `reads`
-   * are the dotted sub-paths the helper reads from that value; substitution
-   * composes them onto the call-site argument's path prefix
-   * (`s` → '', `s.foo` → 'foo'). Added in schema v2.
-   */
-  | { index: number; shape: 'state-value'; reads: string[] }
-  | { index: number; shape: 'options-bag'; fields: Record<string, FieldSpec> }
-  | { index: number; shape: 'send' }
-  | { index: number; shape: 'thunk-returning-nodes' }
-  | { index: number; shape: 'opaque' }
+export type DiagnosticSeverity = 'error' | 'warning' | 'info'
+```
+
+### `DispatchMode`
+
+```typescript
+export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 ```
 
 ### `FieldSpec`
@@ -758,16 +755,6 @@ export type InnerRead =
   | { kind: 'param-result-path'; from: number; path: string }
 ```
 
-### `ParseManifestResult`
-
-```typescript
-export type ParseManifestResult =
-  | { ok: true; manifest: Manifest }
-  /** `incompatible` = readable but the schema/compiler version doesn't match;
-   *  `malformed` = unparseable or structurally wrong. Both → caller coarsens. */
-  | { ok: false; reason: 'incompatible' | 'malformed'; detail: string }
-```
-
 ### `ManifestLookupResult`
 
 ```typescript
@@ -779,12 +766,6 @@ export type ManifestLookupResult =
   | { kind: 'incompatible'; detail: string }
   /** Manifest present but unparseable/structurally wrong — coarsen + emit a diagnostic. */
   | { kind: 'malformed'; detail: string }
-```
-
-### `DispatchMode`
-
-```typescript
-export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 ```
 
 ### `MessageAnnotations`
@@ -862,6 +843,12 @@ export type MessageAnnotations = {
 }
 ```
 
+### `MsgField`
+
+```typescript
+export type MsgField = MsgFieldType | MsgFieldRich
+```
+
 ### `MsgFieldType`
 
 The "bare type" of a field. Covers five cases:
@@ -897,25 +884,40 @@ export type MsgFieldType =
     }
 ```
 
-### `MsgField`
+### `ParamSpec`
 
 ```typescript
-export type MsgField = MsgFieldType | MsgFieldRich
+export type ParamSpec =
+  | { index: number; shape: 'accessor'; innerReads: InnerRead[] }
+  | {
+      index: number
+      shape: 'accessor'
+      /** This parameter's body operates on the result of parameter N. */
+      readsThroughResultOf: number
+      innerReads: InnerRead[]
+    }
+  /**
+   * The parameter is the STATE VALUE itself, passed directly (not via an
+   * accessor function): `helper(s)` inside `state.map(s => helper(s))`. `reads`
+   * are the dotted sub-paths the helper reads from that value; substitution
+   * composes them onto the call-site argument's path prefix
+   * (`s` → '', `s.foo` → 'foo'). Added in schema v2.
+   */
+  | { index: number; shape: 'state-value'; reads: string[] }
+  | { index: number; shape: 'options-bag'; fields: Record<string, FieldSpec> }
+  | { index: number; shape: 'send' }
+  | { index: number; shape: 'thunk-returning-nodes' }
+  | { index: number; shape: 'opaque' }
 ```
 
-### `TypeIndex`
-
-Index of type aliases and interfaces visible from a source file,
-keyed by name. Lets the field-type resolver follow `Criterion[]` →
-`interface Criterion { … }` and emit a nested object shape rather
-than `'unknown'`.
-The cross-file resolver pipeline (`cross-file-resolver.ts`) builds
-an enriched index that includes types imported from sibling files —
-follow `GridSorting` → `'rank' | 'crit-X' | 'crit-Y'` → `{enum: […]}`
-even when the alias lives in `./state.ts` not the Msg-defining file.
+### `ParseManifestResult`
 
 ```typescript
-export type TypeIndex = Map<string, ts.TypeNode | ts.InterfaceDeclaration>
+export type ParseManifestResult =
+  | { ok: true; manifest: Manifest }
+  /** `incompatible` = readable but the schema/compiler version doesn't match;
+   *  `malformed` = unparseable or structurally wrong. Both → caller coarsens. */
+  | { ok: false; reason: 'incompatible' | 'malformed'; detail: string }
 ```
 
 ### `SchemaHashInput`
@@ -945,7 +947,155 @@ export type StateType =
   | { kind: 'union'; of: StateType[] }
 ```
 
+### `TypeIndex`
+
+Index of type aliases and interfaces visible from a source file,
+keyed by name. Lets the field-type resolver follow `Criterion[]` →
+`interface Criterion { … }` and emit a nested object shape rather
+than `'unknown'`.
+The cross-file resolver pipeline (`cross-file-resolver.ts`) builds
+an enriched index that includes types imported from sibling files —
+follow `GridSorting` → `'rank' | 'crit-X' | 'crit-Y'` → `{enum: […]}`
+even when the alias lives in `./state.ts` not the Msg-defining file.
+
+```typescript
+export type TypeIndex = Map<string, ts.TypeNode | ts.InterfaceDeclaration>
+```
+
 ## Interfaces
+
+### `BuildManifestOptions`
+
+```typescript
+export interface BuildManifestOptions {
+  /** Absolute path to the package's source root (e.g. `<pkg>/src`); module ids are relative to it. */
+  srcRoot: string
+}
+```
+
+### `CodeAction`
+
+```typescript
+export interface CodeAction {
+  /** Human-readable label for the autofix. */
+  title: string
+  /** Source edits that apply the fix. Adapters translate to their host edit format. */
+  edits: Array<{
+    file: string
+    range: Range
+    /** New text replacing `range`. Empty string deletes the range. */
+    newText: string
+  }>
+}
+```
+
+### `ComponentEntry`
+
+```typescript
+export interface ComponentEntry {
+  /** Reserved for v2b's read-everything-the-component-reads escape hatch. Unused at v2b ship. */
+  name: string
+}
+```
+
+### `ContextProvider`
+
+```typescript
+export interface ContextProvider {
+  context: string
+  /** Source AST for the consumer's `provide(LocaleContext, (s) => s.i18n, ...)` accessor. */
+  accessor: ts.ArrowFunction | ts.FunctionExpression | undefined
+}
+```
+
+### `ContextRead`
+
+```typescript
+export interface ContextRead {
+  /** Canonical id: `<package-name>#<export-name>`. */
+  context: string
+  /** Sub-paths within the context value the helper reads. */
+  subPaths: string[]
+}
+```
+
+### `Diagnostic`
+
+```typescript
+export interface Diagnostic {
+  /** Stable id — `<namespace>/<slug>`. Examples: `llui/opaque-view-call`. */
+  id: string
+  severity: DiagnosticSeverity
+  category: DiagnosticCategory
+  /** Human-readable, present-tense, actionable. */
+  message: string
+  location: DiagnosticLocation
+  /** Cross-references (e.g. the other end of a cycle, the missing provider's expected site). */
+  relatedInformation?: DiagnosticRelatedInformation[]
+  /** Structured edits the adapter can offer as autofixes. */
+  fixes?: CodeAction[]
+  /** Optional URL to user-facing documentation for this diagnostic id. */
+  documentation?: string
+}
+```
+
+### `DiagnosticLocation`
+
+```typescript
+export interface DiagnosticLocation {
+  /** Project-relative path on emission (never absolute, never hostname-tainted). */
+  file: string
+  range: Range
+}
+```
+
+### `DiagnosticRelatedInformation`
+
+```typescript
+export interface DiagnosticRelatedInformation {
+  location: DiagnosticLocation
+  message: string
+}
+```
+
+### `ExternalTypeSources`
+
+Resolved external type sources for the file under analysis: the source
+string + local alias name for each of the `State` / `Msg` / `Effect`
+type arguments that the host adapter (vite-plugin) chased to their
+declaring file via `findTypeSource`. The schema/annotation extractors
+run against these instead of the focal file when the alias lives
+elsewhere. All fields optional — absent ones fall back to file-local
+extraction.
+
+```typescript
+export interface ExternalTypeSources {
+  state?: { source: string; typeName: string }
+  msg?: { source: string; typeName: string }
+  effect?: { source: string; typeName: string }
+}
+```
+
+### `HelperEntry`
+
+```typescript
+export interface HelperEntry {
+  /**
+   * `'view-helper'` — the call returns Node[]-like and is resolved once per
+   * call site.
+   * `'parts-helper'` — the call returns a *parts bag* (a record of accessor
+   * thunks). The bag is later spread into element calls by the consumer;
+   * every spread contributes the same read set.
+   */
+  kind: 'view-helper' | 'parts-helper'
+  /** Paths the helper reads from its OWN state shape (rare; usually empty). */
+  helperLocalPaths: string[]
+  /** Per-parameter substitution metadata. Index N corresponds to the helper's Nth declared parameter. */
+  viaParams: ParamSpec[]
+  /** Context-provider keys this helper consumes. Resolved against the consumer's provide() call sites. */
+  contextReads?: ContextRead[]
+}
+```
 
 ### `InjectResult`
 
@@ -954,6 +1104,142 @@ export interface InjectResult {
   sf: ts.SourceFile
   /** True when at least one `__registerScopeVariants(...)` call was inserted. */
   injected: boolean
+}
+```
+
+### `LintEdit`
+
+A single text replacement, as absolute char offsets into the linted source.
+
+```typescript
+export interface LintEdit {
+  start: number
+  end: number
+  newText: string
+}
+```
+
+### `LintFix`
+
+A deterministic, mechanically-applicable fix for a diagnostic — the same
+shape an editor quick-fix or `applyLintFixes` consumes. A diagnostic carries
+at most one (the single obvious correction); multi-option fixes aren't needed
+for the rename-style rules that produce them.
+
+```typescript
+export interface LintFix {
+  /** Short label, e.g. "Rename to `tabindex`". */
+  title: string
+  edits: LintEdit[]
+}
+```
+
+### `LowerBail`
+
+A lowering attempt that gave up and fell back to a slower path. Events are
+facts about ATTEMPTS, not final outcomes: an `each` whose row factory bails
+(`each-direct`) may still lower on the render-callback path (`signalEach`),
+and a pass-1 shape bail may be picked up by the pass-2 helper lowering —
+correlate with the transformed output to classify final tiers. Reason tokens
+are short, stable kebab-case strings meant to feed coverage telemetry and,
+later, user-facing `perf` diagnostics.
+
+```typescript
+export interface LowerBail {
+  /** which lowering gave up: the each row factory (`each-direct`), the each
+   * render-callback arm (`each-render`), a `show`/`branch` arm, the view-helper
+   * pass-2 `each` (`helper-each`), or same-file helper-row inlining
+   * (`inline-helper`, reported only once a same-file delegation target was
+   * actually identified). */
+  kind: 'each-direct' | 'each-render' | 'show' | 'branch' | 'helper-each' | 'inline-helper'
+  /** short stable reason token, e.g. 'row-local-signal-alias' */
+  reason: string
+  /** start offset of the bailing call / row render in the original source file */
+  pos: number
+}
+```
+
+### `Manifest`
+
+```typescript
+export interface Manifest {
+  /** Schema version. Currently 2 (see `MANIFEST_SCHEMA_VERSION`). */
+  version: 2
+  /** Compiler version that emitted this manifest. */
+  compilerVersion: string
+  /** Exported helpers keyed by name. */
+  helpers: Record<string, HelperEntry>
+  /** Exported components keyed by name (for completeness; not used in v2b's substitution). */
+  components: Record<string, ComponentEntry>
+}
+```
+
+### `ManifestHelperLookup`
+
+```typescript
+export interface ManifestHelperLookup {
+  manifest: Manifest
+  packageName: string
+  /** `<moduleId>#<exportName>`, the canonical helper key (also used as the substitution label). */
+  helperKey: string
+  /** The matched entry, or undefined when the package ships a manifest but not this helper. */
+  entry: HelperEntry | undefined
+}
+```
+
+### `MsgFieldRich`
+
+Rich per-field descriptor. Emitted only when there's something
+beyond the bare type to communicate — optionality, an explicit
+priority hint, a freeform agent hint, or a runtime validation
+predicate. When everything but `type` is unset, the producer emits
+the bare `MsgFieldType` instead so variants without annotations
+stay byte-cheap in the bundle.
+
+```typescript
+export interface MsgFieldRich {
+  type: MsgFieldType
+  /** Mirrors TypeScript's `?:` optional marker. Required fields omit this. */
+  optional?: boolean
+  /**
+   * Strength signal for optional fields. Borrows RFC 2119's `SHOULD`:
+   * the LLM ought to fill it in unless it has a specific reason not
+   * to. Required fields don't carry a priority — TS already conveys
+   * "must" via the type system. Currently the only level; future
+   * extensions could add `'recommended'` or similar.
+   */
+  priority?: 'should'
+  /** Freeform consequence-shaped explanation. Surfaced verbatim to
+   *  the LLM at affordance time. */
+  hint?: string
+  /**
+   * Boolean JS expression that must hold for the field's value to be
+   * accepted. The expression has `v` bound to the field's runtime
+   * value; everything else is global (Math, JSON, RegExp, etc.).
+   * Authored as `@validates("expr")` JSDoc — the compiler captures
+   * the source string verbatim and the validator compiles it lazily
+   * with `new Function`, caching across calls.
+   *
+   * Examples:
+   *   @validates("v >= 0 && v <= 100")        // weight 0–100
+   *   @validates("v.length > 0")              // non-empty string
+   *   @validates("/^[a-z0-9-]+$/.test(v)")    // slug format
+   *
+   * The predicate runs ONLY at the agent boundary. Human-driven
+   * dispatches bypass it because TypeScript already validated the
+   * call site. Use for invariants the type system can't express
+   * (numeric ranges, format predicates, length bounds).
+   */
+  validates?: string
+}
+```
+
+### `MsgSchema`
+
+```typescript
+export interface MsgSchema {
+  discriminant: string
+  variants: Record<string, Record<string, MsgField>>
 }
 ```
 
@@ -979,43 +1265,14 @@ export interface OpaqueOut {
 }
 ```
 
-### `BindingSourceEntry`
+### `Position`
 
 ```typescript
-export interface BindingSourceEntry {
-  bindingIndex: number
-  file: string
+export interface Position {
+  /** 0-based line index. */
   line: number
+  /** 0-based UTF-16 code-unit column. */
   column: number
-}
-```
-
-### `CompilerCacheEntry`
-
-```typescript
-export interface CompilerCacheEntry {
-  preSource: string
-  postSource: string
-  msgMaskMap: Record<string, number>
-  bindingSources: BindingSourceEntry[]
-}
-```
-
-### `ExternalTypeSources`
-
-Resolved external type sources for the file under analysis: the source
-string + local alias name for each of the `State` / `Msg` / `Effect`
-type arguments that the host adapter (vite-plugin) chased to their
-declaring file via `findTypeSource`. The schema/annotation extractors
-run against these instead of the focal file when the alias lives
-elsewhere. All fields optional — absent ones fall back to file-local
-extraction.
-
-```typescript
-export interface ExternalTypeSources {
-  state?: { source: string; typeName: string }
-  msg?: { source: string; typeName: string }
-  effect?: { source: string; typeName: string }
 }
 ```
 
@@ -1034,6 +1291,15 @@ export interface PreExtractedSchemas {
   msgAnnotations?: ReturnType<typeof extractMsgAnnotations>
   stateSchema?: ReturnType<typeof extractStateSchema>
   effectSchema?: ReturnType<typeof extractEffectSchema>
+}
+```
+
+### `Range`
+
+```typescript
+export interface Range {
+  start: Position
+  end: Position
 }
 ```
 
@@ -1096,144 +1362,52 @@ export interface ResolvedTypeSource {
 }
 ```
 
-### `Position`
+### `SignalDiagnostic`
 
 ```typescript
-export interface Position {
-  /** 0-based line index. */
+export interface SignalDiagnostic {
+  rule: string
+  message: string
+  start: number
+  length: number
+  /** Present iff the diagnostic is mechanically fixable (rename-style rules). */
+  fix?: LintFix
+}
+```
+
+### `SignalLintMessage`
+
+A lint diagnostic with source position resolved (1-based line, 0-based col).
+
+```typescript
+export interface SignalLintMessage {
+  rule: string
+  message: string
+  start: number
   line: number
-  /** 0-based UTF-16 code-unit column. */
   column: number
+  /** Present iff the diagnostic is mechanically fixable (see {@link LintFix}). */
+  fix?: LintFix
 }
 ```
 
-### `Range`
+### `SignalTransformResult`
+
+Result of {@link transformSignalComponentSourceWithMap}: the rewritten code and
+a source map (null when the file had no signal component and was returned as-is).
 
 ```typescript
-export interface Range {
-  start: Position
-  end: Position
+export interface SignalTransformResult {
+  code: string
+  map: SourceMap | null
 }
 ```
 
-### `DiagnosticLocation`
+### `StateSchema`
 
 ```typescript
-export interface DiagnosticLocation {
-  /** Project-relative path on emission (never absolute, never hostname-tainted). */
-  file: string
-  range: Range
-}
-```
-
-### `CodeAction`
-
-```typescript
-export interface CodeAction {
-  /** Human-readable label for the autofix. */
-  title: string
-  /** Source edits that apply the fix. Adapters translate to their host edit format. */
-  edits: Array<{
-    file: string
-    range: Range
-    /** New text replacing `range`. Empty string deletes the range. */
-    newText: string
-  }>
-}
-```
-
-### `DiagnosticRelatedInformation`
-
-```typescript
-export interface DiagnosticRelatedInformation {
-  location: DiagnosticLocation
-  message: string
-}
-```
-
-### `Diagnostic`
-
-```typescript
-export interface Diagnostic {
-  /** Stable id — `<namespace>/<slug>`. Examples: `llui/opaque-view-call`. */
-  id: string
-  severity: DiagnosticSeverity
-  category: DiagnosticCategory
-  /** Human-readable, present-tense, actionable. */
-  message: string
-  location: DiagnosticLocation
-  /** Cross-references (e.g. the other end of a cycle, the missing provider's expected site). */
-  relatedInformation?: DiagnosticRelatedInformation[]
-  /** Structured edits the adapter can offer as autofixes. */
-  fixes?: CodeAction[]
-  /** Optional URL to user-facing documentation for this diagnostic id. */
-  documentation?: string
-}
-```
-
-### `Manifest`
-
-```typescript
-export interface Manifest {
-  /** Schema version. Currently 2 (see `MANIFEST_SCHEMA_VERSION`). */
-  version: 2
-  /** Compiler version that emitted this manifest. */
-  compilerVersion: string
-  /** Exported helpers keyed by name. */
-  helpers: Record<string, HelperEntry>
-  /** Exported components keyed by name (for completeness; not used in v2b's substitution). */
-  components: Record<string, ComponentEntry>
-}
-```
-
-### `HelperEntry`
-
-```typescript
-export interface HelperEntry {
-  /**
-   * `'view-helper'` — the call returns Node[]-like and is resolved once per
-   * call site.
-   * `'parts-helper'` — the call returns a *parts bag* (a record of accessor
-   * thunks). The bag is later spread into element calls by the consumer;
-   * every spread contributes the same read set.
-   */
-  kind: 'view-helper' | 'parts-helper'
-  /** Paths the helper reads from its OWN state shape (rare; usually empty). */
-  helperLocalPaths: string[]
-  /** Per-parameter substitution metadata. Index N corresponds to the helper's Nth declared parameter. */
-  viaParams: ParamSpec[]
-  /** Context-provider keys this helper consumes. Resolved against the consumer's provide() call sites. */
-  contextReads?: ContextRead[]
-}
-```
-
-### `ComponentEntry`
-
-```typescript
-export interface ComponentEntry {
-  /** Reserved for v2b's read-everything-the-component-reads escape hatch. Unused at v2b ship. */
-  name: string
-}
-```
-
-### `ContextRead`
-
-```typescript
-export interface ContextRead {
-  /** Canonical id: `<package-name>#<export-name>`. */
-  context: string
-  /** Sub-paths within the context value the helper reads. */
-  subPaths: string[]
-}
-```
-
-### `ContextProvider`
-
-```typescript
-export interface ContextProvider {
-  context: string
-  /** Source AST for the consumer's `provide(LocaleContext, (s) => s.i18n, ...)` accessor. */
-  accessor: ts.ArrowFunction | ts.FunctionExpression | undefined
+export interface StateSchema {
+  fields: Record<string, StateType>
 }
 ```
 
@@ -1269,19 +1443,6 @@ export interface SubstitutionContext {
 }
 ```
 
-### `SubstitutionResult`
-
-```typescript
-export interface SubstitutionResult {
-  /** Host-state paths contributed by this call site, e.g. `['carousel.paused', 'carousel.current']`. */
-  paths: string[]
-  /** Diagnostics emitted by the substitution. */
-  diagnostics: SubstitutionDiagnostic[]
-  /** Whether the call site fell back to FULL_MASK (e.g. unrecognized options-bag shape). */
-  fullMask: boolean
-}
-```
-
 ### `SubstitutionDiagnostic`
 
 ```typescript
@@ -1295,187 +1456,26 @@ export interface SubstitutionDiagnostic {
 }
 ```
 
-### `ManifestHelperLookup`
+### `SubstitutionResult`
 
 ```typescript
-export interface ManifestHelperLookup {
-  manifest: Manifest
-  packageName: string
-  /** `<moduleId>#<exportName>`, the canonical helper key (also used as the substitution label). */
-  helperKey: string
-  /** The matched entry, or undefined when the package ships a manifest but not this helper. */
-  entry: HelperEntry | undefined
-}
-```
-
-### `BuildManifestOptions`
-
-```typescript
-export interface BuildManifestOptions {
-  /** Absolute path to the package's source root (e.g. `<pkg>/src`); module ids are relative to it. */
-  srcRoot: string
-}
-```
-
-### `LowerBail`
-
-A lowering attempt that gave up and fell back to a slower path. Events are
-facts about ATTEMPTS, not final outcomes: an `each` whose row factory bails
-(`each-direct`) may still lower on the render-callback path (`signalEach`),
-and a pass-1 shape bail may be picked up by the pass-2 helper lowering —
-correlate with the transformed output to classify final tiers. Reason tokens
-are short, stable kebab-case strings meant to feed coverage telemetry and,
-later, user-facing `perf` diagnostics.
-
-```typescript
-export interface LowerBail {
-  /** which lowering gave up: the each row factory (`each-direct`), the each
-   * render-callback arm (`each-render`), a `show`/`branch` arm, the view-helper
-   * pass-2 `each` (`helper-each`), or same-file helper-row inlining
-   * (`inline-helper`, reported only once a same-file delegation target was
-   * actually identified). */
-  kind: 'each-direct' | 'each-render' | 'show' | 'branch' | 'helper-each' | 'inline-helper'
-  /** short stable reason token, e.g. 'row-local-signal-alias' */
-  reason: string
-  /** start offset of the bailing call / row render in the original source file */
-  pos: number
-}
-```
-
-### `LintEdit`
-
-A single text replacement, as absolute char offsets into the linted source.
-
-```typescript
-export interface LintEdit {
-  start: number
-  end: number
-  newText: string
-}
-```
-
-### `LintFix`
-
-A deterministic, mechanically-applicable fix for a diagnostic — the same
-shape an editor quick-fix or `applyLintFixes` consumes. A diagnostic carries
-at most one (the single obvious correction); multi-option fixes aren't needed
-for the rename-style rules that produce them.
-
-```typescript
-export interface LintFix {
-  /** Short label, e.g. "Rename to `tabindex`". */
-  title: string
-  edits: LintEdit[]
-}
-```
-
-### `SignalDiagnostic`
-
-```typescript
-export interface SignalDiagnostic {
-  rule: string
-  message: string
-  start: number
-  length: number
-  /** Present iff the diagnostic is mechanically fixable (rename-style rules). */
-  fix?: LintFix
-}
-```
-
-### `SignalLintMessage`
-
-A lint diagnostic with source position resolved (1-based line, 0-based col).
-
-```typescript
-export interface SignalLintMessage {
-  rule: string
-  message: string
-  start: number
-  line: number
-  column: number
-  /** Present iff the diagnostic is mechanically fixable (see {@link LintFix}). */
-  fix?: LintFix
-}
-```
-
-### `MsgFieldRich`
-
-Rich per-field descriptor. Emitted only when there's something
-beyond the bare type to communicate — optionality, an explicit
-priority hint, a freeform agent hint, or a runtime validation
-predicate. When everything but `type` is unset, the producer emits
-the bare `MsgFieldType` instead so variants without annotations
-stay byte-cheap in the bundle.
-
-```typescript
-export interface MsgFieldRich {
-  type: MsgFieldType
-  /** Mirrors TypeScript's `?:` optional marker. Required fields omit this. */
-  optional?: boolean
-  /**
-   * Strength signal for optional fields. Borrows RFC 2119's `SHOULD`:
-   * the LLM ought to fill it in unless it has a specific reason not
-   * to. Required fields don't carry a priority — TS already conveys
-   * "must" via the type system. Currently the only level; future
-   * extensions could add `'recommended'` or similar.
-   */
-  priority?: 'should'
-  /** Freeform consequence-shaped explanation. Surfaced verbatim to
-   *  the LLM at affordance time. */
-  hint?: string
-  /**
-   * Boolean JS expression that must hold for the field's value to be
-   * accepted. The expression has `v` bound to the field's runtime
-   * value; everything else is global (Math, JSON, RegExp, etc.).
-   * Authored as `@validates("expr")` JSDoc — the compiler captures
-   * the source string verbatim and the validator compiles it lazily
-   * with `new Function`, caching across calls.
-   *
-   * Examples:
-   *   @validates("v >= 0 && v <= 100")        // weight 0–100
-   *   @validates("v.length > 0")              // non-empty string
-   *   @validates("/^[a-z0-9-]+$/.test(v)")    // slug format
-   *
-   * The predicate runs ONLY at the agent boundary. Human-driven
-   * dispatches bypass it because TypeScript already validated the
-   * call site. Use for invariants the type system can't express
-   * (numeric ranges, format predicates, length bounds).
-   */
-  validates?: string
-}
-```
-
-### `MsgSchema`
-
-```typescript
-export interface MsgSchema {
-  discriminant: string
-  variants: Record<string, Record<string, MsgField>>
-}
-```
-
-### `StateSchema`
-
-```typescript
-export interface StateSchema {
-  fields: Record<string, StateType>
-}
-```
-
-## Classes
-
-### `CompilerCache`
-
-```typescript
-class CompilerCache {
-  cache
-  set(componentName: string, entry: CompilerCacheEntry): void
-  get(componentName: string): CompilerCacheEntry | undefined
-  has(componentName: string): boolean
+export interface SubstitutionResult {
+  /** Host-state paths contributed by this call site, e.g. `['carousel.paused', 'carousel.current']`. */
+  paths: string[]
+  /** Diagnostics emitted by the substitution. */
+  diagnostics: SubstitutionDiagnostic[]
+  /** Whether the call site fell back to FULL_MASK (e.g. unrecognized options-bag shape). */
+  fullMask: boolean
 }
 ```
 
 ## Constants
+
+### `COMPILER_DOM_INTERNAL_IMPORTS`
+
+```typescript
+const COMPILER_DOM_INTERNAL_IMPORTS
+```
 
 ### `COMPILER_RENAMEABLE_KEYS`
 
@@ -1513,10 +1513,17 @@ Two disjoint sets:
 const COMPILER_RENAMEABLE_KEYS
 ```
 
-### `COMPILER_DOM_INTERNAL_IMPORTS`
+### `COMPILER_VERSION`
+
+The @llui/compiler version stamped on every emitted ComponentDef.
+Read at runtime by `assertCompilerCompatibility()` in @llui/dom's
+update-loop. v2b §5.
+Keep this in sync with `package.json` — the publish script (Phase 7
+`scripts/publish.sh`) reads from package.json so a drift is caught at
+release time.
 
 ```typescript
-const COMPILER_DOM_INTERNAL_IMPORTS
+const COMPILER_VERSION
 ```
 
 ### `DOM_INTERNAL_MODULE_SPECIFIER`
@@ -1525,23 +1532,6 @@ Module specifier the compiler emits for the internal-helper imports.
 
 ```typescript
 const DOM_INTERNAL_MODULE_SPECIFIER
-```
-
-### `compilerCache`
-
-```typescript
-const compilerCache
-```
-
-### `MANIFEST_SCHEMA_VERSION`
-
-Current manifest schema version. Bumped 1→2 to add the `state-value`
-param/field shape (helpers called as `helper(s)` with the state value passed
-directly, e.g. `state.map(s => itemFill(s, i))`), which v1's accessor-function
-shapes could not express. Consumers reject other majors via `compilerVersion`.
-
-```typescript
-const MANIFEST_SCHEMA_VERSION
 ```
 
 ### `HELPER_KEY_SEP`
@@ -1560,17 +1550,15 @@ The well-known on-disk location, relative to a published package root.
 const MANIFEST_RELATIVE_PATH
 ```
 
-### `COMPILER_VERSION`
+### `MANIFEST_SCHEMA_VERSION`
 
-The @llui/compiler version stamped on every emitted ComponentDef.
-Read at runtime by `assertCompilerCompatibility()` in @llui/dom's
-update-loop. v2b §5.
-Keep this in sync with `package.json` — the publish script (Phase 7
-`scripts/publish.sh`) reads from package.json so a drift is caught at
-release time.
+Current manifest schema version. Bumped 1→2 to add the `state-value`
+param/field shape (helpers called as `helper(s)` with the state value passed
+directly, e.g. `state.map(s => itemFill(s, i))`), which v1's accessor-function
+shapes could not express. Consumers reject other majors via `compilerVersion`.
 
 ```typescript
-const COMPILER_VERSION
+const MANIFEST_SCHEMA_VERSION
 ```
 
 <!-- auto-api:end -->

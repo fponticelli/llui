@@ -14,7 +14,7 @@ description: 'A reactive markdown() renderer with streaming, custom node rendere
 
 <p class="example-source"><a href="https://github.com/fponticelli/llui/tree/main/examples/markdown-showcase" target="_blank" rel="noopener">View source on GitHub ↗</a></p>
 
-A live showcase of [`@llui/markdown`](../../packages/markdown): a reactive `markdown()` renderer
+A live showcase of [`@llui/markdown`](/api/markdown): a reactive `markdown()` renderer
 that turns a Markdown string into real LLui DOM, with per-node renderer overrides.
 
 ```bash

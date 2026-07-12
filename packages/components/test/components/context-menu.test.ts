@@ -52,10 +52,16 @@ describe('context-menu reducer', () => {
   })
 
   it('highlightNext wraps', () => {
-    const s0 = { ...init({ items: flat }) }
+    const s0 = { ...init({ items: flat }), open: true }
     s0.highlights[''] = 'b'
     const [s] = update(s0, { type: 'highlightNext', level: '' })
     expect(s.highlights['']).toBe('a')
+  })
+
+  // Finding 5: highlight is open-only — a stray message must not mutate a closed menu.
+  it('highlight is ignored when the menu is closed', () => {
+    const [s] = update(init({ items: flat }), { type: 'highlight', level: '', value: 'b' })
+    expect(s.highlights['']).toBeNull()
   })
 
   it('select (action) closes menu', () => {

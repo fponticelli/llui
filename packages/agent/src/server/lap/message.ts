@@ -108,6 +108,23 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
         200,
       )
     }
+    if (resolved.outcome === 'timeout') {
+      // Honest: the confirm is still live in the browser — a later
+      // approval may still fire. Return `pending-confirmation` so the
+      // agent polls `get_confirm_result`. Do NOT audit a rejection here
+      // (the earlier `confirm-proposed` entry stands) and do NOT expire
+      // the browser entry — that would defeat a slow-but-genuine approval.
+      return json(
+        {
+          status: 'pending-confirmation',
+          confirmId: initial.confirmId,
+        } satisfies LapMessageResponse,
+        200,
+      )
+    }
+    // user-cancelled: a real rejection. Record it AND expire the browser
+    // entry so a late Approve can't fire the dispatch we just told the
+    // agent was rejected.
     await deps.auditSink.write({
       at: nowMs2,
       tid: auth.tid,
@@ -115,6 +132,7 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
       event: 'confirm-rejected',
       detail: { variant: body.msg.type, confirmId: initial.confirmId },
     })
+    deps.registry.send(auth.tid, { t: 'confirm-expire', confirmId: initial.confirmId })
     return json({ status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse, 200)
   }
 

@@ -142,36 +142,12 @@ Conformance-tested against the real `google/A2UI` v0.9 sample payloads. Custom c
 
 ## Functions
 
-### `isPathBinding()`
+### `a2uiUpdate()`
+
+The component `update`: returns the next state and any effects to emit.
 
 ```typescript
-function isPathBinding(value: unknown): value is PathBinding
-```
-
-### `isFunctionCall()`
-
-```typescript
-function isFunctionCall(value: unknown): value is FunctionCall
-```
-
-### `isChildTemplate()`
-
-```typescript
-function isChildTemplate(value: ChildList | undefined): value is ChildTemplate
-```
-
-### `defineCatalog()`
-
-Build a catalog, optionally layering over a base.
-
-```typescript
-function defineCatalog(spec: CatalogSpec): Catalog
-```
-
-### `initialA2uiState()`
-
-```typescript
-function initialA2uiState(): A2uiState
+function a2uiUpdate(state: A2uiState, msg: A2uiMsg): [A2uiState, A2uiEffect[]]
 ```
 
 ### `applyEnvelope()`
@@ -182,30 +158,6 @@ Apply a single server→client envelope to the state (pure).
 function applyEnvelope(state: A2uiState, envelope: ServerToClientEnvelope): A2uiState
 ```
 
-### `a2uiUpdate()`
-
-The component `update`: returns the next state and any effects to emit.
-
-```typescript
-function a2uiUpdate(state: A2uiState, msg: A2uiMsg): [A2uiState, A2uiEffect[]]
-```
-
-### `pointerTokens()`
-
-Split a pointer into its path tokens. `''` and `'/'` both mean the root.
-
-```typescript
-function pointerTokens(pointer: string): string[]
-```
-
-### `resolvePointer()`
-
-Resolve a pointer against a data model, or `undefined` if any segment is missing.
-
-```typescript
-function resolvePointer(root: JsonValue, pointer: string): JsonValue | undefined
-```
-
 ### `applyPointer()`
 
 Return a new data model with `value` written at `pointer` (upsert semantics).
@@ -214,46 +166,6 @@ Untouched siblings keep their identity (structural sharing).
 
 ```typescript
 function applyPointer(root: JsonValue, pointer: string, value: JsonValue | undefined): JsonValue
-```
-
-### `displayString()`
-
-Coerce any JSON value to a display string.
-
-```typescript
-function displayString(value: JsonValue | undefined): string
-```
-
-### `resolveDynamic()`
-
-One-shot, non-reactive resolution — for action context + input write-back reads.
-
-```typescript
-function resolveDynamic(ctx: RenderContext, scope: RenderScope, dyn: unknown): JsonValue | undefined
-```
-
-### `bindString()`
-
-Reactive string binding for text/attrs.
-
-```typescript
-function bindString(
-  ctx: RenderContext,
-  scope: RenderScope,
-  dyn: DynamicString | undefined,
-): Reactive<string>
-```
-
-### `bindNumber()`
-
-Reactive number binding (Slider value/min/max).
-
-```typescript
-function bindNumber(
-  ctx: RenderContext,
-  scope: RenderScope,
-  dyn: DynamicNumber | undefined,
-): Reactive<number>
 ```
 
 ### `bindBoolean()`
@@ -268,6 +180,30 @@ function bindBoolean(
 ): Reactive<boolean>
 ```
 
+### `bindNumber()`
+
+Reactive number binding (Slider value/min/max).
+
+```typescript
+function bindNumber(
+  ctx: RenderContext,
+  scope: RenderScope,
+  dyn: DynamicNumber | undefined,
+): Reactive<number>
+```
+
+### `bindString()`
+
+Reactive string binding for text/attrs.
+
+```typescript
+function bindString(
+  ctx: RenderContext,
+  scope: RenderScope,
+  dyn: DynamicString | undefined,
+): Reactive<string>
+```
+
 ### `bindStringList()`
 
 Reactive string-list binding (ChoicePicker value).
@@ -278,19 +214,6 @@ function bindStringList(
   scope: RenderScope,
   dyn: DynamicStringList | undefined,
 ): Reactive<readonly string[]>
-```
-
-### `renderSurfaces()`
-
-Render every live surface, in creation order.
-
-```typescript
-function renderSurfaces(
-  state: Signal<A2uiState>,
-  send: (msg: A2uiMsg) => void,
-  resolveCatalog: CatalogResolver,
-  fallbackCatalog: Catalog,
-): Renderable
 ```
 
 ### `connectA2ui()`
@@ -307,6 +230,91 @@ function connectA2ui(
 ): A2uiHandle
 ```
 
+### `defineCatalog()`
+
+Build a catalog, optionally layering over a base.
+
+```typescript
+function defineCatalog(spec: CatalogSpec): Catalog
+```
+
+### `displayString()`
+
+Coerce any JSON value to a display string.
+
+```typescript
+function displayString(value: JsonValue | undefined): string
+```
+
+### `initialA2uiState()`
+
+```typescript
+function initialA2uiState(): A2uiState
+```
+
+### `isChildTemplate()`
+
+```typescript
+function isChildTemplate(value: ChildList | undefined): value is ChildTemplate
+```
+
+### `isFunctionCall()`
+
+```typescript
+function isFunctionCall(value: unknown): value is FunctionCall
+```
+
+### `isPathBinding()`
+
+```typescript
+function isPathBinding(value: unknown): value is PathBinding
+```
+
+### `mountA2ui()`
+
+Mount an A2UI renderer into `container`.
+
+```typescript
+function mountA2ui(container: Element, options: A2uiOptions = {}): A2uiHandle
+```
+
+### `pointerTokens()`
+
+Split a pointer into its path tokens. `''` and `'/'` both mean the root.
+
+```typescript
+function pointerTokens(pointer: string): string[]
+```
+
+### `renderSurfaces()`
+
+Render every live surface, in creation order.
+
+```typescript
+function renderSurfaces(
+  state: Signal<A2uiState>,
+  send: (msg: A2uiMsg) => void,
+  resolveCatalog: CatalogResolver,
+  fallbackCatalog: Catalog,
+): Renderable
+```
+
+### `resolveDynamic()`
+
+One-shot, non-reactive resolution — for action context + input write-back reads.
+
+```typescript
+function resolveDynamic(ctx: RenderContext, scope: RenderScope, dyn: unknown): JsonValue | undefined
+```
+
+### `resolvePointer()`
+
+Resolve a pointer against a data model, or `undefined` if any segment is missing.
+
+```typescript
+function resolvePointer(root: JsonValue, pointer: string): JsonValue | undefined
+```
+
 ### `webSocketTransport()`
 
 A WebSocket A2UI transport. Inbound frames are parsed as an envelope or an
@@ -321,99 +329,7 @@ function webSocketTransport(
 ): A2uiTransport
 ```
 
-### `mountA2ui()`
-
-Mount an A2UI renderer into `container`.
-
-```typescript
-function mountA2ui(container: Element, options: A2uiOptions = {}): A2uiHandle
-```
-
 ## Types
-
-### `JsonValue`
-
-A JSON-serializable value — the shape of an A2UI surface data model.
-
-```typescript
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue }
-```
-
-### `JsonObject`
-
-```typescript
-export type JsonObject = { readonly [key: string]: JsonValue }
-```
-
-### `DynamicString`
-
-A value that may be a literal, a data-model path, or a function result.
-
-```typescript
-export type DynamicString = string | PathBinding | FunctionCall
-```
-
-### `DynamicNumber`
-
-```typescript
-export type DynamicNumber = number | PathBinding | FunctionCall
-```
-
-### `DynamicBoolean`
-
-```typescript
-export type DynamicBoolean = boolean | PathBinding | FunctionCall
-```
-
-### `DynamicStringList`
-
-```typescript
-export type DynamicStringList = readonly string[] | PathBinding | FunctionCall
-```
-
-### `ComponentId`
-
-```typescript
-export type ComponentId = string
-```
-
-### `ChildList`
-
-```typescript
-export type ChildList = readonly ComponentId[] | ChildTemplate
-```
-
-### `ComponentBuilder`
-
-Builds the live DOM for one A2UI component type.
-
-```typescript
-export type ComponentBuilder = (args: BuildArgs) => Renderable
-```
-
-### `CatalogFunction`
-
-A client-defined function (formatting, validation, local actions). Pure: given
-a call and its evaluation environment, return a value. Reactivity is handled
-once at the binding site, so functions need not deal with signals.
-
-```typescript
-export type CatalogFunction = (call: FunctionCall, env: EvalEnv) => JsonValue
-```
-
-### `CatalogResolver`
-
-A resolver from an A2UI `catalogId` to a concrete catalog.
-
-```typescript
-export type CatalogResolver = (catalogId: string) => Catalog | undefined
-```
 
 ### `A2uiEffect`
 
@@ -453,27 +369,231 @@ export type A2uiMsg =
     }
 ```
 
-## Interfaces
+### `CatalogFunction`
 
-### `PathBinding`
-
-A reference into the surface data model via a JSON-Pointer-ish path.
+A client-defined function (formatting, validation, local actions). Pure: given
+a call and its evaluation environment, return a value. Reactivity is handled
+once at the binding site, so functions need not deal with signals.
 
 ```typescript
-export interface PathBinding {
-  readonly path: string
+export type CatalogFunction = (call: FunctionCall, env: EvalEnv) => JsonValue
+```
+
+### `CatalogResolver`
+
+A resolver from an A2UI `catalogId` to a concrete catalog.
+
+```typescript
+export type CatalogResolver = (catalogId: string) => Catalog | undefined
+```
+
+### `ChildList`
+
+```typescript
+export type ChildList = readonly ComponentId[] | ChildTemplate
+```
+
+### `ComponentBuilder`
+
+Builds the live DOM for one A2UI component type.
+
+```typescript
+export type ComponentBuilder = (args: BuildArgs) => Renderable
+```
+
+### `ComponentId`
+
+```typescript
+export type ComponentId = string
+```
+
+### `DynamicBoolean`
+
+```typescript
+export type DynamicBoolean = boolean | PathBinding | FunctionCall
+```
+
+### `DynamicNumber`
+
+```typescript
+export type DynamicNumber = number | PathBinding | FunctionCall
+```
+
+### `DynamicString`
+
+A value that may be a literal, a data-model path, or a function result.
+
+```typescript
+export type DynamicString = string | PathBinding | FunctionCall
+```
+
+### `DynamicStringList`
+
+```typescript
+export type DynamicStringList = readonly string[] | PathBinding | FunctionCall
+```
+
+### `JsonObject`
+
+```typescript
+export type JsonObject = { readonly [key: string]: JsonValue }
+```
+
+### `JsonValue`
+
+A JSON-serializable value — the shape of an A2UI surface data model.
+
+```typescript
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue }
+```
+
+## Interfaces
+
+### `A2uiActionEffect`
+
+An action the user triggered, with its context already resolved to values.
+
+```typescript
+export interface A2uiActionEffect {
+  readonly type: 'a2ui/action'
+  readonly surfaceId: string
+  readonly sourceComponentId: ComponentId
+  readonly name: string
+  readonly context: JsonObject
 }
 ```
 
-### `FunctionCall`
+### `A2uiActionEvent`
 
-A catalog-registered function invocation (validation, formatting, actions).
+A user-triggered action, resolved and ready to send to your agent/server.
 
 ```typescript
-export interface FunctionCall {
-  readonly call: string
-  readonly args?: Readonly<Record<string, unknown>>
-  readonly returnType?: string
+export interface A2uiActionEvent {
+  readonly surfaceId: string
+  readonly sourceComponentId: string
+  readonly name: string
+  readonly context: JsonObject
+  readonly timestamp: string
+  /**
+   * The surface's full data model, present only when the surface was created
+   * with `sendDataModel: true` (A2UI's client→server data sync — the data model
+   * rides along with the client-bound action for collaborative editing).
+   */
+  readonly dataModel?: JsonValue
+}
+```
+
+### `A2uiHandle`
+
+```typescript
+export interface A2uiHandle {
+  /** Apply one server→client envelope, or a batch, as a single reconcile. */
+  apply(envelopes: ServerToClientEnvelope | readonly ServerToClientEnvelope[]): void
+  /** Snapshot the current renderer state. */
+  getState(): A2uiState
+  /** The client capabilities to send to the server (catalogs the client supports). */
+  capabilities(): ClientCapabilities
+  /** Observe state after every update cycle. Returns an unsubscribe. */
+  subscribe(listener: (state: A2uiState) => void): () => void
+  /** Tear down the mounted renderer. */
+  dispose(): void
+}
+```
+
+### `A2uiOptions`
+
+```typescript
+export interface A2uiOptions {
+  /** Called when the user triggers a component action. */
+  readonly onAction?: (event: A2uiActionEvent) => void
+  /** Custom catalogs keyed by their A2UI `catalogId`. */
+  readonly catalogs?: Readonly<Record<string, Catalog>>
+  /** DOM commit scheduler — `'raf'` coalesces streaming updates to one paint/frame. */
+  readonly scheduler?: 'sync' | 'raf'
+}
+```
+
+### `A2uiState`
+
+Root renderer state: all live surfaces plus their creation order.
+
+```typescript
+export interface A2uiState {
+  readonly surfaces: Readonly<Record<string, Surface>>
+  readonly order: readonly string[]
+}
+```
+
+### `A2uiTransport`
+
+A bidirectional A2UI channel: deliver server→client envelopes, accept actions.
+
+```typescript
+export interface A2uiTransport {
+  /** Subscribe to inbound server→client envelopes. Returns an unsubscribe. */
+  onEnvelope(handler: (envelope: ServerToClientEnvelope) => void): () => void
+  /** Send a client→server action to the channel. */
+  sendAction(event: A2uiActionEvent): void
+}
+```
+
+### `Action`
+
+A component action: dispatch an event to the server and/or run a local function.
+
+```typescript
+export interface Action {
+  readonly event?: ActionEvent
+  readonly functionCall?: FunctionCall
+}
+```
+
+### `ActionEvent`
+
+A server-bound event dispatched when the user triggers an action.
+
+```typescript
+export interface ActionEvent {
+  readonly name: string
+  readonly context?: Readonly<Record<string, unknown>>
+}
+```
+
+### `BuildArgs`
+
+```typescript
+export interface BuildArgs {
+  readonly node: ComponentNode
+  readonly ctx: RenderContext
+  readonly scope: RenderScope
+}
+```
+
+### `Catalog`
+
+```typescript
+export interface Catalog {
+  readonly id?: string
+  readonly components: Readonly<Record<string, ComponentBuilder>>
+  readonly functions: Readonly<Record<string, CatalogFunction>>
+}
+```
+
+### `CatalogSpec`
+
+```typescript
+export interface CatalogSpec {
+  readonly id?: string
+  readonly components: Readonly<Record<string, ComponentBuilder>>
+  readonly functions?: Readonly<Record<string, CatalogFunction>>
+  /** A base catalog to inherit builders/functions from (this spec wins on conflict). */
+  readonly extends?: Catalog
 }
 ```
 
@@ -485,6 +605,17 @@ Container children: a static id list, or a template repeated over a collection.
 export interface ChildTemplate {
   readonly componentId: ComponentId
   readonly path: string
+}
+```
+
+### `ClientCapabilities`
+
+Client capabilities to advertise to the server (A2UI `client_capabilities`).
+
+```typescript
+export interface ClientCapabilities {
+  /** Catalog ids the client can render (the Basic catalog plus any custom ones). */
+  readonly supportedCatalogIds: readonly string[]
 }
 ```
 
@@ -502,40 +633,6 @@ export interface ComponentNode {
 }
 ```
 
-### `ActionEvent`
-
-A server-bound event dispatched when the user triggers an action.
-
-```typescript
-export interface ActionEvent {
-  readonly name: string
-  readonly context?: Readonly<Record<string, unknown>>
-}
-```
-
-### `Action`
-
-A component action: dispatch an event to the server and/or run a local function.
-
-```typescript
-export interface Action {
-  readonly event?: ActionEvent
-  readonly functionCall?: FunctionCall
-}
-```
-
-### `Theme`
-
-```typescript
-export interface Theme {
-  readonly primaryColor?: string
-  readonly iconUrl?: string
-  readonly agentDisplayName?: string
-  readonly font?: string
-  readonly [key: string]: JsonValue | undefined
-}
-```
-
 ### `CreateSurface`
 
 ```typescript
@@ -547,27 +644,6 @@ export interface CreateSurface {
 }
 ```
 
-### `UpdateComponents`
-
-```typescript
-export interface UpdateComponents {
-  readonly surfaceId: string
-  readonly components: readonly ComponentNode[]
-}
-```
-
-### `UpdateDataModel`
-
-```typescript
-export interface UpdateDataModel {
-  readonly surfaceId: string
-  /** JSON-Pointer location; defaults to `/` (whole model) when omitted. */
-  readonly path?: string
-  /** New value; omission removes the key at `path`. */
-  readonly value?: JsonValue
-}
-```
-
 ### `DeleteSurface`
 
 ```typescript
@@ -576,17 +652,48 @@ export interface DeleteSurface {
 }
 ```
 
-### `ServerToClientEnvelope`
+### `FunctionCall`
 
-One server→client message. Exactly one of the four payload fields is set.
+A catalog-registered function invocation (validation, formatting, actions).
 
 ```typescript
-export interface ServerToClientEnvelope {
-  readonly version?: string
-  readonly createSurface?: CreateSurface
-  readonly updateComponents?: UpdateComponents
-  readonly updateDataModel?: UpdateDataModel
-  readonly deleteSurface?: DeleteSurface
+export interface FunctionCall {
+  readonly call: string
+  readonly args?: Readonly<Record<string, unknown>>
+  readonly returnType?: string
+}
+```
+
+### `PathBinding`
+
+A reference into the surface data model via a JSON-Pointer-ish path.
+
+```typescript
+export interface PathBinding {
+  readonly path: string
+}
+```
+
+### `RenderContext`
+
+Everything a builder needs to render one component and recurse into children.
+
+```typescript
+export interface RenderContext {
+  readonly surfaceId: string
+  readonly theme: Signal<Theme>
+  /** The surface data model root (absolute `/…` bindings resolve against this). */
+  readonly rootData: Signal<JsonValue>
+  readonly send: (msg: A2uiMsg) => void
+  readonly catalog: Catalog
+  /** Write a stateful component's local UI state (Tabs active tab, Modal open). */
+  setUi(componentId: ComponentId, value: JsonValue): void
+  /** Look up a component definition by id in the current structural snapshot. */
+  getComponent(id: ComponentId): ComponentNode | undefined
+  /** Render a component (and its subtree) by id within a scope. */
+  renderById(id: ComponentId, scope: RenderScope): Renderable
+  /** Render a static id list or a repeated template within a scope. */
+  renderChildren(children: ChildList | undefined, scope: RenderScope): Renderable
 }
 ```
 
@@ -626,58 +733,17 @@ export interface RenderScope {
 }
 ```
 
-### `RenderContext`
+### `ServerToClientEnvelope`
 
-Everything a builder needs to render one component and recurse into children.
-
-```typescript
-export interface RenderContext {
-  readonly surfaceId: string
-  readonly theme: Signal<Theme>
-  /** The surface data model root (absolute `/…` bindings resolve against this). */
-  readonly rootData: Signal<JsonValue>
-  readonly send: (msg: A2uiMsg) => void
-  readonly catalog: Catalog
-  /** Write a stateful component's local UI state (Tabs active tab, Modal open). */
-  setUi(componentId: ComponentId, value: JsonValue): void
-  /** Look up a component definition by id in the current structural snapshot. */
-  getComponent(id: ComponentId): ComponentNode | undefined
-  /** Render a component (and its subtree) by id within a scope. */
-  renderById(id: ComponentId, scope: RenderScope): Renderable
-  /** Render a static id list or a repeated template within a scope. */
-  renderChildren(children: ChildList | undefined, scope: RenderScope): Renderable
-}
-```
-
-### `BuildArgs`
+One server→client message. Exactly one of the four payload fields is set.
 
 ```typescript
-export interface BuildArgs {
-  readonly node: ComponentNode
-  readonly ctx: RenderContext
-  readonly scope: RenderScope
-}
-```
-
-### `Catalog`
-
-```typescript
-export interface Catalog {
-  readonly id?: string
-  readonly components: Readonly<Record<string, ComponentBuilder>>
-  readonly functions: Readonly<Record<string, CatalogFunction>>
-}
-```
-
-### `CatalogSpec`
-
-```typescript
-export interface CatalogSpec {
-  readonly id?: string
-  readonly components: Readonly<Record<string, ComponentBuilder>>
-  readonly functions?: Readonly<Record<string, CatalogFunction>>
-  /** A base catalog to inherit builders/functions from (this spec wins on conflict). */
-  readonly extends?: Catalog
+export interface ServerToClientEnvelope {
+  readonly version?: string
+  readonly createSurface?: CreateSurface
+  readonly updateComponents?: UpdateComponents
+  readonly updateDataModel?: UpdateDataModel
+  readonly deleteSurface?: DeleteSurface
 }
 ```
 
@@ -707,41 +773,36 @@ export interface Surface {
 }
 ```
 
-### `A2uiState`
-
-Root renderer state: all live surfaces plus their creation order.
+### `Theme`
 
 ```typescript
-export interface A2uiState {
-  readonly surfaces: Readonly<Record<string, Surface>>
-  readonly order: readonly string[]
+export interface Theme {
+  readonly primaryColor?: string
+  readonly iconUrl?: string
+  readonly agentDisplayName?: string
+  readonly font?: string
+  readonly [key: string]: JsonValue | undefined
 }
 ```
 
-### `A2uiActionEffect`
-
-An action the user triggered, with its context already resolved to values.
+### `UpdateComponents`
 
 ```typescript
-export interface A2uiActionEffect {
-  readonly type: 'a2ui/action'
+export interface UpdateComponents {
   readonly surfaceId: string
-  readonly sourceComponentId: ComponentId
-  readonly name: string
-  readonly context: JsonObject
+  readonly components: readonly ComponentNode[]
 }
 ```
 
-### `A2uiTransport`
-
-A bidirectional A2UI channel: deliver server→client envelopes, accept actions.
+### `UpdateDataModel`
 
 ```typescript
-export interface A2uiTransport {
-  /** Subscribe to inbound server→client envelopes. Returns an unsubscribe. */
-  onEnvelope(handler: (envelope: ServerToClientEnvelope) => void): () => void
-  /** Send a client→server action to the channel. */
-  sendAction(event: A2uiActionEvent): void
+export interface UpdateDataModel {
+  readonly surfaceId: string
+  /** JSON-Pointer location; defaults to `/` (whole model) when omitted. */
+  readonly path?: string
+  /** New value; omission removes the key at `path`. */
+  readonly value?: JsonValue
 }
 ```
 
@@ -770,67 +831,6 @@ export interface WebSocketTransportOptions {
    * Frames are never dropped *silently*.
    */
   onError?: (error: Error, rawData: unknown) => void
-}
-```
-
-### `A2uiActionEvent`
-
-A user-triggered action, resolved and ready to send to your agent/server.
-
-```typescript
-export interface A2uiActionEvent {
-  readonly surfaceId: string
-  readonly sourceComponentId: string
-  readonly name: string
-  readonly context: JsonObject
-  readonly timestamp: string
-  /**
-   * The surface's full data model, present only when the surface was created
-   * with `sendDataModel: true` (A2UI's client→server data sync — the data model
-   * rides along with the client-bound action for collaborative editing).
-   */
-  readonly dataModel?: JsonValue
-}
-```
-
-### `A2uiOptions`
-
-```typescript
-export interface A2uiOptions {
-  /** Called when the user triggers a component action. */
-  readonly onAction?: (event: A2uiActionEvent) => void
-  /** Custom catalogs keyed by their A2UI `catalogId`. */
-  readonly catalogs?: Readonly<Record<string, Catalog>>
-  /** DOM commit scheduler — `'raf'` coalesces streaming updates to one paint/frame. */
-  readonly scheduler?: 'sync' | 'raf'
-}
-```
-
-### `ClientCapabilities`
-
-Client capabilities to advertise to the server (A2UI `client_capabilities`).
-
-```typescript
-export interface ClientCapabilities {
-  /** Catalog ids the client can render (the Basic catalog plus any custom ones). */
-  readonly supportedCatalogIds: readonly string[]
-}
-```
-
-### `A2uiHandle`
-
-```typescript
-export interface A2uiHandle {
-  /** Apply one server→client envelope, or a batch, as a single reconcile. */
-  apply(envelopes: ServerToClientEnvelope | readonly ServerToClientEnvelope[]): void
-  /** Snapshot the current renderer state. */
-  getState(): A2uiState
-  /** The client capabilities to send to the server (catalogs the client supports). */
-  capabilities(): ClientCapabilities
-  /** Observe state after every update cycle. Returns an unsubscribe. */
-  subscribe(listener: (state: A2uiState) => void): () => void
-  /** Tear down the mounted renderer. */
-  dispose(): void
 }
 ```
 

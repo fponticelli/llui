@@ -2,7 +2,9 @@
   "name": "@llui/agent",
   "version": "0.11.1",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./styles/agent-panel.css"
+  ],
   "exports": {
     "./server": {
       "types": "./dist/server/index.d.ts",
@@ -40,7 +42,8 @@
   },
   "files": [
     "dist",
-    "styles"
+    "styles",
+    "src"
   ],
   "scripts": {
     "prepack": "pnpm run build",
@@ -80,5 +83,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/agent#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/agent#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

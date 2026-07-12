@@ -85,6 +85,22 @@ export type AgentConnectMsg =
   | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
   /** @intent("Resume an existing agent session by tid") */
   | { type: 'Resume'; tid: string }
+  /**
+   * @humanOnly — internal: dispatched by the AgentResumeClaim effect
+   * handler when `/resume/claim` returns the ROTATED bearer. Mirrors
+   * `MintSucceeded`: stores the new token + URLs and PERSISTS them, so a
+   * refresh after a resume survives the same way a fresh mint does.
+   * Without this the rotated token was never persisted and the next
+   * refresh restored the stale (now-invalid) pre-rotation bearer.
+   */
+  | {
+      type: 'ResumeSucceeded'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
   /** @intent("Revoke an agent session by tid") */
   | { type: 'Revoke'; tid: string }
   /** @intent("Dismiss the current agent connect error") */
@@ -410,6 +426,41 @@ export function update(
       return [{ ...state, resumable: msg.sessions }, []]
     case 'Resume':
       return [state, [{ type: 'AgentResumeClaim', tid: msg.tid }]]
+    case 'ResumeSucceeded': {
+      // Mirror MintSucceeded: land in pending-claude with the rotated
+      // credentials, open the WS (the real socket `open` event drives
+      // WsOpened — no fabricated dispatch), and persist so a refresh
+      // restores the NEW token, not the rotated-away one.
+      const pending: AgentConnectPendingToken = {
+        token: msg.token,
+        tid: msg.tid,
+        lapUrl: msg.lapUrl,
+        connectSnippet: buildConnectSnippet(msg.lapUrl, msg.token),
+        expiresAt: msg.expiresAt,
+        wsUrl: msg.wsUrl,
+      }
+      return [
+        {
+          ...state,
+          status: 'pending-claude',
+          pendingToken: pending,
+          error: null,
+          reconnectAttempt: 0,
+          reconnectElapsedMs: 0,
+        },
+        [
+          { type: 'AgentOpenWS', token: msg.token, wsUrl: msg.wsUrl },
+          {
+            type: 'AgentSessionPersist',
+            token: msg.token,
+            tid: msg.tid,
+            lapUrl: msg.lapUrl,
+            wsUrl: msg.wsUrl,
+            expiresAt: msg.expiresAt,
+          },
+        ],
+      ]
+    }
     case 'Revoke': {
       // Optimistically remove from sessions + resumable. If the
       // revoked tid matches the currently-pending session, also fire

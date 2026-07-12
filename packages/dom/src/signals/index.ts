@@ -16,10 +16,10 @@ export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 export { derived, pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
 // `rowHandle` — the compiled each-arm prelude helper: when a row param leaks into
 // a verbatim helper call inside an otherwise-compiled arm, the emission binds it
-// to a REAL runtime handle (`const item = rowHandle(getCtx, 'item')`) — the same
-// pathHandle the authoring `each` creates — so the helper receives a genuine
-// Signal<T> reading the live row ctx.
-export { pathHandle as rowHandle } from './handle.js'
+// to a REAL runtime handle (`const item = rowHandle(getCtx, 'item')`) reading the
+// live row ctx. It is `pathHandle` branded `rowLocal`, so specs built from it are
+// (correctly) NOT rebased to `ctx.state` inside the row.
+export { rowHandle } from './handle.js'
 // Shared, runtime-agnostic type used by transition/animation helpers.
 export type { TransitionOptions } from '../types.js'
 // Agent-handler introspection (runtime-agnostic — tags a handler with the msg
@@ -77,6 +77,7 @@ export {
 export {
   mountSignalComponent,
   hydrateSignalApp,
+  normalizeUpdateResult,
   type SignalComponentDef,
   type SignalComponentHandle,
   type MountSignalOptions,

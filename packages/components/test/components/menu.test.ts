@@ -73,7 +73,7 @@ describe('menu reducer', () => {
   })
 
   it('highlightNext wraps (root level)', () => {
-    const s0 = { ...init({ items: flat }) }
+    const s0 = { ...init({ items: flat, open: true }) }
     s0.highlights[''] = 'c'
     const [s] = update(s0, { type: 'highlightNext', level: '' })
     expect(s.highlights['']).toBe('a')
@@ -82,6 +82,7 @@ describe('menu reducer', () => {
   it('highlightNext skips disabled', () => {
     const s0 = {
       ...init({
+        open: true,
         items: [
           { value: 'a', kind: 'action' },
           { value: 'b', kind: 'action', disabled: true },
@@ -97,6 +98,7 @@ describe('menu reducer', () => {
   it('highlightNext skips separators and group labels', () => {
     const s0 = {
       ...init({
+        open: true,
         items: [
           { value: 'a', kind: 'action' as const },
           { value: 'sep', kind: 'separator' as const },
@@ -110,15 +112,26 @@ describe('menu reducer', () => {
   })
 
   it('highlightPrev wraps backwards', () => {
-    const s0 = { ...init({ items: flat }) }
+    const s0 = { ...init({ items: flat, open: true }) }
     s0.highlights[''] = 'a'
     const [s] = update(s0, { type: 'highlightPrev', level: '' })
     expect(s.highlights['']).toBe('c')
   })
 
   it('highlight directly sets value', () => {
-    const [s] = update(init({ items: flat }), { type: 'highlight', level: '', value: 'b' })
+    const [s] = update(init({ items: flat, open: true }), {
+      type: 'highlight',
+      level: '',
+      value: 'b',
+    })
     expect(s.highlights['']).toBe('b')
+  })
+
+  // Finding 5: highlight/typeahead are open-only — a stray message (e.g. a
+  // queued hover timer) must not mutate a CLOSED menu.
+  it('highlight is ignored when the menu is closed', () => {
+    const [s] = update(init({ items: flat }), { type: 'highlight', level: '', value: 'b' })
+    expect(s.highlights['']).toBeNull()
   })
 
   it('highlight ignores disabled items', () => {
@@ -344,6 +357,36 @@ describe('menu.connect', () => {
 
   it('trigger aria-haspopup=menu', () => {
     expect(parts.trigger['aria-haspopup']).toBe('menu')
+  })
+
+  // Finding 2: virtual-focus menus keep DOM focus on the container, so the
+  // highlighted item must be announced via aria-activedescendant.
+  it('content aria-activedescendant points at the root-level highlighted item', () => {
+    const s = { ...init({ items: flat, open: true }), highlights: { '': 'b' } }
+    expect(read(parts.content['aria-activedescendant'], s)).toBe('m1:item:b')
+    const none = { ...init({ items: flat, open: true }), highlights: { '': null } }
+    expect(read(parts.content['aria-activedescendant'], none)).toBeUndefined()
+  })
+
+  it('subContent aria-activedescendant points at that level highlighted item', () => {
+    const sub = parts.subContent('parent')
+    const s = { ...init({ items: flat, open: true }), highlights: { '': null, parent: 'child' } }
+    expect(read(sub['aria-activedescendant'], s)).toBe('m1:item:child')
+  })
+
+  // Finding 9: group() takes an opaque id — never raw label text — so the id and
+  // aria-labelledby stay valid for multi-word labels.
+  it('group() builds ids from an opaque id, not label text', () => {
+    const g = parts.group('file-ops')
+    expect(g.label.id).toBe('m1:group:file-ops:label')
+    expect(g.group['aria-labelledby']).toBe('m1:group:file-ops:label')
+  })
+
+  // Finding 18: a highlight already at the target returns the same state ref.
+  it('highlight to the already-highlighted value returns the same reference', () => {
+    const s0 = { ...init({ items: flat, open: true }), highlights: { '': 'b' } }
+    const [s1] = update(s0, { type: 'highlight', level: '', value: 'b' })
+    expect(s1).toBe(s0)
   })
 
   it('trigger aria-expanded tracks open', () => {

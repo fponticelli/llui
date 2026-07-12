@@ -120,3 +120,33 @@ describe('tool registration', () => {
     expect(names).toContain('llui_reply_to_note')
   })
 })
+
+describe('sessionId path traversal is rejected', () => {
+  const traversals = ['../../etc', '..', '../secret', 'a/../../b', '/etc/passwd']
+  for (const bad of traversals) {
+    it(`llui_queue rejects ${JSON.stringify(bad)}`, async () => {
+      await expect(mcp.handleToolCall('llui_queue', { sessionId: bad })).rejects.toThrow(
+        /invalid sessionId/,
+      )
+    })
+    it(`llui_claim_note rejects ${JSON.stringify(bad)}`, async () => {
+      await expect(
+        mcp.handleToolCall('llui_claim_note', { sessionId: bad, noteId: '001', workerId: 'w' }),
+      ).rejects.toThrow(/invalid sessionId/)
+    })
+    it(`llui_reply_to_note rejects ${JSON.stringify(bad)}`, async () => {
+      await expect(
+        mcp.handleToolCall('llui_reply_to_note', {
+          sessionId: bad,
+          replyTo: '001',
+          prose: 'x',
+          proposedDiff: {
+            files: [{ path: 'a', patch: 'b' }],
+            summary: 's',
+            confidence: 'low' as const,
+          },
+        }),
+      ).rejects.toThrow(/invalid sessionId/)
+    })
+  }
+})

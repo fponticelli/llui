@@ -120,6 +120,11 @@ export function resolveRovingMove(
   }
 }
 
+/** CSS.escape a value for use in an attribute selector, with a no-op fallback. */
+export function cssEscape(value: string): string {
+  return typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(value) : value
+}
+
 /**
  * Move DOM focus to the trigger whose `data-value` matches, within
  * `container`. Relies only on the `role="tab"` + `data-value` contract
@@ -128,8 +133,36 @@ export function resolveRovingMove(
  * a microtask if activation triggers a re-render).
  */
 export function focusRovingTab(container: Element, value: string): void {
-  const escaped =
-    typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(value) : value
-  const el = container.querySelector(`[role="tab"][data-value="${escaped}"]`)
+  const el = container.querySelector(`[role="tab"][data-value="${cssEscape(value)}"]`)
+  if (el instanceof HTMLElement) el.focus()
+}
+
+/**
+ * Move DOM focus to the roving item identified by `value` within the same
+ * widget instance as `origin`.
+ *
+ * Roving-tabindex widgets track the active index in STATE, but assistive tech
+ * follows real DOM focus — so after a keyboard move the handler MUST also move
+ * focus, or arrow keys are silent for AT. `origin` is the event's
+ * `currentTarget` (the item that received the key); its closest
+ * `[data-scope][data-part="root"]` ancestor scopes the search so sibling
+ * widgets of the same scope never cross-focus. No-op if nothing matches.
+ *
+ * `send()` is synchronous and items already exist in the DOM, so this can be
+ * called immediately after the navigation `send`.
+ */
+export function focusRovingItem(
+  origin: Element | null,
+  scope: string,
+  value: string,
+  opts: { itemPart?: string; attr?: string } = {},
+): void {
+  if (origin === null) return
+  const itemPart = opts.itemPart ?? 'item'
+  const attr = opts.attr ?? 'data-value'
+  const root: ParentNode =
+    origin.closest(`[data-scope="${scope}"][data-part="root"]`) ?? origin.ownerDocument ?? origin
+  const sel = `[data-scope="${scope}"][data-part="${itemPart}"][${attr}="${cssEscape(value)}"]`
+  const el = root.querySelector(sel)
   if (el instanceof HTMLElement) el.focus()
 }

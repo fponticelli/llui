@@ -57,4 +57,28 @@ describe('reactive rendering', () => {
     mounted.set('- a\n- b\n- c')
     expect(body(mounted.container).querySelectorAll('li')).toHaveLength(3)
   })
+
+  it('resolves a reference definition that arrives AFTER the block using it', () => {
+    // `[a][r]` renders as label text while `r` is unresolved; when `[r]: /x`
+    // streams in later the block's key folds in the new definition, so it
+    // rebuilds and the anchor appears. (Its source slice is byte-identical, so a
+    // pure content key would never re-render it — the streaming ref bug.)
+    mounted = mountReactive('[a][r]')
+    let root = body(mounted.container)
+    expect(root.querySelector('a')).toBeNull()
+    expect(root.textContent).toContain('a')
+
+    mounted.set('[a][r]\n\n[r]: /x')
+    root = body(mounted.container)
+    const anchor = root.querySelector('a')
+    expect(anchor).toBeTruthy()
+    expect(anchor?.getAttribute('href')).toBe('/x')
+  })
+
+  it('rebuilds a ref-bearing block when its definition is EDITED', () => {
+    mounted = mountReactive('[a][r]\n\n[r]: /old')
+    expect(body(mounted.container).querySelector('a')?.getAttribute('href')).toBe('/old')
+    mounted.set('[a][r]\n\n[r]: /new')
+    expect(body(mounted.container).querySelector('a')?.getAttribute('href')).toBe('/new')
+  })
 })

@@ -1,6 +1,20 @@
 /**
- * Auto-generates API reference markdown for all @llui packages by parsing
- * TypeScript source with the TS Compiler API. Outputs to site/content/api/.
+ * Auto-generates API reference markdown for all @llui packages.
+ *
+ * The generic package surface is extracted with a real `ts.Program` +
+ * `TypeChecker`: for each package we resolve its public entrypoints from
+ * `package.json#exports`, then enumerate `checker.getExportsOfModule(...)`. That
+ * follows `export *`, re-export chains, and aliases through the type system, so
+ * there is no hand-maintained per-file allowlist to drift — the single package
+ * registry is `pages/api/@pkg/packages.ts` (also driving routes, nav, llms.txt).
+ *
+ * Every prior soft-skip is now a hard failure: a package that is publishable but
+ * missing from the registry, a documented package with zero extractable exports,
+ * and a package whose seed `content/api/<slug>.md` is absent all throw. Output is
+ * deterministic — exports are sorted by name within each kind section.
+ *
+ * `components` is special: its per-component state-machine shape is extracted
+ * directly (see `generateComponentsDoc`).
  *
  * Run as part of the build: `tsx src/generate-api.ts`
  */
@@ -8,12 +22,14 @@ import * as ts from 'typescript'
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
 import { resolve, basename, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { PACKAGE_SLUGS } from '../pages/api/@pkg/packages.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..', '..')
 const contentDir = resolve(__dirname, '..', 'content', 'api')
+const packagesDir = resolve(root, 'packages')
 
-// ── Helpers ──────────────────────────────────────────────────────
+// ── Shared helpers ───────────────────────────────────────────────
 
 function readSource(path: string): ts.SourceFile {
   const text = readFileSync(path, 'utf-8')
@@ -48,7 +64,7 @@ function hasExportModifier(node: ts.Node): boolean {
     : false
 }
 
-// ── Generic Package API Extractor ────────────────────────────────
+// ── Generic Package API Extractor (ts.Program + TypeChecker) ──────
 
 interface ExportedItem {
   kind: 'function' | 'interface' | 'type' | 'class' | 'const'
@@ -57,220 +73,196 @@ interface ExportedItem {
   signature: string
 }
 
-function extractPackageExports(pkgDir: string, sourceFiles?: string[]): ExportedItem[] {
-  const srcDir = resolve(pkgDir, 'src')
-  const entryFiles = sourceFiles ?? readdirSync(srcDir).filter((f) => f.endsWith('.ts'))
+/**
+ * Resolve a package's public entrypoint source files from `package.json#exports`.
+ * Prefer the curated `.` barrel; if a package has no `.` entry (e.g. `@llui/agent`
+ * splits its surface across `./server`, `./client`, …), union every non-CSS
+ * subpath entry. Each `dist/*.d.ts` target maps back to its `src/*.ts` source.
+ */
+function entrySourceFiles(pkgDir: string): string[] {
+  const pkg = JSON.parse(readFileSync(resolve(pkgDir, 'package.json'), 'utf-8')) as {
+    exports?: Record<string, unknown>
+  }
+  const exp = pkg.exports ?? {}
+  const keys = exp['.'] !== undefined ? ['.'] : Object.keys(exp)
+  const out: string[] = []
+  for (const key of keys) {
+    const val = exp[key]
+    const target =
+      typeof val === 'string'
+        ? val
+        : val && typeof val === 'object'
+          ? ((val as Record<string, unknown>).types ?? (val as Record<string, unknown>).import)
+          : undefined
+    if (typeof target !== 'string' || target.endsWith('.css')) continue
+    const rel = target
+      .replace(/^\.\//, '')
+      .replace(/^dist\//, 'src/')
+      .replace(/\.d\.ts$/, '.ts')
+      .replace(/\.js$/, '.ts')
+    const abs = resolve(pkgDir, rel)
+    if (existsSync(abs)) out.push(abs)
+  }
+  return out
+}
 
-  // Resolve re-exports: follow `export { X } from './module'` to find source files
-  const filesToParse = new Set<string>()
-  const reExportedNames = new Map<string, Set<string>>() // file → names to extract
+function reconstructFunction(name: string, funcs: ts.FunctionDeclaration[]): string {
+  // Overload set: print each signature-only declaration verbatim (keeps the
+  // source `export function …` form). Single impl: reconstruct a body-less sig.
+  const overloads = funcs.filter((d) => !d.body)
+  if (overloads.length > 0) {
+    return overloads.map((d) => printNode(d, d.getSourceFile())).join('\n')
+  }
+  const d = funcs[0]!
+  const sf = d.getSourceFile()
+  const params = d.parameters.map((p) => printNode(p, sf)).join(', ')
+  const ret = d.type ? `: ${printNode(d.type, sf)}` : ''
+  const tp = d.typeParameters ? `<${d.typeParameters.map((t) => printNode(t, sf)).join(', ')}>` : ''
+  return `function ${name}${tp}(${params})${ret}`
+}
 
-  for (const file of entryFiles) {
-    const filePath = resolve(srcDir, file)
-    if (!existsSync(filePath)) continue
-    const sf = readSource(filePath)
+function reconstructClass(name: string, node: ts.ClassDeclaration): string {
+  const sf = node.getSourceFile()
+  let classSig = `class ${name}`
+  if (node.heritageClauses) {
+    classSig += ' ' + node.heritageClauses.map((h) => printNode(h, sf)).join(' ')
+  }
+  classSig += ' {\n'
+  for (const member of node.members) {
+    if (ts.isConstructorDeclaration(member)) {
+      const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
+      classSig += `  constructor(${params})\n`
+    } else if (ts.isMethodDeclaration(member) && member.name) {
+      const mName = member.name.getText(sf)
+      const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
+      const ret = member.type ? `: ${printNode(member.type, sf)}` : ''
+      const tp = member.typeParameters
+        ? `<${member.typeParameters.map((t) => printNode(t, sf)).join(', ')}>`
+        : ''
+      classSig += `  ${mName}${tp}(${params})${ret}\n`
+    } else if (ts.isPropertyDeclaration(member) && member.name) {
+      const mName = member.name.getText(sf)
+      const mType = member.type ? `: ${printNode(member.type, sf)}` : ''
+      classSig += `  ${mName}${mType}\n`
+    }
+  }
+  classSig += '}'
+  return classSig
+}
 
-    let hasDirectExports = false
-    ts.forEachChild(sf, (node) => {
-      // Re-export: `export { X, Y } from './module'` or `export type { X } from './module'`
-      if (
-        ts.isExportDeclaration(node) &&
-        node.moduleSpecifier &&
-        ts.isStringLiteral(node.moduleSpecifier)
-      ) {
-        let target = node.moduleSpecifier.text
-        if (target.startsWith('.')) {
-          // Resolve relative to the importing FILE's dir (not srcDir) so nested
-          // entries (e.g. dom's `signals/index.ts`) resolve their `./dom.js`
-          // siblings correctly. ESM specifiers carry a `.js` extension — map it
-          // to the real `.ts` source (a bare `foo.js` → `foo.js.ts` miss is why
-          // dom/transitions previously extracted nothing).
-          target = resolve(dirname(filePath), target)
-          if (target.endsWith('.js')) target = target.slice(0, -3) + '.ts'
-          else if (!target.endsWith('.ts')) target += '.ts'
-          filesToParse.add(target)
-          if (node.exportClause && ts.isNamedExports(node.exportClause)) {
-            const names = reExportedNames.get(target) ?? new Set()
-            for (const spec of node.exportClause.elements) {
-              names.add(spec.propertyName?.text ?? spec.name.text)
-            }
-            reExportedNames.set(target, names)
-          }
-        }
-      }
-      // Direct export in this file
-      if (
-        (ts.isFunctionDeclaration(node) ||
-          ts.isInterfaceDeclaration(node) ||
-          ts.isTypeAliasDeclaration(node) ||
-          ts.isClassDeclaration(node) ||
-          ts.isVariableStatement(node)) &&
-        hasExportModifier(node)
-      ) {
-        hasDirectExports = true
-      }
-    })
+function renderExport(
+  exportName: string,
+  sym: ts.Symbol,
+  checker: ts.TypeChecker,
+): ExportedItem | null {
+  let s = sym
+  if (s.flags & ts.SymbolFlags.Alias) s = checker.getAliasedSymbol(s)
+  const decls = s.getDeclarations() ?? []
+  if (decls.length === 0) return null
 
-    if (hasDirectExports) filesToParse.add(filePath)
+  const funcs = decls.filter(ts.isFunctionDeclaration)
+  if (funcs.length > 0) {
+    return {
+      kind: 'function',
+      name: exportName,
+      doc: getJSDoc(funcs[0]!, funcs[0]!.getSourceFile()),
+      signature: reconstructFunction(exportName, funcs),
+    }
   }
 
+  const iface = decls.find(ts.isInterfaceDeclaration)
+  if (iface) {
+    return {
+      kind: 'interface',
+      name: exportName,
+      doc: getJSDoc(iface, iface.getSourceFile()),
+      signature: printNode(iface, iface.getSourceFile()),
+    }
+  }
+
+  const alias = decls.find(ts.isTypeAliasDeclaration)
+  if (alias) {
+    return {
+      kind: 'type',
+      name: exportName,
+      doc: getJSDoc(alias, alias.getSourceFile()),
+      signature: printNode(alias, alias.getSourceFile()),
+    }
+  }
+
+  const enumDecl = decls.find(ts.isEnumDeclaration)
+  if (enumDecl) {
+    return {
+      kind: 'type',
+      name: exportName,
+      doc: getJSDoc(enumDecl, enumDecl.getSourceFile()),
+      signature: printNode(enumDecl, enumDecl.getSourceFile()),
+    }
+  }
+
+  const cls = decls.find(ts.isClassDeclaration)
+  if (cls) {
+    return {
+      kind: 'class',
+      name: exportName,
+      doc: getJSDoc(cls, cls.getSourceFile()),
+      signature: reconstructClass(exportName, cls),
+    }
+  }
+
+  const varDecl = decls.find(ts.isVariableDeclaration)
+  if (varDecl) {
+    // Skip namespace objects like `export const tabs = { init, update, connect }`.
+    if (varDecl.initializer && ts.isObjectLiteralExpression(varDecl.initializer)) return null
+    const sf = varDecl.getSourceFile()
+    const stmt = varDecl.parent.parent // VariableDeclarationList → VariableStatement
+    const type = varDecl.type ? `: ${printNode(varDecl.type, sf)}` : ''
+    return {
+      kind: 'const',
+      name: exportName,
+      doc: getJSDoc(stmt, sf),
+      signature: `const ${exportName}${type}`,
+    }
+  }
+
+  return null
+}
+
+function extractPackageExports(
+  slug: string,
+  entryFiles: string[],
+  program: ts.Program,
+  checker: ts.TypeChecker,
+): ExportedItem[] {
   const items: ExportedItem[] = []
   const seen = new Set<string>()
-  const overloadMap = new Map<string, string[]>()
 
-  for (const filePath of filesToParse) {
-    if (!existsSync(filePath)) continue
-    const sf = readSource(filePath)
-    const allowedNames = reExportedNames.get(filePath) // undefined = take all exports
-
-    // When this file was reached via a re-export chain, the allowlist
-    // restricts us to the re-exported names. When it was supplied
-    // directly in the package's `sourceFiles` config, there's no
-    // allowlist — but we still must skip non-exported declarations, or
-    // internal helpers (`toBytes`, `parseRate`, etc.) leak into the
-    // public API reference.
-    const isAllowed = (name: string) => (allowedNames ? allowedNames.has(name) : true)
-    const passesExportFilter = (node: ts.Node): boolean =>
-      allowedNames !== undefined || hasExportModifier(node)
-
-    // First pass: collect overload signatures
-    ts.forEachChild(sf, (node) => {
-      if (ts.isFunctionDeclaration(node) && node.name && !node.body) {
-        const name = node.name.text
-        if (!isAllowed(name)) return
-        const sigs = overloadMap.get(name) ?? []
-        sigs.push(printNode(node, sf))
-        overloadMap.set(name, sigs)
-      }
-    })
-
-    // Second pass: collect exports
-    ts.forEachChild(sf, (node) => {
-      // Functions (with body)
-      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
-        if (!passesExportFilter(node)) return
-        const name = node.name.text
-        if (!isAllowed(name)) return
-        if (seen.has(name)) return
-        seen.add(name)
-
-        const doc = getJSDoc(node, sf)
-        const overloads = overloadMap.get(name)
-
-        if (overloads && overloads.length > 0) {
-          items.push({ kind: 'function', name, doc, signature: overloads.join('\n') })
-        } else {
-          const params = node.parameters.map((p) => printNode(p, sf)).join(', ')
-          const ret = node.type ? `: ${printNode(node.type, sf)}` : ''
-          const tp = node.typeParameters
-            ? `<${node.typeParameters.map((t) => printNode(t, sf)).join(', ')}>`
-            : ''
-          items.push({
-            kind: 'function',
-            name,
-            doc,
-            signature: `function ${name}${tp}(${params})${ret}`,
-          })
-        }
-      }
-
-      // Interfaces
-      if (ts.isInterfaceDeclaration(node)) {
-        if (!passesExportFilter(node)) return
-        const name = node.name.text
-        if (!isAllowed(name)) return
-        if (seen.has(name)) return
-        seen.add(name)
-        items.push({
-          kind: 'interface',
-          name,
-          doc: getJSDoc(node, sf),
-          signature: printNode(node, sf),
-        })
-      }
-
-      // Type aliases
-      if (ts.isTypeAliasDeclaration(node)) {
-        if (!passesExportFilter(node)) return
-        const name = node.name.text
-        if (!isAllowed(name)) return
-        if (seen.has(name)) return
-        seen.add(name)
-        items.push({ kind: 'type', name, doc: getJSDoc(node, sf), signature: printNode(node, sf) })
-      }
-
-      // Classes
-      if (ts.isClassDeclaration(node) && node.name) {
-        if (!passesExportFilter(node)) return
-        const name = node.name.text
-        if (!isAllowed(name)) return
-        if (seen.has(name)) return
-        seen.add(name)
-        // Extract class with method signatures but no bodies
-        let classSig = `class ${name}`
-        if (node.heritageClauses) {
-          classSig += ' ' + node.heritageClauses.map((h) => printNode(h, sf)).join(' ')
-        }
-        classSig += ' {\n'
-        for (const member of node.members) {
-          if (ts.isConstructorDeclaration(member)) {
-            const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
-            classSig += `  constructor(${params})\n`
-          } else if (ts.isMethodDeclaration(member) && member.name) {
-            const mName = member.name.getText(sf)
-            const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
-            const ret = member.type ? `: ${printNode(member.type, sf)}` : ''
-            const tp = member.typeParameters
-              ? `<${member.typeParameters.map((t) => printNode(t, sf)).join(', ')}>`
-              : ''
-            classSig += `  ${mName}${tp}(${params})${ret}\n`
-          } else if (ts.isPropertyDeclaration(member) && member.name) {
-            const mName = member.name.getText(sf)
-            const mType = member.type ? `: ${printNode(member.type, sf)}` : ''
-            classSig += `  ${mName}${mType}\n`
-          }
-        }
-        classSig += '}'
-        items.push({ kind: 'class', name, doc: getJSDoc(node, sf), signature: classSig })
-      }
-
-      // Exported const/let
-      if (ts.isVariableStatement(node)) {
-        if (!passesExportFilter(node)) return
-        for (const decl of node.declarationList.declarations) {
-          const name = decl.name.getText(sf)
-          if (!isAllowed(name)) continue
-          if (seen.has(name)) continue
-          // Skip namespace objects like `export const tabs = { init, update, connect }`
-          if (decl.initializer && ts.isObjectLiteralExpression(decl.initializer)) continue
-          seen.add(name)
-          const type = decl.type ? `: ${printNode(decl.type, sf)}` : ''
-          items.push({
-            kind: 'const',
-            name,
-            doc: getJSDoc(node, sf),
-            signature: `const ${name}${type}`,
-          })
-        }
-      }
-    })
+  for (const file of entryFiles) {
+    const sf = program.getSourceFile(file)
+    if (!sf) throw new Error(`@llui/${slug}: program is missing source file ${file}`)
+    const moduleSym = checker.getSymbolAtLocation(sf)
+    if (!moduleSym) continue // no module-level symbol (e.g. a script with no exports)
+    for (const exp of checker.getExportsOfModule(moduleSym)) {
+      const name = exp.getName()
+      if (name === 'default' || seen.has(name)) continue
+      const item = renderExport(name, exp, checker)
+      if (!item) continue
+      seen.add(name)
+      items.push(item)
+    }
   }
 
+  // Deterministic order: alphabetical by name (formatExports groups by kind).
+  items.sort((a, b) => a.name.localeCompare(b.name))
   return items
 }
 
 function formatExports(items: ExportedItem[]): string {
   if (items.length === 0) return ''
 
-  const functions = items.filter((i) => i.kind === 'function')
-  const types = items.filter((i) => i.kind === 'type')
-  const interfaces = items.filter((i) => i.kind === 'interface')
-  const classes = items.filter((i) => i.kind === 'class')
-  const consts = items.filter((i) => i.kind === 'const')
-
   let md = ''
-
-  const section = (title: string, list: ExportedItem[]) => {
+  const section = (title: string, kind: ExportedItem['kind']) => {
+    const list = items.filter((i) => i.kind === kind)
     if (list.length === 0) return
     md += `## ${title}\n\n`
     for (const item of list) {
@@ -281,16 +273,16 @@ function formatExports(items: ExportedItem[]): string {
     }
   }
 
-  section('Functions', functions)
-  section('Types', types)
-  section('Interfaces', interfaces)
-  section('Classes', classes)
-  if (consts.length > 0) section('Constants', consts)
+  section('Functions', 'function')
+  section('Types', 'type')
+  section('Interfaces', 'interface')
+  section('Classes', 'class')
+  section('Constants', 'const')
 
   return md
 }
 
-// ── Component API Generator ──────────────────────────────────────
+// ── Component API Generator (special-cased) ──────────────────────
 
 interface ComponentInfo {
   name: string
@@ -457,7 +449,7 @@ function toTitle(kebab: string): string {
 }
 
 function generateComponentsDoc(): string {
-  const componentsDir = resolve(root, 'packages/components/src/components')
+  const componentsDir = resolve(packagesDir, 'components/src/components')
   const files = readdirSync(componentsDir)
     .filter((f) => f.endsWith('.ts') && f !== 'index.ts')
     .sort()
@@ -504,7 +496,7 @@ function generateComponentsDoc(): string {
   return md
 }
 
-// ── Main ─────────────────────────────────────────────────────────
+// ── Injection ────────────────────────────────────────────────────
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -529,144 +521,85 @@ function injectSection(filePath: string, marker: string, content: string): void 
   writeFileSync(filePath, output)
 }
 
-// Packages to generate API docs for
-const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
-  // dom's public surface is re-exported from `signals/index.ts` (named re-exports
-  // the extractor follows one level into the leaf declaration files); the package
-  // root `index.ts` is an `export *` barrel the extractor can't follow. `dom-env.ts`
-  // adds the SSR env contract (browserEnv / DomEnv).
-  { name: 'dom', sourceFiles: ['signals/index.ts', 'dom-env.ts'] },
-  { name: 'effects', sourceFiles: ['index.ts'] },
-  { name: 'router', sourceFiles: ['index.ts', 'connect.ts'] },
-  { name: 'transitions', sourceFiles: ['index.ts'] },
-  // `index.ts` re-exports `blur-on-removal.ts`; the extractor doesn't follow
-  // re-exporters, so scan that source file directly to document its functions.
-  { name: 'test', sourceFiles: ['index.ts', 'blur-on-removal.ts'] },
-  { name: 'vike', sourceFiles: ['on-render-html.ts', 'on-render-client.ts'] },
-  { name: 'mcp', sourceFiles: ['index.ts'] },
-  {
-    name: 'agent',
-    sourceFiles: [
-      // Server entry points — scan concrete source files rather than the
-      // `index.ts` re-exporters, because the extractor doesn't follow
-      // `export { … } from './x.js'` chains.
-      'server/core.ts',
-      'server/factory.ts',
-      'server/options.ts',
-      'server/token.ts',
-      'server/identity.ts',
-      'server/token-store.ts',
-      'server/audit.ts',
-      'server/rate-limit.ts',
-      'server/ws/pairing-registry.ts',
-      'server/ws/rpc.ts',
-      'server/web/adapter.ts',
-      'server/web/upgrade.ts',
-      'server/cloudflare/durable-object.ts',
-      'server/cloudflare/worker.ts',
-      // Client runtime:
-      'client/factory.ts',
-      'client/effects.ts',
-      'client/agentConnect.ts',
-      'client/agentConfirm.ts',
-      'client/agentLog.ts',
-      // Protocol types:
-      'protocol.ts',
-    ],
-  },
-  { name: 'agent-bridge', sourceFiles: ['index.ts', 'tools.ts', 'bridge.ts'] },
-  { name: 'vite-plugin', sourceFiles: ['index.ts'] },
-  // `index.ts` is all `export *` re-exporters, which the extractor doesn't
-  // follow — scan the public ABI source files directly so the manifest /
-  // cross-package-narrowing surface is documented.
-  {
-    name: 'compiler',
-    sourceFiles: [
-      'index.ts',
-      'manifest.ts',
-      'manifest-io.ts',
-      'manifest-resolve.ts',
-      'build-manifest.ts',
-    ],
-  },
-  { name: 'compiler-ssr', sourceFiles: ['index.ts'] },
-  { name: 'devmode-annotate', sourceFiles: ['index.ts'] },
-  // `index.ts` holds the direct exports (mountA2ui + its option/handle types) and
-  // named re-exports the extractor follows one level; `protocol.js` is pulled in
-  // via `export *`, which the extractor can't follow — scan it directly.
-  { name: 'a2ui', sourceFiles: ['index.ts', 'protocol.ts'] },
-  // `index.ts` re-exports `from './x.js'` chains the extractor doesn't follow —
-  // scan the concrete public ABI source files directly.
-  {
-    name: 'markdown',
-    sourceFiles: [
-      'render.ts',
-      'parse.ts',
-      'renderers/index.ts',
-      'security.ts',
-      'context.ts',
-      'keying.ts',
-      'options.ts',
-      'types.ts',
-    ],
-  },
-  {
-    name: 'lexical',
-    sourceFiles: ['plugin.ts', 'register.ts', 'selection.ts', 'foreign.ts', 'decorator.ts'],
-  },
-  { name: 'lexical-collab', sourceFiles: ['collab.ts'] },
-  {
-    name: 'markdown-editor',
-    sourceFiles: [
-      'editor.ts',
-      'state.ts',
-      'format.ts',
-      'plugins/types.ts',
-      'plugins/ui.ts',
-      'plugins/core.ts',
-      'plugins/link.ts',
-      'plugins/callout.ts',
-      'plugins/hr.ts',
-      'plugins/slash.ts',
-      'plugins/context-menu.ts',
-      'plugins/floating-toolbar.ts',
-      'plugins/math.ts',
-      'plugins/mermaid.ts',
-      'plugins/mention.ts',
-      'plugins/emoji.ts',
-      'plugins/image.ts',
-      'plugins/table.ts',
-      'transformers/gfm.ts',
-      'transformers/registry.ts',
-      'surfaces/toolbar.ts',
-      'surfaces/link-dialog.ts',
-    ],
-  },
-]
+// ── Main ─────────────────────────────────────────────────────────
 
-// Components are special — use the component extractor
+// Every generic package (everything but `components`) is driven straight from
+// the single registry in `pages/api/@pkg/packages.ts`.
+const genericSlugs = PACKAGE_SLUGS.filter((s) => s !== 'components')
+
+// Guard: any publishable package on disk that is absent from the registry gets
+// LOUDLY surfaced (previously such a package silently produced no page). The
+// registry lives in `pages/api/@pkg/packages.ts`; add the package there (route +
+// nav + llms.txt + this page all key off it) or mark it `private`.
+{
+  const documented = new Set(PACKAGE_SLUGS)
+  const undocumented: string[] = []
+  for (const dir of readdirSync(packagesDir)) {
+    const pjPath = resolve(packagesDir, dir, 'package.json')
+    if (!existsSync(pjPath)) continue
+    const pkg = JSON.parse(readFileSync(pjPath, 'utf-8')) as {
+      private?: boolean
+      exports?: unknown
+    }
+    const publishable = !pkg.private && pkg.exports !== undefined
+    if (publishable && !documented.has(dir)) undocumented.push(dir)
+  }
+  if (undocumented.length > 0) {
+    console.error(
+      `\n  ⚠ PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY (pages/api/@pkg/packages.ts):\n` +
+        undocumented.map((d) => `      - @llui/${d}`).join('\n') +
+        `\n    They get NO API page, route, nav entry, or llms.txt line. Register or mark private.\n`,
+    )
+  }
+}
+
+// Resolve entrypoints for every generic package up front, then build ONE program
+// spanning them all (transitive re-exports resolve through the type system).
+const pkgEntries = new Map<string, string[]>()
+for (const slug of genericSlugs) {
+  const pkgDir = resolve(packagesDir, slug)
+  if (!existsSync(pkgDir)) {
+    throw new Error(`@llui/${slug} is in the registry but packages/${slug} does not exist on disk.`)
+  }
+  const files = entrySourceFiles(pkgDir)
+  if (files.length === 0) {
+    throw new Error(
+      `@llui/${slug}: no resolvable src entrypoints from package.json#exports (mapped dist→src).`,
+    )
+  }
+  pkgEntries.set(slug, files)
+}
+
+const program = ts.createProgram([...pkgEntries.values()].flat(), {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  allowJs: true,
+  skipLibCheck: true,
+  noEmit: true,
+  strict: false,
+})
+const checker = program.getTypeChecker()
+
+// Components are special — use the component extractor.
 console.log('Generating component API reference...')
-const componentsDoc = generateComponentsDoc()
-injectSection(resolve(contentDir, 'components.md'), 'auto-api', componentsDoc)
+const componentsSeed = resolve(contentDir, 'components.md')
+if (!existsSync(componentsSeed)) throw new Error('missing seed content/api/components.md')
+injectSection(componentsSeed, 'auto-api', generateComponentsDoc())
 console.log('  → components.md')
 
-// All other packages use the generic extractor
-for (const pkg of PACKAGES) {
-  const pkgDir = resolve(root, 'packages', pkg.name)
-  if (!existsSync(pkgDir)) continue
-
-  const items = extractPackageExports(pkgDir, pkg.sourceFiles)
+// All other packages use the generic checker-based extractor.
+for (const slug of genericSlugs) {
+  const items = extractPackageExports(slug, pkgEntries.get(slug)!, program, checker)
   if (items.length === 0) {
-    console.log(`  → ${pkg.name}.md (no exports found, skipping)`)
-    continue
+    throw new Error(`@llui/${slug}: zero exports extracted — refusing to emit an empty API page.`)
   }
-
-  const md = formatExports(items)
-  const contentFile = resolve(contentDir, `${pkg.name}.md`)
-  if (existsSync(contentFile)) {
-    injectSection(contentFile, 'auto-api', md)
-    console.log(`  → ${pkg.name}.md (${items.length} exports)`)
+  const contentFile = resolve(contentDir, `${slug}.md`)
+  if (!existsSync(contentFile)) {
+    throw new Error(`@llui/${slug}: missing seed content/api/${slug}.md`)
   }
+  injectSection(contentFile, 'auto-api', formatExports(items))
+  console.log(`  → ${slug}.md (${items.length} exports)`)
 }
 
 console.log('Done.')

@@ -167,22 +167,35 @@ describe('createEffectHandler', () => {
     )
   })
 
-  it('AgentResumeClaim → POST /agent/resume/claim, calls openWs + dispatches WsOpened', async () => {
+  it('AgentResumeClaim → POST /agent/resume/claim, dispatches ResumeSucceeded (persists rotated token)', async () => {
     const send = vi.fn()
     const wrapAgentConnect = vi.fn((m) => m)
     const openWs = vi.fn()
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValue(
-        makeJsonResponse({ token: 'newtoken' as AgentToken, wsUrl: 'ws://localhost/ws' }),
-      )
+    const mockFetch = vi.fn().mockResolvedValue(
+      makeJsonResponse({
+        token: 'newtoken' as AgentToken,
+        tid: 't1',
+        wsUrl: 'ws://localhost/ws',
+        lapUrl: 'http://localhost/agent/lap/v1',
+        expiresAt: 1234,
+      }),
+    )
     const host = makeHost({ send, wrapAgentConnect, openWs, fetch: mockFetch })
     const handle = createEffectHandler(host)
 
     await handle({ type: 'AgentResumeClaim', tid: 't1' })
 
-    expect(openWs).toHaveBeenCalledWith('newtoken', 'ws://localhost/ws')
-    expect(wrapAgentConnect).toHaveBeenCalledWith({ type: 'WsOpened' })
+    // No fabricated openWs / WsOpened here — the reducer (ResumeSucceeded)
+    // owns the open + persist, and the real socket open drives WsOpened.
+    expect(openWs).not.toHaveBeenCalled()
+    expect(wrapAgentConnect).toHaveBeenCalledWith({
+      type: 'ResumeSucceeded',
+      token: 'newtoken',
+      tid: 't1',
+      lapUrl: 'http://localhost/agent/lap/v1',
+      wsUrl: 'ws://localhost/ws',
+      expiresAt: 1234,
+    })
   })
 
   it('AgentRevoke → POST /agent/revoke, no send call', async () => {

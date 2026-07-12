@@ -1,8 +1,11 @@
-import { defineConfig } from 'vitest/config'
+import { mergeConfig, defineConfig } from 'vitest/config'
+import shared from '../../vitest.shared'
 
-export default defineConfig({
-  test: {
-    include: ['test/**/*.test.ts'],
-    environment: 'node', // no DOM needed for the bridge
-  },
-})
+export default mergeConfig(
+  shared,
+  defineConfig({
+    test: {
+      environment: 'node', // no DOM needed for the bridge
+    },
+  }),
+)

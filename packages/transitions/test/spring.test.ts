@@ -1,6 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { spring } from '../src/spring'
 
+function withHiddenTab<T>(fn: () => T): T {
+  const orig = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => 'hidden',
+  })
+  try {
+    return fn()
+  } finally {
+    if (orig) Object.defineProperty(document, 'visibilityState', orig)
+    else delete (document as unknown as { visibilityState?: unknown }).visibilityState
+  }
+}
+
 function makeEl(): HTMLElement {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -75,6 +89,29 @@ describe('spring()', () => {
     const t = spring()
     t.enter!([el])
     expect(el.style.getPropertyValue('opacity')).toBe('0')
+  })
+
+  // ── Finding 3: hidden tab must not deadlock the leave Promise ──
+  it('leave settles and resolves immediately when the tab is hidden', async () => {
+    const el = makeEl()
+    await withHiddenTab(async () => {
+      const t = spring({ property: 'opacity', from: 0, to: 1 })
+      // Previously the leave Promise resolved only from rAF, so a hidden tab
+      // (rAF paused) would hang forever — deadlocking fromTransition(spring()).
+      await t.leave!([el])
+      // Snapped to the leave target (from = 0).
+      expect(el.style.getPropertyValue('opacity')).toBe('0')
+    })
+  })
+
+  it('enter settles and resolves immediately when the tab is hidden', async () => {
+    const el = makeEl()
+    await withHiddenTab(async () => {
+      const t = spring({ property: 'opacity', from: 0, to: 1 })
+      t.enter!([el])
+      // Enter snaps straight to the target rather than staying at "from".
+      expect(el.style.getPropertyValue('opacity')).toBe('1')
+    })
   })
 
   it('spring settles to target (simulated)', async () => {

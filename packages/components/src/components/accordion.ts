@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { focusRovingItem } from '../utils/roving.js'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string
@@ -132,7 +133,10 @@ export interface AccordionItemParts {
 
 export interface AccordionParts {
   root: {
-    role: 'region'
+    // No role on the root: an accordion is a set of disclosure buttons, and
+    // labelling the whole container `region` (without an accessible name) just
+    // adds an unlabeled landmark. The meaningful regions are the per-item
+    // panels, each a `role="region"` with `aria-labelledby` its trigger.
     'data-scope': 'accordion'
     'data-part': 'root'
     'data-orientation': 'vertical'
@@ -156,7 +160,6 @@ export function connect(
 
   return {
     root: {
-      role: 'region',
       'data-scope': 'accordion',
       'data-part': 'root',
       'data-orientation': 'vertical',
@@ -178,22 +181,37 @@ export function connect(
           send,
           ['focusNext', 'focusPrev', 'focusFirst', 'focusLast', 'toggle'],
           (e: KeyboardEvent) => {
+            const origin = e.currentTarget as Element | null
+            // Focus messages don't mutate state; the target trigger is derived
+            // from the current items. Move real DOM focus there so arrow keys
+            // work for assistive tech (roving via tabindex is not enough).
+            const moveFocus = (msg: Extract<AccordionMsg, { type: `focus${string}` }>): void => {
+              const s = state.peek()
+              if (s == null) return
+              const target = focusTarget(s, msg)
+              if (target !== null)
+                focusRovingItem(origin, 'accordion', target, { itemPart: 'trigger' })
+            }
             switch (e.key) {
               case 'ArrowDown':
                 e.preventDefault()
                 send({ type: 'focusNext', value })
+                moveFocus({ type: 'focusNext', value })
                 return
               case 'ArrowUp':
                 e.preventDefault()
                 send({ type: 'focusPrev', value })
+                moveFocus({ type: 'focusPrev', value })
                 return
               case 'Home':
                 e.preventDefault()
                 send({ type: 'focusFirst' })
+                moveFocus({ type: 'focusFirst' })
                 return
               case 'End':
                 e.preventDefault()
                 send({ type: 'focusLast' })
+                moveFocus({ type: 'focusLast' })
                 return
               case ' ':
               case 'Enter':

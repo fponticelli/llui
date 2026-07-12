@@ -14,6 +14,7 @@ import type {
   Annotation,
   CaptureLevel,
   CaptureRequestPayload,
+  ConsoleLogEntry,
   CreateNoteRequest,
   CreateNoteResponse,
   NoteBody,
@@ -53,6 +54,9 @@ import {
   type EditorState,
 } from '@llui/markdown-editor'
 import '@llui/markdown-editor/styles/editor.css'
+// The same stylesheet as raw text, so isolate (shadow-DOM) mode can adopt it
+// into the shadow root where the light-DOM side-effect import can't reach.
+import EDITOR_CSS from '@llui/markdown-editor/styles/editor.css?raw'
 import type { LexicalEditor } from 'lexical'
 
 import {
@@ -78,7 +82,13 @@ import {
   resolveCaptureDefaults,
   type RedactHooks,
 } from './redact.js'
-import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
+import {
+  collectComponentInfo,
+  collectDebugSnapshot,
+  collectSourceMap,
+  collectVerboseSnapshot,
+  createConsoleCapture,
+} from './debug-collector.js'
 import { pickElement } from './element-picker.js'
 import { drawRect } from './overlay.js'
 import { createReproRecorder, replayReproEvents } from './repro-recorder.js'
@@ -139,7 +149,22 @@ export { NOTE_SCHEMA_VERSION } from './note-format.js'
 export { defaultSecretRedactor } from './redact.js'
 export type { RedactHooks, CaptureDefaults, SecretRedactorOptions } from './redact.js'
 
-export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
+/** Geometry threaded from the capture into the annotation baker so viewport
+ *  (CSS-px, scroll-relative) annotation coordinates land correctly on the
+ *  full-document, DPR-scaled screenshot raster. */
+export interface ScreenshotGeometry {
+  /** Device pixel ratio the screenshot was captured at (frontmatter viewport.dpr). */
+  dpr: number
+  /** Viewport scroll offset (CSS px) at capture time. */
+  scrollX: number
+  scrollY: number
+}
+
+export type BakeFn = (
+  screenshotBase64: string,
+  annotations: Annotation[],
+  geometry?: ScreenshotGeometry,
+) => Promise<string>
 
 function isAutomatedBrowser(): boolean {
   return typeof navigator !== 'undefined' && navigator.webdriver === true
@@ -218,6 +243,11 @@ export interface MountAnnotateOptions {
    *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
    *  default); `installAnnotateHud` turns it on for production. */
   isolate?: boolean
+  /** Markdown-editor stylesheet text adopted into the shadow root in isolate
+   *  mode (the light-DOM `import '…/editor.css'` can't cross the shadow
+   *  boundary). Defaults to the bundled stylesheet (`editor.css?raw`). Override
+   *  to supply the CSS in environments where the `?raw` import can't resolve. */
+  editorCss?: string
 }
 
 export interface AnnotateHudHandle {
@@ -318,12 +348,24 @@ function bboxOf(ann: Annotation): { x: number; y: number; w: number; h: number }
   if (ann.type === 'element') return ann.bbox
   return null
 }
-function buildNoteBody(annotations: Annotation[], debug: boolean): NoteBody {
+interface BuildNoteBodyOptions {
+  /** The privacy gate: collect the per-component telemetry at all. Off in prod
+   *  by default. When off, only code-structure data (source map) is kept. */
+  debug: boolean
+  /** Capture depth. `standard` = state/message/effect snapshot + source map;
+   *  `verbose` ADDS the deep scope-tree / binding totals + the console log. */
+  level: CaptureLevel
+  /** Recent console entries (from the HUD's console capture), drained into the
+   *  verbose body. */
+  consoleLog?: ConsoleLogEntry[]
+}
+
+function buildNoteBody(annotations: Annotation[], opts: BuildNoteBodyOptions): NoteBody {
   // The debug snapshot (per-component state, message/effect logs) is the
   // sensitive channel — gated by `debug` (off in prod by default). The
   // source-position map below is code structure, not user data, so it's kept
   // regardless.
-  const body: NoteBody = debug ? collectDebugSnapshot() : {}
+  const body: NoteBody = opts.debug ? collectDebugSnapshot() : {}
   const sourceMap: SourceMapEntry[] = []
   for (const ann of annotations) {
     const bb = bboxOf(ann)
@@ -331,6 +373,18 @@ function buildNoteBody(annotations: Annotation[], debug: boolean): NoteBody {
     sourceMap.push(...collectSourceMap(bb))
   }
   if (sourceMap.length > 0) body.sourceMap = sourceMap
+
+  // Verbose telemetry is strictly additive over the standard snapshot, and
+  // still honors the `debug` privacy gate (it's state-derived, so prod stays
+  // opted out). This is what makes the "verbose telemetry" checkbox real —
+  // previously it only flipped a frontmatter flag with no body effect.
+  if (opts.debug && opts.level === 'verbose') {
+    const verbose = collectVerboseSnapshot()
+    if (verbose) body.verbose = verbose
+    if (opts.consoleLog && opts.consoleLog.length > 0) {
+      body.consoleLog = opts.consoleLog.slice()
+    }
+  }
   return body
 }
 
@@ -517,11 +571,23 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ...(opts.repro !== undefined ? { repro: opts.repro } : {}),
   })
   const reproEnabled = captureChannels.repro
+  // Continuously mirror the console into a ring buffer so a verbose capture can
+  // attach the recent console log. Gated by the same privacy channel as the
+  // rest of the telemetry (prod stays off), and torn down in destroy().
+  const consoleCapture = captureChannels.debug ? createConsoleCapture() : null
   // Build the note body honoring the debug-capture default + the host's
   // per-channel state redaction. The single place every capture routes
-  // through, so the seam can't be bypassed.
-  const collectBody = (annotations: Annotation[]): NoteBody =>
-    redactState(buildNoteBody(annotations, captureChannels.debug), opts.redact?.state)
+  // through, so the seam can't be bypassed. `level` (standard/verbose) drives
+  // how deep the telemetry goes.
+  const collectBody = (annotations: Annotation[], level: CaptureLevel): NoteBody =>
+    redactState(
+      buildNoteBody(annotations, {
+        debug: captureChannels.debug,
+        level,
+        ...(consoleCapture ? { consoleLog: consoleCapture.snapshot() } : {}),
+      }),
+      opts.redact?.state,
+    )
 
   // Export: only stores that can produce raw sessions (IndexedDB; not the
   // dev-server store, whose notes already live on disk) support it.
@@ -544,9 +610,19 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const reproRecorder = createReproRecorder()
 
+  // In isolate (shadow-DOM) mode the HUD must own its portal targets: every
+  // menu/select overlay has to portal INTO the shadow root, not document.body,
+  // so the shadow's adopted styles apply and the popup stays contained. Created
+  // here (detached) so createBrowseView + solveSplit can close over it; appended
+  // to the shadow root below where the shadow is built.
+  const isolate = opts.isolate === true
+  const overlayHost: HTMLElement | null = isolate ? document.createElement('div') : null
+  if (overlayHost) overlayHost.setAttribute('data-llui-overlay-portal', '')
+
   // Browse view (its own LLui component) — hosted inside the modal.
   const browse = createBrowseView({
     store,
+    ...(overlayHost ? { overlayTarget: overlayHost } : {}),
     onError: (m) => handle.send({ type: 'status/set', text: m }),
     onReplayRepro: (events) =>
       replayReproEvents(events as ReproEvent[], {
@@ -590,7 +666,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // chrome lives inside its open shadow root); otherwise it's `root` itself.
   // The stylesheet is keyed on `#llui-devmode-annotate-root`, so `root` keeps
   // that id inside the shadow and the adopted sheet still matches.
-  const isolate = opts.isolate === true
   let shadowHost: HTMLElement | null = null
   let idEl: HTMLElement
   if (isolate) {
@@ -599,7 +674,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const shadow = shadowHost.attachShadow({ mode: 'open' })
     shadow.appendChild(root)
     shadow.appendChild(toastContainer)
+    // The overlay portal target lives inside the shadow so menu/select popups
+    // portal into it (styles apply, content is contained).
+    if (overlayHost) shadow.appendChild(overlayHost)
     applyShadowStyles(shadow, THEME_STYLESHEET)
+    // Bundle the markdown-editor stylesheet into the shadow — the light-DOM
+    // side-effect `import '…/editor.css'` doesn't cross the shadow boundary, so
+    // the embedded editor would render unstyled without this.
+    const editorCss = opts.editorCss ?? EDITOR_CSS
+    if (editorCss) applyShadowStyles(shadow, editorCss)
     document.body.appendChild(shadowHost)
     idEl = shadowHost
   } else {
@@ -714,7 +797,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     if (redacted === null) return undefined
     if (annotations.length === 0) return redacted
     const bake = opts.bake ?? bakeAnnotations
-    const baked = await bake(redacted, annotations)
+    // Thread the true capture geometry so annotations map viewport→document
+    // space correctly on scrolled / retina pages.
+    const geometry: ScreenshotGeometry = {
+      dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+      scrollX: typeof window !== 'undefined' ? window.scrollX || 0 : 0,
+      scrollY: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
+    }
+    const baked = await bake(redacted, annotations, geometry)
     return baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
   }
 
@@ -777,20 +867,26 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       agentSchemas: [],
       llui,
     }
-    const noteBody = collectBody(annotations)
-    const reproEvents = redactRepro(reproRecorder.flush(), opts.redact?.repro)
+    const noteBody = collectBody(annotations, submitOpts.captureLevel ?? 'standard')
+    // Read the repro trace WITHOUT clearing it — if the POST below fails, the
+    // buffer must survive so the user can retry (or the trace isn't silently
+    // lost). It's drained + the recorder stopped only in the success path.
+    const reproEvents = redactRepro(reproRecorder.peek(), opts.redact?.repro)
     if (reproEvents.length > 0) noteBody.repro = reproEvents
-    if (reproRecorder.isRecording()) {
-      reproRecorder.stop()
-      handle.send({ type: 'repro/set', recording: false })
-    }
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
       noteBody,
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
-    return store.createNote(body)
+    const response = await store.createNote(body)
+    // Persist succeeded — now it's safe to drain the recorder + stop it.
+    reproRecorder.flush()
+    if (reproRecorder.isRecording()) {
+      reproRecorder.stop()
+      handle.send({ type: 'repro/set', recording: false })
+    }
+    return response
   }
 
   let chainNameSeq = 0
@@ -864,6 +960,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   ): Promise<CreateNoteResponse> => {
     const prose = payload.prose ?? ''
     const annotations: Annotation[] = payload.annotate ?? []
+    const level: CaptureLevel = payload.captureLevel ?? 'standard'
     let screenshotBase64: string | undefined
     const baseFrontmatter = (screenshot: string | null): Omit<NoteFrontmatter, 'id' | 'ts'> => ({
       author: 'llm',
@@ -895,7 +992,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       const failBody: CreateNoteRequest = {
         body: `[capture failed: ${message}]${prose ? `\n\n${prose}` : ''}`,
         frontmatter: baseFrontmatter(null),
-        noteBody: collectBody(annotations),
+        noteBody: collectBody(annotations, level),
       }
       try {
         return await store.createNote(failBody)
@@ -912,7 +1009,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter: baseFrontmatter(screenshotBase64 ? 'placeholder.png' : null),
-      noteBody: collectBody(annotations),
+      noteBody: collectBody(annotations, level),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     return store.createNote(body)
@@ -955,11 +1052,39 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         style: STYLES.button,
         // open()/close() (not a bare modal/toggle) so opening also refreshes
         // the context subhead, re-anchors the modal, and focuses the textarea.
-        onClick: () => (getState().modalOpen ? close() : open()),
+        // `justDragged` swallows the click synthesized at the end of a drag so
+        // dragging the button doesn't also toggle the modal.
+        onClick: () => {
+          if (justDragged) return
+          if (getState().modalOpen) close()
+          else open()
+        },
       },
       BUTTON_LABEL_LINES.map((line) => div({}, [text(line)])),
     ),
   ]
+
+  // Set true for exactly one microtask at the end of a real drag so the click
+  // synthesized by the browser after pointerup is ignored by the button's own
+  // onClick (see the FAB above). A plain flag cleared via queueMicrotask is
+  // robust to a drag that produces NO trailing click — unlike a one-shot
+  // capture listener, which would linger and eat the next legitimate click.
+  let justDragged = false
+  const finishDrag = (wasDrag: boolean): void => {
+    if (!wasDrag) return
+    const pos = deriveSavedPosition(
+      root.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight,
+    )
+    writeSavedPosition(pos)
+    applySavedPosition(root, pos)
+    reanchorModal()
+    justDragged = true
+    queueMicrotask(() => {
+      justDragged = false
+    })
+  }
 
   const wireDrag = (btn: HTMLButtonElement): void => {
     let dragState: {
@@ -1010,26 +1135,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       }
       dragState = null
       btn.style.cssText = STYLES.button
-      if (wasDrag) {
-        const pos = deriveSavedPosition(
-          root.getBoundingClientRect(),
-          window.innerWidth,
-          window.innerHeight,
-        )
-        writeSavedPosition(pos)
-        applySavedPosition(root, pos)
-        reanchorModal()
-        const eat = (ev: Event): void => {
-          ev.stopPropagation()
-          ev.preventDefault()
-          btn.removeEventListener('click', eat, true)
-        }
-        btn.addEventListener('click', eat, true)
-      }
+      finishDrag(wasDrag)
     })
     btn.addEventListener('pointercancel', () => {
+      // A cancelled drag still moved the button — persist + reanchor through
+      // the same path (and swallow any trailing click) as a normal drag end.
+      const wasDrag = dragState?.moved ?? false
       dragState = null
       btn.style.cssText = STYLES.button
+      finishDrag(wasDrag)
     })
   }
 
@@ -1058,6 +1172,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
                   el.appendChild(browse.el)
                   return browse
                 },
+                // Tear down the browse component (refresh timer + its own signal
+                // component) when the HUD unmounts, so destroy() leaves nothing live.
+                unmount: (b) => b.dispose(),
               }),
             ],
           ),
@@ -1552,6 +1669,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         send: (m) => send({ type: 'solveMenu', msg: m }),
         parts,
         placement: 'bottom-end',
+        ...(overlayHost ? { target: overlayHost } : {}),
         content: () => [
           div({ ...parts.content, style: SPLIT_BTN_STYLES.menu, 'style.display': 'flex' }, [
             div(
@@ -1772,16 +1890,26 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   if (persisted.modalOpen) queueMicrotask(() => open())
 
   // ── Auto-dismiss toasts (subscribe-based scheduler — keeps reducer pure) ──
-  const scheduledToasts = new Set<number>()
+  // Map (not a bare Set) so every pending dismiss timer is tracked by toast id:
+  // destroy() can clear them all, and a toast that's dismissed early prunes its
+  // own timer instead of leaking it + growing the id set unboundedly.
+  const toastTimeouts = new Map<number, ReturnType<typeof setTimeout>>()
   handle.subscribe((s) => {
+    const liveIds = new Set(s.tasks.toasts.map((t) => t.id))
+    for (const [id, timer] of toastTimeouts) {
+      if (!liveIds.has(id)) {
+        clearTimeout(timer)
+        toastTimeouts.delete(id)
+      }
+    }
     for (const t of s.tasks.toasts) {
-      if (scheduledToasts.has(t.id)) continue
+      if (toastTimeouts.has(t.id)) continue
       if (t.kind !== 'fail' && t.actions.length === 0) {
-        scheduledToasts.add(t.id)
-        setTimeout(
-          () => handle.send({ type: 'task', msg: { type: 'toast/dismiss', id: t.id } }),
-          8000,
-        )
+        const timer = setTimeout(() => {
+          toastTimeouts.delete(t.id)
+          handle.send({ type: 'task', msg: { type: 'toast/dismiss', id: t.id } })
+        }, 8000)
+        toastTimeouts.set(t.id, timer)
       }
     }
   })
@@ -1900,7 +2028,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── Global keyboard + window listeners ────────────────────────────────
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') close()
+    // Only act on Escape when the modal is actually open and the event hasn't
+    // already been handled (e.g. by an overlay/menu that closed on Escape).
+    // Otherwise every Escape anywhere in the app dispatches a close + persist.
+    if (e.key === 'Escape' && !e.defaultPrevented && getState().modalOpen) close()
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault()
       open()
@@ -1935,7 +2066,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       '',
       'What was happening when this fired?',
     ]
-    const value = lines.join('\n')
+    const errorBlock = lines.join('\n')
+    // Never clobber an in-progress draft: if the user has already typed
+    // something, APPEND the error block below it instead of replacing.
+    const existing = proseValue()
+    const value = existing.trim() ? `${existing}\n\n${errorBlock}` : errorBlock
     // setProse flows into the editor via the foreign value bind; open() focuses it.
     handle.send({ type: 'setProse', value })
     open()
@@ -1972,8 +2107,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
     if (progressTickInterval) clearInterval(progressTickInterval)
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+    }
+    for (const timer of toastTimeouts.values()) clearTimeout(timer)
+    toastTimeouts.clear()
     unsubscribeEvents?.()
+    reproRecorder.stop()
+    consoleCapture?.dispose()
     dismissActiveOverlay()
+    // The element picker installs capture-phase document listeners; leaking
+    // them leaves the host click-dead, so tear the lingering pick down too.
+    activeElementPickDismiss?.()
+    activeElementPickDismiss = null
     handle.dispose()
     if (shadowHost) {
       // Removing the host tears down its shadow root (root + toasts).

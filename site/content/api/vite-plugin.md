@@ -56,14 +56,6 @@ The compiler emits warnings for common issues:
 
 <!-- auto-api:start -->
 
-## Functions
-
-### `llui()`
-
-```typescript
-function llui(options: LluiPluginOptions = {}): Plugin
-```
-
 ## Types
 
 ### `AgentPluginConfig`
@@ -78,150 +70,222 @@ public type.
 export type AgentPluginConfig = Record<string, never>
 ```
 
-## Interfaces
-
-### `LluiPluginOptions`
+### `Annotation`
 
 ```typescript
-export interface LluiPluginOptions {
-  /**
-   * Port for the MCP debug bridge. In dev mode, the runtime relay connects
-   * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
-   * tool calls into the running app.
-   *
-   * When omitted, the plugin checks whether `@llui/mcp` is resolvable from
-   * the Vite project root. If yes → defaults to `5200`. If no → stays
-   * disabled. This means installing `@llui/mcp` (+ starting its server)
-   * Just Works without an explicit config entry. Pass an explicit `false`
-   * to opt out even when `@llui/mcp` is installed; pass a number to use
-   * a non-default port. When enabled but the MCP server isn't running,
-   * the plugin returns 404 from its discovery endpoint and the browser
-   * silently skips the connection — no retry noise.
-   */
-  mcpPort?: number | false
+export type Annotation =
+  | ({
+      type: 'rect'
+    } & NoteRect & {
+        label?: string
+      })
+  | {
+      type: 'element'
+      selector: string
+      bbox: NoteRect
+      label?: string
+    }
+```
 
-  /**
-   * Emit `[llui]`-prefixed `console.info` logs for every transformed
-   * component file — the dependency paths discovered per binding and the
-   * view-lowering compile/bail counts. Useful when diagnosing why a binding
-   * isn't gated the way you expect, or why a view expression fell back to the
-   * runtime authoring helpers instead of being lowered. Off by default.
-   */
-  verbose?: boolean
+### `Author`
 
-  /**
-   * Enables two things together when set:
-   *
-   *   1. Emits schemas + binding descriptors in prod builds so the
-   *      @llui/agent runtime has metadata to advertise over its WS hello
-   *      frame.
-   *   2. Auto-mounts `@llui/agent/server`'s router at `/agent/*` and its
-   *      WS upgrade handler at `/agent/ws` on the Vite dev server — so
-   *      plain `vite dev` has working agent endpoints with no extra
-   *      server.ts wiring. Requires `@llui/agent` installed; if it isn't,
-   *      the plugin warns and skips dev mounting (prod emission still
-   *      works from Plan 3b).
-   *
-   * Pass `true` for defaults (random signing key per dev session;
-   * `identityResolver` returns `'dev-user'`). Pass an object to customize.
-   * Default `false` — metadata is dev-only, no agent endpoints.
-   */
-  agent?: boolean | AgentPluginConfig
+```typescript
+export type Author = 'human' | 'llm'
+```
 
-  /**
-   * Whether any component in the app uses `each()`'s `enter` / `leave`
-   * / `onTransition` options. When `false` (the default), the
-   * vite-plugin substitutes `__LLUI_TRANSITIONS__ = false` into the
-   * runtime bundle; Vite's dead-code eliminator then drops the
-   * per-entry enter/leave helpers, the `leaving` queue plumbing, and
-   * the `report` allocation in `each()`'s reconcile path. Saves
-   * ~0.3 kB gz on jfb-shape bundles that don't animate.
-   *
-   * Apps using `@llui/transitions` or any custom `each({ enter, leave,
-   * onTransition })` MUST pass `transitions: true` — otherwise the
-   * options will be silently ignored at runtime.
-   */
-  transitions?: boolean
+### `CaptureLevel`
 
-  /**
-   * Surface compiler `perf` diagnostics as Vite warnings. Currently one
-   * diagnostic exists: `llui/each-verbatim` — an `each` whose rows did not
-   * compile to the cloneNode RowFactory (nor the render-callback lowering)
-   * and render via the runtime authoring path instead, paying per-row
-   * construction overhead. The message names the bail reason(s) with an
-   * actionable hint (e.g. a row delegating to an imported helper, spread
-   * connect-part props, an imperative render body).
-   *
-   * Advisory only — never blocks the build (a verbatim `each` is fully
-   * correct, just slower per row). **Default: on in dev mode, off in
-   * build.** Pass `false` to silence, `true` to also warn during builds.
-   */
-  perfDiagnostics?: boolean
+```typescript
+export type CaptureLevel = 'standard' | 'verbose'
+```
 
-  /**
-   * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
-   * cross-file walker). When enabled, the plugin builds a `ts.Program`
-   * over the project at `configResolved` and feeds each `transform` call
-   * the cross-file paths read through in-repo view-helpers — replacing
-   * the v0.x sentinel-`show()` workaround for helpers in sibling files.
-   *
-   * Prototype-grade caveats:
-   *   - The Program builds once at startup; it does NOT refresh on file
-   *     change. HMR-edited files see stale cross-file edges until the
-   *     next dev-server restart. (v2c's module decomposition lands the
-   *     proper incremental Program; this is the v2b pipeline-integration
-   *     deferral.)
-   *   - The Program covers `.ts` / `.tsx` files reachable from the Vite
-   *     project root's `tsconfig.json`. Out-of-project imports are not
-   *     followed; manifest-driven library helpers cover those in
-   *     `@llui/cli publish-deps` (v2c, deferred).
-   *   - The walker emits `llui/opaque-view-call` diagnostics for helpers
-   *     it can't classify; in dev these surface as Vite warnings. Set
-   *     `crossFile: 'silent'` to suppress the diagnostics while still
-   *     getting the path merging.
-   *
-   * Default `'silent'` — paths read through in-file-graph helpers
-   * (`(s) => s.route.kind` from a predicate helper, etc.) are folded
-   * into the host component's `__prefixes` automatically, without
-   * polluting dev logs with opaque-call diagnostics. Set `crossFile:
-   * true` to surface the diagnostics in dev, or `false` to disable
-   * cross-file resolution entirely (saves the startup Program build
-   * cost on very large repos; falls back to per-file analysis).
-   */
-  crossFile?: boolean | 'silent'
+### `LogLevel`
 
-  /**
-   * Controls the devmode-annotate notebook surface — a single Connect
-   * middleware mounted at `/_llui/*` that lets the HUD
-   * (`@llui/devmode-annotate`) and the MCP server (`@llui/mcp`) read
-   * and write a shared on-disk notebook under `.llui/notes/`. The HUD
-   * developer drops notes from the running app; the LLM consumes them
-   * via MCP subscriptions; both can initiate captures.
-   *
-   * **Default: on in dev mode.** Omitting the option (or passing `true`)
-   * registers the middleware automatically — there's nothing to do.
-   * Pass `false` to opt out (no routes registered, middleware tree-
-   * shakes). Pass an object to keep it on while customizing the notes
-   * directory or default timeout.
-   *
-   * The HUD is **auto-injected** in dev mode: the plugin emits a
-   * `<script type="module">` into the served HTML that imports
-   * `@llui/devmode-annotate` and mounts the floating button. Production
-   * builds never run `configureServer` or `transformIndexHtml(dev)`, so
-   * this is dev-only by construction. Disable just the HUD (keeping the
-   * notes API on) with `devmodeAnnotate: { hud: false }`; disable
-   * everything with `devmodeAnnotate: false`. The HUD package must be
-   * resolvable from the project root — install
-   * `@llui/devmode-annotate` alongside `@llui/vite-plugin`.
-   *
-   * Environment overrides (honored when not opted out):
-   *   - `LLUI_NOTES_DIR` — override the notes root path
-   *   - `LLUI_CAPTURE_TIMEOUT_MS` — override the default capture-request timeout
-   *
-   * The proposal (`docs/proposals/devmode-annotate/`) details what
-   * lands on disk and what the LLM gets.
-   */
-  devmodeAnnotate?: boolean | DevmodeAnnotateConfig
+```typescript
+export type LogLevel = 'log' | 'warn' | 'error' | 'info' | 'debug'
+```
+
+### `NoteIntent`
+
+```typescript
+export type NoteIntent = 'task' | 'note'
+```
+
+### `NoteKind`
+
+```typescript
+export type NoteKind = 'rect' | 'element' | 'text' | 'capture' | 'reply'
+```
+
+### `NoteStatus`
+
+```typescript
+export type NoteStatus =
+  | 'open'
+  | 'claimed'
+  | 'in-progress'
+  | 'proposed'
+  | 'accepted'
+  | 'applied'
+  | 'rejected'
+  | 'wontfix'
+  | 'failed'
+```
+
+### `ServerEvent`
+
+```typescript
+export type ServerEvent =
+  | {
+      type: 'note-created'
+      id: string
+      filename: string
+      author: Author
+    }
+  | {
+      type: 'note-updated'
+      id: string
+      sessionId: string
+    }
+  | {
+      type: 'note-deleted'
+      id: string
+      sessionId: string
+    }
+  | {
+      type: 'task-progress'
+      noteId: string
+      elapsedMs: number
+      /** Token counters from the LLM stream.
+       *   - `in`: latest cumulative input_tokens (context size). Grows
+       *           monotonically across the conversation.
+       *   - `out`: sum of all output_tokens generated so far.
+       *   - `cacheRead`: prompt-cache hits, if the model reports them
+       *           (claude's `cache_read_input_tokens`). Shows how much
+       *           of the context was served from cache vs. reprocessed. */
+      tokens?: {
+        in: number
+        out: number
+        cacheRead?: number
+      }
+      toolSummary?: string
+    }
+  | {
+      type: 'capture-request'
+      requestId: string
+      payload: CaptureRequestPayload
+    }
+  | {
+      type: 'capture-request-cancelled'
+      requestId: string
+    }
+  | {
+      type: 'session-rotated'
+      sessionId: string
+    }
+  | {
+      type: 'status-changed'
+      noteId: string
+      from: NoteStatus | null
+      to: NoteStatus
+      /** Optional human-readable context — e.g. the LLM's proposed-fix
+       *  summary, a failure message, or a git-apply conflict. The HUD
+       *  surfaces this verbatim in its status line. */
+      reason?: string
+    }
+```
+
+### `SseRole`
+
+```typescript
+export type SseRole = 'hud' | 'mcp' | 'viewer'
+```
+
+## Interfaces
+
+### `AgentSchemaSummary`
+
+```typescript
+export interface AgentSchemaSummary {
+  msg: string
+  fields: Record<string, string>
+}
+```
+
+### `CaptureRequestPayload`
+
+```typescript
+export interface CaptureRequestPayload {
+  route?: string
+  url?: string
+  selector?: string
+  annotate?: Annotation[]
+  prose?: string
+  waitForMessage?: string
+  captureLevel?: CaptureLevel
+  timeoutMs?: number
+}
+```
+
+### `CaptureRequestResponse`
+
+```typescript
+export interface CaptureRequestResponse {
+  requestId: string
+  status: 'fulfilled' | 'timeout' | 'no-client'
+  note?: CreateNoteResponse
+}
+```
+
+### `ComponentMetaRef`
+
+```typescript
+export interface ComponentMetaRef {
+  file: string
+  line: number
+  name: string
+}
+```
+
+### `ConsoleLogEntry`
+
+```typescript
+export interface ConsoleLogEntry {
+  ts: string
+  level: LogLevel
+  text: string
+}
+```
+
+### `CreateNoteRequest`
+
+```typescript
+export interface CreateNoteRequest {
+  body: string
+  frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'>
+  noteBody: NoteBody
+  screenshot?: string
+}
+```
+
+### `CreateNoteResponse`
+
+```typescript
+export interface CreateNoteResponse {
+  id: string
+  filename: string
+  path: string
+  sessionId: string
+}
+```
+
+### `CurrentSessionResponse`
+
+```typescript
+export interface CurrentSessionResponse {
+  sessionId: string
+  startedAt: string
+  notesDir: string
 }
 ```
 
@@ -298,6 +362,18 @@ export interface DevmodeAnnotateConfig {
 }
 ````
 
+### `DirtyTraceEntry`
+
+```typescript
+export interface DirtyTraceEntry {
+  component: string
+  pathsTracked: string[]
+  mask: number
+  maskHi?: number
+  lastFlippedBits: string[]
+}
+```
+
 ### `HudInjectionConfig`
 
 ```typescript
@@ -321,6 +397,392 @@ export interface HudInjectionConfig {
    *  annotation mode alongside "⌖ Add region". Set `false` to hide
    *  the picker affordance. */
   elementPick?: boolean
+}
+```
+
+### `ListNotesQuery`
+
+```typescript
+export interface ListNotesQuery {
+  sessionId?: string
+  author?: Author
+  kind?: NoteKind | NoteKind[]
+  since?: string
+  limit?: number
+}
+```
+
+### `ListNotesResponse`
+
+```typescript
+export interface ListNotesResponse {
+  sessionId: string
+  notes: NoteSummary[]
+  total: number
+}
+```
+
+### `LluiPluginOptions`
+
+```typescript
+export interface LluiPluginOptions {
+  /**
+   * Port for the MCP debug bridge. In dev mode, the runtime relay connects
+   * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
+   * tool calls into the running app.
+   *
+   * When omitted, the plugin checks whether `@llui/mcp` is resolvable from
+   * the Vite project root. If yes → defaults to `5200`. If no → stays
+   * disabled. This means installing `@llui/mcp` (+ starting its server)
+   * Just Works without an explicit config entry. Pass an explicit `false`
+   * to opt out even when `@llui/mcp` is installed; pass a number to use
+   * a non-default port. When enabled but the MCP server isn't running,
+   * the plugin returns 404 from its discovery endpoint and the browser
+   * silently skips the connection — no retry noise.
+   */
+  mcpPort?: number | false
+
+  /**
+   * Enables two things together when set:
+   *
+   *   1. Emits schemas + binding descriptors in prod builds so the
+   *      @llui/agent runtime has metadata to advertise over its WS hello
+   *      frame.
+   *   2. Auto-mounts `@llui/agent/server`'s router at `/agent/*` and its
+   *      WS upgrade handler at `/agent/ws` on the Vite dev server — so
+   *      plain `vite dev` has working agent endpoints with no extra
+   *      server.ts wiring. Requires `@llui/agent` installed; if it isn't,
+   *      the plugin warns and skips dev mounting (prod emission still
+   *      works from Plan 3b).
+   *
+   * Pass `true` for defaults (random signing key per dev session;
+   * `identityResolver` returns `'dev-user'`). Pass an object to customize.
+   * Default `false` — metadata is dev-only, no agent endpoints.
+   */
+  agent?: boolean | AgentPluginConfig
+
+  /**
+   * Whether any component in the app uses `each()`'s `enter` / `leave`
+   * / `onTransition` options. When `false` (the default), the
+   * vite-plugin substitutes `__LLUI_TRANSITIONS__ = false` into the
+   * runtime bundle; Vite's dead-code eliminator then drops the
+   * per-entry enter/leave helpers, the `leaving` queue plumbing, and
+   * the `report` allocation in `each()`'s reconcile path. Saves
+   * ~0.3 kB gz on jfb-shape bundles that don't animate.
+   *
+   * Apps using `@llui/transitions` or any custom `each({ enter, leave,
+   * onTransition })` MUST pass `transitions: true` — otherwise the
+   * options will be silently ignored at runtime.
+   */
+  transitions?: boolean
+
+  /**
+   * Surface compiler `perf` diagnostics as Vite warnings. Currently one
+   * diagnostic exists: `llui/each-verbatim` — an `each` whose rows did not
+   * compile to the cloneNode RowFactory (nor the render-callback lowering)
+   * and render via the runtime authoring path instead, paying per-row
+   * construction overhead. The message names the bail reason(s) with an
+   * actionable hint (e.g. a row delegating to an imported helper, spread
+   * connect-part props, an imperative render body).
+   *
+   * Advisory only — never blocks the build (a verbatim `each` is fully
+   * correct, just slower per row). **Default: on in dev mode, off in
+   * build.** Pass `false` to silence, `true` to also warn during builds.
+   */
+  perfDiagnostics?: boolean
+
+  /**
+   * Controls the devmode-annotate notebook surface — a single Connect
+   * middleware mounted at `/_llui/*` that lets the HUD
+   * (`@llui/devmode-annotate`) and the MCP server (`@llui/mcp`) read
+   * and write a shared on-disk notebook under `.llui/notes/`. The HUD
+   * developer drops notes from the running app; the LLM consumes them
+   * via MCP subscriptions; both can initiate captures.
+   *
+   * **Default: on in dev mode.** Omitting the option (or passing `true`)
+   * registers the middleware automatically — there's nothing to do.
+   * Pass `false` to opt out (no routes registered, middleware tree-
+   * shakes). Pass an object to keep it on while customizing the notes
+   * directory or default timeout.
+   *
+   * The HUD is **auto-injected** in dev mode: the plugin emits a
+   * `<script type="module">` into the served HTML that imports
+   * `@llui/devmode-annotate` and mounts the floating button. Production
+   * builds never run `configureServer` or `transformIndexHtml(dev)`, so
+   * this is dev-only by construction. Disable just the HUD (keeping the
+   * notes API on) with `devmodeAnnotate: { hud: false }`; disable
+   * everything with `devmodeAnnotate: false`. The HUD package must be
+   * resolvable from the project root — install
+   * `@llui/devmode-annotate` alongside `@llui/vite-plugin`.
+   *
+   * Environment overrides (honored when not opted out):
+   *   - `LLUI_NOTES_DIR` — override the notes root path
+   *   - `LLUI_CAPTURE_TIMEOUT_MS` — override the default capture-request timeout
+   *
+   * The proposal (`docs/proposals/devmode-annotate/`) details what
+   * lands on disk and what the LLM gets.
+   */
+  devmodeAnnotate?: boolean | DevmodeAnnotateConfig
+}
+```
+
+### `MessageLogEntry`
+
+```typescript
+export interface MessageLogEntry {
+  ts: string
+  component: string
+  msg: unknown
+}
+```
+
+### `NoteBody`
+
+```typescript
+export interface NoteBody {
+  stateSnapshot?: unknown
+  messageLog?: MessageLogEntry[]
+  consoleLog?: ConsoleLogEntry[]
+  pendingMessages?: PendingMessage[]
+  effects?: {
+    pending: PendingEffectEntry[]
+    recent: RecentEffectEntry[]
+  }
+  dirtyTrace?: DirtyTraceEntry[]
+  structuralAt?: StructuralSnapshot
+  sourceMap?: SourceMapEntry[]
+  errors?: RuntimeErrorEntry[]
+  /** Captured user interactions from the HUD's repro recorder. The
+   *  LLM uses this to understand what the developer did before the
+   *  bug appeared. Times are milliseconds from the start of the
+   *  recording, not absolute. */
+  repro?: ReproEvent[]
+  verbose?: VerboseNoteBody
+}
+```
+
+### `NoteFrontmatter`
+
+```typescript
+export interface NoteFrontmatter {
+  id: string
+  ts: string
+  author: Author
+  kind: NoteKind
+  captureLevel: CaptureLevel
+  url: string
+  route: string | null
+  routeParams: Record<string, string>
+  viewport: {
+    w: number
+    h: number
+    dpr: number
+  }
+  componentPath: string[] | null
+  componentMeta: ComponentMetaRef | null
+  annotations: Annotation[]
+  screenshot: string | null
+  agentSchemas: AgentSchemaSummary[]
+  llui: {
+    runtime: string
+    compiler: string
+  }
+  fulfillsRequestId?: string
+  intent?: NoteIntent
+  replyTo?: string
+  proposedDiff?: ProposedDiff
+  /** When true (default true for HUD-originated tasks), the router
+   *  spawns the LLM with its resume-previous-conversation flag (e.g.
+   *  `claude --continue`) so the LLM keeps prior context. Presets
+   *  without a resume flag treat this as a no-op. */
+  resume?: boolean
+  /** Name of the resume chain this task participates in. The router
+   *  keeps a map of chain name → last session id and passes the
+   *  corresponding id via `--resume` when `resume: true`. Lets the
+   *  user maintain independent conversation threads (e.g. "refactor",
+   *  "ui-polish") without them stomping on each other. Default
+   *  `'default'`. */
+  chainName?: string
+}
+```
+
+### `NoteRect`
+
+```typescript
+export interface NoteRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+```
+
+### `NoteSummary`
+
+```typescript
+export interface NoteSummary {
+  id: string
+  sessionId: string
+  filename: string
+  ts: string
+  author: Author
+  kind: NoteKind
+  url: string
+  componentPath: string[] | null
+  preview: string
+  hasScreenshot: boolean
+  /** Frontmatter shortcuts surfaced in the list so the HUD can
+   *  rehydrate trackedTasks + chainHistories on reload without
+   *  fetching each note individually. Optional for back-compat with
+   *  servers that don't populate them. */
+  intent?: NoteIntent
+  chainName?: string
+  /** For reply notes only — the original task this reply addresses. */
+  replyTo?: string
+  /** For reply notes only — the LLM's one-line summary of the
+   *  proposed change (extracted from proposedDiff). */
+  proposedSummary?: string
+}
+```
+
+### `PendingEffectEntry`
+
+```typescript
+export interface PendingEffectEntry {
+  id: string
+  component: string
+  effect: unknown
+  sinceMs: number
+}
+```
+
+### `PendingMessage`
+
+```typescript
+export interface PendingMessage {
+  component: string
+  msg: unknown
+}
+```
+
+### `ProposedDiff`
+
+```typescript
+export interface ProposedDiff {
+  files: Array<{
+    path: string
+    patch: string
+  }>
+  summary: string
+  confidence: 'high' | 'medium' | 'low'
+}
+```
+
+### `RecentEffectEntry`
+
+```typescript
+export interface RecentEffectEntry {
+  ts: string
+  component: string
+  effect: unknown
+  outcome: 'ok' | 'error' | 'cancelled'
+  error?: string
+}
+```
+
+### `RuntimeErrorEntry`
+
+```typescript
+export interface RuntimeErrorEntry {
+  ts: string
+  kind: 'runtime' | 'compiler'
+  file?: string
+  line?: number
+  message: string
+  stack?: string
+}
+```
+
+### `SourceMapEntry`
+
+```typescript
+export interface SourceMapEntry {
+  selector: string
+  file: string
+  line: number
+  componentPath: string[]
+}
+```
+
+### `StatusTransition`
+
+```typescript
+export interface StatusTransition {
+  ts: string
+  noteId: string
+  from: NoteStatus | null
+  to: NoteStatus
+  by: Author | 'system'
+  reason?: string
+}
+```
+
+### `StructuralSnapshot`
+
+```typescript
+export interface StructuralSnapshot {
+  branches: Array<{
+    at: string
+    activeArm: string
+  }>
+  shows: Array<{
+    at: string
+    visible: boolean
+  }>
+  eachKeys: Array<{
+    at: string
+    keys: string[]
+  }>
+}
+```
+
+### `VerboseNoteBody`
+
+```typescript
+export interface VerboseNoteBody {
+  scopeTree?: Array<{
+    id: string
+    parent: string | null
+    component: string
+    key?: string
+  }>
+  bindings?: {
+    total: number
+    hottest: Array<{
+      component: string
+      path: string
+      firesPerSec: number
+    }>
+    lastCycleMs: number
+  }
+  agentBridge?: {
+    connectedAgents: string[]
+    pendingToolCalls: number
+    recentMsgs: Array<{
+      ts: string
+      direction: 'in' | 'out'
+      payload: unknown
+    }>
+  }
+  transitionsInFlight?: Array<{
+    component: string
+    name: string
+    progress: number
+  }>
+  foreignInstances?: Array<{
+    component: string
+    library: string
+  }>
 }
 ```
 

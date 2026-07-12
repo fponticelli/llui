@@ -16,34 +16,58 @@ set -e
 #   ./scripts/publish.sh              # publish all packages
 #   ./scripts/publish.sh dom effects  # publish specific packages
 
-# Tier 1: no in-repo runtime deps — publish first.
-# Tier 2: depend on tier 1. Within-tier order is best-effort by
-#   who-depends-on-whom for log readability; npm has no strict
-#   visibility ordering once a package is published. `lexical` (the
-#   low-level Lexical↔runtime binding) belongs here — it peers only on
-#   `@llui/dom`.
-# Tier 3: depend on tier 2. `agent-bridge` consumes `@llui/agent` and
-#   publishes as `llui-agent`. `markdown-editor` consumes `@llui/lexical`
-#   and `@llui/components`, so it must publish after both.
-#   `devmode-annotate` (the dev-mode HUD) consumes `@llui/markdown-editor`,
-#   so it publishes last.
+# The publish list is DERIVED, not hand-maintained. `scripts/publish-order.mjs`
+# reads every packages/*/package.json, drops the `"private": true` ones, and
+# topologically sorts the rest so a package's in-repo runtime dependencies
+# publish before it does. This replaces the old hand-kept TIER1/TIER2/TIER3
+# arrays, which silently omitted packages (a2ui, lexical-collab, notes-format)
+# every time a new package was added — a class of bug a derived list cannot have.
 #
-# `eslint-plugin-llui` was deleted in the lint→compiler migration
-# (v0.3.0); all framework lint rules now emit as compile-time errors
-# from `@llui/compiler`.
-TIER1=(dom effects compiler)
-TIER2=(
-  compiler-ssr
-  vite-plugin test router transitions components markdown lexical vike mcp agent
-)
-TIER3=(agent-bridge markdown-editor devmode-annotate)
-ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}" "${TIER3[@]}")
+# `eslint-plugin-llui` was deleted in the lint→compiler migration (v0.3.0); all
+# framework lint rules now emit as compile-time errors from `@llui/compiler`.
+ORDER_TSV="$(node scripts/publish-order.mjs)" || {
+  echo "✗ failed to compute publish order (scripts/publish-order.mjs)"
+  exit 1
+}
 
-# If args provided, use them; otherwise publish all
+ALL_DIRS=()
+declare -A PKG_NAME
+declare -A PKG_DEPS
+while IFS=$'\t' read -r dir name deps; do
+  [ -z "$dir" ] && continue
+  ALL_DIRS+=("$dir")
+  PKG_NAME["$dir"]="$name"
+  PKG_DEPS["$dir"]="$deps"
+done <<< "$ORDER_TSV"
+
+# Completeness assertion: every non-private package under packages/ MUST appear
+# in the derived list. Guards against a package being invisibly dropped (e.g. a
+# dependency cycle that makes the topo sort bail on a node).
+EXPECTED=0
+for d in packages/*/; do
+  [ -f "${d}package.json" ] || continue
+  isPrivate=$(node -e "process.stdout.write(String(!!require('./${d}package.json').private))")
+  [ "$isPrivate" = "true" ] && continue
+  EXPECTED=$((EXPECTED + 1))
+done
+if [ "${#ALL_DIRS[@]}" -ne "$EXPECTED" ]; then
+  echo "✗ publish coverage mismatch: derived ${#ALL_DIRS[@]} packages but $EXPECTED non-private packages exist."
+  echo "  Every non-private package must be covered — check scripts/publish-order.mjs for a cycle or omission."
+  exit 1
+fi
+
+# If args provided, publish only those directory names — but keep topological
+# order and the failure-cascade semantics below.
 if [ $# -gt 0 ]; then
-  PKGS=("$@")
+  REQUESTED=" $* "
+  PKGS=()
+  for dir in "${ALL_DIRS[@]}"; do
+    case "$REQUESTED" in
+      *" $dir "*) PKGS+=("$dir") ;;
+    esac
+  done
 else
-  PKGS=("${ALL_PKGS[@]}")
+  PKGS=("${ALL_DIRS[@]}")
 fi
 
 # Preflight: confirm we have write credentials to the registry before
@@ -105,6 +129,10 @@ echo ""
 
 FAILED=()
 SUCCEEDED=()
+SKIPPED=()
+# Names (not dirs) of packages that failed OR were skipped, so their dependents
+# cascade. Space-padded for whole-word matching.
+FAILED_NAMES=" "
 
 for pkg in "${PKGS[@]}"; do
   dir="packages/$pkg"
@@ -113,20 +141,52 @@ for pkg in "${PKGS[@]}"; do
     continue
   fi
 
-  # Read both name and version from package.json — directory name is not
-  # always the published name (eslint-plugin-llui → @llui/eslint-plugin,
-  # agent-bridge → llui-agent).
-  read -r name version < <(node -e "
-    const p = require('./$dir/package.json');
-    process.stdout.write(p.name + ' ' + p.version + '\n');
-  ")
+  name="${PKG_NAME[$pkg]}"
+  version=$(node -e "process.stdout.write(require('./$dir/package.json').version)")
+
+  # Failure cascade: if any in-repo dependency (transitive) already failed or was
+  # skipped, do NOT publish this package — it would ship pointing at a dependency
+  # version that never reached the registry. Skip it and mark it failed too, so
+  # ITS dependents cascade in turn (topological order guarantees deps come first).
+  blocked=""
+  IFS=',' read -ra deps <<< "${PKG_DEPS[$pkg]}"
+  for dep in "${deps[@]}"; do
+    [ -z "$dep" ] && continue
+    case "$FAILED_NAMES" in
+      *" $dep "*) blocked="$dep"; break ;;
+    esac
+  done
+  if [ -n "$blocked" ]; then
+    echo "⏭ Skipping $name — dependency $blocked did not publish."
+    SKIPPED+=("$name (needs $blocked)")
+    FAILED_NAMES+="$name "
+    echo ""
+    continue
+  fi
+
   echo "Publishing $name@$version..."
+
+  # Build BEFORE emitting the __llui_deps manifest. `pnpm publish` runs the
+  # package's prepack (which builds), but that happens AFTER emit-deps below —
+  # so on a fresh checkout dist/ would not yet exist when emit-deps looks for it,
+  # and the manifest would be silently skipped. Building here guarantees dist/ is
+  # present for emit-deps (the prepack rebuild during publish is then a cheap
+  # no-op re-emit).
+  if [ -f "$dir/package.json" ] && node -e "process.exit(require('./$dir/package.json').scripts?.build ? 0 : 1)"; then
+    if ! (cd "$dir" && pnpm run build); then
+      echo "✗ $name failed to build — aborting its publish."
+      FAILED+=("$name (build)")
+      FAILED_NAMES+="$name "
+      echo ""
+      continue
+    fi
+  fi
 
   # Emit the package's __llui_deps.json library-boundary manifest so consumers
   # can narrow reactive bindings through its helpers (see scripts/emit-deps.mjs).
-  # Requires @llui/compiler to be built (TIER1, already published above). Only
-  # packages with a src/ that ships dist/ benefit; emit-deps no-ops cleanly
-  # elsewhere. Non-fatal — a manifest failure must never block a release.
+  # Requires @llui/compiler to be built. Only packages with a src/ that ships
+  # dist/ benefit; emit-deps no-ops cleanly elsewhere. Non-fatal — a manifest
+  # failure must never block a release.
   if [ -d "$dir/src" ] && [ -d "$dir/dist" ]; then
     node scripts/emit-deps.mjs "$dir" || echo "  ⚠ emit-deps skipped for $name"
   fi
@@ -141,6 +201,7 @@ for pkg in "${PKGS[@]}"; do
     echo "✓ $name@$version published"
   else
     FAILED+=("$name")
+    FAILED_NAMES+="$name "
     echo "✗ $name failed"
   fi
   echo ""
@@ -151,9 +212,15 @@ if [ ${#SUCCEEDED[@]} -gt 0 ]; then
   echo "Published:"
   for s in "${SUCCEEDED[@]}"; do echo "  ✓ $s"; done
 fi
-if [ ${#FAILED[@]} -gt 0 ]; then
-  echo "Failed:"
-  for f in "${FAILED[@]}"; do echo "  ✗ $f"; done
+if [ ${#SKIPPED[@]} -gt 0 ]; then
+  echo "Skipped (dependency did not publish):"
+  for s in "${SKIPPED[@]}"; do echo "  ⏭ $s"; done
+fi
+if [ ${#FAILED[@]} -gt 0 ] || [ ${#SKIPPED[@]} -gt 0 ]; then
+  if [ ${#FAILED[@]} -gt 0 ]; then
+    echo "Failed:"
+    for f in "${FAILED[@]}"; do echo "  ✗ $f"; done
+  fi
   exit 1
 fi
 echo "Done."

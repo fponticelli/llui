@@ -329,17 +329,14 @@ describe('persistent layouts — nested layout chain', () => {
 })
 
 describe('persistent layouts — SSR chain render', () => {
-  it('emits a chain-aware hydration envelope with per-layer state', async () => {
+  it('emits a chain-aware integrity manifest (layer names, outer→page)', async () => {
     const AppLayout = makeAppLayout()
     const ReportsPage = makeReportsPage()
 
     const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     const result = await render({ Page: ReportsPage })
 
-    expect(result.pageContext.lluiState).toEqual({
-      layouts: [{ name: 'AppLayout', state: { session: 'anonymous' } }],
-      page: { name: 'ReportsPage', state: { view: 'summary' } },
-    })
+    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['AppLayout', 'ReportsPage'] })
   })
 
   it('renders nested layout chain into composed HTML', async () => {
@@ -361,14 +358,10 @@ describe('persistent layouts — SSR chain render', () => {
     expect(html).toContain('dashboard')
     expect(html).toContain('reports-page')
 
-    // Envelope carries all three states, layouts array has two entries
-    // (inner is a layout, page is tracked separately).
+    // Manifest lists all three layers by name, outermost → page.
     expect(result.pageContext.lluiState).toEqual({
-      layouts: [
-        { name: 'AppLayout', state: { session: 'anonymous' } },
-        { name: 'DashboardLayout', state: { active: 'reports' } },
-      ],
-      page: { name: 'ReportsPage', state: { view: 'summary' } },
+      v: 2,
+      layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'],
     })
   })
 
@@ -537,13 +530,10 @@ describe('persistent layouts — route-scoped section layout (issue #33)', () =>
     expect(html).toContain('docs-sidebar')
     expect(html).toContain('article-intro')
 
-    // Chain-aware envelope: AppLayout + DocsLayout as layouts, article as page.
+    // Chain-aware manifest: AppLayout + DocsLayout + the article page.
     expect(result.pageContext.lluiState).toEqual({
-      layouts: [
-        { name: 'AppLayout', state: { session: 'anonymous' } },
-        { name: 'DocsLayout', state: { section: 'guide' } },
-      ],
-      page: { name: 'Article-intro', state: { slug: 'intro' } },
+      v: 2,
+      layers: ['AppLayout', 'DocsLayout', 'Article-intro'],
     })
   })
 })

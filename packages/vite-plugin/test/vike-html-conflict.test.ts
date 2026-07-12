@@ -52,10 +52,28 @@ function applyTransform(plugin: Plugin, html: string): string {
 
 let tmpRoot: string
 
+// The HUD is a consumer-provided package now (`@llui/vite-plugin` no longer
+// depends on it), resolved from the consumer's own `node_modules`. Provision
+// a minimal fake so HUD injection is reachable — that way each test isolates
+// its intended variable (Vike presence), not whether the HUD is installed.
+function provisionDevmodeAnnotate(root: string): void {
+  const pkgDir = resolve(root, 'node_modules', '@llui', 'devmode-annotate')
+  mkdirSync(resolve(pkgDir, 'dist'), { recursive: true })
+  writeFileSync(
+    resolve(pkgDir, 'package.json'),
+    JSON.stringify({
+      name: '@llui/devmode-annotate',
+      exports: { '.': { import: './dist/index.js' } },
+    }),
+  )
+  writeFileSync(resolve(pkgDir, 'dist', 'index.js'), 'export function mountAnnotateHud() {}\n')
+}
+
 beforeEach(() => {
   tmpRoot = mkdtempSync(resolve(tmpdir(), 'llui-vike-html-'))
   writeFileSync(resolve(tmpRoot, 'package.json'), JSON.stringify({ name: 'test' }))
   mkdirSync(resolve(tmpRoot, 'node_modules'), { recursive: true })
+  provisionDevmodeAnnotate(tmpRoot)
 })
 
 afterEach(() => {

@@ -94,20 +94,36 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
     // verify + register); the cheap pre-checks above reject before we
     // ever upgrade.
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+      // Buffer inbound frames from the moment the socket is upgraded.
+      // `acceptConnection` (token verify + store lookup) is async, so
+      // registration — which wires the real frame handler — happens
+      // strictly after the browser has already sent its `hello`. Attaching
+      // the 'message' listener here and buffering until onFrame is wired
+      // keeps that hello from being dropped (matters especially for
+      // non-in-memory token stores whose lookup is slower).
+      const buffer: ClientFrame[] = []
+      let frameHandler: ((f: ClientFrame) => void) | null = null
+      ws.on('message', (data: Buffer | string) => {
+        const raw = typeof data === 'string' ? data : data.toString('utf8')
+        let parsed: ClientFrame
+        try {
+          parsed = JSON.parse(raw) as ClientFrame
+        } catch {
+          // Ignore malformed frames.
+          return
+        }
+        if (frameHandler) frameHandler(parsed)
+        else buffer.push(parsed)
+      })
+
       const conn: PairingConnection = {
         send(frame: ServerFrame) {
           ws.send(JSON.stringify(frame))
         },
         onFrame(handler) {
-          ws.on('message', (data: Buffer | string) => {
-            const raw = typeof data === 'string' ? data : data.toString('utf8')
-            try {
-              const parsed = JSON.parse(raw) as ClientFrame
-              handler(parsed)
-            } catch {
-              // Ignore malformed frames.
-            }
-          })
+          frameHandler = handler
+          const pending = buffer.splice(0, buffer.length)
+          for (const f of pending) handler(f)
         },
         onClose(handler) {
           // Registration happens after the async `acceptConnection`
@@ -127,6 +143,8 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
         },
       }
 
+      // On auth failure the buffered frames are simply discarded (onFrame
+      // is never wired) and the socket closed.
       void deps.acceptConnection(token, conn).then((result) => {
         if (!result.ok) ws.close()
       })

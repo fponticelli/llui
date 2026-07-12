@@ -66,7 +66,7 @@ describe('flip()', () => {
     expect(options).toMatchObject({ duration: 200, easing: 'ease-in' })
   })
 
-  it('stops tracking elements after leave', () => {
+  it('does not animate elements reported as leaving', () => {
     const el = makeEl()
     const animateSpy = vi.fn()
     el.animate = animateSpy as unknown as typeof el.animate
@@ -77,7 +77,9 @@ describe('flip()', () => {
     f.enter!([el])
     f.leave!([el])
     rect = { left: 100, top: 0, width: 50, height: 50 } as DOMRect
-    f.onTransition!({ entering: [], leaving: [], parent: document.body })
+    // The row is still in the DOM (leave animation deferred) but reported via
+    // ctx.leaving — flip must skip it rather than glide a departing row.
+    f.onTransition!({ entering: [], leaving: [el], parent: document.body })
     expect(animateSpy).not.toHaveBeenCalled()
   })
 
@@ -92,6 +94,47 @@ describe('flip()', () => {
     document.body.removeChild(el) // disconnect
     f.onTransition!({ entering: [], leaving: [], parent: document.body })
     expect(animateSpy).not.toHaveBeenCalled()
+  })
+
+  // ── Finding 4: no strong retention of bulk-removed rows ──
+  it('ignores rows bulk-removed from the parent (no strong Set retention)', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const a = document.createElement('div')
+    const b = document.createElement('div')
+    container.append(a, b)
+    a.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect
+    b.getBoundingClientRect = () => ({ left: 0, top: 50 }) as DOMRect
+    const aSpy = vi.fn()
+    a.animate = aSpy as unknown as typeof a.animate
+
+    const f = flip()
+    f.enter!([a, b])
+    // Bulk clear (e.g. list emptied) WITHOUT per-row leave calls.
+    container.replaceChildren()
+    f.onTransition!({ entering: [], leaving: [], parent: container })
+    // The removed rows are not among parent.children, so they are neither
+    // iterated nor held — the position map is a WeakMap keyed on the elements.
+    expect(aSpy).not.toHaveBeenCalled()
+    document.body.removeChild(container)
+  })
+
+  it('derives the working set from parent.children each pass', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const el = document.createElement('div')
+    container.appendChild(el)
+    const animateSpy = vi.fn()
+    el.animate = animateSpy as unknown as typeof el.animate
+    let rect = { left: 0, top: 0, width: 10, height: 10 } as DOMRect
+    el.getBoundingClientRect = () => rect
+
+    const f = flip({ duration: 150 })
+    f.enter!([el]) // baseline at {0,0}
+    rect = { left: 40, top: 0, width: 10, height: 10 } as DOMRect
+    f.onTransition!({ entering: [], leaving: [], parent: container })
+    expect(animateSpy).toHaveBeenCalledTimes(1)
+    document.body.removeChild(container)
   })
 })
 

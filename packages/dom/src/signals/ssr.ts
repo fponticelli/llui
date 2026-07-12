@@ -9,7 +9,7 @@
 
 import { renderSignalTree, type SignalDoc } from './dom.js'
 import { pathHandle } from './handle.js'
-import type { SignalComponentDef } from './component.js'
+import { normalizeUpdateResult, type SignalComponentDef } from './component.js'
 
 /** A server DOM document: the node-factory subset the build needs. A `DomEnv`
  * from `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom` satisfies it. */
@@ -36,6 +36,19 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Raw-text elements: the HTML parser reads their content verbatim (no character
+// references), so running `escapeHtml` over inline CSS/JS would corrupt it —
+// `a > b { }` must NOT become `a &gt; b { }`. (`textarea`/`title` are *escapable*
+// raw text and DO use normal escaping, so they stay on the default text path.)
+const RAW_TEXT_ELEMENTS = new Set(['script', 'style'])
+
+/** Emit raw-text-element content verbatim, but neutralize any literal close
+ * sequence (`</script`/`</style`, case-insensitive) that would otherwise end the
+ * element early in the parser — the standard raw-text serialization guard. */
+function guardRawText(text: string, tag: string): string {
+  return text.replace(new RegExp(`</(${tag})`, 'gi'), '<\\/$1')
+}
+
 /** Escape a string for use inside a double-quoted HTML attribute. Exported so the
  * head-management collector serializes html/body attribute strings through the
  * same escaping as the node serializer (no second, divergent escaper). */
@@ -58,10 +71,18 @@ function nodeToString(node: Node): string {
   let attrs = ''
   for (let i = 0; i < el.attributes.length; i++) {
     const attr = el.attributes[i]!
-    if (attr.name.startsWith('on')) continue // event handlers don't serialize
+    // Skip only GENUINE inline event-handler attributes (onclick, oninput, …) —
+    // the DOM exposes a matching `on*` property slot for those. A bare
+    // `startsWith('on')` also dropped legitimate custom attributes (a web
+    // component's `on-theme`, `ontology`, …); this keeps them.
+    if (/^on[a-z]/.test(attr.name) && attr.name in el) continue
     attrs += ` ${attr.name}="${escapeAttr(attr.value)}"`
   }
   if (VOID_ELEMENTS.has(tag)) return `<${tag}${attrs} />`
+  if (RAW_TEXT_ELEMENTS.has(tag)) {
+    // Content is verbatim (see RAW_TEXT_ELEMENTS): concatenate raw text, guarded.
+    return `<${tag}${attrs}>${guardRawText(el.textContent ?? '', tag)}</${tag}>`
+  }
   let children = ''
   for (let i = 0; i < el.childNodes.length; i++) children += nodeToString(el.childNodes[i]!)
   return `<${tag}${attrs}>${children}</${tag}>`
@@ -138,9 +159,5 @@ export function renderToString<S, M, E>(
 
 function normalizeInit<S, M, E>(def: SignalComponentDef<S, M, E>, override: S | undefined): [S] {
   if (override !== undefined) return [override]
-  const r = def.init()
-  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
-    return [(r as [S, E[]])[0]]
-  }
-  return [r as S]
+  return [normalizeUpdateResult<S, E>(def.init())[0]]
 }

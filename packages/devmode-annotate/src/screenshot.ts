@@ -25,6 +25,36 @@ export function dataUrlToBase64(dataUrl: string): string {
 const TRANSPARENT_PIXEL_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
+/**
+ * DOM subtrees that belong to the HUD's own chrome — the floating button /
+ * modal root, the toast container, and the transient drawing overlay + element
+ * picker hosts. They must be excluded from the capture so a screenshot shows
+ * the HOST app, not the annotation UI, and so the in-progress rect overlay
+ * isn't baked into the raster only to be drawn a SECOND time by `bakeAnnotations`.
+ */
+const HUD_CAPTURE_EXCLUDE_SELECTORS: readonly string[] = [
+  '#llui-devmode-annotate-root',
+  '#llui-devmode-annotate-toasts',
+  '[data-llui-overlay-host]',
+  '[data-llui-overlay]',
+  '[data-llui-element-picker-host]',
+  '[data-llui-element-picker]',
+]
+
+/**
+ * `html-to-image` node filter: return `false` to drop a node (and its subtree)
+ * from the capture. Excludes every HUD-owned element so the screenshot never
+ * contains the HUD's chrome. Non-Element nodes (text, comments) always pass.
+ */
+export function hudCaptureFilter(node: unknown): boolean {
+  if (typeof Element === 'undefined' || !(node instanceof Element)) return true
+  if (typeof node.matches !== 'function') return true
+  for (const sel of HUD_CAPTURE_EXCLUDE_SELECTORS) {
+    if (node.matches(sel)) return false
+  }
+  return true
+}
+
 /** Default capture: drives `html-to-image` over the document root.
  *  - `skipFonts: true` avoids the costly font-embed pass (~1s on text-heavy pages).
  *  - `imagePlaceholder` keeps the capture from rejecting when CORS-blocked or
@@ -36,6 +66,9 @@ export const defaultCapture: CaptureFn = async (target) => {
     skipFonts: true,
     cacheBust: true,
     imagePlaceholder: TRANSPARENT_PIXEL_PNG,
+    // Exclude the HUD's own chrome (and the transient overlay/picker hosts)
+    // from the raster — the screenshot is of the host app, not the HUD.
+    filter: hudCaptureFilter,
     onImageErrorHandler: (ev) => {
       const img = (ev as Event & { target?: { src?: string } })?.target
       const src = img?.src ?? '<unknown>'

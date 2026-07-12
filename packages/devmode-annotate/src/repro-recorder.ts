@@ -14,25 +14,10 @@
 // capture entirely. Captured values are truncated to TRUNC_INPUT chars.
 
 import type { ReproEvent } from './note-types.js'
+import { buildSelector } from './selector.js'
 
 const MAX_EVENTS = 200
 const TRUNC_INPUT = 80
-
-function buildSelector(el: Element): string {
-  const parts: string[] = []
-  let cur: Element | null = el
-  for (let depth = 0; cur && depth < 4; depth++, cur = cur.parentElement) {
-    if (cur.id) {
-      parts.unshift(`#${cur.id}`)
-      break
-    }
-    const tag = cur.tagName.toLowerCase()
-    const classes = Array.from(cur.classList).filter((c) => !c.startsWith('llui-'))
-    if (classes.length > 0) parts.unshift(`${tag}.${classes[0]}`)
-    else parts.unshift(tag)
-  }
-  return parts.join(' > ')
-}
 
 function isPrivate(el: Element | null): boolean {
   let cur: Element | null = el
@@ -62,8 +47,11 @@ function isHud(el: Element | null): boolean {
 export interface ReproRecorderHandle {
   start: () => void
   stop: () => void
-  /** Returns + clears the captured events. Use on submit. */
+  /** Returns + clears the captured events. Use once a persist has SUCCEEDED. */
   flush: () => ReproEvent[]
+  /** Returns a copy of the captured events WITHOUT clearing them. Use to build
+   *  a request payload so a failed persist doesn't lose the trace. */
+  peek: () => ReproEvent[]
   isRecording: () => boolean
 }
 
@@ -157,6 +145,9 @@ export function createReproRecorder(): ReproRecorderHandle {
       const out = events
       events = []
       return out
+    },
+    peek() {
+      return events.slice()
     },
     isRecording() {
       return recording
@@ -291,22 +282,35 @@ function assertWithinRoot(el: Element, root: Element | null, selector: string): 
   }
 }
 
+/**
+ * Resolve a recorded selector to exactly ONE live element. A selector that
+ * matches nothing, or MORE THAN ONE element, is a replay hazard: blindly
+ * driving `querySelector`'s first hit could click the wrong homogeneous row.
+ * Throw instead so the caller records it in `skipped` rather than firing on
+ * an ambiguous target.
+ */
+function resolveUnique(selector: string): Element {
+  const matches = document.querySelectorAll(selector)
+  if (matches.length === 0) throw new Error(`selector did not match: ${selector}`)
+  if (matches.length > 1) {
+    throw new Error(`selector matched ${matches.length} elements (ambiguous): ${selector}`)
+  }
+  return matches[0]!
+}
+
 async function dispatchOne(event: ReproEvent, appRoot: Element | null): Promise<void> {
   switch (event.type) {
     case 'click': {
-      const el = document.querySelector(event.selector)
-      if (!el) throw new Error(`selector did not match: ${event.selector}`)
+      const el = resolveUnique(event.selector)
       assertWithinRoot(el, appRoot, event.selector)
       el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       return
     }
     case 'input': {
-      const el = document.querySelector(event.selector) as
+      const el = resolveUnique(event.selector) as
         | HTMLInputElement
         | HTMLTextAreaElement
         | HTMLSelectElement
-        | null
-      if (!el) throw new Error(`selector did not match: ${event.selector}`)
       assertWithinRoot(el, appRoot, event.selector)
       if ('value' in el) {
         // A redacted event carries no value — replay the edit signal

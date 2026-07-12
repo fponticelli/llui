@@ -99,12 +99,32 @@ handlers that mutate the BindingMap directly.
 function createBridgeServer(deps: BridgeDeps): McpServer
 ```
 
-## Types
+### `detectSchemaChange()`
 
-### `ToolDescriptor`
+Compare a freshly-fetched app description against the cached one and
+decide whether the bridge's cached schema is now stale. A changed
+`schemaHash` means the app's Msg/State schema was recompiled — cached
+affordances/examples/payload shapes may no longer be valid, so the
+caller is told to re-read before dispatching. Exported so the
+invalidation policy is unit-testable without wiring an MCP transport.
 
 ```typescript
-export type ToolDescriptor = McpForwardedToolDescriptor | McpMetaToolDescriptor
+function detectSchemaChange(
+  prev: LapDescribeResponse | null,
+  next: Pick<LapDescribeResponse, 'schemaHash'>,
+): { changed: boolean; note: string | null }
+```
+
+## Types
+
+### `Binding`
+
+```typescript
+export type Binding = {
+  url: string // LAP base path, e.g. "https://app/agent/lap/v1"
+  token: string
+  describe: LapDescribeResponse | null // cached describe_app response; populated on bind
+}
 ```
 
 ### `BridgeDeps`
@@ -122,12 +142,22 @@ export type BridgeDeps = {
 }
 ```
 
-## Constants
+## Classes
 
-### `TOOL_DESCRIPTORS`
+### `BindingMap`
+
+Per-MCP-session map. Keyed by the SDK's session id (one per Claude
+conversation). Spec §11.3.
 
 ```typescript
-const TOOL_DESCRIPTORS: ToolDescriptor[]
+class BindingMap {
+  map
+  set(sessionId: string, url: string, token: string): void
+  get(sessionId: string): Binding | null
+  setDescribe(sessionId: string, describe: LapDescribeResponse): void
+  clear(sessionId: string): void
+  has(sessionId: string): boolean
+}
 ```
 
 <!-- auto-api:end -->

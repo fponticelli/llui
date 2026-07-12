@@ -1,7 +1,10 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
+import { focusRovingItem } from '../utils/roving.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -276,14 +279,23 @@ export function connect(
       }),
       onFocus: tagSend(send, ['focusMenu'], () => send({ type: 'focusMenu', id })),
       onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'openMenu'], (e: KeyboardEvent) => {
+        const origin = e.currentTarget as Element | null
+        // After roving the focused trigger in state, move REAL DOM focus to it —
+        // arrow keys are otherwise silent for assistive tech.
+        const moveFocus = (): void => {
+          const focused = state.peek()?.focused
+          if (focused != null) focusRovingItem(origin, 'menubar', focused, { itemPart: 'trigger' })
+        }
         switch (e.key) {
           case 'ArrowRight':
             e.preventDefault()
             send({ type: 'focusNext' })
+            moveFocus()
             return
           case 'ArrowLeft':
             e.preventDefault()
             send({ type: 'focusPrev' })
+            moveFocus()
             return
           case 'ArrowDown':
           case 'Enter':
@@ -315,7 +327,6 @@ export interface MenubarOverlayOptions {
   offset?: number
   flip?: boolean
   shift?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
@@ -326,7 +337,7 @@ export interface MenubarOverlayOptions {
  * dismissable stack the menu machine uses.
  */
 export function overlay(opts: MenubarOverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -338,15 +349,11 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
   return show(
     opts.state.map((s) => s.open === opts.menuId),
     () => {
-      const targetEl =
-        typeof rawTarget === 'string'
-          ? (document.querySelector(rawTarget) ?? document.body)
-          : rawTarget
       return [
         portal(() => {
-          const dismissable = onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
+          const dismissable = onMount((root) => {
+            const contentEl = getElementByIdInScope(root, contentId)
+            const triggerEl = getElementByIdInScope(root, triggerId)
             if (!contentEl) return
 
             const cleanups: Array<() => void> = []
@@ -368,21 +375,27 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
               pushDismissable({
                 element: contentEl,
                 ignore: () => (triggerEl ? [triggerEl] : []),
-                onDismiss: () => {
-                  opts.send({ type: 'closeMenu' })
-                  triggerEl?.focus()
-                },
+                // Focus restoration lives in the cleanup below (runs on EVERY
+                // close, including item-select), so don't also focus here.
+                onDismiss: () => opts.send({ type: 'closeMenu' }),
               }),
             )
 
             contentEl.focus({ preventScroll: true })
 
             return () => {
+              // Restore focus to the menu's trigger when focus is still inside
+              // the overlay (e.g. after selecting an item, which would otherwise
+              // drop focus to <body>). Respect focus the user moved elsewhere.
+              const active = document.activeElement
+              const focusInside =
+                contentEl.contains(active) || active === document.body || active === null
               for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+              if (focusInside) triggerEl?.focus()
             }
           })
           return [dismissable, div(parts.positioner, opts.content())]
-        }, targetEl),
+        }, host),
       ]
     },
   )

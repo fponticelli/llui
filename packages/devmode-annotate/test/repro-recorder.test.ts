@@ -161,3 +161,71 @@ describe('repro recorder — onKey privacy (fix)', () => {
     rec.stop()
   })
 })
+
+// Finding 7 — the trace must survive a failed persist (read without clearing).
+describe('repro recorder — peek vs flush', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+  it('peek() returns events WITHOUT clearing; flush() clears', () => {
+    const btn = document.createElement('button')
+    btn.id = 'p'
+    document.body.append(btn)
+    const rec = createReproRecorder()
+    rec.start()
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(rec.peek().some((e) => e.type === 'click')).toBe(true)
+    // A second peek still sees the events — the buffer is intact.
+    expect(rec.peek().some((e) => e.type === 'click')).toBe(true)
+    rec.flush()
+    expect(rec.peek().some((e) => e.type === 'click')).toBe(false)
+    rec.stop()
+  })
+})
+
+// Finding 15 — the recorder now uses the shared :nth-of-type builder, so a
+// recorded click on the Nth of N homogeneous rows replays back to that exact
+// row; an ambiguous selector is recorded in `skipped` instead of clicking [0].
+describe('repro replay — homogeneous rows + ambiguity', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('records + replays the 3rd of N identical list items to that exact item', async () => {
+    document.body.innerHTML = '<ul id="rows"><li>a</li><li>b</li><li>c</li><li>d</li></ul>'
+    const items = Array.from(document.querySelectorAll('li'))
+    const third = items[2]!
+    const rec = createReproRecorder()
+    rec.start()
+    third.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const events = rec.flush().filter((e) => e.type === 'click')
+    rec.stop()
+    expect(events).toHaveLength(1)
+    const selector = (events[0] as Extract<ReproEvent, { type: 'click' }>).selector
+    expect(selector).toContain(':nth-of-type(3)')
+
+    const hits = items.map((li) => {
+      let clicked = false
+      li.addEventListener('click', () => (clicked = true))
+      return () => clicked
+    })
+    const res = await replayReproEvents(events, { expectedPath: null, speed: 0 })
+    expect(res.applied).toBe(1)
+    expect(res.skipped).toHaveLength(0)
+    // Only the third item received the synthesized click.
+    expect(hits.map((h) => h())).toEqual([false, false, true, false])
+  })
+
+  it('skips an ambiguous selector (matches >1) instead of clicking the first', async () => {
+    document.body.innerHTML = '<div id="box"><span>a</span><span>b</span></div>'
+    let firstClicked = false
+    document.querySelectorAll('span')[0]!.addEventListener('click', () => (firstClicked = true))
+    const res = await replayReproEvents([{ type: 'click', t: 0, selector: '#box > span' }], {
+      expectedPath: null,
+      speed: 0,
+    })
+    expect(res.applied).toBe(0)
+    expect(res.skipped.some((s) => /ambiguous/.test(s.reason))).toBe(true)
+    expect(firstClicked).toBe(false)
+  })
+})

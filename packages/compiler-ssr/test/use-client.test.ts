@@ -87,14 +87,36 @@ export { a, b }
     expect(result!.output).toContain(`export const b = __clientOnlyStub("b")`)
   })
 
-  it('warns on re-exports that bypass stubbing', () => {
+  // Finding 10: a NAMED re-export has known names, so it is stubbed consistently
+  // with local named exports (the source module is dropped, not pulled into SSR).
+  it('stubs a named re-export and drops its source module', () => {
     const src = `'use client'
 export { Chart } from 'chart.js'
+export { Foo as Bar } from './foo'
 `
     const result = transformUseClientSsr(src, 'reexport.ts')
     expect(result).not.toBeNull()
-    expect(result!.warnings.length).toBeGreaterThan(0)
-    expect(result!.warnings[0]).toContain('re-export')
+    expect(result!.output).toContain(`export const Chart = __clientOnlyStub("Chart")`)
+    // `as Bar` stubs the OUTWARD name
+    expect(result!.output).toContain(`export const Bar = __clientOnlyStub("Bar")`)
+    // source modules are NOT pulled into the SSR graph
+    expect(result!.output).not.toContain('chart.js')
+    expect(result!.output).not.toContain('./foo')
+    // named re-exports are handled, so no warning for them
+    expect(result!.warnings).toEqual([])
+  })
+
+  // `export *` can't be enumerated → dropped WITH an accurate warning.
+  it('warns (accurately) on a star re-export it cannot stub', () => {
+    const src = `'use client'
+export * from './other'
+`
+    const result = transformUseClientSsr(src, 'star.ts')
+    expect(result).not.toBeNull()
+    expect(result!.warnings.length).toBe(1)
+    expect(result!.warnings[0]).toContain('export *')
+    // dropped: the source module must not reach the SSR graph
+    expect(result!.output).not.toContain('./other')
   })
 
   it('drops all top-level imports from the stub output', () => {

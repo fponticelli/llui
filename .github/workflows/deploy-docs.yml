@@ -42,6 +42,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Reuse the same turbo cache as ci.yml (shared key prefix) so the docs
+      # deploy replays package builds instead of recompiling from scratch.
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-
+            turbo-${{ runner.os }}-
+
       - name: Build LLui packages
         # @llui/dom, vite-plugin, vike power the site; components/effects/router/agent
         # are needed to build the example mini-apps (transitive deps via ^build).

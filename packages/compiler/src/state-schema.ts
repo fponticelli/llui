@@ -83,6 +83,13 @@ interface TypeScope {
   interfaces: Map<string, ts.NodeArray<ts.TypeElement>>
 }
 
+/** Budget for following NAMED type references (aliases/interfaces). A recursive
+ * `State` (`type State = { children: State[] }`) or mutually-recursive types would
+ * otherwise recurse forever; when the budget is spent the reference resolves to
+ * `'unknown'`. Mirrors msg-schema's MAX_FIELD_DEPTH. Inline structural moves
+ * (arrays, unions, inline object literals) do NOT consume the budget. */
+const MAX_TYPE_DEPTH = 6
+
 export function extractStateSchema(source: string, typeName = 'State'): StateSchema | null {
   const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -103,14 +110,16 @@ export function extractStateSchema(source: string, typeName = 'State'): StateSch
       : (scope.interfaces.get(typeName) ?? null)
   if (!members) return null
 
-  return { fields: buildFields(members, scope) }
+  return { fields: buildFields(members, scope, MAX_TYPE_DEPTH) }
 }
 
 /** Build a field map from object-type members — shared by the top-level State,
- * nested object literals, and interfaces. */
+ * nested object literals, and interfaces. `depth` is the remaining budget for
+ * following named type references (see {@link MAX_TYPE_DEPTH}). */
 function buildFields(
   members: readonly ts.TypeElement[],
   scope: TypeScope,
+  depth: number,
 ): Record<string, StateType> {
   const fields: Record<string, StateType> = {}
   for (const member of members) {
@@ -119,21 +128,21 @@ function buildFields(
       fields[member.name.text] = 'unknown'
       continue
     }
-    let t = resolve(member.type, scope)
+    let t = resolve(member.type, scope, depth)
     if (member.questionToken) t = { kind: 'optional', of: t }
     fields[member.name.text] = t
   }
   return fields
 }
 
-function resolve(type: ts.TypeNode, scope: TypeScope): StateType {
+function resolve(type: ts.TypeNode, scope: TypeScope, depth: number): StateType {
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'
   if (type.kind === ts.SyntaxKind.BooleanKeyword) return 'boolean'
 
-  // T[]
+  // T[] — inline structural move, budget unchanged.
   if (ts.isArrayTypeNode(type)) {
-    return { kind: 'array', of: resolve(type.elementType, scope) }
+    return { kind: 'array', of: resolve(type.elementType, scope, depth) }
   }
   // Array<T>
   if (
@@ -142,12 +151,12 @@ function resolve(type: ts.TypeNode, scope: TypeScope): StateType {
     type.typeName.text === 'Array'
   ) {
     const arg = type.typeArguments?.[0]
-    return { kind: 'array', of: arg ? resolve(arg, scope) : 'unknown' }
+    return { kind: 'array', of: arg ? resolve(arg, scope, depth) : 'unknown' }
   }
 
-  // Object literal: { foo: bar }
+  // Object literal: { foo: bar } — inline, budget unchanged.
   if (ts.isTypeLiteralNode(type)) {
-    return { kind: 'object', fields: buildFields(type.members, scope) }
+    return { kind: 'object', fields: buildFields(type.members, scope, depth) }
   }
 
   // Union: enum-of-strings, or general union, or T | undefined
@@ -161,7 +170,7 @@ function resolve(type: ts.TypeNode, scope: TypeScope): StateType {
         ),
     )
     if (nonUndefined.length === type.types.length - 1 && nonUndefined.length === 1) {
-      return { kind: 'optional', of: resolve(nonUndefined[0]!, scope) }
+      return { kind: 'optional', of: resolve(nonUndefined[0]!, scope, depth) }
     }
 
     // String-literal union
@@ -180,15 +189,18 @@ function resolve(type: ts.TypeNode, scope: TypeScope): StateType {
     }
 
     // General union
-    return { kind: 'union', of: type.types.map((t) => resolve(t, scope)) }
+    return { kind: 'union', of: type.types.map((t) => resolve(t, scope, depth)) }
   }
 
-  // Type reference: resolve via the alias map OR an interface declaration.
+  // Type reference: resolve via the alias map OR an interface declaration. This
+  // is the ONLY step that consumes the depth budget — a self- or mutually-
+  // recursive reference bottoms out at 'unknown' once the budget is spent.
   if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    if (depth <= 0) return 'unknown'
     const aliased = scope.aliases.get(type.typeName.text)
-    if (aliased) return resolve(aliased, scope)
+    if (aliased) return resolve(aliased, scope, depth - 1)
     const iface = scope.interfaces.get(type.typeName.text)
-    if (iface) return { kind: 'object', fields: buildFields(iface, scope) }
+    if (iface) return { kind: 'object', fields: buildFields(iface, scope, depth - 1) }
   }
 
   return 'unknown'

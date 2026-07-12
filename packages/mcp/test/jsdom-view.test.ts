@@ -55,29 +55,30 @@ describe('signal component — core debug surface', () => {
   })
 })
 
-describe('binding/DOM introspection degrades gracefully for signal components', () => {
-  it('llui_inspect_element is unavailable on the signal runtime', async () => {
-    const api = mountCounter()
-    // The signal debug API does not implement inspectElement.
-    expect(api.inspectElement).toBeUndefined()
-
-    const server = new LluiMcpServer()
-    server.connectDirect(api)
-
-    await expect(server.handleToolCall('llui_inspect_element', { selector: '#c' })).rejects.toThrow(
-      /unknown method: inspectElement/,
-    )
+describe('binding/DOM introspection tools are not advertised', () => {
+  // The signal runtime does not implement the legacy binding/DOM-introspection
+  // methods, so the tools backed by them are no longer registered (rather than
+  // advertised and failing with "unknown method" at call time).
+  it('does not register unservable DOM-introspection tools', () => {
+    const names = new LluiMcpServer().getTools().map((t) => t.name)
+    for (const dead of [
+      'llui_inspect_element',
+      'llui_get_rendered_html',
+      'llui_dispatch_event',
+      'llui_dom_diff',
+      'llui_get_focus',
+      'llui_scope_tree',
+      'llui_get_bindings',
+      'llui_mock_effect',
+      'llui_step_back',
+    ]) {
+      expect(names).not.toContain(dead)
+    }
   })
 
-  it('llui_get_rendered_html is unavailable on the signal runtime', async () => {
+  it('signal debug API omits the legacy introspection methods', () => {
     const api = mountCounter()
+    expect(api.inspectElement).toBeUndefined()
     expect(api.getRenderedHtml).toBeUndefined()
-
-    const server = new LluiMcpServer()
-    server.connectDirect(api)
-
-    await expect(
-      server.handleToolCall('llui_get_rendered_html', { selector: '#c' }),
-    ).rejects.toThrow(/unknown method: getRenderedHtml/)
   })
 })

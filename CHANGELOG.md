@@ -9,7 +9,7 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **How to read this file:** entries are anchored by **release date**. Inside each release, fixes are grouped by **`@llui/<package>@<version>`** sub-sections so you always know exactly which package and version a bullet applies to. Cross-cutting changes that affect every package (like build-output fixes) live under a shared "All packages" section. Breaking changes and migration notes sit at the top of each release block because they usually cut across multiple packages.
 
-Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
+Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
 ## 2026-07-12 — @llui/dom@0.11.6 + compiler/runtime cleanup
 

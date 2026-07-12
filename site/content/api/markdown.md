@@ -28,28 +28,56 @@ pnpm add @llui/markdown @llui/dom
 
 ## Functions
 
-### `renderMarkdown()`
+### `blockSource()`
 
-Render an already-parsed mdast {@link Root} to LLui DOM (no wrapper element).
-Returns the rendered top-level blocks.
+The block's source text (via mdast position offsets), or a structural fallback.
 
 ```typescript
-function renderMarkdown(root: Root, opts: MarkdownOptions = {}): Renderable
+function blockSource(node: RootContent, source: string): string
 ```
 
-### `markdown()`
+### `collectDefinitions()`
 
-Reactive Markdown view. Composes like `text()`/`unsafeHtml()` — returns a
-`Mountable` placed in a view.
+Walk the tree and collect every link/image reference definition, keyed by
+lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
+
+```typescript
+function collectDefinitions(root: Root): Map<string, Definition>
+```
+
+### `createMarkdown()`
+
+Build a reactive Markdown view bound to a specific parser.
 
 - Plain `string` source → parsed once, rendered statically.
 - `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
-  content hash and rendered through `each`, so unchanged earlier blocks keep their
-  DOM and only the changing tail (and appended blocks) rebuild. This makes
+  content hash (folding in the reference definitions each block resolves) and
+  rendered through `each`, so unchanged earlier blocks keep their DOM and only the
+  changing tail (and appended / newly-resolved blocks) rebuild. This makes
   streaming / growing Markdown (e.g. LLM output) cheap to render.
 
 ```typescript
-function markdown(source: Reactive<string>, opts: MarkdownOptions = {}): Mountable
+function createMarkdown(parse: ParseFn)
+```
+
+### `makeContext()`
+
+Build the context renderers receive: `render` dispatches one node through the
+merged registry, `renderChildren` recurses, `definitions` resolves references.
+
+```typescript
+function makeContext(
+  options: ResolvedOptions,
+  definitions: ReadonlyMap<string, Definition>,
+): RenderContext
+```
+
+### `mergeRenderers()`
+
+Merge user overrides over the built-in defaults into a uniform registry.
+
+```typescript
+function mergeRenderers(user?: Renderers): ResolvedRenderers
 ```
 
 ### `parseMarkdown()`
@@ -61,21 +89,19 @@ Parse Markdown source into an mdast {@link Root}. GFM is on unless
 function parseMarkdown(src: string, opts: MarkdownOptions = {}): Root
 ```
 
-### `mergeRenderers()`
+### `renderMarkdown()`
 
-Merge user overrides over the built-in defaults into a uniform registry.
+Render an already-parsed mdast {@link Root} to LLui DOM (no wrapper element).
+Returns the rendered top-level blocks. Parser-agnostic (takes an mdast tree).
 
 ```typescript
-function mergeRenderers(user?: Renderers): ResolvedRenderers
+function renderMarkdown(root: Root, opts: MarkdownOptions = {}): Renderable
 ```
 
-### `sanitizeUrl()`
-
-Returns the URL unchanged if its scheme is allowed (or it is relative),
-otherwise `null`.
+### `resolveOptions()`
 
 ```typescript
-function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null
+function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions
 ```
 
 ### `resolveUrl()`
@@ -91,61 +117,32 @@ function resolveUrl(
 ): string | null
 ```
 
-### `collectDefinitions()`
+### `sanitizeUrl()`
 
-Walk the tree and collect every link/image reference definition, keyed by
-lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
-
-```typescript
-function collectDefinitions(root: Root): Map<string, Definition>
-```
-
-### `makeContext()`
-
-Build the context renderers receive: `render` dispatches one node through the
-merged registry, `renderChildren` recurses, `definitions` resolves references.
+Returns the URL unchanged if its scheme is allowed (or it is relative),
+otherwise `null`.
 
 ```typescript
-function makeContext(
-  options: ResolvedOptions,
-  definitions: ReadonlyMap<string, Definition>,
-): RenderContext
-```
-
-### `blockSource()`
-
-The block's source text (via mdast position offsets), or a structural fallback.
-
-```typescript
-function blockSource(node: RootContent, source: string): string
+function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null
 ```
 
 ### `toKeyedBlocks()`
 
 Derive a stable, unique-per-render key for each top-level block. Identical block
-source ⇒ identical base key; duplicates get a `#n` suffix to stay unique.
+source (AND identical resolved references) ⇒ identical base key; duplicate keys —
+whether from identical content or a user `keyOf` — get a `#n` suffix so the outer
+`each` never receives a colliding key (which would corrupt its keyed reconcile).
 
 ```typescript
-function toKeyedBlocks(root: Root, source: string, options: ResolvedOptions): KeyedBlock[]
-```
-
-### `resolveOptions()`
-
-```typescript
-function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions
+function toKeyedBlocks(
+  root: Root,
+  source: string,
+  options: ResolvedOptions,
+  definitions: ReadonlyMap<string, Definition>,
+): KeyedBlock[]
 ```
 
 ## Types
-
-### `BuiltinRenderers`
-
-The built-in registry: every built-in node type, uniformly callable. Its keys
-are statically known, so `defaultRenderers.heading(node, ctx)` (delegating from a
-custom override) type-checks without an undefined guard.
-
-```typescript
-export type BuiltinRenderers = { [K in keyof typeof builtins]: NodeRenderer<Node> }
-```
 
 ### `NodeRenderer`
 
@@ -154,6 +151,14 @@ node and a {@link RenderContext} for recursing into children / sibling nodes.
 
 ```typescript
 export type NodeRenderer<N extends Node = Node> = (node: N, ctx: RenderContext) => Renderable
+```
+
+### `ParseFn`
+
+A Markdown → mdast parser (GFM or CommonMark). Injected into {@link createMarkdown}.
+
+```typescript
+export type ParseFn = (src: string, opts?: MarkdownOptions) => Root
 ```
 
 ### `Renderers`
@@ -172,16 +177,6 @@ export type Renderers = {
 } & {
   [type: string]: NodeRenderer<never> | undefined
 }
-```
-
-### `ResolvedRenderers`
-
-Internal: the merged registry after defaults are applied. Every renderer is
-uniformly callable with a base `Node` (dispatch only ever calls the renderer
-whose key matches `node.type`, so the widening is sound).
-
-```typescript
-export type ResolvedRenderers = Record<string, NodeRenderer<Node>>
 ```
 
 ### `TransformLink`
@@ -204,8 +199,9 @@ export type TransformLink = (
 export interface KeyedBlock {
   /** Reconcile identity for the outer keyed list (from `keyOf`, else content-based). */
   key: string | number
-  /** Content identity — changes iff the block's source changes. Drives in-place
-   * row rebuilds when a custom `keyOf` gives blocks stable identity. */
+  /** Content identity — changes iff the block's source (or the reference
+   * definitions it resolves) changes. Drives in-place row rebuilds when a custom
+   * `keyOf` gives blocks stable identity. */
   hash: string
   node: Nodes
 }
@@ -243,24 +239,6 @@ export interface MarkdownOptions {
 }
 ```
 
-### `ResolvedOptions`
-
-Fully-resolved options with defaults applied — what renderers see on `ctx`.
-
-```typescript
-export interface ResolvedOptions {
-  gfm: boolean
-  renderers: ResolvedRenderers
-  extensions: FromMarkdownOptions['extensions']
-  mdastExtensions: FromMarkdownOptions['mdastExtensions']
-  sanitizeHtml: ((html: string) => string) | undefined
-  allowedProtocols: string[]
-  transformLink: TransformLink | undefined
-  class: string
-  keyOf: ((node: Nodes, index: number) => string | number) | undefined
-}
-```
-
 ### `RenderContext`
 
 Passed to every {@link NodeRenderer}: recurse, resolve references, read options.
@@ -279,12 +257,39 @@ export interface RenderContext {
 }
 ```
 
+### `ResolvedOptions`
+
+Fully-resolved options with defaults applied — what renderers see on `ctx`.
+
+```typescript
+export interface ResolvedOptions {
+  gfm: boolean
+  renderers: ResolvedRenderers
+  extensions: FromMarkdownOptions['extensions']
+  mdastExtensions: FromMarkdownOptions['mdastExtensions']
+  sanitizeHtml: ((html: string) => string) | undefined
+  allowedProtocols: string[]
+  transformLink: TransformLink | undefined
+  class: string
+  keyOf: ((node: Nodes, index: number) => string | number) | undefined
+}
+```
+
 ## Constants
 
 ### `defaultRenderers`
 
 ```typescript
 const defaultRenderers: BuiltinRenderers
+```
+
+### `markdown`
+
+Reactive Markdown view (CommonMark + GFM). Composes like `text()` — returns a
+`Mountable`. For a GFM-free build, import from `@llui/markdown/commonmark`.
+
+```typescript
+const markdown
 ```
 
 <!-- auto-api:end -->

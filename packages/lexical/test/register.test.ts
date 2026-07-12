@@ -75,4 +75,39 @@ describe('matchesCombo', () => {
     const combo = parseCombo('Mod-b')
     expect(matchesCombo(kbd('i', { metaKey: true }), combo, true)).toBe(false)
   })
+
+  describe('explicit Ctrl- chords', () => {
+    it('fires off-mac (Ctrl folds onto the physical Ctrl key)', () => {
+      const combo = parseCombo('Ctrl-b')
+      // Regression: an explicit `Ctrl-` chord used to be dead off-mac.
+      expect(matchesCombo(kbd('b', { ctrlKey: true }), combo, false)).toBe(true)
+      // meta (Windows key) must NOT satisfy it off-mac.
+      expect(matchesCombo(kbd('b', { metaKey: true }), combo, false)).toBe(false)
+    })
+
+    it('is equivalent to Mod- off-mac', () => {
+      const ctrl = parseCombo('Ctrl-b')
+      const mod = parseCombo('Mod-b')
+      const evt = kbd('b', { ctrlKey: true })
+      expect(matchesCombo(evt, ctrl, false)).toBe(true)
+      expect(matchesCombo(evt, mod, false)).toBe(true)
+    })
+
+    it('targets ⌃ specifically on mac (distinct from ⌘/Mod)', () => {
+      const combo = parseCombo('Ctrl-b')
+      expect(matchesCombo(kbd('b', { ctrlKey: true }), combo, true)).toBe(true)
+      // ⌘ does not satisfy an explicit ⌃ chord on mac.
+      expect(matchesCombo(kbd('b', { metaKey: true }), combo, true)).toBe(false)
+    })
+
+    it('honours extra modifiers on a Ctrl chord off-mac', () => {
+      const combo = parseCombo('Ctrl-Shift-k')
+      expect(matchesCombo(kbd('k', { ctrlKey: true, shiftKey: true }), combo, false)).toBe(true)
+      expect(matchesCombo(kbd('k', { ctrlKey: true }), combo, false)).toBe(false)
+      // An undeclared alt rejects.
+      expect(
+        matchesCombo(kbd('k', { ctrlKey: true, shiftKey: true, altKey: true }), combo, false),
+      ).toBe(false)
+    })
+  })
 })

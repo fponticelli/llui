@@ -10,7 +10,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "prepack": "pnpm run build",
@@ -39,5 +40,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/effects#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/effects#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

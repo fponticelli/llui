@@ -85,13 +85,9 @@ describe('listbox.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
   })
 
-  it('root aria-owns lists all item IDs', () => {
+  it('root does not emit aria-owns (options are real DOM children)', () => {
     const pc = connect(rootSignal(), vi.fn(), { id: 'lb' })
-    // Empty items → undefined
-    expect(read(pc.root['aria-owns'], init())).toBeUndefined()
-    // With items → space-separated ids using index
-    const s = init({ items: ['apple', 'banana', 'cherry'] })
-    expect(read(pc.root['aria-owns'], s)).toBe('lb:item:0 lb:item:1 lb:item:2')
+    expect('aria-owns' in pc.root).toBe(false)
   })
 
   it('typeahead fires for single char', () => {

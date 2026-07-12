@@ -10,10 +10,12 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, unlinkSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 
 import type { CaptureRegistry } from './capture-registry.js'
 import type { EventBus } from './event-bus.js'
+import { checkSameOriginLoopback, isJsonContentType } from './request-guard.js'
+import type { TrustedTaskRegistry } from './trusted-tasks.js'
 import {
   cleanupResolvedTask,
   createNote,
@@ -22,6 +24,7 @@ import {
   listSessions,
   readNote,
   readScreenshot,
+  resolveSessionDir,
   updateNoteProse,
   type NoteFormatConfig,
 } from './store.js'
@@ -51,6 +54,14 @@ export interface NotesMiddlewareConfig {
   sseHeartbeatMs?: number
   /** Override session-folder naming and/or slug derivation. */
   format?: NoteFormatConfig
+  /**
+   * Provenance registry for task-intent notes. When provided, every task
+   * note accepted through this (same-origin, authenticated) middleware is
+   * marked here so the attention router only spawns agents for tasks a
+   * trusted in-page writer created. Omit to skip provenance recording
+   * (the router then falls back to on-disk intent — dev/test only).
+   */
+  trustedTasks?: TrustedTaskRegistry
 }
 
 export type MiddlewareHandler = (
@@ -101,6 +112,21 @@ function sendError(res: ServerResponse, status: number, message: string): void {
   sendJson(res, status, { error: message })
 }
 
+/**
+ * Guard JSON-body routes: reject anything that isn't declared
+ * `application/json`. Browsers can issue cross-site `text/plain` /
+ * form-encoded POSTs without a CORS preflight, so a JSON parser that
+ * accepts any content type is a CSRF vector even behind the same-origin
+ * check. Returns `false` (and answers 415) when the type is wrong.
+ */
+function requireJson(req: IncomingMessage, res: ServerResponse): boolean {
+  if (!isJsonContentType(req)) {
+    sendError(res, 415, 'content-type must be application/json')
+    return false
+  }
+  return true
+}
+
 function parseQuery(url: string): URLSearchParams {
   const qIdx = url.indexOf('?')
   return new URLSearchParams(qIdx === -1 ? '' : url.slice(qIdx + 1))
@@ -130,8 +156,21 @@ function pathOf(url: string): string {
   return qIdx === -1 ? url : url.slice(0, qIdx)
 }
 
+/**
+ * Resolve `relPath` against `rootResolved` and return the absolute path
+ * ONLY if it stays inside the root. Returns `null` for absolute paths or
+ * any `..` escape. `rootResolved` must already be `resolve()`-d.
+ */
+function containWithinRoot(rootResolved: string, relPath: string): string | null {
+  if (isAbsolute(relPath)) return null
+  const full = resolve(rootResolved, relPath)
+  const rel = relative(rootResolved, full)
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null
+  return full
+}
+
 export function createNotesMiddleware(config: NotesMiddlewareConfig): MiddlewareHandler {
-  const { notesRoot, bus, registry } = config
+  const { notesRoot, bus, registry, trustedTasks } = config
   const captureTimeoutMs = config.defaultCaptureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS
   const heartbeatMs = config.sseHeartbeatMs ?? 15_000
   const format = config.format ?? {}
@@ -166,6 +205,19 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     method: string,
     url: string,
   ): Promise<void> {
+    // CSRF / cross-site guard. Every state-changing request (create/patch/
+    // delete a note, drive the status machine, rotate the session, ingest
+    // a bundle, initiate a capture) must be a same-origin call to the
+    // loopback dev server. Read-only GETs (list/read/SSE) are exempt — they
+    // leak nothing an attacker couldn't already read same-origin, and SSE
+    // must stay reachable. See request-guard.ts.
+    const mutating =
+      method === 'POST' || method === 'PATCH' || method === 'DELETE' || method === 'PUT'
+    if (mutating) {
+      const reject = checkSameOriginLoopback(req)
+      if (reject) return sendError(res, 403, reject)
+    }
+
     // SSE — must respond with text/event-stream and keep open.
     if (path === `${ROUTE_PREFIX}/events`) {
       if (method !== 'GET') return sendError(res, 405, 'method not allowed')
@@ -176,6 +228,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     }
 
     if (path === `${ROUTE_PREFIX}/notes` && method === 'POST') {
+      if (!requireJson(req, res)) return
       const body = await readBody(req)
       let payload: CreateNoteRequest
       try {
@@ -201,7 +254,10 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       // attention router (and llui_queue) can pick them up. Without
       // this, the note exists on disk but never appears as work.
       if (payload.frontmatter.intent === 'task') {
-        const sd = join(notesRoot, result.sessionId)
+        // Record provenance: this task note came through the authenticated,
+        // same-origin middleware, so the router may spawn an agent for it.
+        trustedTasks?.mark(result.sessionId, result.id)
+        const sd = resolveSessionDir(notesRoot, result.sessionId)
         appendStatus(sd, {
           ts: new Date().toISOString(),
           noteId: result.id,
@@ -236,7 +292,12 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       const qs = parseQuery(url)
       const sessionId =
         qs.get('sessionId') ?? resolveCurrentSession(notesRoot, sessionOpts).sessionId
-      const sessionDir = join(notesRoot, sessionId)
+      let sessionDir: string
+      try {
+        sessionDir = resolveSessionDir(notesRoot, sessionId)
+      } catch {
+        return sendError(res, 400, 'invalid sessionId')
+      }
 
       if (method === 'GET') {
         const history = readStatusHistory(sessionDir, id)
@@ -244,6 +305,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
         return sendJson(res, 200, { noteId: id, sessionId, current, history })
       }
       if (method === 'POST') {
+        if (!requireJson(req, res)) return
         const body = await readBody(req)
         let payload: { to: NoteStatus; by?: Author | 'system'; reason?: string }
         try {
@@ -330,7 +392,12 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       const qs = parseQuery(url)
       const sessionId =
         qs.get('sessionId') ?? resolveCurrentSession(notesRoot, sessionOpts).sessionId
-      const sessionDir = join(notesRoot, sessionId)
+      let sessionDir: string
+      try {
+        sessionDir = resolveSessionDir(notesRoot, sessionId)
+      } catch {
+        return sendError(res, 400, 'invalid sessionId')
+      }
       const statusFilter = qs.getAll('status') as NoteStatus[]
       const queue = listQueue(sessionDir, statusFilter.length > 0 ? { status: statusFilter } : {})
       return sendJson(res, 200, { sessionId, queue })
@@ -373,6 +440,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       }
 
       if (method === 'PATCH') {
+        if (!requireJson(req, res)) return
         const body = await readBody(req)
         let payload: { prose?: unknown }
         try {
@@ -445,6 +513,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     }
 
     if (path === `${ROUTE_PREFIX}/capture-request` && method === 'POST') {
+      if (!requireJson(req, res)) return
       const body = await readBody(req)
       let payload: CaptureRequestPayload
       try {
@@ -511,7 +580,8 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
 /** Re-export the joined path of the notes-root setting under a session
  *  for callers that want to compose paths from outside.  */
 export function sessionDir(notesRoot: string, sessionId: string): string {
-  return join(notesRoot, sessionId)
+  // Containment-safe: throws if `sessionId` escapes the notes root.
+  return resolveSessionDir(notesRoot, sessionId)
 }
 
 /**
@@ -568,16 +638,26 @@ function revertProposedChanges(
   }
   const reverted: string[] = []
   const failures: string[] = []
+  const rootResolved = resolve(projectRoot)
   for (const file of chosen.files) {
-    const fullPath = join(projectRoot, file.path)
+    // Containment: a note's proposedDiff is untrusted input. An absolute
+    // path or one that climbs out with `..` must never reach `git checkout`
+    // or `unlinkSync` — that would revert/delete arbitrary files anywhere on
+    // disk. Reject anything that doesn't resolve to a path inside the
+    // project root.
+    const safe = containWithinRoot(rootResolved, file.path)
+    if (!safe) {
+      failures.push(`${file.path}: path escapes project root`)
+      continue
+    }
     try {
       if (isTracked(file.path)) {
         execFileSync('git', ['checkout', 'HEAD', '--', file.path], {
           cwd: projectRoot,
           stdio: ['ignore', 'ignore', 'pipe'],
         })
-      } else if (existsSync(fullPath)) {
-        unlinkSync(fullPath)
+      } else if (existsSync(safe)) {
+        unlinkSync(safe)
       }
       reverted.push(file.path)
     } catch (err) {

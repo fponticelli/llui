@@ -53,7 +53,7 @@ async function main() {
     console.log(`✓ Vite ready on :${VITE_PORT}`)
 
     console.log(`\n🌉 Starting MCP bridge on :${BRIDGE_PORT}...`)
-    const server = new LluiMcpServer(BRIDGE_PORT)
+    const server = new LluiMcpServer({ bridgePort: BRIDGE_PORT })
     server.startBridge()
 
     console.log('\n🌐 Launching headless browser...')
@@ -91,8 +91,8 @@ async function main() {
     )
 
     pp(
-      '🗺️  llui_mask_legend  →  bit → field map',
-      await server.handleToolCall('llui_mask_legend', {}),
+      '🧩 llui_list_effects  →  all effect variants the component emits',
+      await server.handleToolCall('llui_list_effects', {}),
     )
 
     pp(
@@ -146,19 +146,15 @@ async function main() {
     )
 
     pp(
-      '📜 llui_get_message_history  →  timeline with DECODED dirty masks',
-      await Promise.all(
-        (
-          (await server.handleToolCall('llui_get_message_history', {})) as Array<
-            Record<string, unknown>
-          >
-        ).map(async (h) => ({
-          index: h.index,
-          msg: h.msg,
-          dirtyMask: h.dirtyMask,
-          fieldsChanged: await server.handleToolCall('llui_decode_mask', { mask: h.dirtyMask }),
-        })),
-      ),
+      '📜 llui_get_message_history  →  timeline of messages + state transitions',
+      (
+        (await server.handleToolCall('llui_get_message_history', {})) as Array<
+          Record<string, unknown>
+        >
+      ).map((h) => ({
+        index: h.index,
+        msg: h.msg,
+      })),
     )
 
     pp(

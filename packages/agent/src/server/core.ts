@@ -171,6 +171,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     tokenStore,
     identityResolver,
     auditSink,
+    rateLimiter,
     lapBasePath,
     allowAnonymous,
   })
@@ -245,11 +246,16 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     // agent must call `/resume/claim` to start fresh. The token-
     // store guards the transition so `revoke`/`expired` don't get
     // lifted back into a grace window.
-    if (pendingResumeGraceMs > 0) {
-      registry.onClose(tid, () => {
-        void tokenStore.markPendingResume(tid, Date.now() + pendingResumeGraceMs)
-      })
-    }
+    // Always register the close handler. With a positive grace window the
+    // record becomes reconnectable-without-rotation until the window
+    // lapses. With grace 0 we still transition OUT of the live state — to
+    // a `pending-resume` whose window is already expired — so the record
+    // is never left permanently `active` after the socket drops, and any
+    // reconnect is forced through the rotate-on-resume path.
+    registry.onClose(tid, () => {
+      const until = pendingResumeGraceMs > 0 ? Date.now() + pendingResumeGraceMs : Date.now()
+      void tokenStore.markPendingResume(tid, until)
+    })
     await auditSink.write({
       at: nowMs,
       tid,

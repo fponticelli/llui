@@ -2,18 +2,21 @@ import { readFileSync, writeFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { PACKAGES } from '../pages/api/@pkg/packages.js'
+import { FRAMEWORK_TAGLINE } from './framework-meta.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const publicDir = resolve(root, 'public')
 const projectRoot = resolve(root, '..')
 
-// Read source content
+// Read a REQUIRED source file. A missing input here means the generated
+// llms-full.txt would silently ship with a hole (empty system prompt / missing
+// guide), so fail loudly instead of returning ''.
 function read(path: string): string {
   try {
     return readFileSync(resolve(projectRoot, path), 'utf-8')
   } catch {
-    return ''
+    throw new Error(`generate-llms: required source file not found: ${path}`)
   }
 }
 
@@ -21,7 +24,7 @@ function readLocal(path: string): string {
   try {
     return readFileSync(resolve(root, path), 'utf-8')
   } catch {
-    return ''
+    throw new Error(`generate-llms: required site file not found: ${path}`)
   }
 }
 
@@ -32,7 +35,7 @@ const stripFrontmatter = (md: string): string => md.replace(/^---[\s\S]*?---\n/,
 
 const llmsTxt = `# LLui
 
-> A compile-time-optimized web framework built on The Elm Architecture (TEA), designed for LLM-first authoring. No virtual DOM — view() runs once at mount, builds real DOM nodes with reactive bindings. State changes drive a two-phase update with bitmask gating.
+> ${FRAMEWORK_TAGLINE}
 
 ## Packages
 
@@ -43,7 +46,7 @@ const llmsTxt = `# LLui
 - @llui/effects — Effect builders: http, cancel, debounce, websocket, retry, upload
 - @llui/router — Routing: structured path matching, guards, history/hash mode
 - @llui/transitions — Animation: transition(), fade, slide, scale, collapse, flip, spring
-- @llui/components — 58 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
+- @llui/components — 66 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools
@@ -111,18 +114,15 @@ const cookbook = stripFrontmatter(readLocal('content/cookbook.md'))
 // hand-written `docs/designs/09 API Reference.md` was removed with the
 // pre-signal design docs, which previously left this section empty.)
 const apiRef = PACKAGES.map(({ slug }) => {
+  // `readLocal` throws if the seed page is missing — every registry package MUST
+  // have one (generate-api.ts enforces the same invariant), so a hole here is a
+  // hard error rather than a silently-omitted section.
   const md = readLocal(`content/api/${slug}.md`)
-  if (!md) {
-    console.warn(`  ⚠ no content/api/${slug}.md — omitted from llms-full.txt`)
-    return ''
-  }
   // Drop frontmatter and the auto-api injection markers (HTML comments).
   return stripFrontmatter(md)
     .replace(/<!-- auto-api:(?:start|end) -->\n?/g, '')
     .trim()
-})
-  .filter(Boolean)
-  .join('\n\n---\n\n')
+}).join('\n\n---\n\n')
 
 const llmsFullTxt = `# LLui — Complete LLM Reference
 

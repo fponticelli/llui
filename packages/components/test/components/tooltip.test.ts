@@ -82,6 +82,13 @@ describe('tooltip.connect', () => {
     vi.useRealTimers()
   })
 
+  // Finding 7: the positioner is pointer-events:none, so the content must
+  // re-enable them or trigger→content travel can't cancel the close (WCAG 1.4.13).
+  it('content re-enables pointer events', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(p.content.style).toContain('pointer-events:auto')
+  })
+
   it('pointerEnter schedules show after delay', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send, { id: 'x', delayOpen: 200 })

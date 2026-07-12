@@ -60,6 +60,39 @@ describe('createWHATWGPairingConnection', () => {
     expect(received).toHaveLength(0)
   })
 
+  it('buffers frames received BEFORE onFrame is wired and flushes them on registration', () => {
+    // Regression (accept race): the browser sends hello the instant the
+    // socket opens, but registration (which calls onFrame) only happens
+    // after the async acceptConnection. Frames must be buffered, not lost.
+    const sock = makeFakeWhatwgSocket()
+    const conn = createWHATWGPairingConnection(sock as unknown as WebSocket)
+
+    // hello arrives before onFrame is registered.
+    sock.__emit('message', JSON.stringify({ t: 'hello', appName: 'early' }))
+
+    const received: ClientFrame[] = []
+    conn.onFrame((f) => received.push(f))
+    // The buffered hello is flushed into the handler at registration.
+    expect(received).toHaveLength(1)
+    expect(received[0]?.t).toBe('hello')
+
+    // Subsequent frames deliver live.
+    sock.__emit(
+      'message',
+      JSON.stringify({ t: 'log-append', entry: { id: 'e', at: 1, kind: 'read' } }),
+    )
+    expect(received).toHaveLength(2)
+  })
+
+  it('onClose() fires immediately if the socket already closed before registration', () => {
+    const sock = makeFakeWhatwgSocket()
+    const conn = createWHATWGPairingConnection(sock as unknown as WebSocket)
+    sock.__emit('close') // closed before the registry wired onClose
+    const closed = vi.fn()
+    conn.onClose(closed)
+    expect(closed).toHaveBeenCalledOnce()
+  })
+
   it('onClose() fires on the socket close event', () => {
     const sock = makeFakeWhatwgSocket()
     const conn = createWHATWGPairingConnection(sock as unknown as WebSocket)

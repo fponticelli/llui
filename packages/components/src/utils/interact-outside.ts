@@ -1,4 +1,4 @@
-import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
+import { resolveElements, isInAnyElement, composedTarget, type ElementSource } from './dom.js'
 import { isInNestedLayer } from './nested-layer.js'
 
 export interface InteractOutsideOptions {
@@ -30,7 +30,7 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
 
   const handlePointer = (event: Event): void => {
     if (opts.shouldDispatch && !opts.shouldDispatch(event)) return
-    const target = event.target as Node | null
+    const target = composedTarget(event)
     const inside = resolveElements(opts.element)
     if (isInAnyElement(target, inside)) return
     const ignore = opts.ignore ? resolveElements(opts.ignore) : []
@@ -44,7 +44,7 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
 
   const handleFocus = (event: FocusEvent): void => {
     if (opts.shouldDispatch && !opts.shouldDispatch(event)) return
-    const target = event.target as Node | null
+    const target = composedTarget(event)
     const inside = resolveElements(opts.element)
     if (isInAnyElement(target, inside)) return
     const ignore = opts.ignore ? resolveElements(opts.ignore) : []

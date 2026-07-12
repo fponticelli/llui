@@ -38,6 +38,8 @@ describe('handleMint', () => {
     expect(body.wsUrl).toMatch(/^wss?:\/\/app\.example\/agent\/ws$/)
     expect(body.expiresAt).toBeGreaterThan(clock)
     expect(body.token.startsWith('agt_')).toBe(true)
+    // LAP version negotiation: mint advertises the server's wire version.
+    expect(body.lapVersion).toBe(1)
 
     const stored = await store.findByTid(body.tid)
     expect(stored?.uid).toBe('u1')
@@ -119,6 +121,88 @@ describe('handleMint', () => {
     })
     expect(auditLog).toHaveLength(1)
     expect((auditLog[0] as { event: string }).event).toBe('mint')
+  })
+
+  it('rate-limits by identity BEFORE creating any record (429, nothing persisted)', async () => {
+    const denyLimiter = {
+      calls: [] as Array<{ key: string; bucket: string }>,
+      check: async (key: string, bucket: 'token' | 'identity') => {
+        denyLimiter.calls.push({ key, bucket })
+        return { allowed: false as const, retryAfterMs: 1234 }
+      },
+    }
+    const req = new Request('https://app.example/agent/mint', { method: 'POST' })
+    const res = await handleMint(req, {
+      tokenStore: store,
+      identityResolver: async () => 'spammer',
+      auditSink: audit,
+      rateLimiter: denyLimiter,
+      lapBasePath: '/agent/lap/v1',
+      now: () => clock * 1000,
+      uuid: () => 't-rl',
+    })
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as { error: { code: string; retryAfterMs: number } }
+    expect(body.error.code).toBe('rate-limited')
+    expect(body.error.retryAfterMs).toBe(1234)
+    // Keyed by resolved identity, in the identity bucket.
+    expect(denyLimiter.calls).toEqual([{ key: 'spammer', bucket: 'identity' }])
+    // No record was created.
+    expect(await store.findByTid('t-rl')).toBeNull()
+  })
+
+  it('rate-limits anonymous callers by client IP (X-Forwarded-For)', async () => {
+    const seen: string[] = []
+    const denyLimiter = {
+      check: async (key: string) => {
+        seen.push(key)
+        return { allowed: false as const, retryAfterMs: 1 }
+      },
+    }
+    const req = new Request('https://app.example/agent/mint', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' },
+    })
+    await handleMint(req, {
+      tokenStore: store,
+      identityResolver: async () => null,
+      auditSink: audit,
+      rateLimiter: denyLimiter,
+      allowAnonymous: true,
+      lapBasePath: '/agent/lap/v1',
+      now: () => clock * 1000,
+      uuid: () => 't-ip',
+    })
+    expect(seen).toEqual(['203.0.113.7'])
+  })
+
+  it('lazily sweeps records past expiry + retention on mint', async () => {
+    // Seed a record whose hard expiry lapsed well over an hour ago.
+    await store.create({
+      tid: 'old',
+      tokenHash: 'oldhash',
+      uid: 'u1',
+      status: 'active',
+      createdAt: 0,
+      expiresAt: 1000, // ms — ancient
+      lastSeenAt: 0,
+      pendingResumeUntil: null,
+      origin: 'https://app.example',
+      label: null,
+    })
+    const req = new Request('https://app.example/agent/mint', { method: 'POST' })
+    await handleMint(req, {
+      tokenStore: store,
+      identityResolver: async () => 'u1',
+      auditSink: audit,
+      lapBasePath: '/agent/lap/v1',
+      now: () => clock * 1000, // far in the future vs the seeded record
+      uuid: () => 't-fresh',
+    })
+    // The ancient record was evicted by the mint-time sweep.
+    expect(await store.findByTid('old')).toBeNull()
+    // The fresh mint persisted normally.
+    expect(await store.findByTid('t-fresh')).not.toBeNull()
   })
 
   it('rejects non-POST methods', async () => {

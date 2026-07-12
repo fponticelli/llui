@@ -13,7 +13,7 @@ import {
   defaultSessionName,
   deriveFilename,
   deriveSlug,
-  nextId,
+  padId,
   parseFilename,
   preview,
 } from '../note-format.js'
@@ -73,6 +73,10 @@ interface StoredTransition extends StatusTransition {
 
 const DB_VERSION = 1
 const META_CURRENT_SESSION = 'currentSession'
+/** Per-session monotonic id counter meta key. Holds the last-allocated
+ *  numeric id for the session so `createNote` can allocate the next id
+ *  and insert the note in one atomic transaction (no read-then-write race). */
+const idCounterKey = (sessionId: string): string => `counter/${sessionId}`
 
 function promisify<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -222,48 +226,89 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
     async createNote(req: CreateNoteRequest): Promise<CreateNoteResponse> {
       const sessionId = await ensureSession()
       const slug = deriveSlug(req.body)
-      const existing = await notesForSession(sessionId)
-      const id = nextId(existing.map((n) => parseFilename(n.filename)?.idNum ?? 0))
-      let filename = deriveFilename(id, req.frontmatter.author, req.frontmatter.kind, slug)
-      // Collision guard (matches the server's -2/-3 suffix behaviour).
-      const taken = new Set(existing.map((n) => n.filename))
-      let attempt = 2
-      while (taken.has(filename)) {
-        filename = deriveFilename(
-          id,
-          req.frontmatter.author,
-          req.frontmatter.kind,
-          `${slug}-${attempt}`,
-        )
-        attempt++
-      }
-
-      const screenshotFilename = req.screenshot ? filename.replace(/\.md$/, '.png') : null
-      const frontmatter: NoteFrontmatter = {
-        ...req.frontmatter,
-        id,
-        ts: now().toISOString(),
-        screenshot: screenshotFilename,
-      }
       const bytes = req.screenshot ? base64ToBytes(req.screenshot) : null
-      const record: StoredNote = {
-        key: `${sessionId}/${id}`,
-        sessionId,
-        id,
-        filename,
-        frontmatter,
-        body: req.noteBody,
-        prose: req.body,
-        screenshot: bytes,
+      const database = await db()
+      const counterKey = idCounterKey(sessionId)
+
+      // Seed the per-session counter (first use) from any notes already
+      // present — keeps ids consistent with imported/existing notes.
+      const existing = await notesForSession(sessionId)
+      const seed = existing.reduce(
+        (max, n) => Math.max(max, parseFilename(n.filename)?.idNum ?? 0),
+        0,
+      )
+      // Filename slug-collision guard (matches the server's -2/-3 suffix
+      // behaviour). The primary key is `${sessionId}/${id}`, not the filename,
+      // so this only disambiguates the human-readable slug.
+      const taken = new Set(existing.map((n) => n.filename))
+
+      // Allocate the numeric id and insert the note in ONE readwrite
+      // transaction over both `meta` (the counter) and `notes`, using `.add`
+      // so a residual key collision from a concurrent writer surfaces as a
+      // retryable ConstraintError (tx abort) instead of silently overwriting.
+      const MAX_ATTEMPTS = 5
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const tx = database.transaction(['meta', 'notes'], 'readwrite')
+        const meta = tx.objectStore('meta')
+        const notes = tx.objectStore('notes')
+        try {
+          const rec = (await promisify(meta.get(counterKey))) as
+            | { key: string; value: number }
+            | undefined
+          const nextNum = Math.max(rec?.value ?? 0, seed) + 1
+          const id = padId(nextNum)
+
+          let filename = deriveFilename(id, req.frontmatter.author, req.frontmatter.kind, slug)
+          let suffix = 2
+          while (taken.has(filename)) {
+            filename = deriveFilename(
+              id,
+              req.frontmatter.author,
+              req.frontmatter.kind,
+              `${slug}-${suffix}`,
+            )
+            suffix++
+          }
+
+          const screenshotFilename = req.screenshot ? filename.replace(/\.md$/, '.png') : null
+          const frontmatter: NoteFrontmatter = {
+            ...req.frontmatter,
+            id,
+            ts: now().toISOString(),
+            screenshot: screenshotFilename,
+          }
+          const record: StoredNote = {
+            key: `${sessionId}/${id}`,
+            sessionId,
+            id,
+            filename,
+            frontmatter,
+            body: req.noteBody,
+            prose: req.body,
+            screenshot: bytes,
+          }
+
+          meta.put({ key: counterKey, value: nextNum })
+          // `.add` (not `.put`): a colliding key aborts the whole tx — the
+          // counter increment rolls back with it — so we retry cleanly.
+          notes.add(record)
+          await txDone(tx)
+
+          if (bytes) cacheScreenshot(id, bytes)
+          emit({ type: 'note-created', id, filename, author: frontmatter.author })
+          return { id, filename, path: `${sessionId}/${filename}`, sessionId }
+        } catch (err) {
+          // A concurrent writer committed our candidate id; its committed
+          // counter increment means the next attempt reads a higher value and
+          // skips past the collision.
+          lastErr = err
+        }
       }
-
-      const tx = (await db()).transaction('notes', 'readwrite')
-      tx.objectStore('notes').put(record)
-      await txDone(tx)
-
-      if (bytes) cacheScreenshot(id, bytes)
-      emit({ type: 'note-created', id, filename, author: frontmatter.author })
-      return { id, filename, path: `${sessionId}/${filename}`, sessionId }
+      throw new Error(
+        `indexedDbStore.createNote: id allocation failed after ${MAX_ATTEMPTS} attempts`,
+        { cause: lastErr },
+      )
     },
 
     async listSessions(): Promise<SessionSummary[]> {
@@ -324,8 +369,20 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
     },
 
     async deleteNote(id: string, sessionId: string): Promise<void> {
-      const tx = (await db()).transaction('notes', 'readwrite')
+      // Delete the note AND its status transitions in one transaction so a
+      // deleted note can't resurrect in the queue / status replay / export.
+      const tx = (await db()).transaction(['notes', 'transitions'], 'readwrite')
       tx.objectStore('notes').delete(`${sessionId}/${id}`)
+      const cursorReq = tx
+        .objectStore('transitions')
+        .index('bySession')
+        .openCursor(IDBKeyRange.only(sessionId))
+      cursorReq.onsuccess = () => {
+        const cursor = cursorReq.result
+        if (!cursor) return
+        if ((cursor.value as StoredTransition).noteId === id) cursor.delete()
+        cursor.continue()
+      }
       await txDone(tx)
       cacheScreenshot(id, null)
       emit({ type: 'note-deleted', id, sessionId })

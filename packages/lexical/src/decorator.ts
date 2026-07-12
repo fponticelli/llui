@@ -25,17 +25,25 @@ export type SerializedLLuiDecoratorNode = Spread<
   SerializedLexicalNode
 >
 
-const REGISTRIES = new WeakMap<LexicalEditor, Map<string, DecoratorBridge>>()
-const MOUNTS = new WeakMap<LexicalEditor, Map<NodeKey, () => void>>()
-
-function mountsFor(editor: LexicalEditor): Map<NodeKey, () => void> {
-  let mounts = MOUNTS.get(editor)
-  if (!mounts) {
-    mounts = new Map()
-    MOUNTS.set(editor, mounts)
-  }
-  return mounts
+/** Per-editor decorator wiring, shared across composed `registerDecoratorBridges`
+ * calls and reference-counted so each call owns only what it contributed.
+ *  - `registry`  — the merged type→bridge lookup used by `decorate`.
+ *  - `typeRefs`  — how many active registrations own each type-id (a type leaves
+ *                  the registry only when its last owner disposes).
+ *  - `mounts`    — live sub-app disposers, keyed by decorator node.
+ *  - `registrations` — active `registerDecoratorBridges` calls on this editor;
+ *                  the shared decorator/mutation listeners are wired on the first
+ *                  and torn down on the last.
+ */
+interface EditorDecoratorState {
+  registry: Map<string, DecoratorBridge>
+  typeRefs: Map<string, number>
+  mounts: Map<NodeKey, () => void>
+  registrations: number
+  disposeListeners: () => void
 }
+
+const EDITOR_STATE = new WeakMap<LexicalEditor, EditorDecoratorState>()
 
 /** A generic decorator node that mounts an LLui sub-view via a registered
  * {@link DecoratorBridge}. */
@@ -93,8 +101,9 @@ export class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
 
   override decorate(editor: LexicalEditor): HTMLElement {
     const container = document.createElement('div')
-    const bridge = REGISTRIES.get(editor)?.get(this.__bridgeType)
-    if (!bridge) return container
+    const state = EDITOR_STATE.get(editor)
+    const bridge = state?.registry.get(this.__bridgeType)
+    if (!state || !bridge) return container
 
     const key = this.getKey()
     const api: DecoratorApi<unknown> = {
@@ -106,10 +115,9 @@ export class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
         }),
     }
 
-    const mounts = mountsFor(editor)
     // Re-decoration (data change): tear the previous sub-app down first.
-    mounts.get(key)?.()
-    mounts.set(key, bridge.mount(container, this.getData(), api))
+    state.mounts.get(key)?.()
+    state.mounts.set(key, bridge.mount(container, this.getData(), api))
     return container
   }
 
@@ -149,40 +157,87 @@ export function registerDecoratorBridges(
   editor: LexicalEditor,
   bridges: readonly DecoratorBridge[],
 ): () => void {
-  // Merge into any existing registry so multiple decorator plugins compose.
-  const registry = REGISTRIES.get(editor) ?? new Map<string, DecoratorBridge>()
-  for (const bridge of bridges) registry.set(bridge.type, bridge)
-  REGISTRIES.set(editor, registry)
-
-  const unregisterDecorator = editor.registerDecoratorListener<HTMLElement>((decorators) => {
-    for (const key of Object.keys(decorators)) {
-      const decoration = decorators[key]
-      const host = editor.getElementByKey(key)
-      if (host && decoration && decoration.parentElement !== host) {
-        host.replaceChildren(decoration)
-      }
+  let state = EDITOR_STATE.get(editor)
+  if (!state) {
+    state = {
+      registry: new Map<string, DecoratorBridge>(),
+      typeRefs: new Map<string, number>(),
+      mounts: new Map<NodeKey, () => void>(),
+      registrations: 0,
+      disposeListeners: () => {},
     }
-  })
+    EDITOR_STATE.set(editor, state)
+  }
+  const s = state
 
-  const unregisterMutation = editor.registerMutationListener(LLuiDecoratorNode, (mutations) => {
-    const mounts = MOUNTS.get(editor)
-    if (!mounts) return
-    for (const [key, kind] of mutations) {
-      if (kind === 'destroyed') {
-        mounts.get(key)?.()
-        mounts.delete(key)
+  // Wire the shared listeners exactly once (on the first registration); later
+  // composed registrations reuse them and only add their own bridges/refs.
+  if (s.registrations === 0) {
+    const unregisterDecorator = editor.registerDecoratorListener<HTMLElement>((decorators) => {
+      for (const key of Object.keys(decorators)) {
+        const decoration = decorators[key]
+        const host = editor.getElementByKey(key)
+        if (host && decoration && decoration.parentElement !== host) {
+          host.replaceChildren(decoration)
+        }
       }
+    })
+    const unregisterMutation = editor.registerMutationListener(LLuiDecoratorNode, (mutations) => {
+      for (const [key, kind] of mutations) {
+        if (kind === 'destroyed') {
+          s.mounts.get(key)?.()
+          s.mounts.delete(key)
+        }
+      }
+    })
+    s.disposeListeners = () => {
+      unregisterDecorator()
+      unregisterMutation()
     }
-  })
+  }
+  s.registrations++
+
+  // Record the type-ids THIS registration contributes (ref-counted so a type
+  // survives in the merged registry until its last owner disposes).
+  const ownedTypes = bridges.map((b) => b.type)
+  for (const bridge of bridges) {
+    s.registry.set(bridge.type, bridge)
+    s.typeRefs.set(bridge.type, (s.typeRefs.get(bridge.type) ?? 0) + 1)
+  }
 
   return () => {
-    unregisterDecorator()
-    unregisterMutation()
-    const mounts = MOUNTS.get(editor)
-    if (mounts) {
-      for (const dispose of mounts.values()) dispose()
-      mounts.clear()
+    // Dispose only the mounts backing nodes whose bridge type THIS registration
+    // owns — composed registrations keep their own live sub-apps.
+    const ownedKeys = editor.getEditorState().read(() =>
+      [...s.mounts.keys()].filter((key) => {
+        const node = $getNodeByKey(key)
+        return $isLLuiDecoratorNode(node) && ownedTypes.includes(node.getBridgeType())
+      }),
+    )
+    for (const key of ownedKeys) {
+      s.mounts.get(key)?.()
+      s.mounts.delete(key)
     }
-    REGISTRIES.delete(editor)
+
+    // Release this registration's hold on its type-ids.
+    for (const type of ownedTypes) {
+      const refs = (s.typeRefs.get(type) ?? 0) - 1
+      if (refs <= 0) {
+        s.typeRefs.delete(type)
+        s.registry.delete(type)
+      } else {
+        s.typeRefs.set(type, refs)
+      }
+    }
+
+    // Last registration on this editor: tear down the shared listeners and drop
+    // the per-editor state (disposing any stragglers defensively).
+    s.registrations--
+    if (s.registrations <= 0) {
+      s.disposeListeners()
+      for (const dispose of s.mounts.values()) dispose()
+      s.mounts.clear()
+      EDITOR_STATE.delete(editor)
+    }
   }
 }

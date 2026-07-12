@@ -32,6 +32,14 @@ export interface TokenStore {
    * carries over.
    */
   rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
+  /**
+   * Evict records whose hard expiry lapsed more than `retentionMs` ago —
+   * bounding memory for long-lived, high-churn deployments (every mint
+   * creates a record; nothing removed them before). Optional: stores
+   * backed by a database with row-level TTL manage this themselves and
+   * can leave it unimplemented. Returns the number of records evicted.
+   */
+  sweepExpired?(now: number, retentionMs: number): Promise<number>
 }
 
 export class InMemoryTokenStore implements TokenStore {
@@ -118,5 +126,20 @@ export class InMemoryTokenStore implements TokenStore {
     this.tidByTokenHash.delete(r.tokenHash)
     this.byTid.set(tid, { ...r, tokenHash: newTokenHash, expiresAt })
     this.tidByTokenHash.set(newTokenHash, tid)
+  }
+
+  async sweepExpired(now: number, retentionMs: number): Promise<number> {
+    let evicted = 0
+    for (const [tid, r] of this.byTid) {
+      // Keep records until they're past hard expiry PLUS a retention
+      // window — the window lets `/resume/list` and audit lookups still
+      // find a just-expired session for a while after it lapses.
+      if (r.expiresAt + retentionMs <= now) {
+        this.byTid.delete(tid)
+        this.tidByTokenHash.delete(r.tokenHash)
+        evicted++
+      }
+    }
+    return evicted
   }
 }

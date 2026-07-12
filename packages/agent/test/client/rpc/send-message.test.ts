@@ -53,6 +53,27 @@ describe('randomUUID', () => {
   })
 })
 
+describe('handleSendMessage — raw-ref diffing (finding 12)', () => {
+  it('prunes unchanged subtrees via Object.is on the raw immutable refs', async () => {
+    // The host returns RAW state references (as the factory now does). An
+    // immutable update that keeps the `untouched` subtree by reference must
+    // produce a diff touching ONLY the changed leaf — not the whole tree.
+    const untouched = { big: [1, 2, 3], nested: { z: 9 } }
+    let state: { count: number; untouched: typeof untouched } = { count: 0, untouched }
+    const send = vi.fn(() => {
+      // Structural sharing: reuse `untouched` by reference.
+      state = { count: 1, untouched }
+    })
+    const host = makeHost({ state, getState: () => state, send, flush: vi.fn() })
+
+    const result = await handleSendMessage(host, { msg: { type: 'inc' }, waitFor: 'none' })
+    expect(result.status).toBe('dispatched')
+    if (result.status !== 'dispatched') throw new Error('unreachable')
+    // Only /count changed — the shared subtree is pruned, not re-emitted.
+    expect(result.stateDiff).toEqual([{ op: 'replace', path: '/count', value: 1 }])
+  })
+})
+
 describe('handleSendMessage — validation and annotations', () => {
   it('invalid msg (missing type) → {status: rejected, reason: invalid}', async () => {
     const host = makeHost()

@@ -6,13 +6,26 @@
  * parallel, applies success/error messages to state via update(),
  * and recurses if the responses produce more effects (up to a depth limit).
  */
-import { httpStatusToApiError, type HttpEffect } from './index.js'
+import {
+  buildRequest,
+  httpStatusToApiError,
+  parseResponse,
+  type ApiError,
+  type HttpEffect,
+} from './index.js'
 
 type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
 
 /**
  * Execute all HTTP effects from the effect list, apply responses
  * to state via update(), return the final loaded state.
+ *
+ * Requests are built with the SAME `buildRequest`/`parseResponse` core the live
+ * `http` runner uses, so SSR pre-loading derives identical requests (real headers,
+ * content-type, pass-through bodies, `responseType`) and passes the response's real
+ * `Headers` to `onSuccess`. A rejected fetch (network failure / timeout) is mapped
+ * through the effect's `onError` rather than silently dropped, so SSR and the client
+ * converge on the same failure state.
  */
 export async function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
   state: S,
@@ -26,23 +39,25 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
   const httpEffects = effects.filter((e): e is E & HttpEffect => e.type === 'http')
   if (httpEffects.length === 0) return state
 
-  const results = await Promise.allSettled(
+  const results = await Promise.all(
     httpEffects.map(async (effect) => {
-      const opts: RequestInit = {}
-      if (effect.method) opts.method = effect.method
-      if (effect.body) opts.body = JSON.stringify(effect.body)
-      if (effect.headers) opts.headers = effect.headers
+      const opts = buildRequest(effect)
+      if (effect.timeout) opts.signal = AbortSignal.timeout(effect.timeout)
 
-      const res = await fetch(effect.url, opts)
-
-      if (!res.ok) {
-        const error = await httpStatusToApiError(res)
+      try {
+        const res = await fetch(effect.url, opts)
+        if (!res.ok) {
+          return { effect, ok: false as const, error: await httpStatusToApiError(res) }
+        }
+        const data = await parseResponse(res, effect.responseType)
+        return { effect, ok: true as const, data, headers: res.headers }
+      } catch (err: unknown) {
+        const error: ApiError =
+          err instanceof DOMException && err.name === 'TimeoutError'
+            ? { kind: 'timeout' }
+            : { kind: 'network', message: err instanceof Error ? err.message : String(err) }
         return { effect, ok: false as const, error }
       }
-
-      const ct = res.headers.get('content-type') ?? ''
-      const data = ct.includes('application/json') ? await res.json() : await res.text()
-      return { effect, ok: true as const, data }
     }),
   )
 
@@ -51,13 +66,10 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
   const newEffects: E[] = []
 
   for (const result of results) {
-    if (result.status === 'rejected') continue
-
-    const { effect, ok } = result.value
     // Use the typed callbacks to construct messages
-    const msg = ok
-      ? (effect.onSuccess(result.value.data, new Headers()) as unknown as M)
-      : (effect.onError(result.value.error) as unknown as M)
+    const msg = result.ok
+      ? (result.effect.onSuccess(result.data, result.headers) as unknown as M)
+      : (result.effect.onError(result.error) as unknown as M)
 
     const [nextState, moreEffects] = update(currentState, msg)
     currentState = nextState

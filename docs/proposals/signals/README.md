@@ -1,6 +1,8 @@
 # Signals: The View-Layer Reactive Surface
 
-> **Status (2026-06-02): SHIPPED.** The runtime described here is live in `@llui/dom` — `Signal` handles (`.at`/`.map`/`.peek`, `handle.ts`), `derived`, `each`/`show`/`branch`/`component` (`authoring.ts`), and the chunked-mask reconciler (`mask.ts`). Cross-file/local-helper narrowing also shipped (`packages/compiler/src/cross-file-walker.ts`, `manifest.ts`). The `track()` runtime _primitive_ was retired in favour of the compiler-recognized `track({ deps })` escape hatch (`collect-deps.ts`). The cross-_package_ precompiled dep manifest (`__llui_deps.json`) emit/consume layer also shipped (schema v2) — see `docs/publishing-a-precompiled-library.md`. Read this as design rationale; the authoritative reference is the runtime source + root `CLAUDE.md`.
+> **Status (2026-07): CORRECTION.** The signal runtime described here **shipped** in `@llui/dom`, but the 2026-06-02 note below names compiler artifacts that were **deleted** and overstates the cross-package layer. Ground truth (root `CLAUDE.md` "Active proposals"): cross-file/local-helper narrowing is live via `packages/compiler/src/cross-file-resolver.ts` (+ the signal transform's `signals/analyze-deps.ts` / `extract-deps.ts`), **not** a `cross-file-walker.ts` — that walker was deleted. There is **no runtime `track()` primitive** in `@llui/dom`; only a compiler annotation ever existed. The cross-_package_ `__llui_deps.json` ABI is **dormant**, not fully shipped: the producer emits manifests but consumer narrowing is **not** wired into the live transform (`transformSignalComponentSource`), which emits metadata inline. Read this as design rationale; the authoritative reference is the runtime source + root `CLAUDE.md`.
+
+> **Status (2026-06-02): SHIPPED.** _(Superseded by the 2026-07 correction above — `cross-file-walker.ts`, the `track()` primitive, and the "shipped" `__llui_deps.json` layer are inaccurate.)_ The runtime described here is live in `@llui/dom` — `Signal` handles (`.at`/`.map`/`.peek`), `derived`, `each`/`show`/`branch`/`component`, and the chunked-mask reconciler. Cross-file/local-helper narrowing also shipped. The `track()` runtime _primitive_ was retired in favour of the compiler-recognized `track({ deps })` escape hatch. See `docs/publishing-a-precompiled-library.md` for the (dormant) precompiled-library ABI.
 
 > Status: proposal, design-locked. Supersedes the arrow-accessor authoring model
 > (`(s) => s.x.y`, `track()`, `sample()`, `h.getState()`, `item.current()`,
@@ -619,11 +621,12 @@ Verified against `main` (2026-05) and the other `docs/proposals/` entries.
   sharing) and should share the implementation. **No open contradiction.**
 
 - **`v2-compiler/` — complementary; cross-file substrate ALREADY SHIPS.** Contrary
-  to the earlier "rides on v2b (if it ships)" hedge: the cross-file walker
-  (`packages/compiler/src/cross-file-walker.ts`), file-local helper recursion
-  (`computeAccessorMask`/`extractAccessorPaths`), and the function-summary schema
+  to the earlier "rides on v2b (if it ships)" hedge: cross-file resolution
+  (`packages/compiler/src/cross-file-resolver.ts` — the earlier `cross-file-walker.ts`
+  named here was **deleted**), the signal transform's own dep analysis
+  (`signals/analyze-deps.ts` / `extract-deps.ts`), and the function-summary schema
   (`manifest.ts`: `viaParams` = paramReadPaths, `readsThroughResultOf` = returnTaint)
-  are **implemented and wired into the Vite build** (v2b landed: commit `4f4f2da`).
+  are **implemented and wired into the Vite build**.
   Inter-procedural narrowing is therefore **extend-existing (small-to-medium)**, not
   a v2b pull-forward. The still-unbuilt piece is the cross-_package_ precompiled
   `__llui_deps.json` manifest layer (schema+algorithm exist and are tested, but

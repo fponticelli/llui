@@ -247,8 +247,8 @@ describe('resolveEffects', () => {
     vi.unstubAllGlobals()
   })
 
-  it('handles fetch network failures gracefully', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+  it('routes a fetch network failure through onError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')))
 
     const result = await resolveEffects<State, Msg, Effect>(
       { items: ['preserved'], error: null },
@@ -262,8 +262,67 @@ describe('resolveEffects', () => {
       update,
     )
 
-    // Fetch rejection → Promise.allSettled catches it → state unchanged
+    // A rejection now maps through onError (matching the client runHttp), not
+    // silently dropped: items preserved AND the error is recorded.
     expect(result.items).toEqual(['preserved'])
+    expect(result.error).toBe('network')
+    vi.unstubAllGlobals()
+  })
+
+  it('passes the response’s real Headers to onSuccess', async () => {
+    let seen: Headers | null = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'application/json', 'x-total': '42' }),
+        json: () => Promise.resolve({ items: ['a'] }),
+      }),
+    )
+
+    type S = { items: string[] }
+    await resolveEffects<S, { type: 'ok'; payload: { items: string[] } }, Effect>(
+      { items: [] },
+      [
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/api/items',
+          onSuccess: (data, headers) => {
+            seen = headers
+            return { type: 'ok', payload: data }
+          },
+          onError: () => ({ type: 'ok', payload: { items: [] } }),
+        }),
+      ],
+      (s, m) => (m.type === 'ok' ? [{ ...s, items: m.payload.items }, []] : [s, []]),
+    )
+
+    expect(seen).not.toBeNull()
+    expect(seen!.get('x-total')).toBe('42')
+    vi.unstubAllGlobals()
+  })
+
+  it('honors a per-effect timeout (maps a TimeoutError through onError)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation timed out', 'TimeoutError')),
+    )
+
+    const result = await resolveEffects<State, Msg, Effect>(
+      { items: ['preserved'], error: null },
+      [
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/api/slow',
+          timeout: 10,
+          onSuccess: (data) => ({ type: 'loaded', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ],
+      update,
+    )
+
+    expect(result.error).toBe('timeout')
     vi.unstubAllGlobals()
   })
 })

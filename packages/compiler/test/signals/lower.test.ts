@@ -21,6 +21,13 @@ function parse(src: string): { expr: ts.Expression; sf: ts.SourceFile } {
 function lower(src: string): { produce: string; deps: string[] } {
   const { expr, sf } = parse(src)
   const r = signalToProduce(expr, sf)
+  if (r.produce === null) throw new Error(`produce bailed to null for: ${src}`)
+  return { produce: r.produce, deps: r.deps.sort() }
+}
+
+function lowerRaw(src: string): { produce: string | null; deps: string[] } {
+  const { expr, sf } = parse(src)
+  const r = signalToProduce(expr, sf)
   return { produce: r.produce, deps: r.deps.sort() }
 }
 
@@ -42,6 +49,36 @@ describe('signalToProduce — produce source', () => {
     expect(lower("derived([state.at('a'), state.at('b')], (x, y) => x + y)").produce).toBe(
       '((x, y) => x + y)(s.a, s.b)',
     )
+  })
+
+  // Finding 1: non-identifier `.at()` keys must use bracket access, not `.seg`
+  // (which parses as subtraction / an illegal member for `my-key`).
+  it('uses bracket access for non-identifier .at keys', () => {
+    expect(lower("state.at('my-key')").produce).toBe('s["my-key"]')
+    expect(lower("state.at('a.my-key.b')").produce).toBe('s.a["my-key"].b')
+    expect(lower("state.at('with space')").produce).toBe('s["with space"]')
+    expect(lower("state.at('123abc')").produce).toBe('s["123abc"]')
+  })
+
+  it('non-identifier .at key produce actually evaluates the value', () => {
+    const { produce } = lower("state.at('my-key')")
+    expect(run(produce, { 'my-key': 42 })).toBe(42)
+  })
+
+  // Finding 6: casts wrapping a signal element must not leak a HANDLE into produce.
+  it('unwraps as/!/satisfies casts around a signal inside derived', () => {
+    expect(
+      lowerRaw("derived([state.at('a'), state.at('b') as any], (x, y) => x + y)").produce,
+    ).toBe('((x, y) => x + y)(s.a, s.b)')
+    expect(lowerRaw("state.at('a')!").produce).toBe('s.a')
+    expect(lowerRaw("(state.at('a') satisfies unknown)").produce).toBe('s.a')
+  })
+
+  it('bails to null (verbatim) on an unrecognized signal form rather than emitting a handle read', () => {
+    // a bare non-root identifier is a signal-handle local — must not be emitted
+    // verbatim into a produce body (it would evaluate to a Signal, not a value)
+    expect(lowerRaw('someLocalHandle').produce).toBeNull()
+    expect(lowerRaw("derived([state.at('a'), someHandle], (x, y) => x + y)").produce).toBeNull()
   })
 })
 

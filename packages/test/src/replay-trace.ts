@@ -1,12 +1,5 @@
-import type { SignalComponentDef } from '@llui/dom'
-
-/** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple. */
-function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
-  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
-    return r as [S, E[]]
-  }
-  return [r as S, []]
-}
+import { normalizeUpdateResult, type SignalComponentDef } from '@llui/dom'
+import { jsonEqual } from './internal/json.js'
 
 export interface LluiTrace<S, M, E> {
   lluiTrace: 1
@@ -24,15 +17,15 @@ export function replayTrace<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   trace: LluiTrace<S, M, E>,
 ): void {
-  const [initState] = normalize(def.init())
+  const [initState] = normalizeUpdateResult(def.init())
   let state = initState
 
   for (let i = 0; i < trace.entries.length; i++) {
     const entry = trace.entries[i]!
-    const [newState, effects] = normalize(def.update(state, entry.msg))
+    const [newState, effects] = normalizeUpdateResult(def.update(state, entry.msg))
 
     // Compare state
-    if (!deepEqual(newState, entry.expectedState)) {
+    if (!jsonEqual(newState, entry.expectedState)) {
       throw new Error(
         `replayTrace: state diverged at step ${i}\n` +
           `Message: ${JSON.stringify(entry.msg)}\n` +
@@ -42,7 +35,7 @@ export function replayTrace<S, M, E>(
     }
 
     // Compare effects
-    if (!deepEqual(effects, entry.expectedEffects)) {
+    if (!jsonEqual(effects, entry.expectedEffects)) {
       throw new Error(
         `replayTrace: effects diverged at step ${i}\n` +
           `Message: ${JSON.stringify(entry.msg)}\n` +
@@ -53,32 +46,4 @@ export function replayTrace<S, M, E>(
 
     state = newState
   }
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true
-  if (a === null || b === null) return false
-  if (typeof a !== typeof b) return false
-  if (typeof a !== 'object') return false
-
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b)) return false
-    if (a.length !== b.length) return false
-    for (let i = 0; i < a.length; i++) {
-      if (!deepEqual(a[i], b[i])) return false
-    }
-    return true
-  }
-
-  const aObj = a as Record<string, unknown>
-  const bObj = b as Record<string, unknown>
-  const aKeys = Object.keys(aObj)
-  const bKeys = Object.keys(bObj)
-  if (aKeys.length !== bKeys.length) return false
-
-  for (const key of aKeys) {
-    if (!deepEqual(aObj[key], bObj[key])) return false
-  }
-
-  return true
 }

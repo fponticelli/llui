@@ -87,47 +87,6 @@ When no HUD is connected (e.g., the app is closed in the browser), `@llui/mcp` f
 
 ## Functions
 
-### `devServerStore()`
-
-Build the dev-server-backed store rooted at `origin` (e.g. `location.origin`).
-
-```typescript
-function devServerStore(origin: string): NotesStore
-```
-
-### `httpStore()`
-
-A NotesStore that talks to a host-provided HTTP backend. Use in production
-when a team wants centralized capture instead of manual export/import. The
-backend must speak the notebook wire protocol (the same shapes the dev
-server serves under `/_llui`).
-
-```typescript
-function httpStore(opts: HttpStoreOptions): NotesStore
-```
-
-### `indexedDbStore()`
-
-Build a browser-local NotesStore backed by IndexedDB. No dev server
-required; the HUD captures, persists, and browses entirely client-side.
-
-```typescript
-function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & ExportableStore
-```
-
-### `exportBundle()`
-
-Build an export bundle from any store that can produce raw sessions.
-Returns the zip as a Blob (for download), the parsed manifest, and the
-raw bytes.
-
-```typescript
-function exportBundle(
-  store: ExportableStore,
-  opts: ExportBundleOptions = {},
-): Promise<ExportBundleResult>
-```
-
 ### `bundleFilename()`
 
 Default bundle filename: `llui-notes-<contentHash prefix>.zip`.
@@ -151,6 +110,47 @@ guards pathological inputs.
 function defaultSecretRedactor(options: SecretRedactorOptions = {}): (body: NoteBody) => NoteBody
 ```
 
+### `devServerStore()`
+
+Build the dev-server-backed store rooted at `origin` (e.g. `location.origin`).
+
+```typescript
+function devServerStore(origin: string): NotesStore
+```
+
+### `exportBundle()`
+
+Build an export bundle from any store that can produce raw sessions.
+Returns the zip as a Blob (for download), the parsed manifest, and the
+raw bytes.
+
+```typescript
+function exportBundle(
+  store: ExportableStore,
+  opts: ExportBundleOptions = {},
+): Promise<ExportBundleResult>
+```
+
+### `httpStore()`
+
+A NotesStore that talks to a host-provided HTTP backend. Use in production
+when a team wants centralized capture instead of manual export/import. The
+backend must speak the notebook wire protocol (the same shapes the dev
+server serves under `/_llui`).
+
+```typescript
+function httpStore(opts: HttpStoreOptions): NotesStore
+```
+
+### `indexedDbStore()`
+
+Build a browser-local NotesStore backed by IndexedDB. No dev server
+required; the HUD captures, persists, and browses entirely client-side.
+
+```typescript
+function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & ExportableStore
+```
+
 ### `mountAnnotateHud()`
 
 ```typescript
@@ -158,6 +158,16 @@ function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle
 ```
 
 ## Types
+
+### `BakeFn`
+
+```typescript
+export type BakeFn = (
+  screenshotBase64: string,
+  annotations: Annotation[],
+  geometry?: ScreenshotGeometry,
+) => Promise<string>
+```
 
 ### `HeadersInput`
 
@@ -170,53 +180,149 @@ export type HeadersInput =
   | (() => Record<string, string> | Promise<Record<string, string>>)
 ```
 
-### `BakeFn`
-
-```typescript
-export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
-```
-
 ## Interfaces
 
-### `SessionSummary`
-
-One session as returned by the session list.
+### `AnnotateHudHandle`
 
 ```typescript
-export interface SessionSummary {
-  id: string
+export interface AnnotateHudHandle {
+  open(): void
+  close(): void
+  destroy(): void
+  /** Programmatically set the compose draft (Markdown). Flows into the embedded
+   * editor like a restored draft. */
+  setProse(text: string): void
+  submit(
+    prose: string,
+    opts?: {
+      captureLevel?: CaptureLevel
+      annotations?: Annotation[]
+      screenshot?: string
+      intent?: NoteIntent
+      resume?: boolean
+      chainName?: string
+    },
+  ): Promise<CreateNoteResponse>
+  drawRect(): Promise<NoteRect | null>
+  handleCaptureRequest(
+    requestId: string,
+    payload: CaptureRequestPayload,
+  ): Promise<CreateNoteResponse>
+  setIntent(intent: NoteIntent): void
+  replayRepro(
+    events: ReproEvent[],
+    options?: { speed?: number; maxStepMs?: number; abortOnMissing?: boolean },
+  ): Promise<{ applied: number; skipped: Array<{ event: ReproEvent; reason: string }> }>
+  /** Export the notebook as a downloadable `.zip` bundle and trigger a
+   *  browser download. Resolves to the bundle manifest, or `null` when the
+   *  active store can't export (e.g. the dev-server store). */
+  exportBundle(): Promise<BundleManifest | null>
+}
+```
+
+### `BundleAppProvenance`
+
+Capture-environment provenance (host-populated; omitted when unknown).
+
+```typescript
+export interface BundleAppProvenance {
+  version?: string
+  buildId?: string
+  releaseChannel?: string
+  url?: string
+}
+```
+
+### `BundleIdentity`
+
+Who captured the notes (host-populated; omitted when unknown).
+
+```typescript
+export interface BundleIdentity {
+  id?: string
+  label?: string
+  kind: 'human' | 'llm' | 'agent'
+}
+```
+
+### `BundleManifest`
+
+```typescript
+export interface BundleManifest {
+  /** On-disk note-format schema version (see NOTE_SCHEMA_VERSION). */
+  schemaVersion: number
+  /** Host-stamped export time (ISO). */
+  exportedAt: string
+  /** The sessions included, sorted. */
+  sessions: string[]
+  /** Total `.md` notes across all sessions. */
   noteCount: number
-  startedAt?: string
+  /** SHA-256 hex over every file entry (sorted by path), excluding the
+   *  manifest itself. Drives idempotent import + integrity checks. */
+  contentHash: string
+  exportedBy?: BundleIdentity
+  app?: BundleAppProvenance
 }
 ```
 
-### `NoteStatusResponse`
-
-Status sidecar for a single note: its current status + transition log.
+### `CaptureDefaults`
 
 ```typescript
-export interface NoteStatusResponse {
-  current: NoteStatus | null
-  history: StatusTransition[]
+export interface CaptureDefaults {
+  /** Collect the verbose debug-telemetry body (state/message/effect dump). */
+  debug: boolean
+  /** Record user interactions (repro trace). */
+  repro: boolean
 }
 ```
 
-### `QueueEntry`
+### `EventSubscription`
 
-A note's place in the task queue.
+Live-event subscription parameters.
 
 ```typescript
-export interface QueueEntry {
-  noteId: string
-  status: NoteStatus
+export interface EventSubscription {
+  role: SseRole
+  onEvent: (event: ServerEvent) => void
+  onError?: (err: unknown) => void
 }
 ```
 
-### `QueueResponse`
+### `ExportableStore`
+
+A store that can produce its notebook as raw on-disk-format entries, for
+export into a zip bundle. Browser stores implement this; the dev-server
+store doesn't need to (its files already live on disk).
 
 ```typescript
-export interface QueueResponse {
-  queue: QueueEntry[]
+export interface ExportableStore {
+  exportSessions(sessionIds?: string[]): Promise<RawSession[]>
+}
+```
+
+### `ExportBundleOptions`
+
+```typescript
+export interface ExportBundleOptions {
+  /** Limit to these sessions. Default: every session in the store. */
+  sessionIds?: string[]
+  /** Capture identity recorded in the manifest. */
+  exportedBy?: BundleIdentity
+  /** App/environment provenance recorded in the manifest. */
+  app?: BundleAppProvenance
+  /** Clock override (tests / deterministic runs). */
+  now?: () => Date
+}
+```
+
+### `ExportBundleResult`
+
+```typescript
+export interface ExportBundleResult {
+  blob: Blob
+  manifest: BundleManifest
+  /** The raw zip bytes (same content as `blob`), handy for tests/Node. */
+  bytes: Uint8Array
 }
 ```
 
@@ -240,77 +346,73 @@ export interface FullNote {
 }
 ```
 
-### `StatusUpdate`
-
-A status transition the HUD requests (POST status).
+### `HttpStoreOptions`
 
 ```typescript
-export interface StatusUpdate {
-  to: NoteStatus
-  by: Author | 'system'
-  reason?: string
+export interface HttpStoreOptions {
+  /** Base URL the host's notebook backend lives under, no trailing slash. */
+  baseUrl: string
+  /** Headers injected on every request (e.g. an auth token). Never bake
+   *  credentials into the bundle — supply them here at mount time. */
+  headers?: HeadersInput
+  /** Override fetch (tests / custom transport). */
+  fetch?: typeof fetch
 }
 ```
 
-### `NoteUpdate`
-
-A mutable patch to an existing note (PATCH).
+### `IndexedDbStoreOptions`
 
 ```typescript
-export interface NoteUpdate {
-  prose?: string
+export interface IndexedDbStoreOptions {
+  /** IndexedDB database name. Default `llui-devmode-annotate`. */
+  dbName?: string
+  /** Clock override (tests / deterministic runs). Default `() => new Date()`. */
+  now?: () => Date
 }
 ```
 
-### `RawNote`
-
-One note in raw export form: its serialized `.md` plus optional screenshot.
+### `MountAnnotateOptions`
 
 ```typescript
-export interface RawNote {
-  /** The `.md` filename (canonical `{id}-{author}-{kind}-{slug}.md`). */
-  filename: string
-  /** Serialized note markdown (YAML frontmatter + prose). */
-  markdown: string
-  /** Screenshot bytes (PNG), or null when the note has none. */
-  screenshot: Uint8Array | null
-}
-```
-
-### `RawSession`
-
-One session in raw export form.
-
-```typescript
-export interface RawSession {
-  id: string
-  notes: RawNote[]
-  /** `status.jsonl` content (one JSON transition per line; '' when empty). */
-  statusJsonl: string
-}
-```
-
-### `ExportableStore`
-
-A store that can produce its notebook as raw on-disk-format entries, for
-export into a zip bundle. Browser stores implement this; the dev-server
-store doesn't need to (its files already live on disk).
-
-```typescript
-export interface ExportableStore {
-  exportSessions(sessionIds?: string[]): Promise<RawSession[]>
-}
-```
-
-### `EventSubscription`
-
-Live-event subscription parameters.
-
-```typescript
-export interface EventSubscription {
-  role: SseRole
-  onEvent: (event: ServerEvent) => void
-  onError?: (err: unknown) => void
+export interface MountAnnotateOptions {
+  origin?: string
+  /** The notes transport. Defaults to `devServerStore(origin)` — the Vite
+   *  dev-server endpoints. Inject a different adapter (IndexedDB, HTTP,
+   *  export bundle) to run the HUD without a dev server. */
+  store?: NotesStore
+  /** Mount in a production build. By default the HUD only mounts under the
+   *  dev server (`import.meta.env.DEV`); set this when a live app deliberately
+   *  ships it (typically via `installAnnotateHud`, behind the host's own
+   *  authorization). */
+  allowProduction?: boolean
+  llui?: { runtime: string; compiler: string }
+  hidden?: boolean
+  capture?: CaptureFn
+  bake?: BakeFn
+  subscribeEvents?: boolean
+  rehydrate?: boolean
+  solveEnabled?: boolean
+  autoCaptureOnError?: boolean
+  repro?: boolean
+  elementPick?: boolean
+  /** Per-channel redaction hooks (state / repro / screenshot), run before a
+   *  capture is persisted. The host owns the privacy policy; these are the
+   *  seams to enforce it. */
+  redact?: RedactHooks
+  /** Collect the verbose debug-telemetry body (state/message/effect dump).
+   *  Defaults: on under the dev server, OFF in production. */
+  captureDebug?: boolean
+  /** Mount the HUD chrome inside an open shadow root with isolated styles
+   *  (constructable `adoptedStyleSheets`, falling back to a shadow `<style>`).
+   *  Gives bidirectional style isolation from the host app and avoids the
+   *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
+   *  default); `installAnnotateHud` turns it on for production. */
+  isolate?: boolean
+  /** Markdown-editor stylesheet text adopted into the shadow root in isolate
+   *  mode (the light-DOM `import '…/editor.css'` can't cross the shadow
+   *  boundary). Defaults to the bundled stylesheet (`editor.css?raw`). Override
+   *  to supply the CSS in environments where the `?raw` import can't resolve. */
+  editorCss?: string
 }
 ```
 
@@ -363,99 +465,71 @@ export interface NotesStore {
 }
 ```
 
-### `HttpStoreOptions`
+### `NoteStatusResponse`
+
+Status sidecar for a single note: its current status + transition log.
 
 ```typescript
-export interface HttpStoreOptions {
-  /** Base URL the host's notebook backend lives under, no trailing slash. */
-  baseUrl: string
-  /** Headers injected on every request (e.g. an auth token). Never bake
-   *  credentials into the bundle — supply them here at mount time. */
-  headers?: HeadersInput
-  /** Override fetch (tests / custom transport). */
-  fetch?: typeof fetch
+export interface NoteStatusResponse {
+  current: NoteStatus | null
+  history: StatusTransition[]
 }
 ```
 
-### `IndexedDbStoreOptions`
+### `NoteUpdate`
+
+A mutable patch to an existing note (PATCH).
 
 ```typescript
-export interface IndexedDbStoreOptions {
-  /** IndexedDB database name. Default `llui-devmode-annotate`. */
-  dbName?: string
-  /** Clock override (tests / deterministic runs). Default `() => new Date()`. */
-  now?: () => Date
+export interface NoteUpdate {
+  prose?: string
 }
 ```
 
-### `BundleIdentity`
+### `QueueEntry`
 
-Who captured the notes (host-populated; omitted when unknown).
+A note's place in the task queue.
 
 ```typescript
-export interface BundleIdentity {
-  id?: string
-  label?: string
-  kind: 'human' | 'llm' | 'agent'
+export interface QueueEntry {
+  noteId: string
+  status: NoteStatus
 }
 ```
 
-### `BundleAppProvenance`
-
-Capture-environment provenance (host-populated; omitted when unknown).
+### `QueueResponse`
 
 ```typescript
-export interface BundleAppProvenance {
-  version?: string
-  buildId?: string
-  releaseChannel?: string
-  url?: string
+export interface QueueResponse {
+  queue: QueueEntry[]
 }
 ```
 
-### `BundleManifest`
+### `RawNote`
+
+One note in raw export form: its serialized `.md` plus optional screenshot.
 
 ```typescript
-export interface BundleManifest {
-  /** On-disk note-format schema version (see NOTE_SCHEMA_VERSION). */
-  schemaVersion: number
-  /** Host-stamped export time (ISO). */
-  exportedAt: string
-  /** The sessions included, sorted. */
-  sessions: string[]
-  /** Total `.md` notes across all sessions. */
-  noteCount: number
-  /** SHA-256 hex over every file entry (sorted by path), excluding the
-   *  manifest itself. Drives idempotent import + integrity checks. */
-  contentHash: string
-  exportedBy?: BundleIdentity
-  app?: BundleAppProvenance
+export interface RawNote {
+  /** The `.md` filename (canonical `{id}-{author}-{kind}-{slug}.md`). */
+  filename: string
+  /** Serialized note markdown (YAML frontmatter + prose). */
+  markdown: string
+  /** Screenshot bytes (PNG), or null when the note has none. */
+  screenshot: Uint8Array | null
 }
 ```
 
-### `ExportBundleOptions`
+### `RawSession`
+
+One session in raw export form.
 
 ```typescript
-export interface ExportBundleOptions {
-  /** Limit to these sessions. Default: every session in the store. */
-  sessionIds?: string[]
-  /** Capture identity recorded in the manifest. */
-  exportedBy?: BundleIdentity
-  /** App/environment provenance recorded in the manifest. */
-  app?: BundleAppProvenance
-  /** Clock override (tests / deterministic runs). */
-  now?: () => Date
-}
-```
-
-### `ExportBundleResult`
-
-```typescript
-export interface ExportBundleResult {
-  blob: Blob
-  manifest: BundleManifest
-  /** The raw zip bytes (same content as `blob`), handy for tests/Node. */
-  bytes: Uint8Array
+export interface RawSession {
+  id: string
+  notes: RawNote[]
+  /** `status.jsonl` content (one JSON transition per line; '' when empty). */
+  statusJsonl: string
 }
 ```
 
@@ -480,14 +554,19 @@ export interface RedactHooks {
 }
 ```
 
-### `CaptureDefaults`
+### `ScreenshotGeometry`
+
+Geometry threaded from the capture into the annotation baker so viewport
+(CSS-px, scroll-relative) annotation coordinates land correctly on the
+full-document, DPR-scaled screenshot raster.
 
 ```typescript
-export interface CaptureDefaults {
-  /** Collect the verbose debug-telemetry body (state/message/effect dump). */
-  debug: boolean
-  /** Record user interactions (repro trace). */
-  repro: boolean
+export interface ScreenshotGeometry {
+  /** Device pixel ratio the screenshot was captured at (frontmatter viewport.dpr). */
+  dpr: number
+  /** Viewport scroll offset (CSS px) at capture time. */
+  scrollX: number
+  scrollY: number
 }
 ```
 
@@ -504,81 +583,27 @@ export interface SecretRedactorOptions {
 }
 ```
 
-### `MountAnnotateOptions`
+### `SessionSummary`
+
+One session as returned by the session list.
 
 ```typescript
-export interface MountAnnotateOptions {
-  origin?: string
-  /** The notes transport. Defaults to `devServerStore(origin)` — the Vite
-   *  dev-server endpoints. Inject a different adapter (IndexedDB, HTTP,
-   *  export bundle) to run the HUD without a dev server. */
-  store?: NotesStore
-  /** Mount in a production build. By default the HUD only mounts under the
-   *  dev server (`import.meta.env.DEV`); set this when a live app deliberately
-   *  ships it (typically via `installAnnotateHud`, behind the host's own
-   *  authorization). */
-  allowProduction?: boolean
-  llui?: { runtime: string; compiler: string }
-  hidden?: boolean
-  capture?: CaptureFn
-  bake?: BakeFn
-  subscribeEvents?: boolean
-  rehydrate?: boolean
-  solveEnabled?: boolean
-  autoCaptureOnError?: boolean
-  repro?: boolean
-  elementPick?: boolean
-  /** Per-channel redaction hooks (state / repro / screenshot), run before a
-   *  capture is persisted. The host owns the privacy policy; these are the
-   *  seams to enforce it. */
-  redact?: RedactHooks
-  /** Collect the verbose debug-telemetry body (state/message/effect dump).
-   *  Defaults: on under the dev server, OFF in production. */
-  captureDebug?: boolean
-  /** Mount the HUD chrome inside an open shadow root with isolated styles
-   *  (constructable `adoptedStyleSheets`, falling back to a shadow `<style>`).
-   *  Gives bidirectional style isolation from the host app and avoids the
-   *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
-   *  default); `installAnnotateHud` turns it on for production. */
-  isolate?: boolean
+export interface SessionSummary {
+  id: string
+  noteCount: number
+  startedAt?: string
 }
 ```
 
-### `AnnotateHudHandle`
+### `StatusUpdate`
+
+A status transition the HUD requests (POST status).
 
 ```typescript
-export interface AnnotateHudHandle {
-  open(): void
-  close(): void
-  destroy(): void
-  /** Programmatically set the compose draft (Markdown). Flows into the embedded
-   * editor like a restored draft. */
-  setProse(text: string): void
-  submit(
-    prose: string,
-    opts?: {
-      captureLevel?: CaptureLevel
-      annotations?: Annotation[]
-      screenshot?: string
-      intent?: NoteIntent
-      resume?: boolean
-      chainName?: string
-    },
-  ): Promise<CreateNoteResponse>
-  drawRect(): Promise<NoteRect | null>
-  handleCaptureRequest(
-    requestId: string,
-    payload: CaptureRequestPayload,
-  ): Promise<CreateNoteResponse>
-  setIntent(intent: NoteIntent): void
-  replayRepro(
-    events: ReproEvent[],
-    options?: { speed?: number; maxStepMs?: number; abortOnMissing?: boolean },
-  ): Promise<{ applied: number; skipped: Array<{ event: ReproEvent; reason: string }> }>
-  /** Export the notebook as a downloadable `.zip` bundle and trigger a
-   *  browser download. Resolves to the bundle manifest, or `null` when the
-   *  active store can't export (e.g. the dev-server store). */
-  exportBundle(): Promise<BundleManifest | null>
+export interface StatusUpdate {
+  to: NoteStatus
+  by: Author | 'system'
+  reason?: string
 }
 ```
 

@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 
 import type { EventBus, SseEventListener } from './event-bus.js'
+import type { TrustedTaskRegistry } from './trusted-tasks.js'
 import { createNote, listNotes, readNote } from './store.js'
 import { appendStatus, currentStatus } from './status.js'
 import { serializeNote } from './frontmatter.js'
@@ -257,6 +258,16 @@ export interface RouterConfig {
   beforePrompt?: (input: { prompt: string; note: NoteContext }) => string | Promise<string>
   /** Logger; defaults to stderr. */
   log?: (msg: string) => void
+  /**
+   * Provenance registry gating which task notes may spawn an agent. When
+   * set, a `note-created` event only triggers a spawn if the note was
+   * marked trusted (i.e. created through the authenticated same-origin
+   * middleware). This prevents a note that reached disk by some other
+   * path — a forged/dropped file, a stale mutation — from auto-spawning a
+   * CLI agent in the project root. When omitted, the router falls back to
+   * the on-disk `intent` field alone (dev/test convenience only).
+   */
+  trustedTasks?: TrustedTaskRegistry
 }
 
 /**
@@ -1042,6 +1053,13 @@ export function startRouter(config: RouterConfig): RouterHandle {
       sessionId = summary.sessionId
       const note = readNote(config.notesRoot, sessionId, event.id)
       if (note.frontmatter.intent !== 'task') return
+      // Provenance gate: only spawn for task notes an authenticated in-page
+      // writer created. On-disk `intent` alone is not sufficient authority
+      // to launch a CLI agent in the project root.
+      if (config.trustedTasks && !config.trustedTasks.isTrusted(sessionId, event.id)) {
+        log(`skip untrusted task note ${event.id} (no in-page provenance)`)
+        return
+      }
       const chainName = note.frontmatter.chainName ?? DEFAULT_CHAIN
       queue.push({ sessionId, noteId: event.id, chainName })
     } catch (err) {

@@ -80,35 +80,35 @@ describe('formField reducer', () => {
     expect(s.form.status).toBe('idle')
     expect(s.form.touched).toEqual({})
     expect(s.issues).toEqual([])
-    expect(s.fields.email.invalid).toBe(false)
-    expect(s.fields.password.invalid).toBe(false)
+    expect(s.fields.email!.invalid).toBe(false)
+    expect(s.fields.password!.invalid).toBe(false)
     // field slice ids derive from the form id + field name
-    expect(s.fields.email.id).toBe('signup:email')
+    expect(s.fields.email!.id).toBe('signup:email')
   })
 
   it('validate (sync) sets invalid on each errored field + stores issues', () => {
     const s0 = init({ id: 'signup', fields: ['email', 'password'] })
     const [s] = update(s0, { type: 'validate', schema: failureSchema, values: {} })
-    expect(s.fields.email.invalid).toBe(true)
-    expect(s.fields.password.invalid).toBe(true)
+    expect(s.fields.email!.invalid).toBe(true)
+    expect(s.fields.password!.invalid).toBe(true)
     expect(s.issues).toHaveLength(2)
   })
 
   it('validate clears invalid for fields that now pass', () => {
     const s0 = init({ id: 'signup', fields: ['email', 'password'] })
     const [bad] = update(s0, { type: 'validate', schema: failureSchema, values: {} })
-    expect(bad.fields.email.invalid).toBe(true)
+    expect(bad.fields.email!.invalid).toBe(true)
     const [good] = update(bad, { type: 'validate', schema: successSchema, values: {} })
-    expect(good.fields.email.invalid).toBe(false)
-    expect(good.fields.password.invalid).toBe(false)
+    expect(good.fields.email!.invalid).toBe(false)
+    expect(good.fields.password!.invalid).toBe(false)
     expect(good.issues).toEqual([])
   })
 
   it('validate maps nested + array index paths to field names', () => {
     const s0 = init({ id: 'profile', fields: ['address.street', 'tags.0'] })
     const [s] = update(s0, { type: 'validate', schema: nestedSchema, values: {} })
-    expect(s.fields['address.street'].invalid).toBe(true)
-    expect(s.fields['tags.0'].invalid).toBe(true)
+    expect(s.fields['address.street']!.invalid).toBe(true)
+    expect(s.fields['tags.0']!.invalid).toBe(true)
   })
 
   it('touch marks a field touched', () => {
@@ -137,14 +137,14 @@ describe('formField reducer', () => {
       schema: asyncFailureSchema,
       values: {},
     })
-    expect(pending.fields.email.pending).toBe(true)
+    expect(pending.fields.email!.pending).toBe(true)
     expect(fx).toEqual([])
     // resolve the promise produced internally and feed result back
     const result = await asyncFailureSchema['~standard'].validate({})
     const issues = 'issues' in result && result.issues ? result.issues : []
     const [resolved] = update(pending, { type: 'validateResult', issues: [...issues] })
-    expect(resolved.fields.email.pending).toBe(false)
-    expect(resolved.fields.email.invalid).toBe(true)
+    expect(resolved.fields.email!.pending).toBe(false)
+    expect(resolved.fields.email!.invalid).toBe(true)
   })
 
   it('validateResult on success clears pending + invalid', async () => {
@@ -157,8 +157,8 @@ describe('formField reducer', () => {
     const result = await asyncSuccessSchema['~standard'].validate({})
     const issues = 'issues' in result && result.issues ? result.issues : []
     const [resolved] = update(pending, { type: 'validateResult', issues: [...issues] })
-    expect(resolved.fields.email.pending).toBe(false)
-    expect(resolved.fields.email.invalid).toBe(false)
+    expect(resolved.fields.email!.pending).toBe(false)
+    expect(resolved.fields.email!.invalid).toBe(false)
   })
 })
 
@@ -194,17 +194,17 @@ describe('formField connect — formField(name) part bag', () => {
     const f = p.formField('email')
 
     const invalidUntouched = stateOf()
-    invalidUntouched.fields.email.invalid = true
+    invalidUntouched.fields.email!.invalid = true
     // invalid but not touched, status idle → hidden
     expect(read(f.control['aria-invalid'], invalidUntouched)).toBeUndefined()
 
     const invalidTouched = stateOf()
-    invalidTouched.fields.email.invalid = true
+    invalidTouched.fields.email!.invalid = true
     invalidTouched.form.touched.email = true
     expect(read(f.control['aria-invalid'], invalidTouched)).toBe('true')
 
     const invalidSubmitted = stateOf()
-    invalidSubmitted.fields.email.invalid = true
+    invalidSubmitted.fields.email!.invalid = true
     invalidSubmitted.form.status = 'submitted'
     expect(read(f.control['aria-invalid'], invalidSubmitted)).toBe('true')
   })
@@ -217,11 +217,11 @@ describe('formField connect — formField(name) part bag', () => {
     const f = p.formField('email', { hasDescription: true })
 
     const hidden = stateOf()
-    hidden.fields.email.invalid = true
+    hidden.fields.email!.invalid = true
     expect(read(f.control['aria-describedby'], hidden)).toBe('signup:email:description')
 
     const shown = stateOf()
-    shown.fields.email.invalid = true
+    shown.fields.email!.invalid = true
     shown.form.touched.email = true
     expect(read(f.control['aria-describedby'], shown)).toBe(
       'signup:email:description signup:email:error',
@@ -235,7 +235,7 @@ describe('formField connect — formField(name) part bag', () => {
     const withIssue = stateOf({
       issues: [{ message: 'Invalid email', path: ['email'] }],
     })
-    withIssue.fields.email.invalid = true
+    withIssue.fields.email!.invalid = true
     // not touched → no visible message
     expect(read(f.errorVisible, withIssue)).toBe(false)
     expect(read(f.errorText.message, withIssue)).toBe('')
@@ -255,7 +255,7 @@ describe('formField connect — formField(name) part bag', () => {
         { message: 'Other', path: ['password'] },
       ],
     })
-    st.fields.email.invalid = true
+    st.fields.email!.invalid = true
     st.form.touched.email = true
     const all = read(f.errorText.issues, st)
     expect(all.map((i) => i.message)).toEqual(['Invalid email', 'Email taken'])
@@ -265,7 +265,7 @@ describe('formField connect — formField(name) part bag', () => {
     const p = connect(rootSignal<FormFieldState>(), vi.fn(), { id: 'signup', fields: ['email'] })
     const f = p.formField('email')
     const pendingState = stateOf()
-    pendingState.fields.email.pending = true
+    pendingState.fields.email!.pending = true
     expect(read(f.control['aria-busy'], pendingState)).toBe('true')
     expect(read(f.control['aria-busy'], stateOf())).toBeUndefined()
   })

@@ -1,6 +1,10 @@
 /// <reference lib="dom" />
 import { describe, expect, it } from 'vitest'
-import { collectDebugSnapshot } from '../src/debug-collector.js'
+import {
+  collectDebugSnapshot,
+  collectVerboseSnapshot,
+  createConsoleCapture,
+} from '../src/debug-collector.js'
 
 interface MsgRec {
   index: number
@@ -165,6 +169,90 @@ describe('collectDebugSnapshot', () => {
   })
 })
 
+// Finding 9 — verbose telemetry is now real (scope tree + binding totals).
+describe('collectVerboseSnapshot', () => {
+  it('returns null when no debug API is present', () => {
+    expect(collectVerboseSnapshot({ components: {} })).toBeNull()
+  })
+
+  it('flattens the scope tree and totals live bindings', () => {
+    const scope = {
+      scopeId: 'root',
+      kind: 'root',
+      active: true,
+      children: [{ scopeId: 'each#0', kind: 'each', active: true, children: [] }],
+    }
+    const verbose = collectVerboseSnapshot({
+      components: {
+        App: {
+          getState: () => ({}),
+          getScopeTree: () => scope,
+          getBindings: () => [
+            { index: 0, kind: 'text', dead: false },
+            { index: 1, kind: 'attr', dead: true },
+            { index: 2, kind: 'text', dead: false },
+          ],
+        },
+      },
+    })
+    expect(verbose).not.toBeNull()
+    expect(verbose!.scopeTree).toEqual([
+      { id: 'root', parent: null, component: 'App' },
+      { id: 'each#0', parent: 'root', component: 'App' },
+    ])
+    // Dead bindings are excluded from the total.
+    expect(verbose!.bindings).toEqual({ total: 2, hottest: [], lastCycleMs: 0 })
+  })
+
+  it('skips HUD-internal components', () => {
+    const verbose = collectVerboseSnapshot({
+      components: {
+        'llui-devmode-annotate:hud': {
+          getState: () => ({}),
+          getScopeTree: () => ({ scopeId: 'x', kind: 'root', active: true, children: [] }),
+        },
+      },
+    })
+    expect(verbose).toBeNull()
+  })
+})
+
+describe('createConsoleCapture', () => {
+  it('mirrors console calls into a ring buffer and chains to the original', () => {
+    const seen: string[] = []
+    const fake = {
+      log: (...a: unknown[]) => seen.push(`log:${a.join(' ')}`),
+      warn: (...a: unknown[]) => seen.push(`warn:${a.join(' ')}`),
+      error: () => {},
+      info: () => {},
+      debug: () => {},
+    }
+    const cap = createConsoleCapture({ target: fake })
+    fake.log('hello', 'world')
+    fake.warn('careful')
+    const snap = cap.snapshot()
+    expect(snap.map((e) => `${e.level}:${e.text}`)).toEqual(['log:hello world', 'warn:careful'])
+    // Chained to the original method — the developer still sees the output.
+    expect(seen).toEqual(['log:hello world', 'warn:careful'])
+    // dispose() restores the originals.
+    cap.dispose()
+    fake.log('after')
+    expect(cap.snapshot()).toHaveLength(2)
+    expect(seen).toContain('log:after')
+  })
+
+  it('honors the ring-buffer limit', () => {
+    const noop = (..._a: unknown[]): void => {}
+    const fake = { log: noop, warn: noop, error: noop, info: noop, debug: noop }
+    const cap = createConsoleCapture({ target: fake, limit: 2 })
+    fake.log('a')
+    fake.log('b')
+    fake.log('c')
+    expect(cap.snapshot().map((e) => e.text)).toEqual(['b', 'c'])
+    cap.dispose()
+  })
+})
+
 describe('integration with submit() / handleCaptureRequest', () => {
   it('submit() includes debug snapshot in the POST body when __lluiComponents is set', async () => {
     ;(globalThis as { __lluiComponents?: Record<string, unknown> }).__lluiComponents = {
@@ -189,6 +277,39 @@ describe('integration with submit() / handleCaptureRequest', () => {
     expect(body.noteBody.stateSnapshot).toEqual({ MyComp: { value: 42 } })
 
     // Cleanup
+    delete (globalThis as { __lluiComponents?: unknown }).__lluiComponents
+    document.body.innerHTML = ''
+  })
+
+  // Finding 9 — the verbose capture level must actually collect more than the
+  // standard one (previously the checkbox was a no-op on the body).
+  it('verbose captureLevel adds a verbose body that standard omits', async () => {
+    ;(globalThis as { __lluiComponents?: Record<string, unknown> }).__lluiComponents = {
+      MyComp: {
+        getState: () => ({ value: 1 }),
+        getScopeTree: () => ({ scopeId: 'root', kind: 'root', active: true, children: [] }),
+        getBindings: () => [{ index: 0, kind: 'text', dead: false }],
+      },
+    }
+    const bodies: Array<{ verbose?: unknown }> = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      bodies.push((JSON.parse(init.body as string) as { noteBody: { verbose?: unknown } }).noteBody)
+      return new Response(
+        JSON.stringify({ id: '001', filename: 'x.md', path: '/x', sessionId: 's' }),
+        { status: 201 },
+      )
+    }) as unknown as typeof fetch
+
+    const { mountAnnotateHud } = await import('../src/index.js')
+    document.body.innerHTML = ''
+    const handle = mountAnnotateHud({ origin: 'http://localhost:5173', subscribeEvents: false })
+    await handle.submit('standard note', { captureLevel: 'standard' })
+    await handle.submit('verbose note', { captureLevel: 'verbose' })
+
+    expect(bodies[0]!.verbose).toBeUndefined()
+    expect(bodies[1]!.verbose).toBeDefined()
+
+    handle.destroy()
     delete (globalThis as { __lluiComponents?: unknown }).__lluiComponents
     document.body.innerHTML = ''
   })

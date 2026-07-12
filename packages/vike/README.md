@@ -234,21 +234,17 @@ Layouts can have their own server-fetched data alongside per-page `+data.ts` by 
 
 Wire this from Vike's config mechanism however you like — the adapter just reads `pageContext.lluiLayoutData` when present.
 
-#### Hydration envelope
+#### Hydration manifest
 
-With a `Layout` configured, `window.__LLUI_STATE__` is chain-aware:
+`window.__LLUI_STATE__` carries a small **integrity manifest**, not per-layer state:
 
 ```js
-window.__LLUI_STATE__ = {
-  layouts: [
-    { name: 'AppLayout', state: { session: 'alice' } },
-    { name: 'DashboardLayout', state: { active: 'reports' } },
-  ],
-  page: { name: 'ReportsPage', state: { view: 'summary' } },
-}
+window.__LLUI_STATE__ = { v: 2, layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'] }
 ```
 
-The client matches each layer by component `name` when hydrating — server/client chain mismatches throw with a clear error instead of silently binding the wrong state to the wrong instance. Pages written against the pre-layout flat envelope shape continue to hydrate correctly when no `Layout` is configured.
+The server render runs **no effects** — it only bakes each layer's initial state into HTML — so every layer's seed is exactly `data ?? init()`, both of which the client already has (Vike re-supplies `pageContext.data` / `lluiLayoutData` on hydration). Shipping the full state again would be dead weight, so the client reconstructs each seed locally and the script only ships the chain's layer names.
+
+The manifest is versioned (`v`) and lists every layer outermost → page. On hydration the client verifies it against the chain it's about to build: a wrong version, a wrong layer count, or a divergent layer at any index throws a clear error instead of silently binding the wrong instance. Unnamed layers use a stable per-index key (`layer:0`, `layer:1`, …), normalized identically on both sides, so an unnamed page or layout hydrates cleanly.
 
 ### Page Transitions
 

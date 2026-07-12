@@ -21,12 +21,56 @@ export interface BakeOptions {
   labelColor?: string
   /** Label background color. Default the strokeColor. */
   labelBg?: string
+  /**
+   * Device-pixel-ratio the screenshot was captured at. Used only as the
+   * FALLBACK scale when the live document width can't be read (e.g. jsdom,
+   * where `documentElement.clientWidth` is 0). Threaded from the note
+   * frontmatter's `viewport.dpr`. Default 1.
+   */
+  dpr?: number
+  /**
+   * Canvas-pixels-per-CSS-pixel. Annotations arrive in viewport (CSS) pixels
+   * but the screenshot is a DPR-scaled raster of the whole document, so every
+   * coordinate must be multiplied by this before it's stroked. Defaults to
+   * `canvas.width / documentElement.clientWidth` (the true capture scale),
+   * falling back to `dpr`, then 1.
+   */
+  scale?: number
+  /**
+   * Viewport scroll offset (CSS px) at capture time. Annotation coords are
+   * viewport-relative (`getBoundingClientRect`) but the screenshot spans the
+   * whole document, so the scroll offset is added before scaling. Defaults to
+   * `window.scrollX` / `window.scrollY`, then 0.
+   */
+  scrollX?: number
+  scrollY?: number
+}
+
+/** Viewport→canvas coordinate mapping resolved from BakeOptions + environment. */
+interface CoordTransform {
+  scale: number
+  scrollX: number
+  scrollY: number
+}
+
+function resolveTransform(opts: BakeOptions, canvasWidth: number): CoordTransform {
+  const clientWidth =
+    typeof document !== 'undefined' && document.documentElement
+      ? document.documentElement.clientWidth
+      : 0
+  const scale =
+    opts.scale ?? (clientWidth > 0 && canvasWidth > 0 ? canvasWidth / clientWidth : (opts.dpr ?? 1))
+  const scrollX = opts.scrollX ?? (typeof window !== 'undefined' ? window.scrollX || 0 : 0)
+  const scrollY = opts.scrollY ?? (typeof window !== 'undefined' ? window.scrollY || 0 : 0)
+  return { scale: scale || 1, scrollX, scrollY }
 }
 
 const DEFAULT_STROKE = '#ff5252'
 const DEFAULT_LABEL_COLOR = '#ffffff'
 const STROKE_WIDTH = 3
-const LABEL_FONT = "13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+const LABEL_FONT_PX = 13
+const LABEL_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+const LABEL_FONT = `${LABEL_FONT_PX}px ${LABEL_FONT_FAMILY}`
 const LABEL_PAD_X = 6
 const LABEL_PAD_Y = 3
 
@@ -61,13 +105,17 @@ export async function bakeAnnotations(
     ctx.drawImage(img, 0, 0)
   }
 
-  ctx.lineWidth = STROKE_WIDTH
+  // Map viewport (CSS px, scroll-relative) annotation coords → canvas
+  // (document-space, DPR-scaled) pixels.
+  const transform = resolveTransform(opts, img.width)
+
+  ctx.lineWidth = STROKE_WIDTH * transform.scale
   ctx.strokeStyle = strokeColor
   ctx.fillStyle = labelBg
   ctx.font = LABEL_FONT
 
   for (const ann of annotations) {
-    drawAnnotation(ctx, ann, { strokeColor, labelColor, labelBg })
+    drawAnnotation(ctx, ann, { strokeColor, labelColor, labelBg }, transform)
   }
 
   return canvas.toDataURL('image/png')
@@ -79,19 +127,35 @@ interface DrawColors {
   labelBg: string
 }
 
-function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation, colors: DrawColors): void {
+function drawAnnotation(
+  ctx: CanvasRenderingContext2D,
+  ann: Annotation,
+  colors: DrawColors,
+  t: CoordTransform,
+): void {
   ctx.strokeStyle = colors.strokeColor
-  ctx.lineWidth = STROKE_WIDTH
+  ctx.lineWidth = STROKE_WIDTH * t.scale
+
+  const map = (x: number, y: number, w: number, h: number): [number, number, number, number] => [
+    (x + t.scrollX) * t.scale,
+    (y + t.scrollY) * t.scale,
+    w * t.scale,
+    h * t.scale,
+  ]
 
   switch (ann.type) {
-    case 'rect':
-      ctx.strokeRect(ann.x, ann.y, ann.w, ann.h)
-      if (ann.label) drawLabel(ctx, ann.label, ann.x, ann.y, colors)
+    case 'rect': {
+      const [x, y, w, h] = map(ann.x, ann.y, ann.w, ann.h)
+      ctx.strokeRect(x, y, w, h)
+      if (ann.label) drawLabel(ctx, ann.label, x, y, colors, t)
       break
-    case 'element':
-      ctx.strokeRect(ann.bbox.x, ann.bbox.y, ann.bbox.w, ann.bbox.h)
-      if (ann.label) drawLabel(ctx, ann.label, ann.bbox.x, ann.bbox.y, colors)
+    }
+    case 'element': {
+      const [x, y, w, h] = map(ann.bbox.x, ann.bbox.y, ann.bbox.w, ann.bbox.h)
+      ctx.strokeRect(x, y, w, h)
+      if (ann.label) drawLabel(ctx, ann.label, x, y, colors, t)
       break
+    }
   }
 }
 
@@ -101,18 +165,23 @@ function drawLabel(
   x: number,
   y: number,
   colors: DrawColors,
+  t: CoordTransform,
 ): void {
-  ctx.font = LABEL_FONT
+  // `x`/`y` are already canvas-space (mapped by the caller). Scale the label
+  // box + text so it stays legible on a DPR-scaled raster.
+  ctx.font = t.scale === 1 ? LABEL_FONT : `${LABEL_FONT_PX * t.scale}px ${LABEL_FONT_FAMILY}`
   const w = ctx.measureText(text).width
-  const h = 16
+  const h = 16 * t.scale
+  const padX = LABEL_PAD_X * t.scale
+  const padY = LABEL_PAD_Y * t.scale
   // Place the label above-and-left of the anchor point; clamp to canvas
   // edges to avoid clipping.
   const labelX = Math.max(0, x)
-  const labelY = Math.max(h + LABEL_PAD_Y * 2, y) - h - LABEL_PAD_Y
+  const labelY = Math.max(h + padY * 2, y) - h - padY
   ctx.fillStyle = colors.labelBg
-  ctx.fillRect(labelX, labelY, w + LABEL_PAD_X * 2, h + LABEL_PAD_Y * 2)
+  ctx.fillRect(labelX, labelY, w + padX * 2, h + padY * 2)
   ctx.fillStyle = colors.labelColor
-  ctx.fillText(text, labelX + LABEL_PAD_X, labelY + h)
+  ctx.fillText(text, labelX + padX, labelY + h)
 }
 
 function defaultCreateCanvas(): HTMLCanvasElement {

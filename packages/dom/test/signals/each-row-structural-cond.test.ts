@@ -310,6 +310,43 @@ describe('a bare structural primitive as a row root is a clear authoring error',
     ).toThrow(/wrap the conditional body in an element/)
   })
 
+  it('catches a bare-fragment root on a LATER data-conditional row, not just the first (finding 15)', () => {
+    const c = document.createElement('div')
+    interface DS {
+      items: { id: number; name: string; special: boolean }[]
+    }
+    expect(() =>
+      mountSignalComponent<DS, never>(c, {
+        init: () => ({
+          items: [
+            { id: 1, name: 'a', special: false },
+            { id: 2, name: 'b', special: true },
+          ],
+        }),
+        update: (s) => s,
+        view: ({ state }) => [
+          each(
+            state.map((s) => s.items),
+            {
+              key: (i) => i.id,
+              // First row (not special) → an element root (passes). Second row
+              // (special) → a bare `show` root (a fragment) — must still be caught.
+              render: (item) =>
+                item.peek().special
+                  ? [
+                      show(
+                        state.map(() => true),
+                        () => [span({}, [text('x')])],
+                      ),
+                    ]
+                  : [li({}, [text(item.map((i) => i.name))])],
+            },
+          ),
+        ],
+      }),
+    ).toThrow(/wrap the conditional body in an element/)
+  })
+
   it('the same content wrapped in an element mounts fine', () => {
     const c = document.createElement('div')
     const h = mountSignalComponent<S, { type: 'flip' }>(c, {

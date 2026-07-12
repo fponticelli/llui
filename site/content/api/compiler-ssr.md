@@ -13,6 +13,16 @@ Apps that don't use server-rendering can leave this off — the engine and Vite 
 
 ## Functions
 
+### `hasUseClientDirective()`
+
+Check whether `source`'s first statement is a `'use client'` directive.
+Cheap string scan so the caller can decide which transform to run
+without parsing the whole file twice.
+
+```typescript
+function hasUseClientDirective(source: string): boolean
+```
+
 ### `transformUseClientSsr()`
 
 If `source` begins with a `'use client'` directive, generate a stub
@@ -24,31 +34,25 @@ to the normal compiler pass).
 The client build is expected to skip this path entirely — Vite passes
 `{ ssr: false }` there, and the plugin checks that before invoking
 this function.
-Shapes this v1 does NOT handle (emits a warning + leaves them out of
-the stub output):
+Every export with a statically-known name is stubbed uniformly:
 
-- `export function foo() {}` and `export class Foo {}` — rewritten
-  as stubs but the caller may be surprised that `foo` and `Foo` are
-  ComponentDef-shaped objects during SSR.
-- `export { a, b } from './other.js'` — re-export forms are not
-  detected; they pass through and will still pull `./other` into
-  the SSR graph.
-- `export * from './other.js'` — same as above.
-- `export type ...` — type exports are erased by TS so nothing to
-  stub; left untouched.
+- `export const/let NAME = …`, `export function NAME()`, `export class
+NAME` — each becomes `export const NAME = __clientOnlyStub('NAME')`.
+  (A stubbed function/class is a value, not a callable/constructable —
+  SSR must not invoke it; the client build ships the real one.)
+- `export { a, b }` and `export { a as b } from './other.js'` — the
+  names are known, so each is stubbed (the `from './other.js'` source
+  module is DROPPED, never pulled into the SSR graph).
+- `export default …` — stubbed as `export default __clientOnlyStub("default")`.
+  NOT stubbable (dropped from the output, WITH a warning):
+- `export * from './other.js'` — its re-exported names can't be
+  enumerated statically, so they can't be stubbed. Any client-only
+  value it re-exported is undefined during SSR; move the 'use client'
+  directive to the source module.
+  Left untouched: `export type …` / `interface` (erased by TS anyway).
 
 ```typescript
 function transformUseClientSsr(source: string, _filename: string): UseClientTransformResult | null
-```
-
-### `hasUseClientDirective()`
-
-Check whether `source`'s first statement is a `'use client'` directive.
-Cheap string scan so the caller can decide which transform to run
-without parsing the whole file twice.
-
-```typescript
-function hasUseClientDirective(source: string): boolean
 ```
 
 ## Interfaces

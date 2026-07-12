@@ -174,7 +174,7 @@ describe('createLluiAgentCore', () => {
     if (!result.ok) expect(result.code).toBe('auth-failed')
   })
 
-  it('opting out (graceMs=0) drops the record on WS close — no pending-resume', async () => {
+  it('opting out (graceMs=0) transitions to an immediately-claimable pending-resume on WS close', async () => {
     const core = createLluiAgentCore({ pendingResumeGraceMs: 0 })
     const { token } = await seedToken(core.tokenStore, {
       tid: 't-no-grace',
@@ -194,9 +194,17 @@ describe('createLluiAgentCore', () => {
     await core.tokenStore.markActive('t-no-grace', 'demo', Date.now())
     closeFn!()
     await new Promise((r) => setTimeout(r, 0))
-    // Status stays whatever it was — no transition, since grace=0
-    // means we didn't subscribe to onClose.
+    // With grace=0 the close handler still runs, transitioning the record
+    // OUT of `active` into `pending-resume` with a window that is already
+    // expired — so the record isn't stuck live, and any WS reconnect must
+    // go through /resume/claim (rotation).
     const after = await core.tokenStore.findByTid('t-no-grace')
-    expect(after?.status).toBe('active')
+    expect(after?.status).toBe('pending-resume')
+    expect(after?.pendingResumeUntil).toBeLessThanOrEqual(Date.now())
+
+    // Reconnecting the WS with the same bearer is rejected (grace expired).
+    const conn2 = { send() {}, onFrame() {}, onClose() {}, close() {} }
+    const res = await core.acceptConnection(token, conn2)
+    expect(res.ok).toBe(false)
   })
 })

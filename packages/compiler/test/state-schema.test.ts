@@ -42,4 +42,27 @@ describe('extractStateSchema', () => {
   it('returns null when the type/interface is absent', () => {
     expect(extractStateSchema('const x = 1')).toBeNull()
   })
+
+  // Finding 5: a self-referential State must terminate (depth budget), not
+  // recurse until a stack overflow.
+  it('does not stack-overflow on a directly recursive State (interface)', () => {
+    const src = 'interface State { name: string; children: State[] }'
+    const schema = extractStateSchema(src)
+    expect(schema).not.toBeNull()
+    expect(schema!.fields.name).toBe('string')
+    // `children` is an array; its element bottoms out at 'unknown' once the
+    // recursion budget is spent (rather than looping forever).
+    expect(schema!.fields.children).toMatchObject({ kind: 'array' })
+  })
+
+  it('does not stack-overflow on mutually recursive types', () => {
+    const src = [
+      'type A = { b: B; tag: string }',
+      'type B = { a: A; n: number }',
+      'interface State { root: A }',
+    ].join('\n')
+    expect(() => extractStateSchema(src)).not.toThrow()
+    const schema = extractStateSchema(src)
+    expect(schema).not.toBeNull()
+  })
 })

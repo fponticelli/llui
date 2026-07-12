@@ -681,5 +681,87 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain("= ['state.mode']")
       expect(out).toContain('ctx.state.mode')
     })
+
+    // Finding 2: a non-trivial call arg spliced into an operator expression must be
+    // PARENTHESIZED, else `idx.peek()+1` into `n*2` mis-parses as `idx.peek()+1*2`.
+    it('parenthesizes a non-trivial substituted arg (precedence)', () => {
+      const src = [
+        "import { component, ul, td, text, each } from '@llui/dom'",
+        'const cell = (n) => td({}, [text(String(n * 2))])',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEachDirect(')
+      // the arg is grouped before the `* 2` — never the buggy `+ 1 * 2`
+      expect(out).toContain(') * 2')
+      expect(out).not.toContain('+ 1 * 2')
+    })
+
+    // Finding 2: a non-trivial arg referenced 2+ times is bound to a const, not
+    // textually duplicated (which would re-evaluate a side effect like .peek()).
+    it('binds a multiply-referenced non-trivial arg to a const', () => {
+      const src = [
+        "import { component, ul, td, text, each } from '@llui/dom'",
+        'const cell = (n) => td({}, [text(String(n * 2 + n))])',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('signalEachDirect(')
+      expect(out).toContain('const _arg_n =')
+      // the arg source (idx read) appears exactly once — bound, not duplicated
+      expect((out.match(/getCtx\(\)\.index/g) ?? []).length).toBe(1)
+    })
+  })
+
+  // Finding 3: a component() nested inside an outer view must compile to parseable
+  // code — pass 1 must not push an edit for the inner view overlapping the outer's.
+  describe('nested component() (finding 3)', () => {
+    it('compiles a component nested in an outer view to parseable code', () => {
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'const Outer = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [',
+        '    div({}, [text(state.at("n"))]),',
+        '    component({ init: () => ({ m: 0 }), update: (s) => s, view: ({ state }) => [text(state.at("m"))] }),',
+        '  ],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out) // was corrupt (overlapping edits) before the fix
+      expect(out).toContain("signalText((s) => s.n, ['n'])") // outer view still lowered
+    })
+  })
+
+  // Finding 4: import injection must not duplicate a helper the user already imports,
+  // nor be tricked by a helper name inside a comment/string.
+  describe('import injection (finding 4)', () => {
+    it('does not re-import a runtime helper the file already imports from @llui/dom', () => {
+      const src = [
+        "import { component, el, div, text } from '@llui/dom'",
+        'const C = component({ init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div({}, [text(state.at("n"))])] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // `el` is emitted (div lowers to el) but already imported → exactly one import binds it
+      expect((out.match(/import \{[^}]*\bel\b[^}]*\} from '@llui\/dom'/g) ?? []).length).toBe(1)
+    })
+
+    it('does not inject an import for a helper name that only appears in a comment/string', () => {
+      const src = [
+        "import { component, text } from '@llui/dom'",
+        '// this comment mentions el( and signalEach( but neither is emitted',
+        'const C = component({ init: () => ({}), update: (s) => s, view: ({ state }) => [text("literal /* el( */")] })',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // only staticText is emitted; el / signalEach must NOT be imported
+      expect(out).not.toMatch(/import \{[^}]*\bel\b/)
+      expect(out).not.toMatch(/import \{[^}]*\bsignalEach\b/)
+      expect(out).toMatch(/import \{[^}]*\bstaticText\b/)
+    })
   })
 })

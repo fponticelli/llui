@@ -57,4 +57,30 @@ describe('e2e: wait_for_change', () => {
     // stateAfter reflects the state after the inc was applied.
     expect(body.stateAfter?.count).toBe(1)
   })
+
+  it('a PATH-scoped wait on /count resolves when count changes', async () => {
+    await mintAndBind(ctx)
+
+    // Regression (finding 3): a path-scoped wait could never match under
+    // the old `/`-broadcast + prefix scheme. It must resolve now.
+    const waitPromise = ctx.mcpClient.callTool({
+      name: 'wait_for_change',
+      arguments: { path: '/count', timeoutMs: 5_000 },
+    })
+    await new Promise<void>((r) => setTimeout(r, 100))
+    await ctx.page.evaluate(() => {
+      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
+        '__lluiE2eHandle'
+      ]
+      h.send({ type: 'inc' })
+    })
+
+    const result = await waitPromise
+    expect(result.isError).toBeFalsy()
+    const body = parseToolResult<{ status: string; stateAfter?: { count?: number } }>(
+      result as { content: Array<{ type: string; text?: string }> },
+    )
+    expect(body.status).toBe('changed')
+    expect(body.stateAfter?.count).toBe(1)
+  })
 })

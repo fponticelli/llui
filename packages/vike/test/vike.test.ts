@@ -60,16 +60,16 @@ describe('onRenderHtml', () => {
     expect(html).toContain('__LLUI_STATE__')
   })
 
-  it('serializes initial state into the page', async () => {
+  it('emits a tiny integrity manifest (no per-layer state) into the page', async () => {
     const result = await onRenderHtml({ Page: TestPage })
     const html = getHtml(result)
-    expect(html).toContain('"greeting":"hello"')
-    // Hydration envelope is chain-aware: layouts array (empty when no
-    // Layout configured) plus a named page entry that carries state.
-    expect(result.pageContext.lluiState).toEqual({
-      layouts: [],
-      page: { name: 'TestPage', state: { greeting: 'hello' } },
-    })
+    // The hydration script now carries ONLY the integrity manifest — no state.
+    // Per-layer seed is `data ?? init()`, reconstructed client-side (the server
+    // ran no effects), so shipping the full state would be dead weight.
+    expect(html).not.toContain('"greeting":"hello"')
+    expect(html).toContain('"layers"')
+    // Manifest: version + the chain's layer names (page-only chain here).
+    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['TestPage'] })
   })
 
   it('uses the per-layer data slice as the seed state', async () => {
@@ -117,16 +117,27 @@ describe('onRenderHtml', () => {
     const result = await render({ Page: Malicious })
     const html = getHtml(result)
 
-    // The raw breakout sequence must not appear anywhere in the document.
+    // The malicious payload lives in STATE, which the manifest no longer ships —
+    // so it can't appear in the document at all.
     expect(html).not.toContain(payload)
-    // `<` is neutralized to its < escape inside the state script.
-    expect(html).toContain('\\u003c/script>')
-    // Hydration data is still preserved — it round-trips via JSON.parse on
-    // the client because the escapes are valid JSON string escapes.
-    expect(result.pageContext.lluiState).toEqual({
-      layouts: [],
-      page: { name: 'Malicious', state: { greeting: payload } },
+    // The manifest carries only the (developer-authored) layer name.
+    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['Malicious'] })
+  })
+
+  it('escapes script-breakout sequences in a component NAME embedded in the manifest', async () => {
+    // Component names are developer-authored, but a `<`-bearing name must still
+    // not break out of the hydration <script>. The manifest ships names, so this
+    // is the remaining script-injection surface.
+    const Weird = component<State, never, never>({
+      name: '</script><script>alert(1)</script>',
+      init: () => ({ greeting: 'hi' }),
+      update: (s) => s,
+      view: ({ state }) => [text(state.map((s) => s.greeting))],
     })
+    const render = createOnRenderHtml({ domEnv })
+    const html = getHtml(await render({ Page: Weird }))
+    expect(html).not.toContain('</script><script>alert(1)</script>')
+    expect(html).toContain('\\u003c/script>')
   })
 })
 
@@ -145,10 +156,7 @@ describe('createOnRenderHtml', () => {
     expect(html).toContain('<main id="root">')
     expect(html).toContain('hello')
     expect(html).toContain('__LLUI_STATE__')
-    expect(result.pageContext.lluiState).toEqual({
-      layouts: [],
-      page: { name: 'TestPage', state: { greeting: 'hello' } },
-    })
+    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['TestPage'] })
   })
 
   it('passes pageContext to document function', async () => {
@@ -205,7 +213,7 @@ describe('onRenderClient', () => {
     container.id = 'app'
     container.innerHTML = serverHtml
     document.body.appendChild(container)
-    ;(window as Record<string, unknown>).__LLUI_STATE__ = { greeting: 'hello' }
+    ;(window as Record<string, unknown>).__LLUI_STATE__ = { v: 2, layers: ['TestPage'] }
 
     await onRenderClient({ Page: TestPage, isHydration: true })
 
@@ -281,7 +289,7 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
     const html = getHtml(result)
     const match = html.match(/<div id="app">([\s\S]*?)<\/div>/)
     container.innerHTML = match?.[1] ?? ''
-    ;(window as Record<string, unknown>).__LLUI_STATE__ = { greeting: 'hello' }
+    ;(window as Record<string, unknown>).__LLUI_STATE__ = { v: 2, layers: ['TestPage'] }
 
     let leaveCount = 0
     let enterCount = 0

@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { focusRovingItem } from '../utils/roving.js'
 
 /**
  * Radio group — a set of mutually-exclusive options. Users select one value
@@ -211,38 +212,50 @@ export function connect(
           send,
           ['selectNext', 'selectPrev', 'selectFirst', 'selectLast', 'setValue'],
           (e) => {
+            const target = e.currentTarget as HTMLElement | null
             const key = flipArrow(e.key, state.peek().dir)
-            const isVertical =
-              (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
-              null
+            const isVertical = target?.closest('[data-orientation="vertical"]') !== null
+            // A radio group moves selection AND focus together — after the
+            // reducer picks the new value, move real DOM focus to it so AT
+            // follows (roving tabindex alone does not focus).
+            const moveFocus = (): void => {
+              const v = state.peek()?.value
+              if (v != null) focusRovingItem(target, 'radio-group', v)
+            }
             switch (key) {
               case 'ArrowDown':
                 if (isVertical) {
                   e.preventDefault()
                   send({ type: 'selectNext', from: value })
+                  moveFocus()
                 }
                 return
               case 'ArrowUp':
                 if (isVertical) {
                   e.preventDefault()
                   send({ type: 'selectPrev', from: value })
+                  moveFocus()
                 }
                 return
               case 'ArrowRight':
                 e.preventDefault()
                 send({ type: 'selectNext', from: value })
+                moveFocus()
                 return
               case 'ArrowLeft':
                 e.preventDefault()
                 send({ type: 'selectPrev', from: value })
+                moveFocus()
                 return
               case 'Home':
                 e.preventDefault()
                 send({ type: 'selectFirst' })
+                moveFocus()
                 return
               case 'End':
                 e.preventDefault()
                 send({ type: 'selectLast' })
+                moveFocus()
                 return
               case ' ':
                 e.preventDefault()

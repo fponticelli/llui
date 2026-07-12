@@ -1,6 +1,8 @@
 # Follow-up Topics — Next Session
 
-> **Status (2026-06-02): PARTIAL.** RESOLVED: the headline multi-root/combined-ctx `each` blocker (rows reading component state — `dom.ts` `inRow` ctx), the composition model, D1 SSR/hydration (`@llui/vike`), and D2 devtools/introspection (`@llui/compiler-introspection`, MCP per-binding deps). STILL OPEN: B1 effect-lifecycle types, B2 branded `Query`/`Action`/`Internal` (shipped instead as JSDoc `intent` annotations), B3 `area()`, C1 `embed()` (only `foreign()` exists), C3 example mini-apps, and the E doc updates. Note: the `unified-composition-model` and `dirty-mask-precision` proposals referenced below have been removed (superseded by the signal runtime).
+> **Status (2026-07): CORRECTION.** The 2026-06-02 note below names `@llui/compiler-introspection`, which was **deleted** and never shipped as a standalone package. D2 devtools/introspection is served by the live transform emitting agent/devtools metadata **inline** (`transformSignalComponentSource` → `sharedMetaProps`) plus MCP per-binding deps; there is no `@llui/compiler-introspection` / `@llui/compiler-devtools` package (only `@llui/compiler` and `@llui/compiler-ssr` exist). References below to a `cross-file-walker.ts` are also stale — cross-file work is now `cross-file-resolver.ts` + the signal transform's `signals/analyze-deps.ts`. The `docs/designs/…` links in §E3 point at a directory that no longer exists (see the note there).
+
+> **Status (2026-06-02): PARTIAL.** _(See the 2026-07 correction above re: `@llui/compiler-introspection`.)_ RESOLVED: the headline multi-root/combined-ctx `each` blocker (rows reading component state — `dom.ts` `inRow` ctx), the composition model, D1 SSR/hydration (`@llui/vike`), and D2 devtools/introspection (inline transform metadata, MCP per-binding deps). STILL OPEN: B1 effect-lifecycle types, B2 branded `Query`/`Action`/`Internal` (shipped instead as JSDoc `intent` annotations), B3 `area()`, C1 `embed()` (only `foreign()` exists), C3 example mini-apps, and the E doc updates. Note: the `unified-composition-model` and `dirty-mask-precision` proposals referenced below have been removed (superseded by the signal runtime).
 
 Topics discussed and explicitly deferred, or noticed and not yet dug into, while
 designing signals. All are part of the v1 picture.
@@ -62,8 +64,9 @@ decide when a real case appears.
 ## Verified during reconciliation (no longer open questions)
 
 - **Cross-file / inter-procedural narrowing machinery already ships** on `main`
-  (`cross-file-walker.ts`, `manifest.ts` summary schema = `{paramReadPaths,
-returnTaint}`, wired into the Vite build, v2b commit `4f4f2da`). So the chosen
+  (`cross-file-resolver.ts` — the `cross-file-walker.ts` named here was later
+  **deleted** — plus the signal transform's `signals/analyze-deps.ts`; `manifest.ts`
+  summary schema = `{paramReadPaths, returnTaint}`, wired into the Vite build). So the chosen
   inter-procedural narrowing is extend-existing, not a v2b pull-forward. The only
   unbuilt piece is the cross-_package_ `__llui_deps.json` emit/consume layer.
 - **`dirty-mask-precision/` is superseded** by signals (goal adopted, mechanism
@@ -224,13 +227,15 @@ After one hand-migration, automate the mechanical patterns: `(s) => s.X.Y` →
 
 ### E3. Doc updates
 
-- `docs/designs/01 Architecture.md` — replace accessor model
-- `docs/designs/02 Compiler.md` — replace walker description with the aggressive
+_The numbered `docs/designs/01`–`13` spec files listed below were **removed** with the pre-signal runtime; that directory no longer exists. The authoritative docs now live in `site/content/` and are published to [llui.dev](https://llui.dev). Treat these as "topics to update in the live docs":_
+
+- Architecture (→ [llui.dev/architecture](https://llui.dev/architecture)) — replace accessor model
+- Compiler — replace walker description with the aggressive
   analyzer + soundness invariant
-- `docs/designs/03 Runtime DOM.md` — clarify binding shape, output-equality-check,
+- Runtime DOM (→ [llui.dev/architecture](https://llui.dev/architecture)) — clarify binding shape, output-equality-check,
   chunked masks
-- `docs/designs/09 API Reference.md` — full new types
-- `docs/designs/13 Migration…` — extend / replace with signals migration guide
+- API Reference (→ [llui.dev/api/dom](https://llui.dev/api/dom)) — full new types
+- Migration — extend / replace with signals migration guide
 
 ## Suggested priority for next session
 

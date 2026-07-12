@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/select'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('select reducer', () => {
   it('initializes closed', () => {
@@ -78,11 +78,35 @@ describe('select.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'open' })
   })
 
-  it('Enter in content selects highlighted', () => {
+  it('Enter selects highlighted when open (single keydown handler branches on open)', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const open = signalOf({ ...init({ items: ['a', 'b'] }), open: true })
+    const pc = connect(open, send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'selectHighlighted' })
+  })
+
+  // Finding 3: the trigger is the focused combobox — it (not just the listbox)
+  // handles navigation while open, keeping focus + activedescendant + keydown
+  // on one element.
+  it('ArrowDown on the trigger navigates options when open', () => {
+    const send = vi.fn()
+    const open = signalOf({ ...init({ items: ['a', 'b'] }), open: true })
+    const pc = connect(open, send, { id: 'x' })
+    pc.trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
+  })
+
+  // Finding 17: the hidden select participates in forms when a name is given.
+  it('hiddenSelect carries the form name; hiddenOption reflects selection', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x', name: 'fruit' })
+    expect(pc.hiddenSelect.name).toBe('fruit')
+    expect(read(pc.hiddenOption('a').selected, init({ items: ['a', 'b'], value: ['a'] }))).toBe(
+      true,
+    )
+    expect(read(pc.hiddenOption('b').selected, init({ items: ['a', 'b'], value: ['a'] }))).toBe(
+      false,
+    )
   })
 
   it('valueText uses placeholder when empty', () => {

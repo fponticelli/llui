@@ -43,11 +43,12 @@ export async function handleLapConfirmResult(
   if (!body || typeof body.confirmId !== 'string') return json({ error: { code: 'invalid' } }, 400)
   const timeoutMs = body.timeoutMs ?? 5_000
 
-  // Spec: if the confirm was already resolved during the earlier long-poll on
-  // /message, there's no second resolution to wait for. In the current design
-  // /confirm-result is ONLY used when /message bailed out early with
-  // pending-confirmation. So we call waitForConfirm with the given timeoutMs.
-  // If no resolution arrives in time, we surface 'still-pending'.
+  // This route is polled after `/message` bailed out with
+  // `pending-confirmation`. Re-arm `waitForConfirm` for up to `timeoutMs`.
+  // The three-way outcome maps cleanly to the response contract now:
+  //   confirmed      → { status: 'confirmed', stateAfter }
+  //   user-cancelled → { status: 'rejected', reason: 'user-cancelled' } (+ expire)
+  //   timeout        → { status: 'still-pending' } — the agent polls again.
   const result = await deps.registry.waitForConfirm(auth.tid, body.confirmId, timeoutMs)
 
   const nowMs = (deps.now ?? (() => Date.now()))()
@@ -65,15 +66,14 @@ export async function handleLapConfirmResult(
       200,
     )
   }
-  // user-cancelled OR timeout. WsPairingRegistry returns user-cancelled on timeout too;
-  // we distinguish by checking whether the confirm is still in registry.pendingConfirm —
-  // but pendingConfirm cleanup happens inside waitForConfirm's timer, so we can't peek.
-  // For v1: treat user-cancelled as user-cancelled; treat explicit timeout as timeout by
-  // comparing elapsed vs. timeoutMs. Simpler: just return 'still-pending' on the timeout
-  // branch to let Claude poll again. Registry returns {outcome: 'user-cancelled'} on
-  // both timer and actual cancel — so we can't distinguish. Punt: return 'user-cancelled'
-  // (matches registry semantics). Spec §8.2 get_confirm_result allows 'user-cancelled' |
-  // 'timeout' | 'still-pending' — a refinement to distinguish is follow-up work.
+  if (result.outcome === 'timeout') {
+    // No resolution yet — the confirm is still live in the browser. Report
+    // `still-pending` (not a fabricated rejection) so the agent can poll
+    // again; do NOT expire the browser entry.
+    return json({ status: 'still-pending' } satisfies LapConfirmResultResponse, 200)
+  }
+  // user-cancelled: a real rejection. Record it and expire the browser
+  // entry so a late Approve can't fire a dispatch we reported as rejected.
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,
@@ -81,6 +81,7 @@ export async function handleLapConfirmResult(
     event: 'confirm-rejected',
     detail: { confirmId: body.confirmId },
   })
+  deps.registry.send(auth.tid, { t: 'confirm-expire', confirmId: body.confirmId })
   return json(
     { status: 'rejected', reason: 'user-cancelled' } satisfies LapConfirmResultResponse,
     200,

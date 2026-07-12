@@ -1,26 +1,25 @@
 import { mountSignalComponent, hydrateSignalApp } from '@llui/dom'
 import type { SignalComponentHandle, MountTarget } from '@llui/dom'
-import type { TransitionOptions, Renderable } from '@llui/dom'
+import type { TransitionOptions } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
+import {
+  resolveLayoutChain as resolveChain,
+  seedFor,
+  seedStateFor,
+  verifyManifest,
+  type AnyLayer,
+  type LayoutChain,
+  type LayoutOption,
+} from './chain.js'
 
 // Re-exported so `@llui/vike/client` is a one-stop-shop for everything
 // a pages/+onRenderClient.ts / Layout.ts file needs.
 export { pageSlot } from './page-slot.js'
 export { createNavigationProgress } from './nav-progress.js'
 export type { NavigationProgress, NavigationProgressOptions } from './nav-progress.js'
+export type { AnyLayer } from './chain.js'
 
-/** A type-erased signal component as the adapter handles it (type params unused
- * at runtime). Method syntax + a single `unknown` view-bag param so any concrete
- * `SignalComponentDef<S,M,E>` assigns in (see on-render-html's AnyLayer note —
- * ComponentBag's state/send variance rules out the `<unknown,…>` erasure). */
-export interface AnyLayer {
-  readonly name?: string
-  init(): unknown
-  update(state: unknown, msg: unknown): unknown
-  view(bag: unknown): Renderable
-  onEffect?(effect: unknown, api: unknown): void | (() => void)
-}
 /** The live handle a mounted/hydrated layer exposes (send/getState/subscribe). */
 export type LayerHandle = SignalComponentHandle<unknown, unknown>
 
@@ -95,35 +94,6 @@ export interface ClientPageContext {
 export type LayoutResolverContext = ClientPageContext &
   Required<Pick<ClientPageContext, 'urlPathname' | 'routeParams'>>
 
-type LayoutChain = ReadonlyArray<AnyLayer>
-
-/**
- * Resolves the layout chain for a given pageContext. A single layout
- * becomes a one-element chain; a function resolver gives callers full
- * control to return different chains for different routes.
- */
-function resolveLayoutChain(
-  layoutOption: RenderClientOptions['Layout'],
-  pageContext: ClientPageContext,
-): LayoutChain {
-  if (!layoutOption) return []
-  if (typeof layoutOption === 'function') {
-    // The resolver only ever runs against a live Vike navigation, which always
-    // populates `urlPathname`/`routeParams`. Our base type marks them optional
-    // (test/SSR construction sites needn't supply them), so narrow to the
-    // resolver's required view at this single boundary.
-    return layoutOption(pageContext as LayoutResolverContext) ?? []
-  }
-  if (Array.isArray(layoutOption)) return layoutOption
-  return [layoutOption as AnyLayer]
-}
-
-/** Resolve a layer's seed state — a present data slice IS the seed state
- * (signal init() takes no data); an absent slice falls back to init(). */
-function seedFor(data: unknown): unknown | undefined {
-  return data === undefined ? undefined : data
-}
-
 /**
  * Page-lifecycle hooks that fire around the dispose → mount cycle on
  * client navigation. With persistent layouts in play the cycle only
@@ -151,7 +121,7 @@ export interface RenderClientOptions {
    * Layers shared between the previous and next navigation stay mounted.
    * Only the divergent suffix is disposed and re-mounted.
    */
-  Layout?: AnyLayer | LayoutChain | ((pageContext: LayoutResolverContext) => LayoutChain)
+  Layout?: LayoutOption<LayoutResolverContext>
 
   /**
    * Called on the slot element whose contents are about to be replaced,
@@ -205,9 +175,16 @@ export interface RenderClientOptions {
 
   /**
    * Forwarded to the signal hydrate path for every layer on initial
-   * hydration. When `true`, effects returned by each component's `init()`
-   * are dispatched post-swap on the client. When `false` (default), they
-   * are skipped — the SSR pass already ran them.
+   * hydration. When `true` (**the default for this adapter**), effects
+   * returned by each component's `init()` are dispatched post-swap on the
+   * client. Set `false` to skip them.
+   *
+   * The default is to RUN them because the SSR pass runs NO effects — the
+   * server render is pure (it only bakes initial state into HTML; see
+   * `renderNodes`). An init effect (data fetch, subscription, timer, focus)
+   * therefore never fired server-side, so skipping it on hydrate would drop
+   * it entirely on first load. Opt out only for an init effect that is
+   * genuinely first-paint-only and must not re-run on the client.
    *
    * Subsequent client-side navigation always uses a fresh mount, which
    * always fires init effects regardless of this flag.
@@ -294,6 +271,16 @@ interface ChainEntry {
 let chainHandles: ChainEntry[] = []
 
 /**
+ * Monotonic navigation counter — the reentrancy guard for overlapping navs.
+ * Each `renderClient` call captures `++navEpoch` on entry; after it awaits the
+ * async `onLeave` hook it re-checks the counter. If a newer navigation bumped it
+ * in the meantime (the user clicked twice, or a redirect raced), the stale nav
+ * ABANDONS before it can dispose/mount against `chainHandles` a fresh nav is
+ * already mutating — which would otherwise corrupt the live chain.
+ */
+let navEpoch = 0
+
+/**
  * @internal — test helper. Disposes every layer in the current chain and
  * clears the module state so subsequent calls behave as a first mount.
  */
@@ -303,6 +290,7 @@ export function _resetChainForTest(): void {
     chainHandles[i]!.handle.dispose()
   }
   chainHandles = []
+  navEpoch = 0
   _resetPendingSlot()
 }
 
@@ -342,6 +330,10 @@ async function renderClient(
   pageContext: ClientPageContext,
   options: RenderClientOptions,
 ): Promise<void> {
+  // Claim this navigation's epoch up front. Any nav that starts after us bumps
+  // navEpoch; we re-check after the one `await` (onLeave) to detect being lapped.
+  const nav = ++navEpoch
+
   const selector = options.container ?? '#app'
   const container = document.querySelector(selector)
   if (!container) {
@@ -350,17 +342,19 @@ async function renderClient(
   const rootEl = container as HTMLElement
 
   // Resolve the chain for this render. The page is always the innermost entry.
-  const layoutChain = resolveLayoutChain(options.Layout, pageContext)
+  const layoutChain = resolveChain(options.Layout, pageContext as LayoutResolverContext)
   const layoutData = pageContext.lluiLayoutData ?? []
   const newChain: LayoutChain = [...layoutChain, pageContext.Page]
   const newChainData: readonly unknown[] = [...layoutData, pageContext.data]
 
   if (pageContext.isHydration) {
-    // First load — hydrate every layer against server-rendered HTML.
+    // First load — hydrate every layer against server-rendered HTML. Init
+    // effects RUN by default here (the server ran none): opt out with
+    // `runInitEffectsOnHydrate: false`.
     mountChainSuffix(newChain, newChainData, 0, rootEl, undefined, {
       mode: 'hydrate',
       serverStateEnvelope: window.__LLUI_STATE__,
-      runInitEffectsOnHydrate: options.runInitEffectsOnHydrate,
+      runInitEffectsOnHydrate: options.runInitEffectsOnHydrate ?? true,
     })
     options.onMount?.(snapshotLayoutChain())
     return
@@ -408,6 +402,10 @@ async function renderClient(
       ? rootEl
       : (chainHandles[firstMismatch - 1]!.slotAnchor?.parentElement ?? rootEl)
     await options.onLeave(leaveTargetEl)
+    // A newer navigation started (and possibly already committed) while we were
+    // awaiting onLeave. Abandon: disposing/mounting now would clobber the chain
+    // the newer nav owns. We have mutated nothing yet, so bailing is clean.
+    if (nav !== navEpoch) return
   }
 
   // Dispose the divergent suffix, innermost first. Each handle.dispose() runs
@@ -453,7 +451,9 @@ function snapshotLayoutChain(): readonly LayerHandle[] {
 
 interface MountOpts {
   mode: 'mount' | 'hydrate'
-  /** For hydration: the full `window.__LLUI_STATE__` envelope. */
+  /** For hydration: the `window.__LLUI_STATE__` integrity manifest (see
+   * chain.ts). Verified against the chain; per-layer seed state is reconstructed
+   * locally from data/init, not read from here. */
   serverStateEnvelope?: unknown
   /** Forwarded to the signal hydrate path. Mount mode ignores. */
   runInitEffectsOnHydrate?: boolean
@@ -493,25 +493,39 @@ export function _mountChainSuffix(
     // Defensive: clear any stale slot from a prior failed mount.
     _resetPendingSlot()
 
+    // Anchor-mounted inner layers always use mode 'append'. On the hydrate path
+    // the OUTERMOST layer (a container target) rebuilds the whole tree and
+    // atomically replaces the container's children — so by the time an inner
+    // layer mounts at its FRESH slot anchor, the server region is already gone.
+    // 'replace' would scan from the anchor for a nonexistent `llui-mount-end`
+    // sentinel and delete the layout's trailing siblings placed after pageSlot().
     const isContainer = mountTarget.nodeType === 1
     const target: Element | MountTarget = isContainer
       ? (mountTarget as HTMLElement)
-      : { anchor: mountTarget as Comment, mode: opts.mode === 'hydrate' ? 'replace' : 'append' }
+      : { anchor: mountTarget as Comment, mode: 'append' }
 
     let handle: LayerHandle
     if (opts.mode === 'hydrate') {
-      // Each layer pulls its own state slice from the envelope, matched by name
-      // so a server/client mismatch throws clearly instead of binding wrong state.
-      const layerState = extractHydrationState(opts.serverStateEnvelope, i, chain.length, def)
+      // Verify the server manifest against this chain (fails loud on drift), then
+      // reconstruct this layer's seed locally: the server ran no effects, so its
+      // rendered state was always `data ?? init()` — no need to ship state.
+      if (i === startAt) verifyManifest(opts.serverStateEnvelope, chain)
+      const layerState = seedStateFor(def, layerData)
       handle = hydrateSignalApp(target, def, layerState, {
         runInitEffects: opts.runInitEffectsOnHydrate,
         contexts,
       })
     } else {
-      handle = mountSignalComponent(target, def, {
-        initialState: seedFor(layerData),
-        contexts,
-      })
+      // Only pass `initialState` when a data slice is actually present. The
+      // signal mount uses a PRESENCE check (`'initialState' in opts`), so a
+      // literal `initialState: undefined` would override init() with `undefined`
+      // rather than falling back to it. A `null`/`0`/`''` data slice is a
+      // legitimate seed and IS forwarded (see seedFor's `=== undefined` check).
+      handle = mountSignalComponent(
+        target,
+        def,
+        seedFor(layerData) === undefined ? { contexts } : { initialState: layerData, contexts },
+      )
     }
 
     const slot = _consumePendingSlot()
@@ -583,70 +597,4 @@ function hasDataChanged(prev: unknown, next: unknown): boolean {
     if (!seen.has(k)) return true
   }
   return false
-}
-
-/**
- * Pull the per-layer state from the hydration envelope. Supports the chain-aware
- * shape (`{ layouts: [...], page: {...} }`) and the legacy flat shape (the state
- * object itself) for a single-layer page-only render.
- *
- * Throws on envelope shape mismatch — missing entries, wrong component name at a
- * given index — so server/client drift fails loud.
- */
-function extractHydrationState(
-  envelope: unknown,
-  layerIndex: number,
-  chainLength: number,
-  def: AnyLayer,
-): unknown {
-  const isLegacyFlat =
-    envelope !== null &&
-    typeof envelope === 'object' &&
-    !('layouts' in (envelope as object)) &&
-    !('page' in (envelope as object))
-
-  if (isLegacyFlat) {
-    if (chainLength !== 1) {
-      throw new Error(
-        `[llui/vike] Hydration envelope is in the legacy flat shape but the ` +
-          `current render has ${chainLength} chain layers. The server must emit ` +
-          `the chain-aware shape ({ layouts, page }) when rendering with a layout.`,
-      )
-    }
-    return envelope
-  }
-
-  const chainEnvelope = envelope as
-    | { layouts?: Array<{ name: string; state: unknown }>; page?: { name: string; state: unknown } }
-    | undefined
-  if (!chainEnvelope) {
-    throw new Error(
-      `[llui/vike] Hydration envelope is missing. Server-side onRenderHtml must ` +
-        `populate window.__LLUI_STATE__ with the full chain before client hydration.`,
-    )
-  }
-
-  const isPageLayer = layerIndex === chainLength - 1
-  const layoutEntries = chainEnvelope.layouts ?? []
-  const expected = isPageLayer ? chainEnvelope.page : layoutEntries[layerIndex]
-
-  if (!expected) {
-    throw new Error(
-      `[llui/vike] Hydration envelope has no entry for chain layer ${layerIndex} ` +
-        `(<${def.name}>). Server rendered ${layoutEntries.length} layouts + ${
-          chainEnvelope.page ? 'a page' : 'no page'
-        }, client expected ${chainLength} total entries.`,
-    )
-  }
-
-  if (expected.name !== def.name) {
-    throw new Error(
-      `[llui/vike] Hydration mismatch at chain layer ${layerIndex}: server ` +
-        `rendered <${expected.name}> but client is trying to hydrate <${def.name}>. ` +
-        `This usually means the layout chain resolver returns different layouts ` +
-        `on the server and the client for the same route.`,
-    )
-  }
-
-  return expected.state
 }

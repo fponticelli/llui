@@ -16,25 +16,13 @@ export interface RouteTransitionOptions {
 
 /**
  * Convenience wrapper that returns `{ enter, leave }` hooks suitable for
- * animating page-to-page transitions. Used in two ways:
+ * animating page-to-page transitions.
  *
- * **Manual branch-based routing:** spread the result into a `branch()`
- * call that switches on the current route key. The runtime invokes
- * `enter` / `leave` as the branch swaps cases.
- *
- * ```ts
- * branch({
- *   on: (s) => s.route,
- *   cases: { '/': home, '/about': about },
- *   ...routeTransition({ duration: 200 }),
- * })
- * ```
- *
- * **Vike filesystem routing (`@llui/vike`):** Vike's `onRenderClient`
- * doesn't consume `{ enter, leave }` directly because each page is its
- * own component and the swap goes through dispose + clear + mount. Use
- * `fromTransition` from `@llui/vike/client` to adapt the transition to
- * the `onLeave` / `onEnter` hook shape:
+ * **Vike filesystem routing (`@llui/vike`):** this is the wired consumer.
+ * Vike's `onRenderClient` doesn't take `{ enter, leave }` directly — each page
+ * is its own component and the swap goes through dispose + clear + mount — so
+ * `fromTransition` from `@llui/vike/client` adapts the bundle to the
+ * `onLeave` / `onEnter` hook shape:
  *
  * ```ts
  * // pages/+onRenderClient.ts
@@ -46,19 +34,28 @@ export interface RouteTransitionOptions {
  * })
  * ```
  *
- * The vike variant operates on the container element itself (the `#app`
- * div) — its opacity / transform fades out the whole page, then the new
- * page fades in when it mounts.
+ * The vike variant operates on the container / page-slot element itself — its
+ * opacity / transform fades out the whole page, then the new page fades in when
+ * it mounts.
  *
- * Both call forms also accept a pre-built `TransitionOptions` from any
- * preset (`fade`, `slide`, `scale`, …) — `routeTransition` will pass it
- * through unchanged.
+ * > Note: spreading the result directly into a `branch()`/`show()` call does
+ * > **not** animate anything today — the signal structural primitives don't yet
+ * > accept transition hooks. Route-level animation goes through
+ * > `fromTransition`, not the structural primitives.
+ *
+ * The call form also accepts a pre-built `TransitionOptions` from any preset or
+ * composition (`fade`, `slide`, `scale`, `flip`, `mergeTransitions`, …) —
+ * detected by the presence of an `enter`, `leave`, or `onTransition` hook — and
+ * passes it through unchanged.
  */
 export function routeTransition(
   opts?: RouteTransitionOptions | TransitionOptions,
 ): TransitionOptions {
-  // If opts already has enter/leave, treat it as a pre-built TransitionOptions.
-  if (opts && ('enter' in opts || 'leave' in opts)) {
+  // If opts already carries any transition hook, treat it as a pre-built
+  // TransitionOptions and pass it through. `onTransition` must be included:
+  // an onTransition-only bundle (e.g. a bare flip()/mergeTransitions result)
+  // would otherwise be misread as a RouteTransitionOptions config and dropped.
+  if (opts && ('enter' in opts || 'leave' in opts || 'onTransition' in opts)) {
     return opts as TransitionOptions
   }
 

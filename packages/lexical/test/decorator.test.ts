@@ -111,4 +111,77 @@ describe('LLuiDecoratorNode bridge', () => {
     await wait(0)
     expect(lifecycle).toContain('cleanup')
   })
+
+  it('disposing one registration leaves a composed registration’s mounts alive', async () => {
+    const lifecycle: string[] = []
+    let editor!: LexicalEditor
+    let disposeA!: () => void
+    let disposeB!: () => void
+
+    const bridge = (type: string) =>
+      decoratorBridge<{ label: string }, { label: string }, AppMsg, never>(type, (data) =>
+        component<{ label: string }, AppMsg, never>({
+          name: `Sub-${type}`,
+          init: () => ({ label: data.label }),
+          update: (s) => s,
+          view: ({ state }) => [
+            onMount(() => {
+              lifecycle.push(`${type}-mount`)
+              return () => lifecycle.push(`${type}-cleanup`)
+            }),
+            span({ 'data-sub': type }, [text(state.at('label') as Signal<string>)]),
+          ],
+        }),
+      )
+
+    const def = component<AppState, AppMsg, never>({
+      name: 'ComposedHost',
+      init: () => ({ readonly: false }),
+      update: (s) => s,
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'composed',
+          nodes: [LLuiDecoratorNode],
+          readonly: state.at('readonly'),
+          serialize: (e) => e.getEditorState().read(() => $getRoot().getTextContent()),
+          deserialize: () => {
+            $getRoot().clear().append($createParagraphNode())
+          },
+          onReady: (e) => {
+            editor = e
+            // Two independent registrations on the SAME editor (composition).
+            disposeA = registerDecoratorBridges(e, [bridge('alpha')])
+            disposeB = registerDecoratorBridges(e, [bridge('beta')])
+          },
+        }),
+      ],
+    })
+    app = mountApp(container, def)
+
+    editor.update(
+      () => {
+        $getRoot()
+          .clear()
+          .append($createLLuiDecoratorNode('alpha', { label: 'A' }))
+          .append($createLLuiDecoratorNode('beta', { label: 'B' }))
+          .append($createParagraphNode())
+      },
+      { discrete: true },
+    )
+    await wait(0)
+    expect(lifecycle).toContain('alpha-mount')
+    expect(lifecycle).toContain('beta-mount')
+    expect(container.querySelector('[data-sub="alpha"]')).not.toBeNull()
+    expect(container.querySelector('[data-sub="beta"]')).not.toBeNull()
+
+    // Disposing registration A tears down ONLY its own mounts; B survives.
+    disposeA()
+    expect(lifecycle).toContain('alpha-cleanup')
+    expect(lifecycle).not.toContain('beta-cleanup')
+    // The beta bridge still decorates: re-decoration keeps mounting it.
+    expect(container.querySelector('[data-sub="beta"]')).not.toBeNull()
+
+    disposeB()
+    expect(lifecycle).toContain('beta-cleanup')
+  })
 })

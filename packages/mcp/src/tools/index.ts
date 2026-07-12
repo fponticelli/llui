@@ -1,6 +1,5 @@
 export { registerDebugApiTools } from './debug-api.js'
 export { registerCdpTools } from './cdp.js'
-export { registerCompilerTools } from './compiler.js'
 export { registerStaticCompilerTools } from './static-compiler.js'
 export { registerSourceTools } from './source.js'
 export { registerSsrTools } from './ssr.js'

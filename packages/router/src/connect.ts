@@ -121,16 +121,70 @@ export interface ConnectedRouter<R> {
   }): (state: S, msg: M) => [S, E[]] | null
 }
 
+/** history.state key holding our monotonic navigation index. */
+const STATE_KEY = '__llui_idx'
+
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
 ): ConnectedRouter<R> {
-  let currentRoute: R | null = null
   // The canonical route-change message factory. Used by the navigate()
   // effect, the popstate/hashchange listener, and link() so every
   // route-change dispatch produces the same message shape.
   const navigateMsg: (route: R) => unknown =
     options?.navigateMsg ?? ((r: R) => ({ type: 'navigate', route: r }))
+
+  // Seed currentRoute from the current location so the first navigation's
+  // guards see the actual starting route as `from` (not null) and a
+  // blocked navigation can restore the real starting URL.
+  function currentInput(): string {
+    if (typeof location === 'undefined') return router.mode === 'hash' ? '#/' : '/'
+    return router.mode === 'hash' ? location.hash : location.pathname + location.search
+  }
+  let currentRoute: R | null = (() => {
+    try {
+      return router.match(currentInput())
+    } catch {
+      return null
+    }
+  })()
+
+  // Monotonic index tracked across our own pushState entries. A blocked
+  // popstate is undone with history.go(delta) (never a fresh pushState, which
+  // would grow a forward entry on every block).
+  let currentIndex = 0
+  if (
+    typeof history !== 'undefined' &&
+    history.state &&
+    typeof (history.state as Record<string, unknown>)[STATE_KEY] === 'number'
+  ) {
+    currentIndex = (history.state as Record<string, number>)[STATE_KEY]!
+  }
+  // Suppress the echo event our own URL mutation triggers, so a single
+  // navigation dispatches exactly once (see findings 2a/2b/2c).
+  let suppressNextHashchange = false
+  let suppressNextPopstate = false
+
+  function pushUrl(path: string): void {
+    currentIndex += 1
+    history.pushState({ [STATE_KEY]: currentIndex }, '', path)
+  }
+
+  function replaceUrl(path: string): void {
+    history.replaceState({ [STATE_KEY]: currentIndex }, '', path)
+  }
+
+  function sameHash(a: string, b: string): boolean {
+    const norm = (h: string) => (h === '' ? '#/' : h.startsWith('#') ? h : '#' + h)
+    return norm(a) === norm(b)
+  }
+
+  /** Set location.hash, optionally suppressing the echo hashchange dispatch. */
+  function setHash(newHash: string, suppress: boolean): void {
+    if (sameHash(location.hash, newHash)) return
+    if (suppress) suppressNextHashchange = true
+    location.hash = newHash
+  }
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route
    * to navigate to, or `null` if navigation should be blocked.
@@ -157,27 +211,31 @@ export function connectRouter<R>(
   function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
     switch (effect.action) {
       case 'push': {
+        // URL only. In hash mode, suppress the echo hashchange so the listener
+        // does not ALSO dispatch a navigate (finding 2b).
         const target = router.match(effect.path!)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          location.hash = finalPath
+          setHash(finalPath, true)
         } else {
-          history.pushState(null, '', finalPath)
+          pushUrl(finalPath)
         }
         currentRoute = finalRoute
         break
       }
       case 'replace': {
+        // URL only. Same echo suppression as push (finding 2b).
         const target = router.match(effect.path!)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
+          if (!sameHash(location.hash, finalPath)) suppressNextHashchange = true
           location.replace(finalPath)
         } else {
-          history.replaceState(null, '', finalPath)
+          replaceUrl(finalPath)
         }
         currentRoute = finalRoute
         break
@@ -191,14 +249,17 @@ export function connectRouter<R>(
         // already hands every effect — so it works from ANY effect (an
         // init() effect included), with no dependency on listener() having
         // mounted first.
+        //
+        // In hash mode we dispatch here AND suppress the echo hashchange, so
+        // the listener does not double-dispatch the same message (finding 2a).
         const target = router.match(effect.path!)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          location.hash = finalPath
+          setHash(finalPath, true)
         } else {
-          history.pushState(null, '', finalPath)
+          pushUrl(finalPath)
         }
         currentRoute = finalRoute
         send(navigateMsg(finalRoute))
@@ -253,17 +314,55 @@ export function connectRouter<R>(
         onMount(() => {
           const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
           const handler = () => {
+            // Swallow the echo event our own URL mutation triggered — it was
+            // already dispatched (navigate) or is URL-only (push/replace).
+            if (router.mode === 'hash') {
+              if (suppressNextHashchange) {
+                suppressNextHashchange = false
+                return
+              }
+            } else if (suppressNextPopstate) {
+              suppressNextPopstate = false
+              // Resync the index to the entry history.go landed us on.
+              const st = history.state as Record<string, unknown> | null
+              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
+              return
+            }
+
             const input =
               router.mode === 'hash' ? location.hash : location.pathname + location.search
             const route = router.match(input)
             const finalRoute = runGuards(route)
             if (finalRoute === null) {
-              // Guard blocked — restore previous URL
+              // Guard blocked the browser-driven navigation — restore the URL.
               if (currentRoute !== null) {
-                const restorePath = router.href(currentRoute)
-                history.pushState(null, '', restorePath)
+                if (router.mode === 'history') {
+                  // Reverse the pop with history.go(delta), tracked by a
+                  // monotonic index — NEVER pushState, which would leave a
+                  // stray forward entry on every block (finding 2c).
+                  const st = history.state as Record<string, unknown> | null
+                  const poppedIdx =
+                    st && typeof st[STATE_KEY] === 'number' ? (st[STATE_KEY] as number) : 0
+                  const delta = currentIndex - poppedIdx
+                  if (delta !== 0) {
+                    suppressNextPopstate = true
+                    history.go(delta)
+                  }
+                } else {
+                  // Hash mode: restore the previous hash without dispatching.
+                  const restore = router.href(currentRoute)
+                  if (!sameHash(location.hash, restore)) {
+                    suppressNextHashchange = true
+                    location.hash = restore
+                  }
+                }
               }
               return
+            }
+            // Allowed — resync index to the entry we're now on.
+            if (router.mode === 'history') {
+              const st = history.state as Record<string, unknown> | null
+              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
             }
             currentRoute = finalRoute
             send(factory(finalRoute))
@@ -290,16 +389,31 @@ export function connectRouter<R>(
           href: router.href(route),
           onClick: (e: Event) => {
             const me = e as MouseEvent
+            // Respect a handler that already handled the event.
+            if (e.defaultPrevented) return
             if (me.ctrlKey || me.metaKey || me.shiftKey || me.altKey || me.button !== 0) return
+            // Respect an anchor target that opens elsewhere (_blank, a named
+            // frame, …) — let the browser handle it natively.
+            const anchor = e.currentTarget as HTMLAnchorElement | null
+            const target = anchor?.target
+            if (target && target !== '' && target !== '_self') return
             e.preventDefault()
-            // Push history — pushState doesn't fire popstate, so no double-nav
             if (router.mode === 'hash') {
-              // hashchange will fire the listener, which sends the navigate message
-              location.hash = router.href(route)
+              // Set the hash and let the listener run guards + dispatch — the
+              // single dispatch source in hash mode. (No suppression: we WANT
+              // the echo hashchange to drive the navigation.)
+              setHash(router.href(route), false)
               return
             }
-            history.pushState(null, '', router.href(route))
-            send(factory(route))
+            // History mode is the primary nav path — run the SAME guard
+            // pipeline as the navigate() effect (guards → block/redirect/allow
+            // → pushState + send + currentRoute), so auth / unsaved-changes
+            // guards are never silently skipped (finding 1).
+            const finalRoute = runGuards(route)
+            if (finalRoute === null) return
+            pushUrl(router.href(finalRoute))
+            currentRoute = finalRoute
+            send(factory(finalRoute))
           },
         },
         children,

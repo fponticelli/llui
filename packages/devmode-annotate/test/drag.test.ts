@@ -85,6 +85,37 @@ describe('floating button — drag + persist', () => {
     expect(modal.style.display === 'block').toBe(false)
   })
 
+  // Finding 11 — the trailing-click suppression must not go stale: a LATER
+  // legitimate click (after the drag's microtask) must still open the modal.
+  it('a click after the drag settles still opens the modal', async () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    const btn = root.querySelector('button')!
+    const modal = root.querySelector('[data-llui-modal]') as HTMLElement
+    dispatchPointer(btn, 'pointerdown', 100, 100)
+    dispatchPointer(btn, 'pointermove', 200, 250)
+    dispatchPointer(btn, 'pointerup', 200, 250)
+    // The immediate synthesized click is swallowed.
+    btn.click()
+    expect(modal.style.display === 'block').toBe(false)
+    // After the microtask clears `justDragged`, a fresh click opens the modal —
+    // the old one-shot capture listener would have lingered and eaten this one.
+    await Promise.resolve()
+    btn.click()
+    expect(modal.style.display).toBe('block')
+  })
+
+  it('pointercancel after a drag persists the position (same path as pointerup)', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    const btn = root.querySelector('button')!
+    dispatchPointer(btn, 'pointerdown', 100, 100)
+    dispatchPointer(btn, 'pointermove', 220, 260)
+    // Cancelled instead of a clean pointerup — must still persist + reanchor.
+    dispatchPointer(btn, 'pointercancel', 220, 260)
+    expect(localStorage.getItem(POSITION_KEY)).not.toBeNull()
+  })
+
   it('restores a left/top-anchored saved position on next mount', () => {
     localStorage.setItem(
       POSITION_KEY,

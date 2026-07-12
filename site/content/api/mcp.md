@@ -234,7 +234,7 @@ class LluiMcpServer {
   cdp: CdpSessionManager
   notesRoot: string
   devUrl: string | null
-  constructor(optsOrPort: LluiMcpServerOptions | number = 5200)
+  constructor(opts: LluiMcpServerOptions = {})
   buildMcpServer(): McpServer
   createSessionMcp(): McpServer
   connect(transport: Transport): Promise<void>
@@ -247,18 +247,6 @@ class LluiMcpServer {
   getTools(): ToolDefinition[]
   handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>
 }
-```
-
-## Constants
-
-### `mcpToolDefinitions`
-
-Snapshot of all registered tool definitions. Kept as a named export for
-backward compatibility with downstream consumers that used to import the
-`TOOLS` array re-export under this alias.
-
-```typescript
-const mcpToolDefinitions: ToolDefinition[]
 ```
 
 <!-- auto-api:end -->

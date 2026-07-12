@@ -10,7 +10,6 @@ import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-regi
 import {
   registerDebugApiTools,
   registerCdpTools,
-  registerCompilerTools,
   registerStaticCompilerTools,
   registerSourceTools,
   registerSsrTools,
@@ -159,19 +158,7 @@ export class LluiMcpServer {
   private readonly notesRoot: string
   private devUrl: string | null = null
 
-  /**
-   * @param optsOrPort options object (preferred) or bridge port (legacy).
-   *   The numeric-port form is kept for one release cycle of back-compat;
-   *   new code should always pass an options object. The options form
-   *   supports `attachTo` for HTTP-transport deployments that share a
-   *   single port between MCP and the browser bridge — the numeric form
-   *   can't express that.
-   * @deprecated numeric `optsOrPort` — pass `{ bridgePort }` instead.
-   *   This overload will be removed in a future breaking release.
-   */
-  constructor(optsOrPort: LluiMcpServerOptions | number = 5200) {
-    const opts: LluiMcpServerOptions =
-      typeof optsOrPort === 'number' ? { bridgePort: optsOrPort } : optsOrPort
+  constructor(opts: LluiMcpServerOptions = {}) {
     this.bridgePort = opts.bridgePort ?? 5200
     this.registry = new ToolRegistry()
     // Pass bridgePort even in attachTo mode — the relay's diagnose()
@@ -182,6 +169,10 @@ export class LluiMcpServer {
       port: this.bridgePort,
       attachTo: opts.attachTo,
       markerPath: mcpActiveFilePath(),
+      // Enforced only in attachTo (shared-HTTP-port) mode, where cli.ts
+      // writes the per-launch token to this path. Harmless in standalone
+      // mode (the file is absent, so the token check is skipped).
+      authTokenPath: mcpHttpTokenPath(),
     })
     this.cdp = new CdpSessionManager({
       devUrl: opts.devUrl ?? null,
@@ -195,7 +186,6 @@ export class LluiMcpServer {
     this.notesRoot = resolveNotesRoot(opts.notesRoot)
     registerDebugApiTools(this.registry, { enableEval: opts.enableEval })
     registerCdpTools(this.registry)
-    registerCompilerTools(this.registry)
     registerStaticCompilerTools(this.registry)
     registerSourceTools(this.registry)
     registerSsrTools(this.registry)
@@ -372,23 +362,6 @@ export class LluiMcpServer {
     return this.registry.dispatch(name, args, ctx)
   }
 }
-
-/**
- * Snapshot of all registered tool definitions. Kept as a named export for
- * backward compatibility with downstream consumers that used to import the
- * `TOOLS` array re-export under this alias.
- */
-export const mcpToolDefinitions: ToolDefinition[] = (() => {
-  const registry = new ToolRegistry()
-  registerDebugApiTools(registry)
-  registerCdpTools(registry)
-  registerCompilerTools(registry)
-  registerStaticCompilerTools(registry)
-  registerSourceTools(registry)
-  registerSsrTools(registry)
-  registerNotesTools(registry)
-  return registry.listDefinitions()
-})()
 
 /**
  * Resolve the notes root: explicit option → env var → workspace root.

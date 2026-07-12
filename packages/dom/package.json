@@ -46,7 +46,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "prepack": "pnpm run build",
@@ -80,5 +81,8 @@
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/dom#readme",
   "devDependencies": {
     "@llui/compiler": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

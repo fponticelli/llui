@@ -1,4 +1,4 @@
-import type { Send, Signal, TransitionOptions, Mountable } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 import { div, input, h2, text } from '@llui/dom'
 import {
   connect as dialogConnect,
@@ -342,7 +342,6 @@ export interface CommandMenuViewOptions {
   send: Send<CommandMenuMsg>
   id: string
   inputLabel?: string
-  transition?: TransitionOptions
   /** Custom class for the content root. */
   contentClass?: string
   /** Accessible title for the palette dialog (default: 'Command palette'). */
@@ -395,7 +394,6 @@ export function view(opts: CommandMenuViewOptions): Mountable {
         ]),
       ]),
     ],
-    transition: opts.transition,
     closeOnOutsideClick: true,
   })
 }

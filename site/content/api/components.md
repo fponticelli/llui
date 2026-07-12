@@ -1,11 +1,11 @@
 ---
 title: '@llui/components'
-description: '58 headless components + opt-in CSS theme and Tailwind class helpers'
+description: '66 headless components + opt-in CSS theme and Tailwind class helpers'
 ---
 
 # @llui/components
 
-58 headless UI components for [LLui](../../README.md). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
+66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
 
 ## Install
 
@@ -91,19 +91,19 @@ view: ({ state, send }) => {
 }
 ```
 
-## Components (58)
+## Components (66)
 
 ### Form controls
 
-accordion, checkbox, collapsible, editable, form, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, theme-switch, toggle, toggle-group
+accordion, checkbox, collapsible, editable, field, fieldset, form, number-input, password-input, pin-input, radio-group, rating-group, search-field, slider, switch, tabs, tags-input, theme-switch, toggle, toggle-group
 
 ### Overlays
 
-alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigation-menu, popover, select, toast, tooltip, tour
+alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, menubar, navigation-menu, popover, select, toast, tooltip, tour
 
 ### Data display
 
-async-list, avatar, carousel, cascade-select, clipboard, in-view, listbox, pagination, progress, qr-code, scroll-area, sortable, steps, toc, tree-view
+async-list, avatar, breadcrumbs, carousel, cascade-select, clipboard, in-view, listbox, meter, pagination, progress, qr-code, scroll-area, sortable, steps, table, toc, toolbar, tree-view
 
 ### Pickers
 
@@ -1292,7 +1292,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `group`, `valueText`
+**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `hiddenOption`, `item`, `group`, `valueText`
 
 **Utilities:** `overlay()`
 

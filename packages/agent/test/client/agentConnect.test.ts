@@ -101,6 +101,31 @@ describe('agentConnect', () => {
     })
   })
 
+  describe('ResumeSucceeded', () => {
+    it('mirrors MintSucceeded: pending-claude + AgentOpenWS + AgentSessionPersist (persists rotated token)', () => {
+      // Finding 5: resume must persist the ROTATED bearer so a refresh
+      // restores the new token, not the stale pre-rotation one.
+      const [state0] = init(opts)
+      const [state1, effects] = send(state0, {
+        type: 'ResumeSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      expect(state1.status).toBe('pending-claude')
+      expect(state1.pendingToken!.token).toBe(token)
+      expect(state1.pendingToken!.tid).toBe(tid)
+      // Opens the WS (real socket open drives WsOpened) AND persists — no
+      // fabricated WsOpened here.
+      expect(effects).toEqual([
+        { type: 'AgentOpenWS', token, wsUrl },
+        { type: 'AgentSessionPersist', token, tid, lapUrl, wsUrl, expiresAt },
+      ])
+    })
+  })
+
   describe('MintFailed', () => {
     it('transitions to error with error payload, emits no effects', () => {
       const [state0] = init(opts)

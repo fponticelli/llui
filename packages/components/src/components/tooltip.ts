@@ -1,6 +1,8 @@
-import type { Send, Signal, TransitionOptions, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import type { PresenceStatus } from './presence.js'
 import { isMounted as presenceIsMounted } from './presence.js'
@@ -126,6 +128,7 @@ export interface TooltipParts {
   content: {
     role: 'tooltip'
     id: string
+    style: string
     'data-state': Signal<PresenceStatus>
     'data-scope': 'tooltip'
     'data-part': 'content'
@@ -190,15 +193,24 @@ export function connect(
 
   const onEnd = (): void => send({ type: 'animationEnd' })
 
+  // A pending hover timer must not act once the component unmounts (its trigger
+  // leaves the DOM), or it dispatches to a disposed handle. Capture the trigger
+  // at schedule time; drop the message if it was live then but is detached when
+  // the timer fires. (No trigger element at all, e.g. a unit test → no guard.)
+  const detached = (el: Element | null): boolean => el !== null && !el.isConnected
+  const getTrigger = (): Element | null =>
+    typeof document === 'undefined' ? null : document.getElementById(triggerId)
+
   const scheduleShow = (delay: number): void => {
     clearTimers()
     if (delay <= 0) {
       send({ type: 'show' })
       return
     }
+    const trigger = getTrigger()
     openTimer = setTimeout(() => {
       openTimer = null
-      send({ type: 'show' })
+      if (!detached(trigger)) send({ type: 'show' })
     }, delay)
   }
 
@@ -208,9 +220,10 @@ export function connect(
       send({ type: 'hide' })
       return
     }
+    const trigger = getTrigger()
     closeTimer = setTimeout(() => {
       closeTimer = null
-      send({ type: 'hide' })
+      if (!detached(trigger)) send({ type: 'hide' })
     }, delay)
   }
 
@@ -237,6 +250,11 @@ export function connect(
     content: {
       role: 'tooltip',
       id: contentId,
+      // The positioner sets `pointer-events:none` (so the invisible box never
+      // blocks the page); the content must re-enable pointer events, or the
+      // pointer can never land on it and `onPointerEnter` (which cancels the
+      // close) never fires — breaking trigger→content travel (WCAG 1.4.13).
+      style: 'pointer-events:auto;',
       'data-state': state.map((s) => s.status),
       'data-scope': 'tooltip',
       'data-part': 'content',
@@ -270,7 +288,6 @@ export interface OverlayOptions {
   offset?: number
   flip?: boolean
   shift?: boolean
-  transition?: TransitionOptions
   target?: string | HTMLElement
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
@@ -278,7 +295,7 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const rawTarget = opts.target ?? 'body'
+  const host = resolvePortalTarget(opts.target ?? 'body')
   const placement = opts.placement ?? 'top'
   const offset = opts.offset ?? 6
   const flip = opts.flip !== false
@@ -293,15 +310,11 @@ export function overlay(opts: OverlayOptions): Mountable {
   // it on `closed`. When not animated, `closing` is skipped so this collapses
   // to today's instant unmount (no hang waiting for an animation that never fires).
   return show(opts.state.map(isMounted), () => {
-    const targetEl =
-      typeof rawTarget === 'string'
-        ? (document.querySelector(rawTarget) ?? document.body)
-        : rawTarget
     return [
       portal(() => {
-        const dismissable = onMount(() => {
-          const contentEl = document.getElementById(contentId)
-          const triggerEl = document.getElementById(triggerId)
+        const dismissable = onMount((root) => {
+          const contentEl = getElementByIdInScope(root, contentId)
+          const triggerEl = getElementByIdInScope(root, triggerId)
           if (!contentEl || !triggerEl) return
 
           const cleanups: Array<() => void> = []
@@ -342,7 +355,7 @@ export function overlay(opts: OverlayOptions): Mountable {
           }
         })
         return [dismissable, div(parts.positioner, opts.content())]
-      }, targetEl),
+      }, host),
     ]
   })
 }

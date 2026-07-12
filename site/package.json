@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "tsx src/generate-benchmarks.ts && tsx src/generate-api.ts && tsx src/generate-llms.ts && tsx src/generate-examples.ts && pnpm exec prettier --write 'content/**/*.md' 'public/benchmark-data.json' --log-level silent && vite build && tsx src/build-examples.ts",
+    "generate": "tsx src/generate-benchmarks.ts && tsx src/generate-api.ts && tsx src/generate-llms.ts && tsx src/generate-examples.ts && pnpm exec prettier --write 'content/api/**/*.md' 'content/examples/**/*.md' 'content/examples.md' 'content/benchmarks.md' 'public/benchmark-data.json' --log-level silent",
+    "build": "pnpm run generate && vite build && tsx src/build-examples.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -15,7 +16,10 @@
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",
+    "@shikijs/rehype": "^3.4.2",
     "gray-matter": "^4.0.3",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-slug": "^6.0.0",
     "rehype-stringify": "^10.0.1",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",

@@ -1,0 +1,61 @@
+{
+  "name": "@llui/notes-format",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./note-types": {
+      "types": "./dist/note-types.d.ts",
+      "import": "./dist/note-types.js"
+    },
+    "./note-format": {
+      "types": "./dist/note-format.d.ts",
+      "import": "./dist/note-format.js"
+    },
+    "./note-serialize": {
+      "types": "./dist/note-serialize.d.ts",
+      "import": "./dist/note-serialize.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "description": "LLui devmode notebook on-disk format — zero-dependency note types, filename/slug/session helpers, and YAML (de)serialization shared by the vite-plugin server store, the HUD, and the MCP server",
+  "keywords": [
+    "llui",
+    "devtools",
+    "notes",
+    "notebook",
+    "serialization"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/notes-format"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/notes-format#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

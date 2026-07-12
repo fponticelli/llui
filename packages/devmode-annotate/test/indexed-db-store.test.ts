@@ -169,6 +169,66 @@ describe('indexedDbStore', () => {
     expect(seen.map((e) => e.type)).toEqual(['note-created', 'status-changed', 'note-deleted'])
   })
 
+  it('createNote allocates unique ids under concurrency (no silent overwrite)', async () => {
+    const store = freshStore()
+    const N = 25
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        store.createNote({
+          body: `concurrent note number ${i}`,
+          frontmatter: frontmatter(),
+          noteBody: {},
+        }),
+      ),
+    )
+    const ids = results.map((r) => r.id)
+    // Every allocation is unique — no two racing writes share an id.
+    expect(new Set(ids).size).toBe(N)
+    // And every note is actually persisted (not clobbered by a colliding put).
+    const { total, notes } = await store.listNotes({})
+    expect(total).toBe(N)
+    expect(new Set(notes.map((n) => n.id)).size).toBe(N)
+  })
+
+  it('deleteNote also removes the note’s status transitions (no orphan resurrection)', async () => {
+    const store = freshStore()
+    const { id, sessionId } = await store.createNote({
+      body: 'task to delete',
+      frontmatter: frontmatter({ intent: 'task' }),
+      noteBody: {},
+    })
+    await store.postStatus(id, sessionId, { to: 'claimed', by: 'human' })
+    await store.postStatus(id, sessionId, { to: 'proposed', by: 'llm', reason: 'x' })
+    // A second task whose transitions must survive the delete.
+    const other = await store.createNote({
+      body: 'survivor task',
+      frontmatter: frontmatter({ intent: 'task' }),
+      noteBody: {},
+    })
+    await store.postStatus(other.id, sessionId, { to: 'claimed', by: 'human' })
+
+    await store.deleteNote(id, sessionId)
+
+    // Status history for the deleted note is gone.
+    const status = await store.getStatus(id, sessionId)
+    expect(status.history).toHaveLength(0)
+    expect(status.current).toBeNull()
+
+    // The queue no longer resurrects the deleted note; the survivor stays.
+    const { queue } = await store.getQueue(sessionId)
+    expect(queue.find((e) => e.noteId === id)).toBeUndefined()
+    expect(queue.find((e) => e.noteId === other.id)).toBeDefined()
+
+    // Export omits the deleted note's transitions entirely.
+    const [session] = await store.exportSessions([sessionId])
+    const lines = session!.statusJsonl
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { noteId: string })
+    expect(lines.some((t) => t.noteId === id)).toBe(false)
+    expect(lines.some((t) => t.noteId === other.id)).toBe(true)
+  })
+
   it('uses defaultSessionName from the injected clock', async () => {
     const fixed = new Date(Date.UTC(2026, 5, 7, 9, 4))
     const store = freshStore(() => fixed)

@@ -76,6 +76,24 @@ describe('handleLapConfirmResult', () => {
     expect(body.reason).toBe('user-cancelled')
   })
 
+  it('returns still-pending (NOT rejected) when the confirm wait times out', async () => {
+    vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'timeout' })
+    const sendSpy = vi.spyOn(registry, 'send')
+    const res = await handleLapConfirmResult(req({ confirmId: 'c1' }), deps())
+    const body = (await res.json()) as { status: string }
+    expect(body.status).toBe('still-pending')
+    expect(sendSpy).not.toHaveBeenCalled()
+  })
+
+  it('expires the browser confirm entry on a genuine user-cancel', async () => {
+    vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'user-cancelled' })
+    const sendSpy = vi.spyOn(registry, 'send')
+    const res = await handleLapConfirmResult(req({ confirmId: 'c1' }), deps())
+    const body = (await res.json()) as { status: string }
+    expect(body.status).toBe('rejected')
+    expect(sendSpy).toHaveBeenCalledWith('t1', { t: 'confirm-expire', confirmId: 'c1' })
+  })
+
   it('rejects missing confirmId', async () => {
     const res = await handleLapConfirmResult(req({}), deps())
     expect(res.status).toBe(400)

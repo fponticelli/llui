@@ -20,7 +20,7 @@ import {
 import { registerRichText } from '@lexical/rich-text'
 import { registerHistory, createEmptyHistoryState } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
-import { foreign, type Mountable, type Signal } from '@llui/dom'
+import { foreign, type LiveSignal, type Mountable, type Signal } from '@llui/dom'
 import type { LexicalPlugin, PluginContext } from './plugin.js'
 import { registerShortcuts } from './register.js'
 
@@ -92,8 +92,10 @@ export interface LexicalForeignOptions<Emit = unknown> {
 interface BootResult {
   editor: LexicalEditor
   getLastEmitted: () => string
-  setLastEmitted: (value: string) => void
-  /** Tear down listeners, history, plugins, and the pending debounce timer. */
+  /** Apply a controlled `value` push to the document (programmatic, echo-guarded). */
+  pushProgrammatic: (value: string) => void
+  /** Flush any pending edit, tear down listeners/history/plugins/timer, and
+   * detach the editor root (releases the document selectionchange listener). */
   dispose: () => void
 }
 
@@ -131,12 +133,31 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     // browser shows no caret and ignores typing.
     el.setAttribute('contenteditable', opts.readonly.peek() ? 'false' : 'true')
     editor.setRootElement(el as HTMLElement)
-    opts.onReady?.(editor)
 
     let lastEmitted = opts.value ? opts.value.peek() : (opts.defaultValue ?? '')
     let canUndo = false
     let canRedo = false
+
+    // ── Outbound serialization debounce, modelled as a tiny state machine ──────
+    // A user edit arms `debounceTimer` and records `pendingFlush` (the closure
+    // that serializes + emits the CURRENT editor state). Two transitions keep it
+    // honest:
+    //   • a PROGRAMMATIC update (seed / controlled push / collab writeback) cancels
+    //     any armed timer and resyncs `lastEmitted` from a fresh serialize — so a
+    //     stale timer can never emit programmatic content back to the host as a
+    //     user edit, and pending keystrokes superseded by a push are dropped
+    //     deterministically rather than silently racing.
+    //   • dispose (below) flushes `pendingFlush` synchronously, so edits typed
+    //     within the debounce window survive an unmount (show/branch remount).
     let debounceTimer: ReturnType<typeof setTimeout> | undefined
+    let pendingFlush: (() => void) | undefined
+    const clearPending = (): void => {
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer)
+        debounceTimer = undefined
+      }
+      pendingFlush = undefined
+    }
 
     // Seed the initial document (programmatic — not echoed outbound). Discrete so
     // the host is populated synchronously at mount (before the first paint/read).
@@ -192,15 +213,27 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
       ),
       editor.registerUpdateListener(({ editorState, tags }) => {
         emitSelection()
-        if (tags.has(PROGRAMMATIC_TAG)) return
+        if (tags.has(PROGRAMMATIC_TAG)) {
+          // Programmatic write already committed to the doc: drop any pending
+          // user serialization and rebase the echo-guard baseline onto the doc's
+          // serialized form (so the next controlled push echo-suppresses cleanly
+          // and a leftover timer can't re-emit this content).
+          clearPending()
+          lastEmitted = editorState.read(() => opts.serialize(editor))
+          return
+        }
         if (debounceTimer !== undefined) clearTimeout(debounceTimer)
-        debounceTimer = setTimeout(() => {
+        const flush = (): void => {
+          debounceTimer = undefined
+          pendingFlush = undefined
           editorState.read(() => {
             const next = opts.serialize(editor)
             lastEmitted = next
             opts.onChange?.(next)
           })
-        }, debounceMs)
+        }
+        pendingFlush = flush
+        debounceTimer = setTimeout(flush, debounceMs)
       }),
       ...pluginDisposers,
     )
@@ -215,45 +248,77 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
       })
     }
 
+    // Hand the host a fully-wired editor: rich-text, history/plugins/decorator
+    // bridges, and the seed document are all live, so commands dispatched from
+    // `onReady` hit a real, populated editor rather than an empty shell.
+    opts.onReady?.(editor)
+
     return {
       editor,
       getLastEmitted: () => lastEmitted,
-      setLastEmitted: (value) => {
-        lastEmitted = value
+      pushProgrammatic: (value) => {
+        // Controlled push: overwrite the doc programmatically. The update
+        // listener's PROGRAMMATIC branch cancels any pending user timer and
+        // rebases `lastEmitted`, so this is the single write path.
+        editor.update(() => opts.deserialize(editor, value), { tag: PROGRAMMATIC_TAG })
       },
       dispose: () => {
-        if (debounceTimer !== undefined) clearTimeout(debounceTimer)
+        // Flush a user edit still inside the debounce window BEFORE teardown so
+        // keystrokes aren't lost on unmount; a programmatic last-update leaves
+        // `pendingFlush` cleared, so nothing spurious is emitted.
+        pendingFlush?.()
+        clearPending()
         baseDispose()
+        // Release the document-level selectionchange listener and detach the
+        // editor's DOM subtree; without this every remount leaks both.
+        editor.setRootElement(null)
       },
     }
   }
 
+  // ONE mount body for both control modes. `readonly` always binds; the
+  // controlled `value` (present only in controlled mode) binds conditionally.
+  // A single dispose path unbinds and tears the editor down — so the leak /
+  // debounce / contenteditable fixes above live in exactly one place and the two
+  // modes can't drift apart. (The two `foreign` wrappers below differ only in the
+  // state shape they declare, which the type system forces; they carry no logic.)
   const readonly = opts.readonly
   const controlled = opts.value
 
-  if (controlled) {
-    return foreign<ForeignInst, { value: Signal<string>; readonly: Signal<boolean> }>({
-      tag: 'div',
-      state: { value: controlled, readonly },
-      mount: ({ el, state }) => {
-        const b = boot(el)
-        const unbindValue = state.value.bind((incoming) => {
+  const mountEditor = (
+    el: Element,
+    readonlyLive: LiveSignal<boolean>,
+    valueLive: LiveSignal<string> | undefined,
+  ): ForeignInst => {
+    const b = boot(el)
+    const unbinds: Array<() => void> = []
+    if (valueLive) {
+      unbinds.push(
+        valueLive.bind((incoming) => {
           if (incoming === b.getLastEmitted()) return
-          b.editor.update(() => opts.deserialize(b.editor, incoming), { tag: PROGRAMMATIC_TAG })
-          b.setLastEmitted(incoming)
-        })
-        const unbindReadOnly = state.readonly.bind((ro) => {
-          b.editor.setEditable(!ro)
-          el.setAttribute('contenteditable', ro ? 'false' : 'true')
-        })
-        return {
-          dispose: () => {
-            unbindValue()
-            unbindReadOnly()
-            b.dispose()
-          },
-        }
+          b.pushProgrammatic(incoming)
+        }),
+      )
+    }
+    unbinds.push(
+      readonlyLive.bind((ro) => {
+        b.editor.setEditable(!ro)
+        el.setAttribute('contenteditable', ro ? 'false' : 'true')
+      }),
+    )
+    return {
+      dispose: () => {
+        for (const unbind of unbinds) unbind()
+        b.dispose()
       },
+    }
+  }
+
+  if (controlled) {
+    return foreign<ForeignInst, { readonly: Signal<boolean>; value: Signal<string> }>({
+      tag: 'div',
+      state: { readonly, value: controlled },
+      mount: ({ el, state }) => mountEditor(el, state.readonly, state.value),
       unmount: (inst) => inst.dispose(),
     })
   }
@@ -261,19 +326,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
   return foreign<ForeignInst, { readonly: Signal<boolean> }>({
     tag: 'div',
     state: { readonly },
-    mount: ({ el, state }) => {
-      const b = boot(el)
-      const unbindReadOnly = state.readonly.bind((ro) => {
-        b.editor.setEditable(!ro)
-        ;(el as HTMLElement).contentEditable = ro ? 'false' : 'true'
-      })
-      return {
-        dispose: () => {
-          unbindReadOnly()
-          b.dispose()
-        },
-      }
-    },
+    mount: ({ el, state }) => mountEditor(el, state.readonly, undefined),
     unmount: (inst) => inst.dispose(),
   })
 }

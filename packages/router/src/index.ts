@@ -63,21 +63,48 @@ export function route<R = any>(
 export interface RouterConfig<R> {
   mode?: 'hash' | 'history'
   fallback?: R
+  /**
+   * Base path (history mode only). All matched pathnames must start with it —
+   * a non-matching prefix resolves to `fallback`. `toPath`/`href` prepend it.
+   * Trailing slashes are normalized away, e.g. `'/app/'` → `'/app'`.
+   */
+  base?: string
 }
 
 export interface Router<R> {
   /** Match a pathname to a Route. Returns fallback if no match. */
   match(pathname: string): R
-  /** Format a Route back to a pathname (without hash/history prefix). */
+  /** Format a Route back to a pathname (base prefixed in history mode, no hash prefix). */
   toPath(route: R): string
-  /** Format a Route to a full href (with # prefix in hash mode). */
+  /** Format a Route to a full href (# prefix in hash mode, base prefix in history mode). */
   href(route: R): string
   /** The configured mode */
   mode: 'hash' | 'history'
+  /** The normalized base path (empty string when none) */
+  base: string
   /** All route definitions (for iteration) */
   routes: ReadonlyArray<RouteDef<R>>
   /** The fallback route */
   fallback: R
+}
+
+// Non-enumerable tag attached to routes produced by `match`, carrying the
+// RouteDef that built them. `toPath`/`href` read it for a direct O(segments)
+// format with no round-trip and no per-format `build()` call. Non-enumerable
+// so it never shows up in JSON, equality checks, or object spreads.
+const ROUTE_DEF = Symbol('llui.routeDef')
+
+/** Primitive fixed fields a builder emits for a def, keyed by field name. */
+interface DefMeta<R> {
+  def: RouteDef<R>
+  /** param + rest segment names — all must be present on a route to select this def */
+  paramKeys: string[]
+  /**
+   * The builder's primitive, non-param, non-query output fields (e.g. `page`,
+   * `tab`) computed ONCE at createRouter with sample params. `null` when the
+   * builder threw on sample params (selection then falls back to params only).
+   */
+  fixed: Record<string, string | number | boolean> | null
 }
 
 export function createRouter<R>(
@@ -86,7 +113,80 @@ export function createRouter<R>(
   config?: RouterConfig<R>,
 ): Router<R> {
   const mode = config?.mode ?? 'hash'
-  const fallback = config?.fallback ?? defs[0]!.build({})
+  const base = normalizeBase(config?.base)
+
+  function tagRoute(r: R, def: RouteDef<R>): R {
+    if (r !== null && typeof r === 'object') {
+      Object.defineProperty(r as object, ROUTE_DEF, {
+        value: def,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      })
+    }
+    return r
+  }
+
+  function getTag(r: R): RouteDef<R> | undefined {
+    if (r !== null && typeof r === 'object') {
+      return (r as Record<symbol, unknown>)[ROUTE_DEF] as RouteDef<R> | undefined
+    }
+    return undefined
+  }
+
+  /** Placeholder params covering every path/query key a builder may read. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function sampleParamsFor(def: RouteDef<any>): Record<string, string> {
+    const params: Record<string, string> = {}
+    for (const seg of def.segments) {
+      if (typeof seg !== 'string') params[seg.name] = '1'
+    }
+    for (const key of def.queryKeys) params[key] = '1'
+    return params
+  }
+
+  // Fallback: an explicit config value, else the first route built with sample
+  // params so a param-reading builder does not crash createRouter.
+  const fallback: R =
+    config?.fallback ?? tagRoute(defs[0]!.build(sampleParamsFor(defs[0]!)) as R, defs[0]!)
+
+  // Precompute per-def selection metadata ONCE. Never calls build({}) per
+  // format, never round-trips through match — replaces the old
+  // O(defs²×deepEqual) heuristic.
+  function computeFixed(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    def: RouteDef<any>,
+    paramKeys: string[],
+  ): Record<string, string | number | boolean> | null {
+    try {
+      const out = def.build(sampleParamsFor(def)) as Record<string, unknown>
+      const fixed: Record<string, string | number | boolean> = {}
+      const querySet = new Set(def.queryKeys)
+      for (const key of Object.keys(out)) {
+        if (paramKeys.includes(key)) continue
+        if (querySet.has(key)) continue
+        const v = out[key]
+        // Only primitive fields discriminate a route. Object/array fields (e.g.
+        // a runtime `data` payload) are not part of the URL and would break
+        // selection, so they are excluded.
+        if (v === null || v === undefined) continue
+        if (typeof v === 'object') continue
+        fixed[key] = v as string | number | boolean
+      }
+      return fixed
+    } catch {
+      // Builder threw on sample params — selection falls back to params only.
+      return null
+    }
+  }
+
+  const defMetas: DefMeta<R>[] = defs.map((def) => {
+    const paramKeys: string[] = []
+    for (const seg of def.segments) {
+      if (typeof seg !== 'string') paramKeys.push(seg.name)
+    }
+    return { def: def as RouteDef<R>, paramKeys, fixed: computeFixed(def, paramKeys) }
+  })
 
   function matchPathname(pathname: string): R {
     // Separate path from query string
@@ -106,67 +206,125 @@ export function createRouter<R>(
       if (params !== null) {
         // Merge query params
         for (const key of def.queryKeys) {
-          if (queryParams[key] !== undefined) params[key] = queryParams[key]
+          if (queryParams[key] !== undefined) params[key] = queryParams[key]!
         }
-        return def.build(params)
+        return tagRoute(def.build(params) as R, def as RouteDef<R>)
       }
     }
 
     return fallback
   }
 
-  function formatPath(r: R): string {
-    // Try each route definition in reverse order (most specific first)
-    for (let i = defs.length - 1; i >= 0; i--) {
-      const def = defs[i]!
-
-      // If route has a manual toPath, use it
-      if (def.toPath) return def.toPath(r)
-
-      // Try to extract params from the Route and build the path
-      const path = tryFormat(def, r)
-      if (path !== null) {
-        // Round-trip check: parse the formatted path and verify URL-relevant
-        // fields match. Ignore extra fields (like runtime `data`) that aren't
-        // part of the URL — they would break the comparison since the route
-        // builder produces default values that differ from the actual state.
-        const roundTrip = matchPathname(path)
-        const urlKeys = getUrlKeys(def)
-        if (
-          partialEqual(roundTrip as Record<string, unknown>, r as Record<string, unknown>, urlKeys)
-        )
-          return path
+  /** Pick the def that produced a route object, without round-tripping. */
+  function selectDef(r: R): DefMeta<R> | null {
+    const ro = r as Record<string, unknown>
+    let best: DefMeta<R> | null = null
+    for (const meta of defMetas) {
+      // Every fixed field the builder emits must match the route's value.
+      if (meta.fixed) {
+        let ok = true
+        for (const key in meta.fixed) {
+          if (ro[key] !== meta.fixed[key]) {
+            ok = false
+            break
+          }
+        }
+        if (!ok) continue
       }
+      // Every path parameter must be present on the route.
+      let allParams = true
+      for (const p of meta.paramKeys) {
+        const v = ro[p]
+        if (v === undefined || v === null) {
+          allParams = false
+          break
+        }
+      }
+      if (!allParams) continue
+      // Prefer the most specific viable def (most params); on a tie, the
+      // later-registered def wins (matches the old "most specific first").
+      if (best === null || meta.paramKeys.length >= best.paramKeys.length) best = meta
     }
+    return best
+  }
 
-    // Last resort: try forward order
-    for (const def of defs) {
+  function formatWithDef(def: RouteDef<R>, r: R): string | null {
+    return def.toPath ? def.toPath(r) : tryFormat(def, r)
+  }
+
+  function formatPath(r: R): string {
+    // Fast + exact path: a route produced by match carries its def.
+    const tagged = getTag(r)
+    if (tagged) {
+      const p = formatWithDef(tagged, r)
+      if (p !== null) return p
+    }
+    const meta = selectDef(r)
+    if (meta) {
+      const p = formatWithDef(meta.def, r)
+      if (p !== null) return p
+    }
+    // Last resort — a manual toPath, then any structural format.
+    for (const def of defs as RouteDef<R>[]) {
       if (def.toPath) return def.toPath(r)
-      const path = tryFormat(def, r)
-      if (path !== null) return path
     }
-
+    for (const def of defs as RouteDef<R>[]) {
+      const p = tryFormat(def, r)
+      if (p !== null) return p
+    }
     return '/'
+  }
+
+  function stripBase(pathname: string): string | null {
+    if (!base) return pathname
+    if (pathname === base || pathname === base + '/') return '/'
+    if (pathname.startsWith(base + '/')) return pathname.slice(base.length)
+    if (pathname.startsWith(base + '?')) return '/' + pathname.slice(base.length + 1)
+    if (pathname.startsWith(base + '#')) return '/' + pathname.slice(base.length + 1)
+    return null
+  }
+
+  function withBase(path: string): string {
+    if (!base) return path
+    if (path === '/') return base + '/'
+    return base + path
   }
 
   return {
     match(input: string) {
-      // Strip hash prefix, preserve query string
-      const pathname = mode === 'hash' ? input.replace(/^#\/?/, '/') : input
-      return matchPathname(pathname)
+      if (mode === 'hash') {
+        // Strip hash prefix, preserve query string
+        return matchPathname(input.replace(/^#\/?/, '/'))
+      }
+      const stripped = stripBase(input)
+      if (stripped === null) return fallback
+      return matchPathname(stripped)
     },
-    toPath: formatPath,
+    toPath(r: R) {
+      return mode === 'hash' ? formatPath(r) : withBase(formatPath(r))
+    },
     href(r: R) {
-      const path = formatPath(r)
-      return mode === 'hash' ? `#${path}` : path
+      return mode === 'hash' ? `#${formatPath(r)}` : withBase(formatPath(r))
     },
     mode,
-    routes: defs,
+    base,
+    routes: defs as ReadonlyArray<RouteDef<R>>,
     fallback,
   }
 }
 
 // ── Matching ─────────────────────────────────────────────────────
+
+/** Decode a URI component, falling back to the raw string on malformed input. */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    // Malformed percent-encoding (e.g. `100%`) — decodeURIComponent throws
+    // URIError. Fall back to the raw segment rather than crashing the nav path.
+    return s
+  }
+}
 
 function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, string> | null {
   const params: Record<string, string> = {}
@@ -180,10 +338,10 @@ function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, s
       si++
     } else if (seg.__kind === 'param') {
       if (si >= pathSegments.length) return null
-      params[seg.name] = decodeURIComponent(pathSegments[si]!)
+      params[seg.name] = safeDecode(pathSegments[si]!)
       si++
     } else if (seg.__kind === 'rest') {
-      params[seg.name] = pathSegments.slice(si).map(decodeURIComponent).join('/')
+      params[seg.name] = pathSegments.slice(si).map(safeDecode).join('/')
       si = pathSegments.length
     }
   }
@@ -208,7 +366,10 @@ function tryFormat<R>(def: RouteDef<R>, r: R): string | null {
     } else if (seg.__kind === 'rest') {
       const value = routeObj[seg.name]
       if (value === undefined || value === null) return null
-      parts.push(String(value))
+      // A rest value spans multiple segments — encode each segment
+      // individually so the `/` separators survive but any other reserved
+      // characters inside a segment are escaped.
+      parts.push(String(value).split('/').map(encodeURIComponent).join('/'))
     }
   }
 
@@ -216,14 +377,15 @@ function tryFormat<R>(def: RouteDef<R>, r: R): string | null {
 
   // Append query params if defined
   if (def.queryKeys.length > 0) {
-    const qParts: string[] = []
+    const search = new URLSearchParams()
     for (const key of def.queryKeys) {
       const value = routeObj[key]
       if (value !== undefined && value !== null && value !== '') {
-        qParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+        search.set(key, String(value))
       }
     }
-    if (qParts.length > 0) path += '?' + qParts.join('&')
+    const qs = search.toString()
+    if (qs) path += '?' + qs
   }
 
   return path
@@ -231,60 +393,25 @@ function tryFormat<R>(def: RouteDef<R>, r: R): string | null {
 
 // ── Utilities ────────────────────────────────────────────────────
 
+/** Normalize a base path: ensure a leading slash, strip trailing slashes. */
+function normalizeBase(b?: string): string {
+  if (!b) return ''
+  let s = b.trim()
+  if (s === '' || s === '/') return ''
+  if (!s.startsWith('/')) s = '/' + s
+  s = s.replace(/\/+$/, '')
+  return s
+}
+
+/** Parse a query string via URLSearchParams (handles `+`, `=` in values, decode). */
 function parseQuery(qs: string): Record<string, string> {
   const params: Record<string, string> = {}
-  for (const pair of qs.split('&')) {
-    const [key, val] = pair.split('=')
-    if (key) params[decodeURIComponent(key)] = decodeURIComponent(val ?? '')
+  // URLSearchParams handles `+` → space, percent-decoding (leniently, never
+  // throwing on malformed input), and values containing `=`. Last value wins
+  // on duplicate keys, matching the previous hand-rolled behavior.
+  const search = new URLSearchParams(qs)
+  for (const [key, val] of search) {
+    params[key] = val
   }
   return params
-}
-
-/** Extract URL-relevant field names from a route definition */
-function getUrlKeys<R>(def: RouteDef<R>): Set<string> {
-  const keys = new Set<string>()
-  for (const seg of def.segments) {
-    if (typeof seg === 'string') continue
-    keys.add(seg.name)
-  }
-  for (const key of def.queryKeys) {
-    keys.add(key)
-  }
-  // Also include 'page' / 'tab' or any fixed field from the builder
-  // by running the builder with empty params and collecting its keys
-  const sample = def.build({}) as Record<string, unknown>
-  for (const key of Object.keys(sample)) {
-    // Include all keys from the builder EXCEPT those with object/array values
-    // (which are likely runtime state like `data`)
-    const val = sample[key]
-    if (val === null || val === undefined || typeof val !== 'object') {
-      keys.add(key)
-    }
-  }
-  return keys
-}
-
-/** Compare two objects only on the specified keys */
-function partialEqual(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-  keys: Set<string>,
-): boolean {
-  for (const key of keys) {
-    if (!deepEqual(a[key], b[key])) return false
-  }
-  return true
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
-  const ka = Object.keys(a as Record<string, unknown>)
-  const kb = Object.keys(b as Record<string, unknown>)
-  if (ka.length !== kb.length) return false
-  for (const key of ka) {
-    if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
-      return false
-  }
-  return true
 }

@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { firstEnabled, lastEnabled, nextEnabled } from '../utils/roving.js'
+import { firstEnabled, lastEnabled, nextEnabled, focusRovingItem } from '../utils/roving.js'
 
 /**
  * Tabs — tabbed interface with keyboard navigation. Each tab has a value
@@ -270,22 +270,32 @@ export function connect(
             const key = flipArrow(e.key, state.peek().dir)
             const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
             const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
+            // Move real DOM focus to the newly-focused trigger after the state
+            // move — roving tabindex alone leaves AT focus stranded.
+            const moveFocus = (): void => {
+              const focused = state.peek()?.focused
+              if (focused != null) focusRovingItem(target, 'tabs', focused, { itemPart: 'trigger' })
+            }
             switch (key) {
               case nextKey:
                 e.preventDefault()
                 send({ type: 'focusNext', from: value })
+                moveFocus()
                 return
               case prevKey:
                 e.preventDefault()
                 send({ type: 'focusPrev', from: value })
+                moveFocus()
                 return
               case 'Home':
                 e.preventDefault()
                 send({ type: 'focusFirst' })
+                moveFocus()
                 return
               case 'End':
                 e.preventDefault()
                 send({ type: 'focusLast' })
+                moveFocus()
                 return
               case 'Enter':
               case ' ':
