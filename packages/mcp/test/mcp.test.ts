@@ -146,13 +146,20 @@ describe('llui_lint tool', () => {
   // and the GitHub Actions runner pushes that past the 5s default. The test
   // is a single-shot smoke test, so the cost is paid once. Bump generously.
   it('lints a file via the path argument', async () => {
-    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+    const { writeFileSync, mkdirSync, rmSync } = await import('node:fs')
     const { join, resolve } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
 
-    // Write temp file inside the project tree so ESLint finds the root config
+    // Write the temp file inside the project tree so ESLint finds the root flat
+    // config (walking up from the linted file). A FIXED, gitignored dir name —
+    // rather than a random `mkdtemp` — means at most one ever exists: it's swept
+    // before use and removed after, so a run killed mid-test (e.g. turbo aborting
+    // on another package's failure, which skips the `finally`) leaves a single
+    // gitignored dir that the next run overwrites, never a pile of stray dirs.
     const projectRoot = resolve(fileURLToPath(import.meta.url), '../../../../')
-    const dir = mkdtempSync(join(projectRoot, 'tmp-lint-test-'))
+    const dir = join(projectRoot, 'tmp-lint-test')
+    rmSync(dir, { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
     const filePath = join(dir, 'sample.ts')
     writeFileSync(filePath, `const x = 1\n`)
 

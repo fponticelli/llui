@@ -17,6 +17,11 @@ benchmarks/bundle-composition.json
 # Ephemeral git worktrees created by tooling (EnterWorktree / `git worktree add`).
 .claude/worktrees/
 
+# Fixed temp dir the @llui/mcp `llui_lint` test writes a sample file into (needs to
+# live inside the tree so ESLint finds the root flat config). Swept before/after
+# each run; ignored so a run killed mid-test can't pollute `git status`.
+/tmp-lint-test/
+
 # devmode-annotate notebook — developer-local notes/screenshots +
 # router chain-state file, not shared across the team unless
 # explicitly copied elsewhere.
