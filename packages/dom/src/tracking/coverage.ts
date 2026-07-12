@@ -7,7 +7,7 @@
  * Msg variants: any variant declared in the compiled `__msgSchema` that
  * never fired in the current session shows up in `neverFired`.
  *
- * Zero cost in production: `installDevTools` is the only caller, and it
+ * Zero cost in production: `installSignalDebug` is the only caller, and it
  * never runs in prod builds. Hot path is one optional-chain read per
  * dispatched message (`ci._coverage?.record(...)`).
  */

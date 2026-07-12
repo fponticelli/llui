@@ -3149,7 +3149,7 @@ for objects missing a `type` field) along with the message index it
 fired at. Consumed by the `llui_coverage` MCP tool to surface untested
 Msg variants: any variant declared in the compiled `__msgSchema` that
 never fired in the current session shows up in `neverFired`.
-Zero cost in production: `installDevTools` is the only caller, and it
+Zero cost in production: `installSignalDebug` is the only caller, and it
 never runs in prod builds. Hot path is one optional-chain read per
 dispatched message (`ci._coverage?.record(...)`).
 
@@ -3181,7 +3181,7 @@ export interface DirectRow {
 
 Dev-only disposer log entry, emitted once per `disposeLifetime` call
 when the owning component instance has an `_disposerLog` ring buffer
-installed by `installDevTools`.
+installed by `installSignalDebug`.
 `cause` is set by the structural primitive (each / branch / child)
 immediately before calling `disposeLifetime`. When no cause was
 explicitly set, `disposeLifetime` falls back to `'component-unmount'`.
@@ -3294,7 +3294,7 @@ export interface DomEnv {
 
 Per-each-block reconciliation diff, recorded once per update that
 mutates an each() block's key set. Dev-only — populated when
-`installDevTools` has initialized an `_eachDiffLog` on the instance.
+`installSignalDebug` has initialized an `_eachDiffLog` on the instance.
 `updateIndex` correlates with the message-history index recorded by
 `devtools.ts` so tools can join diffs back to the message that caused
 them. `eachSiteId` identifies the each() call site stably across
@@ -4647,7 +4647,7 @@ by its reactive accessors, plus the opaque-flow flag. These are the paths
 the runtime's chunked-mask reconciler gates each binding on.
 Files that don't import from `@llui/dom` return an empty set. `extraPaths`
 (paths discovered through in-repo view-helpers in *other* files, via the
-cross-file walker) are unioned in so cross-file helpers contribute to the
+cross-file resolver) are unioned in so cross-file helpers contribute to the
 consumer's dependency set.
 
 ```typescript
@@ -4862,8 +4862,8 @@ Determines if a node is at a reactive-accessor position — either an
 inline arrow / function expression OR an identifier that's about to
 be resolved to one. The check is identity-based on `parent.arguments[0]`
 etc., so the same logic works for both shapes.
-Exported so the cross-file walker can use the same gate. Without this
-gate the walker descends into every 1-param arrow in the file —
+Exported so the cross-file resolver can use the same gate. Without this
+gate the resolver descends into every 1-param arrow in the file —
 including `onEffect: (bag) => bag.send(...)` — and pollutes
 `__prefixes` with non-state property names (issue #5, bug 3).
 
@@ -5905,8 +5905,8 @@ export interface SubstitutionContext {
   providers: Map<string, ContextProvider>
   /**
    * Path-extraction hook. Walks an arrow body and returns the dotted paths
-   * it reads. The cross-file walker injects its `extractAccessorPaths`
-   * here; tests can stub with a simpler walker.
+   * it reads. The cross-file resolver injects its `extractAccessorPaths`
+   * here; tests can stub with a simpler implementation.
    */
   extractPaths: (
     accessor: ts.ArrowFunction | ts.FunctionExpression,
@@ -5923,7 +5923,7 @@ export interface SubstitutionContext {
    * Extract the dotted path a VALUE expression denotes relative to
    * `rootParamName` (`s` → '', `s.foo.bar` → 'foo.bar'); returns null when the
    * expression is not rooted at the param (so the call coarsens). Injected by
-   * the cross-file walker; tests may stub it.
+   * the cross-file resolver; tests may stub it.
    */
   extractValuePath?: (expr: ts.Expression, rootParamName: string) => string | null
 }
@@ -6001,8 +6001,7 @@ const COMPILER_RENAMEABLE_KEYS
 ### `COMPILER_VERSION`
 
 The @llui/compiler version stamped on every emitted ComponentDef.
-Read at runtime by `assertCompilerCompatibility()` in @llui/dom's
-update-loop. v2b §5.
+Stamped so the runtime can check compiler/runtime compatibility.
 Keep this in sync with `package.json` — the publish script (Phase 7
 `scripts/publish.sh`) reads from package.json so a drift is caught at
 release time.
@@ -7219,7 +7218,7 @@ function httpStatusToApiError(res: Response): Promise<ApiError>
 ### `interval()`
 
 ```typescript
-function interval<M>(key: string, ms: number, msg: M): IntervalEffect
+function interval<M>(key: string, ms: number, msg: M): IntervalEffect<M>
 ```
 
 ### `log()`
@@ -7329,7 +7328,7 @@ function storageWatch<M>(key: string, onChange: (value: unknown) => M, scope: St
 ### `timeout()`
 
 ```typescript
-function timeout<M>(ms: number, msg: M): TimeoutEffect
+function timeout<M>(ms: number, msg: M): TimeoutEffect<M>
 ```
 
 ### `upload()`
@@ -7399,31 +7398,38 @@ export type Async<T, E> =
 
 ### `Effect`
 
+The union of every builtin effect, parameterized by the component message type
+`M` the effects dispatch. Threading `M` through the union (and through the
+composite wrappers `sequence`/`race`/`retry`/`debounce`/`cancel(inner)`) lets the
+SSR resolver discriminate each effect and type its produced messages as `M`
+without a cast. `M` defaults to `unknown`, so bare `BuiltinEffect`/`Effect`
+references keep working unchanged.
+
 ```typescript
-export type BuiltinEffect =
-  | HttpEffect
+export type BuiltinEffect<M = unknown> =
+  | HttpEffect<M>
   | CancelEffect
-  | CancelReplaceEffect
-  | DebounceEffect
-  | TimeoutEffect
-  | IntervalEffect
+  | CancelReplaceEffect<M>
+  | DebounceEffect<M>
+  | TimeoutEffect<M>
+  | IntervalEffect<M>
   | LogEffect
   | StorageSetEffect
   | StorageRemoveEffect
-  | StorageGetEffect
-  | StorageWatchEffect
+  | StorageGetEffect<M>
+  | StorageWatchEffect<M>
   | BroadcastEffect
-  | BroadcastListenEffect
-  | SequenceEffect
-  | RaceEffect
-  | WebSocketEffect
+  | BroadcastListenEffect<M>
+  | SequenceEffect<M>
+  | RaceEffect<M>
+  | WebSocketEffect<M>
   | WebSocketSendEffect
-  | RetryEffect
-  | UploadEffect
-  | ClipboardReadEffect
+  | RetryEffect<M>
+  | UploadEffect<M>
+  | ClipboardReadEffect<M>
   | ClipboardWriteEffect
-  | NotificationEffect
-  | GeolocationEffect
+  | NotificationEffect<M>
+  | GeolocationEffect<M>
 ```
 
 ### `EffectInterceptor`
@@ -7502,10 +7508,10 @@ export interface CancelEffect {
 ### `CancelReplaceEffect`
 
 ```typescript
-export interface CancelReplaceEffect {
+export interface CancelReplaceEffect<M = unknown> {
   type: 'cancel'
   token: string
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 ```
 
@@ -7531,11 +7537,11 @@ export interface ClipboardWriteEffect {
 ### `DebounceEffect`
 
 ```typescript
-export interface DebounceEffect {
+export interface DebounceEffect<M = unknown> {
   type: 'debounce'
   key: string
   ms: number
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 ```
 
@@ -7582,11 +7588,11 @@ export interface HttpEffect<M = unknown> {
 Fires `msg` every `ms` milliseconds. Cancel with `cancel(key)`.
 
 ```typescript
-export interface IntervalEffect {
+export interface IntervalEffect<M = unknown> {
   type: 'interval'
   key: string
   ms: number
-  msg: unknown
+  msg: M
 }
 ```
 
@@ -7623,19 +7629,19 @@ export interface NotificationEffect<M = unknown> {
 ### `RaceEffect`
 
 ```typescript
-export interface RaceEffect {
+export interface RaceEffect<M = unknown> {
   type: 'race'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 ```
 
 ### `RetryEffect`
 
 ```typescript
-export interface RetryEffect {
+export interface RetryEffect<M = unknown> {
   type: 'retry'
   /** Only `http` effects are retriable — retry re-issues the request on failure. */
-  inner: HttpEffect
+  inner: HttpEffect<M>
   maxAttempts: number
   delayMs: number
   /**
@@ -7672,9 +7678,9 @@ export interface Runner {
 ### `SequenceEffect`
 
 ```typescript
-export interface SequenceEffect {
+export interface SequenceEffect<M = unknown> {
   type: 'sequence'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 ```
 
@@ -7734,10 +7740,10 @@ export interface StorageWatchEffect<M = unknown> {
 Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts.
 
 ```typescript
-export interface TimeoutEffect {
+export interface TimeoutEffect<M = unknown> {
   type: 'timeout'
   ms: number
-  msg: unknown
+  msg: M
 }
 ```
 
@@ -11397,6 +11403,107 @@ export interface RenderHtmlResult {
   documentHtml: DangerousHtml
   pageContext: { lluiState: HydrationManifest }
 }
+```
+
+---
+
+# @llui/security
+
+The tiny, dependency-free home of [LLui](https://github.com/fponticelli/llui)'s security-sensitive primitives, owned in exactly **one** place so a fix to any of them can't drift between copies. Everything here uses only the WHATWG `URL` API plus regex — no `node:*` builtins — so it is safe to import from browser bundles.
+
+Two surfaces:
+
+- **`url`** — `sanitizeUrl` scheme allow-listing, shared by every package that renders untrusted URLs into the DOM: [`@llui/markdown`](/api/markdown), [`@llui/markdown-editor`](/api/markdown-editor), and [`@llui/a2ui`](/api/a2ui).
+- **`loopback`** — same-machine authority/origin recognition for CSRF / CSWSH gating on the dev-server surfaces, shared by [`@llui/mcp`](/api/mcp) and [`@llui/vite-plugin`](/api/vite-plugin).
+
+```bash
+pnpm add @llui/security
+```
+
+## Usage
+
+```ts
+import { sanitizeUrl, defaultAllowedProtocols } from '@llui/security/url'
+import { isLoopbackOrigin, isLoopbackAuthority } from '@llui/security/loopback'
+
+// Neutralize a javascript:/data: URL before it reaches an href/src sink.
+const href = sanitizeUrl(userSuppliedUrl) // null when the scheme is not allowed
+
+// Gate a dev-server request to same-machine callers.
+if (!isLoopbackOrigin(req.headers.origin)) reject()
+```
+
+## Entry points
+
+| Import                    | Purpose                                                                   |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `@llui/security`          | Barrel — re-exports both modules below                                    |
+| `@llui/security/url`      | `sanitizeUrl` + `defaultAllowedProtocols` scheme allow-listing            |
+| `@llui/security/loopback` | `isLoopbackHost` / `isLoopbackAuthority` / `isLoopbackOrigin` recognizers |
+
+
+## Functions
+
+### `isLoopbackAuthority()`
+
+True when an authority (`host` or `host:port`, IPv6 bracketed as `[::1]:port`)
+is a loopback host. An ABSENT/empty authority → `false`: a request with no
+Host header is not provably same-machine, so it must not pass the guard.
+
+```typescript
+function isLoopbackAuthority(authority: string | undefined): boolean
+```
+
+### `isLoopbackHost()`
+
+True when `host` — a bare hostname with NO port (IPv6 may be bracketed
+`[::1]` or bare `::1`) — names the loopback interface.
+
+```typescript
+function isLoopbackHost(host: string): boolean
+```
+
+### `isLoopbackOrigin()`
+
+True when an `Origin` header value is same-origin/local: either ABSENT (a
+native, non-browser client sends none) or a loopback host. A cross-origin
+browser page (CSWSH / drive-by hijack) presents a non-loopback Origin and is
+rejected. A literal `Origin: null` (sandboxed / `file:` / `data:` context)
+fails `new URL` and is likewise rejected — it is NOT the same as an absent
+header.
+IPv6 loopback origins arrive bracketed (`http://[::1]`), and WHATWG
+`URL.hostname` keeps the brackets (`[::1]`); {@link isLoopbackHost} strips them
+before the comparison so bracketed IPv6 loopback is recognised.
+
+```typescript
+function isLoopbackOrigin(origin: string | undefined): boolean
+```
+
+### `sanitizeUrl()`
+
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
+
+```typescript
+function sanitizeUrl(url: string, allowedProtocols: readonly string[] = defaultAllowedProtocols): string | null
+```
+
+## Constants
+
+### `defaultAllowedProtocols`
+
+The schemes permitted by default in links (and, via markdown, images).
+Relative URLs (no scheme) are always allowed regardless of this list. This is
+the shared baseline every consumer builds on instead of hand-rolling a
+divergent allowlist.
+
+```typescript
+const defaultAllowedProtocols: readonly string[]
 ```
 
 ---
@@ -16738,11 +16845,16 @@ function resolveUrl(url: string, node: Link | Image | LinkReference | ImageRefer
 
 ### `sanitizeUrl()`
 
-Returns the URL unchanged if its scheme is allowed (or it is relative),
-otherwise `null`.
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript
-function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null
+export declare function sanitizeUrl(url: string, allowedProtocols?: readonly string[]): string | null;
 ```
 
 ### `toKeyedBlocks()`
@@ -16927,10 +17039,10 @@ export interface ResolvedOptions {
 
 ### `defaultAllowedProtocols`
 
-The schemes permitted by default in links/images. Relative URLs (no scheme)
-are always allowed regardless of this list. Exported so downstream packages
-(e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
-hand-rolling a divergent allowlist.
+The schemes permitted by default in links (and, via markdown, images).
+Relative URLs (no scheme) are always allowed regardless of this list. This is
+the shared baseline every consumer builds on instead of hand-rolling a
+divergent allowlist.
 
 ```typescript
 const defaultAllowedProtocols: readonly string[]

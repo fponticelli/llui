@@ -135,6 +135,17 @@ describe('transition()', () => {
     expect(el.style.fontWeight).toBe('700')
   })
 
+  it('restores an author-set inline value for a camelCase (kebab-mapped) property', async () => {
+    const el = makeEl()
+    el.style.zIndex = '5' // author-set inline value (camelCase DOM key → z-index)
+    const t = transition({ enterTo: { zIndex: 10 }, duration: 100 })
+    t.enter!([el])
+    expect(el.style.zIndex).toBe('10') // applied during the transition
+    // Drive the fallback timer so enter completes and cleanup restores the snapshot.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(el.style.zIndex).toBe('5') // restored, not blanked
+  })
+
   it('filters out non-element nodes', () => {
     const comment = document.createComment('anchor')
     const el = makeEl()

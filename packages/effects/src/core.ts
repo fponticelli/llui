@@ -102,7 +102,7 @@ export function createDispatch(runners: readonly Runner[]): DispatchFn {
       send(msg)
     }
     for (const plugin of deps.plugins) {
-      if (plugin({ effect, send: trackedSend as unknown as (msg: unknown) => void, signal })) {
+      if (plugin({ effect, send: trackedSend, signal })) {
         // Claimed by a plugin: complete-without-dispatch unless it sent synchronously.
         return !dispatchedSync
       }

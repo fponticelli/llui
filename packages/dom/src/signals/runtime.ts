@@ -1,8 +1,7 @@
-// Signal runtime — the Phase-2 binding driver for signal-compiled components.
+// Signal runtime — the binding driver for signal-compiled components.
 //
-// Built ALONGSIDE the existing mask/maskHi runtime (per-file-flip migration):
-// signal-compiled components use this chunked-mask driver; legacy components keep
-// the existing gate until migrated. No change to the live binding path.
+// This chunked-mask driver is the ONLY binding path; the pre-signal two-word
+// mask/maskHi runtime it replaced has been deleted.
 //
 // Each binding pairs a sparse chunked mask (which dependency bits it reads) with
 // a `produce(state)` (the compiled accessor expression) and a `commit(value)`

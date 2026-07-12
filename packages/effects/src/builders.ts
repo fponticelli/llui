@@ -54,11 +54,11 @@ export function debounce(key: string, ms: number, inner: BuiltinEffect): Debounc
   return { type: 'debounce', key, ms, inner }
 }
 
-export function timeout<M>(ms: number, msg: M): TimeoutEffect {
+export function timeout<M>(ms: number, msg: M): TimeoutEffect<M> {
   return { type: 'timeout', ms, msg }
 }
 
-export function interval<M>(key: string, ms: number, msg: M): IntervalEffect {
+export function interval<M>(key: string, ms: number, msg: M): IntervalEffect<M> {
   return { type: 'interval', key, ms, msg }
 }
 

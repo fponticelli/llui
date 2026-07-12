@@ -19,30 +19,13 @@
 
 import type { IncomingMessage } from 'node:http'
 
-/**
- * Hostnames that identify the loopback interface. `0.0.0.0` is deliberately
- * NOT here: it is the unspecified/"all interfaces" bind address, not a
- * loopback authority — a request whose Host/Origin is `0.0.0.0` is not
- * provably same-machine, so treating it as loopback would widen the guard.
- */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
-
-/** Strip a `:port` suffix from a Host/authority, tolerating IPv6 `[::1]`. */
-function hostname(authority: string): string {
-  const trimmed = authority.trim().toLowerCase()
-  if (trimmed.startsWith('[')) {
-    // IPv6 literal: `[::1]:5173` → `[::1]`
-    const close = trimmed.indexOf(']')
-    return close === -1 ? trimmed : trimmed.slice(0, close + 1)
-  }
-  const colon = trimmed.indexOf(':')
-  return colon === -1 ? trimmed : trimmed.slice(0, colon)
-}
-
-function isLoopbackAuthority(authority: string | undefined): boolean {
-  if (!authority) return false
-  return LOOPBACK_HOSTS.has(hostname(authority))
-}
+// The loopback host set + authority parsing are owned by `@llui/security`
+// (`isLoopbackAuthority`), unified with the MCP copy so the CSRF/CSWSH guard
+// can't drift. The host set is { localhost, 127.0.0.1, ::1 }; `0.0.0.0` is
+// deliberately NOT loopback (the unspecified/all-interfaces bind address is not
+// provably same-machine). The same-origin flow below (Host required, cross-site
+// Sec-Fetch-Site rejected, Origin — when present — must be loopback) is unchanged.
+import { isLoopbackAuthority } from '@llui/security'
 
 /**
  * Reject any mutating request that isn't a same-origin call to a loopback

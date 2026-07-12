@@ -14,6 +14,7 @@
 - @llui/transitions — LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each
 - @llui/test — LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects
 - @llui/vike — LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks
+- @llui/security — LLui shared security primitives — one canonical, dependency-free home for URL-scheme sanitization (sanitizeUrl) and loopback/same-origin recognition (CSRF/CSWSH gating), so security-sensitive logic can't drift between packages
 - @llui/mcp — LLui MCP server — LLM debug tools via Model Context Protocol
 - @llui/agent — LLui Agent — LAP server + browser client runtime for driving LLui apps from LLM clients
 - llui-agent — LLui Agent bridge — MCP server that translates Claude Desktop tool calls to LLui apps via LAP

@@ -3,9 +3,9 @@
  * trackers that back the `llui_pending_effects`, `llui_effect_timeline`,
  * `llui_mock_effect`, and `llui_resolve_effect` MCP tools.
  *
- * Dev-only — populated on `ComponentInstance` when `installDevTools`
- * runs. Zero cost in production (the `dispatchEffectDev` wrapper in
- * `update-loop.ts` short-circuits when `_effectTimeline` is undefined).
+ * Dev-only — populated when `installSignalDebug` runs. Zero cost in
+ * production (the effect-dispatch path short-circuits when
+ * `_effectTimeline` is undefined).
  *
  * The mock registry stores match-to-response pairs; the actual
  * response delivery (i.e., converting a mocked response back into a

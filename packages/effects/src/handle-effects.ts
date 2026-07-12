@@ -94,15 +94,24 @@ export function handleEffectsWith<E extends { type: string }, M = never>(
       // Plugins have already run (at the top of `dispatch`), so this only ever
       // forwards genuinely custom effects to the user handler.
       const custom: InternalHandler = (effect, send, signal) => {
+        // `send` is `InternalSend` (`(msg: unknown) => void`); a handler that only
+        // accepts `M` accepts an `unknown` message too (params are contravariant),
+        // so no cast is needed. `effect` widens from the erased supertype to `E`.
         handler({
           effect: effect as E,
-          send: send as unknown as (msg: M) => void,
+          send,
           signal,
         })
       }
       return ({ effect, send, signal }: EffectCtx<E, M>) => {
         const deps: Deps = { registry: registryFor(signal), custom, plugins, dispatch }
-        dispatch(effect, send as unknown as InternalSend, signal, deps)
+        // `InternalSend` is intentionally message-type-erased (`(msg: unknown) =>
+        // void`) so the dispatch core can synthesize dynamic messages (e.g. an http
+        // `onSuccess` result). The app's `send` accepts its own `M`; the runtime
+        // only ever feeds it `M`-shaped messages, so widening its input to `unknown`
+        // here is the one deliberate, sound boundary — a single downcast, not an
+        // `as unknown as`.
+        dispatch(effect, send as InternalSend, signal, deps)
       }
     },
   }

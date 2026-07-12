@@ -1376,7 +1376,7 @@ for objects missing a `type` field) along with the message index it
 fired at. Consumed by the `llui_coverage` MCP tool to surface untested
 Msg variants: any variant declared in the compiled `__msgSchema` that
 never fired in the current session shows up in `neverFired`.
-Zero cost in production: `installDevTools` is the only caller, and it
+Zero cost in production: `installSignalDebug` is the only caller, and it
 never runs in prod builds. Hot path is one optional-chain read per
 dispatched message (`ci._coverage?.record(...)`).
 
@@ -1408,7 +1408,7 @@ export interface DirectRow {
 
 Dev-only disposer log entry, emitted once per `disposeLifetime` call
 when the owning component instance has an `_disposerLog` ring buffer
-installed by `installDevTools`.
+installed by `installSignalDebug`.
 `cause` is set by the structural primitive (each / branch / child)
 immediately before calling `disposeLifetime`. When no cause was
 explicitly set, `disposeLifetime` falls back to `'component-unmount'`.
@@ -1522,7 +1522,7 @@ export interface DomEnv {
 
 Per-each-block reconciliation diff, recorded once per update that
 mutates an each() block's key set. Dev-only — populated when
-`installDevTools` has initialized an `_eachDiffLog` on the instance.
+`installSignalDebug` has initialized an `_eachDiffLog` on the instance.
 `updateIndex` correlates with the message-history index recorded by
 `devtools.ts` so tools can join diffs back to the message that caused
 them. `eachSiteId` identifies the each() call site stably across

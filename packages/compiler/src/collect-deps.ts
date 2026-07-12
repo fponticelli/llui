@@ -368,7 +368,7 @@ export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
  *
  * Files that don't import from `@llui/dom` return an empty set. `extraPaths`
  * (paths discovered through in-repo view-helpers in *other* files, via the
- * cross-file walker) are unioned in so cross-file helpers contribute to the
+ * cross-file resolver) are unioned in so cross-file helpers contribute to the
  * consumer's dependency set.
  */
 export function collectDeps(
@@ -416,8 +416,8 @@ function hasLluiImport(sourceFile: ts.SourceFile): boolean {
  * be resolved to one. The check is identity-based on `parent.arguments[0]`
  * etc., so the same logic works for both shapes.
  *
- * Exported so the cross-file walker can use the same gate. Without this
- * gate the walker descends into every 1-param arrow in the file —
+ * Exported so the cross-file resolver can use the same gate. Without this
+ * gate the resolver descends into every 1-param arrow in the file —
  * including `onEffect: (bag) => bag.send(...)` — and pollutes
  * `__prefixes` with non-state property names (issue #5, bug 3).
  */

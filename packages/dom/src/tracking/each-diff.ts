@@ -1,7 +1,7 @@
 /**
  * Per-each-block reconciliation diff, recorded once per update that
  * mutates an each() block's key set. Dev-only — populated when
- * `installDevTools` has initialized an `_eachDiffLog` on the instance.
+ * `installSignalDebug` has initialized an `_eachDiffLog` on the instance.
  *
  * `updateIndex` correlates with the message-history index recorded by
  * `devtools.ts` so tools can join diffs back to the message that caused

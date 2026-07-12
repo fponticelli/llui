@@ -392,6 +392,9 @@ importers:
       '@llui/components':
         specifier: workspace:^
         version: link:../components
+      '@llui/security':
+        specifier: workspace:^
+        version: link:../security
     devDependencies:
       '@llui/dom':
         specifier: workspace:*
@@ -670,6 +673,9 @@ importers:
 
   packages/markdown:
     dependencies:
+      '@llui/security':
+        specifier: workspace:^
+        version: link:../security
       mdast-util-from-markdown:
         specifier: ^2.0.2
         version: 2.0.3
@@ -764,6 +770,9 @@ importers:
       '@llui/notes-format':
         specifier: workspace:^
         version: link:../notes-format
+      '@llui/security':
+        specifier: workspace:^
+        version: link:../security
       '@llui/vite-plugin':
         specifier: workspace:^
         version: link:../vite-plugin
@@ -807,6 +816,8 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/security: {}
 
   packages/test:
     devDependencies:
@@ -853,6 +864,9 @@ importers:
       '@llui/notes-format':
         specifier: workspace:^
         version: link:../notes-format
+      '@llui/security':
+        specifier: workspace:^
+        version: link:../security
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

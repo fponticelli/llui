@@ -135,7 +135,7 @@ by its reactive accessors, plus the opaque-flow flag. These are the paths
 the runtime's chunked-mask reconciler gates each binding on.
 Files that don't import from `@llui/dom` return an empty set. `extraPaths`
 (paths discovered through in-repo view-helpers in _other_ files, via the
-cross-file walker) are unioned in so cross-file helpers contribute to the
+cross-file resolver) are unioned in so cross-file helpers contribute to the
 consumer's dependency set.
 
 ```typescript
@@ -374,8 +374,8 @@ Determines if a node is at a reactive-accessor position — either an
 inline arrow / function expression OR an identifier that's about to
 be resolved to one. The check is identity-based on `parent.arguments[0]`
 etc., so the same logic works for both shapes.
-Exported so the cross-file walker can use the same gate. Without this
-gate the walker descends into every 1-param arrow in the file —
+Exported so the cross-file resolver can use the same gate. Without this
+gate the resolver descends into every 1-param arrow in the file —
 including `onEffect: (bag) => bag.send(...)` — and pollutes
 `__prefixes` with non-state property names (issue #5, bug 3).
 
@@ -1449,8 +1449,8 @@ export interface SubstitutionContext {
   providers: Map<string, ContextProvider>
   /**
    * Path-extraction hook. Walks an arrow body and returns the dotted paths
-   * it reads. The cross-file walker injects its `extractAccessorPaths`
-   * here; tests can stub with a simpler walker.
+   * it reads. The cross-file resolver injects its `extractAccessorPaths`
+   * here; tests can stub with a simpler implementation.
    */
   extractPaths: (
     accessor: ts.ArrowFunction | ts.FunctionExpression,
@@ -1467,7 +1467,7 @@ export interface SubstitutionContext {
    * Extract the dotted path a VALUE expression denotes relative to
    * `rootParamName` (`s` → '', `s.foo.bar` → 'foo.bar'); returns null when the
    * expression is not rooted at the param (so the call coarsens). Injected by
-   * the cross-file walker; tests may stub it.
+   * the cross-file resolver; tests may stub it.
    */
   extractValuePath?: (expr: ts.Expression, rootParamName: string) => string | null
 }
@@ -1546,8 +1546,7 @@ const COMPILER_RENAMEABLE_KEYS
 ### `COMPILER_VERSION`
 
 The @llui/compiler version stamped on every emitted ComponentDef.
-Read at runtime by `assertCompilerCompatibility()` in @llui/dom's
-update-loop. v2b §5.
+Stamped so the runtime can check compiler/runtime compatibility.
 Keep this in sync with `package.json` — the publish script (Phase 7
 `scripts/publish.sh`) reads from package.json so a drift is caught at
 release time.

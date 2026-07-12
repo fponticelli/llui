@@ -23,7 +23,8 @@
     "@llui/dom": "workspace:^"
   },
   "dependencies": {
-    "@llui/components": "workspace:^"
+    "@llui/components": "workspace:^",
+    "@llui/security": "workspace:^"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

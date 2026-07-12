@@ -7,15 +7,7 @@
  * and recurses if the responses produce more effects (up to a depth limit).
  */
 import { buildRequest, httpStatusToApiError, parseResponse } from './http-core.js'
-import type {
-  ApiError,
-  CancelReplaceEffect,
-  DebounceEffect,
-  HttpEffect,
-  RaceEffect,
-  RetryEffect,
-  SequenceEffect,
-} from './types.js'
+import type { ApiError, BuiltinEffect, HttpEffect } from './types.js'
 
 type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
 
@@ -26,7 +18,7 @@ type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
  * and passes the response's real `Headers` to `onSuccess`. A rejected fetch
  * (network / timeout) is mapped through `onError` rather than dropped.
  */
-async function resolveHttp(effect: HttpEffect): Promise<unknown> {
+async function resolveHttp<M>(effect: HttpEffect<M>): Promise<M> {
   const opts = buildRequest(effect)
   if (effect.timeout) opts.signal = AbortSignal.timeout(effect.timeout)
 
@@ -44,20 +36,31 @@ async function resolveHttp(effect: HttpEffect): Promise<unknown> {
   }
 }
 
+/**
+ * Widen an app effect (`{ type: string }`) to the builtin union carrying message
+ * type `M`. See the boundary note in {@link resolveEffects} for why this single
+ * narrowing is sound. Because the parameter is the concrete erased supertype
+ * `{ type: string }` (a supertype of every builtin member), this is a plain
+ * downcast — not an `as unknown as` double assertion.
+ */
+function asBuiltin<M>(effect: { type: string }): BuiltinEffect<M> {
+  return effect as BuiltinEffect<M>
+}
+
 /** True if the effect is, or transitively wraps, an http effect. */
-function containsHttp(effect: { type: string }): boolean {
+function containsHttp(effect: BuiltinEffect): boolean {
   switch (effect.type) {
     case 'http':
       return true
     case 'sequence':
     case 'race':
-      return (effect as SequenceEffect | RaceEffect).effects.some(containsHttp)
+      return effect.effects.some(containsHttp)
     case 'retry':
-      return containsHttp((effect as RetryEffect).inner)
+      return containsHttp(effect.inner)
     case 'debounce':
-      return containsHttp((effect as DebounceEffect).inner)
+      return containsHttp(effect.inner)
     case 'cancel':
-      return 'inner' in effect && containsHttp((effect as CancelReplaceEffect).inner)
+      return 'inner' in effect && containsHttp(effect.inner)
     default:
       return false
   }
@@ -75,29 +78,29 @@ function containsHttp(effect: { type: string }): boolean {
  *  - `cancel(inner)` / `debounce(inner)` — resolve the wrapped inner effect.
  * Non-http leaf effects (timeouts, storage, log, …) contribute no messages.
  */
-async function resolveToMessages(effect: { type: string }): Promise<unknown[]> {
+async function resolveToMessages<M>(effect: BuiltinEffect<M>): Promise<M[]> {
   switch (effect.type) {
     case 'http':
-      return [await resolveHttp(effect as unknown as HttpEffect)]
+      return [await resolveHttp(effect)]
     case 'sequence': {
-      const msgs: unknown[] = []
-      for (const inner of (effect as SequenceEffect).effects) {
+      const msgs: M[] = []
+      for (const inner of effect.effects) {
         msgs.push(...(await resolveToMessages(inner)))
       }
       return msgs
     }
     case 'race': {
-      const racers = (effect as RaceEffect).effects.filter(containsHttp)
+      const racers = effect.effects.filter(containsHttp)
       if (racers.length === 0) return []
       // First racer to settle wins; the rest are ignored (as in the live runner).
       return Promise.race(racers.map((r) => resolveToMessages(r)))
     }
     case 'retry':
-      return resolveToMessages((effect as RetryEffect).inner)
+      return resolveToMessages(effect.inner)
     case 'debounce':
-      return resolveToMessages((effect as DebounceEffect).inner)
+      return resolveToMessages(effect.inner)
     case 'cancel':
-      return 'inner' in effect ? resolveToMessages((effect as CancelReplaceEffect).inner) : []
+      return 'inner' in effect ? resolveToMessages(effect.inner) : []
     default:
       return []
   }
@@ -121,11 +124,21 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
 ): Promise<S> {
   if (maxDepth <= 0 || effects.length === 0) return state
 
+  // The single, deliberate boundary of this module. `E` — the app's effect union —
+  // is only constrained to `{ type: string }`, but every effect that carries
+  // server-resolvable work is a builtin whose messages are the component's `M`
+  // (the link is `update`'s own signature: it maps `M` back to `E[]`). The effect
+  // union erases that message type at the container, so the compiler can't recover
+  // it from `E` alone; `asBuiltin` re-establishes it once, here. This is sound for
+  // the resolver: a genuinely custom (non-builtin) effect matches no `switch` arm
+  // in `resolveToMessages` and falls through to `[]`, contributing no messages.
+  const builtins = effects.map((effect) => asBuiltin<M>(effect))
+
   // Nothing reachable is an http effect — no server pre-loading to do.
-  if (!effects.some(containsHttp)) return state
+  if (!builtins.some(containsHttp)) return state
 
   // Resolve each top-level effect to its ordered messages (top-level in parallel).
-  const messageLists = await Promise.all(effects.map((effect) => resolveToMessages(effect)))
+  const messageLists = await Promise.all(builtins.map((effect) => resolveToMessages(effect)))
 
   // Apply messages to state in effect order.
   let currentState = state
@@ -133,7 +146,7 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
 
   for (const messages of messageLists) {
     for (const msg of messages) {
-      const [nextState, moreEffects] = update(currentState, msg as unknown as M)
+      const [nextState, moreEffects] = update(currentState, msg)
       currentState = nextState
       newEffects.push(...moreEffects)
     }

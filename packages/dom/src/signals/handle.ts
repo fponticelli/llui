@@ -77,9 +77,9 @@ export function pathHandle<T>(get: () => unknown, base: string, rowLocal = false
     at: ((path: string) =>
       pathHandle(get, base === '' ? path : `${base}.${path}`, rowLocal)) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
-      derivedHandle<U>(
-        () => fn(resolveSegments(get(), segs) as T),
-        (s) => fn(produce(s)),
+      mapHandle<T, U>(
+        { peek: () => resolveSegments(get(), segs) as T, produce },
+        fn,
         [base],
         rowLocal,
       )) as Signal<T>['map'],
@@ -99,14 +99,15 @@ export function rowHandle<T>(get: () => unknown, base: string): SignalHandle<T> 
 
 const EMPTY_SEGS: readonly string[] = []
 
-/** A derived handle (from `.map`): wraps a source's peek/produce; deps carry
- * through unchanged (the mask gate stays correct — the value can only change
- * when the source path changes). */
-function derivedHandle<T>(
+/** Assemble a derived (mapped/combined) handle object from a peek/produce pair.
+ * Pure carrier construction — the input-identity memo lives in the `produce`
+ * passed in (built by {@link mapHandle} / {@link combineSignals}), so this just
+ * wires the object and its `.map` chaining (which memoizes at the next level). */
+function makeMappedHandle<T>(
   peek: () => T,
   produce: (state: unknown) => T,
   deps: readonly string[],
-  rowLocal = false,
+  rowLocal: boolean,
 ): MappedHandle<T> {
   // The carrier keeps a THROWING `at` as a runtime safety net for uncompiled
   // view-helper code; the public type is `MappedSignal` (`at: never`), which
@@ -124,14 +125,48 @@ function derivedHandle<T>(
       throw new Error('.at() on a mapped signal is unsupported — slice with .at() before .map()')
     }) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
-      derivedHandle<U>(
-        () => fn(peek()),
-        (s) => fn(produce(s)),
-        deps,
-        rowLocal,
-      )) as Signal<T>['map'],
+      mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal)) as Signal<T>['map'],
   }
   return h as MappedHandle<T>
+}
+
+/**
+ * A single-source derived handle (`.map`) with an input-identity memo.
+ *
+ * The runtime calls a handle's `produce(state)` once PER DOWNSTREAM BINDING per
+ * update (N bindings reading the same `.map` = N calls; a per-row fanout adds one
+ * per row), and the reconciler gates commits on OUTPUT identity (`Object.is`).
+ * Re-running `fn` when the resolved input is reference-identical to the last call
+ * is pure waste. So we cache `{ lastInput, lastValue }` and short-circuit when
+ * `source.produce(state)` returns a reference-identical input.
+ *
+ * Correctness: the memo is keyed on the RESOLVED INPUT reference, which is the
+ * exact quantity the chunked-mask gate keys on (reference-equality per path). A
+ * binding is evaluated on update ONLY when one of its dep paths changed by
+ * reference — i.e. only when this input changed by reference — so inside the
+ * reconciler a memo hit never masks a real change; it only dedups the redundant
+ * re-reads (multiple bindings / rows in one pass, and mount). `fn` must be a pure
+ * function of its input (the framework's dep-coverage contract already requires
+ * this); `peek` stays UN-memoized because it reads live mutable state one-shot.
+ */
+function mapHandle<S, T>(
+  source: { peek: () => S; produce: (state: unknown) => S },
+  fn: (v: S) => T,
+  deps: readonly string[],
+  rowLocal: boolean,
+): MappedHandle<T> {
+  let has = false
+  let lastInput: S
+  let lastValue: T
+  const produce = (state: unknown): T => {
+    const input = source.produce(state)
+    if (has && Object.is(input, lastInput)) return lastValue
+    lastInput = input
+    lastValue = fn(input)
+    has = true
+    return lastValue
+  }
+  return makeMappedHandle<T>(() => fn(source.peek()), produce, deps, rowLocal)
 }
 
 /**
@@ -218,9 +253,32 @@ function combineSignals(
     }
     return { produce: (ctx: unknown) => h.produce(ctx), deps: h.deps }
   })
-  return derivedHandle<unknown>(
+  // Input-identity memo over the TUPLE of resolved inputs (the multi-input analog
+  // of `mapHandle`'s single-slot cache): recompute `fn` only when at least one
+  // resolved input differs by reference from the last call. Same correctness
+  // basis as `mapHandle` — a binding is re-evaluated on update only when one of
+  // its dep paths (hence one of these inputs) changed by reference, so a memo hit
+  // never masks a real change; it dedups the redundant re-reads across the N
+  // bindings / rows that share this combined handle in a single reconcile pass.
+  let lastInputs: unknown[] | null = null
+  let lastValue: unknown
+  const memoProduce = (state: unknown): unknown => {
+    const n = inputs.length
+    const vals = new Array<unknown>(n)
+    let changed = lastInputs === null
+    for (let k = 0; k < n; k++) {
+      const v = inputs[k]!.produce(state)
+      vals[k] = v
+      if (!changed && !Object.is(v, lastInputs![k])) changed = true
+    }
+    if (!changed) return lastValue
+    lastInputs = vals
+    lastValue = fn(...vals)
+    return lastValue
+  }
+  return makeMappedHandle<unknown>(
     () => fn(...handles.map((h) => h.peek())),
-    (state) => fn(...inputs.map((i) => i.produce(state))),
+    memoProduce,
     [...new Set(inputs.flatMap((i) => i.deps))],
     // In a row build the inputs are rebased to read the combined ctx, so the
     // result reads the row ctx → row-local. Outside a row it reads component state.

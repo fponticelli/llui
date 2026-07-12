@@ -3,7 +3,7 @@ import { createRingBuffer, type RingBuffer } from './each-diff.js'
 /**
  * Dev-only disposer log entry, emitted once per `disposeLifetime` call
  * when the owning component instance has an `_disposerLog` ring buffer
- * installed by `installDevTools`.
+ * installed by `installSignalDebug`.
  *
  * `cause` is set by the structural primitive (each / branch / child)
  * immediately before calling `disposeLifetime`. When no cause was

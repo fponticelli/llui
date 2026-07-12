@@ -1,7 +1,7 @@
-// Consumer-side manifest resolution. When the cross-file walker hits a call
+// Consumer-side manifest resolution. When the cross-file resolver hits a call
 // `lib.helper(s)` whose target it cannot follow (declaration is a body-less
 // `.d.ts` in a published package), it asks here whether that package ships a
-// `__llui_deps.json` and, if so, for the matching `HelperEntry`. The walker then
+// `__llui_deps.json` and, if so, for the matching `HelperEntry`. The resolver then
 // runs `substituteHelperCall` instead of coarsening to opaque.
 //
 // Everything here is best-effort and side-effect-free w.r.t. correctness: a

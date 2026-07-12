@@ -54,6 +54,11 @@ export const PACKAGES: PackageMeta[] = [
   },
   { slug: 'test', category: 'libraries', blurb: 'testComponent, propertyTest, replayTrace' },
   { slug: 'vike', category: 'libraries', blurb: 'Vike SSR/SSG adapter' },
+  {
+    slug: 'security',
+    category: 'libraries',
+    blurb: 'Shared URL + loopback-origin sanitization for the framework security surfaces',
+  },
   { slug: 'mcp', category: 'ai', blurb: 'MCP server — LLM debug tools' },
   { slug: 'agent', category: 'ai', blurb: 'LLM control surface — LAP server + client' },
   { slug: 'agent-bridge', category: 'ai', blurb: 'MCP bridge CLI for Claude Desktop' },

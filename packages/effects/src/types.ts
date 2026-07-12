@@ -38,32 +38,32 @@ export interface CancelEffect {
   token: string
 }
 
-export interface CancelReplaceEffect {
+export interface CancelReplaceEffect<M = unknown> {
   type: 'cancel'
   token: string
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 
-export interface DebounceEffect {
+export interface DebounceEffect<M = unknown> {
   type: 'debounce'
   key: string
   ms: number
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 
 /** Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts. */
-export interface TimeoutEffect {
+export interface TimeoutEffect<M = unknown> {
   type: 'timeout'
   ms: number
-  msg: unknown
+  msg: M
 }
 
 /** Fires `msg` every `ms` milliseconds. Cancel with `cancel(key)`. */
-export interface IntervalEffect {
+export interface IntervalEffect<M = unknown> {
   type: 'interval'
   key: string
   ms: number
-  msg: unknown
+  msg: M
 }
 
 /**
@@ -125,14 +125,14 @@ export interface BroadcastListenEffect<M = unknown> {
   onMessage: (data: unknown) => M
 }
 
-export interface SequenceEffect {
+export interface SequenceEffect<M = unknown> {
   type: 'sequence'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 
-export interface RaceEffect {
+export interface RaceEffect<M = unknown> {
   type: 'race'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 
 export interface WebSocketEffect<M = unknown> {
@@ -165,10 +165,10 @@ export interface UploadEffect<M = unknown> {
   onError: (error: ApiError) => M
 }
 
-export interface RetryEffect {
+export interface RetryEffect<M = unknown> {
   type: 'retry'
   /** Only `http` effects are retriable — retry re-issues the request on failure. */
-  inner: HttpEffect
+  inner: HttpEffect<M>
   maxAttempts: number
   delayMs: number
   /**
@@ -211,30 +211,38 @@ export interface GeolocationEffect<M = unknown> {
   enableHighAccuracy?: boolean
 }
 
-export type BuiltinEffect =
-  | HttpEffect
+/**
+ * The union of every builtin effect, parameterized by the component message type
+ * `M` the effects dispatch. Threading `M` through the union (and through the
+ * composite wrappers `sequence`/`race`/`retry`/`debounce`/`cancel(inner)`) lets the
+ * SSR resolver discriminate each effect and type its produced messages as `M`
+ * without a cast. `M` defaults to `unknown`, so bare `BuiltinEffect`/`Effect`
+ * references keep working unchanged.
+ */
+export type BuiltinEffect<M = unknown> =
+  | HttpEffect<M>
   | CancelEffect
-  | CancelReplaceEffect
-  | DebounceEffect
-  | TimeoutEffect
-  | IntervalEffect
+  | CancelReplaceEffect<M>
+  | DebounceEffect<M>
+  | TimeoutEffect<M>
+  | IntervalEffect<M>
   | LogEffect
   | StorageSetEffect
   | StorageRemoveEffect
-  | StorageGetEffect
-  | StorageWatchEffect
+  | StorageGetEffect<M>
+  | StorageWatchEffect<M>
   | BroadcastEffect
-  | BroadcastListenEffect
-  | SequenceEffect
-  | RaceEffect
-  | WebSocketEffect
+  | BroadcastListenEffect<M>
+  | SequenceEffect<M>
+  | RaceEffect<M>
+  | WebSocketEffect<M>
   | WebSocketSendEffect
-  | RetryEffect
-  | UploadEffect
-  | ClipboardReadEffect
+  | RetryEffect<M>
+  | UploadEffect<M>
+  | ClipboardReadEffect<M>
   | ClipboardWriteEffect
-  | NotificationEffect
-  | GeolocationEffect
+  | NotificationEffect<M>
+  | GeolocationEffect<M>
 
 // Re-export for user convenience
 export type { BuiltinEffect as Effect }

@@ -118,8 +118,8 @@ export interface SubstitutionContext {
   providers: Map<string, ContextProvider>
   /**
    * Path-extraction hook. Walks an arrow body and returns the dotted paths
-   * it reads. The cross-file walker injects its `extractAccessorPaths`
-   * here; tests can stub with a simpler walker.
+   * it reads. The cross-file resolver injects its `extractAccessorPaths`
+   * here; tests can stub with a simpler implementation.
    */
   extractPaths: (
     accessor: ts.ArrowFunction | ts.FunctionExpression,
@@ -136,7 +136,7 @@ export interface SubstitutionContext {
    * Extract the dotted path a VALUE expression denotes relative to
    * `rootParamName` (`s` → '', `s.foo.bar` → 'foo.bar'); returns null when the
    * expression is not rooted at the param (so the call coarsens). Injected by
-   * the cross-file walker; tests may stub it.
+   * the cross-file resolver; tests may stub it.
    */
   extractValuePath?: (expr: ts.Expression, rootParamName: string) => string | null
 }
@@ -236,7 +236,7 @@ export function substituteHelperCall(
       // the closure without re-walking the consumer's view source — that
       // walk happens at the consumer's compile step, not here. We mark
       // this param's contribution as "must be walked by consumer", which
-      // the cross-file walker handles by recursing into the thunk body
+      // the cross-file resolver handles by recursing into the thunk body
       // directly. The manifest substitution itself contributes no paths.
       continue
     }

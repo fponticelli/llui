@@ -1,6 +1,6 @@
 // Canonical diagnostic schema — v2c §3.
 //
-// Every diagnostic the compiler emits (cross-file walker, manifest
+// Every diagnostic the compiler emits (cross-file resolver, manifest
 // substitution, future per-module diagnostics) flows through this shape.
 // Adapters (ESLint, MCP, future LSP, CLI) translate it into their
 // host-specific representations. Adapters never construct diagnostics;

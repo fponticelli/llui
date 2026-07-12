@@ -332,7 +332,7 @@ function httpStatusToApiError(res: Response): Promise<ApiError>
 ### `interval()`
 
 ```typescript
-function interval<M>(key: string, ms: number, msg: M): IntervalEffect
+function interval<M>(key: string, ms: number, msg: M): IntervalEffect<M>
 ```
 
 ### `log()`
@@ -464,7 +464,7 @@ function storageWatch<M>(
 ### `timeout()`
 
 ```typescript
-function timeout<M>(ms: number, msg: M): TimeoutEffect
+function timeout<M>(ms: number, msg: M): TimeoutEffect<M>
 ```
 
 ### `upload()`
@@ -534,31 +534,38 @@ export type Async<T, E> =
 
 ### `Effect`
 
+The union of every builtin effect, parameterized by the component message type
+`M` the effects dispatch. Threading `M` through the union (and through the
+composite wrappers `sequence`/`race`/`retry`/`debounce`/`cancel(inner)`) lets the
+SSR resolver discriminate each effect and type its produced messages as `M`
+without a cast. `M` defaults to `unknown`, so bare `BuiltinEffect`/`Effect`
+references keep working unchanged.
+
 ```typescript
-export type BuiltinEffect =
-  | HttpEffect
+export type BuiltinEffect<M = unknown> =
+  | HttpEffect<M>
   | CancelEffect
-  | CancelReplaceEffect
-  | DebounceEffect
-  | TimeoutEffect
-  | IntervalEffect
+  | CancelReplaceEffect<M>
+  | DebounceEffect<M>
+  | TimeoutEffect<M>
+  | IntervalEffect<M>
   | LogEffect
   | StorageSetEffect
   | StorageRemoveEffect
-  | StorageGetEffect
-  | StorageWatchEffect
+  | StorageGetEffect<M>
+  | StorageWatchEffect<M>
   | BroadcastEffect
-  | BroadcastListenEffect
-  | SequenceEffect
-  | RaceEffect
-  | WebSocketEffect
+  | BroadcastListenEffect<M>
+  | SequenceEffect<M>
+  | RaceEffect<M>
+  | WebSocketEffect<M>
   | WebSocketSendEffect
-  | RetryEffect
-  | UploadEffect
-  | ClipboardReadEffect
+  | RetryEffect<M>
+  | UploadEffect<M>
+  | ClipboardReadEffect<M>
   | ClipboardWriteEffect
-  | NotificationEffect
-  | GeolocationEffect
+  | NotificationEffect<M>
+  | GeolocationEffect<M>
 ```
 
 ### `EffectInterceptor`
@@ -638,10 +645,10 @@ export interface CancelEffect {
 ### `CancelReplaceEffect`
 
 ```typescript
-export interface CancelReplaceEffect {
+export interface CancelReplaceEffect<M = unknown> {
   type: 'cancel'
   token: string
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 ```
 
@@ -667,11 +674,11 @@ export interface ClipboardWriteEffect {
 ### `DebounceEffect`
 
 ```typescript
-export interface DebounceEffect {
+export interface DebounceEffect<M = unknown> {
   type: 'debounce'
   key: string
   ms: number
-  inner: BuiltinEffect
+  inner: BuiltinEffect<M>
 }
 ```
 
@@ -718,11 +725,11 @@ export interface HttpEffect<M = unknown> {
 Fires `msg` every `ms` milliseconds. Cancel with `cancel(key)`.
 
 ```typescript
-export interface IntervalEffect {
+export interface IntervalEffect<M = unknown> {
   type: 'interval'
   key: string
   ms: number
-  msg: unknown
+  msg: M
 }
 ```
 
@@ -759,19 +766,19 @@ export interface NotificationEffect<M = unknown> {
 ### `RaceEffect`
 
 ```typescript
-export interface RaceEffect {
+export interface RaceEffect<M = unknown> {
   type: 'race'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 ```
 
 ### `RetryEffect`
 
 ```typescript
-export interface RetryEffect {
+export interface RetryEffect<M = unknown> {
   type: 'retry'
   /** Only `http` effects are retriable — retry re-issues the request on failure. */
-  inner: HttpEffect
+  inner: HttpEffect<M>
   maxAttempts: number
   delayMs: number
   /**
@@ -808,9 +815,9 @@ export interface Runner {
 ### `SequenceEffect`
 
 ```typescript
-export interface SequenceEffect {
+export interface SequenceEffect<M = unknown> {
   type: 'sequence'
-  effects: BuiltinEffect[]
+  effects: BuiltinEffect<M>[]
 }
 ```
 
@@ -870,10 +877,10 @@ export interface StorageWatchEffect<M = unknown> {
 Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts.
 
 ```typescript
-export interface TimeoutEffect {
+export interface TimeoutEffect<M = unknown> {
   type: 'timeout'
   ms: number
-  msg: unknown
+  msg: M
 }
 ```
 

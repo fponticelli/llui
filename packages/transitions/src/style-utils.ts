@@ -31,6 +31,17 @@ function formatStyleValue(prop: string, value: string | number): string {
   return `${value}px`
 }
 
+/**
+ * Convert a camelCase DOM style key (e.g. `zIndex`, `fontWeight`, `WebkitTransform`)
+ * to the kebab-case CSS property name the `CSSStyleDeclaration` property API
+ * (`setProperty`/`getPropertyValue`/`removeProperty`) expects (`z-index`,
+ * `font-weight`, `-webkit-transform`). Custom properties (`--foo`) and already
+ * kebab-cased keys pass through unchanged.
+ */
+function camelToKebab(key: string): string {
+  return key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
+}
+
 function splitClasses(raw: string): string[] {
   const out: string[] = []
   const parts = raw.split(/\s+/)
@@ -110,16 +121,16 @@ export function styleKeysOf(value: TransitionValue | undefined): string[] {
  * "not inline-set" state) rather than inventing a value.
  */
 export function snapshotInline(el: HTMLElement, keys: Iterable<string>): Record<string, string> {
-  const decl = el.style as unknown as Record<string, string>
   const snap: Record<string, string> = {}
-  for (const key of keys) snap[key] = decl[key] ?? ''
+  for (const key of keys) snap[key] = el.style.getPropertyValue(camelToKebab(key))
   return snap
 }
 
 /** Restore inline style values captured by {@link snapshotInline}. */
 export function restoreInline(el: HTMLElement, snapshot: Record<string, string>): void {
-  const decl = el.style as unknown as Record<string, string>
-  for (const key in snapshot) decl[key] = snapshot[key]!
+  // An empty snapshot value means "not inline-set"; setProperty with `''`
+  // removes the property, blanking it to its natural state.
+  for (const key in snapshot) el.style.setProperty(camelToKebab(key), snapshot[key]!)
 }
 
 /** Remove ONLY the class portions of a TransitionValue, leaving styles untouched. */
@@ -147,16 +158,14 @@ function removeClasses(el: HTMLElement, raw: string): void {
 }
 
 function applyStyles(el: HTMLElement, styles: Styles): void {
-  const decl = el.style as unknown as Record<string, string>
   for (const key in styles) {
-    decl[key] = formatStyleValue(key, styles[key]!)
+    el.style.setProperty(camelToKebab(key), formatStyleValue(key, styles[key]!))
   }
 }
 
 function removeStyles(el: HTMLElement, styles: Styles): void {
-  const decl = el.style as unknown as Record<string, string>
   for (const key in styles) {
-    decl[key] = ''
+    el.style.removeProperty(camelToKebab(key))
   }
 }
 

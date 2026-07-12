@@ -4,12 +4,16 @@
  * Everything here treats its input as attacker-controlled: URL schemes, registry
  * keys, CSS values and pointer tokens all arrive from an untrusted server.
  *
- * NOTE: {@link sanitizeUrl} is a near-duplicate of `@llui/markdown`'s
- * `sanitizeUrl` (packages/markdown/src/security.ts). We keep a local copy rather
- * than take a package dependency on `@llui/markdown` for a ~15-line helper;
- * `allowedProtocols` is not a value export there either. FOLLOW-UP: extract a
- * shared `@llui/security` (or similar) util and have both packages consume it.
+ * The scheme-allowlisting algorithm (`sanitizeUrl`) is owned by `@llui/security`
+ * — the single canonical copy shared with `@llui/markdown` / `@llui/markdown-editor`
+ * so a fix can't drift. Re-exported here for the existing a2ui import sites. The
+ * per-surface protocol SETS below are a2ui POLICY (data), not a divergent
+ * algorithm.
  */
+
+import { sanitizeUrl } from '@llui/security'
+
+export { sanitizeUrl }
 
 /** URL schemes allowed for navigation/link actions (openUrl). */
 export const LINK_PROTOCOLS: readonly string[] = ['http', 'https']
@@ -20,39 +24,6 @@ export const MEDIA_PROTOCOLS: readonly string[] = ['http', 'https', 'data']
 /** `Object.prototype.hasOwnProperty` guard usable on null-prototype records too. */
 export function hasOwn(obj: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key)
-}
-
-/**
- * Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
- * relative/anchor/query URL — always safe), otherwise `null`.
- *
- * Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
- * precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
- * chars ignored first, the way a browser does — so `java\tscript:` or a leading
- * control char cannot hide a dangerous scheme.
- */
-export function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null {
-  const stripped = String(url).replace(/[\t\n\r]/g, '')
-  let from = 0
-  while (from < stripped.length && stripped.charCodeAt(from) <= 0x20) from++
-  const value = stripped.slice(from)
-  const colon = value.indexOf(':')
-  if (colon < 0) return value // no scheme → relative/anchor/query, safe
-
-  const slash = value.indexOf('/')
-  const question = value.indexOf('?')
-  const hash = value.indexOf('#')
-  if (
-    (slash > -1 && colon > slash) ||
-    (question > -1 && colon > question) ||
-    (hash > -1 && colon > hash)
-  ) {
-    return value
-  }
-
-  const scheme = value.slice(0, colon).toLowerCase()
-  if (/[^a-z0-9+.-]/.test(scheme)) return null // mangled scheme (embedded control char) ⇒ unsafe
-  return allowedProtocols.includes(scheme) ? value : null
 }
 
 /**

@@ -232,17 +232,23 @@ describe('formField connect — formField(name) part bag', () => {
     const p = connect(rootSignal<FormFieldState>(), vi.fn(), { id: 'signup', fields: ['email'] })
     const f = p.formField('email')
 
-    const withIssue = stateOf({
+    // State is immutable in the runtime (every send yields a fresh object), so
+    // each gating case is a distinct state — not the same object mutated in place.
+    const untouched = stateOf({
       issues: [{ message: 'Invalid email', path: ['email'] }],
     })
-    withIssue.fields.email!.invalid = true
+    untouched.fields.email!.invalid = true
     // not touched → no visible message
-    expect(read(f.errorVisible, withIssue)).toBe(false)
-    expect(read(f.errorText.message, withIssue)).toBe('')
+    expect(read(f.errorVisible, untouched)).toBe(false)
+    expect(read(f.errorText.message, untouched)).toBe('')
 
-    withIssue.form.touched.email = true
-    expect(read(f.errorVisible, withIssue)).toBe(true)
-    expect(read(f.errorText.message, withIssue)).toBe('Invalid email')
+    const touched = stateOf({
+      issues: [{ message: 'Invalid email', path: ['email'] }],
+    })
+    touched.fields.email!.invalid = true
+    touched.form.touched.email = true
+    expect(read(f.errorVisible, touched)).toBe(true)
+    expect(read(f.errorText.message, touched)).toBe('Invalid email')
   })
 
   it('errorText exposes all issues for the field for custom rendering', () => {

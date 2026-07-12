@@ -1,50 +1,17 @@
-// URL safety — neutralize dangerous link/image schemes (javascript:, data:, …).
+// URL safety for markdown links/images.
 //
-// Strategy mirrors micromark's own `sanitizeUri`: a scheme only "counts" when its
-// colon precedes any `/`, `?`, or `#` (otherwise the colon is part of a path,
-// query, or fragment and the URL is relative — always safe). A recognized scheme
-// must be on the allowlist; a scheme containing any non-scheme character (control
-// chars, whitespace — e.g. `java\nscript:`) is treated as unsafe.
+// The scheme-allowlisting algorithm (`sanitizeUrl`) and the shared baseline
+// allowlist (`defaultAllowedProtocols`) now live in `@llui/security` — the ONE
+// canonical home so security-sensitive logic can't drift between packages. This
+// module re-exports them (keeping `@llui/markdown`'s `sanitizeUrl` /
+// `defaultAllowedProtocols` / `./security` public surface unchanged) and adds the
+// markdown-specific `resolveUrl` that threads a link through `transformLink`.
 
 import type { Link, Image, LinkReference, ImageReference } from 'mdast'
 import type { ResolvedOptions } from './types.js'
+import { sanitizeUrl, defaultAllowedProtocols } from '@llui/security'
 
-/** The schemes permitted by default in links/images. Relative URLs (no scheme)
- * are always allowed regardless of this list. Exported so downstream packages
- * (e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
- * hand-rolling a divergent allowlist. */
-export const defaultAllowedProtocols: readonly string[] = ['http', 'https', 'mailto', 'tel']
-
-/** Returns the URL unchanged if its scheme is allowed (or it is relative),
- * otherwise `null`. */
-export function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null {
-  // Normalize the way a browser does before scheme resolution: tab/CR/LF
-  // are stripped anywhere in a URL, and leading ASCII control/space chars
-  // are ignored. Without this, `java\tscript:` or a leading control char
-  // would hide a dangerous scheme from the checks below.
-  const stripped = String(url).replace(/[\t\n\r]/g, '')
-  let from = 0
-  while (from < stripped.length && stripped.charCodeAt(from) <= 0x20) from++
-  const value = stripped.slice(from)
-  const colon = value.indexOf(':')
-  if (colon < 0) return value // no scheme → relative/anchor/query, safe
-
-  const slash = value.indexOf('/')
-  const question = value.indexOf('?')
-  const hash = value.indexOf('#')
-  // colon after a path/query/fragment delimiter ⇒ not a scheme ⇒ relative.
-  if (
-    (slash > -1 && colon > slash) ||
-    (question > -1 && colon > question) ||
-    (hash > -1 && colon > hash)
-  ) {
-    return value
-  }
-
-  const scheme = value.slice(0, colon).toLowerCase()
-  if (/[^a-z0-9+.-]/.test(scheme)) return null // mangled scheme (e.g. embedded \n) ⇒ unsafe
-  return allowedProtocols.includes(scheme) ? value : null
-}
+export { sanitizeUrl, defaultAllowedProtocols }
 
 /** Resolve a link/image URL through `transformLink` (if any) then sanitize it.
  * Returns the final URL, or `null` if the link/image should be dropped. */

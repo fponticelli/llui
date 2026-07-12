@@ -1,0 +1,57 @@
+{
+  "name": "@llui/security",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "import": "./dist/url.js"
+    },
+    "./loopback": {
+      "types": "./dist/loopback.d.ts",
+      "import": "./dist/loopback.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "description": "LLui shared security primitives — one canonical, dependency-free home for URL-scheme sanitization (sanitizeUrl) and loopback/same-origin recognition (CSRF/CSWSH gating), so security-sensitive logic can't drift between packages",
+  "keywords": [
+    "llui",
+    "security",
+    "sanitize",
+    "url",
+    "csrf",
+    "loopback"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/security"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/security#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

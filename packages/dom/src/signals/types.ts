@@ -2,8 +2,8 @@
 //
 // `Signal<T>` is the authoring API for reading state in views. It is a
 // COMPILE-TIME FICTION: the Vite compiler erases `state.at('a.b')` / `.map` /
-// `derived` into bitmask-gated bindings, so there is no runtime Signal object on
-// the common path (see docs/proposals/signals/). The interfaces here define the
+// `derived` into chunked-mask-gated bindings, so there is no runtime Signal object
+// on the common path (see docs/proposals/signals/). The interfaces here define the
 // authored surface and the static path typing the compiler keys off.
 //
 // `LiveSignal<T>` is the ONE place signals materialize at runtime: the

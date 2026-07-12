@@ -26,6 +26,7 @@
   "dependencies": {
     "@llui/compiler": "workspace:^",
     "@llui/notes-format": "workspace:^",
+    "@llui/security": "workspace:^",
     "@llui/vite-plugin": "workspace:^",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0",

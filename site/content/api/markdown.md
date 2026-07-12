@@ -143,11 +143,19 @@ function resolveUrl(
 
 ### `sanitizeUrl()`
 
-Returns the URL unchanged if its scheme is allowed (or it is relative),
-otherwise `null`.
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript
-function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null
+export declare function sanitizeUrl(
+  url: string,
+  allowedProtocols?: readonly string[],
+): string | null
 ```
 
 ### `toKeyedBlocks()`
@@ -337,10 +345,10 @@ export interface ResolvedOptions {
 
 ### `defaultAllowedProtocols`
 
-The schemes permitted by default in links/images. Relative URLs (no scheme)
-are always allowed regardless of this list. Exported so downstream packages
-(e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
-hand-rolling a divergent allowlist.
+The schemes permitted by default in links (and, via markdown, images).
+Relative URLs (no scheme) are always allowed regardless of this list. This is
+the shared baseline every consumer builds on instead of hand-rolling a
+divergent allowlist.
 
 ```typescript
 const defaultAllowedProtocols: readonly string[]

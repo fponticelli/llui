@@ -1,7 +1,6 @@
 /**
  * The @llui/compiler version stamped on every emitted ComponentDef.
- * Read at runtime by `assertCompilerCompatibility()` in @llui/dom's
- * update-loop. v2b §5.
+ * Stamped so the runtime can check compiler/runtime compatibility.
  *
  * Keep this in sync with `package.json` — the publish script (Phase 7
  * `scripts/publish.sh`) reads from package.json so a drift is caught at
