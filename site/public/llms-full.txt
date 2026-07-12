@@ -2294,7 +2294,7 @@ synthesized end sentinel — `dispose()` removes that bracketed region.
 adapters mounting a nested build whose providers live in a different pass.
 
 ```typescript
-function mountSignal(target: Element | MountTarget, initial: unknown, build: () => Renderable, modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>, seedContexts?: ReadonlyMap<symbol, unknown>): SignalMount
+function mountSignal(target: Element | MountTarget, initial: unknown, build: () => Renderable, modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>, seedContexts?: ReadonlyMap<symbol, unknown>, getState?: () => unknown): SignalMount
 ```
 
 ### `signalLazy()`

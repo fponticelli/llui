@@ -506,6 +506,7 @@ function mountSignal(
   build: () => Renderable,
   modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
   seedContexts?: ReadonlyMap<symbol, unknown>,
+  getState?: () => unknown,
 ): SignalMount
 ```
 

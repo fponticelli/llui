@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent, type SignalComponentDef } from '../../src/signals/component'
 import { signalText, el, signalLazy, type Renderable } from '../../src/signals/dom'
+import { lazy, div, span, text } from '../../src/signals/authoring'
 
 // A microtask tick — lets a resolved/rejected loader promise settle.
 const tick = (): Promise<void> => Promise.resolve().then(() => {})
@@ -119,5 +120,39 @@ describe('signalLazy — async component loading', () => {
     await tick()
     // never mounted the loaded component after dispose
     expect(container.querySelector('.loaded')).toBeNull()
+  })
+})
+
+describe('signalLazy — error arm reading component state', () => {
+  interface S {
+    label: string
+  }
+  type M = { type: 'set'; label: string }
+
+  it('mounts the error arm against live component state and keeps it reactive', async () => {
+    const container = document.createElement('div')
+    const h = mountSignalComponent<S, M>(container, {
+      init: () => ({ label: 'v1' }),
+      update: (s, m) => (m.type === 'set' ? { ...s, label: m.label } : s),
+      view: ({ state }) => [
+        div([
+          lazy({
+            loader: () => Promise.reject(new Error('boom')),
+            fallback: () => [span([text('loading')])],
+            // The error arm reads COMPONENT state — it must mount against the live
+            // state (not `null`) and update when that state changes.
+            error: () => [span({ class: 'err' }, [text(state.at('label'))])],
+          }),
+        ]),
+      ],
+    })
+
+    await tick()
+    await tick()
+    expect(container.querySelector('.err')?.textContent).toBe('v1')
+
+    h.send({ type: 'set', label: 'v2' })
+    expect(container.querySelector('.err')?.textContent).toBe('v2')
+    h.dispose()
   })
 })

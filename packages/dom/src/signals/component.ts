@@ -393,7 +393,14 @@ export function mountSignalComponent<S, M, E = never>(
       target instanceof Object && ('container' in target || 'anchor' in target)
         ? (target as MountTarget)
         : { container: target as Element, mode: hy ? 'replace' : 'append' }
-    mount = mountSignal(mt, state, () => def.view({ state: handle, send, batch }), opts?.contexts)
+    mount = mountSignal(
+      mt,
+      state,
+      () => def.view({ state: handle, send, batch }),
+      opts?.contexts,
+      undefined,
+      () => state,
+    )
   })
   // onMount callbacks ran synchronously inside mountSignal above, before `mount`
   // was assigned. If one dispatched a state-changing send, `commitPending` deferred

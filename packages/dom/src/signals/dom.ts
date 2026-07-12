@@ -74,6 +74,12 @@ interface BuildCtx {
   /** the scope that will own the bindings collected in this build — set after
    * buildScope. Structural primitives register their mounted child scopes here. */
   host: { scope: SignalScope | null }
+  /** Live getter for the component's current state, threaded from the root mount.
+   * Structural primitives that mount a child scope ASYNCHRONOUSLY (outside a
+   * reconcile that would hand them the state) — notably `signalLazy`'s error arm —
+   * snapshot the current state here to mount correctly. Undefined only outside a
+   * component mount (raw `renderNodes`/SSR of a fragment). */
+  getState?: () => unknown
   /** teardown callbacks (foreign unmount, subscription disposal) run on dispose. */
   teardowns: Array<() => void>
   /** onMount callbacks — run (with the mounted parent element) after the built
@@ -469,6 +475,9 @@ function runBuild(
   // Only the ROOT build sets it (`renderSignalTree`'s `ssr` arg); nested structural
   // builds inherit it from their parent ctx, so it never needs re-passing.
   rootSsr = false,
+  // Live component-state getter, seeded by the ROOT build (`mountSignal`) and
+  // inherited into every nested build so async-mounting primitives can snapshot it.
+  rootGetState?: () => unknown,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
@@ -495,6 +504,8 @@ function runBuild(
   const inRow = forceInRow || parent?.inRow || false
   // Inherit SSR from the parent build; the root build seeds it from `rootSsr`.
   const ssr = parent?.ssr ?? rootSsr
+  // Inherit the state getter from the parent build; the root build seeds it.
+  const getState = parent?.getState ?? rootGetState
   ctx = {
     specs,
     doc,
@@ -506,6 +517,7 @@ function runBuild(
     inRow,
     descriptors,
     ssr,
+    getState,
   }
   let nodes: readonly Node[]
   try {
@@ -1829,6 +1841,10 @@ export function mountSignal(
   build: () => Renderable,
   modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
   seedContexts?: ReadonlyMap<symbol, unknown>,
+  // Live component-state getter (see `BuildCtx.getState`). Passed by
+  // `mountSignalComponent` so async-mounting primitives (signalLazy's error arm)
+  // can snapshot current state; absent for raw `mountSignal` fragment mounts.
+  getState?: () => unknown,
 ): SignalMount {
   // Back-compat positional form: mountSignal(container, initial, build, mode).
   const t: MountTarget =
@@ -1842,7 +1858,7 @@ export function mountSignal(
   if ('anchor' in t) {
     const anchor = t.anchor
     const doc = anchor.ownerDocument as unknown as SignalDoc
-    const built = renderSignalTree(doc, build, seed)
+    const built = renderSignalTree(doc, build, seed, false, getState)
     const parent = anchor.parentNode
     if (!parent) throw new Error('mountSignal: anchor comment is not attached to a parent')
     // Hydration: drop the server-rendered region (anchor → existing end sentinel)
@@ -1886,7 +1902,7 @@ export function mountSignal(
   }
 
   const container = t.container
-  const built = renderSignalTree(container.ownerDocument, build, seed)
+  const built = renderSignalTree(container.ownerDocument, build, seed, false, getState)
   if (t.mode === 'replace') container.replaceChildren(...built.nodes)
   else for (const n of built.nodes) container.appendChild(n)
 
@@ -1924,6 +1940,8 @@ export function renderSignalTree(
   // lifecycle is skipped (see `BuildCtx.ssr` / `onMount`). The client mount and
   // hydrate paths leave this false — they own the real DOM and run onMount.
   ssr = false,
+  // Live component-state getter (see `BuildCtx.getState`), threaded to the root build.
+  getState?: () => unknown,
 ): {
   nodes: readonly Node[]
   scope: SignalScope
@@ -1932,7 +1950,7 @@ export function renderSignalTree(
   mounts: Array<(root: Element) => void | (() => void)>
   getDescriptors: () => Array<{ variant: string }>
 } {
-  const built = runBuild(doc, build, undefined, seedContexts, false, ssr)
+  const built = runBuild(doc, build, undefined, seedContexts, false, ssr, getState)
   const scope = buildAndPublishScope(built)
   return {
     nodes: built.nodes,
@@ -2032,9 +2050,13 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
       errorTeardowns = built.teardowns
       const insertPoint = anchor.nextSibling
       for (const n of errorNodes) parent.insertBefore(n, insertPoint)
-      // mount against the host's current state is unknown here; the error arm
-      // typically reads only the captured `err` (deps []), so mount with null.
-      errorScope.mount(null)
+      // Mount against the host's CURRENT state (snapshotted via the threaded
+      // getter), and register the arm as a child of the host scope so component
+      // state changes propagate to it — the error arm may read component state
+      // (e.g. a localized message or a retry button reading `state`), not just the
+      // captured `err`. Falls back to null outside a component mount.
+      errorScope.mount(c.getState ? c.getState() : null)
+      c.host.scope?.addChild(errorScope)
       runMounts(built.mounts, parent as Element, built.teardowns)
     })
 
@@ -2045,6 +2067,7 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
     mounted?.dispose()
     mounted = null
     if (errorScope) {
+      c.host.scope?.removeChild(errorScope)
       for (const t of errorTeardowns.splice(0)) t()
       const parent = anchor.parentNode
       if (parent) for (const n of errorNodes) if (n.parentNode === parent) parent.removeChild(n)
