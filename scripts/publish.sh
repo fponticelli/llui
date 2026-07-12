@@ -30,15 +30,17 @@ ORDER_TSV="$(node scripts/publish-order.mjs)" || {
   exit 1
 }
 
+# NOTE: macOS ships bash 3.2, which has no associative arrays (`declare -A`).
+# Look name/deps up from the TSV on demand instead of caching them in a map, so
+# the script runs on the stock system bash without requiring a Homebrew bash 4+.
 ALL_DIRS=()
-declare -A PKG_NAME
-declare -A PKG_DEPS
-while IFS=$'\t' read -r dir name deps; do
+while IFS=$'\t' read -r dir _name _deps; do
   [ -z "$dir" ] && continue
   ALL_DIRS+=("$dir")
-  PKG_NAME["$dir"]="$name"
-  PKG_DEPS["$dir"]="$deps"
 done <<< "$ORDER_TSV"
+
+pkg_name() { printf '%s\n' "$ORDER_TSV" | awk -F'\t' -v d="$1" '$1==d {print $2; exit}'; }
+pkg_deps() { printf '%s\n' "$ORDER_TSV" | awk -F'\t' -v d="$1" '$1==d {print $3; exit}'; }
 
 # Completeness assertion: every non-private package under packages/ MUST appear
 # in the derived list. Guards against a package being invisibly dropped (e.g. a
@@ -141,7 +143,7 @@ for pkg in "${PKGS[@]}"; do
     continue
   fi
 
-  name="${PKG_NAME[$pkg]}"
+  name="$(pkg_name "$pkg")"
   version=$(node -e "process.stdout.write(require('./$dir/package.json').version)")
 
   # Failure cascade: if any in-repo dependency (transitive) already failed or was
@@ -149,7 +151,7 @@ for pkg in "${PKGS[@]}"; do
   # version that never reached the registry. Skip it and mark it failed too, so
   # ITS dependents cascade in turn (topological order guarantees deps come first).
   blocked=""
-  IFS=',' read -ra deps <<< "${PKG_DEPS[$pkg]}"
+  IFS=',' read -ra deps <<< "$(pkg_deps "$pkg")"
   for dep in "${deps[@]}"; do
     [ -z "$dep" ] && continue
     case "$FAILED_NAMES" in
