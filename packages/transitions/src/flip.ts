@@ -25,11 +25,15 @@ export interface FlipOptions {
  * mergeTransitions(fade(), flip())
  * ```
  *
- * **Not yet wired:** the signal `each()` primitive does not currently invoke
- * `onTransition`, so spreading `flip()` onto an `each({...})` has no effect.
- * Wiring the structural reconcilers to call these hooks is a deferred
- * cross-package change; `flip()` and `mergeTransitions()` are the building
- * blocks that seam will consume.
+ * The signal `each()` primitive invokes `onTransition` (with the entering /
+ * leaving / parent for the reconcile), so passing `flip()` as `each`'s trailing
+ * transition argument animates surviving rows to their new positions:
+ *
+ * ```ts
+ * each(state.at('rows'), r => r.id, row, undefined, flip({ duration: 300 }))
+ * // or combined with an appear/disappear preset:
+ * each(state.at('rows'), r => r.id, row, undefined, mergeTransitions(fade(), flip()))
+ * ```
  *
  * Requires WAAPI (`element.animate()`). In environments without it (old
  * browsers, minimal jsdom) positions are still tracked but no animation runs.
@@ -102,8 +106,9 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
  * mergeTransitions(fade(), flip())
  * ```
  *
- * (As with `flip()`, the `onTransition` half is only meaningful once the
- * structural reconcilers invoke it — not yet wired. See `flip()`.)
+ * The merged bundle is passed as the trailing transition argument to
+ * `show`/`branch`/`each` (or adapted onto a route via `fromTransition`); `each`
+ * drives the `onTransition` half of a `flip()` part. See `flip()`.
  */
 export function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions {
   const enters = parts.map((p) => p.enter).filter((f): f is NonNullable<typeof f> => !!f)

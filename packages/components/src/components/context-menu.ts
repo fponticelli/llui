@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
@@ -280,6 +280,15 @@ export interface OverlayOptions {
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the context-menu content (from
+   * `@llui/transitions`). `enter` animates it in on open; `leave` defers the
+   * unmount until its promise resolves, so the close plays an exit animation.
+   * Keep `skipAnimations` at its default (true) when driving exits this way.
+   *
+   * @example contextMenu.overlay({ state, send, parts, content, transition: fade({ duration: 120 }) })
+   */
+  transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
@@ -289,6 +298,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // positioner is placed at the virtual (x, y) anchor set by `openAt`.
   return createOverlay({
     state: opts.state,
+    transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
     positioner: opts.parts.positioner,
     content: opts.content,

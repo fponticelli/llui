@@ -147,10 +147,10 @@ function animateSpring(
  * `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
  * not hang (e.g. `fromTransition(spring())` route navigation).
  *
- * Consumed at the route/container seam via `fromTransition` in
- * `@llui/vike/client`. The signal `show`/`each`/`branch` primitives do **not**
- * currently accept transition hooks, so `show({ ...spring() })` is not yet
- * wired — that structural seam is a deferred cross-package change.
+ * Passed as the trailing transition argument to the signal `show`/`branch`/`each`
+ * primitives to spring an arm/row in and defer its leave, e.g.
+ * `show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
+ * at the route/container seam via `fromTransition` in `@llui/vike/client`.
  */
 export function spring(opts: SpringOptions = {}): TransitionOptions {
   const stiffness = opts.stiffness ?? 170

@@ -198,10 +198,14 @@ export function branch<U extends object, D extends keyof U>(
   arms: {
     [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => Renderable
   },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
 ): Mountable
 export function branch<K extends string | number>(
   value: Signal<K>,
   arms: Partial<Record<K, () => Renderable>>,
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
 ): Mountable
 ```
 
@@ -329,6 +333,13 @@ function each<T>(
   opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
+    /** Optional element-level transition hooks (from `@llui/transitions` — e.g.
+     * `fade()`, `flip()`, `mergeTransitions(fade(), flip())`): `enter` animates
+     * newly-inserted rows, `leave` defers a removed row's detach until its promise
+     * resolves, and `onTransition` runs after each keyed reconcile so FLIP can
+     * glide surviving rows to their new positions. Omitted ⇒ no animation (the
+     * reconcile is unchanged). Never runs under SSR. */
+    transition?: TransitionOptions
   },
 ): Mountable
 ```
@@ -742,6 +753,7 @@ function show<T>(
   cond: Signal<T>,
   render: (narrowed: Signal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
+  transition?: TransitionOptions,
 ): Mountable
 ```
 
@@ -753,7 +765,11 @@ a child scope). Same-value updates do NOT remount — the mounted arm's child
 scope handles its own inner reactivity. An absent arm renders nothing.
 
 ```typescript
-function signalBranch(disc: ShowCond, arms: Readonly<Record<string, () => Renderable>>): Mountable
+function signalBranch(
+  disc: ShowCond,
+  arms: Readonly<Record<string, () => Renderable>>,
+  transition?: TransitionOptions,
+): Mountable
 ```
 
 ### `signalEach()`
@@ -775,6 +791,7 @@ function signalEach<T>(
   key: (item: T) => string | number,
   renderRow: (getCtx: () => RowCtx<T>) => Renderable,
   extraDeps?: readonly string[],
+  transition?: TransitionOptions,
 ): Mountable
 ```
 
@@ -791,6 +808,7 @@ function signalEachDirect<T>(
   key: (item: T) => string | number,
   rowFactory: RowFactory,
   extraDeps?: readonly string[],
+  transition?: TransitionOptions,
 ): Mountable
 ```
 
@@ -837,7 +855,12 @@ bindings re-run when THEIR deps change, not just when the condition flips).
 Toggling the condition swaps arms; a same-truthiness update does NOT remount.
 
 ```typescript
-function signalShow(cond: ShowCond, render: () => Renderable, orElse?: () => Renderable): Mountable
+function signalShow(
+  cond: ShowCond,
+  render: () => Renderable,
+  orElse?: () => Renderable,
+  transition?: TransitionOptions,
+): Mountable
 ```
 
 ### `signalText()`

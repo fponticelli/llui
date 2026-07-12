@@ -20,6 +20,7 @@ import type { SignalScope } from './runtime.js'
 import type { Renderable } from './element.js'
 import { rebaseRowSpecs } from './row-rebase.js'
 import { buildAndPublishScope } from './scope-build.js'
+import type { TransitionOptions } from '../types.js'
 
 /** Placement + teardown policy for an {@link ArmController}. The controller reads
  * `parent()`/`insertBefore()` fresh on every mount (anchors move as siblings come
@@ -42,6 +43,24 @@ export interface ArmPlacement {
    * bracketed primitive ignores them and clears between its anchors instead (which
    * also sweeps nested-structural content). */
   clear(nodes: readonly Node[]): void
+  /** Optional element-level enter/leave hooks (see {@link TransitionOptions}). When
+   * `leave` is provided the controller DEFERS node detachment + scope teardown of a
+   * swapped-out arm until the returned promise resolves; `enter` runs post-mount on
+   * a freshly-inserted arm. Absent (the default) ⇒ synchronous swap, byte-identical
+   * to the pre-transition behavior. Never invoked under {@link ssr}. */
+  transition?: TransitionOptions
+  /** True during a server render — transitions never run (no live DOM / no frames).
+   * The controller then always takes the synchronous path. */
+  ssr?: boolean
+  /** Snapshot the exact DOM footprint of the arm to detach LATER, when its `leave`
+   * animation resolves. Captured at teardown time — BEFORE any replacement arm is
+   * inserted — so it names only the leaving arm's nodes (its own PLUS any nested
+   * structural content between the anchors), never the incoming arm's. Required
+   * (with {@link detach}) for the deferred-leave path; when absent the controller
+   * falls back to the synchronous {@link clear}. */
+  collectRegion?(nodes: readonly Node[]): readonly Node[]
+  /** Detach a set previously captured by {@link collectRegion}. */
+  detach?(nodes: readonly Node[]): void
 }
 
 interface MountedArm<K> {
@@ -49,6 +68,18 @@ interface MountedArm<K> {
   scope: SignalScope
   nodes: readonly Node[]
   teardowns: Array<() => void>
+}
+
+/** A swapped-out arm whose `leave` animation is still running: its scope + nodes are
+ * kept alive and in the DOM until the promise resolves (or an interrupting switch /
+ * dispose supersedes it — see {@link ArmController.finalizePendingLeaves}). */
+interface PendingLeave {
+  scope: SignalScope
+  /** exact nodes to detach on finalize (captured before any replacement arm) */
+  nodes: readonly Node[]
+  teardowns: Array<() => void>
+  /** guards against double-teardown when a superseding finalize races the promise */
+  finalized: boolean
 }
 
 /**
@@ -59,6 +90,10 @@ interface MountedArm<K> {
  */
 export class ArmController<K> {
   private mounted: MountedArm<K> | null = null
+  // Arms whose `leave` animation is in flight. At most one accumulates in normal
+  // use — a new switch finalizes any prior pending leaves first (see switchTo) — but
+  // a Set keeps the finalize/resurrect bookkeeping robust regardless.
+  private pendingLeaves: Set<PendingLeave> | null = null
 
   constructor(private readonly place: ArmPlacement) {}
 
@@ -85,7 +120,15 @@ export class ArmController<K> {
     if (!parent) return
     if (this.mounted && this.mounted.key === key) return // same arm — inner scope handles updates
 
-    this.teardown()
+    // Interruption safety: finalize any arm still animating out from a PRIOR switch
+    // before starting a new one. This supersedes the pending leave (hard-detaching
+    // its nodes + running its teardowns exactly once) so we never accumulate
+    // overlapping leaving arms and the pending promise's later resolution is a
+    // no-op (its `finalized` guard) — no double-teardown, no leaked nodes. The arm
+    // we are about to leave (below) is created AFTER this, so it is not affected.
+    this.finalizePendingLeaves()
+
+    this.teardown(false)
 
     if (!armFn) return
     const built = runBuild(this.place.doc, armFn, this.place.buildCtx)
@@ -102,18 +145,74 @@ export class ArmController<K> {
     this.place.ownerHost.scope?.addChild(scope) // receive future state updates while mounted
     runMounts(built.mounts, parent as Element, built.teardowns)
     this.mounted = { key, scope, nodes: built.nodes, teardowns: built.teardowns }
+    // Post-mount enter hook: nodes are inserted and bindings committed. Skipped
+    // under SSR (no live DOM). enter is fire-and-forget — the arm stays mounted
+    // whether or not its enter animation has finished.
+    if (!this.place.ssr && this.place.transition?.enter) {
+      this.place.transition.enter(Array.from(built.nodes))
+    }
   }
 
-  /** Tear down the currently-mounted arm, if any (host dispose). Idempotent. */
+  /** Tear down the currently-mounted arm, if any (host dispose). Idempotent.
+   * Finalizes synchronously — a `leave` animation must never hold DOM/scopes past
+   * the owning component's unmount. */
   dispose(): void {
-    this.teardown()
+    this.finalizePendingLeaves()
+    this.teardown(true)
   }
 
-  private teardown(): void {
-    if (!this.mounted) return
-    this.place.ownerHost.scope?.removeChild(this.mounted.scope)
-    for (const t of this.mounted.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
-    this.place.clear(this.mounted.nodes)
+  /** Tear down the currently-mounted arm. With `immediate` false and a `leave` hook
+   * present, DEFERS node detachment + scope teardown until `leave` resolves (the arm
+   * animates out while a replacement may already be mounting); otherwise removes
+   * synchronously — the byte-identical pre-transition path. */
+  private teardown(immediate: boolean): void {
+    const m = this.mounted
+    if (!m) return
     this.mounted = null
+
+    const leave = immediate || this.place.ssr ? undefined : this.place.transition?.leave
+    if (leave && this.place.collectRegion && this.place.detach) {
+      // Deferred leave: keep the arm's scope registered + its nodes in the DOM while
+      // the animation runs. Capture the exact leaving footprint NOW (before any
+      // replacement arm is inserted before the same anchor).
+      const pending: PendingLeave = {
+        scope: m.scope,
+        nodes: this.place.collectRegion(m.nodes),
+        teardowns: m.teardowns,
+        finalized: false,
+      }
+      ;(this.pendingLeaves ??= new Set()).add(pending)
+      const result = leave(Array.from(pending.nodes))
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        void (result as Promise<void>).then(() => this.finalizeLeave(pending))
+      } else {
+        // A `leave` that returns void (no promise) detaches synchronously — same
+        // as an absent leave, but still routed through the pending record so a
+        // reentrant switch during the call can't double-finalize.
+        this.finalizeLeave(pending)
+      }
+      return
+    }
+
+    // Synchronous swap (no leave / immediate / SSR) — unchanged behavior.
+    this.place.ownerHost.scope?.removeChild(m.scope)
+    for (const t of m.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
+    this.place.clear(m.nodes)
+  }
+
+  /** Detach a pending-leave arm and run its teardowns exactly once. */
+  private finalizeLeave(pending: PendingLeave): void {
+    if (pending.finalized) return
+    pending.finalized = true
+    this.pendingLeaves?.delete(pending)
+    this.place.ownerHost.scope?.removeChild(pending.scope)
+    for (const t of pending.teardowns.splice(0)) t()
+    this.place.detach!(pending.nodes)
+  }
+
+  /** Finalize every in-flight leave synchronously (interruption / dispose). */
+  private finalizePendingLeaves(): void {
+    if (!this.pendingLeaves || this.pendingLeaves.size === 0) return
+    for (const pending of [...this.pendingLeaves]) this.finalizeLeave(pending)
   }
 }

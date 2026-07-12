@@ -164,8 +164,10 @@ first element in each `nodes` group is animated.
 Because it mutates `overflow` / `height` / `transition` inline, collapse
 registers a per-element restore that runs the moment a later phase supersedes
 it — so an interrupted open/close never leaves stale inline styles behind.
-Like the other presets, these hooks are consumed at the route/container seam
-(`fromTransition`), not by the not-yet-wired structural primitives.
+Like the other presets, this bundle is passed as the trailing transition
+argument to the signal `show`/`branch`/`each` primitives (e.g.
+`show(state.at('open'), () => [panel()], undefined, collapse())`) and is also
+consumed at the route/container seam via `fromTransition`.
 
 ```typescript
 function collapse(opts: CollapseOptions = {}): TransitionOptions
@@ -194,11 +196,16 @@ Combine with an item-level appear/disappear preset via `mergeTransitions`:
 mergeTransitions(fade(), flip())
 ```
 
-**Not yet wired:** the signal `each()` primitive does not currently invoke
-`onTransition`, so spreading `flip()` onto an `each({...})` has no effect.
-Wiring the structural reconcilers to call these hooks is a deferred
-cross-package change; `flip()` and `mergeTransitions()` are the building
-blocks that seam will consume.
+The signal `each()` primitive invokes `onTransition` (with the entering /
+leaving / parent for the reconcile), so passing `flip()` as `each`'s trailing
+transition argument animates surviving rows to their new positions:
+
+```ts
+each(state.at('rows'), (r) => r.id, row, undefined, flip({ duration: 300 }))
+// or combined with an appear/disappear preset:
+each(state.at('rows'), (r) => r.id, row, undefined, mergeTransitions(fade(), flip()))
+```
+
 Requires WAAPI (`element.animate()`). In environments without it (old
 browsers, minimal jsdom) positions are still tracked but no animation runs.
 
@@ -217,8 +224,9 @@ Useful for combining an item-level animation (fade/slide/...) with flip():
 mergeTransitions(fade(), flip())
 ```
 
-(As with `flip()`, the `onTransition` half is only meaningful once the
-structural reconcilers invoke it — not yet wired. See `flip()`.)
+The merged bundle is passed as the trailing transition argument to
+`show`/`branch`/`each` (or adapted onto a route via `fromTransition`); `each`
+drives the `onTransition` half of a `flip()` part. See `flip()`.
 
 ```typescript
 function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions
@@ -247,10 +255,10 @@ The vike variant operates on the container / page-slot element itself — its
 opacity / transform fades out the whole page, then the new page fades in when
 it mounts.
 
-> Note: spreading the result directly into a `branch()`/`show()` call does
-> **not** animate anything today — the signal structural primitives don't yet
-> accept transition hooks. Route-level animation goes through
-> `fromTransition`, not the structural primitives.
+> Note: this preset targets the WHOLE page slot. For animating individual
+> arms/rows, pass a preset bundle (`fade`/`slide`/`flip`/…) as the trailing
+> transition argument to `show`/`branch`/`each` directly; `routeTransition`
+> via `fromTransition` is for the page-to-page/container swap.
 > The call form also accepts a pre-built `TransitionOptions` from any preset or
 > composition (`fade`, `slide`, `scale`, `flip`, `mergeTransitions`, …) —
 > detected by the presence of an `enter`, `leave`, or `onTransition` hook — and
@@ -281,10 +289,10 @@ hidden/background tab where rAF is paused — the animation settles instantly
 to its target and the returned Promise still resolves. This matters for the
 `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
 not hang (e.g. `fromTransition(spring())` route navigation).
-Consumed at the route/container seam via `fromTransition` in
-`@llui/vike/client`. The signal `show`/`each`/`branch` primitives do **not**
-currently accept transition hooks, so `show({ ...spring() })` is not yet
-wired — that structural seam is a deferred cross-package change.
+Passed as the trailing transition argument to the signal `show`/`branch`/`each`
+primitives to spring an arm/row in and defer its leave, e.g.
+`show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
+at the route/container seam via `fromTransition` in `@llui/vike/client`.
 
 ```typescript
 function spring(opts: SpringOptions = {}): TransitionOptions
@@ -301,10 +309,13 @@ microtask, so the next batch starts from 0.
 stagger(fade({ duration: 150 }), { delayPerItem: 30 })
 ```
 
-**Not yet wired for lists:** staggering only produces visible per-item delays
-once the structural `each()` primitive invokes the `enter`/`leave` hooks per
-row, which it does not do today. Until that runtime seam lands, `stagger`
-wraps a bundle but there is no `each()` call site feeding it batched rows.
+The signal `each()` primitive invokes the `enter`/`leave` hooks per row, so a
+staggered bundle passed as `each`'s trailing transition argument gives batch-
+inserted rows their sequential delays:
+
+```ts
+each(state.at('items'), (i) => i.id, row, undefined, stagger(fade({ duration: 150 })))
+```
 
 ```typescript
 function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions
@@ -313,17 +324,22 @@ function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOpti
 ### `transition()`
 
 Build a `TransitionOptions` bundle (`{ enter, leave }`) from a class/style spec.
-The returned hooks operate on raw DOM `Node`s. Today the only place the
-runtime actually invokes them is the **route/container** seam:
-`fromTransition(...)` in `@llui/vike/client` adapts the bundle onto the page
-slot element (see `routeTransition`). Element-level structural transitions —
-animating individual `show`/`branch`/`each` arms — are **not yet wired**: the
-signal `show`/`each`/`branch` primitives do not currently accept transition
-hooks, so `show({ ...fade() })` / `each({ ...fade() })` do nothing. That
-runtime seam is a deferred cross-package change; until it lands, drive these
-bundles through the route-level adapter, not the structural primitives.
-Lifecycle:
+The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
 
+- **Element-level structural transitions** — the signal `show`/`branch`/`each`
+  primitives accept this `TransitionOptions` bundle directly and drive it:
+  `enter` animates a freshly-mounted arm/row in, and `leave` DEFERS the
+  swapped-out arm/row's unmount until its promise resolves. Pass a bundle as
+  the trailing argument:
+  ```ts
+  show(state.at('open'), () => [panel()], undefined, fade({ duration: 150 }))
+  branch(state, (s) => s.tab, { a: () => [tabA()], b: () => [tabB()] }, slide())
+  each(state.at('items'), (i) => i.id, row, undefined, fade({ duration: 120 }))
+  ```
+- **Route/container** seam — `fromTransition(...)` in `@llui/vike/client`
+  adapts the same bundle onto the page slot element (see `routeTransition`)
+  for whole-view/route navigations rather than individual arms.
+  Lifecycle:
 - **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
   → wait for `transitionend` (timer fallback) → remove all transient values.
 - **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`

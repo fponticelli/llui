@@ -146,8 +146,10 @@ export interface CollapseOptions {
  * registers a per-element restore that runs the moment a later phase supersedes
  * it — so an interrupted open/close never leaves stale inline styles behind.
  *
- * Like the other presets, these hooks are consumed at the route/container seam
- * (`fromTransition`), not by the not-yet-wired structural primitives.
+ * Like the other presets, this bundle is passed as the trailing transition
+ * argument to the signal `show`/`branch`/`each` primitives (e.g.
+ * `show(state.at('open'), () => [panel()], undefined, collapse())`) and is also
+ * consumed at the route/container seam via `fromTransition`.
  */
 export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const axis = opts.axis ?? 'y'

@@ -6,8 +6,9 @@
 import { requireCtx, mountable, type Mountable } from './build-context.js'
 import type { Renderable } from './element.js'
 import { isRowLocalDep, rebaseComponentDep, rebaseRowDep } from './row-rebase.js'
-import { removeBetween } from './dom-region.js'
+import { removeBetween, nodesBetween, detachNodes } from './dom-region.js'
 import { ArmController } from './arm-controller.js'
+import type { TransitionOptions } from '../types.js'
 
 /** Condition source for `signalShow` / discriminant source for `signalBranch`: an
  * accessor plus its dep paths. */
@@ -55,14 +56,16 @@ export function signalShow(
   cond: ShowCond,
   render: () => Renderable,
   orElse?: () => Renderable,
+  transition?: TransitionOptions,
 ): Mountable {
-  return mountable(() => buildSignalShow(cond, render, orElse))
+  return mountable(() => buildSignalShow(cond, render, orElse, transition))
 }
 
 function buildSignalShow(
   cond: ShowCond,
   render: () => Renderable,
-  orElse?: () => Renderable,
+  orElse: (() => Renderable) | undefined,
+  transition: TransitionOptions | undefined,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -95,6 +98,12 @@ function buildSignalShow(
     parent: () => end.parentNode,
     insertBefore: () => end,
     clear: () => removeBetween(start, end), // arm nodes + any nested-structural content
+    transition,
+    ssr: c.ssr,
+    // Capture the leaving arm's full between-anchors footprint (its own nodes plus
+    // any nested-structural content) before a replacement arm is inserted.
+    collectRegion: () => nodesBetween(start, end),
+    detach: detachNodes,
   })
 
   const reconcile = (state: unknown): void => {
@@ -133,11 +142,16 @@ function buildSignalShow(
 export function signalBranch(
   disc: ShowCond,
   arms: Readonly<Record<string, () => Renderable>>,
+  transition?: TransitionOptions,
 ): Mountable {
-  return mountable(() => buildSignalBranch(disc, arms))
+  return mountable(() => buildSignalBranch(disc, arms, transition))
 }
 
-function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => Renderable>>): Node {
+function buildSignalBranch(
+  disc: ShowCond,
+  arms: Readonly<Record<string, () => Renderable>>,
+  transition: TransitionOptions | undefined,
+): Node {
   const c = requireCtx()
   const doc = c.doc
   const inRow = c.inRow
@@ -163,6 +177,10 @@ function buildSignalBranch(disc: ShowCond, arms: Readonly<Record<string, () => R
     parent: () => end.parentNode,
     insertBefore: () => end,
     clear: () => removeBetween(start, end),
+    transition,
+    ssr: c.ssr,
+    collectRegion: () => nodesBetween(start, end),
+    detach: detachNodes,
   })
 
   const reconcile = (state: unknown): void => {

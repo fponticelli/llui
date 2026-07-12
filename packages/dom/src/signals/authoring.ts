@@ -9,6 +9,7 @@
 // `component` and `mountApp` route to the signal runtime.
 
 import type { Signal, LiveSignal } from './types.js'
+import type { TransitionOptions } from '../types.js'
 import { isSignalHandle, rowHandle } from './handle.js'
 import { react, type Mountable } from './build-context.js'
 import {
@@ -260,6 +261,13 @@ export function each<T>(
   opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
+    /** Optional element-level transition hooks (from `@llui/transitions` — e.g.
+     * `fade()`, `flip()`, `mergeTransitions(fade(), flip())`): `enter` animates
+     * newly-inserted rows, `leave` defers a removed row's detach until its promise
+     * resolves, and `onTransition` runs after each keyed reconcile so FLIP can
+     * glide surviving rows to their new positions. Omitted ⇒ no animation (the
+     * reconcile is unchanged). Never runs under SSR. */
+    transition?: TransitionOptions
   },
 ): Mountable {
   if (!isSignalHandle(items)) return compiledAway('each')
@@ -275,6 +283,7 @@ export function each<T>(
       return opts.render(itemH, indexH)
     },
     WHOLE_STATE_DEPS,
+    opts.transition,
   )
 }
 
@@ -336,6 +345,12 @@ export function show<T>(
   cond: Signal<T>,
   render: (narrowed: Signal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
+  // Optional element-level transition hooks (from `@llui/transitions` — e.g.
+  // `fade()`, `slide()`): `enter` animates the arm in after it mounts, `leave`
+  // defers the swapped-out arm's detach + scope teardown until its promise
+  // resolves. Toggling back before `leave` resolves cancels cleanly (a fresh arm
+  // mounts). Omitted ⇒ synchronous swap (unchanged). Never runs under SSR.
+  transition?: TransitionOptions,
 ): Mountable {
   if (!isSignalHandle(cond)) return compiledAway('show')
   // the arm reads component state; the cond handle (path-rooted) IS the narrowed
@@ -345,6 +360,7 @@ export function show<T>(
     { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
     () => render(narrowed),
     orElse,
+    transition,
   )
 }
 
@@ -358,18 +374,28 @@ export function branch<U extends object, D extends keyof U>(
   arms: {
     [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => Renderable
   },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
 ): Mountable
 /** Render keyed by a plain string/number signal's value (no narrowing). */
 export function branch<K extends string | number>(
   value: Signal<K>,
   arms: Partial<Record<K, () => Renderable>>,
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
 ): Mountable
-export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): Mountable {
+export function branch(
+  value: Signal<unknown>,
+  arg1: unknown,
+  arg2?: unknown,
+  arg3?: unknown,
+): Mountable {
   if (!isSignalHandle(value)) return compiledAway('branch')
   if (typeof arg1 === 'function') {
-    // 3-arg: discriminant fn + narrowed arms
+    // 3-arg: discriminant fn + narrowed arms; `arg3` is the optional transition.
     const discFn = arg1 as (u: unknown) => string | number
-    const armMap = arms as Record<string, (v: Signal<unknown>) => Renderable>
+    const armMap = arg2 as Record<string, (v: Signal<unknown>) => Renderable>
+    const transition = arg3 as TransitionOptions | undefined
     const lowered: Record<string, () => Renderable> = {}
     for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
     return signalBranch(
@@ -379,15 +405,18 @@ export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): M
         componentRooted: value.rowLocal !== true,
       },
       lowered,
+      transition,
     )
   }
-  // 2-arg: the value IS the discriminant (string/number)
+  // 2-arg: the value IS the discriminant (string/number); `arg2` is the transition.
   const armMap = arg1 as Record<string, () => Renderable>
+  const transition = arg2 as TransitionOptions | undefined
   const lowered: Record<string, () => Renderable> = {}
   for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!()
   return signalBranch(
     { produce: value.produce, deps: value.deps, componentRooted: value.rowLocal !== true },
     lowered,
+    transition,
   )
 }
 

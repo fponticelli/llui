@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import {
   init,
   update,
@@ -66,6 +66,15 @@ export interface AlertDialogOverlayOptions {
   send: Send<DialogMsg>
   parts: AlertDialogParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the alert-dialog content (from
+   * `@llui/transitions`), forwarded to `dialog.overlay`. `enter` animates it in
+   * on open; `leave` defers the unmount until its promise resolves, so the close
+   * plays an exit animation. Keep `skipAnimations` at its default (true) here.
+   *
+   * @example alertDialog.overlay({ state, send, parts, content, transition: fade({ duration: 150 }) })
+   */
+  transition?: TransitionOptions
   closeOnEscape?: boolean
   /** Whether outside-click should dismiss (default: false for alert dialogs). */
   closeOnOutsideClick?: boolean

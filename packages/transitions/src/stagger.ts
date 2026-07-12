@@ -19,10 +19,13 @@ export interface StaggerOptions {
  * stagger(fade({ duration: 150 }), { delayPerItem: 30 })
  * ```
  *
- * **Not yet wired for lists:** staggering only produces visible per-item delays
- * once the structural `each()` primitive invokes the `enter`/`leave` hooks per
- * row, which it does not do today. Until that runtime seam lands, `stagger`
- * wraps a bundle but there is no `each()` call site feeding it batched rows.
+ * The signal `each()` primitive invokes the `enter`/`leave` hooks per row, so a
+ * staggered bundle passed as `each`'s trailing transition argument gives batch-
+ * inserted rows their sequential delays:
+ *
+ * ```ts
+ * each(state.at('items'), i => i.id, row, undefined, stagger(fade({ duration: 150 })))
+ * ```
  */
 export function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions {
   const delayPerItem = opts?.delayPerItem ?? 30

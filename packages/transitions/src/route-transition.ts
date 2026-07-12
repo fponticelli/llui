@@ -38,10 +38,10 @@ export interface RouteTransitionOptions {
  * opacity / transform fades out the whole page, then the new page fades in when
  * it mounts.
  *
- * > Note: spreading the result directly into a `branch()`/`show()` call does
- * > **not** animate anything today — the signal structural primitives don't yet
- * > accept transition hooks. Route-level animation goes through
- * > `fromTransition`, not the structural primitives.
+ * > Note: this preset targets the WHOLE page slot. For animating individual
+ * > arms/rows, pass a preset bundle (`fade`/`slide`/`flip`/…) as the trailing
+ * > transition argument to `show`/`branch`/`each` directly; `routeTransition`
+ * > via `fromTransition` is for the page-to-page/container swap.
  *
  * The call form also accepts a pre-built `TransitionOptions` from any preset or
  * composition (`fade`, `slide`, `scale`, `flip`, `mergeTransitions`, …) —

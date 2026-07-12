@@ -6,15 +6,23 @@ import { waitForEnd, createRunScope } from './anim.js'
 /**
  * Build a `TransitionOptions` bundle (`{ enter, leave }`) from a class/style spec.
  *
- * The returned hooks operate on raw DOM `Node`s. Today the only place the
- * runtime actually invokes them is the **route/container** seam:
- * `fromTransition(...)` in `@llui/vike/client` adapts the bundle onto the page
- * slot element (see `routeTransition`). Element-level structural transitions —
- * animating individual `show`/`branch`/`each` arms — are **not yet wired**: the
- * signal `show`/`each`/`branch` primitives do not currently accept transition
- * hooks, so `show({ ...fade() })` / `each({ ...fade() })` do nothing. That
- * runtime seam is a deferred cross-package change; until it lands, drive these
- * bundles through the route-level adapter, not the structural primitives.
+ * The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
+ *
+ *  - **Element-level structural transitions** — the signal `show`/`branch`/`each`
+ *    primitives accept this `TransitionOptions` bundle directly and drive it:
+ *    `enter` animates a freshly-mounted arm/row in, and `leave` DEFERS the
+ *    swapped-out arm/row's unmount until its promise resolves. Pass a bundle as
+ *    the trailing argument:
+ *
+ *    ```ts
+ *    show(state.at('open'), () => [panel()], undefined, fade({ duration: 150 }))
+ *    branch(state, s => s.tab, { a: () => [tabA()], b: () => [tabB()] }, slide())
+ *    each(state.at('items'), i => i.id, row, undefined, fade({ duration: 120 }))
+ *    ```
+ *
+ *  - **Route/container** seam — `fromTransition(...)` in `@llui/vike/client`
+ *    adapts the same bundle onto the page slot element (see `routeTransition`)
+ *    for whole-view/route navigations rather than individual arms.
  *
  * Lifecycle:
  *  - **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`

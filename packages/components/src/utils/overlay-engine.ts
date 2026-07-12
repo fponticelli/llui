@@ -1,4 +1,4 @@
-import type { Signal, Mountable, Renderable, ElProps } from '@llui/dom'
+import type { Signal, Mountable, Renderable, ElProps, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
 import { pushDismissable } from './dismissable.js'
 import { pushFocusTrap } from './focus-trap.js'
@@ -13,8 +13,12 @@ import type { TextDirection } from './direction.js'
  * declares against. It owns the structure that was previously copy-pasted a
  * dozen times:
  *
- *   `show(mountWhen)` (stay mounted through the exit animation)
- *     → SSR-safe portal to `host`
+ *   SSR-safe portal to `host` (the outer shell — mounted for the component's
+ *   lifetime so the mountWhen `show` below lives INSIDE the host)
+ *     → `show(mountWhen)` (stay mounted through the exit animation; carries the
+ *       optional `transition`, whose `enter`/`leave` therefore receive the REAL
+ *       popup content nodes — they sit between this show's anchors in the host,
+ *       not the inline portal placeholder)
  *       → an optional persistent block (floating positioning that survives the
  *         exit animation, e.g. popover)
  *       → the interaction phase — either placed directly (single-phase) or
@@ -119,6 +123,26 @@ export interface OverlayEngineOptions<S> {
   /** Select the focused input's existing value (searchable-select prefill). */
   focusOnOpenSelect?: boolean
   restoreFocus?: OverlayRestoreFocusConfig
+  /**
+   * Optional element-level enter/leave transition (from `@llui/transitions` —
+   * e.g. `fade({ duration: 150 })`). Threaded onto the OUTER `show(mountWhen)`
+   * gate — the single show that keeps the popup content in the DOM — so `enter`
+   * animates the content in when the overlay opens and `leave` defers the final
+   * unmount until its promise resolves (giving raw-open overlays an exit
+   * animation for free).
+   *
+   * Coordination with the presence (`data-state`) machinery: the JS transition
+   * and the CSS presence exit are two mechanisms for the SAME job (defer unmount
+   * for the exit animation), gated on mutually-exclusive status transitions — the
+   * CSS exit plays on `status: 'closing'`, the JS `leave` fires only when the
+   * outer gate finally goes false (`status: 'closed'`). With the components'
+   * default `skipAnimations: true` there is no `'closing'` phase, so a supplied
+   * transition is the SOLE exit driver — no double-animation, no hang. Supplying
+   * BOTH a JS transition AND `skipAnimations: false` would run them in sequence
+   * (CSS then JS); keep `skipAnimations` at its default when driving exits with a
+   * JS transition.
+   */
+  transition?: TransitionOptions
 }
 
 export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
@@ -250,5 +274,17 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     return children
   }
 
-  return show(opts.state.map(opts.mountWhen), () => [portal(() => buildInner(), opts.host)])
+  // Portal is the OUTER shell (mounted for the component's lifetime); the
+  // mountWhen-gated `show` lives INSIDE it so its arm nodes — the real popup
+  // content — sit in the portal host. That placement is what lets a supplied
+  // `transition` animate (and defer the unmount of) the ACTUAL content: the arm
+  // controller hands `enter`/`leave` the content nodes between the show's
+  // anchors, not the inline portal placeholder (which a leave would treat as an
+  // empty element set, animating and deferring nothing). With no transition the
+  // gated swap is synchronous — content mounts on open and is removed on close
+  // exactly as before.
+  return portal(
+    () => [show(opts.state.map(opts.mountWhen), () => buildInner(), undefined, opts.transition)],
+    opts.host,
+  )
 }

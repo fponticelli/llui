@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -283,6 +283,15 @@ export interface OverlayOptions {
   send: Send<TooltipMsg>
   parts: TooltipParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the tooltip content (from
+   * `@llui/transitions`). `enter` animates it in on open; `leave` defers the
+   * unmount until its promise resolves, so the close plays an exit animation.
+   * Opt-in only — supplying this does not turn animation on automatically.
+   *
+   * @example tooltip.overlay({ state, send, parts, content, transition: fade({ duration: 100 }) })
+   */
+  transition?: TransitionOptions
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -301,6 +310,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // outside-click is disabled (tooltips dismiss on blur / pointer-leave).
   return createOverlay({
     state: opts.state,
+    transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
     positioner: opts.parts.positioner,
     content: opts.content,

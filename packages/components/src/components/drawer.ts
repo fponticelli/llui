@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -239,6 +239,15 @@ export interface OverlayOptions {
   send: Send<DrawerMsg>
   parts: DrawerParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the drawer content (from
+   * `@llui/transitions`). `enter` animates it in on open; `leave` defers the
+   * unmount until its promise resolves, so the close plays an exit animation.
+   * Keep `skipAnimations` at its default (true) when driving exits this way.
+   *
+   * @example drawer.overlay({ state, send, parts, content, transition: slide({ duration: 200 }) })
+   */
+  transition?: TransitionOptions
   closeOnEscape?: boolean
   closeOnOutsideClick?: boolean
   trapFocus?: boolean
@@ -258,6 +267,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // unwinds at the close REQUEST (isVisible). Ids resolve against `document`.
   return createOverlay({
     state: opts.state,
+    transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
     positioner: opts.parts.positioner,
     content: opts.content,

@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -348,6 +348,15 @@ export interface OverlayOptions {
   send: Send<MenuMsg>
   parts: MenuParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the menu content (from
+   * `@llui/transitions`). `enter` animates it in on open; `leave` defers the
+   * unmount until its promise resolves, so the close plays an exit animation.
+   * Keep `skipAnimations` at its default (true) when driving exits this way.
+   *
+   * @example menu.overlay({ state, send, parts, content, transition: fade({ duration: 120 }) })
+   */
+  transition?: TransitionOptions
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -361,6 +370,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // restored to the trigger on EVERY close when it is still inside the overlay.
   return createOverlay({
     state: opts.state,
+    transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
     positioner: opts.parts.positioner,
     content: opts.content,

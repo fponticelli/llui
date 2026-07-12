@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -687,6 +687,15 @@ export interface OverlayOptions {
   send: Send<ComboboxMsg>
   parts: ComboboxParts
   content: () => Renderable
+  /**
+   * Optional enter/leave transition for the combobox listbox (from
+   * `@llui/transitions`). `enter` animates it in on open; `leave` defers the
+   * unmount until its promise resolves, giving the raw-`open` combobox an exit
+   * animation for free. Omitted ⇒ the listbox closes synchronously as before.
+   *
+   * @example combobox.overlay({ state, send, parts, content, transition: fade({ duration: 120 }) })
+   */
+  transition?: TransitionOptions
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -700,6 +709,7 @@ export function overlay(opts: OverlayOptions): Mountable {
   // is never focused (trigger-focused ARIA pattern with aria-activedescendant).
   return createOverlay({
     state: opts.state,
+    transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
     positioner: opts.parts.positioner,
     content: opts.content,

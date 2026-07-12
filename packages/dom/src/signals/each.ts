@@ -27,6 +27,7 @@ import {
 import { scopeFromSpecs, depsSignatureMatches, type ScopeShape } from './scope-build.js'
 import { RowStateGate } from './row-state-gate.js'
 import { EMPTY_ROW_NODES, EMPTY_ROW_TEARDOWNS, EMPTY_ROW_MOUNTS, type RowCtx } from './row.js'
+import type { TransitionOptions } from '../types.js'
 
 export type { RowCtx } from './row.js'
 
@@ -112,8 +113,9 @@ export function signalEach<T>(
   key: (item: T) => string | number,
   renderRow: (getCtx: () => RowCtx<T>) => Renderable,
   extraDeps?: readonly string[],
+  transition?: TransitionOptions,
 ): Mountable {
-  return mountable(() => buildSignalEach(source, key, renderRow, undefined, extraDeps))
+  return mountable(() => buildSignalEach(source, key, renderRow, undefined, extraDeps, transition))
 }
 
 /** Direct-construction keyed list: same keyed reconcile as {@link signalEach},
@@ -125,8 +127,9 @@ export function signalEachDirect<T>(
   key: (item: T) => string | number,
   rowFactory: RowFactory,
   extraDeps?: readonly string[],
+  transition?: TransitionOptions,
 ): Mountable {
-  return mountable(() => buildSignalEach(source, key, undefined, rowFactory, extraDeps))
+  return mountable(() => buildSignalEach(source, key, undefined, rowFactory, extraDeps, transition))
 }
 
 function buildSignalEach<T>(
@@ -150,9 +153,19 @@ function buildSignalEach<T>(
   // the precise collected paths. Without it, a row-nested arm reading an
   // unrelated state path was frozen out of state-only changes (stale DOM).
   extraDeps?: readonly string[],
+  // Optional element-level transition hooks (see {@link TransitionOptions}):
+  // `enter` runs on freshly-inserted rows, `leave` DEFERS a removed row's detach
+  // until its promise resolves (a row re-added mid-leave resurrects), and
+  // `onTransition({ entering, leaving, parent })` runs after the keyed reconcile
+  // commit so FLIP can measure old→new row positions. Absent (the default) ⇒ the
+  // reconcile is byte-identical to the pre-transition path. Never runs under SSR.
+  transition?: TransitionOptions,
 ): Node {
   const c = requireCtx()
   const doc = c.doc
+  // Transitions are a live-DOM concern — disabled entirely under SSR.
+  const tx = c.ssr ? undefined : transition
+  const leaveHook = tx?.leave
   // When this each is itself nested in an enclosing row, its reconcile must
   // receive the component state (`ctx.state`), so its own rows mount with
   // `ctx.state` = the component state (not the enclosing row ctx).
@@ -182,7 +195,46 @@ function buildSignalEach<T>(
     mounts: ReadonlyArray<(root: Element) => void | (() => void)>
     mounted: boolean
   }
+  // A row whose `leave` animation is in flight: kept out of `rows`/`order` (so the
+  // keyed reconcile ignores it) but with its scope + still-connected nodes alive
+  // until the promise resolves — or until a later update RE-ADDS its key, which
+  // resurrects it (cancels the pending detach and moves it back into `rows`).
+  interface LeavingRow {
+    row: Row
+    cancelled: boolean
+  }
   const rows = new Map<string, Row>()
+  // Rows currently animating out (deferred detach). Allocated only when a `leave`
+  // hook is present, so the no-transition path adds no state.
+  const leaving: Map<string, LeavingRow> | null = leaveHook ? new Map() : null
+
+  /** Detach a leaving row and run its teardowns exactly once — unless it was
+   * cancelled (resurrected) or superseded by a newer leave for the same key. */
+  const finalizeLeavingRow = (k: string, entry: LeavingRow): void => {
+    if (entry.cancelled) return
+    if (leaving!.get(k) !== entry) return // superseded by a newer leave for this key
+    entry.cancelled = true
+    leaving!.delete(k)
+    const row = entry.row
+    if (row.teardowns.length) for (const t of row.teardowns.splice(0)) t()
+    for (const node of row.nodes) node.parentNode?.removeChild(node)
+  }
+
+  /** Begin leaving `row` (already removed from `rows`): keep it alive + connected,
+   * run the `leave` hook, and defer detach until its promise resolves. A `leave`
+   * that returns void (e.g. `flip`, which detaches immediately and animates the
+   * survivors) finalizes synchronously. */
+  const startLeave = (k: string, row: Row): void => {
+    const entry: LeavingRow = { row, cancelled: false }
+    leaving!.set(k, entry)
+    const result = leaveHook!(Array.from(row.nodes))
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      void (result as Promise<void>).then(() => finalizeLeavingRow(k, entry))
+    } else {
+      finalizeLeavingRow(k, entry)
+    }
+  }
+
   // Keys in current DOM order — the previous reconcile's desired order. Drives the
   // LIS move-minimization (old position of each surviving key).
   let order: string[] = []
@@ -238,6 +290,14 @@ function buildSignalEach<T>(
     // item changed? Delegated to the gate (see RowStateGate.shouldSweep); replaces
     // the coarse always-on read at the per-row update sites below.
     const sweepAll = gate.shouldSweep(rowState)
+
+    // Transition bookkeeping (only allocated when a transition is wired): the nodes
+    // of rows created / removed in THIS reconcile, handed to `enter` and
+    // `onTransition({ entering, leaving, parent })` after the commit. The fast paths
+    // below (same-structure, same-order) have no creates/removes/moves, so they
+    // return before any of this runs — untouched by the seam.
+    const enteringNodes: Node[] | null = tx ? [] : null
+    const leavingNodes: Node[] | null = tx ? [] : null
 
     // ── Same-structure fast path ──────────────────────────────────────────
     // The streaming in-place update case (e.g. a ticker tick replacing a few
@@ -308,6 +368,23 @@ function buildSignalEach<T>(
       if (sameOrder && order[index] !== k) sameOrder = false
       seen.add(k)
       let row = rows.get(k)
+      // Re-add during leave: a key whose row is still animating out resurrects —
+      // cancel the pending detach, reuse the live scope + still-connected nodes,
+      // and let the existing-row update branch below apply the current item/index.
+      // Its key is absent from `order` (it left in a prior pass), so Phase 3 treats
+      // it as a move of already-connected nodes (no re-mount — `mounted` is true).
+      if (!row && leaving) {
+        const reviving = leaving.get(k)
+        if (reviving && !reviving.cancelled) {
+          reviving.cancelled = true
+          leaving.delete(k)
+          row = reviving.row
+          rows.set(k, row)
+          // Reverse the interrupted leave animation (the transition run-scope
+          // supersedes the in-flight leave); no-op when there's no enter hook.
+          if (tx?.enter) tx.enter(Array.from(row.nodes))
+        }
+      }
       if (!row) {
         // Create the row FIRST so the factory/render closures can capture it as
         // the live-ctx box (`getCtx = () => created.ctx`); build-pending fields
@@ -467,7 +544,9 @@ function buildSignalEach<T>(
 
     // Full clear: drop all rows' teardowns, then remove every row node between the
     // anchors in ONE Range op (where supported) instead of N removeChild calls.
-    if (n === 0 && rows.size > 0) {
+    // Skipped when a transition is wired — leaving rows must be handled one by one
+    // (deferred detach / onTransition) via Phase 2 below, not bulk-deleted.
+    if (n === 0 && rows.size > 0 && !tx) {
       for (const row of rows.values())
         if (row.teardowns.length) for (const t of row.teardowns.splice(0)) t()
       const ownerDoc = (parent as Node).ownerDocument
@@ -490,9 +569,17 @@ function buildSignalEach<T>(
     if (rows.size > n || seen.size < rows.size) {
       for (const [k, row] of rows) {
         if (!seen.has(k)) {
-          if (row.teardowns.length) for (const t of row.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
-          for (const node of row.nodes) if (node.parentNode === parent) parent.removeChild(node)
-          rows.delete(k)
+          if (leavingNodes) leavingNodes.push(...row.nodes) // for onTransition
+          if (leaveHook) {
+            // Deferred detach: keep the row alive + connected while it animates out;
+            // finalizeLeavingRow (on the leave promise) runs teardowns + removes it.
+            rows.delete(k)
+            startLeave(k, row)
+          } else {
+            if (row.teardowns.length) for (const t of row.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
+            for (const node of row.nodes) if (node.parentNode === parent) parent.removeChild(node)
+            rows.delete(k)
+          }
         }
       }
     }
@@ -522,6 +609,9 @@ function buildSignalEach<T>(
           // exactly once, on first insertion.
           row.scope!.mount(row.ctx)
           runMounts(row.mounts, parent as Element, row.teardowns)
+          // A freshly-mounted row is ENTERING (a resurrected row was already
+          // mounted, so it is excluded — its enter ran at resurrection).
+          if (enteringNodes) enteringNodes.push(...row.nodes)
         }
       } else if (!keep.has(i)) {
         for (const node of row.nodes) parent.insertBefore(node, anchor)
@@ -532,6 +622,15 @@ function buildSignalEach<T>(
 
     order = newKeys
     rowsInOrder = newRows
+
+    // Post-commit transition hooks: `enter` on the freshly-inserted rows, then
+    // `onTransition({ entering, leaving, parent })` (FLIP measures survivors'
+    // old→new positions). Only reached on a structural reconcile — the same-
+    // structure / same-order fast paths returned above with nothing to animate.
+    if (tx) {
+      if (tx.enter && enteringNodes!.length) tx.enter(enteringNodes!)
+      tx.onTransition?.({ entering: enteringNodes!, leaving: leavingNodes!, parent })
+    }
   }
 
   // structural binding: fires when the list deps change; produce returns the
@@ -560,6 +659,18 @@ function buildSignalEach<T>(
     for (const [k, row] of rows) {
       if (row.teardowns.length) for (const t of row.teardowns.splice(0)) t()
       rows.delete(k)
+    }
+    // Finalize any rows still animating out synchronously — a leave must not hold
+    // DOM/scopes past the list's unmount (its promise resolving later is a no-op:
+    // `cancelled` guards it). Detach the nodes too, so the region doesn't leak.
+    if (leaving) {
+      for (const entry of leaving.values()) {
+        if (entry.cancelled) continue
+        entry.cancelled = true
+        if (entry.row.teardowns.length) for (const t of entry.row.teardowns.splice(0)) t()
+        for (const node of entry.row.nodes) node.parentNode?.removeChild(node)
+      }
+      leaving.clear()
     }
   })
 
