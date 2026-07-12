@@ -205,7 +205,9 @@ async function teardownHarness(h: Harness): Promise<void> {
   await delay(200)
 }
 
-describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', () => {
+// Real headless browser + a real Vite dev server: correct but timing-sensitive
+// under full-repo parallel load, so retry transient starvation at the suite level.
+describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { retry: 2 }, () => {
   let h: Harness
   let uncaughtHandler: ((err: Error) => void) | null = null
 
@@ -304,7 +306,7 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', ()
   })
 })
 
-describe.skipIf(!playwright)('CDP tools via Playwright harness', () => {
+describe.skipIf(!playwright)('CDP tools via Playwright harness', { retry: 2 }, () => {
   let h: Harness
 
   beforeAll(async () => {

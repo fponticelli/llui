@@ -22,7 +22,7 @@ describe('e2e: describe_app', () => {
 
     // Retry connect_session until the WS hello frame arrives.
     let connected = false
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 10_000
     let lastBody: { status?: string; appName?: string } = {}
     while (Date.now() < deadline) {
       const result = await ctx.mcpClient.callTool({

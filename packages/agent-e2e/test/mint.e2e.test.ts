@@ -34,7 +34,7 @@ describe('e2e: mint + WS pairing', () => {
     // mintToken() already calls effectHandler to open the WS in the browser,
     // so a short poll is sufficient.
     let status = 0
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 10_000
     while (Date.now() < deadline) {
       const res = await fetch(`${mint.lapUrl}/describe`, {
         method: 'POST',

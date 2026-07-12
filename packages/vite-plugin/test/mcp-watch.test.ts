@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import llui from '../src/index'
 
@@ -310,40 +310,50 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
   })
 
-  it('stamps devUrl when the marker is created after listening fires (dirWatcher path)', async () => {
-    // Full MCP-after-Vite integration: listening fires with no marker,
-    // the plugin caches the URL, then MCP later writes the marker. The
-    // parent-directory watcher must detect the creation, call
-    // stampDevUrl(), and notify HMR with the devUrl attached.
-    const fake = setup({ mcpPort: 5200 })
-    // Fire listening first, while marker absent.
-    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
-    expect(existsSync(ACTIVE_PATH)).toBe(false)
-    fake.sent.length = 0
+  // Exercises the real parent-directory fs.watch path — OS fs-event delivery is
+  // inherently timing-sensitive and can lag badly under full-repo parallel load,
+  // so retry transient starvation on top of the generous poll deadline.
+  it(
+    'stamps devUrl when the marker is created after listening fires (dirWatcher path)',
+    { retry: 2, timeout: 15_000 },
+    async () => {
+      // Full MCP-after-Vite integration: listening fires with no marker,
+      // the plugin caches the URL, then MCP later writes the marker. The
+      // parent-directory watcher must detect the creation, call
+      // stampDevUrl(), and notify HMR with the devUrl attached.
+      const fake = setup({ mcpPort: 5200 })
+      // Fire listening first, while marker absent.
+      for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+      expect(existsSync(ACTIVE_PATH)).toBe(false)
+      fake.sent.length = 0
 
-    // MCP now writes the marker without devUrl.
-    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 42 }))
+      // MCP now writes the marker without devUrl.
+      writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 42 }))
 
-    // Wait for fs.watch to fire — poll up to ~500ms.
-    const deadline = Date.now() + 500
-    while (Date.now() < deadline) {
-      const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as { devUrl?: string }
-      if (marker.devUrl === 'http://127.0.0.1:5173') break
-      await new Promise((r) => setTimeout(r, 20))
-    }
+      // Wait for fs.watch to fire. The poll exits the instant the watcher stamps
+      // the marker, so a generous deadline only costs time when the OS is slow to
+      // deliver the fs event — which is exactly the flake seen under full-repo
+      // parallel `turbo test` load. The test's own timeout (below) bounds it.
+      const deadline = Date.now() + 8000
+      while (Date.now() < deadline) {
+        const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as { devUrl?: string }
+        if (marker.devUrl === 'http://127.0.0.1:5173') break
+        await new Promise((r) => setTimeout(r, 20))
+      }
 
-    const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
-      port: number
-      pid: number
-      devUrl?: string
-    }
-    expect(marker.devUrl).toBe('http://127.0.0.1:5173')
-    expect(marker.port).toBe(5200)
-    expect(marker.pid).toBe(42)
+      const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
+        port: number
+        pid: number
+        devUrl?: string
+      }
+      expect(marker.devUrl).toBe('http://127.0.0.1:5173')
+      expect(marker.port).toBe(5200)
+      expect(marker.pid).toBe(42)
 
-    // The dirWatcher-triggered notification should carry the stamped devUrl.
-    const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
-    expect(ready).toBeDefined()
-    expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
-  })
+      // The dirWatcher-triggered notification should carry the stamped devUrl.
+      const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
+      expect(ready).toBeDefined()
+      expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
+    },
+  )
 })

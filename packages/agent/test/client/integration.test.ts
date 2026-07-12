@@ -73,6 +73,10 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  // Force-close any lingering sockets — e.g. a WS still open because a test threw
+  // before its `ws.close()` — so `server.close()` can't hang the hook waiting on
+  // them (Node 18.2+). Then wait for the graceful close to complete.
+  server.closeAllConnections?.()
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
@@ -86,6 +90,30 @@ function baseUrl(): string {
 
 function wsUrl(path: string): string {
   return `ws://127.0.0.1:${port}${path}`
+}
+
+/**
+ * POST a LAP endpoint, retrying until it returns `wantStatus` or the deadline
+ * passes. The WS `hello` frame is processed asynchronously by the server, so
+ * after the socket opens there's a brief window where `describe`/`state` still
+ * report 503 (paused). A fixed sleep flakes under CPU contention (parallel test
+ * runners); polling is fast when the hello lands quickly and robust when it
+ * doesn't. Returns the last response either way so the caller's assertions
+ * surface the real status on timeout.
+ */
+async function lapPost(path: string, token: string, wantStatus = 200): Promise<Response> {
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    const res = await fetch(`${baseUrl()}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    if (res.status === wantStatus || Date.now() >= deadline) return res
+    // Drain the body so the socket is freed for the next attempt.
+    await res.arrayBuffer().catch(() => {})
+    await new Promise((r) => setTimeout(r, 20))
+  }
 }
 
 function makeFakeRpcHost(state: unknown): RpcHosts {
@@ -160,49 +188,49 @@ describe('integration: mint → ws → describe → state', () => {
     expect(body.error.code).toBe('paused')
   })
 
-  it('describe returns 200 with hello payload after WS connects and sends hello', async () => {
-    // 1. Mint
-    const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
-    expect(mintRes.status).toBe(200)
-    const { token } = (await mintRes.json()) as MintResponse
+  // Real HTTP server + WS round-trip: correct but timing-sensitive under
+  // full-repo parallel load, so retry transient starvation.
+  it(
+    'describe returns 200 with hello payload after WS connects and sends hello',
+    { retry: 2, timeout: 20_000 },
+    async () => {
+      // 1. Mint
+      const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
+      expect(mintRes.status).toBe(200)
+      const { token } = (await mintRes.json()) as MintResponse
 
-    // 2. Open WS + wire attachWsClient so it sends hello on open
-    const ws = new WebSocket(`${wsUrl('/agent/ws')}?token=${encodeURIComponent(token)}`)
-    // ws package implements the WsLike interface (addEventListener + send + close)
-    const fakeRpc = makeFakeRpcHost({ value: 42 })
-    attachWsClient(
-      ws as unknown as import('../../src/client/ws-client.js').WsLike,
-      fakeRpc,
-      makeHelloBuilder('IntegrationApp'),
-    )
+      // 2. Open WS + wire attachWsClient so it sends hello on open
+      const ws = new WebSocket(`${wsUrl('/agent/ws')}?token=${encodeURIComponent(token)}`)
+      // ws package implements the WsLike interface (addEventListener + send + close)
+      const fakeRpc = makeFakeRpcHost({ value: 42 })
+      attachWsClient(
+        ws as unknown as import('../../src/client/ws-client.js').WsLike,
+        fakeRpc,
+        makeHelloBuilder('IntegrationApp'),
+      )
 
-    // 3. Wait for WS to fully open (hello has been sent at this point)
-    await new Promise<void>((resolve, reject) => {
-      ws.once('open', resolve)
-      ws.once('error', reject)
-    })
+      // 3. Wait for WS to fully open (hello has been sent at this point)
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', resolve)
+        ws.once('error', reject)
+      })
 
-    // Small buffer: hello frame is sent synchronously on open, but the server
-    // must process it before describe can return 200. Give it a brief moment.
-    await new Promise((r) => setTimeout(r, 50))
+      // 4. describe → should have the hello payload once the server has processed
+      // the hello frame (polled, so this is robust under load — see `lapPost`).
+      const descRes = await lapPost('/agent/lap/v1/describe', token)
+      expect(descRes.status).toBe(200)
+      const body = (await descRes.json()) as LapDescribeResponse
+      expect(body.name).toBe('IntegrationApp')
+      expect(body.schemaHash).toBe('testhash1')
+      expect(body.docs?.purpose).toBe('Integration test app')
+      expect(typeof body.messages['ping']).toBe('object')
 
-    // 4. describe → should now have the hello payload
-    const descRes = await fetch(`${baseUrl()}/agent/lap/v1/describe`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-    })
-    expect(descRes.status).toBe(200)
-    const body = (await descRes.json()) as LapDescribeResponse
-    expect(body.name).toBe('IntegrationApp')
-    expect(body.schemaHash).toBe('testhash1')
-    expect(body.docs?.purpose).toBe('Integration test app')
-    expect(typeof body.messages['ping']).toBe('object')
+      ws.close()
+      await new Promise<void>((resolve) => ws.once('close', resolve))
+    },
+  )
 
-    ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
-  })
-
-  it("state returns the rpc host's current state", async () => {
+  it("state returns the rpc host's current state", { retry: 2, timeout: 20_000 }, async () => {
     // Mint + connect WS
     const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
     const { token } = (await mintRes.json()) as MintResponse
@@ -219,13 +247,8 @@ describe('integration: mint → ws → describe → state', () => {
       ws.once('open', resolve)
       ws.once('error', reject)
     })
-    await new Promise((r) => setTimeout(r, 50))
 
-    const stateRes = await fetch(`${baseUrl()}/agent/lap/v1/state`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const stateRes = await lapPost('/agent/lap/v1/state', token)
     expect(stateRes.status).toBe(200)
     const body = (await stateRes.json()) as { state: unknown }
     expect(body.state).toEqual(appState)

@@ -15,8 +15,9 @@ import type { E2EContext, MintResult } from './harness.js'
 export async function mintAndBind(ctx: E2EContext): Promise<MintResult> {
   const mint = await ctx.mintToken()
 
-  // Poll until bindClaude succeeds (WS hello received) or we time out.
-  const deadline = Date.now() + 5_000
+  // Poll until bindClaude succeeds (WS hello received) or we time out. Generous
+  // cap: under full-repo parallel test load the WS hello round-trip can be slow.
+  const deadline = Date.now() + 10_000
   let lastErr: Error | null = null
   while (Date.now() < deadline) {
     try {

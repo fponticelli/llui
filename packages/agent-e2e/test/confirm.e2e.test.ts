@@ -47,7 +47,7 @@ async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]>
       return h.getState().agent.confirm.pending.length > 0
     },
     undefined,
-    { timeout: 5_000 },
+    { timeout: 10_000 },
   )
   return page.evaluate(() => {
     const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
@@ -139,7 +139,7 @@ describe('e2e: confirm flow', () => {
         return h.getState().lastDelete === '99'
       },
       undefined,
-      { timeout: 5_000 },
+      { timeout: 10_000 },
     )
     const lastDelete = await ctx.page.evaluate(() => {
       const h = (

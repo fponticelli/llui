@@ -2,6 +2,7 @@ import { chromium, type Browser, type Page } from '@playwright/test'
 import {
   createLluiAgentServer,
   InMemoryTokenStore,
+  defaultRateLimiter,
   type AgentServerHandle,
 } from '@llui/agent/server'
 import { createServer, type Server } from 'node:http'
@@ -57,6 +58,10 @@ export async function setup(): Promise<E2EContext> {
     tokenStore: new InMemoryTokenStore(),
     identityResolver: async () => 'e2e-user',
     auditSink: { write: async () => undefined },
+    // Tests poll mint+connect (retry until the WS hello lands) which, under load,
+    // can exceed the production 30/min default. Rate limiting isn't under test
+    // here, so lift it well clear of any retry storm.
+    rateLimiter: defaultRateLimiter({ perBucket: '100000/minute' }),
   })
 
   // 3. Spin up an ephemeral Node http server.
@@ -138,8 +143,12 @@ export async function setup(): Promise<E2EContext> {
   const mcpClient = new Client({ name: 'e2e-mcp-client', version: '0.0.0' }, { capabilities: {} })
   await mcpClient.connect(clientTransport)
 
-  // 5. Launch headless Chromium and navigate to the test page.
-  const browser = await chromium.launch({ headless: true })
+  // 5. Launch headless Chromium and navigate to the test page. Timeouts are
+  // generous because this whole setup runs under heavy parallel load (turbo runs
+  // every package's build/test at once), where a correct-but-CPU-starved browser
+  // launch + bundle-serve + app mount can be slow. The vitest `hookTimeout` gives
+  // the outer bound; these keep individual steps from tripping their own default.
+  const browser = await chromium.launch({ headless: true, timeout: 60_000 })
   const page = await browser.newPage()
   await page.goto(`http://localhost:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.
@@ -147,7 +156,7 @@ export async function setup(): Promise<E2EContext> {
     () => typeof (window as unknown as Record<string, unknown>)['__lluiE2eClient'] !== 'undefined',
     undefined,
     {
-      timeout: 10_000,
+      timeout: 30_000,
     },
   )
 
@@ -189,6 +198,9 @@ export async function setup(): Promise<E2EContext> {
   const close = async () => {
     await browser.close()
     await mcpClient.close()
+    // Force-close lingering sockets (agent WS connections opened by the tests) so
+    // `server.close()` can't hang the teardown hook waiting on them.
+    server.closeAllConnections?.()
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),
     )
