@@ -89,11 +89,12 @@ registrars. Each tool's Zod schema (declared once in `tools.ts`)
 drives both runtime input validation and the JSON Schema published
 to `tools/list` — eliminating the hand-written-schema-vs-handler
 drift that the low-level `setRequestHandler` pattern is prone to.
-Forwarded tools (`kind: 'forward'`) share a generic forwarder that
-looks up the binding, dispatches to LAP, and caches description
-payloads where applicable. The two meta tools
-(`connect_session`, `disconnect_session`) carry custom
-handlers that mutate the BindingMap directly.
+Forwarded tools (`kind: 'forward'`) share the `@llui/agent/mcp/executor`
+dispatch — the same code the server-side MCP runs — so describe
+caching, schemaHash invalidation, and error shaping behave identically
+across both surfaces. The two meta tools (`connect_session`,
+`disconnect_session`) carry custom handlers that mutate the BindingMap
+directly, then delegate to the shared connect prefetch.
 
 ```typescript
 function createBridgeServer(deps: BridgeDeps): McpServer
@@ -102,17 +103,20 @@ function createBridgeServer(deps: BridgeDeps): McpServer
 ### `detectSchemaChange()`
 
 Compare a freshly-fetched app description against the cached one and
-decide whether the bridge's cached schema is now stale. A changed
-`schemaHash` means the app's Msg/State schema was recompiled — cached
+decide whether the cached schema is now stale. A changed `schemaHash`
+means the app's Msg/State schema was recompiled — cached
 affordances/examples/payload shapes may no longer be valid, so the
 caller is told to re-read before dispatching. Exported so the
-invalidation policy is unit-testable without wiring an MCP transport.
+invalidation policy is unit-testable in isolation.
 
 ```typescript
-function detectSchemaChange(
+export declare function detectSchemaChange(
   prev: LapDescribeResponse | null,
   next: Pick<LapDescribeResponse, 'schemaHash'>,
-): { changed: boolean; note: string | null }
+): {
+  changed: boolean
+  note: string | null
+}
 ```
 
 ## Types

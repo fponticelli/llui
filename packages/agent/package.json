@@ -38,6 +38,10 @@
       "types": "./dist/mcp/tools.d.ts",
       "import": "./dist/mcp/tools.js"
     },
+    "./mcp/executor": {
+      "types": "./dist/mcp/executor.d.ts",
+      "import": "./dist/mcp/executor.js"
+    },
     "./styles/agent-panel.css": "./styles/agent-panel.css"
   },
   "files": [

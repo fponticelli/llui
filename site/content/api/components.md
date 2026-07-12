@@ -233,7 +233,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 66 components follow the same pattern:
+All 67 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -531,21 +531,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ContextMenuState`):
 
-| Field                | Type                             |
-| -------------------- | -------------------------------- |
-| `open`               | `boolean`                        |
-| `status`             | `PresenceStatus`                 |
-| `skipAnimations`     | `boolean`                        |
-| `x`                  | `number`                         |
-| `y`                  | `number`                         |
-| `items`              | `ContextMenuItem[]`              |
-| `highlights`         | `Record<string, string \| null>` |
-| `openPath`           | `string[]`                       |
-| `checked`            | `string[]`                       |
-| `closeOnSelect`      | `boolean`                        |
-| `typeahead`          | `string`                         |
-| `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `'ltr' \| 'rtl'`                 |
+| Field | Type     |
+| ----- | -------- |
+| `x`   | `number` |
+| `y`   | `number` |
 
 **Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
@@ -902,6 +891,30 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Parts:** `root`, `content`
 
 **Utilities:** `isRunning()`, `cssAnimationDirection()`, `axis()`
+
+---
+
+### Menu Machine
+
+**State** (`MenuTreeState`):
+
+| Field                | Type                             |
+| -------------------- | -------------------------------- |
+| `open`               | `boolean`                        |
+| `status`             | `PresenceStatus`                 |
+| `skipAnimations`     | `boolean`                        |
+| `items`              | `MenuNode[]`                     |
+| `highlights`         | `Record<string, string \| null>` |
+| `openPath`           | `string[]`                       |
+| `checked`            | `string[]`                       |
+| `closeOnSelect`      | `boolean`                        |
+| `typeahead`          | `string`                         |
+| `typeaheadExpiresAt` | `number`                         |
+| `dir`                | `'ltr' \| 'rtl'`                 |
+
+**Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
+
+**Parts:** `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `rootKeyNav`
 
 ---
 

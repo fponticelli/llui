@@ -33,7 +33,7 @@ describe('popover.overlay integration', () => {
         const parts = connect(state.at('p'), send, { id: 'pop' })
         return [
           button({ ...parts.trigger }, [text('Open')]),
-          ...overlay({
+          overlay({
             state: state.at('p'),
             send,
             parts,

@@ -281,8 +281,30 @@ function geolocation<M>(opts: {
 
 ### `handleEffects()`
 
+Batteries-included handler chain — handles every built-in effect out of the box.
+See {@link handleEffectsWith} for the tree-shakeable, hand-picked-runner form.
+
 ```typescript
 function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M>
+```
+
+### `handleEffectsWith()`
+
+Build a handler chain over an explicit set of runners. `handleEffects()` is
+this with the batteries-included {@link defaultRunners}; pass a hand-picked
+subset here to tree-shake unused runner code out of the bundle.
+Per-mount registries are keyed off each mount's lifecycle `AbortSignal` (a
+`WeakMap` so a torn-down mount's registry is collectible once its signal is
+unreachable). One registry is created lazily per distinct signal — i.e. per
+mount — and torn down exactly once when that signal aborts. Keying off the
+signal (rather than a chain-level closure) keeps two concurrent mounts of the
+same component isolated: disposing one never cancels the other's in-flight
+http / intervals / debounces / websockets.
+
+```typescript
+function handleEffectsWith<E extends { type: string }, M = never>(
+  runners: readonly Runner[],
+): EffectChain<E, M>
 ```
 
 ### `http()`
@@ -502,7 +524,7 @@ export type Async<T, E> =
 ### `Effect`
 
 ```typescript
-type BuiltinEffect =
+export type BuiltinEffect =
   | HttpEffect
   | CancelEffect
   | CancelReplaceEffect
@@ -744,6 +766,25 @@ export interface RetryEffect {
 }
 ```
 
+### `Runner`
+
+A single effect runner. `types` are the effect `type` discriminants this runner
+claims; `run` executes the effect; `completesWithoutDispatch` is the static
+signal used by `sequence` to advance past a fire-and-forget step immediately —
+a step that never calls `send` would otherwise stall the chain forever.
+`run` may RETURN a boolean to override `completesWithoutDispatch` on a per-call
+basis (only `cancel` needs this: bare `cancel` completes without dispatching,
+but `cancel(token, inner)` may dispatch via its inner effect). Returning
+`undefined`/`void` falls back to the static `completesWithoutDispatch`.
+
+```typescript
+export interface Runner {
+  readonly types: readonly string[]
+  readonly completesWithoutDispatch: boolean
+  run(effect: { type: string }, send: InternalSend, signal: AbortSignal, deps: Deps): boolean | void
+}
+```
+
 ### `SequenceEffect`
 
 ```typescript
@@ -859,6 +900,14 @@ export interface WebSocketSendEffect {
 ```
 
 ## Constants
+
+### `defaultRunners`
+
+Every built-in runner, in the original dispatch order.
+
+```typescript
+const defaultRunners: readonly Runner[]
+```
 
 ### `delay`
 

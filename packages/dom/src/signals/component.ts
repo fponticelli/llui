@@ -10,7 +10,8 @@
 // handle; only event handlers / effects use it (the `state.at('x').peek()` form
 // is left verbatim by the transform and satisfied here at runtime).
 
-import { mountSignal, type SignalMount, type MountTarget, type Renderable } from './dom.js'
+import { mountSignal, type SignalMount, type MountTarget } from './mount.js'
+import type { Renderable } from './element.js'
 import { withBindingErrors, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'

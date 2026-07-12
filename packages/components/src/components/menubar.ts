@@ -1,9 +1,8 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { tagSend } from '@llui/dom'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import { focusRovingItem } from '../utils/roving.js'
 import {
   init as menuInit,
@@ -337,68 +336,28 @@ export interface MenubarOverlayOptions {
  * dismissable stack the menu machine uses.
  */
 export function overlay(opts: MenubarOverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'bottom-start'
-  const offset = opts.offset ?? 4
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-
-  return show(
-    opts.state.map((s) => s.open === opts.menuId),
-    () => {
-      return [
-        portal(() => {
-          const dismissable = onMount((root) => {
-            const contentEl = getElementByIdInScope(root, contentId)
-            const triggerEl = getElementByIdInScope(root, triggerId)
-            if (!contentEl) return
-
-            const cleanups: Array<() => void> = []
-
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            cleanups.push(
-              attachFloating({
-                anchor: triggerEl ?? contentEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-              }),
-            )
-
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => (triggerEl ? [triggerEl] : []),
-                // Focus restoration lives in the cleanup below (runs on EVERY
-                // close, including item-select), so don't also focus here.
-                onDismiss: () => opts.send({ type: 'closeMenu' }),
-              }),
-            )
-
-            contentEl.focus({ preventScroll: true })
-
-            return () => {
-              // Restore focus to the menu's trigger when focus is still inside
-              // the overlay (e.g. after selecting an item, which would otherwise
-              // drop focus to <body>). Respect focus the user moved elsewhere.
-              const active = document.activeElement
-              const focusInside =
-                contentEl.contains(active) || active === document.body || active === null
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-              if (focusInside) triggerEl?.focus()
-            }
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
-        }, host),
-      ]
+  // Gated on `state.open === menuId`; dismisses by closing the menubar (which
+  // returns focus to the top-level trigger). The anchor (trigger) is optional —
+  // floating falls back to the content element when it can't be resolved.
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    mountWhen: (s) => s.open === opts.menuId,
+    onDismiss: () => opts.send({ type: 'closeMenu' }),
+    floating: {
+      placement: opts.placement ?? 'bottom-start',
+      offset: opts.offset ?? 4,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
     },
-  )
+    dismiss: {},
+    focusOnOpenId: opts.parts.content.id,
+    restoreFocus: { boundary: 'content' },
+  })
 }
 
 export const menubar = { init, update, connect, overlay }

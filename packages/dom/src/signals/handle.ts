@@ -16,7 +16,8 @@ import { resolveSegments } from './mask.js'
 // item/index inputs read the combined ctx. These are runtime-only calls (inside
 // `derived`), so the handle→dom import is a benign one-way edge (dom does not
 // import handle).
-import { __inRowBuild, isRowLocalDep, rebaseComponentDep } from './dom.js'
+import { __inRowBuild } from './build-context.js'
+import { isRowLocalDep, rebaseComponentDep } from './row-rebase.js'
 import type { Signal, MappedSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')

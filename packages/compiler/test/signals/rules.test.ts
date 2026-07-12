@@ -622,3 +622,48 @@ describe('exhaustive-update', () => {
     expect(rules(src)).not.toContain('exhaustive-update')
   })
 })
+
+describe('import-binding recognition (framework calls gated by @llui/dom imports)', () => {
+  it('does NOT flag a user function named `text` as node construction', () => {
+    const src = [
+      'function text(x: string) { return x }', // user's OWN text, not the dom helper
+      "const c = state.at('n').map((v) => text(String(v)))",
+    ].join('\n')
+    expect(rules(src)).not.toContain('no-node-construction-in-body')
+  })
+
+  it('still flags the real @llui/dom `text` helper in a derive body', () => {
+    const src = [
+      "import { text } from '@llui/dom'",
+      "const c = state.at('n').map((v) => text(String(v)))",
+    ].join('\n')
+    expect(rules(src)).toContain('no-node-construction-in-body')
+  })
+
+  it('recognizes an ALIASED element import for element-level lint (controlled-input)', () => {
+    const src = [
+      "import { input as field } from '@llui/dom'",
+      "const v = field({ value: state.at('name') })",
+    ].join('\n')
+    expect(rules(src)).toContain('controlled-input')
+  })
+
+  it('does NOT run element lint on a user function shadowing an element-helper name', () => {
+    const src = [
+      'function input(props: unknown) { return props }', // user's OWN input
+      "const v = input({ value: state.at('name') })",
+    ].join('\n')
+    expect(rules(src)).not.toContain('controlled-input')
+  })
+
+  it('does NOT treat a user function named `each` as a structural primitive', () => {
+    // Under the real structural `each`, `item.at('x') ? a : b` in the row body
+    // would be flagged operator-on-signal. A user `each` introduces no row root,
+    // so `item` is a plain value and nothing fires.
+    const src = [
+      'function each(xs: number[], opts: unknown) { return xs.length }',
+      "const c = each(state.at('rows').peek(), { render: (item) => [item.at('x') ? 1 : 2] })",
+    ].join('\n')
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+})

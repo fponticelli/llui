@@ -10,29 +10,22 @@
 
 import type { Signal, LiveSignal } from './types.js'
 import { isSignalHandle, rowHandle } from './handle.js'
+import { react, type Mountable } from './build-context.js'
 import {
   signalText,
   staticText,
   el,
   elNS,
-  react,
-  signalEach,
-  signalEachDirect,
-  signalShow,
-  signalUnsafeHtml,
-  signalBranch,
-  signalLazy,
-  signalVirtualEach,
-  signalForeign,
   type PropValue,
   type ChildNode,
-  type Mountable,
   type Renderable,
-  type SignalLazyOptions,
-  type SignalSpec,
-  type RowFactory,
-  type RowCtx,
-} from './dom.js'
+} from './element.js'
+import { signalEach, signalEachDirect, type RowFactory, type RowCtx } from './each.js'
+import { signalShow, signalBranch } from './show-branch.js'
+import { signalUnsafeHtml } from './unsafe-html.js'
+import { signalLazy, type SignalLazyOptions } from './lazy.js'
+import { signalVirtualEach } from './virtual-each.js'
+import { signalForeign, type SignalSpec } from './foreign.js'
 import {
   mountSignalComponent,
   type MountSignalOptions,

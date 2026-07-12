@@ -8,15 +8,15 @@ import {
   handleLapContext,
   handleLapRecentActions,
   handleLapWouldDispatch,
-  type ForwardDeps,
 } from './forward.js'
+import type { LapGateDeps } from './gate.js'
 import { handleLapMessage } from './message.js'
 import { handleLapWait } from './wait.js'
 import { handleLapNarrate } from './narrate.js'
 import { handleLapConfirmResult } from './confirm-result.js'
 import { handleLapObserve } from './observe.js'
 
-export type LapRouterDeps = ForwardDeps
+export type LapRouterDeps = LapGateDeps
 
 export function createLapRouter(
   deps: LapRouterDeps,

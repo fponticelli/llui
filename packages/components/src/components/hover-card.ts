@@ -1,9 +1,7 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
-import { pushDismissable } from '../utils/dismissable.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -232,62 +230,29 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'bottom'
-  const offset = opts.offset ?? 8
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-
-  // Stay mounted through the exit animation (status !== 'closed'); the content
-  // keeps its floating position while the close transition plays.
-  return show(
-    opts.state.map((s) => isMounted(s)),
-    () => {
-      return [
-        portal(() => {
-          const dismissable = onMount((root) => {
-            const contentEl = getElementByIdInScope(root, contentId)
-            const triggerEl = getElementByIdInScope(root, triggerId)
-            if (!contentEl || !triggerEl) return
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            const arrow = opts.arrowSelector
-              ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
-              : null
-            const cleanups: Array<() => void> = []
-            cleanups.push(
-              attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-                arrow: arrow ?? undefined,
-              }),
-            )
-            // Escape dismisses the card (WAI-ARIA). Outside-click dismissal is
-            // disabled — a hover-card closes on pointer-leave, not on click.
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => [triggerEl],
-                disableOutside: true,
-                onDismiss: () => opts.send({ type: 'hide' }),
-              }),
-            )
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
-        }, host),
-      ]
+  // Stay mounted through the exit animation (isMounted); the content keeps its
+  // floating position while the close transition plays. Escape dismisses the
+  // card (WAI-ARIA); outside-click is disabled — a hover-card closes on
+  // pointer-leave, not on click.
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    requireAnchor: true,
+    mountWhen: isMounted,
+    onDismiss: () => opts.send({ type: 'hide' }),
+    floating: {
+      placement: opts.placement ?? 'bottom',
+      offset: opts.offset ?? 8,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      arrowSelector: opts.arrowSelector,
     },
-  )
+    dismiss: { disableOutside: true },
+  })
 }
 
 export const hoverCard = { init, update, connect, overlay, isMounted, isPresent }

@@ -1,9 +1,8 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { tagSend } from '@llui/dom'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import {
   typeaheadAccumulate,
   typeaheadMatchByItems,
@@ -561,75 +560,32 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'bottom-start'
-  const offset = opts.offset ?? 4
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const sameWidth = opts.sameWidth !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-
-  return show(
-    opts.state.map((s) => s.open),
-    () => {
-      return [
-        portal(() => {
-          const dismissable = onMount((root) => {
-            const contentEl = getElementByIdInScope(root, contentId)
-            const triggerEl = getElementByIdInScope(root, triggerId)
-            if (!contentEl || !triggerEl) return
-
-            const cleanups: Array<() => void> = []
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            if (sameWidth) {
-              floatingEl.style.minWidth = `${triggerEl.offsetWidth}px`
-            }
-            cleanups.push(
-              attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-              }),
-            )
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => [triggerEl],
-                // Focus restoration lives in the cleanup below (runs on EVERY
-                // close, including option-select), so don't also focus here.
-                onDismiss: () => opts.send({ type: 'close' }),
-              }),
-            )
-            // Trigger-focused ARIA pattern: DOM focus stays on the trigger (which
-            // carries aria-activedescendant + the keydown handler); the listbox is
-            // never focused. This keeps the announced active option consistent
-            // with the focused element.
-            triggerEl.focus({ preventScroll: true })
-            return () => {
-              // Restore focus to the trigger when it's still inside the overlay
-              // (e.g. after picking an option, which would otherwise drop focus
-              // to <body>). If the user moved focus elsewhere, respect that.
-              const active = document.activeElement
-              const focusInside =
-                contentEl.contains(active) ||
-                active === triggerEl ||
-                active === document.body ||
-                active === null
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-              if (focusInside) triggerEl.focus()
-            }
-          })
-          return [dismissable, div(parts.positioner, opts.content())]
-        }, host),
-      ]
+  // Trigger-focused ARIA pattern: DOM focus stays on the trigger (which carries
+  // aria-activedescendant + the keydown handler); the listbox is never focused.
+  // On close, focus is restored to the trigger when it lingered inside the
+  // overlay (e.g. after picking an option, which would otherwise drop focus to
+  // <body>).
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    requireAnchor: true,
+    mountWhen: (s) => s.open,
+    onDismiss: () => opts.send({ type: 'close' }),
+    floating: {
+      placement: opts.placement ?? 'bottom-start',
+      offset: opts.offset ?? 4,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      sameWidth: opts.sameWidth !== false,
     },
-  )
+    dismiss: {},
+    focusOnOpenId: opts.parts.trigger.id,
+    restoreFocus: { boundary: 'content', allowAnchorActive: true },
+  })
 }
 
 export const select = { init, update, connect, overlay }

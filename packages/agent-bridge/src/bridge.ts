@@ -1,34 +1,22 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { TOOL_DESCRIPTORS, type ToolDescriptor } from './tools.js'
-import { BindingMap } from './binding.js'
+import { BindingMap, type Binding } from './binding.js'
 import { forwardLap } from './forwarder.js'
-import type { LapDescribeResponse, LapObserveResponse } from '@llui/agent/protocol'
+import {
+  okResult,
+  errorResult,
+  executeForwardedTool,
+  executeConnect,
+  detectSchemaChange,
+  type LapCaller,
+  type DescribeCache,
+} from '@llui/agent/mcp/executor'
 import { registerPrompts } from './prompts.js'
 
-/**
- * Compare a freshly-fetched app description against the cached one and
- * decide whether the bridge's cached schema is now stale. A changed
- * `schemaHash` means the app's Msg/State schema was recompiled — cached
- * affordances/examples/payload shapes may no longer be valid, so the
- * caller is told to re-read before dispatching. Exported so the
- * invalidation policy is unit-testable without wiring an MCP transport.
- */
-export function detectSchemaChange(
-  prev: LapDescribeResponse | null,
-  next: Pick<LapDescribeResponse, 'schemaHash'>,
-): { changed: boolean; note: string | null } {
-  if (prev === null || prev.schemaHash === next.schemaHash) {
-    return { changed: false, note: null }
-  }
-  return {
-    changed: true,
-    note:
-      `App schema changed (was ${prev.schemaHash}, now ${next.schemaHash}). ` +
-      `The previously cached description is stale — re-read actions/description ` +
-      `before dispatching, as payload shapes and affordances may have changed.`,
-  }
-}
+// Re-exported so the bridge's unit tests (and any downstream) can reach
+// the schemaHash-invalidation policy at its historical import site. The
+// implementation now lives once in the shared executor.
+export { detectSchemaChange }
 
 export type BridgeDeps = {
   /** Injectable for tests. */
@@ -48,11 +36,12 @@ export type BridgeDeps = {
  * to `tools/list` — eliminating the hand-written-schema-vs-handler
  * drift that the low-level `setRequestHandler` pattern is prone to.
  *
- * Forwarded tools (`kind: 'forward'`) share a generic forwarder that
- * looks up the binding, dispatches to LAP, and caches description
- * payloads where applicable. The two meta tools
- * (`connect_session`, `disconnect_session`) carry custom
- * handlers that mutate the BindingMap directly.
+ * Forwarded tools (`kind: 'forward'`) share the `@llui/agent/mcp/executor`
+ * dispatch — the same code the server-side MCP runs — so describe
+ * caching, schemaHash invalidation, and error shaping behave identically
+ * across both surfaces. The two meta tools (`connect_session`,
+ * `disconnect_session`) carry custom handlers that mutate the BindingMap
+ * directly, then delegate to the shared connect prefetch.
  */
 export function createBridgeServer(deps: BridgeDeps): McpServer {
   const server = new McpServer(
@@ -67,6 +56,19 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
   registerPrompts(server)
 
   return server
+}
+
+/** LAP caller bound to a live binding — POSTs over HTTP via `forwardLap`. */
+function callerFor(deps: BridgeDeps, binding: Binding): LapCaller {
+  return (path, args) => forwardLap(binding.url, binding.token, path, args, { fetch: deps.fetch })
+}
+
+/** Per-session describe cache backed by the BindingMap. */
+function cacheFor(deps: BridgeDeps): DescribeCache {
+  return {
+    get: () => deps.bindings.get(deps.sessionId)?.describe ?? null,
+    set: (d) => deps.bindings.setDescribe(deps.sessionId, d),
+  }
 }
 
 function registerToolDescriptor(server: McpServer, deps: BridgeDeps, desc: ToolDescriptor): void {
@@ -88,32 +90,13 @@ function registerConnectSession(server: McpServer, deps: BridgeDeps, desc: ToolD
     async (args) => {
       const { url, token } = args as { url: string; token: string }
       deps.bindings.set(deps.sessionId, url, token)
-      // Validate AND prefetch the bootstrap bundle in one call.
-      // /observe returns {state, actions, description, context} —
-      // exactly what the LLM needs to start acting. Without this,
-      // Claude has to follow up with `observe` to get anything
-      // usable, costing round-trips and creating a window where
-      // the connect tool's "you are now connected" result is the
-      // entire context the LLM has to reason about.
-      const res = await forwardLap(url, token, '/observe', {}, { fetch: deps.fetch })
-      if (!res.ok) {
-        deps.bindings.clear(deps.sessionId)
-        return errorResult(`connect failed: ${JSON.stringify(res.error)}`)
-      }
-      const observe = res.body as LapObserveResponse
-      deps.bindings.setDescribe(deps.sessionId, observe.description)
-      return okResult({
-        status: 'connected',
-        appName: observe.description.name,
-        appVersion: observe.description.version,
-        // Full observe payload — same shape the `observe` tool returns —
-        // so a `describe_app` / `get_state` / `list_actions` /
-        // `describe_context` follow-up is unnecessary on the first turn.
-        state: observe.state,
-        actions: observe.actions,
-        description: observe.description,
-        context: observe.context,
-      })
+      const binding = deps.bindings.get(deps.sessionId)
+      if (!binding) return errorResult('connect_session failed: binding lost')
+      // Validate + prefetch the /observe bootstrap bundle and cache the
+      // description — shared with the server-side MCP.
+      return executeConnect(callerFor(deps, binding), cacheFor(deps), () =>
+        deps.bindings.clear(deps.sessionId),
+      )
     },
   )
 }
@@ -151,73 +134,12 @@ function registerForwardedTool(
             'In Claude Desktop, the snippet is also available as the slash command `/llui-connect`.)',
         )
       }
-
-      // describe_app can serve from cache when one is available.
-      if (desc.name === 'describe_app' && binding.describe) {
-        return okResult(binding.describe)
-      }
-
-      const res = await forwardLap(binding.url, binding.token, desc.lapPath, args ?? {}, {
-        fetch: deps.fetch,
-      })
-      if (!res.ok) {
-        return errorResult(
-          `LAP ${desc.lapPath} failed: status=${res.status} ${JSON.stringify(res.error)}`,
-        )
-      }
-
-      // Cache describe_app responses after the first call too. (Only
-      // reached on a cache miss — a warm cache short-circuits above — so
-      // there's no prior hash to diff against, but route it through the
-      // same detector for uniformity/future-proofing.)
-      if (desc.name === 'describe_app') {
-        const d = res.body as LapDescribeResponse
-        const change = detectSchemaChange(binding.describe, d)
-        deps.bindings.setDescribe(deps.sessionId, d)
-        if (change.changed) {
-          return okResult({ ...(d as object), schemaChanged: true, schemaChangedNote: change.note })
-        }
-      }
-
-      // observe returns description on every call; it's the invalidation
-      // path for the describe cache. Diff the incoming schemaHash against
-      // the cached one, replace the cache, and surface a note when the
-      // app's schema changed under a live session so the LLM re-reads
-      // before trusting stale affordances.
-      if (desc.name === 'observe') {
-        const obs = res.body as LapObserveResponse
-        if (obs?.description) {
-          const change = detectSchemaChange(binding.describe, obs.description)
-          deps.bindings.setDescribe(deps.sessionId, obs.description)
-          if (change.changed) {
-            return okResult({
-              ...(obs as object),
-              schemaChanged: true,
-              schemaChangedNote: change.note,
-            })
-          }
-        }
-      }
-
-      return okResult(res.body)
+      return executeForwardedTool(
+        desc,
+        (args ?? {}) as Record<string, unknown>,
+        callerFor(deps, binding),
+        cacheFor(deps),
+      )
     },
   )
-}
-
-function okResult(body: unknown): CallToolResult {
-  // structuredContent is what current Claude clients (Desktop + CC)
-  // consume preferentially when present — typed JSON instead of a
-  // stringified blob. The `content` array stays as a `text` fallback
-  // so older clients still see something sensible.
-  return {
-    structuredContent: body as Record<string, unknown>,
-    content: [{ type: 'text', text: JSON.stringify(body) }],
-  }
-}
-
-function errorResult(msg: string): CallToolResult {
-  return {
-    content: [{ type: 'text', text: msg }],
-    isError: true,
-  }
 }

@@ -764,4 +764,78 @@ describe('transformSignalComponentSource', () => {
       expect(out).toMatch(/import \{[^}]*\bstaticText\b/)
     })
   })
+
+  describe('import-binding recognition', () => {
+    it('does NOT lower a user function that shadows a helper name (`text`)', () => {
+      const src = [
+        "import { component, div } from '@llui/dom'",
+        'function text(x: string) { return x }', // user's OWN text, not the dom helper
+        'const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text('hi')])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // div IS a dom import -> lowers to el(...)
+      expect(out).toContain('el("div"')
+      // the user's text(...) must stay verbatim — NOT signalText/staticText
+      expect(out).toContain("text('hi')")
+      expect(out).not.toContain('staticText')
+      expect(out).not.toContain('signalText')
+    })
+
+    it('does NOT lower a user const named `each`', () => {
+      const src = [
+        "import { component, ul } from '@llui/dom'",
+        'const each = (xs: number[]) => xs.length', // user's OWN each
+        'const C = component({',
+        '  init: () => ({ items: [1, 2] }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => [ul([]), each([1, 2]) as unknown as never],',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // no each-family lowering of the user each(...)
+      expect(out).not.toMatch(/signalEach|eachDirect|eachArm/)
+      expect(out).toContain('each([1, 2])')
+    })
+
+    it('lowers ALIASED helper imports (`each as loop`, `div as box`) using canonical names', () => {
+      const src = [
+        "import { component, each as loop, div as box, text } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ items: [{ id: 1 }] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [box([loop(state.at('items'), { key: (i) => i.id, render: (item) => [text(item.at('id'))] })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // box -> canonical div element helper
+      expect(out).toContain('el("div"')
+      // loop -> each structural lowering (direct factory or render arm)
+      expect(out).toMatch(/signalEach/)
+    })
+
+    it('leaves an element-helper name shadowed by a render param alone', () => {
+      // The row param is named `div`; the row body `div([...])` refers to the
+      // PARAM (the row item signal), not the element helper — must stay verbatim
+      // so the runtime authoring path binds the real handle.
+      const src = [
+        "import { component, ul, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: (div) => [div([])] })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // the shadowed `div([])` must NOT become el("div", ...)
+      expect(out).not.toContain('el("div"')
+    })
+  })
 })

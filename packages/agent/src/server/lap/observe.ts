@@ -1,10 +1,4 @@
-import type { TokenStore } from '../token-store.js'
-import type { PairingRegistry } from '../ws/pairing-registry.js'
-import type { AuditSink } from '../audit.js'
-import type { RateLimiter } from '../rate-limit.js'
-import { verifyAndReadTid } from './describe.js'
-import { buildPausedResponse } from './paused.js'
-import { ensureActive } from './active.js'
+import { withLapGates, type LapGateDeps } from './gate.js'
 import type {
   AgentContext,
   LapActionsResponse,
@@ -13,15 +7,8 @@ import type {
   MessageSchemaEntry,
 } from '../../protocol.js'
 
-export type LapObserveDeps = {
-  tokenStore: TokenStore
-  registry: PairingRegistry
-  auditSink: AuditSink
-  rateLimiter: RateLimiter
-  now?: () => number
-  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
-  slidingTtlMs?: number
-}
+/** @deprecated Use `LapGateDeps` from `./gate.js`. */
+export type LapObserveDeps = LapGateDeps
 
 /**
  * Unified bootstrap endpoint. One call returns everything the LLM
@@ -36,21 +23,9 @@ export type LapObserveDeps = {
  * callers, but the common "what can I see, what can I do" question
  * is one call instead of three.
  */
-export async function handleLapObserve(req: Request, deps: LapObserveDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
-  if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
-
-  const rec = await deps.tokenStore.findByTid(auth.tid)
-  if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
-
-  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
-  if (!rlCheck.allowed) {
-    return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
-  }
-
-  const hello = deps.registry.getHello(auth.tid)
-  if (!hello) return buildPausedResponse(deps.tokenStore, auth.tid)
+export const handleLapObserve = withLapGates({ touchOn: 'completion' }, async (ctx) => {
+  const hello = ctx.deps.registry.getHello(ctx.tid)
+  if (!hello) return ctx.paused()
 
   let dynamic: {
     state: unknown
@@ -58,13 +33,13 @@ export async function handleLapObserve(req: Request, deps: LapObserveDeps): Prom
     context: AgentContext | null
   }
   try {
-    dynamic = (await deps.registry.rpc(auth.tid, 'observe', {})) as typeof dynamic
+    dynamic = (await ctx.deps.registry.rpc(ctx.tid, 'observe', {})) as typeof dynamic
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }
     const code = err.code ?? 'internal'
-    if (code === 'paused') return buildPausedResponse(deps.tokenStore, auth.tid)
+    if (code === 'paused') return ctx.paused()
     const status = code === 'timeout' ? 504 : 500
-    return json({ error: { code, detail: err.detail } }, status)
+    return ctx.json({ error: { code, detail: err.detail } }, status)
   }
 
   const description: LapDescribeResponse = {
@@ -88,22 +63,5 @@ export async function handleLapObserve(req: Request, deps: LapObserveDeps): Prom
     context: dynamic.context,
   }
 
-  const nowMs = (deps.now ?? (() => Date.now()))()
-  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
-  await deps.tokenStore.touch(auth.tid, nowMs)
-  await deps.auditSink.write({
-    at: nowMs,
-    tid: auth.tid,
-    uid: rec.uid,
-    event: 'lap-call',
-    detail: { tool: 'observe' },
-  })
-  return json(out, 200)
-}
-
-function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), {
-    status: s,
-    headers: { 'content-type': 'application/json' },
-  })
-}
+  return ctx.finish(out, { detail: { tool: 'observe' } })
+})

@@ -1,9 +1,8 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { tagSend } from '@llui/dom'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
-import { pushDismissable } from '../utils/dismissable.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
 import { isMounted as presenceIsMounted } from './presence.js'
 
@@ -295,68 +294,29 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'top'
-  const offset = opts.offset ?? 6
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
   const closeOnEscape = opts.closeOnEscape !== false
-
-  // Mount through the exit animation: when `animated`, the node stays mounted
-  // while `status === 'closing'` and is removed only once `animationEnd` lands
-  // it on `closed`. When not animated, `closing` is skipped so this collapses
-  // to today's instant unmount (no hang waiting for an animation that never fires).
-  return show(opts.state.map(isMounted), () => {
-    return [
-      portal(() => {
-        const dismissable = onMount((root) => {
-          const contentEl = getElementByIdInScope(root, contentId)
-          const triggerEl = getElementByIdInScope(root, triggerId)
-          if (!contentEl || !triggerEl) return
-
-          const cleanups: Array<() => void> = []
-
-          const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-          const floatingEl = positioner ?? contentEl
-          const arrow = opts.arrowSelector
-            ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
-            : null
-          cleanups.push(
-            attachFloating({
-              anchor: triggerEl,
-              floating: floatingEl,
-              placement,
-              offset,
-              flip,
-              shift,
-              arrow: arrow ?? undefined,
-            }),
-          )
-
-          // Escape dismisses regardless of where focus sits (trigger, content,
-          // or elsewhere). Outside-click is intentionally disabled — tooltips
-          // dismiss on blur / pointer-leave, not on clicks elsewhere.
-          if (closeOnEscape) {
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => [triggerEl],
-                disableOutside: true,
-                onDismiss: () => opts.send({ type: 'hide' }),
-              }),
-            )
-          }
-
-          return () => {
-            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-          }
-        })
-        return [dismissable, div(parts.positioner, opts.content())]
-      }, host),
-    ]
+  // Mount through the exit animation (isMounted): when `animated`, the node stays
+  // mounted while `status === 'closing'` and is removed only once `animationEnd`
+  // lands it on `closed`. Escape dismisses regardless of where focus sits;
+  // outside-click is disabled (tooltips dismiss on blur / pointer-leave).
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    requireAnchor: true,
+    mountWhen: isMounted,
+    onDismiss: () => opts.send({ type: 'hide' }),
+    floating: {
+      placement: opts.placement ?? 'top',
+      offset: opts.offset ?? 6,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      arrowSelector: opts.arrowSelector,
+    },
+    dismiss: closeOnEscape ? { disableOutside: true } : undefined,
   })
 }
 

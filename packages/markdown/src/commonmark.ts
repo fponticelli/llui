@@ -23,6 +23,7 @@ export { sanitizeUrl, resolveUrl } from './security.js'
 export { makeContext, collectDefinitions } from './context.js'
 export { toKeyedBlocks, blockSource, type KeyedBlock } from './keying.js'
 export { resolveOptions } from './options.js'
+export { incrementalParse, type ParseCache, type IncrementalResult } from './incremental.js'
 
 export type {
   MarkdownOptions,

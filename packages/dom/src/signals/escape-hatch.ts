@@ -7,7 +7,8 @@
 // loop with no reactive props, a 60fps layer, a deferred chunk with its own
 // lifecycle. Each call documents WHY via the required `reason` field.
 
-import { signalSubApp, type Renderable, type SubAppSpec } from './dom.js'
+import { signalSubApp, type SubAppSpec } from './sub-app.js'
+import type { Renderable } from './element.js'
 
 /**
  * Mount an isolated sub-application at this point in the view. Returns the anchor

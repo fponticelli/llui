@@ -497,6 +497,22 @@ Per-op short verb + readable path. Useful for a flat detail view:
 function describeOp(op: JsonPatchOp): string
 ```
 
+### `detectSchemaChange()`
+
+Compare a freshly-fetched app description against the cached one and
+decide whether the cached schema is now stale. A changed `schemaHash`
+means the app's Msg/State schema was recompiled — cached
+affordances/examples/payload shapes may no longer be valid, so the
+caller is told to re-read before dispatching. Exported so the
+invalidation policy is unit-testable in isolation.
+
+```typescript
+function detectSchemaChange(
+  prev: LapDescribeResponse | null,
+  next: Pick<LapDescribeResponse, 'schemaHash'>,
+): { changed: boolean; note: string | null }
+```
+
 ### `encodeForWire()`
 
 Recursively walk `value`. For any node a codec claims via
@@ -508,6 +524,46 @@ should claim it before the generic walker tries to enumerate keys.
 
 ```typescript
 function encodeForWire(value: unknown, registry: CodecRegistry): unknown
+```
+
+### `errorResult()`
+
+```typescript
+function errorResult(msg: string): CallToolResult
+```
+
+### `executeConnect()`
+
+Shared tail of `connect_session`, after each surface has recorded its
+own binding (bridge: url+token; server: tid+token). Prefetch the
+`/observe` bundle so the LLM gets `{state, actions, description,
+context}` in one call — no follow-up `observe` / `describe_app` /
+`get_state` / `list_actions` on the first turn — cache the
+description, and return the connected result. On failure, `onFailure`
+unwinds the binding the caller set.
+
+```typescript
+function executeConnect(
+  call: LapCaller,
+  cache: DescribeCache,
+  onFailure: () => void,
+): Promise<CallToolResult>
+```
+
+### `executeForwardedTool()`
+
+Run one forwarded tool: serve `describe_app` from cache when warm,
+otherwise dispatch to LAP, then cache + schemaHash-diff the
+description-bearing responses (`describe_app`, `observe`) so a
+mid-session recompile is surfaced to the LLM.
+
+```typescript
+function executeForwardedTool(
+  desc: McpForwardedToolDescriptor,
+  args: object,
+  call: LapCaller,
+  cache: DescribeCache,
+): Promise<CallToolResult>
 ```
 
 ### `extractToken()`
@@ -591,6 +647,17 @@ to remint. See CHANGELOG.
 
 ```typescript
 function mintToken(): Promise<{ token: AgentToken; tokenHash: string }>
+```
+
+### `okResult()`
+
+`structuredContent` is what current Claude clients (Desktop + Claude
+Code) consume preferentially when present — typed JSON instead of a
+stringified blob. The `content` array stays as a `text` fallback so
+older clients still see something sensible.
+
+```typescript
+function okResult(body: unknown): CallToolResult
 ```
 
 ### `routeToAgentDO()`
@@ -1403,6 +1470,16 @@ export type LapActionsResponse = {
 }
 ```
 
+### `LapCaller`
+
+Call a LAP endpoint. The server surface routes a synthetic WHATWG
+Request through the agent core (`coreRouter`); the bridge surface
+POSTs over HTTP (`forwardLap`). Both collapse to this shape.
+
+```typescript
+export type LapCaller = (path: string, args: object) => Promise<LapEnvelope>
+```
+
 ### `LapConfirmResultRequest`
 
 ```typescript
@@ -1521,6 +1598,16 @@ export type LapEndpointMap = {
   '/lap/v1/context': { req: null; res: LapContextResponse }
   '/lap/v1/observe': { req: null; res: LapObserveResponse }
 }
+```
+
+### `LapEnvelope`
+
+Discriminated result of one LAP call, transport-independent.
+
+```typescript
+export type LapEnvelope =
+  | { ok: true; body: unknown }
+  | { ok: false; status: number; error: unknown }
 ```
 
 ### `LapError`
@@ -2226,6 +2313,21 @@ export interface AgentCodec<TWire = unknown, TRuntime = unknown> {
 }
 ```
 
+### `DescribeCache`
+
+A per-session cache of the app `description`. Populated on connect
+(from the `/observe` bundle) and on every `describe_app` / `observe`
+call; read to serve `describe_app` from cache and to diff schemaHash
+for staleness. Each surface backs this with its own session store
+(bridge: `BindingMap`; server: `McpSessionMap`).
+
+```typescript
+export interface DescribeCache {
+  get(): LapDescribeResponse | null
+  set(d: LapDescribeResponse): void
+}
+```
+
 ### `McpForwardedToolDescriptor`
 
 ```typescript
@@ -2343,6 +2445,15 @@ export interface PairingRegistry {
    */
   getRecentLog(tid: string, n: number): LogEntry[]
 
+  /**
+   * Per-tid cap on the recent-log ring buffer — the ceiling
+   * `getRecentLog` clamps to. Exposed so callers that need "everything
+   * the buffer can hold" (e.g. the `/recent-actions` handler pulling the
+   * full buffer before filtering by kind) reference the registry's own
+   * bound instead of hardcoding a literal that could drift.
+   */
+  readonly recentLogCap: number
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -2459,6 +2570,7 @@ class CodecRegistry {
 
 ```typescript
 class InMemoryPairingRegistry implements PairingRegistry {
+  recentLogCap
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
   recentLog

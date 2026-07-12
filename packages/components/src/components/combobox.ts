@@ -1,10 +1,9 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { pushDismissable } from '../utils/dismissable.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { createOverlay } from '../utils/overlay-engine.js'
+import { type Placement } from '../utils/floating.js'
 
 /**
  * Combobox — text input paired with a filtered listbox dropdown. User
@@ -697,57 +696,27 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const targetOpt = opts.target ?? 'body'
-  const placement = opts.placement ?? 'bottom-start'
-  const offset = opts.offset ?? 4
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const sameWidth = opts.sameWidth !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const inputId = parts.input.id
-  const host = resolvePortalTarget(targetOpt)
-
-  return show(
-    opts.state.map((s) => s.open),
-    () => [
-      portal(() => {
-        const dismissable = onMount((root) => {
-          const contentEl = getElementByIdInScope(root, contentId)
-          const inputEl = getElementByIdInScope(root, inputId)
-          if (!contentEl || !inputEl) return
-
-          const cleanups: Array<() => void> = []
-          const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-          const floatingEl = positioner ?? contentEl
-          if (sameWidth) {
-            floatingEl.style.minWidth = `${inputEl.offsetWidth}px`
-          }
-          cleanups.push(
-            attachFloating({
-              anchor: inputEl,
-              floating: floatingEl,
-              placement,
-              offset,
-              flip,
-              shift,
-            }),
-          )
-          cleanups.push(
-            pushDismissable({
-              element: contentEl,
-              ignore: () => [inputEl],
-              onDismiss: () => opts.send({ type: 'close' }),
-            }),
-          )
-          return () => {
-            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-          }
-        })
-        return [dismissable, div(parts.positioner, opts.content())]
-      }, host),
-    ],
-  )
+  // Anchored to the combobox INPUT (which stays visible while open); the listbox
+  // is never focused (trigger-focused ARIA pattern with aria-activedescendant).
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.input.id,
+    requireAnchor: true,
+    mountWhen: (s) => s.open,
+    onDismiss: () => opts.send({ type: 'close' }),
+    floating: {
+      placement: opts.placement ?? 'bottom-start',
+      offset: opts.offset ?? 4,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      sameWidth: opts.sameWidth !== false,
+    },
+    dismiss: {},
+  })
 }
 
 export const combobox = { init, update, connect, overlay, isCreateOption, CREATE_OPTION_VALUE }

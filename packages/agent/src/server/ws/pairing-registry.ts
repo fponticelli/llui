@@ -79,6 +79,15 @@ export interface PairingRegistry {
    */
   getRecentLog(tid: string, n: number): LogEntry[]
 
+  /**
+   * Per-tid cap on the recent-log ring buffer — the ceiling
+   * `getRecentLog` clamps to. Exposed so callers that need "everything
+   * the buffer can hold" (e.g. the `/recent-actions` handler pulling the
+   * full buffer before filtering by kind) reference the registry's own
+   * bound instead of hardcoding a literal that could drift.
+   */
+  readonly recentLogCap: number
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -127,6 +136,8 @@ type Pairing = {
 const RECENT_LOG_CAP = 100
 
 export class InMemoryPairingRegistry implements PairingRegistry {
+  /** @see PairingRegistry.recentLogCap */
+  readonly recentLogCap = RECENT_LOG_CAP
   private pairings = new Map<string, Pairing>()
   private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
   /**

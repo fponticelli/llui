@@ -1,61 +1,18 @@
-import type { TokenStore } from '../token-store.js'
-import type { PairingRegistry } from '../ws/pairing-registry.js'
-import type { AuditSink } from '../audit.js'
-import type { RateLimiter } from '../rate-limit.js'
-import { verifyAndReadTid } from './describe.js'
-import { buildPausedResponse } from './paused.js'
-import { ensureActive } from './active.js'
+import { withLapGates, type LapGateDeps } from './gate.js'
 import type { LapWaitRequest, LapWaitResponse } from '../../protocol.js'
 
-export type LapWaitDeps = {
-  tokenStore: TokenStore
-  registry: PairingRegistry
-  auditSink: AuditSink
-  rateLimiter: RateLimiter
-  now?: () => number
-  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
-  slidingTtlMs?: number
-}
+/** @deprecated Use `LapGateDeps` from `./gate.js`. */
+export type LapWaitDeps = LapGateDeps
 
-export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
-  if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
-
-  const rec = await deps.tokenStore.findByTid(auth.tid)
-  if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
-
-  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
-  if (!rlCheck.allowed) {
-    return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
-  }
-
-  // Refresh the sliding-TTL clock at request ARRIVAL — `/wait` is a long
-  // poll that can block past `slidingTtlMs`, so touching only after it
-  // resolves would let the inactivity expiry kill an actively-polling
-  // agent. `lastSeenAt` must advance the moment the request lands.
-  await deps.tokenStore.touch(auth.tid, (deps.now ?? (() => Date.now()))())
-
-  const body = ((await req.json().catch(() => null)) ?? {}) as LapWaitRequest
+export const handleLapWait = withLapGates({ touchOn: 'arrival' }, async (ctx) => {
+  // Note: the sliding-TTL clock was refreshed at request ARRIVAL by the
+  // gate (`touchOn: 'arrival'`) — `/wait` is a long poll that can block
+  // past `slidingTtlMs`, so touching only after it resolves would let the
+  // inactivity expiry kill an actively-polling agent.
+  const body = ((await ctx.req.json().catch(() => null)) ?? {}) as LapWaitRequest
   const timeoutMs = body.timeoutMs ?? 10_000
-  const result = await deps.registry.waitForChange(auth.tid, body.path, timeoutMs)
+  const result = await ctx.deps.registry.waitForChange(ctx.tid, body.path, timeoutMs)
   const out: LapWaitResponse = result
 
-  const nowMs = (deps.now ?? (() => Date.now()))()
-  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
-  await deps.auditSink.write({
-    at: nowMs,
-    tid: auth.tid,
-    uid: rec.uid,
-    event: 'lap-call',
-    detail: { path: '/lap/v1/wait', outcome: result.status },
-  })
-  return json(out, 200)
-}
-
-function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), {
-    status: s,
-    headers: { 'content-type': 'application/json' },
-  })
-}
+  return ctx.finish(out, { detail: { path: '/lap/v1/wait', outcome: result.status } })
+})

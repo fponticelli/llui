@@ -1979,7 +1979,8 @@ export interface ScriptAttrs {
 
 ### `ShowCond`
 
-Condition source for `signalShow`: an accessor plus its dep paths.
+Condition source for `signalShow` / discriminant source for `signalBranch`: an
+accessor plus its dep paths.
 
 ```typescript
 export interface ShowCond {

@@ -1,17 +1,27 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { tagSend } from '@llui/dom'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
-import { flipArrow } from '../utils/direction.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
-  typeaheadAccumulate,
-  typeaheadMatch,
-  isTypeaheadKey,
-  TYPEAHEAD_TIMEOUT_MS,
-} from '../utils/typeahead.js'
+  type MenuNode,
+  type MenuNodeKind,
+  type MenuTreeState,
+  type MenuItemPartsOf,
+  type MenuCheckItemPartsOf,
+  type MenuGroupPartsOf,
+  type MenuSeparatorPartsOf,
+  type MenuSubTriggerPartsOf,
+  type MenuSubPositionerPartsOf,
+  type MenuSubContentPartsOf,
+  statusOnOpen,
+  closedPatch,
+  reduceMenuTree,
+  firstNav,
+  setHighlight,
+  createMenuTreeParts,
+} from './menu-machine.js'
 
 /**
  * Menu — a dropdown of items triggered by a button. Supports submenus,
@@ -27,20 +37,13 @@ import {
  */
 
 /** Kind of a menu item. */
-export type MenuItemKind = 'action' | 'checkbox' | 'radio' | 'separator'
+export type MenuItemKind = MenuNodeKind
 
-/** A single node in the menu item tree (JSON-serializable). */
-export interface MenuItem {
-  value: string
-  kind: MenuItemKind
-  /** Radio group key (radio items in the same group are mutually exclusive). */
-  group?: string
-  /** Child items — present on a parent that opens a submenu. */
-  children?: MenuItem[]
-  disabled?: boolean
-}
+/** A single node in the menu item tree (JSON-serializable). Shared with
+ * `context-menu` (and `menubar`) via the {@link MenuNode} machine type. */
+export type MenuItem = MenuNode
 
-export interface MenuState {
+export interface MenuState extends MenuTreeState {
   open: boolean
   /**
    * Presence lifecycle of the root content, layered over `open` for exit
@@ -132,24 +135,7 @@ export function init(opts: MenuInit = {}): MenuState {
   }
 }
 
-// ---- presence lifecycle (composes presence.update; never reinvents it) ----
-
-/** Advance the root content's presence status on an OPEN. Reuses presence's
- * reducer; with skipAnimations we land directly on 'open'. */
-function statusOnOpen(status: PresenceStatus): PresenceStatus {
-  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
-  // No enter animation is wired for menus today, so opening resolves immediately.
-  return next.status === 'opening' ? 'open' : next.status
-}
-
-/** Advance the root content's presence status on a CLOSE REQUEST. With
- * skipAnimations the node unmounts synchronously ('closed'); otherwise it
- * enters 'closing' and stays mounted until `animationEnd`. */
-function statusOnClose(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
-  if (skipAnimations) return 'closed'
-  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'close' })
-  return next.status
-}
+// ---- presence lifecycle (composes the shared machine's status helpers) ----
 
 /** Whether the root menu content should be in the DOM. True for every status
  * except 'closed' — so the content stays mounted through the exit animation. */
@@ -170,94 +156,6 @@ function isVisible(state: MenuState): boolean {
     : state.status === 'open' || state.status === 'opening'
 }
 
-// ---- item-tree helpers (pure) ----
-
-/** Find an item by value anywhere in the tree, returning it (or null). */
-function findItem(items: MenuItem[], value: string): MenuItem | null {
-  for (const it of items) {
-    if (it.value === value) return it
-    if (it.children) {
-      const nested = findItem(it.children, value)
-      if (nested) return nested
-    }
-  }
-  return null
-}
-
-/** The list of items at a given level. `''` is the root; otherwise the children of that value. */
-function levelItems(items: MenuItem[], level: string): MenuItem[] {
-  if (level === '') return items
-  const parent = findItem(items, level)
-  return parent?.children ?? []
-}
-
-/** Navigable values at a level: skip separators and disabled items. */
-function navigable(items: MenuItem[]): string[] {
-  const out: string[] = []
-  for (const it of items) {
-    if (it.kind === 'separator') continue
-    if (it.disabled) continue
-    out.push(it.value)
-  }
-  return out
-}
-
-function firstNav(items: MenuItem[]): string | null {
-  const nav = navigable(items)
-  return nav.length > 0 ? nav[0]! : null
-}
-
-function lastNav(items: MenuItem[]): string | null {
-  const nav = navigable(items)
-  return nav.length > 0 ? nav[nav.length - 1]! : null
-}
-
-function nextNav(items: MenuItem[], from: string | null, delta: 1 | -1): string | null {
-  const nav = navigable(items)
-  if (nav.length === 0) return null
-  const start = from === null ? -1 : nav.indexOf(from)
-  const n = nav.length
-  const idx = start === -1 && delta === 1 ? 0 : (((start + delta) % n) + n) % n
-  return nav[idx]!
-}
-
-function isDisabled(items: MenuItem[], value: string): boolean {
-  const it = findItem(items, value)
-  return !!it?.disabled
-}
-
-function setHighlight(
-  highlights: Record<string, string | null>,
-  level: string,
-  value: string | null,
-): Record<string, string | null> {
-  return { ...highlights, [level]: value }
-}
-
-/** Toggle a checkbox value. */
-function toggleChecked(checked: string[], value: string): string[] {
-  return checked.includes(value) ? checked.filter((v) => v !== value) : [...checked, value]
-}
-
-/** Select a radio value: clear other members of its group, set this one. */
-function selectRadio(items: MenuItem[], checked: string[], item: MenuItem): string[] {
-  const group = item.group
-  const siblings = group ? collectGroupValues(items, group) : [item.value]
-  return [...checked.filter((v) => !siblings.includes(v)), item.value]
-}
-
-function collectGroupValues(items: MenuItem[], group: string): string[] {
-  const out: string[] = []
-  const walk = (list: MenuItem[]): void => {
-    for (const it of list) {
-      if (it.kind === 'radio' && it.group === group) out.push(it.value)
-      if (it.children) walk(it.children)
-    }
-  }
-  walk(items)
-  return out
-}
-
 export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
   switch (msg.type) {
     case 'open': {
@@ -272,31 +170,9 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         [],
       ]
     }
-    case 'close':
-      return [
-        {
-          ...state,
-          open: false,
-          status: statusOnClose(state.status, state.skipAnimations),
-          highlights: { '': null },
-          openPath: [],
-          typeahead: '',
-        },
-        [],
-      ]
     case 'toggle':
       if (state.open) {
-        return [
-          {
-            ...state,
-            open: false,
-            status: statusOnClose(state.status, state.skipAnimations),
-            highlights: { '': null },
-            openPath: [],
-            typeahead: '',
-          },
-          [],
-        ]
+        return [{ ...state, ...closedPatch(state) }, []]
       }
       return [
         {
@@ -311,255 +187,24 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         },
         [],
       ]
-    case 'highlight':
-      // Open-only: a highlight arriving after close (e.g. a queued pointer
-      // event) must not resurrect state on a closed menu.
-      if (!state.open) return [state, []]
-      if (msg.value !== null && isDisabled(state.items, msg.value)) return [state, []]
-      // Pointer-move fires per tick — when the target is already highlighted,
-      // return the SAME reference so the reconciler skips the commit.
-      if ((state.highlights[msg.level] ?? null) === msg.value) return [state, []]
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, msg.value) }, []]
-    case 'highlightNext': {
-      if (!state.open) return [state, []]
-      const items = levelItems(state.items, msg.level)
-      const to = nextNav(items, state.highlights[msg.level] ?? null, 1)
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
-    }
-    case 'highlightPrev': {
-      if (!state.open) return [state, []]
-      const items = levelItems(state.items, msg.level)
-      const to = nextNav(items, state.highlights[msg.level] ?? null, -1)
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
-    }
-    case 'highlightFirst':
-      if (!state.open) return [state, []]
-      return [
-        {
-          ...state,
-          highlights: setHighlight(
-            state.highlights,
-            msg.level,
-            firstNav(levelItems(state.items, msg.level)),
-          ),
-        },
-        [],
-      ]
-    case 'highlightLast':
-      if (!state.open) return [state, []]
-      return [
-        {
-          ...state,
-          highlights: setHighlight(
-            state.highlights,
-            msg.level,
-            lastNav(levelItems(state.items, msg.level)),
-          ),
-        },
-        [],
-      ]
-    case 'openSub': {
-      if (!state.open) return [state, []]
-      const parent = findItem(state.items, msg.value)
-      if (!parent || !parent.children || parent.disabled) return [state, []]
-      const openPath = [...state.openPath, msg.value]
-      return [
-        {
-          ...state,
-          openPath,
-          highlights: setHighlight(state.highlights, msg.value, firstNav(parent.children)),
-        },
-        [],
-      ]
-    }
-    case 'closeSub': {
-      if (state.openPath.length === 0) return [state, []]
-      const deepest = state.openPath[state.openPath.length - 1]!
-      const openPath = state.openPath.slice(0, -1)
-      const highlights = { ...state.highlights }
-      delete highlights[deepest]
-      return [{ ...state, openPath, highlights }, []]
-    }
-    case 'selectHighlighted': {
-      const value = state.highlights[msg.level] ?? null
-      if (value === null) return [state, []]
-      return applySelect(state, value)
-    }
-    case 'select':
-      return applySelect(state, msg.value)
-    case 'setItems':
-      return [{ ...state, items: msg.items }, []]
-    case 'typeahead': {
-      if (!state.open) return [state, []]
-      const items = levelItems(state.items, msg.level)
-      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
-      const nav = navigable(items)
-      const current = state.highlights[msg.level] ?? null
-      const startIdx = current ? nav.indexOf(current) : null
-      const mask = nav.map(() => false)
-      const matchIdx = typeaheadMatch(nav, mask, acc, startIdx)
-      const match = matchIdx === null ? null : nav[matchIdx]!
-      return [
-        {
-          ...state,
-          typeahead: acc,
-          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
-          highlights: setHighlight(state.highlights, msg.level, match ?? current),
-        },
-        [],
-      ]
-    }
-    case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
-    case 'animationEnd': {
-      const [next] = presence.update(
-        { status: state.status, unmountOnExit: true },
-        { type: 'animationEnd' },
-      )
-      if (next.status === state.status) return [state, []]
-      return [{ ...state, status: next.status }, []]
-    }
+    // close, highlight family, select, openSub/closeSub, typeahead, setDir,
+    // animationEnd — all shared with context-menu / menubar.
+    default:
+      return reduceMenuTree(state, msg)
   }
-}
-
-/** The state patch applied when a selection closes the whole menu. Routes the
- * presence status through `statusOnClose` so animations are honored. */
-function closedPatch(
-  state: MenuState,
-): Pick<MenuState, 'open' | 'status' | 'highlights' | 'openPath' | 'typeahead'> {
-  return {
-    open: false,
-    status: statusOnClose(state.status, state.skipAnimations),
-    highlights: { '': null },
-    openPath: [],
-    typeahead: '',
-  }
-}
-
-/** Shared selection logic for `select` and `selectHighlighted`. */
-function applySelect(state: MenuState, value: string): [MenuState, never[]] {
-  const item = findItem(state.items, value)
-  if (!item || item.disabled || item.kind === 'separator') return [state, []]
-
-  // A parent with children opens its submenu rather than selecting.
-  if (item.children && item.children.length > 0) {
-    if (state.openPath[state.openPath.length - 1] === value) return [state, []]
-    return [
-      {
-        ...state,
-        openPath: [...state.openPath, value],
-        highlights: setHighlight(state.highlights, value, firstNav(item.children)),
-      },
-      [],
-    ]
-  }
-
-  if (item.kind === 'checkbox') {
-    const checked = toggleChecked(state.checked, value)
-    if (state.closeOnSelect) {
-      return [{ ...state, checked, ...closedPatch(state) }, []]
-    }
-    return [{ ...state, checked }, []]
-  }
-
-  if (item.kind === 'radio') {
-    const checked = selectRadio(state.items, state.checked, item)
-    if (state.closeOnSelect) {
-      return [{ ...state, checked, ...closedPatch(state) }, []]
-    }
-    return [{ ...state, checked }, []]
-  }
-
-  // action leaf: close the whole menu.
-  return [{ ...state, ...closedPatch(state) }, []]
 }
 
 // ---- connect ----
 
-interface ItemAttrs {
-  role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio'
-  id: string
-  'aria-disabled': Signal<'true' | undefined>
-  'aria-checked'?: Signal<'true' | 'false'>
-  'data-state': Signal<'highlighted' | undefined>
-  'data-disabled': Signal<'' | undefined>
-  'data-scope': 'menu'
-  'data-part': 'item'
-  'data-value': string
-  tabindex: -1
-  onClick: (e: MouseEvent) => void
-  onPointerMove: (e: PointerEvent) => void
-}
-
-export interface MenuItemParts {
-  item: ItemAttrs & { role: 'menuitem' }
-}
-
-export interface MenuCheckItemParts {
-  item: ItemAttrs & {
-    role: 'menuitemcheckbox' | 'menuitemradio'
-    'aria-checked': Signal<'true' | 'false'>
-  }
-}
-
-export interface MenuGroupParts {
-  group: {
-    role: 'group'
-    'aria-labelledby': string
-    'data-scope': 'menu'
-    'data-part': 'group'
-  }
-  label: {
-    id: string
-    'data-scope': 'menu'
-    'data-part': 'group-label'
-  }
-}
-
-export interface MenuSeparatorParts {
-  role: 'separator'
-  'data-scope': 'menu'
-  'data-part': 'separator'
-}
-
-export interface MenuSubTriggerParts {
-  role: 'menuitem'
-  id: string
-  'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
-  'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
-  'data-state': Signal<'highlighted' | undefined>
-  'data-scope': 'menu'
-  'data-part': 'subtrigger'
-  'data-value': string
-  tabindex: -1
-  onClick: (e: MouseEvent) => void
-  onPointerEnter: (e: PointerEvent) => void
-  onPointerLeave: (e: PointerEvent) => void
-  onKeyDown: (e: KeyboardEvent) => void
-}
-
-export interface MenuSubPositionerParts {
-  'data-scope': 'menu'
-  'data-part': 'subpositioner'
-  style: string
-}
-
-export interface MenuSubContentParts {
-  role: 'menu'
-  id: string
-  'aria-labelledby': string
-  /** Virtually-focused item id at this submenu level. */
-  'aria-activedescendant': Signal<string | undefined>
-  tabindex: -1
-  'data-state': Signal<'open' | 'closed'>
-  'data-scope': 'menu'
-  'data-part': 'subcontent'
-  onPointerEnter: (e: PointerEvent) => void
-  onPointerLeave: (e: PointerEvent) => void
-  onKeyDown: (e: KeyboardEvent) => void
-}
+// Item / group / separator / submenu part shapes come from the shared machine,
+// specialized to this component's `data-scope: 'menu'`.
+export type MenuItemParts = MenuItemPartsOf<'menu'>
+export type MenuCheckItemParts = MenuCheckItemPartsOf<'menu'>
+export type MenuGroupParts = MenuGroupPartsOf<'menu'>
+export type MenuSeparatorParts = MenuSeparatorPartsOf<'menu'>
+export type MenuSubTriggerParts = MenuSubTriggerPartsOf<'menu'>
+export type MenuSubPositionerParts = MenuSubPositionerPartsOf<'menu'>
+export type MenuSubContentParts = MenuSubContentPartsOf<'menu'>
 
 export interface MenuParts {
   trigger: {
@@ -631,96 +276,18 @@ export function connect(
   // label text into an element id produced invalid ids / broken
   // aria-labelledby references.
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
-  const hoverDelay = opts.hoverDelay ?? 200
-  const hoverCloseDelay = opts.hoverCloseDelay ?? 300
 
-  // Per-instance hover-intent timers keyed by subTrigger value.
-  const openTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-  const closeTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-
-  const clearOpenTimer = (value: string): void => {
-    const t = openTimers[value]
-    if (t) {
-      clearTimeout(t)
-      delete openTimers[value]
-    }
-  }
-  const clearCloseTimer = (value: string): void => {
-    const t = closeTimers[value]
-    if (t) {
-      clearTimeout(t)
-      delete closeTimers[value]
-    }
-  }
-
-  const scheduleOpenSub = (value: string): void => {
-    clearCloseTimer(value)
-    clearOpenTimer(value)
-    openTimers[value] = setTimeout(() => {
-      delete openTimers[value]
-      send({ type: 'openSub', value })
-    }, hoverDelay)
-  }
-
-  const scheduleCloseSub = (value: string): void => {
-    clearOpenTimer(value)
-    clearCloseTimer(value)
-    closeTimers[value] = setTimeout(() => {
-      delete closeTimers[value]
-      // `closeSub` pops the DEEPEST open submenu. Only fire it when THIS submenu
-      // is the deepest open one — otherwise a shallower level's pointerleave
-      // would wrongly collapse a deeper, still-hovered submenu.
-      const openPath = state.peek()?.openPath ?? []
-      if (openPath[openPath.length - 1] === value) send({ type: 'closeSub' })
-    }, hoverCloseDelay)
-  }
-
-  const keyNav = (level: string) =>
-    tagSend(
-      send,
-      [
-        'highlightNext',
-        'highlightPrev',
-        'highlightFirst',
-        'highlightLast',
-        'selectHighlighted',
-        'close',
-        'typeahead',
-      ],
-      (e: KeyboardEvent): void => {
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'highlightNext', level })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'highlightPrev', level })
-            return
-          case 'Home':
-            e.preventDefault()
-            send({ type: 'highlightFirst', level })
-            return
-          case 'End':
-            e.preventDefault()
-            send({ type: 'highlightLast', level })
-            return
-          case 'Enter':
-          case ' ':
-            e.preventDefault()
-            send({ type: 'selectHighlighted', level })
-            return
-          case 'Escape':
-            e.preventDefault()
-            send({ type: 'close' })
-            return
-          default:
-            if (isTypeaheadKey(e)) {
-              send({ type: 'typeahead', level, char: e.key, now: Date.now() })
-            }
-        }
-      },
-    )
+  // The item / submenu / group parts + hover-intent timers + level resolver +
+  // root keydown all come from the shared item-tree machine.
+  const parts = createMenuTreeParts({
+    scope: 'menu',
+    state,
+    send,
+    ids: { itemId, subContentId, subTriggerId, groupLabelId },
+    onSelect: opts.onSelect,
+    hoverDelay: opts.hoverDelay,
+    hoverCloseDelay: opts.hoverCloseDelay,
+  })
 
   return {
     trigger: {
@@ -761,232 +328,18 @@ export function connect(
       'data-state': state.map((s) => s.status),
       'data-scope': 'menu',
       'data-part': 'content',
-      onKeyDown: keyNav(''),
+      onKeyDown: parts.rootKeyNav,
       onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
       onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
     },
-    item: (value: string): MenuItemParts => ({
-      item: {
-        role: 'menuitem',
-        id: itemId(value),
-        'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-        'data-state': state.map((s) =>
-          Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-        ),
-        'data-disabled': state.map((s) => (isDisabled(s.items, value) ? '' : undefined)),
-        'data-scope': 'menu',
-        'data-part': 'item',
-        'data-value': value,
-        tabindex: -1,
-        onClick: tagSend(send, ['select'], () => {
-          send({ type: 'select', value })
-          opts.onSelect?.(value)
-        }),
-        onPointerMove: tagSend(send, ['highlight'], () => {
-          const level = levelOf(value)
-          if ((state.peek()?.highlights[level] ?? null) === value) return
-          send({ type: 'highlight', level, value })
-        }),
-      },
-    }),
-    checkboxItem: (value: string): MenuCheckItemParts => ({
-      item: {
-        role: 'menuitemcheckbox',
-        id: itemId(value),
-        'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-        'aria-checked': state.map((s) => (s.checked.includes(value) ? 'true' : 'false')),
-        'data-state': state.map((s) =>
-          Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-        ),
-        'data-disabled': state.map((s) => (isDisabled(s.items, value) ? '' : undefined)),
-        'data-scope': 'menu',
-        'data-part': 'item',
-        'data-value': value,
-        tabindex: -1,
-        onClick: tagSend(send, ['select'], () => {
-          send({ type: 'select', value })
-          opts.onSelect?.(value)
-        }),
-        onPointerMove: tagSend(send, ['highlight'], () => {
-          const level = levelOf(value)
-          if ((state.peek()?.highlights[level] ?? null) === value) return
-          send({ type: 'highlight', level, value })
-        }),
-      },
-    }),
-    radioItem: (value: string): MenuCheckItemParts => ({
-      item: {
-        role: 'menuitemradio',
-        id: itemId(value),
-        'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-        'aria-checked': state.map((s) => (s.checked.includes(value) ? 'true' : 'false')),
-        'data-state': state.map((s) =>
-          Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-        ),
-        'data-disabled': state.map((s) => (isDisabled(s.items, value) ? '' : undefined)),
-        'data-scope': 'menu',
-        'data-part': 'item',
-        'data-value': value,
-        tabindex: -1,
-        onClick: tagSend(send, ['select'], () => {
-          send({ type: 'select', value })
-          opts.onSelect?.(value)
-        }),
-        onPointerMove: tagSend(send, ['highlight'], () => {
-          const level = levelOf(value)
-          if ((state.peek()?.highlights[level] ?? null) === value) return
-          send({ type: 'highlight', level, value })
-        }),
-      },
-    }),
-    group: (id: string): MenuGroupParts => ({
-      group: {
-        role: 'group',
-        'aria-labelledby': groupLabelId(id),
-        'data-scope': 'menu',
-        'data-part': 'group',
-      },
-      label: {
-        id: groupLabelId(id),
-        'data-scope': 'menu',
-        'data-part': 'group-label',
-      },
-    }),
-    separator: (): MenuSeparatorParts => ({
-      role: 'separator',
-      'data-scope': 'menu',
-      'data-part': 'separator',
-    }),
-    subTrigger: (value: string): MenuSubTriggerParts => ({
-      role: 'menuitem',
-      id: subTriggerId(value),
-      'aria-haspopup': 'menu',
-      'aria-expanded': state.map((s) => s.openPath.includes(value)),
-      'aria-controls': subContentId(value),
-      'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-      'data-state': state.map((s) =>
-        Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-      ),
-      'data-scope': 'menu',
-      'data-part': 'subtrigger',
-      'data-value': value,
-      tabindex: -1,
-      onClick: tagSend(send, ['openSub'], () => send({ type: 'openSub', value })),
-      onPointerEnter: () => scheduleOpenSub(value),
-      onPointerLeave: () => scheduleCloseSub(value),
-      onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        const key = flipArrow(e.key, state.peek().dir)
-        switch (key) {
-          case 'ArrowRight':
-          case 'Enter':
-          case ' ':
-            e.preventDefault()
-            send({ type: 'openSub', value })
-            return
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'highlightNext', level: levelOf(value) })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'highlightPrev', level: levelOf(value) })
-            return
-          case 'Escape':
-            e.preventDefault()
-            send({ type: 'close' })
-            return
-        }
-      }),
-    }),
-    subPositioner: (_value: string): MenuSubPositionerParts => ({
-      'data-scope': 'menu',
-      'data-part': 'subpositioner',
-      style: 'position:absolute;top:0;left:0;',
-    }),
-    subContent: (value: string): MenuSubContentParts => ({
-      role: 'menu',
-      id: subContentId(value),
-      'aria-labelledby': subTriggerId(value),
-      'aria-activedescendant': state.map((s) => {
-        const v = s.highlights[value]
-        return v == null ? undefined : itemId(v)
-      }),
-      tabindex: -1,
-      'data-state': state.map((s) => (s.openPath.includes(value) ? 'open' : 'closed')),
-      'data-scope': 'menu',
-      'data-part': 'subcontent',
-      onPointerEnter: () => clearCloseTimer(value),
-      onPointerLeave: () => scheduleCloseSub(value),
-      onKeyDown: tagSend(
-        send,
-        [
-          'highlightNext',
-          'highlightPrev',
-          'highlightFirst',
-          'highlightLast',
-          'selectHighlighted',
-          'closeSub',
-          'typeahead',
-        ],
-        (e: KeyboardEvent): void => {
-          const key = flipArrow(e.key, state.peek().dir)
-          switch (key) {
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'highlightNext', level: value })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'highlightPrev', level: value })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'highlightFirst', level: value })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'highlightLast', level: value })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'selectHighlighted', level: value })
-              return
-            case 'ArrowLeft':
-            case 'Escape':
-              e.preventDefault()
-              send({ type: 'closeSub' })
-              return
-            default:
-              if (isTypeaheadKey(e)) {
-                send({ type: 'typeahead', level: value, char: e.key, now: Date.now() })
-              }
-          }
-        },
-      ),
-    }),
-  }
-
-  // Resolve which level an item lives at. Used by pointer highlight (which
-  // fires per mouse tick) so the highlight lands in the correct level bucket.
-  // Memoized per items-array reference: the value→level map is rebuilt only
-  // when `items` changes, turning a per-move O(n) tree walk into an O(1) lookup.
-  let levelCacheItems: MenuItem[] | null = null
-  let levelCache = new Map<string, string>()
-  function levelOf(value: string): string {
-    const items = state.peek()?.items ?? []
-    if (items !== levelCacheItems) {
-      levelCacheItems = items
-      levelCache = new Map()
-      const walk = (list: MenuItem[], level: string): void => {
-        for (const it of list) {
-          levelCache.set(it.value, level)
-          if (it.children) walk(it.children, it.value)
-        }
-      }
-      walk(items, '')
-    }
-    return levelCache.get(value) ?? ''
+    item: parts.item,
+    checkboxItem: parts.checkboxItem,
+    radioItem: parts.radioItem,
+    group: parts.group,
+    separator: parts.separator,
+    subTrigger: parts.subTrigger,
+    subPositioner: parts.subPositioner,
+    subContent: parts.subContent,
   }
 }
 
@@ -1003,79 +356,31 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'bottom-start'
-  const offset = opts.offset ?? 4
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-
-  // Outer block stays mounted through the exit animation (isPresent, status !==
-  // 'closed'); the inner block tracks the VISIBLE phase (isVisible, open/opening)
-  // so interaction wiring — floating positioning, dismissable, content focus —
-  // tears down at the close REQUEST while the node lingers for its exit animation.
-  // With `skipAnimations` (the default) both flip together, so close unmounts and
-  // tears down synchronously (no hang waiting on an animationEnd that never fires).
-  return show(
-    opts.state.map((s) => isPresent(s)),
-    () => {
-      return [
-        portal(() => {
-          const interaction = show(opts.state.map(isVisible), () => [
-            onMount((root) => {
-              const contentEl = getElementByIdInScope(root, contentId)
-              const triggerEl = getElementByIdInScope(root, triggerId)
-              if (!contentEl || !triggerEl) return
-
-              const cleanups: Array<() => void> = []
-
-              const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-              const floatingEl = positioner ?? contentEl
-              cleanups.push(
-                attachFloating({
-                  anchor: triggerEl,
-                  floating: floatingEl,
-                  placement,
-                  offset,
-                  flip,
-                  shift,
-                  dir: opts.state.peek().dir,
-                }),
-              )
-
-              cleanups.push(
-                pushDismissable({
-                  element: contentEl,
-                  ignore: () => [triggerEl],
-                  // Focus restoration lives in the cleanup below (which runs on
-                  // EVERY close, not just dismiss); focusing here too would
-                  // fight it and steal focus when the user clicked elsewhere.
-                  onDismiss: () => opts.send({ type: 'close' }),
-                }),
-              )
-
-              contentEl.focus({ preventScroll: true })
-
-              return () => {
-                // Capture BEFORE tearing down (focus trap etc. may move focus).
-                // Only pull focus back to the trigger when it is still inside the
-                // overlay — if the user clicked another control, respect that.
-                const focusInside =
-                  contentEl.contains(document.activeElement) ||
-                  document.activeElement === document.body ||
-                  document.activeElement === null
-                for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-                if (focusInside) triggerEl.focus()
-              }
-            }),
-          ])
-          return [interaction, div(parts.positioner, opts.content())]
-        }, host),
-      ]
+  // Two-phase: mounted through the exit animation (isPresent); floating +
+  // dismissable + content focus unwind at the close REQUEST (isVisible). Focus is
+  // restored to the trigger on EVERY close when it is still inside the overlay.
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    requireAnchor: true,
+    mountWhen: isPresent,
+    visibleWhen: isVisible,
+    onDismiss: () => opts.send({ type: 'close' }),
+    floating: {
+      placement: opts.placement ?? 'bottom-start',
+      offset: opts.offset ?? 4,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      dir: () => opts.state.peek().dir,
     },
-  )
+    dismiss: {},
+    focusOnOpenId: opts.parts.content.id,
+    restoreFocus: { boundary: 'content' },
+  })
 }
 
 export const menu = { init, update, connect, overlay, isPresent, isMounted }

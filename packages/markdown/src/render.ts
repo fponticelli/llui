@@ -12,6 +12,23 @@ import type { MarkdownOptions } from './types.js'
 import { resolveOptions } from './options.js'
 import { makeContext, collectDefinitions } from './context.js'
 import { toKeyedBlocks } from './keying.js'
+import { incrementalParse, type ParseCache } from './incremental.js'
+
+declare global {
+  // Vite/Rollup substitute `import.meta.env.DEV`; raw tsc/vitest see undefined.
+  // Merges with @llui/dom's identical augmentation.
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+
+/** A stable structural signature of a tree's top-level blocks (types, inline
+ * children AND positions) — what the dev assertion compares. Positions are
+ * included on purpose: `blockSource` keys blocks by their `position` offsets, so
+ * an off-by-one in the tail shift must be caught, not hidden. */
+function structuralSignature(root: Root): string {
+  return JSON.stringify(root.children)
+}
 
 /** A Markdown → mdast parser (GFM or CommonMark). Injected into {@link createMarkdown}. */
 export type ParseFn = (src: string, opts?: MarkdownOptions) => Root
@@ -53,8 +70,31 @@ export function createMarkdown(parse: ParseFn) {
       return div({ class: options.class }, ctx.renderChildren(root))
     }
 
+    // Incremental parse state, threaded across updates: on each new source value
+    // we reuse the previously-parsed prefix blocks and re-parse only the changed
+    // tail (see incremental.ts). The reused block nodes keep their identity, so the
+    // keyed `each` below reuses their DOM untouched — the streaming sweet spot.
+    let cache: ParseCache | undefined
+    const parseSource = (src: string): Root => parse(src, opts)
+
     const units = source.map((src): RenderUnit[] => {
-      const root = parse(src, opts)
+      const result = incrementalParse(cache, src, parseSource)
+      let root = result.root
+      cache = result.cache
+
+      if (import.meta.env?.DEV === true && result.reused > 0) {
+        const full = parseSource(src)
+        if (structuralSignature(root) !== structuralSignature(full)) {
+          console.error(
+            '[LLui markdown] incremental parse diverged from a full parse; ' +
+              'falling back to the full parse. This is a bug in incremental.ts — ' +
+              'please report the source that triggered it.',
+          )
+          root = full
+          cache = { source: src, root: full }
+        }
+      }
+
       const definitions = collectDefinitions(root)
       const ctx = makeContext(options, definitions)
       return toKeyedBlocks(root, src, options, definitions).map((block) => ({

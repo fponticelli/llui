@@ -1,16 +1,24 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable.js'
+import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
-import { flipArrow } from '../utils/direction.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
-  typeaheadAccumulate,
-  typeaheadMatch,
-  isTypeaheadKey,
-  TYPEAHEAD_TIMEOUT_MS,
-} from '../utils/typeahead.js'
+  type MenuNode,
+  type MenuNodeKind,
+  type MenuTreeState,
+  type MenuItemPartsOf,
+  type MenuCheckItemPartsOf,
+  type MenuGroupPartsOf,
+  type MenuSeparatorPartsOf,
+  type MenuSubTriggerPartsOf,
+  type MenuSubPositionerPartsOf,
+  type MenuSubContentPartsOf,
+  statusOnOpen,
+  reduceMenuTree,
+  firstNav,
+  createMenuTreeParts,
+} from './menu-machine.js'
 
 /**
  * Context menu — right-click (contextmenu) triggered menu positioned at the
@@ -23,45 +31,17 @@ import {
  */
 
 /** Kind of a context-menu item. */
-export type ContextMenuItemKind = 'action' | 'checkbox' | 'radio' | 'separator'
+export type ContextMenuItemKind = MenuNodeKind
 
-/** A single node in the context-menu item tree (JSON-serializable). */
-export interface ContextMenuItem {
-  value: string
-  kind: ContextMenuItemKind
-  group?: string
-  children?: ContextMenuItem[]
-  disabled?: boolean
-}
+/** A single node in the context-menu item tree (JSON-serializable). Shared with
+ * `menu` via the {@link MenuNode} machine type. */
+export type ContextMenuItem = MenuNode
 
-export interface ContextMenuState {
-  open: boolean
-  /**
-   * Presence lifecycle of the root content, layered over `open` for exit
-   * animations. `open` stays the logical "should be visible/interactive" flag;
-   * `status` tracks 'opening'/'open'/'closing'/'closed' so the content can stay
-   * mounted while its exit animation runs (status 'closing'). When
-   * `skipAnimations` is true (the default) a close jumps straight to 'closed'.
-   */
-  status: PresenceStatus
-  /** When true (default), a close goes straight to 'closed' synchronously — no
-   * exit animation, no waiting for an `animationEnd` that may never fire. */
-  skipAnimations: boolean
+/** Context-menu state — the shared menu-tree state plus the pointer (x, y) the
+ * root content is positioned at. */
+export interface ContextMenuState extends MenuTreeState {
   x: number
   y: number
-  items: ContextMenuItem[]
-  /** Highlighted value per open level. Key `''` is the root. */
-  highlights: Record<string, string | null>
-  /** Chain of subTrigger values whose submenus are open (deepest last). */
-  openPath: string[]
-  /** Checked checkbox / radio values. */
-  checked: string[]
-  /** When true, selecting a checkbox/radio also closes the menu (default false). */
-  closeOnSelect: boolean
-  typeahead: string
-  typeaheadExpiresAt: number
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
-  dir: 'ltr' | 'rtl'
 }
 
 export type ContextMenuMsg =
@@ -124,23 +104,7 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
   }
 }
 
-// ---- presence lifecycle (composes presence.update; never reinvents it) ----
-
-/** Advance the root content's presence status on an OPEN. Reuses presence's
- * reducer; with no enter animation wired, opening resolves directly to 'open'. */
-function statusOnOpen(status: PresenceStatus): PresenceStatus {
-  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
-  return next.status === 'opening' ? 'open' : next.status
-}
-
-/** Advance the root content's presence status on a CLOSE REQUEST. With
- * skipAnimations the node unmounts synchronously ('closed'); otherwise it
- * enters 'closing' and stays mounted until `animationEnd`. */
-function statusOnClose(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
-  if (skipAnimations) return 'closed'
-  const [next] = presence.update({ status, unmountOnExit: true }, { type: 'close' })
-  return next.status
-}
+// ---- presence lifecycle (composes the shared machine's status helpers) ----
 
 /** Whether the root content should be in the DOM. True for every status except
  * 'closed' — so the content stays mounted through the exit animation. Falls back
@@ -166,89 +130,6 @@ function isVisible(state: ContextMenuState): boolean {
   return state.open
 }
 
-// ---- item-tree helpers (pure) ----
-
-function findItem(items: ContextMenuItem[], value: string): ContextMenuItem | null {
-  for (const it of items) {
-    if (it.value === value) return it
-    if (it.children) {
-      const nested = findItem(it.children, value)
-      if (nested) return nested
-    }
-  }
-  return null
-}
-
-function levelItems(items: ContextMenuItem[], level: string): ContextMenuItem[] {
-  if (level === '') return items
-  const parent = findItem(items, level)
-  return parent?.children ?? []
-}
-
-function navigable(items: ContextMenuItem[]): string[] {
-  const out: string[] = []
-  for (const it of items) {
-    if (it.kind === 'separator') continue
-    if (it.disabled) continue
-    out.push(it.value)
-  }
-  return out
-}
-
-function firstNav(items: ContextMenuItem[]): string | null {
-  const nav = navigable(items)
-  return nav.length > 0 ? nav[0]! : null
-}
-
-function lastNav(items: ContextMenuItem[]): string | null {
-  const nav = navigable(items)
-  return nav.length > 0 ? nav[nav.length - 1]! : null
-}
-
-function nextNav(items: ContextMenuItem[], from: string | null, delta: 1 | -1): string | null {
-  const nav = navigable(items)
-  if (nav.length === 0) return null
-  const start = from === null ? -1 : nav.indexOf(from)
-  const n = nav.length
-  const idx = start === -1 && delta === 1 ? 0 : (((start + delta) % n) + n) % n
-  return nav[idx]!
-}
-
-function isDisabled(items: ContextMenuItem[], value: string): boolean {
-  const it = findItem(items, value)
-  return !!it?.disabled
-}
-
-function setHighlight(
-  highlights: Record<string, string | null>,
-  level: string,
-  value: string | null,
-): Record<string, string | null> {
-  return { ...highlights, [level]: value }
-}
-
-function toggleChecked(checked: string[], value: string): string[] {
-  return checked.includes(value) ? checked.filter((v) => v !== value) : [...checked, value]
-}
-
-function collectGroupValues(items: ContextMenuItem[], group: string): string[] {
-  const out: string[] = []
-  const walk = (list: ContextMenuItem[]): void => {
-    for (const it of list) {
-      if (it.kind === 'radio' && it.group === group) out.push(it.value)
-      if (it.children) walk(it.children)
-    }
-  }
-  walk(items)
-  return out
-}
-
-function selectRadio(items: ContextMenuItem[], checked: string[], item: ContextMenuItem): string[] {
-  const group = item.group
-  const siblings = group ? collectGroupValues(items, group) : [item.value]
-  return [...checked.filter((v) => !siblings.includes(v)), item.value]
-}
-
 export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMenuState, never[]] {
   switch (msg.type) {
     case 'openAt':
@@ -264,252 +145,24 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         },
         [],
       ]
-    case 'close':
-      return [{ ...state, ...closedPatch(state) }, []]
-    case 'highlight':
-      // Open-only + same-ref no-op guards (mirrors menu.ts): a queued pointer
-      // event after close must not resurrect state, and a highlight already at
-      // the target returns the SAME reference so the reconciler skips it.
-      if (!state.open) return [state, []]
-      if (msg.value !== null && isDisabled(state.items, msg.value)) return [state, []]
-      if ((state.highlights[msg.level] ?? null) === msg.value) return [state, []]
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, msg.value) }, []]
-    case 'highlightNext': {
-      if (!state.open) return [state, []]
-      const to = nextNav(levelItems(state.items, msg.level), state.highlights[msg.level] ?? null, 1)
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
-    }
-    case 'highlightPrev': {
-      if (!state.open) return [state, []]
-      const to = nextNav(
-        levelItems(state.items, msg.level),
-        state.highlights[msg.level] ?? null,
-        -1,
-      )
-      return [{ ...state, highlights: setHighlight(state.highlights, msg.level, to) }, []]
-    }
-    case 'highlightFirst':
-      if (!state.open) return [state, []]
-      return [
-        {
-          ...state,
-          highlights: setHighlight(
-            state.highlights,
-            msg.level,
-            firstNav(levelItems(state.items, msg.level)),
-          ),
-        },
-        [],
-      ]
-    case 'highlightLast':
-      if (!state.open) return [state, []]
-      return [
-        {
-          ...state,
-          highlights: setHighlight(
-            state.highlights,
-            msg.level,
-            lastNav(levelItems(state.items, msg.level)),
-          ),
-        },
-        [],
-      ]
-    case 'openSub': {
-      if (!state.open) return [state, []]
-      const parent = findItem(state.items, msg.value)
-      if (!parent || !parent.children || parent.disabled) return [state, []]
-      return [
-        {
-          ...state,
-          openPath: [...state.openPath, msg.value],
-          highlights: setHighlight(state.highlights, msg.value, firstNav(parent.children)),
-        },
-        [],
-      ]
-    }
-    case 'closeSub': {
-      if (state.openPath.length === 0) return [state, []]
-      const deepest = state.openPath[state.openPath.length - 1]!
-      const highlights = { ...state.highlights }
-      delete highlights[deepest]
-      return [{ ...state, openPath: state.openPath.slice(0, -1), highlights }, []]
-    }
-    case 'selectHighlighted': {
-      const value = state.highlights[msg.level] ?? null
-      if (value === null) return [state, []]
-      return applySelect(state, value)
-    }
-    case 'select':
-      return applySelect(state, msg.value)
-    case 'setItems':
-      return [{ ...state, items: msg.items }, []]
-    case 'typeahead': {
-      if (!state.open) return [state, []]
-      const nav = navigable(levelItems(state.items, msg.level))
-      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
-      const current = state.highlights[msg.level] ?? null
-      const startIdx = current ? nav.indexOf(current) : null
-      const mask = nav.map(() => false)
-      const matchIdx = typeaheadMatch(nav, mask, acc, startIdx)
-      const match = matchIdx === null ? null : nav[matchIdx]!
-      return [
-        {
-          ...state,
-          typeahead: acc,
-          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
-          highlights: setHighlight(state.highlights, msg.level, match ?? current),
-        },
-        [],
-      ]
-    }
-    case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
-    case 'animationEnd': {
-      const [next] = presence.update(
-        { status: state.status, unmountOnExit: true },
-        { type: 'animationEnd' },
-      )
-      if (next.status === state.status) return [state, []]
-      return [{ ...state, status: next.status }, []]
-    }
+    // close, highlight family, select, openSub/closeSub, typeahead, setDir,
+    // animationEnd — all shared with menu / menubar.
+    default:
+      return reduceMenuTree(state, msg)
   }
-}
-
-/** The state patch applied when a close request unmounts the menu. Routes the
- * presence status through `statusOnClose` so animations are honored. */
-function closedPatch(
-  state: ContextMenuState,
-): Pick<ContextMenuState, 'open' | 'status' | 'highlights' | 'openPath' | 'typeahead'> {
-  return {
-    open: false,
-    status: statusOnClose(state.status, state.skipAnimations),
-    highlights: { '': null },
-    openPath: [],
-    typeahead: '',
-  }
-}
-
-function applySelect(state: ContextMenuState, value: string): [ContextMenuState, never[]] {
-  const item = findItem(state.items, value)
-  if (!item || item.disabled || item.kind === 'separator') return [state, []]
-
-  if (item.children && item.children.length > 0) {
-    if (state.openPath[state.openPath.length - 1] === value) return [state, []]
-    return [
-      {
-        ...state,
-        openPath: [...state.openPath, value],
-        highlights: setHighlight(state.highlights, value, firstNav(item.children)),
-      },
-      [],
-    ]
-  }
-
-  if (item.kind === 'checkbox') {
-    const checked = toggleChecked(state.checked, value)
-    if (state.closeOnSelect) {
-      return [{ ...state, checked, ...closedPatch(state) }, []]
-    }
-    return [{ ...state, checked }, []]
-  }
-
-  if (item.kind === 'radio') {
-    const checked = selectRadio(state.items, state.checked, item)
-    if (state.closeOnSelect) {
-      return [{ ...state, checked, ...closedPatch(state) }, []]
-    }
-    return [{ ...state, checked }, []]
-  }
-
-  return [{ ...state, ...closedPatch(state) }, []]
 }
 
 // ---- connect ----
 
-interface ItemAttrs {
-  role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio'
-  id: string
-  'aria-disabled': Signal<'true' | undefined>
-  'aria-checked'?: Signal<'true' | 'false'>
-  'data-state': Signal<'highlighted' | undefined>
-  'data-disabled': Signal<'' | undefined>
-  'data-scope': 'context-menu'
-  'data-part': 'item'
-  'data-value': string
-  tabindex: -1
-  onClick: (e: MouseEvent) => void
-  onPointerMove: (e: PointerEvent) => void
-}
-
-export interface ContextMenuItemParts {
-  item: ItemAttrs & { role: 'menuitem' }
-}
-
-export interface ContextMenuCheckItemParts {
-  item: ItemAttrs & {
-    role: 'menuitemcheckbox' | 'menuitemradio'
-    'aria-checked': Signal<'true' | 'false'>
-  }
-}
-
-export interface ContextMenuGroupParts {
-  group: {
-    role: 'group'
-    'aria-labelledby': string
-    'data-scope': 'context-menu'
-    'data-part': 'group'
-  }
-  label: {
-    id: string
-    'data-scope': 'context-menu'
-    'data-part': 'group-label'
-  }
-}
-
-export interface ContextMenuSeparatorParts {
-  role: 'separator'
-  'data-scope': 'context-menu'
-  'data-part': 'separator'
-}
-
-export interface ContextMenuSubTriggerParts {
-  role: 'menuitem'
-  id: string
-  'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
-  'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
-  'data-state': Signal<'highlighted' | undefined>
-  'data-scope': 'context-menu'
-  'data-part': 'subtrigger'
-  'data-value': string
-  tabindex: -1
-  onClick: (e: MouseEvent) => void
-  onPointerEnter: (e: PointerEvent) => void
-  onPointerLeave: (e: PointerEvent) => void
-  onKeyDown: (e: KeyboardEvent) => void
-}
-
-export interface ContextMenuSubPositionerParts {
-  'data-scope': 'context-menu'
-  'data-part': 'subpositioner'
-  style: string
-}
-
-export interface ContextMenuSubContentParts {
-  role: 'menu'
-  id: string
-  'aria-labelledby': string
-  /** Virtually-focused item id at this submenu level. */
-  'aria-activedescendant': Signal<string | undefined>
-  tabindex: -1
-  'data-state': Signal<'open' | 'closed'>
-  'data-scope': 'context-menu'
-  'data-part': 'subcontent'
-  onPointerEnter: (e: PointerEvent) => void
-  onPointerLeave: (e: PointerEvent) => void
-  onKeyDown: (e: KeyboardEvent) => void
-}
+// Item / group / separator / submenu part shapes come from the shared machine,
+// specialized to this component's `data-scope: 'context-menu'`.
+export type ContextMenuItemParts = MenuItemPartsOf<'context-menu'>
+export type ContextMenuCheckItemParts = MenuCheckItemPartsOf<'context-menu'>
+export type ContextMenuGroupParts = MenuGroupPartsOf<'context-menu'>
+export type ContextMenuSeparatorParts = MenuSeparatorPartsOf<'context-menu'>
+export type ContextMenuSubTriggerParts = MenuSubTriggerPartsOf<'context-menu'>
+export type ContextMenuSubPositionerParts = MenuSubPositionerPartsOf<'context-menu'>
+export type ContextMenuSubContentParts = MenuSubContentPartsOf<'context-menu'>
 
 export interface ContextMenuParts {
   /** The element users right-click to open the menu. */
@@ -569,97 +222,17 @@ export function connect(
   const subTriggerId = (v: string): string => `${base}:sub:${v}:trigger`
   // Opaque id, not display text: multi-word label text would yield invalid ids.
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
-  const hoverDelay = opts.hoverDelay ?? 200
-  const hoverCloseDelay = opts.hoverCloseDelay ?? 300
 
-  const openTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-  const closeTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-
-  const clearOpenTimer = (value: string): void => {
-    const t = openTimers[value]
-    if (t) {
-      clearTimeout(t)
-      delete openTimers[value]
-    }
-  }
-  const clearCloseTimer = (value: string): void => {
-    const t = closeTimers[value]
-    if (t) {
-      clearTimeout(t)
-      delete closeTimers[value]
-    }
-  }
-  const scheduleOpenSub = (value: string): void => {
-    clearCloseTimer(value)
-    clearOpenTimer(value)
-    openTimers[value] = setTimeout(() => {
-      delete openTimers[value]
-      send({ type: 'openSub', value })
-    }, hoverDelay)
-  }
-  const scheduleCloseSub = (value: string): void => {
-    clearOpenTimer(value)
-    clearCloseTimer(value)
-    closeTimers[value] = setTimeout(() => {
-      delete closeTimers[value]
-      // Only close when THIS submenu is the deepest open one — otherwise a
-      // shallower level's pointerleave would collapse a deeper, still-open one.
-      const openPath = state.peek()?.openPath ?? []
-      if (openPath[openPath.length - 1] === value) send({ type: 'closeSub' })
-    }, hoverCloseDelay)
-  }
-
-  // Memoized per items-array reference: turns the per-pointer-move O(n) tree
-  // walk into an O(1) lookup (rebuilt only when `items` changes).
-  let levelCacheItems: ContextMenuItem[] | null = null
-  let levelCache = new Map<string, string>()
-  function levelOf(value: string): string {
-    const items = state.peek()?.items ?? []
-    if (items !== levelCacheItems) {
-      levelCacheItems = items
-      levelCache = new Map()
-      const walk = (list: ContextMenuItem[], level: string): void => {
-        for (const it of list) {
-          levelCache.set(it.value, level)
-          if (it.children) walk(it.children, it.value)
-        }
-      }
-      walk(items, '')
-    }
-    return levelCache.get(value) ?? ''
-  }
-
-  const itemAttrs = (
-    value: string,
-    role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio',
-  ): ItemAttrs => ({
-    role,
-    id: itemId(value),
-    'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-    ...(role === 'menuitem'
-      ? {}
-      : {
-          'aria-checked': state.map((s): 'true' | 'false' =>
-            s.checked.includes(value) ? 'true' : 'false',
-          ),
-        }),
-    'data-state': state.map((s) =>
-      Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-    ),
-    'data-disabled': state.map((s) => (isDisabled(s.items, value) ? '' : undefined)),
-    'data-scope': 'context-menu',
-    'data-part': 'item',
-    'data-value': value,
-    tabindex: -1,
-    onClick: tagSend(send, ['select'], () => {
-      send({ type: 'select', value })
-      opts.onSelect?.(value)
-    }),
-    onPointerMove: tagSend(send, ['highlight'], () => {
-      const level = levelOf(value)
-      if ((state.peek()?.highlights[level] ?? null) === value) return
-      send({ type: 'highlight', level, value })
-    }),
+  // The item / submenu / group parts + hover-intent timers + level resolver +
+  // root keydown all come from the shared item-tree machine.
+  const parts = createMenuTreeParts({
+    scope: 'context-menu',
+    state,
+    send,
+    ids: { itemId, subContentId, subTriggerId, groupLabelId },
+    onSelect: opts.onSelect,
+    hoverDelay: opts.hoverDelay,
+    hoverCloseDelay: opts.hoverCloseDelay,
   })
 
   return {
@@ -689,193 +262,16 @@ export function connect(
       'data-part': 'content',
       onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
       onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
-      onKeyDown: tagSend(
-        send,
-        [
-          'highlightNext',
-          'highlightPrev',
-          'highlightFirst',
-          'highlightLast',
-          'selectHighlighted',
-          'close',
-          'typeahead',
-        ],
-        (e) => {
-          switch (e.key) {
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'highlightNext', level: '' })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'highlightPrev', level: '' })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'highlightFirst', level: '' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'highlightLast', level: '' })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'selectHighlighted', level: '' })
-              return
-            case 'Escape':
-              e.preventDefault()
-              send({ type: 'close' })
-              return
-            default:
-              if (isTypeaheadKey(e)) {
-                send({ type: 'typeahead', level: '', char: e.key, now: Date.now() })
-              }
-          }
-        },
-      ),
+      onKeyDown: parts.rootKeyNav,
     },
-    item: (value: string): ContextMenuItemParts => ({
-      item: itemAttrs(value, 'menuitem') as ItemAttrs & { role: 'menuitem' },
-    }),
-    checkboxItem: (value: string): ContextMenuCheckItemParts => ({
-      item: itemAttrs(value, 'menuitemcheckbox') as ItemAttrs & {
-        role: 'menuitemcheckbox'
-        'aria-checked': Signal<'true' | 'false'>
-      },
-    }),
-    radioItem: (value: string): ContextMenuCheckItemParts => ({
-      item: itemAttrs(value, 'menuitemradio') as ItemAttrs & {
-        role: 'menuitemradio'
-        'aria-checked': Signal<'true' | 'false'>
-      },
-    }),
-    group: (id: string): ContextMenuGroupParts => ({
-      group: {
-        role: 'group',
-        'aria-labelledby': groupLabelId(id),
-        'data-scope': 'context-menu',
-        'data-part': 'group',
-      },
-      label: {
-        id: groupLabelId(id),
-        'data-scope': 'context-menu',
-        'data-part': 'group-label',
-      },
-    }),
-    separator: (): ContextMenuSeparatorParts => ({
-      role: 'separator',
-      'data-scope': 'context-menu',
-      'data-part': 'separator',
-    }),
-    subTrigger: (value: string): ContextMenuSubTriggerParts => ({
-      role: 'menuitem',
-      id: subTriggerId(value),
-      'aria-haspopup': 'menu',
-      'aria-expanded': state.map((s) => s.openPath.includes(value)),
-      'aria-controls': subContentId(value),
-      'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
-      'data-state': state.map((s) =>
-        Object.values(s.highlights).includes(value) ? 'highlighted' : undefined,
-      ),
-      'data-scope': 'context-menu',
-      'data-part': 'subtrigger',
-      'data-value': value,
-      tabindex: -1,
-      onClick: tagSend(send, ['openSub'], () => send({ type: 'openSub', value })),
-      onPointerEnter: () => scheduleOpenSub(value),
-      onPointerLeave: () => scheduleCloseSub(value),
-      onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        const key = flipArrow(e.key, state.peek().dir)
-        switch (key) {
-          case 'ArrowRight':
-          case 'Enter':
-          case ' ':
-            e.preventDefault()
-            send({ type: 'openSub', value })
-            return
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'highlightNext', level: levelOf(value) })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'highlightPrev', level: levelOf(value) })
-            return
-          case 'Escape':
-            e.preventDefault()
-            send({ type: 'close' })
-            return
-        }
-      }),
-    }),
-    subPositioner: (_value: string): ContextMenuSubPositionerParts => ({
-      'data-scope': 'context-menu',
-      'data-part': 'subpositioner',
-      style: 'position:absolute;top:0;left:0;',
-    }),
-    subContent: (value: string): ContextMenuSubContentParts => ({
-      role: 'menu',
-      id: subContentId(value),
-      'aria-labelledby': subTriggerId(value),
-      'aria-activedescendant': state.map((s) => {
-        const v = s.highlights[value]
-        return v == null ? undefined : itemId(v)
-      }),
-      tabindex: -1,
-      'data-state': state.map((s) => (s.openPath.includes(value) ? 'open' : 'closed')),
-      'data-scope': 'context-menu',
-      'data-part': 'subcontent',
-      onPointerEnter: () => clearCloseTimer(value),
-      onPointerLeave: () => scheduleCloseSub(value),
-      onKeyDown: tagSend(
-        send,
-        [
-          'highlightNext',
-          'highlightPrev',
-          'highlightFirst',
-          'highlightLast',
-          'selectHighlighted',
-          'closeSub',
-          'typeahead',
-        ],
-        (e: KeyboardEvent): void => {
-          const key = flipArrow(e.key, state.peek().dir)
-          switch (key) {
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'highlightNext', level: value })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'highlightPrev', level: value })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'highlightFirst', level: value })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'highlightLast', level: value })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'selectHighlighted', level: value })
-              return
-            case 'ArrowLeft':
-            case 'Escape':
-              e.preventDefault()
-              send({ type: 'closeSub' })
-              return
-            default:
-              if (isTypeaheadKey(e)) {
-                send({ type: 'typeahead', level: value, char: e.key, now: Date.now() })
-              }
-          }
-        },
-      ),
-    }),
+    item: parts.item,
+    checkboxItem: parts.checkboxItem,
+    radioItem: parts.radioItem,
+    group: parts.group,
+    separator: parts.separator,
+    subTrigger: parts.subTrigger,
+    subPositioner: parts.subPositioner,
+    subContent: parts.subContent,
   }
 }
 
@@ -888,36 +284,21 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const parts = opts.parts
-  const contentId = parts.content.id
-
-  // Outer block stays mounted through the exit animation (isPresent); the inner
-  // block tracks the VISIBLE phase (isVisible, open/opening) so dismissable + focus
-  // tear down at the close REQUEST while the node lingers for its exit animation.
-  // With `skipAnimations` (the default) both flip together — synchronous unmount,
-  // no hang waiting on an animationEnd that never fires.
-  return show(
-    opts.state.map((s) => isPresent(s)),
-    () => {
-      return [
-        portal(() => {
-          const interaction = show(opts.state.map(isVisible), () => [
-            onMount((root) => {
-              const contentEl = getElementByIdInScope(root, contentId)
-              if (!contentEl) return
-              contentEl.focus({ preventScroll: true })
-              return pushDismissable({
-                element: contentEl,
-                onDismiss: () => opts.send({ type: 'close' }),
-              })
-            }),
-          ])
-          return [interaction, div(parts.positioner, opts.content())]
-        }, host),
-      ]
-    },
-  )
+  // Two-phase: mounted through the exit animation (isPresent); the content focus
+  // + dismissable unwind at the close REQUEST (isVisible). No floating — the
+  // positioner is placed at the virtual (x, y) anchor set by `openAt`.
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    mountWhen: isPresent,
+    visibleWhen: isVisible,
+    onDismiss: () => opts.send({ type: 'close' }),
+    dismiss: {},
+    focusOnOpenId: opts.parts.content.id,
+  })
 }
 
 export const contextMenu = { init, update, connect, overlay, isPresent, isMounted }

@@ -53,6 +53,7 @@ import ts from 'typescript'
 import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS } from './element-helpers.js'
+import { HelperBindings, bindingNames } from './helper-bindings.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -306,16 +307,6 @@ function fnParamNames(fn: ts.Node): string[] {
   return fn.parameters.flatMap((p) => (ts.isIdentifier(p.name) ? [p.name.text] : []))
 }
 
-/** All identifier names introduced by a (possibly destructured) binding. */
-function bindingNames(name: ts.BindingName): string[] {
-  if (ts.isIdentifier(name)) return [name.text]
-  const out: string[] = []
-  for (const el of name.elements) {
-    if (ts.isBindingElement(el)) out.push(...bindingNames(el.name))
-  }
-  return out
-}
-
 /** Names a node introduces into its child scope that would SHADOW an outer root:
  * a function-like node's parameters, and a block's local variable declarations.
  * Rooting is scope-aware — when a param/local rebinds a root name (e.g. a reducer
@@ -418,6 +409,11 @@ function withParams(base: Roots, params: readonly string[]): Roots {
  */
 export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   const diags: SignalDiagnostic[] = []
+  // Per-file `@llui/dom` binding set — gates framework-call recognition so a
+  // user's own function named `text`/`each`/`div`, or an aliased import, is
+  // treated correctly (see helper-bindings.ts). A `null` resolution means the
+  // callee is not a framework helper and the helper-specific rules skip it.
+  const bindings = HelperBindings.fromSourceFile(sf)
   const push = (rule: string, message: string, node: ts.Node, fix?: LintFix): void => {
     diags.push({ rule, message, start: node.getStart(sf), length: node.getWidth(sf), fix })
   }
@@ -480,7 +476,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     ) {
       return true
     }
-    return ts.isIdentifier(e.expression) && e.expression.text === 'derived'
+    return ts.isIdentifier(e.expression) && bindings.resolve(e.expression) === 'derived'
   }
 
   // ---- inside a .map/derived body: pure-derive + no-node-construction ----
@@ -490,7 +486,8 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       if (ts.isCallExpression(n)) {
         const callee = n.expression
         if (ts.isIdentifier(callee)) {
-          if (NODE_HELPERS.has(callee.text)) {
+          const canon = bindings.resolve(callee)
+          if (canon !== null && NODE_HELPERS.has(canon)) {
             push(
               'no-node-construction-in-body',
               `Building DOM (${callee.text}()) inside a .map/derived body; use a structural primitive (each/branch/show) instead.`,
@@ -615,11 +612,12 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     node: ts.CallExpression,
   ): { tag: string; props: ts.ObjectLiteralExpression | null } | null => {
     const callee = node.expression
-    if (ts.isIdentifier(callee) && ELEMENT_TAGS.has(callee.text)) {
+    const canon = ts.isIdentifier(callee) ? bindings.resolve(callee) : null
+    if (canon !== null && ELEMENT_TAGS.has(canon)) {
       const a0 = node.arguments[0]
-      return { tag: callee.text, props: a0 && ts.isObjectLiteralExpression(a0) ? a0 : null }
+      return { tag: canon, props: a0 && ts.isObjectLiteralExpression(a0) ? a0 : null }
     }
-    if (ts.isIdentifier(callee) && callee.text === 'el') {
+    if (canon === 'el') {
       const a0 = node.arguments[0]
       if (!a0 || !ts.isStringLiteralLike(a0)) return null
       const a1 = node.arguments[1]
@@ -805,8 +803,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     // `({ state: s }) => [text(s.at('n') + 1)]` is checked, not silently passed.
     if (
       ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'component' &&
+      bindings.resolveCall(node) === 'component' &&
       node.arguments[0] &&
       ts.isObjectLiteralExpression(node.arguments[0])
     ) {
@@ -884,8 +881,8 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     }
 
     // structural primitives augment roots inside their render callbacks
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      const callee = node.expression.text
+    if (ts.isCallExpression(node)) {
+      const callee = bindings.resolveCall(node)
       if (callee === 'each') return visitEach(node, roots, peekOk)
       if (callee === 'show') return visitShow(node, roots, peekOk)
       if (callee === 'branch') return visitBranch(node, roots, peekOk)
@@ -972,7 +969,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           }
         }
       }
-      if (ts.isIdentifier(node.expression) && node.expression.text === 'derived') {
+      if (ts.isIdentifier(node.expression) && bindings.resolve(node.expression) === 'derived') {
         const fn = node.arguments[1]
         if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) lintDeriveBody(fn, roots)
       }
@@ -1001,7 +998,8 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       } else if (ts.isCallExpression(node)) {
         const isMap =
           ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'map'
-        const isDerived = ts.isIdentifier(node.expression) && node.expression.text === 'derived'
+        const isDerived =
+          ts.isIdentifier(node.expression) && bindings.resolve(node.expression) === 'derived'
         if ((isMap && c === node.arguments[0]) || (isDerived && c === node.arguments[1])) {
           childPeek = true
         }

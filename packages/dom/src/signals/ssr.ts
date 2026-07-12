@@ -7,7 +7,8 @@
 // HTML with no `data-llui-hydrate` markers — the server pass exists for first
 // paint / SEO; the client owns reconciliation from there.
 
-import { renderSignalTree, type SignalDoc } from './dom.js'
+import { renderSignalTree } from './mount.js'
+import type { SignalDoc } from './build-context.js'
 import { pathHandle } from './handle.js'
 import { normalizeUpdateResult, type SignalComponentDef } from './component.js'
 

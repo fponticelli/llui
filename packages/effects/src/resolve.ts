@@ -6,13 +6,8 @@
  * parallel, applies success/error messages to state via update(),
  * and recurses if the responses produce more effects (up to a depth limit).
  */
-import {
-  buildRequest,
-  httpStatusToApiError,
-  parseResponse,
-  type ApiError,
-  type HttpEffect,
-} from './index.js'
+import { buildRequest, httpStatusToApiError, parseResponse } from './http-core.js'
+import type { ApiError, HttpEffect } from './types.js'
 
 type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
 

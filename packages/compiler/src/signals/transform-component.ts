@@ -17,10 +17,12 @@ import {
   setAutoBatchContext,
   lowerHelperEach,
   setHelperDecls,
+  setHelperBindings,
   setLowerBailHook,
   setEachLoweredHook,
   type LowerBail,
 } from './transform-view.js'
+import { HelperBindings } from './helper-bindings.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
 import type { SourceMap } from 'magic-string'
@@ -224,6 +226,11 @@ export function transformSignalComponentSourceWithMap(
   const edits: Edit[] = []
   let transformedAny = false
 
+  // Per-file `@llui/dom` import-binding set — gates every framework-call
+  // recognition (below, and in the view transform): resolves aliases, excludes a
+  // user's own binding of a helper name, and honors lexical shadowing.
+  const bindings = HelperBindings.fromSourceFile(sf)
+
   // Introspection metadata is per-file (Msg/State/Effect follow the `Msg`/`State`/
   // `Effect` convention). Compute the shared agent fields once, lazily.
   const shouldEmit = Boolean(opts.emitAgentMetadata || opts.devMode)
@@ -304,6 +311,7 @@ export function transformSignalComponentSourceWithMap(
     }
   }
   setHelperDecls(helpers)
+  setHelperBindings(bindings)
   // Perf diagnostics need the full event stream to attribute reasons to the
   // each sites that end verbatim — record while forwarding to the user hook.
   const recordedBails: LowerBail[] | null = opts.onPerfDiagnostic ? [] : null
@@ -333,8 +341,7 @@ export function transformSignalComponentSourceWithMap(
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'component' &&
+      bindings.resolveCall(node) === 'component' &&
       node.arguments[0] &&
       ts.isObjectLiteralExpression(node.arguments[0])
     ) {
@@ -401,8 +408,7 @@ export function transformSignalComponentSourceWithMap(
     const visitHelpers = (node: ts.Node): void => {
       if (
         ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'each' &&
+        bindings.resolveCall(node) === 'each' &&
         !insidePass1(node)
       ) {
         const lowered = lowerHelperEach(node, sf)
@@ -430,6 +436,7 @@ export function transformSignalComponentSourceWithMap(
     }
   } finally {
     setHelperDecls(null)
+    setHelperBindings(null)
     setAutoBatchContext(null)
     setLowerBailHook(null)
     setEachLoweredHook(null)

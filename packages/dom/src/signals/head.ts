@@ -24,18 +24,16 @@
 // cross-document module global.
 
 import {
-  applyAttr,
-  createContext,
   currentDoc,
   mountable,
   onTeardown,
   registerBinding,
-  useContext,
   __nextHeadAnon,
-  type Context,
   type Mountable,
   type SignalDoc,
-} from './dom.js'
+} from './build-context.js'
+import { applyAttr } from './element.js'
+import { createContext, useContext, type Context } from './context.js'
 import { isSignalHandle } from './handle.js'
 import { serializeNodes, escapeAttr } from './ssr.js'
 import type { Signal } from './types.js'

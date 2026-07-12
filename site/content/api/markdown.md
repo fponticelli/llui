@@ -60,6 +60,21 @@ Build a reactive Markdown view bound to a specific parser.
 function createMarkdown(parse: ParseFn)
 ```
 
+### `incrementalParse()`
+
+Parse `source` incrementally against `cache` (the previous source + tree), or
+fully when no safe reuse boundary exists. The returned tree is structurally
+identical to `parse(source)` — reuse only ever changes which node OBJECTS are
+shared with the previous tree (so their keys, and thus their DOM, survive).
+
+```typescript
+function incrementalParse(
+  cache: ParseCache | undefined,
+  source: string,
+  parse: (src: string) => Root,
+): IncrementalResult
+```
+
 ### `makeContext()`
 
 Build the context renderers receive: `render` dispatches one node through the
@@ -193,6 +208,20 @@ export type TransformLink = (
 
 ## Interfaces
 
+### `IncrementalResult`
+
+Result of one (incremental or full) parse: the tree plus the cache to thread
+into the next update. `reused` is the number of prefix blocks reused (0 = full
+parse) — used only for dev diagnostics.
+
+```typescript
+export interface IncrementalResult {
+  readonly root: Root
+  readonly cache: ParseCache
+  readonly reused: number
+}
+```
+
 ### `KeyedBlock`
 
 ```typescript
@@ -236,6 +265,17 @@ export interface MarkdownOptions {
   /** Override the key derived for each top-level block (controls reuse during
    * reactive/streaming updates). Default: a content hash of the block's source. */
   keyOf?: (node: Nodes, index: number) => string | number
+}
+```
+
+### `ParseCache`
+
+Old source + its parsed tree, threaded across reactive updates.
+
+```typescript
+export interface ParseCache {
+  readonly source: string
+  readonly root: Root
 }
 ```
 

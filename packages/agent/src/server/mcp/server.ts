@@ -1,11 +1,19 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import {
   FORWARDED_TOOL_DESCRIPTORS,
   DISCONNECT_SESSION_DESCRIPTOR,
   type McpForwardedToolDescriptor,
 } from '../../mcp/tools.js'
+import {
+  okResult,
+  errorResult,
+  executeForwardedTool,
+  executeConnect,
+  type LapCaller,
+  type LapEnvelope,
+  type DescribeCache,
+} from '../../mcp/executor.js'
 import type { McpSessionMap } from './session-map.js'
 import type { TokenStore } from '../token-store.js'
 import { verifyAndReadTid } from '../lap/describe.js'
@@ -32,13 +40,27 @@ export type McpServerDeps = {
 /**
  * Build one `McpServer` instance for a single MCP session. Tool handlers
  * call LAP endpoints via synthetic WHATWG Requests routed through
- * `coreRouter` — no extra HTTP round-trip to localhost needed.
+ * `coreRouter` — no extra HTTP round-trip to localhost needed. The
+ * forwarded-tool dispatch, describe cache, connect prefetch, and result
+ * shaping are shared with the bridge via `@llui/agent/mcp/executor`.
  */
 export function createAgentMcpServer(deps: McpServerDeps): McpServer {
   const server = new McpServer(
     { name: deps.serverName, version: deps.serverVersion },
     { capabilities: { tools: {} } },
   )
+
+  // In-process LAP caller: construct a synthetic WHATWG Request for the
+  // given token and route it through the agent core's router.
+  const callerFor = (token: string): LapCaller => {
+    return async (lapPath, body) => lapCall(deps.coreRouter, token, deps.lapBasePath, lapPath, body)
+  }
+
+  // Per-session describe cache backed by the session map.
+  const cacheFor = (sessionId: string): DescribeCache => ({
+    get: () => deps.sessionMap.get(sessionId)?.describe ?? null,
+    set: (d) => deps.sessionMap.setDescribe(sessionId, d),
+  })
 
   // ── connect_session ────────────────────────────────────────────────
   server.registerTool(
@@ -71,15 +93,11 @@ export function createAgentMcpServer(deps: McpServerDeps): McpServer {
 
       deps.sessionMap.set(sessionId, { tid: auth.tid, token })
 
-      // Prefetch the initial observe bundle — same reason the bridge does
-      // this: Claude gets state + actions + description + context in one
-      // call, avoiding a follow-up round-trip.
-      const result = await lapCall(deps.coreRouter, token, deps.lapBasePath, '/observe', {})
-      if (!result.ok) {
-        deps.sessionMap.delete(sessionId)
-        return errorResult(`connect_session: observe failed — ${result.error}`)
-      }
-      return okResult({ status: 'connected', ...(result.body as object) })
+      // Prefetch the observe bundle + cache the description — shared with
+      // the bridge so both surfaces hand back the same connected shape.
+      return executeConnect(callerFor(token), cacheFor(sessionId), () =>
+        deps.sessionMap.delete(sessionId),
+      )
     },
   )
 
@@ -99,7 +117,7 @@ export function createAgentMcpServer(deps: McpServerDeps): McpServer {
 
   // ── forwarded tools ────────────────────────────────────────────────
   for (const desc of FORWARDED_TOOL_DESCRIPTORS) {
-    registerForwardedTool(server, deps, desc)
+    registerForwardedTool(server, deps, callerFor, cacheFor, desc)
   }
 
   return server
@@ -108,6 +126,8 @@ export function createAgentMcpServer(deps: McpServerDeps): McpServer {
 function registerForwardedTool(
   server: McpServer,
   deps: McpServerDeps,
+  callerFor: (token: string) => LapCaller,
+  cacheFor: (sessionId: string) => DescribeCache,
   desc: McpForwardedToolDescriptor,
 ): void {
   server.registerTool(
@@ -116,21 +136,18 @@ function registerForwardedTool(
     async (args) => {
       const sessionId = deps.getSessionId()
       const session = sessionId ? deps.sessionMap.get(sessionId) : null
-      if (!session) {
+      if (!session || !sessionId) {
         return errorResult(
           'Not connected — ask the user to copy the token from the app connect panel ' +
             'and call connect_session with it.',
         )
       }
-      const result = await lapCall(
-        deps.coreRouter,
-        session.token,
-        deps.lapBasePath,
-        desc.lapPath,
+      return executeForwardedTool(
+        desc,
         (args ?? {}) as Record<string, unknown>,
+        callerFor(session.token),
+        cacheFor(sessionId),
       )
-      if (!result.ok) return errorResult(`${desc.name}: ${result.error}`)
-      return okResult(result.body)
     },
   )
 }
@@ -145,8 +162,8 @@ async function lapCall(
   token: string,
   lapBasePath: string,
   lapPath: string,
-  body: Record<string, unknown>,
-): Promise<{ ok: true; body: unknown } | { ok: false; error: string }> {
+  body: object,
+): Promise<LapEnvelope> {
   const req = new Request(`http://local${lapBasePath}${lapPath}`, {
     method: 'POST',
     headers: {
@@ -157,29 +174,11 @@ async function lapCall(
   })
   try {
     const res = await coreRouter(req)
-    if (!res) return { ok: false, error: `no handler for ${lapPath}` }
+    if (!res) return { ok: false, status: 404, error: { code: 'no-handler', detail: lapPath } }
     const payload = (await res.json()) as { error?: { code: string; detail?: string } }
-    if (!res.ok || payload.error) {
-      const code = payload.error?.code ?? res.status
-      const detail = payload.error?.detail ? ` — ${payload.error.detail}` : ''
-      return { ok: false, error: `status=${res.status} code=${code}${detail}` }
-    }
+    if (!res.ok || payload.error) return { ok: false, status: res.status, error: payload }
     return { ok: true, body: payload }
   } catch (e) {
-    return { ok: false, error: String(e) }
-  }
-}
-
-function okResult(body: unknown): CallToolResult {
-  return {
-    structuredContent: body as Record<string, unknown>,
-    content: [{ type: 'text', text: JSON.stringify(body) }],
-  }
-}
-
-function errorResult(msg: string): CallToolResult {
-  return {
-    content: [{ type: 'text', text: msg }],
-    isError: true,
+    return { ok: false, status: 0, error: { code: 'internal', detail: String(e) } }
   }
 }

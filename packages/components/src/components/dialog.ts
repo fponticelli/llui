@@ -1,11 +1,8 @@
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { pushFocusTrap } from '../utils/focus-trap.js'
-import { pushDismissable } from '../utils/dismissable.js'
-import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
-import { lockBodyScroll } from '../utils/remove-scroll.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -304,66 +301,35 @@ export interface OverlayOptions {
  * animation end; with `skipAnimations` (the default) close unmounts synchronously.
  */
 export function overlay(opts: OverlayOptions): Mountable {
-  const targetOpt = opts.target ?? 'body'
   const closeOnEscape = opts.closeOnEscape !== false
   const closeOnOutsideClick = opts.closeOnOutsideClick !== false
   const trapFocus = opts.trapFocus !== false
-  const lockScroll = opts.lockScroll !== false
-  const hideSiblings = opts.hideSiblings !== false
-  const restoreFocus = opts.restoreFocus !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-  const host = resolvePortalTarget(targetOpt)
-
-  // Outer block stays mounted through the exit animation (isMounted, status !==
-  // 'closed'); the inner block tracks the VISIBLE phase (isVisible, open/opening)
-  // so interaction wiring — focus trap, scroll lock, aria-hidden, dismissable —
-  // tears down at the close REQUEST while the node lingers for the exit
-  // animation. With `skipAnimations` (the default) both flip together, so close
-  // unmounts and tears down synchronously (no hang waiting on animationEnd).
-  return show(opts.state.map(isMounted), () => [
-    portal(() => {
-      const interaction = show(opts.state.map(isVisible), () => [
-        onMount(() => {
-          const contentEl = document.getElementById(contentId)
-          if (!contentEl) return
-          const triggerEl = document.getElementById(triggerId)
-
-          const cleanups: Array<() => void> = []
-
-          if (lockScroll) cleanups.push(lockBodyScroll())
-          if (hideSiblings) cleanups.push(setAriaHiddenOutside(contentEl))
-          if (trapFocus) {
-            cleanups.push(
-              pushFocusTrap({
-                container: contentEl,
-                initialFocus: opts.initialFocus,
-                restoreFocus,
-              }),
-            )
-          }
-          if (closeOnEscape || closeOnOutsideClick) {
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => (triggerEl ? [triggerEl] : []),
-                disableEscape: !closeOnEscape,
-                disableOutside: !closeOnOutsideClick,
-                onDismiss: () => opts.send({ type: 'close' }),
-              }),
-            )
-          }
-
-          return () => {
-            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-          }
-        }),
-      ])
-
-      return [interaction, div(parts.positioner, opts.content())]
-    }, host),
-  ])
+  // Two-phase: the outer block stays mounted through the exit animation
+  // (isMounted); the interaction phase unwinds at the close REQUEST (isVisible)
+  // so focus trap / scroll lock / aria-hidden / dismissable tear down while the
+  // node lingers for its exit animation. Ids are resolved against `document`
+  // (dialogs always portal to the light-DOM body).
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    idScope: 'document',
+    mountWhen: isMounted,
+    visibleWhen: isVisible,
+    onDismiss: () => opts.send({ type: 'close' }),
+    lockScroll: opts.lockScroll !== false,
+    hideSiblings: opts.hideSiblings !== false,
+    focusTrap: trapFocus
+      ? { initialFocus: opts.initialFocus, restoreFocus: opts.restoreFocus !== false }
+      : undefined,
+    dismiss:
+      closeOnEscape || closeOnOutsideClick
+        ? { disableEscape: !closeOnEscape, disableOutside: !closeOnOutsideClick }
+        : undefined,
+  })
 }
 
 export const dialog = { init, update, connect, overlay, isMounted, isPresent }

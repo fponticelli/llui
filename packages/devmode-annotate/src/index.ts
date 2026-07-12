@@ -15,12 +15,9 @@ import type {
   CaptureLevel,
   CaptureRequestPayload,
   ConsoleLogEntry,
-  CreateNoteRequest,
   CreateNoteResponse,
   NoteBody,
-  NoteFrontmatter,
   NoteIntent,
-  NoteKind,
   NoteRect,
   ReproEvent,
   SourceMapEntry,
@@ -66,7 +63,6 @@ import {
 } from '@llui/components/collapsible'
 import { tabs, type TabsMsg, type TabsState } from '@llui/components/tabs'
 import { menu, type MenuMsg, type MenuState, type MenuItem } from '@llui/components/menu'
-import { bakeAnnotations } from './bake.js'
 import { createBrowseView } from './browse-view.js'
 import type { ExportableStore, NotesStore } from './notes-store.js'
 import { devServerStore } from './stores/dev-server-store.js'
@@ -75,13 +71,7 @@ import {
   bundleFilename,
   type BundleManifest,
 } from './export-bundle.js'
-import {
-  redactRepro,
-  redactScreenshot,
-  redactState,
-  resolveCaptureDefaults,
-  type RedactHooks,
-} from './redact.js'
+import { redactState, resolveCaptureDefaults, type RedactHooks } from './redact.js'
 import {
   collectComponentInfo,
   collectDebugSnapshot,
@@ -92,7 +82,7 @@ import {
 import { pickElement } from './element-picker.js'
 import { drawRect } from './overlay.js'
 import { createReproRecorder, replayReproEvents } from './repro-recorder.js'
-import { captureScreenshot, describeCaptureError, type CaptureFn } from './screenshot.js'
+import { type CaptureFn } from './screenshot.js'
 import {
   btnStyle,
   RESUME_GLYPH_STYLE,
@@ -101,16 +91,10 @@ import {
   THEME_STYLESHEET,
 } from './styles.js'
 import {
-  clampOffset,
   computeModalAnchor,
-  deriveKind,
-  deriveSavedPosition,
-  DRAG_THRESHOLD_PX,
-  parseSavedPosition,
   queueCounts,
   reduceTask,
   shouldMountHud,
-  type SavedPosition,
   type TaskEffect,
   type TaskMsg,
   type TaskState,
@@ -118,6 +102,11 @@ import {
   type Toast,
   type ToastAction,
 } from './hud-core.js'
+import { createDisposerRegistry } from './hud-lifecycle.js'
+import { createPersistence } from './persistence.js'
+import { applySavedPosition, createDragController, readSavedPosition } from './drag-controller.js'
+import { installAutoCapture } from './auto-capture.js'
+import { createCapturePipeline, type BakeFn } from './capture-pipeline.js'
 
 // The notes transport seam. Re-exported so consumers can supply their own
 // adapter (IndexedDB, HTTP, export bundle) via `mountAnnotateHud({ store })`.
@@ -149,22 +138,9 @@ export { NOTE_SCHEMA_VERSION } from './note-format.js'
 export { defaultSecretRedactor } from './redact.js'
 export type { RedactHooks, CaptureDefaults, SecretRedactorOptions } from './redact.js'
 
-/** Geometry threaded from the capture into the annotation baker so viewport
- *  (CSS-px, scroll-relative) annotation coordinates land correctly on the
- *  full-document, DPR-scaled screenshot raster. */
-export interface ScreenshotGeometry {
-  /** Device pixel ratio the screenshot was captured at (frontmatter viewport.dpr). */
-  dpr: number
-  /** Viewport scroll offset (CSS px) at capture time. */
-  scrollX: number
-  scrollY: number
-}
-
-export type BakeFn = (
-  screenshotBase64: string,
-  annotations: Annotation[],
-  geometry?: ScreenshotGeometry,
-) => Promise<string>
+// The capture geometry + annotation baker types live with the capture
+// pipeline; re-exported here so the public surface is unchanged.
+export type { ScreenshotGeometry, BakeFn } from './capture-pipeline.js'
 
 function isAutomatedBrowser(): boolean {
   return typeof navigator !== 'undefined' && navigator.webdriver === true
@@ -299,47 +275,11 @@ declare global {
 }
 
 const HUD_ELEMENT_ID = 'llui-devmode-annotate-root'
-const POSITION_STORAGE_KEY = 'llui-devmode-annotate.position'
-const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
 const BUTTON_LABEL_LINES = ['LLui', 'HUD'] as const
 
-// ── Saved-position DOM helpers (the imperative layout boundary) ───────────
-
-function readSavedPosition(): SavedPosition | null {
-  try {
-    return parseSavedPosition(localStorage.getItem(POSITION_STORAGE_KEY))
-  } catch {
-    return null
-  }
-}
-function writeSavedPosition(pos: SavedPosition): void {
-  try {
-    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(pos))
-  } catch {
-    // unavailable (private mode/quota) — fine for this session.
-  }
-}
-function applySavedPosition(root: HTMLElement, pos: SavedPosition): void {
-  const offsetX = clampOffset(pos.offsetX, window.innerWidth)
-  const offsetY = clampOffset(pos.offsetY, window.innerHeight)
-  if (pos.anchorX === 'left') {
-    root.style.left = `${offsetX}px`
-    root.style.right = 'auto'
-  } else {
-    root.style.right = `${offsetX}px`
-    root.style.left = 'auto'
-  }
-  if (pos.anchorY === 'top') {
-    root.style.top = `${offsetY}px`
-    root.style.bottom = 'auto'
-  } else {
-    root.style.bottom = `${offsetY}px`
-    root.style.top = 'auto'
-  }
-}
-function clampViewportXY(x: number, y: number): { x: number; y: number } {
-  return { x: clampOffset(x, window.innerWidth), y: clampOffset(y, window.innerHeight) }
-}
+// The saved-position DOM helpers (the imperative layout boundary) live in
+// ./drag-controller.js; `readSavedPosition` / `applySavedPosition` are imported
+// above for the initial mount + resize handling.
 
 // ── Annotation → note-body helpers ───────────────────────────────────────
 
@@ -608,6 +548,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   let editorApi: LexicalEditor | null = null
   let modalEl: HTMLElement | null = null
 
+  // Every timer, listener, subscription, nested app, and DOM node registers its
+  // teardown here; `destroy()` folds over the registry (see ./hud-lifecycle).
+  const disposers = createDisposerRegistry()
+
   const reproRecorder = createReproRecorder()
 
   // In isolate (shadow-DOM) mode the HUD must own its portal targets: every
@@ -718,6 +662,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     modalEl.style.bottom = anchor.vertical === 'bottom' ? '56px' : 'auto'
   }
 
+  // The floating-button drag boundary (pointer wiring + saved-position I/O).
+  const dragController = createDragController({
+    root,
+    isModalOpen: () => getState().modalOpen,
+    reanchorModal,
+  })
+
   const refreshContext = (): void => {
     const parts: string[] = []
     if (typeof location !== 'undefined') parts.push(location.pathname || '/')
@@ -784,110 +735,24 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   let defaultIntentRef: NoteIntent = solveEnabled ? 'task' : 'note'
 
-  // Capture → redact → bake, in that order. The host screenshot redactor
-  // masks sensitive page regions on the RAW capture, BEFORE annotation
-  // labels are composited on top — so the redactor sees page content (not
-  // a composite), annotations aren't masked away, and `null` from the
-  // redactor drops the screenshot entirely. Used by both the human
-  // (`submit`) and LLM-driven capture paths so neither can skip redaction.
-  const captureRedactBake = async (annotations: Annotation[]): Promise<string | undefined> => {
-    const raw = await captureScreenshot({ ...(opts.capture ? { capture: opts.capture } : {}) })
-    const rawB64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw
-    const redacted = redactScreenshot(rawB64, opts.redact?.screenshot)
-    if (redacted === null) return undefined
-    if (annotations.length === 0) return redacted
-    const bake = opts.bake ?? bakeAnnotations
-    // Thread the true capture geometry so annotations map viewport→document
-    // space correctly on scrolled / retina pages.
-    const geometry: ScreenshotGeometry = {
-      dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-      scrollX: typeof window !== 'undefined' ? window.scrollX || 0 : 0,
-      scrollY: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
-    }
-    const baked = await bake(redacted, annotations, geometry)
-    return baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
-  }
-
-  const submit = async (
-    prose: string,
-    submitOpts: {
-      captureLevel?: CaptureLevel
-      annotations?: Annotation[]
-      screenshot?: string
-      intent?: NoteIntent
-      resume?: boolean
-      chainName?: string
-    } = {},
-  ): Promise<CreateNoteResponse> => {
-    const s = getState()
-    const annotations = submitOpts.annotations ?? buildAnnotations()
-    let screenshotBase64 = submitOpts.screenshot
-    let kind: NoteKind = deriveKind(s.pendingElement, s.pendingRect) as NoteKind
-    if (submitOpts.annotations && submitOpts.annotations.length > 0) {
-      const first = submitOpts.annotations[0]!
-      kind = first.type === 'rect' ? 'rect' : 'capture'
-    }
-
-    if (annotations.length > 0 && !screenshotBase64) {
-      try {
-        screenshotBase64 = await captureRedactBake(annotations)
-      } catch (err) {
-        throw new Error(`devmode-annotate: screenshot failed — ${describeCaptureError(err)}`, {
-          cause: err,
-        })
-      }
-    } else if (screenshotBase64) {
-      // A screenshot supplied directly (not captured here) — still redact
-      // before persist.
-      screenshotBase64 = redactScreenshot(screenshotBase64, opts.redact?.screenshot) ?? undefined
-    }
-
-    const compInfo = collectComponentInfo()
-    const intent: NoteIntent = submitOpts.intent ?? defaultIntentRef
-    const resume: boolean | undefined = intent === 'task' ? (submitOpts.resume ?? true) : undefined
-    const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
-      author: 'human',
-      kind,
-      captureLevel: submitOpts.captureLevel ?? 'standard',
-      url: typeof location !== 'undefined' ? location.href : '',
-      route: null,
-      routeParams: {},
-      viewport: {
-        w: typeof window !== 'undefined' ? window.innerWidth : 0,
-        h: typeof window !== 'undefined' ? window.innerHeight : 0,
-        dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-      },
-      componentPath: compInfo?.componentPath ?? null,
-      componentMeta: compInfo?.componentMeta ?? null,
-      annotations,
-      intent,
-      ...(resume !== undefined ? { resume } : {}),
-      ...(submitOpts.chainName ? { chainName: submitOpts.chainName } : {}),
-      screenshot: screenshotBase64 ? 'placeholder.png' : null,
-      agentSchemas: [],
-      llui,
-    }
-    const noteBody = collectBody(annotations, submitOpts.captureLevel ?? 'standard')
-    // Read the repro trace WITHOUT clearing it — if the POST below fails, the
-    // buffer must survive so the user can retry (or the trace isn't silently
-    // lost). It's drained + the recorder stopped only in the success path.
-    const reproEvents = redactRepro(reproRecorder.peek(), opts.redact?.repro)
-    if (reproEvents.length > 0) noteBody.repro = reproEvents
-    const body: CreateNoteRequest = {
-      body: prose,
-      frontmatter,
-      noteBody,
-      ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
-    }
-    const response = await store.createNote(body)
-    // Persist succeeded — now it's safe to drain the recorder + stop it.
-    reproRecorder.flush()
-    if (reproRecorder.isRecording()) {
-      reproRecorder.stop()
-      handle.send({ type: 'repro/set', recording: false })
-    }
-    return response
-  }
+  // The capture pipeline owns the capture → redact → bake order and the shared
+  // frontmatter template for both the human (`submit`) and LLM-driven
+  // (`handleCaptureRequest`) paths, so neither can skip host redaction and the
+  // two frontmatters can't drift. See ./capture-pipeline.
+  const capturePipeline = createCapturePipeline({
+    store,
+    llui,
+    reproRecorder,
+    getState,
+    buildAnnotations,
+    collectBody,
+    getDefaultIntent: () => defaultIntentRef,
+    notifyReproStopped: () => handle.send({ type: 'repro/set', recording: false }),
+    ...(opts.capture ? { capture: opts.capture } : {}),
+    ...(opts.bake ? { bake: opts.bake } : {}),
+    ...(opts.redact ? { redact: opts.redact } : {}),
+  })
+  const { submit, handleCaptureRequest } = capturePipeline
 
   let chainNameSeq = 0
   const mintChainName = (): string => {
@@ -954,67 +819,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     )
   }
 
-  const handleCaptureRequest = async (
-    requestId: string,
-    payload: CaptureRequestPayload,
-  ): Promise<CreateNoteResponse> => {
-    const prose = payload.prose ?? ''
-    const annotations: Annotation[] = payload.annotate ?? []
-    const level: CaptureLevel = payload.captureLevel ?? 'standard'
-    let screenshotBase64: string | undefined
-    const baseFrontmatter = (screenshot: string | null): Omit<NoteFrontmatter, 'id' | 'ts'> => ({
-      author: 'llm',
-      kind: 'capture',
-      captureLevel: payload.captureLevel ?? 'standard',
-      url: typeof location !== 'undefined' ? location.href : '',
-      route: null,
-      routeParams: {},
-      viewport: {
-        w: typeof window !== 'undefined' ? window.innerWidth : 0,
-        h: typeof window !== 'undefined' ? window.innerHeight : 0,
-        dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-      },
-      componentPath: collectComponentInfo()?.componentPath ?? null,
-      componentMeta: collectComponentInfo()?.componentMeta ?? null,
-      annotations,
-      screenshot,
-      agentSchemas: [],
-      llui,
-      fulfillsRequestId: requestId,
-    })
-
-    try {
-      // Same capture → redact → bake path as the human flow, so an
-      // LLM-requested capture can't skip host screenshot redaction.
-      screenshotBase64 = await captureRedactBake(annotations)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const failBody: CreateNoteRequest = {
-        body: `[capture failed: ${message}]${prose ? `\n\n${prose}` : ''}`,
-        frontmatter: baseFrontmatter(null),
-        noteBody: collectBody(annotations, level),
-      }
-      try {
-        return await store.createNote(failBody)
-      } catch (postErr) {
-        throw new Error(`devmode-annotate: failed to record capture failure`, { cause: postErr })
-      }
-    }
-
-    // No second redaction here: `captureRedactBake` already redacted the
-    // RAW capture before baking annotations on top. Re-running the hook on
-    // the baked composite would let a coordinate-mask re-cover the fresh
-    // annotation labels, or a `null` return silently drop a screenshot that
-    // already passed redaction.
-    const body: CreateNoteRequest = {
-      body: prose,
-      frontmatter: baseFrontmatter(screenshotBase64 ? 'placeholder.png' : null),
-      noteBody: collectBody(annotations, level),
-      ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
-    }
-    return store.createNote(body)
-  }
-
   // ── The view ───────────────────────────────────────────────────────────
 
   const view = ({ state, send }: SignalViewBag<HudState, HudMsg>): Renderable => [
@@ -1039,7 +843,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     onMount(() => {
       // Wire drag imperatively on the button after it mounts.
       const btn = root.querySelector<HTMLButtonElement>('[data-llui-fab]')
-      if (btn) wireDrag(btn)
+      if (btn) dragController.wire(btn)
       modalEl = root.querySelector<HTMLElement>('[data-llui-modal]')
       return undefined
     }),
@@ -1055,7 +859,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         // `justDragged` swallows the click synthesized at the end of a drag so
         // dragging the button doesn't also toggle the modal.
         onClick: () => {
-          if (justDragged) return
+          if (dragController.justDragged()) return
           if (getState().modalOpen) close()
           else open()
         },
@@ -1063,89 +867,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       BUTTON_LABEL_LINES.map((line) => div({}, [text(line)])),
     ),
   ]
-
-  // Set true for exactly one microtask at the end of a real drag so the click
-  // synthesized by the browser after pointerup is ignored by the button's own
-  // onClick (see the FAB above). A plain flag cleared via queueMicrotask is
-  // robust to a drag that produces NO trailing click — unlike a one-shot
-  // capture listener, which would linger and eat the next legitimate click.
-  let justDragged = false
-  const finishDrag = (wasDrag: boolean): void => {
-    if (!wasDrag) return
-    const pos = deriveSavedPosition(
-      root.getBoundingClientRect(),
-      window.innerWidth,
-      window.innerHeight,
-    )
-    writeSavedPosition(pos)
-    applySavedPosition(root, pos)
-    reanchorModal()
-    justDragged = true
-    queueMicrotask(() => {
-      justDragged = false
-    })
-  }
-
-  const wireDrag = (btn: HTMLButtonElement): void => {
-    let dragState: {
-      startX: number
-      startY: number
-      pointerStartX: number
-      pointerStartY: number
-      moved: boolean
-    } | null = null
-    btn.addEventListener('pointerdown', (e: PointerEvent) => {
-      const rect = root.getBoundingClientRect()
-      dragState = {
-        startX: rect.left,
-        startY: rect.top,
-        pointerStartX: e.clientX,
-        pointerStartY: e.clientY,
-        moved: false,
-      }
-      try {
-        btn.setPointerCapture(e.pointerId)
-      } catch {
-        /* jsdom */
-      }
-    })
-    btn.addEventListener('pointermove', (e: PointerEvent) => {
-      if (!dragState) return
-      const dx = e.clientX - dragState.pointerStartX
-      const dy = e.clientY - dragState.pointerStartY
-      if (!dragState.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
-      if (!dragState.moved) {
-        dragState.moved = true
-        btn.style.cssText = STYLES.button + ';' + STYLES.buttonDragging
-        root.style.right = 'auto'
-        root.style.bottom = 'auto'
-      }
-      const { x, y } = clampViewportXY(dragState.startX + dx, dragState.startY + dy)
-      root.style.left = `${x}px`
-      root.style.top = `${y}px`
-      if (getState().modalOpen) reanchorModal()
-    })
-    btn.addEventListener('pointerup', (e: PointerEvent) => {
-      if (!dragState) return
-      const wasDrag = dragState.moved
-      try {
-        btn.releasePointerCapture(e.pointerId)
-      } catch {
-        /* jsdom */
-      }
-      dragState = null
-      btn.style.cssText = STYLES.button
-      finishDrag(wasDrag)
-    })
-    btn.addEventListener('pointercancel', () => {
-      // A cancelled drag still moved the button — persist + reanchor through
-      // the same path (and swallow any trailing click) as a normal drag end.
-      const wasDrag = dragState?.moved ?? false
-      dragState = null
-      btn.style.cssText = STYLES.button
-      finishDrag(wasDrag)
-    })
-  }
 
   const modalView = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => {
     const parts = tabsConnectFor(state, send)
@@ -1786,6 +1507,35 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     ]
   }
 
+  // ── Pre-mount controllers (own timers; referenced by onEffect) ─────────
+  // Created BEFORE the mount call so the effect handler references these live
+  // objects (persistence, ticker) instead of bindings declared further down —
+  // the fix for the old temporal-dead-zone hazard where `onEffect` referenced
+  // `schedulePersist` / `progressTickInterval` declared below and only worked
+  // by accident of first-send timing. They close over `handle` (declared just
+  // below) but only touch it when their methods run, well after mount.
+
+  // Progress ticker — a 1s interval that pulses task/tick while a task works.
+  let progressTickInterval: ReturnType<typeof setInterval> | null = null
+  const ticker = {
+    start(): void {
+      if (!progressTickInterval)
+        progressTickInterval = setInterval(
+          () => handle.send({ type: 'task', msg: { type: 'task/tick', now: Date.now() } }),
+          1000,
+        )
+    },
+    stop(): void {
+      if (progressTickInterval) {
+        clearInterval(progressTickInterval)
+        progressTickInterval = null
+      }
+    },
+  }
+
+  // Debounced localStorage mirror of the durable HUD state (see ./persistence).
+  const persistence = createPersistence(getState)
+
   // ── Mount ────────────────────────────────────────────────────────────
 
   const handle = mountSignalComponent<HudState, HudMsg, HudEffect>(
@@ -1798,7 +1548,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       onEffect: (eff) => {
         switch (eff.type) {
           case 'persist':
-            schedulePersist()
+            persistence.schedule()
             return
           case 'postStatus':
             void store
@@ -1808,17 +1558,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
               })
             return
           case 'startTicker':
-            if (!progressTickInterval)
-              progressTickInterval = setInterval(
-                () => handle.send({ type: 'task', msg: { type: 'task/tick', now: Date.now() } }),
-                1000,
-              )
+            ticker.start()
             return
           case 'stopTicker':
-            if (progressTickInterval) {
-              clearInterval(progressTickInterval)
-              progressTickInterval = null
-            }
+            ticker.stop()
             return
           case 'reproStart':
             reproRecorder.start()
@@ -1836,46 +1579,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // Now that the editor foreign has mounted, query the modal ref.
   modalEl = root.querySelector<HTMLElement>('[data-llui-modal]')
 
-  let progressTickInterval: ReturnType<typeof setInterval> | null = null
-
-  // ── Persistence ────────────────────────────────────────────────────
-  interface PersistedHudState {
-    modalOpen?: boolean
-    view?: 'compose' | 'browse'
-    draftProse?: string
-    selectedResumeChain?: string | null
-  }
-  let persistTimer: ReturnType<typeof setTimeout> | null = null
-  const schedulePersist = (): void => {
-    if (persistTimer) clearTimeout(persistTimer)
-    persistTimer = setTimeout(() => {
-      persistTimer = null
-      try {
-        const s = getState()
-        const data: PersistedHudState = {
-          modalOpen: s.modalOpen,
-          view: s.tabs.value as 'compose' | 'browse',
-          draftProse: s.draftProse,
-          selectedResumeChain: s.tasks.selectedChain,
-        }
-        localStorage.setItem(HUD_STATE_KEY, JSON.stringify(data))
-      } catch {
-        // unavailable; skip.
-      }
-    }, 200)
-  }
-
-  const readPersisted = (): PersistedHudState => {
-    try {
-      const raw = localStorage.getItem(HUD_STATE_KEY)
-      if (!raw) return {}
-      const parsed = JSON.parse(raw) as PersistedHudState
-      return parsed && typeof parsed === 'object' ? parsed : {}
-    } catch {
-      return {}
-    }
-  }
-  const persisted = readPersisted()
+  // ── Restore persisted state ────────────────────────────────────────
+  const persisted = persistence.read()
   if (persisted.draftProse) {
     // setProse → state.draftProse → the editor foreign's value.bind → setValue.
     handle.send({ type: 'setProse', value: persisted.draftProse })
@@ -2050,78 +1755,40 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   if (typeof window !== 'undefined') window.addEventListener('resize', onResize)
 
   // ── Auto-capture on uncaught error ────────────────────────────────────
-  const autoCaptureEnabled = opts.autoCaptureOnError !== false
-  let lastAutoCaptureAt = 0
-  const fillFromError = (lbl: string, message: string, stack: string | undefined): void => {
-    const now = Date.now()
-    if (now - lastAutoCaptureAt < 5000) return
-    lastAutoCaptureAt = now
-    const lines = [
-      `**Auto-captured ${lbl}**`,
-      '',
-      '```',
-      message,
-      ...(stack ? [stack.split('\n').slice(0, 8).join('\n')] : []),
-      '```',
-      '',
-      'What was happening when this fired?',
-    ]
-    const errorBlock = lines.join('\n')
-    // Never clobber an in-progress draft: if the user has already typed
-    // something, APPEND the error block below it instead of replacing.
-    const existing = proseValue()
-    const value = existing.trim() ? `${existing}\n\n${errorBlock}` : errorBlock
-    // setProse flows into the editor via the foreign value bind; open() focuses it.
-    handle.send({ type: 'setProse', value })
-    open()
-  }
-  const onWindowError = (e: ErrorEvent): void => {
-    if (autoCaptureEnabled) fillFromError('error', e.message || String(e.error), e.error?.stack)
-  }
-  const onUnhandledRejection = (e: PromiseRejectionEvent): void => {
-    if (!autoCaptureEnabled) return
-    const reason = e.reason
-    const message =
-      reason instanceof Error
-        ? reason.message
-        : typeof reason === 'string'
-          ? reason
-          : String(reason)
-    fillFromError(
-      'unhandled rejection',
-      message,
-      reason instanceof Error ? reason.stack : undefined,
-    )
-  }
-  if (autoCaptureEnabled && typeof window !== 'undefined') {
-    window.addEventListener('error', onWindowError)
-    window.addEventListener('unhandledrejection', onUnhandledRejection)
-  }
+  const autoCapture = installAutoCapture({
+    enabled: opts.autoCaptureOnError !== false,
+    proseValue,
+    setProse: (value) => handle.send({ type: 'setProse', value }),
+    open,
+  })
 
-  // ── Handle ────────────────────────────────────────────────────────────
-  const destroy = (): void => {
-    document.removeEventListener('keydown', onKey)
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('resize', onResize)
-      window.removeEventListener('error', onWindowError)
-      window.removeEventListener('unhandledrejection', onUnhandledRejection)
-    }
-    if (progressTickInterval) clearInterval(progressTickInterval)
-    if (persistTimer) {
-      clearTimeout(persistTimer)
-      persistTimer = null
-    }
+  // ── Teardown registry ──────────────────────────────────────────────────
+  // Every timer/listener/subscription/nested-app/DOM node registers its
+  // teardown here, in the order the original destroy() ran them (the component
+  // + DOM removal last). `destroy()` folds over the registry.
+  disposers.add(() => document.removeEventListener('keydown', onKey))
+  disposers.add(() => {
+    if (typeof window !== 'undefined') window.removeEventListener('resize', onResize)
+  })
+  disposers.add(() => autoCapture.dispose())
+  disposers.add(() => ticker.stop())
+  disposers.add(() => persistence.dispose())
+  disposers.add(() => {
     for (const timer of toastTimeouts.values()) clearTimeout(timer)
     toastTimeouts.clear()
-    unsubscribeEvents?.()
-    reproRecorder.stop()
-    consoleCapture?.dispose()
-    dismissActiveOverlay()
+  })
+  disposers.add(() => unsubscribeEvents?.())
+  disposers.add(() => reproRecorder.stop())
+  disposers.add(() => consoleCapture?.dispose())
+  disposers.add(() => dismissActiveOverlay())
+  disposers.add(() => {
     // The element picker installs capture-phase document listeners; leaking
     // them leaves the host click-dead, so tear the lingering pick down too.
     activeElementPickDismiss?.()
     activeElementPickDismiss = null
-    handle.dispose()
+  })
+  disposers.add(() => handle.dispose())
+  disposers.add(() => {
     if (shadowHost) {
       // Removing the host tears down its shadow root (root + toasts).
       shadowHost.remove()
@@ -2129,7 +1796,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       root.remove()
       toastContainer.remove()
     }
-  }
+  })
+
+  // ── Handle ────────────────────────────────────────────────────────────
+  const destroy = (): void => disposers.dispose()
 
   const publicHandle: AnnotateHudHandle = {
     open,

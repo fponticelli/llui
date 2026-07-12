@@ -1,11 +1,9 @@
-import type { Send, Signal, Renderable } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { pushDismissable } from '../utils/dismissable.js'
-import { pushFocusTrap } from '../utils/focus-trap.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { getElementByIdInScope } from '../utils/root-scope.js'
+import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -239,98 +237,46 @@ export interface OverlayOptions {
   arrowSelector?: string
 }
 
-export function overlay(opts: OverlayOptions): Renderable {
-  const host = resolvePortalTarget(opts.target ?? 'body')
-  const placement = opts.placement ?? 'bottom'
-  const offset = opts.offset ?? 8
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
+export function overlay(opts: OverlayOptions): Mountable {
   const closeOnEscape = opts.closeOnEscape !== false
   const closeOnOutsideClick = opts.closeOnOutsideClick !== false
   const trapFocus = opts.trapFocus === true
   const restoreFocus = opts.restoreFocus !== false
-  const parts = opts.parts
-  const contentId = parts.content.id
-  const triggerId = parts.trigger.id
-
-  // Outer block stays mounted through the exit animation (status !== 'closed');
-  // inner block tracks visibility (open) so interaction wiring tears down at the
-  // close REQUEST while the node lingers for the exit transition.
-  return [
-    show(
-      opts.state.map((st) => isMounted(st)),
-      () => {
-        return [
-          portal(() => {
-            // Floating positioning lives with the mounted node so the content
-            // stays anchored while the exit animation plays.
-            const floating = onMount((root) => {
-              const contentEl = getElementByIdInScope(root, contentId)
-              const triggerEl = getElementByIdInScope(root, triggerId)
-              if (!contentEl || !triggerEl) return
-              const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-              const floatingEl = positioner ?? contentEl
-              const arrow = opts.arrowSelector
-                ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
-                : null
-              return attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-                arrow: arrow ?? undefined,
-              })
-            })
-            // Dismissable + focus-trap are interaction concerns: they unwind at
-            // the close REQUEST (visibility false), not at DOM removal.
-            const interaction = show(
-              opts.state.map((st) => st.open),
-              () => [
-                onMount((root) => {
-                  const contentEl = getElementByIdInScope(root, contentId)
-                  const triggerEl = getElementByIdInScope(root, triggerId)
-                  if (!contentEl || !triggerEl) return
-
-                  const cleanups: Array<() => void> = []
-
-                  if (trapFocus) {
-                    cleanups.push(
-                      pushFocusTrap({
-                        container: contentEl,
-                        restoreFocus,
-                      }),
-                    )
-                  }
-
-                  if (closeOnEscape || closeOnOutsideClick) {
-                    cleanups.push(
-                      pushDismissable({
-                        element: contentEl,
-                        ignore: () => [triggerEl],
-                        disableEscape: !closeOnEscape,
-                        disableOutside: !closeOnOutsideClick,
-                        onDismiss: () => {
-                          opts.send({ type: 'close' })
-                          if (restoreFocus) triggerEl.focus()
-                        },
-                      }),
-                    )
-                  }
-
-                  return () => {
-                    for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-                  }
-                }),
-              ],
-            )
-            return [floating, interaction, div(parts.positioner, opts.content())]
-          }, host),
-        ]
-      },
-    ),
-  ]
+  // Floating positioning is PERSISTENT — it lives with the mounted node so the
+  // content stays anchored while the exit animation plays. Dismissable +
+  // focus-trap are interaction concerns gated on visibility (open) so they
+  // unwind at the close REQUEST, not at DOM removal.
+  return createOverlay({
+    state: opts.state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    positioner: opts.parts.positioner,
+    content: opts.content,
+    contentId: opts.parts.content.id,
+    anchorId: opts.parts.trigger.id,
+    requireAnchor: true,
+    mountWhen: isMounted,
+    visibleWhen: (st) => st.open,
+    onDismiss: () => opts.send({ type: 'close' }),
+    floating: {
+      placement: opts.placement ?? 'bottom',
+      offset: opts.offset ?? 8,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      arrowSelector: opts.arrowSelector,
+      persistent: true,
+    },
+    focusTrap: trapFocus ? { restoreFocus } : undefined,
+    dismiss:
+      closeOnEscape || closeOnOutsideClick
+        ? {
+            disableEscape: !closeOnEscape,
+            disableOutside: !closeOnOutsideClick,
+            extra: (els) => {
+              if (restoreFocus) els.anchor?.focus()
+            },
+          }
+        : undefined,
+  })
 }
 
 export const popover = { init, update, connect, overlay, isMounted, isPresent }

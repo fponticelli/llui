@@ -1,38 +1,13 @@
-import type { TokenStore } from '../token-store.js'
-import type { PairingRegistry } from '../ws/pairing-registry.js'
-import type { AuditSink } from '../audit.js'
-import type { RateLimiter } from '../rate-limit.js'
-import { verifyAndReadTid } from './describe.js'
-import { buildPausedResponse } from './paused.js'
-import { ensureActive } from './active.js'
+import { withLapGates, type LapGateDeps } from './gate.js'
 import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 
-export type LapMessageDeps = {
-  tokenStore: TokenStore
-  registry: PairingRegistry
-  auditSink: AuditSink
-  rateLimiter: RateLimiter
-  now?: () => number
-  /** Sliding (inactivity) TTL in ms; folded into the verify path. */
-  slidingTtlMs?: number
-}
+/** @deprecated Use `LapGateDeps` from `./gate.js`. */
+export type LapMessageDeps = LapGateDeps
 
-export async function handleLapMessage(req: Request, deps: LapMessageDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
-  if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
-
-  const rec = await deps.tokenStore.findByTid(auth.tid)
-  if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
-
-  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
-  if (!rlCheck.allowed) {
-    return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
-  }
-
-  const body = (await req.json().catch(() => null)) as LapMessageRequest | null
+export const handleLapMessage = withLapGates({ touchOn: 'completion' }, async (ctx) => {
+  const body = (await ctx.req.json().catch(() => null)) as LapMessageRequest | null
   if (!body || !body.msg || typeof body.msg.type !== 'string') {
-    return json({ error: { code: 'invalid' } }, 400)
+    return ctx.json({ error: { code: 'invalid' } }, 400)
   }
 
   const timeoutMs = body.timeoutMs ?? 5_000
@@ -44,7 +19,7 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   let initial: LapMessageResponse
   try {
-    initial = (await deps.registry.rpc(auth.tid, 'send_message', body, {
+    initial = (await ctx.deps.registry.rpc(ctx.tid, 'send_message', body, {
       timeoutMs: rpcTimeoutMs,
     })) as LapMessageResponse
   } catch (e: unknown) {
@@ -63,47 +38,41 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     console.error(
       `[llui-agent] /lap/v1/message 500 — code=${err.code ?? 'internal'}, detail=${detail}`,
     )
-    return json({ error: { code: err.code ?? 'internal', detail } }, status)
+    return ctx.json({ error: { code: err.code ?? 'internal', detail } }, status)
   }
 
-  const nowMs = (deps.now ?? (() => Date.now()))()
-  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
-  await deps.tokenStore.touch(auth.tid, nowMs)
+  const nowMs = ctx.now()
+  await ctx.markActive(nowMs)
+  await ctx.touch(nowMs)
 
   if (
     initial.status === 'dispatched' ||
     initial.status === 'confirmed' ||
     initial.status === 'rejected'
   ) {
-    await deps.auditSink.write({
-      at: nowMs,
-      tid: auth.tid,
-      uid: rec.uid,
-      event: initial.status === 'rejected' ? 'msg-blocked' : 'msg-dispatched',
-      detail: { variant: body.msg.type, status: initial.status },
-    })
-    return json(initial, 200)
+    await ctx.audit(
+      initial.status === 'rejected' ? 'msg-blocked' : 'msg-dispatched',
+      { variant: body.msg.type, status: initial.status },
+      nowMs,
+    )
+    return ctx.json(initial, 200)
   }
 
   if (initial.status === 'pending-confirmation') {
-    await deps.auditSink.write({
-      at: nowMs,
-      tid: auth.tid,
-      uid: rec.uid,
-      event: 'confirm-proposed',
-      detail: { variant: body.msg.type, confirmId: initial.confirmId },
-    })
-    const resolved = await deps.registry.waitForConfirm(auth.tid, initial.confirmId, timeoutMs)
-    const nowMs2 = (deps.now ?? (() => Date.now()))()
+    await ctx.audit(
+      'confirm-proposed',
+      { variant: body.msg.type, confirmId: initial.confirmId },
+      nowMs,
+    )
+    const resolved = await ctx.deps.registry.waitForConfirm(ctx.tid, initial.confirmId, timeoutMs)
+    const nowMs2 = ctx.now()
     if (resolved.outcome === 'confirmed') {
-      await deps.auditSink.write({
-        at: nowMs2,
-        tid: auth.tid,
-        uid: rec.uid,
-        event: 'confirm-approved',
-        detail: { variant: body.msg.type, confirmId: initial.confirmId },
-      })
-      return json(
+      await ctx.audit(
+        'confirm-approved',
+        { variant: body.msg.type, confirmId: initial.confirmId },
+        nowMs2,
+      )
+      return ctx.json(
         { status: 'confirmed', stateAfter: resolved.stateAfter } satisfies LapMessageResponse,
         200,
       )
@@ -114,7 +83,7 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
       // agent polls `get_confirm_result`. Do NOT audit a rejection here
       // (the earlier `confirm-proposed` entry stands) and do NOT expire
       // the browser entry — that would defeat a slow-but-genuine approval.
-      return json(
+      return ctx.json(
         {
           status: 'pending-confirmation',
           confirmId: initial.confirmId,
@@ -125,18 +94,19 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     // user-cancelled: a real rejection. Record it AND expire the browser
     // entry so a late Approve can't fire the dispatch we just told the
     // agent was rejected.
-    await deps.auditSink.write({
-      at: nowMs2,
-      tid: auth.tid,
-      uid: rec.uid,
-      event: 'confirm-rejected',
-      detail: { variant: body.msg.type, confirmId: initial.confirmId },
-    })
-    deps.registry.send(auth.tid, { t: 'confirm-expire', confirmId: initial.confirmId })
-    return json({ status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse, 200)
+    await ctx.audit(
+      'confirm-rejected',
+      { variant: body.msg.type, confirmId: initial.confirmId },
+      nowMs2,
+    )
+    ctx.deps.registry.send(ctx.tid, { t: 'confirm-expire', confirmId: initial.confirmId })
+    return ctx.json(
+      { status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse,
+      200,
+    )
   }
 
-  return json(
+  return ctx.json(
     {
       error: {
         code: 'internal',
@@ -145,11 +115,4 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     },
     500,
   )
-}
-
-function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), {
-    status: s,
-    headers: { 'content-type': 'application/json' },
-  })
-}
+})

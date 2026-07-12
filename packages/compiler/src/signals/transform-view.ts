@@ -18,6 +18,29 @@ import ts from 'typescript'
 import { signalToProduce } from './lower.js'
 import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { ELEMENT_HELPERS } from './element-helpers.js'
+import { HelperBindings } from './helper-bindings.js'
+
+// ── Import-binding recognition context ────────────────────────────────────────
+// The per-file `@llui/dom` binding set that gates every framework-call
+// recognition below (alias resolution + shadowing + user-shadow exclusion). Set
+// by the component transform around the file's lowering; when null (a lowering
+// helper exercised in isolation, e.g. a unit test with no import context) an
+// empty, permissive binding set is used — every bare name falls back to
+// canonical-name recognition, still shadow-aware. Module-scoped like the other
+// ambient contexts (auto-batch / helper decls / bail hook); the single-threaded
+// source transform makes this safe.
+let currentBindings: HelperBindings | null = null
+const EMPTY_BINDINGS = HelperBindings.empty()
+/** Set (or clear) the ambient `@llui/dom` binding set for the file being lowered. */
+export function setHelperBindings(b: HelperBindings | null): void {
+  currentBindings = b
+}
+/** The canonical `@llui/dom` helper name a call's callee denotes at this site, or
+ * null when it is not a framework helper (user binding / lexical shadow / not a
+ * bare-identifier callee). */
+function resolveCallee(call: ts.CallExpression): string | null {
+  return (currentBindings ?? EMPTY_BINDINGS).resolveCall(call)
+}
 
 // ── Auto-batch ambient context (Opportunity A) ───────────────────────────────
 // Set by the component transform around each view's lowering (and reset after);
@@ -650,9 +673,8 @@ export function transformNodeExpr(
 ): string {
   const node = unwrap(expr)
 
-  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-    const callee = node.expression.text
-
+  const callee = ts.isCallExpression(node) ? resolveCallee(node) : null
+  if (ts.isCallExpression(node) && callee !== null) {
     if (callee === 'text') {
       const arg = node.arguments[0]
       if (!arg) return node.getText(sf)
@@ -1212,9 +1234,6 @@ function lowerRowFactory(
     }
   }
 
-  const calleeName = (c: ts.CallExpression): string | null =>
-    ts.isIdentifier(c.expression) ? c.expression.text : null
-
   // Build a child node at child-index `path` under skeleton `parentVar`; returns false
   // to bail the whole row. Static literal text bakes into the skeleton; reactive and
   // per-row-computed text become an empty placeholder text node (located + filled per clone).
@@ -1229,7 +1248,7 @@ function lowerRowFactory(
       return true
     }
     if (!ts.isCallExpression(child)) return bailF('row-child-unsupported')
-    const callee = calleeName(child)
+    const callee = resolveCallee(child)
     if (callee === 'text') {
       const arg = child.arguments[0]
       if (!arg) return bailF('row-text-empty')
@@ -1282,7 +1301,7 @@ function lowerRowFactory(
     root: number,
     path: readonly number[],
   ): number | null {
-    const callee = calleeName(call)
+    const callee = resolveCallee(call)
     if (!callee || !ELEMENT_HELPERS.has(callee)) return null
     const a0 = call.arguments[0]
     const a1 = call.arguments[1]
@@ -1387,7 +1406,7 @@ function lowerRowFactory(
     // A keyed row's top-level node must be a stable ELEMENT (buildSignalEach
     // rejects a bare structural fragment as a row root).
     if (!ts.isCallExpression(el)) return bail('row-top-not-element')
-    const callee = calleeName(el)
+    const callee = resolveCallee(el)
     if (!callee || !ELEMENT_HELPERS.has(callee)) return bail('row-top-not-element')
     const id = buildElement(el, topIds.length, [])
     if (id === null) return null
@@ -1443,7 +1462,7 @@ const DIRECT_SKIP_ATTRS = new Set(['value', 'checked', 'selected', 'indeterminat
  * Returns null (→ leave the authoring `each`) when neither tier lowers — e.g. a
  * row param leaking into a verbatim helper call. Used by the view-helper pass. */
 export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): string | null {
-  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'each') return null
+  if (resolveCallee(node) !== 'each') return null
   const pos = node.getStart(sf)
   const bail = (reason: string): null => {
     reportBail('helper-each', reason, pos)
