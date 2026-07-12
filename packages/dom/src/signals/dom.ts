@@ -2085,8 +2085,12 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
 // ── virtualEach (windowed list) ─────────────────────────────────────
 export interface VirtualEachSpec<T> extends EachSource<T> {
   key: (item: T) => string | number
-  /** fixed pixel height per row (dynamic heights unsupported) */
-  itemHeight: number
+  /** Row height in pixels. A `number` is a uniform fixed height (O(1) windowing);
+   * a function returns a per-item height, letting rows vary — the window, spacer,
+   * and row offsets are computed from cumulative heights (prefix sums, rebuilt when
+   * `items` changes). Heights must be known from the data; measured/auto heights
+   * are not supported. */
+  itemHeight: number | ((item: T, index: number) => number)
   /** scroll-container height in pixels */
   containerHeight: number
   /** extra rows rendered above/below the viewport (default 3) */
@@ -2154,12 +2158,60 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   let lastState: unknown = null
   let scrollTop = 0
 
+  // Height metrics. Fixed height → O(1) formulas. Per-item height → a prefix-sum
+  // array (`prefix[i]` = cumulative top of row i, `prefix[n]` = total height),
+  // rebuilt only when the `items` array reference changes (so a pure scroll reuses
+  // it). All windowing/positioning goes through the helpers so both modes share
+  // the reconcile loop.
+  const fixedHeight = typeof spec.itemHeight === 'number' ? spec.itemHeight : null
+  const heightFn = typeof spec.itemHeight === 'function' ? spec.itemHeight : null
+  let metricsItems: readonly T[] | null = null
+  let prefix: number[] = [0]
+
+  const ensureMetrics = (items: readonly T[]): void => {
+    if (fixedHeight !== null || items === metricsItems) return
+    metricsItems = items
+    const p = new Array<number>(items.length + 1)
+    p[0] = 0
+    for (let i = 0; i < items.length; i++) p[i + 1] = p[i]! + heightFn!(items[i]!, i)
+    prefix = p
+  }
+
+  const totalHeight = (n: number): number => (fixedHeight !== null ? n * fixedHeight : prefix[n]!)
+  const offsetOf = (i: number): number => (fixedHeight !== null ? i * fixedHeight : prefix[i]!)
+  const heightOf = (i: number): number =>
+    fixedHeight !== null ? fixedHeight : prefix[i + 1]! - prefix[i]!
+  // Largest index in [0, n] whose top offset is ≤ px (the row containing px).
+  const rowAtOffset = (px: number, n: number): number => {
+    if (fixedHeight !== null) return Math.floor(px / fixedHeight)
+    let lo = 0
+    let hi = n
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (prefix[mid]! <= px) lo = mid
+      else hi = mid - 1
+    }
+    return lo
+  }
+  // Smallest index in [0, n] whose top offset is ≥ px (first row starting at/after).
+  const rowStartingAtOrAfter = (px: number, n: number): number => {
+    if (fixedHeight !== null) return Math.ceil(px / fixedHeight)
+    let lo = 0
+    let hi = n
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (prefix[mid]! >= px) hi = mid
+      else lo = mid + 1
+    }
+    return lo
+  }
+
   const computeRange = (length: number): [number, number] => {
     if (length === 0) return [0, 0]
-    const start = Math.max(0, Math.floor(scrollTop / spec.itemHeight) - overscan)
+    const start = Math.max(0, rowAtOffset(scrollTop, length) - overscan)
     const end = Math.min(
       length,
-      Math.ceil((scrollTop + spec.containerHeight) / spec.itemHeight) + overscan,
+      rowStartingAtOrAfter(scrollTop + spec.containerHeight, length) + overscan,
     )
     return [start, end]
   }
@@ -2169,8 +2221,8 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     wrapper.style.setProperty('top', '0')
     wrapper.style.setProperty('left', '0')
     wrapper.style.setProperty('right', '0')
-    wrapper.style.setProperty('height', `${spec.itemHeight}px`)
-    wrapper.style.setProperty('transform', `translateY(${index * spec.itemHeight}px)`)
+    wrapper.style.setProperty('height', `${heightOf(index)}px`)
+    wrapper.style.setProperty('transform', `translateY(${offsetOf(index)}px)`)
   }
 
   const disposeRow = (row: Row): void => {
@@ -2181,7 +2233,8 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   const reconcile = (state: unknown): void => {
     lastState = state
     const items = spec.items(state)
-    spacer.style.setProperty('height', `${items.length * spec.itemHeight}px`)
+    ensureMetrics(items)
+    spacer.style.setProperty('height', `${totalHeight(items.length)}px`)
 
     const [start, end] = computeRange(items.length)
     const seen = new Set<string>()
@@ -2233,7 +2286,10 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
       row.scope!.update(row.ctx, next)
       row.spare = row.ctx
       row.ctx = next
-      if (row.index !== index) {
+      // Reposition on index change; in variable-height mode also reposition every
+      // pass, since an earlier item's height change shifts this row's offset even
+      // when its own index is unchanged.
+      if (row.index !== index || fixedHeight === null) {
         row.index = index
         positionWrapper(row.wrapper, index)
       }

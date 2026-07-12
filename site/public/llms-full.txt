@@ -3133,8 +3133,12 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
 ```typescript
 export interface VirtualEachSpec<T> extends EachSource<T> {
   key: (item: T) => string | number
-  /** fixed pixel height per row (dynamic heights unsupported) */
-  itemHeight: number
+  /** Row height in pixels. A `number` is a uniform fixed height (O(1) windowing);
+   * a function returns a per-item height, letting rows vary — the window, spacer,
+   * and row offsets are computed from cumulative heights (prefix sums, rebuilt when
+   * `items` changes). Heights must be known from the data; measured/auto heights
+   * are not supported. */
+  itemHeight: number | ((item: T, index: number) => number)
   /** scroll-container height in pixels */
   containerHeight: number
   /** extra rows rendered above/below the viewport (default 3) */

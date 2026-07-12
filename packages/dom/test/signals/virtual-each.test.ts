@@ -119,3 +119,80 @@ describe('signalVirtualEach — windowed list', () => {
     expect(spacer.style.height).toBe('0px')
   })
 })
+
+describe('signalVirtualEach — variable row heights (itemHeight function)', () => {
+  interface VItem {
+    id: number
+    h: number
+  }
+  interface VS {
+    items: VItem[]
+  }
+  type VM = { type: 'set'; items: VItem[] }
+
+  // heights: 20,40,20,40,... → cumulative offsets 0,20,60,80,120,140,180,200,...
+  const items = (n: number): VItem[] =>
+    Array.from({ length: n }, (_, i) => ({ id: i, h: i % 2 === 0 ? 20 : 40 }))
+
+  function setup(n: number) {
+    const container = document.createElement('div')
+    const h = mountSignalComponent<VS, VM>(container, {
+      init: () => ({ items: items(n) }),
+      update: (_s, m) => ({ items: m.items }),
+      view: () => [
+        signalVirtualEach<VItem>({
+          items: (s) => (s as VS).items,
+          deps: ['items'],
+          key: (it) => it.id,
+          itemHeight: (it) => it.h, // per-item height
+          containerHeight: 100,
+          overscan: 0, // deterministic window
+          renderRow: () => [
+            el('div', { class: 'row' }, [
+              signalText((ctx) => String((ctx as RowCtx<VItem>).item.id), ['item.id']),
+            ]),
+          ],
+        }),
+      ],
+    })
+    const scroll = container.querySelector('[data-virtual-container]') as HTMLElement
+    const spacer = scroll.querySelector('[data-virtual-spacer]') as HTMLElement
+    const rowEls = (): HTMLElement[] => [...scroll.querySelectorAll('.row')] as HTMLElement[]
+    const wrappers = (): HTMLElement[] =>
+      [...scroll.querySelectorAll('[data-virtual-item]')] as HTMLElement[]
+    const scrollTo = (top: number): void => {
+      scroll.scrollTop = top
+      scroll.dispatchEvent(new Event('scroll'))
+    }
+    return { container, h, scroll, spacer, rowEls, wrappers, scrollTo }
+  }
+
+  it('sizes the spacer to the sum of all row heights', () => {
+    const { spacer } = setup(10) // 5*20 + 5*40 = 300
+    expect(spacer.style.height).toBe('300px')
+  })
+
+  it('positions each visible row at its cumulative offset with its own height', () => {
+    const { wrappers } = setup(10)
+    // At scrollTop 0, containerHeight 100, overscan 0: rows 0..3 (row 3 top=80 < 100).
+    const w = wrappers()
+    expect(w.map((el) => el.getAttribute('data-virtual-key'))).toEqual(['0', '1', '2', '3'])
+    expect(w[0]!.style.transform).toBe('translateY(0px)')
+    expect(w[0]!.style.height).toBe('20px')
+    expect(w[1]!.style.transform).toBe('translateY(20px)')
+    expect(w[1]!.style.height).toBe('40px')
+    expect(w[2]!.style.transform).toBe('translateY(60px)')
+    expect(w[3]!.style.transform).toBe('translateY(80px)')
+    expect(w[3]!.style.height).toBe('40px')
+  })
+
+  it('windows correctly when scrolled to a variable-height offset', () => {
+    const { wrappers, scrollTo } = setup(10)
+    // Scroll so the viewport top sits at offset 120 (start of row 4).
+    scrollTo(120)
+    const keys = wrappers().map((el) => el.getAttribute('data-virtual-key'))
+    // row containing 120 is index 4 (offset 120); viewport bottom 220 → up to row 7
+    // (offset 200 < 220, row 8 offset 240 ≥ 220). Window [4, 8).
+    expect(keys).toEqual(['4', '5', '6', '7'])
+  })
+})
