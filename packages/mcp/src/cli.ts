@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomUUID, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { LluiMcpServer, mcpActiveFilePath, mcpHttpTokenPath } from './index.js'
+import { tokensMatch, isLoopbackOrigin } from './util/loopback.js'
 
 /**
  * Parse `--http [port]` from argv. Returns:
@@ -51,17 +52,6 @@ function parseEnableEvalFlag(argv: string[]): boolean {
 }
 
 /**
- * Constant-time comparison of two ASCII tokens. Avoids leaking length /
- * content via early-exit timing on the auth check.
- */
-function tokensMatch(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8')
-  const bb = Buffer.from(b, 'utf8')
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}
-
-/**
  * Reject DNS-rebinding / cross-origin POSTs. Defends a local-only server
  * against a malicious web page in the user's browser POSTing to
  * `http://127.0.0.1:<port>/mcp`. We require:
@@ -82,22 +72,6 @@ function isLocalHostHeader(host: string | undefined): boolean {
 function singleHeader(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
   return value
-}
-
-function isAllowedOrigin(origin: string | undefined): boolean {
-  // A native MCP client sends NO Origin header → allow. A literal
-  // `Origin: null` is a browser context (sandboxed iframe, `file:`/`data:`
-  // document), NOT an absent header, so it is NOT auto-allowed: it falls
-  // through to the loopback check below, where `new URL('null')` throws and
-  // it is rejected. (Defense in depth — the 0600 bearer token already gates
-  // every request.)
-  if (origin === undefined) return true
-  try {
-    const { hostname } = new URL(origin)
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
-  } catch {
-    return false
-  }
 }
 
 const bridgePort = Number(process.env.LLUI_MCP_PORT ?? 5200)
@@ -223,7 +197,7 @@ async function main(): Promise<void> {
     //     Reject non-loopback Host and cross-origin Origin headers.
     const hostHeader = singleHeader(req.headers.host)
     const originHeader = singleHeader(req.headers.origin)
-    if (!isLocalHostHeader(hostHeader) || !isAllowedOrigin(originHeader)) {
+    if (!isLocalHostHeader(hostHeader) || !isLoopbackOrigin(originHeader)) {
       res.statusCode = 403
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ error: 'forbidden: cross-origin or non-local host rejected' }))

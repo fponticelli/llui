@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { focusRovingItem } from '../utils/roving.js'
 import { LocaleContext } from '../locale.js'
 
 /**
@@ -188,6 +189,27 @@ export function connect(
     send({ type: 'addTag' })
   }
 
+  // Roving focus lives in `focusedIndex`; AT follows real DOM focus, so after a
+  // keyboard move we must focus the newly-active target. When `focusedIndex`
+  // becomes null (arrowed past the last tag, or a tag was removed) focus
+  // returns to the text input. `root` is captured before the send so it still
+  // resolves after a removed tag detaches `origin` from the tree.
+  const moveTagFocus = (origin: Element, root: ParentNode | null): void => {
+    const focusedIndex = state.peek()?.focusedIndex ?? null
+    if (focusedIndex === null) {
+      const input = root?.querySelector('[data-scope="tags-input"][data-part="input"]')
+      if (input instanceof HTMLElement) input.focus()
+      return
+    }
+    focusRovingItem(origin, 'tags-input', String(focusedIndex), {
+      itemPart: 'tag',
+      attr: 'data-index',
+    })
+  }
+
+  const tagRoot = (origin: Element): ParentNode | null =>
+    origin.closest('[data-scope="tags-input"][data-part="root"]')
+
   return {
     root: {
       role: 'group',
@@ -225,7 +247,10 @@ export function connect(
           const target = e.target as HTMLInputElement
           if (target.value === '') {
             e.preventDefault()
+            const origin = e.currentTarget as Element
+            const root = tagRoot(origin)
             send({ type: 'focusTagPrev' })
+            moveTagFocus(origin, root)
           }
         }
       }),
@@ -243,16 +268,21 @@ export function connect(
         'data-focused': state.map((s) => (s.focusedIndex === index ? '' : undefined)),
         onFocus: tagSend(send, ['focusTag'], () => send({ type: 'focusTag', index })),
         onKeyDown: tagSend(send, ['focusTagPrev', 'focusTagNext', 'removeTag'], (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
+          const origin = e.currentTarget as Element
+          const root = tagRoot(origin)
+          const key = flipArrow(e.key, origin)
           if (key === 'ArrowLeft') {
             e.preventDefault()
             send({ type: 'focusTagPrev' })
+            moveTagFocus(origin, root)
           } else if (key === 'ArrowRight') {
             e.preventDefault()
             send({ type: 'focusTagNext' })
+            moveTagFocus(origin, root)
           } else if (key === 'Backspace' || key === 'Delete') {
             e.preventDefault()
             send({ type: 'removeTag', index })
+            moveTagFocus(origin, root)
           }
         }),
       },

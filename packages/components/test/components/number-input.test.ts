@@ -108,27 +108,46 @@ describe('number-input.connect', () => {
     expect(read(p.increment.disabled, init({ value: 5, max: 10 }))).toBe(false)
   })
 
-  it('validate blocks setValue on invalid input', () => {
+  it('onInput keeps in-progress text and does not snap/commit live', () => {
+    const send = vi.fn()
+    const pc = connect(rootSignal(), send)
+    const input = document.createElement('input')
+    input.value = '1.'
+    const ev = new Event('input')
+    Object.defineProperty(ev, 'target', { value: input })
+    pc.input.onInput(ev)
+    // Only the raw text is recorded — "1." is preserved verbatim.
+    expect(send).toHaveBeenCalledWith({ type: 'setRawText', text: '1.' })
+    // No live setValue/commit that would clamp/snap the in-progress value.
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'setValue' }))
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'commit' }))
+  })
+
+  it('validate blocks commit on invalid input, allows it when valid', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send, {
       validate: (v) => (v < 0 ? ['must be non-negative'] : null),
     })
     const input = document.createElement('input')
-    // Type a negative number
+    // Typing only records raw text — never setValue.
     input.value = '-5'
     const ev = new Event('input')
     Object.defineProperty(ev, 'target', { value: input })
     pc.input.onInput(ev)
-    // setRawText should still be dispatched
     expect(send).toHaveBeenCalledWith({ type: 'setRawText', text: '-5' })
-    // setValue should NOT be dispatched (blocked by validate)
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'setValue' }))
-    // Type a valid number
+    // Blur with an invalid value → commit is blocked by validate.
+    send.mockClear()
+    const blur = new FocusEvent('blur')
+    Object.defineProperty(blur, 'target', { value: input })
+    pc.input.onBlur(blur)
+    expect(send).not.toHaveBeenCalledWith({ type: 'commit' })
+    // Blur with a valid value → commit fires.
     send.mockClear()
     input.value = '5'
-    const ev2 = new Event('input')
-    Object.defineProperty(ev2, 'target', { value: input })
-    pc.input.onInput(ev2)
-    expect(send).toHaveBeenCalledWith({ type: 'setValue', value: 5 })
+    const blur2 = new FocusEvent('blur')
+    Object.defineProperty(blur2, 'target', { value: input })
+    pc.input.onBlur(blur2)
+    expect(send).toHaveBeenCalledWith({ type: 'commit' })
   })
 })

@@ -109,6 +109,31 @@ describe('content plugins — markdown round-trip', () => {
     })
     expect(out).toBe(md)
   })
+
+  it('round-trips a table cell that contains an escaped pipe', () => {
+    const t = buildTransformers([tablePlugin(), corePlugin()])
+    const editor = createHeadlessEditor({
+      namespace: 'tbl-pipe',
+      nodes: [...GFM_NODES, TableNode, TableRowNode, TableCellNode],
+      onError: (e) => {
+        throw e
+      },
+    })
+    // `a \| b` is ONE cell whose text is `a | b`; the escaped pipe must not split
+    // it into two cells (which corrupted the round-trip before the splitRow fix).
+    const md = ['| A | B |', '| --- | --- |', '| a \\| b | c |'].join('\n')
+    let out = ''
+    let cellCount = 0
+    editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
+    editor.getEditorState().read(() => {
+      out = $convertToMarkdownString(t)
+      const table = $getRoot().getChildren()[0]
+      const bodyRow = (table as TableNode).getChildren()[1]
+      cellCount = (bodyRow as TableRowNode).getChildren().length
+    })
+    expect(cellCount).toBe(2) // two cells, not three
+    expect(out).toBe(md)
+  })
 })
 
 describe('image plugin (jsdom)', () => {

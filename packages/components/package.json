@@ -564,7 +564,13 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5"
+    "@llui/dom": "workspace:^",
+    "tailwindcss": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "tailwindcss": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

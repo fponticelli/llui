@@ -12,7 +12,7 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { button, component, div, span, text, type Signal } from '@llui/dom'
+import { button, div, span, text, type Signal } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
 
 export type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
@@ -46,71 +46,56 @@ function isCalloutData(value: unknown): value is CalloutData {
   )
 }
 
-type CalloutMsg = { type: 'cycle' } | { type: 'commitText'; text: string }
-
 // Keep keyboard/input/paste events from bubbling to the outer Lexical editor so
 // the nested editable text island edits natively without Lexical intercepting.
 const stop = (e: Event): void => e.stopPropagation()
 
 /** The LLui sub-view rendered inside a callout DecoratorNode. The badge cycles
  * the kind; the text is an editable island that persists into the Lexical node
- * on blur (both round-trip to markdown). */
-const calloutBridge = decoratorBridge<CalloutData, CalloutData, CalloutMsg, never>(
-  BRIDGE_TYPE,
-  (data, api) =>
-    component<CalloutData, CalloutMsg, never>({
-      name: 'Callout',
-      init: () => ({ kind: data.kind, text: data.text }),
-      update: (state, msg) => {
-        if (msg.type === 'cycle') {
-          const kind = nextKind(state.kind)
-          api.update({ kind, text: state.text })
-          return { ...state, kind }
-        }
-        if (msg.type === 'commitText') {
-          if (msg.text === state.text) return state
-          api.update({ kind: state.kind, text: msg.text })
-          return { ...state, text: msg.text }
-        }
-        return state
-      },
-      view: ({ state, send }) => [
-        div(
-          {
-            'data-scope': 'md-callout',
-            'data-part': 'root',
-            'data-kind': state.at('kind') as Signal<string>,
-            contenteditable: 'false',
-            onKeyDown: stop,
-            onBeforeInput: stop,
-            onPaste: stop,
+ * on blur (both round-trip to markdown). `data` is a reactive signal fed by the
+ * bridge, so a data commit updates the view IN PLACE — the editable island keeps
+ * its focus/caret instead of the whole sub-app remounting. */
+const calloutBridge = decoratorBridge<CalloutData>(BRIDGE_TYPE, (data, api) => [
+  div(
+    {
+      'data-scope': 'md-callout',
+      'data-part': 'root',
+      'data-kind': data.at('kind') as Signal<string>,
+      contenteditable: 'false',
+      onKeyDown: stop,
+      onBeforeInput: stop,
+      onPaste: stop,
+    },
+    [
+      button(
+        {
+          type: 'button',
+          'data-part': 'badge',
+          'aria-label': 'Change callout kind',
+          onClick: () => {
+            const cur = data.peek()
+            api.update({ kind: nextKind(cur.kind), text: cur.text })
           },
-          [
-            button(
-              {
-                type: 'button',
-                'data-part': 'badge',
-                'aria-label': 'Change callout kind',
-                onClick: () => send({ type: 'cycle' }),
-              },
-              [text(state.at('kind').map((k) => KIND_LABEL[k]))],
-            ),
-            span(
-              {
-                'data-part': 'text',
-                contenteditable: 'true',
-                role: 'textbox',
-                'aria-label': 'Callout text',
-                onBlur: (e: FocusEvent) =>
-                  send({ type: 'commitText', text: (e.target as HTMLElement).textContent ?? '' }),
-              },
-              [text(state.at('text') as Signal<string>)],
-            ),
-          ],
-        ),
-      ],
-    }),
-)
+        },
+        [text(data.at('kind').map((k) => KIND_LABEL[k]))],
+      ),
+      span(
+        {
+          'data-part': 'text',
+          contenteditable: 'true',
+          role: 'textbox',
+          'aria-label': 'Callout text',
+          onBlur: (e: FocusEvent) => {
+            const cur = data.peek()
+            const value = (e.target as HTMLElement).textContent ?? ''
+            if (value !== cur.text) api.update({ kind: cur.kind, text: value })
+          },
+        },
+        [text(data.at('text') as Signal<string>)],
+      ),
+    ],
+  ),
+])
 
 /** `:::kind text` element transformer (single-line admonition). */
 const CALLOUT_TRANSFORMER: ElementTransformer = {

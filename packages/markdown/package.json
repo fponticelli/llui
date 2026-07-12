@@ -13,6 +13,10 @@
       "types": "./dist/commonmark.d.ts",
       "import": "./dist/commonmark.js"
     },
+    "./security": {
+      "types": "./dist/security.d.ts",
+      "import": "./dist/security.js"
+    },
     "./styles/theme.css": "./dist/styles/theme.css",
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css"
   },
@@ -25,7 +29,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5"
+    "@llui/dom": "workspace:^"
   },
   "dependencies": {
     "mdast-util-from-markdown": "^2.0.2",

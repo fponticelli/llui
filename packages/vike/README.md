@@ -174,11 +174,10 @@ interface ToastDispatchers {
   show: (msg: string) => void
   dismiss: (id: string) => void
 }
-export const ToastContext = createContext<ToastDispatchers>(undefined, 'Toast')
-
-// Note: import { provideValue, useContextValue } from '@llui/dom' for
-// the stable-dispatcher pattern below — they're the static-bag
-// companions to the reactive provide / useContext primitives.
+export const ToastContext = createContext<ToastDispatchers>(
+  { show: () => {}, dismiss: () => {} },
+  'Toast',
+)
 
 export const AppLayout = component<LayoutState, LayoutMsg>({
   name: 'AppLayout',
@@ -187,7 +186,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   view: ({ send }) => [
     div({ class: 'app-shell' }, [
       ToastStack(), // reads from layout state
-      ...provideValue(
+      provide(
         ToastContext,
         {
           show: (msg) => send({ type: 'toast/show', msg }),
@@ -203,7 +202,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```ts
 // Any page below the layout can now use the toast dispatcher.
 // pages/studio/+Page.ts
-import { component, button, text, useContextValue } from '@llui/dom'
+import { component, button, text, useContext } from '@llui/dom'
 import { ToastContext } from '../Layout'
 
 export const StudioPage = component<StudioState, StudioMsg>({
@@ -216,13 +215,13 @@ export const StudioPage = component<StudioState, StudioMsg>({
     return [s, []]
   },
   view: ({ send }) => {
-    const toast = useContextValue(ToastContext)
+    const toast = useContext(ToastContext)
     return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
   },
 })
 ```
 
-`provideValue` and `useContextValue` are companions to the reactive `provide` / `useContext` for the common case of publishing a stable dispatcher bag — anything that doesn't depend on the parent's state. Use them for toast queues, session managers, breadcrumb dispatchers, and any other pattern where a page calls into layout-owned operations through a closure-captured `send`. The reactive `provide(ctx, accessor, children)` and `useContext(ctx)` forms still exist for context values that DO depend on state (e.g. `provide(ThemeContext, (s) => s.theme, () => [...])`).
+`provide(ctx, value, render)` publishes `value` to everything `render` builds, and `useContext(ctx)` reads the nearest provided value (or the context's default). For the common case here — a stable dispatcher bag that doesn't depend on the parent's state — pass the closure-captured `send`-backed object directly, as above. The same pair also carries reactive context values that DO depend on state: because a value may itself be a `Signal`, pass a derived signal rather than an accessor callback (e.g. `provide(ThemeContext, state.map((s) => s.theme), () => [...])`). Use this for toast queues, session managers, breadcrumb dispatchers, and any other pattern where a page calls into layout-owned operations.
 
 Toast state machines, global progress indicators, breadcrumb/title bars, modal-takeover chrome toggles, and session-expired banners all fall out of this pattern naturally — the layout owns the state, provides a dispatcher via context, and any page can trigger layout operations without touching the layout's internals.
 
@@ -394,7 +393,7 @@ Renders the component to HTML via `renderToString()`. Each render gets a fresh `
 
 ### Client (`onRenderClient`)
 
-Hydrates the server-rendered HTML on the client. Attaches event listeners and reactive bindings to existing DOM nodes without re-rendering. Falls back to fresh `mountApp()` for client-side navigations.
+Hydrates the server-rendered HTML on the client via `hydrateSignalApp()`. It does **not** attach listeners to the existing server DOM in place — it builds a fresh client tree against `serverState` (matching the SSR render) and **atomically swaps it in**, replacing the server HTML. The server markup stays visible until the swap, so there's no flash. `init()`'s effects are skipped by default (they already ran on the server). Falls back to a fresh `mountApp()` for client-side navigations.
 
 ## API
 

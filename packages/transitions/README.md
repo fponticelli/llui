@@ -8,39 +8,42 @@ pnpm add @llui/transitions
 
 ## Usage
 
-```ts
-// @doc-skip — illustrative; uses bare `view({...})` shorthand and `text((s) => …)` placeholder values
-import { fade, slide, mergeTransitions } from '@llui/transitions'
-import { div } from '@llui/dom'
+Presets return a `TransitionOptions` bundle. Pass it **positionally** as the trailing `transition` argument to `show`/`branch`, or as the `transition:` option to `each` — never spread it. Element and structural helpers are module imports from `@llui/dom`; the view bag is `{ state, send }`.
 
-// Fade + slide on a show block
-view({ show, text }) {
-  show({
-    when: (s) => s.visible,
-    render: () => div({}, text((s) => s.message)),
-    ...mergeTransitions(fade(), slide({ direction: 'down' })),
-  })
-}
+```ts
+import { show, div, text } from '@llui/dom'
+import { fade, slide, mergeTransitions } from '@llui/transitions'
+
+// Inside a component's view({ state, send }):
+// Fade + slide on a show block (transition is the 4th positional arg)
+show(
+  state.at('visible'),
+  () => div({}, text(state.map((s) => s.message))),
+  undefined, // no orElse arm
+  mergeTransitions(fade(), slide({ direction: 'down' })),
+)
 ```
 
 ## API
 
 ### Core
 
-| Function                       | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `transition({ enter, leave })` | Core transition -- define custom enter/leave animations |
-| `mergeTransitions(a, b)`       | Combine two transitions into one                        |
+| Function                     | Description                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transition(spec)`           | Core primitive -- build a custom transition from a class/style spec (`enterFrom`, `enterTo`, `enterActive`, `leaveFrom`, `leaveTo`, `leaveActive`, plus `duration`, `appear`) |
+| `mergeTransitions(...parts)` | Combine multiple transitions into one (chains their `enter`, `leave`, and `onTransition` handlers)                                                                            |
+
+All presets and the core primitive return a `TransitionOptions` bundle — `{ enter?, leave?, onTransition? }` hooks that operate on raw DOM `Node`s.
 
 ### Presets
 
-| Function             | Options                           | Description                                          |
-| -------------------- | --------------------------------- | ---------------------------------------------------- |
-| `fade(options?)`     | `duration`, `easing`              | Fade in/out                                          |
-| `slide(options?)`    | `direction`, `duration`, `easing` | Slide from direction (`up`, `down`, `left`, `right`) |
-| `scale(options?)`    | `from`, `duration`, `easing`      | Scale transform in/out                               |
-| `collapse(options?)` | `duration`, `easing`              | Height collapse/expand                               |
-| `flip(options?)`     | `duration`, `easing`              | FLIP reorder animation for `each()`                  |
+| Function             | Options                                                         | Description                                                                             |
+| -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `fade(options?)`     | `duration`, `easing`, `appear`                                  | Fade in/out                                                                             |
+| `slide(options?)`    | `direction`, `distance`, `duration`, `easing`, `fade`, `appear` | Slide from direction (`up`, `down`, `left`, `right`)                                    |
+| `scale(options?)`    | `from`, `duration`, `easing`, `fade`, `origin`, `appear`        | Scale transform in/out                                                                  |
+| `collapse(options?)` | `axis`, `duration`, `easing`, `appear`                          | Collapse/expand along `y` (height) or `x` (width); measures the natural size at runtime |
+| `flip(options?)`     | `duration`, `easing`                                            | FLIP reorder animation for `each()`                                                     |
 
 ### Spring Physics
 
@@ -51,17 +54,19 @@ view({ show, text }) {
 Uses a damped spring simulation instead of CSS easing. The animation runs via `requestAnimationFrame` and settles naturally based on physics parameters.
 
 ```ts
+import { show } from '@llui/dom'
 import { spring } from '@llui/transitions'
 
 // Default: opacity 0 → 1 with react-spring-like defaults
-show({ when: (s) => s.open, render: () => content(), ...spring() })
+show(state.at('open'), () => content(), undefined, spring())
 
 // Custom spring feel
-show({
-  when: (s) => s.open,
-  render: () => content(),
-  ...spring({ stiffness: 300, damping: 15, property: 'opacity' }),
-})
+show(
+  state.at('open'),
+  () => content(),
+  undefined,
+  spring({ stiffness: 300, damping: 15, property: 'opacity' }),
+)
 ```
 
 ### Route Transitions
@@ -74,23 +79,24 @@ Convenience wrapper for animating page transitions in a `branch()`:
 
 ```ts
 // @doc-skip — uses `[...]` render-result placeholders
+import { branch } from '@llui/dom'
 import { routeTransition, fade } from '@llui/transitions'
 
 // Default: fade + slight upward slide (250ms)
-branch({
-  on: (s) => s.route.page,
-  cases: { home: () => [...], about: () => [...] },
-  ...routeTransition(),
-})
+branch(
+  state.map((s) => s.route.page),
+  { home: () => [...], about: () => [...] },
+  routeTransition(),
+)
 
 // Custom duration
-branch({ on, cases, ...routeTransition({ duration: 200 }) })
+branch(state.map((s) => s.route.page), arms, routeTransition({ duration: 200 }))
 
 // Fade only (no slide)
-branch({ on, cases, ...routeTransition({ duration: 200, slide: false }) })
+branch(state.map((s) => s.route.page), arms, routeTransition({ duration: 200, slide: false }))
 
 // Pass any preset directly
-branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
+branch(state.map((s) => s.route.page), arms, routeTransition(fade({ duration: 200 })))
 ```
 
 ### Stagger
@@ -99,30 +105,31 @@ branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
 | ------------------------------- | ---------------------------- | ------------------------------------------------- |
 | `stagger(transition, options?)` | `delayPerItem`, `leaveOrder` | Stagger enter/leave animations for `each()` items |
 
-Wraps any transition preset so batch-entered items animate with incremental delays:
+Wraps any transition preset so batch-entered items animate with incremental delays. Pass the result as `each`'s `transition:` option:
 
 ```ts
 // @doc-skip — uses `[...]` render-result placeholder
+import { each } from '@llui/dom'
 import { stagger, fade, slide } from '@llui/transitions'
 
-each({
-  items: (s) => s.items,
+each(state.at('items'), {
   key: (i) => i.id,
-  render: ({ item }) => [...],
-  ...stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
+  render: (item) => [...],
+  transition: stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
 })
 
 // Works with any preset
-each({
-  items: (s) => s.items,
+each(state.at('items'), {
   key: (i) => i.id,
-  render: ({ item }) => [...],
-  ...stagger(slide({ direction: 'up' }), { delayPerItem: 50 }),
+  render: (item) => [...],
+  transition: stagger(slide({ direction: 'up' }), { delayPerItem: 50 }),
 })
 
 // Stagger leave animations too (default is simultaneous)
-each({
-  ...stagger(fade(), { delayPerItem: 30, leaveOrder: 'sequential' }),
+each(state.at('items'), {
+  key: (i) => i.id,
+  render: (item) => [...],
+  transition: stagger(fade(), { delayPerItem: 30, leaveOrder: 'sequential' }),
 })
 ```
 
@@ -130,21 +137,19 @@ Items entering within the same microtask are considered a "batch" and get sequen
 
 ### Integration
 
-Presets return `{ enter, leave }` objects that spread directly into `show`, `branch`, or `each`:
+Presets return a `TransitionOptions` object (`{ enter?, leave?, onTransition? }`). Pass it **positionally** to `show`/`branch` (the trailing `transition` argument) or as the `transition:` option to `each` — do not spread it. Row `render` callbacks receive a `Signal` handle (e.g. `item` is `Signal<T>`).
 
 ```ts
-// show with fade
-show({ when: (s) => s.open, render: () => content(), ...fade() })
+import { show, each, li, text } from '@llui/dom'
+import { fade, flip } from '@llui/transitions'
 
-// each with FLIP reorder
-each({
-  items: (s) => s.list,
+// show with fade — transition is the 4th positional arg
+show(state.at('open'), () => content(), undefined, fade())
+
+// each with FLIP reorder — transition is an option in the second arg
+each(state.at('list'), {
   key: (item) => item.id,
-  render: (item) =>
-    li(
-      {},
-      text(() => item.name),
-    ),
-  ...flip({ duration: 200 }),
+  render: (item) => li({}, text(item.map((i) => i.name))),
+  transition: flip({ duration: 200 }),
 })
 ```

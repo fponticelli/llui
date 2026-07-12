@@ -17,6 +17,7 @@
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
+import { hostname } from 'node:os'
 import { keepAwake } from '../scripts/keep-awake'
 
 const ROOT = dirname(import.meta.dirname)
@@ -109,7 +110,11 @@ const saveBaseline = args.includes('--save')
 const runAll = args.includes('--all')
 const headful = args.includes('--headful')
 const extraFrameworks: string[] = []
-let runs = 1
+// Default to 3 runs: a single run is dominated by scheduling/JIT noise, and the
+// median-of-medians aggregation below only earns its keep with >1 sample. Three
+// is the cheapest count that lets a spurious slow run be outvoted. Override with
+// `--runs N`.
+let runs = 3
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--framework' && i + 1 < args.length) {
     extraFrameworks.push(args[i + 1]!)
@@ -425,7 +430,28 @@ if (baselineLlui && currentLlui && baselineLlui !== currentLlui) {
 // ── Save baseline if requested ──
 
 if (saveBaseline) {
-  writeFileSync(BASELINE, JSON.stringify(current, null, 2) + '\n')
+  // Embed provenance so a stale baseline is visible at a glance (when it was
+  // captured, on which host, headless or not, which @llui/dom it measured, and
+  // how many runs backed the medians). Lives under a `meta` key the framework
+  // iteration (`allFws`) never reads, so it can't leak into a comparison row.
+  let lluiVersion = 'unknown'
+  try {
+    lluiVersion = JSON.parse(
+      readFileSync(resolve(ROOT, 'packages/dom/package.json'), 'utf8'),
+    ).version
+  } catch {
+    // leave as 'unknown' if the package can't be read
+  }
+  const meta = {
+    savedAt: new Date().toISOString(),
+    host: hostname(),
+    headless: !headful,
+    lluiVersion,
+    runs,
+  }
+  // `meta` LAST so a fresh capture overrides any stale `meta` that a previously
+  // saved baseline seeded into `current`.
+  writeFileSync(BASELINE, JSON.stringify({ ...current, meta }, null, 2) + '\n')
   console.log(`\n✅ Baseline saved to ${BASELINE}`)
 }
 

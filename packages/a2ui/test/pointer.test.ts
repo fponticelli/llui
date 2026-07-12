@@ -97,4 +97,33 @@ describe('applyPointer (immutable upsert)', () => {
     expect(next.keep).toBe(model.keep) // structural sharing
     expect(next.change).toBe(5)
   })
+
+  it('rejects an out-of-range array index instead of ballooning the array (fix 3)', () => {
+    const next = applyPointer({ items: ['a'] }, '/items/999999999', 'x') as { items: unknown[] }
+    // The write is refused; the array keeps its original length (no OOM).
+    expect(next.items.length).toBe(1)
+    expect(next.items).toEqual(['a'])
+  })
+
+  it('allows appending at the end of an array', () => {
+    const next = applyPointer({ items: ['a'] }, '/items/1', 'b') as { items: unknown[] }
+    expect(next.items).toEqual(['a', 'b'])
+  })
+
+  it('rejects an index at/over the absolute cap', () => {
+    const next = applyPointer({}, '/items/100000', 'x') as { items?: unknown[] }
+    // Nothing created for an out-of-range write into a fresh array.
+    expect(next.items ?? []).toEqual([])
+  })
+
+  it('refuses to write __proto__/constructor/prototype tokens (fix 4)', () => {
+    const proto = applyPointer({}, '/__proto__/polluted', true)
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+    expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined()
+    // The dangerous intermediate write is dropped, not applied.
+    expect(proto).toEqual({})
+
+    const ctor = applyPointer({ a: 1 }, '/constructor', 'x') as Record<string, unknown>
+    expect(ctor.constructor).not.toBe('x')
+  })
 })

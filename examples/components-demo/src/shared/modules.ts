@@ -3,8 +3,8 @@
  *
  * These are pure data/type utilities — they compose `(state, msg) => [state,
  * effects]` reducers, with no dependency on any runtime. They live here (rather
- * than being imported from a package) so the demo stays on the signal surface
- * (`@llui/dom`) without pulling the legacy `@llui/dom` entry.
+ * than being imported from a package) because they are demo-specific glue for
+ * composing section reducers under the single `@llui/dom` update loop.
  */
 
 /** Extract the state type from a component module's update function. */

@@ -9,6 +9,12 @@
 import type { Link, Image, LinkReference, ImageReference } from 'mdast'
 import type { ResolvedOptions } from './types.js'
 
+/** The schemes permitted by default in links/images. Relative URLs (no scheme)
+ * are always allowed regardless of this list. Exported so downstream packages
+ * (e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
+ * hand-rolling a divergent allowlist. */
+export const defaultAllowedProtocols: readonly string[] = ['http', 'https', 'mailto', 'tel']
+
 /** Returns the URL unchanged if its scheme is allowed (or it is relative),
  * otherwise `null`. */
 export function sanitizeUrl(url: string, allowedProtocols: readonly string[]): string | null {

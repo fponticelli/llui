@@ -40,7 +40,8 @@ export const Counter = component<State, Msg, never>({
 })
 ```
 
-The view bag is `{ state, send }` — `state: Signal<State>`, `send: (msg: M) => void`.
+The view bag is `{ state, send, batch }` — `state: Signal<State>`, `send: (msg: M) => void`,
+`batch: (fn: () => void) => void` (coalesce a burst of `send`s into one reconcile).
 Element and structural helpers (`div`, `button`, `text`, `each`, `show`, `branch`, …) are
 module imports from `@llui/dom`, not bag fields. There is a single import surface:
 `@llui/dom` — no `/signals` subpath, no separate legacy runtime, and no `@llui/eslint-plugin`.
@@ -135,7 +136,7 @@ Two consequences follow from that one parameter:
 
 **Disposal cascades in the right direction.** Disposing the layout's root cascades through `slotScope` → page `rootScope` → page's entire subtree — the whole chain tears down in one pass. Disposing only the page's root disposes its subtree without touching the layout: child scopes disposed, disposers fired, bindings marked dead, but the `parent` pointer from `slotScope` downward is the only upward reference and it's never followed by `disposeScope`. Navigating between pages (page re-mount, layout persists) is exactly this asymmetric disposal.
 
-For framework-adapter packages that need to build primitives like `pageSlot()` on top of the runtime, the low-level glue (`getRenderContext`, `createScope`, `addDisposer`) is exposed via the `@llui/dom/internal` subpath. App authors never reach for this — it's for sibling packages in the workspace that compose at the render-context layer.
+Framework-adapter packages that build primitives like `pageSlot()` on top of the runtime hook into the build via `__currentBuildInfo()` (exported from `@llui/dom`) — it returns the in-progress build's `doc` and a snapshot of the context values in scope, so an adapter that mounts a nested build in a separate pass can replay them via `runBuild`'s `seedContexts` / the `contexts` mount option (this is what `@llui/vike` uses). App authors never reach for this. The `@llui/dom/internal` subpath is a narrower surface still: it exports only `__clientOnlyStub` (the compiler-emitted server stub for `'use client'` modules), imported by compiler-generated code, not by hand.
 
 ## Compiler Pipeline
 
@@ -153,11 +154,11 @@ Views the compiler can't lower (helper functions, block bodies) run via the runt
 
 ### Compile-time correctness rules
 
-The framework's correctness, agent-protocol, and convention rules are non-bypassable compile-time **errors** surfaced by the Vite plugin (LLMs ignore warnings, so a build that fails closed is the only effective channel). The signal-specific rules catch the reactivity foot-guns: `peek-in-slot` (a `.peek()` used as a slot value), `operator-on-signal` (`signal + 1`, ternary on a signal), `pure-derive-body` and `no-node-construction-in-body` (side effects / DOM construction inside a `.map` body), and `whole-state-to-call` (passing the root `state` to a call in a slot).
+The framework's correctness, agent-protocol, and convention rules are non-bypassable compile-time **errors** surfaced by the Vite plugin (LLMs ignore warnings, so a build that fails closed is the only effective channel). The signal-specific rules catch the reactivity foot-guns: `peek-in-slot` (a `.peek()` snapshot used as a reactive slot value), `operator-on-signal` (`signal + 1`, ternary on a signal), `no-node-construction-in-body` (element/text helper called inside a `.map` body), `pure-derive-body` (side effects or reactive primitives inside a `.map` body), `prefer-at-over-map` (a plain single-field projection `sig.map(p => p.x)` that should be `sig.at('x')`), and `at-after-map` (`sig.map(fn).at('x')`, which has no static path to slice). (There is deliberately **no** whole-`state`-coarseness rule: rendering a whole-state object is already a type error, and a `Signal` coerced in an operator is caught by `operator-on-signal`.)
 
 ## Synchronous `send`
 
-`send(msg)` runs the pure reducer **immediately**. If the returned state differs by reference, it commits to the reconciler, notifies subscribers, then dispatches effects to `onEffect`. There is no microtask queue and no combined-dirty coalescing — each `send` is its own update cycle. Under synchronous TEA the mask-gated reconcile is cheap enough that batching isn't warranted.
+`send(msg)` runs the pure reducer **immediately**. If the returned state differs by reference, it commits to the reconciler, notifies subscribers, then dispatches effects to `onEffect`. By default there is no microtask/rAF auto-batching — each `send` is its own update cycle, so the synchronous contract is predictable.
 
 ```ts
 send({ type: 'togglePanel' })
@@ -165,7 +166,13 @@ send({ type: 'togglePanel' })
 const rect = panelEl.getBoundingClientRect()
 ```
 
-`handle.flush()` is retained as a **no-op** on the component handle, for parity with harnesses and agents that assume an async batch model. An effect that calls `send` again is an ordinary synchronous reducer step, not re-entrant reconciliation.
+### `batch` — coalescing a burst
+
+`batch(fn)` (on the component handle **and** in the view/`onEffect` bag, alongside `send`) coalesces a burst of `send`s into **one** reconcile: every reducer still runs in order and effects still fire per message, but the DOM commit and subscriber notification are deferred to a single pass against the final state when the outermost `batch` returns. State is applied by the time `batch` returns, so the synchronous contract still holds at the boundary. This is the opt-in burst/streaming fast path — drain a websocket frame of N ticks as one re-render (~13× on a 1k-tick burst). The compiler also **auto-wraps** provably-safe straight-line multi-`send` handlers (a block of only `send(...)` calls) in `batch(...)` and injects `batch` into the bag.
+
+### `raf` scheduler
+
+`mountApp(container, def, { scheduler: 'raf' })` is the opt-in frame-scheduled mode: reducers and effects stay synchronous (the data contract holds), but the DOM commit and subscriber notification coalesce to one reconcile per animation frame (microtask fallback off-browser). The DOM therefore lags state by up to a frame; `handle.flush()` forces a synchronous commit. Measured at vanilla parity on the 1k-burst ticker op. In the default `'sync'` scheduler `handle.flush()` is a no-op (there is nothing pending), kept for harness/agent parity. An effect that calls `send` again is an ordinary synchronous reducer step, not re-entrant reconciliation.
 
 ## Effects as Data
 
@@ -175,11 +182,11 @@ Effects are plain data objects. `update()` returns them; the runtime dispatches 
 
 The core runtime hands every effect to the component's `onEffect(effect, { send, state })` after the DOM is updated. The `@llui/effects` package provides `handleEffects<Effect, Msg>()`, a composable chain that interprets the standard effect types (`http`, `cancel`, `debounce`, `timeout`, `interval`, `sequence`, `race`, …), tracks cancellation tokens and debounce timers in a per-component closure, and passes unrecognized effects to a `.else()` callback as one `{ effect, send, signal }` context.
 
-TypeScript narrows the `.else()` callback to only the effect variants that `handleEffects` doesn't consume, and `noImplicitReturns` catches missing cases.
+TypeScript narrows the `.else()` callback to only the effect variants that `handleEffects` doesn't consume, and `noImplicitReturns` catches missing cases. The chain terminates in a `(ctx) => void` function, so wrap it in `asOnEffect(...)` to adapt it to the runtime's two-argument `onEffect(effect, api)` shape.
 
 ```ts
 import { component, input, text } from '@llui/dom'
-import { handleEffects, http, cancel, debounce } from '@llui/effects'
+import { handleEffects, asOnEffect, http, cancel, debounce } from '@llui/effects'
 
 type Effect =
   | { type: 'http'; url: string; onSuccess: string; onError: string }
@@ -218,13 +225,17 @@ export const Search = component<State, Msg, Effect>({
 
   // handleEffects() consumes http/cancel/debounce.
   // .else() receives only the remaining types -- here, just 'analytics'.
-  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
-    switch (effect.type) {
-      case 'analytics':
-        window.analytics?.track(effect.event)
-        break
-    }
-  }),
+  // asOnEffect(...) adapts the chain's (ctx) => void to the runtime's
+  // onEffect(effect, api) two-arg shape.
+  onEffect: asOnEffect(
+    handleEffects<Effect, Msg>().else(({ effect }) => {
+      switch (effect.type) {
+        case 'analytics':
+          window.analytics?.track(effect.event)
+          break
+      }
+    }),
+  ),
 
   view: ({ state, send }) => [
     input({

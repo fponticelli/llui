@@ -1,5 +1,6 @@
 import type { TransitionOptions } from '@llui/dom'
 import { asElements } from './style-utils.js'
+import { prefersReducedMotion } from './anim.js'
 
 export interface SpringOptions {
   /** Spring stiffness (default: 170). */
@@ -16,6 +17,8 @@ export interface SpringOptions {
   from?: number
   /** End value (default: 1). */
   to?: number
+  /** Honor `prefers-reduced-motion` (default: true) — jump to the target instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 interface SpringState {
@@ -44,99 +47,6 @@ function isDocumentHidden(): boolean {
   return typeof document !== 'undefined' && document.visibilityState === 'hidden'
 }
 
-function animateSpring(
-  els: HTMLElement[],
-  from: number,
-  to: number,
-  property: string,
-  stiffness: number,
-  damping: number,
-  mass: number,
-  precision: number,
-): Promise<void> {
-  if (els.length === 0) return Promise.resolve()
-
-  const rafAvailable = typeof requestAnimationFrame === 'function'
-
-  return new Promise<void>((resolve) => {
-    let settled = false
-
-    const cleanup = (): void => {
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', onVisibility)
-      }
-    }
-
-    // Snap to the exact target and resolve. Used both on natural settle and as
-    // the escape hatch when no rAF loop can run (hidden tab / rAF unavailable):
-    // without it the leave Promise would never resolve, deadlocking anything
-    // gated on it (e.g. route navigation via fromTransition(spring())).
-    const snap = (): void => {
-      if (settled) return
-      settled = true
-      for (const el of els) {
-        el.style.setProperty(property, String(to))
-      }
-      cleanup()
-      resolve()
-    }
-
-    const onVisibility = (): void => {
-      if (isDocumentHidden()) snap()
-    }
-
-    // Apply initial value
-    for (const el of els) {
-      el.style.setProperty(property, String(from))
-    }
-
-    // No animation loop available (SSR / minimal jsdom) or the tab is already
-    // hidden — settle immediately so the Promise always resolves.
-    if (!rafAvailable || isDocumentHidden()) {
-      snap()
-      return
-    }
-
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onVisibility)
-    }
-
-    const state: SpringState = { position: from, velocity: 0 }
-    let lastTime: number | null = null
-
-    function step(time: number) {
-      if (settled) return
-      // If the tab was hidden mid-flight, rAF stalls — settle so we don't hang.
-      if (isDocumentHidden()) {
-        snap()
-        return
-      }
-      if (lastTime === null) {
-        lastTime = time
-      }
-
-      // dt in seconds, clamped to avoid spiral on tab-switch
-      const dt = Math.min((time - lastTime) / 1000, 0.064)
-      lastTime = time
-
-      simulateSpring(state, to, stiffness, damping, mass, dt)
-
-      for (const el of els) {
-        el.style.setProperty(property, String(state.position))
-      }
-
-      if (isSettled(state, to, precision)) {
-        snap()
-        return
-      }
-
-      requestAnimationFrame(step)
-    }
-
-    requestAnimationFrame(step)
-  })
-}
-
 /**
  * Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
  * property using a damped spring simulation driven by `requestAnimationFrame`.
@@ -145,7 +55,13 @@ function animateSpring(
  * hidden/background tab where rAF is paused — the animation settles instantly
  * to its target and the returned Promise still resolves. This matters for the
  * `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
- * not hang (e.g. `fromTransition(spring())` route navigation).
+ * not hang (e.g. `fromTransition(spring())` route navigation). Honoring
+ * `prefers-reduced-motion` takes the same instant-settle path.
+ *
+ * Interruption: enter and leave on the SAME element supersede each other. A new
+ * phase cancels the previous element's loop WITHOUT letting it snap to its own
+ * (now-stale) target, so an enter interrupted by a leave rests at the leave
+ * target rather than being clobbered back to the enter target by the dying loop.
  *
  * Passed as the trailing transition argument to the signal `show`/`branch`/`each`
  * primitives to spring an arm/row in and defer its leave, e.g.
@@ -160,15 +76,110 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
   const property = opts.property ?? 'opacity'
   const from = opts.from ?? 0
   const to = opts.to ?? 1
+  const respectReduced = opts.respectReducedMotion !== false
+
+  // Per-element cancellation. A new phase (enter↔leave) on an element marks the
+  // previous loop cancelled; that loop then stops without writing, so two loops
+  // never fight over the same style and no stale loop snaps back to its target.
+  const runs = new WeakMap<HTMLElement, { cancelled: boolean }>()
+
+  const animateOne = (el: HTMLElement, start: number, target: number): Promise<void> => {
+    // Supersede any in-flight loop on this element (no snap — we own it now).
+    const prev = runs.get(el)
+    if (prev) prev.cancelled = true
+    const run = { cancelled: false }
+    runs.set(el, run)
+
+    return new Promise<void>((resolve) => {
+      let settled = false
+
+      const cleanup = (): void => {
+        if (typeof document !== 'undefined') {
+          document.removeEventListener('visibilitychange', onVisibility)
+        }
+      }
+
+      // Finish the loop. `write` controls whether the final value is committed —
+      // a natural settle / hidden-tab snap writes the target; a supersede does
+      // NOT (the newer loop owns the element's value).
+      const done = (write: boolean, value: number): void => {
+        if (settled) return
+        settled = true
+        if (write) el.style.setProperty(property, String(value))
+        cleanup()
+        if (runs.get(el) === run) runs.delete(el)
+        resolve()
+      }
+      const snap = (): void => done(true, target)
+      const onVisibility = (): void => {
+        if (isDocumentHidden()) snap()
+      }
+
+      // Apply the initial value.
+      el.style.setProperty(property, String(start))
+
+      const rafAvailable = typeof requestAnimationFrame === 'function'
+
+      // Reduced motion, no animation loop (SSR / minimal jsdom), or an already
+      // hidden tab: settle straight to the target so the Promise always resolves.
+      if ((respectReduced && prefersReducedMotion()) || !rafAvailable || isDocumentHidden()) {
+        snap()
+        return
+      }
+
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisibility)
+      }
+
+      const state: SpringState = { position: start, velocity: 0 }
+      let lastTime: number | null = null
+
+      function step(time: number): void {
+        if (settled) return
+        // Superseded by a newer phase — stop WITHOUT snapping.
+        if (run.cancelled) {
+          done(false, target)
+          return
+        }
+        // If the tab was hidden mid-flight, rAF stalls — settle so we don't hang.
+        if (isDocumentHidden()) {
+          snap()
+          return
+        }
+        if (lastTime === null) {
+          lastTime = time
+        }
+
+        // dt in seconds, clamped to avoid spiral on tab-switch
+        const dt = Math.min((time - lastTime) / 1000, 0.064)
+        lastTime = time
+
+        simulateSpring(state, target, stiffness, damping, mass, dt)
+        el.style.setProperty(property, String(state.position))
+
+        if (isSettled(state, target, precision)) {
+          snap()
+          return
+        }
+
+        requestAnimationFrame(step)
+      }
+
+      requestAnimationFrame(step)
+    })
+  }
+
+  const animateAll = (els: HTMLElement[], start: number, target: number): Promise<void> => {
+    if (els.length === 0) return Promise.resolve()
+    return Promise.all(els.map((el) => animateOne(el, start, target))).then(() => undefined)
+  }
 
   const enter = (nodes: Node[]): void => {
-    const els = asElements(nodes)
-    void animateSpring(els, from, to, property, stiffness, damping, mass, precision)
+    void animateAll(asElements(nodes), from, to)
   }
 
   const leave = (nodes: Node[]): Promise<void> => {
-    const els = asElements(nodes)
-    return animateSpring(els, to, from, property, stiffness, damping, mass, precision)
+    return animateAll(asElements(nodes), to, from)
   }
 
   return { enter, leave }

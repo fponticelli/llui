@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5"
+    "@llui/dom": "workspace:^"
   },
   "devDependencies": {
     "@llui/agent": "workspace:*",

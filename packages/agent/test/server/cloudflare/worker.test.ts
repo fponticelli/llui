@@ -100,6 +100,19 @@ describe('routeToAgentDO', () => {
     expect(ns.idFromName).toHaveBeenCalledWith('__root')
   })
 
+  it('rejects a public /__resolve (and any /__* internal path) with 404', async () => {
+    // `/__resolve` is reachable ONLY via an internal DO stub. A public
+    // request must never reach a DO and become a token-resolution oracle.
+    const ns = mockNamespace()
+    const req = new Request('https://app/__resolve', {
+      method: 'POST',
+      headers: { authorization: `Bearer agt_probe` },
+    })
+    const res = await routeToAgentDO(req, ns, resolveAlways('t1'))
+    expect(res.status).toBe(404)
+    expect(ns.get).not.toHaveBeenCalled()
+  })
+
   it('respects a custom mcpPath option', async () => {
     const ns = mockNamespace()
     const req = new Request('https://app/mcp', { method: 'POST' })

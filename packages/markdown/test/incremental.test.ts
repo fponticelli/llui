@@ -114,6 +114,65 @@ describe('incrementalParse — tree equals full parse', () => {
   })
 })
 
+describe('incrementalParse — prefix reuse can be disabled (unsafe custom extensions)', () => {
+  it('never reuses a prefix when allowPrefixReuse=false, staying correct', () => {
+    let cache: ParseCache | undefined
+    const step = (src: string): number => {
+      const res = incrementalParse(cache, src, parse, false)
+      cache = res.cache
+      expect(sig(res.root)).toBe(sig(parse(src)))
+      return res.reused
+    }
+    // Append that WOULD normally reuse the sealed prefix — disabled ⇒ full parse.
+    expect(step('# T\n\npara\n\n')).toBe(0)
+    expect(step('# T\n\npara\n\nmore')).toBe(0)
+    // A late reclassifying edit is handled by the (forced) full parse.
+    expect(step('# T\n\npara\n\nmore\n\nhello')).toBe(0)
+  })
+
+  it('still short-circuits an IDENTICAL source (no reparse needed)', () => {
+    let cache: ParseCache | undefined
+    const r1 = incrementalParse(cache, 'a\n\nb', parse, false)
+    cache = r1.cache
+    const r2 = incrementalParse(cache, 'a\n\nb', parse, false)
+    expect(r2.root).toBe(r1.root) // unchanged source returns the cached tree
+  })
+})
+
+describe('reactive markdown — custom extensions disable prefix reuse by default', () => {
+  // A harmless no-op custom syntax + mdast extension: its mere PRESENCE must switch
+  // markdown() to full-parse-per-chunk (the seal invariant isn't proven for it),
+  // yet streaming must still render every reclassification correctly.
+  const custom = { extensions: [{}], mdastExtensions: [{}] }
+
+  it('a late setext reclassification renders correctly with a custom extension', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mounted = mountReactive('hello', custom)
+    expect(body(mounted.container).querySelector('p')?.textContent).toBe('hello')
+    // `hello` → `hello\n===` retro-converts the paragraph to a heading. With reuse
+    // disabled this is a full parse, so it is always correct (never a stale prefix).
+    mounted.set('hello\n===\n\nworld')
+    expect(body(mounted.container).querySelector('h1')?.textContent).toBe('hello')
+    expect(body(mounted.container).querySelector('p')?.textContent).toBe('world')
+    // Reuse never runs (reused === 0 always), so the dev divergence assertion path
+    // is never entered — no console.error either way.
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('opting in with sealSafeExtensions re-enables prefix reuse', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mounted = mountReactive('# Title\n\nfirst paragraph', {
+      ...custom,
+      sealSafeExtensions: true,
+    })
+    const heading = body(mounted.container).querySelector('h1')
+    mounted.set('# Title\n\nfirst paragraph\n\nsecond paragraph')
+    // Reuse is back on: the heading DOM is preserved across the streamed append.
+    expect(body(mounted.container).querySelector('h1')).toBe(heading)
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
 describe('reactive markdown — streaming DOM (dev assertion active)', () => {
   it('appending reuses earlier DOM and never trips the dev assertion', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})

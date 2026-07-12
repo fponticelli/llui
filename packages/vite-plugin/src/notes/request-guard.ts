@@ -19,8 +19,13 @@
 
 import type { IncomingMessage } from 'node:http'
 
-/** Hostnames that identify the loopback interface. */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0'])
+/**
+ * Hostnames that identify the loopback interface. `0.0.0.0` is deliberately
+ * NOT here: it is the unspecified/"all interfaces" bind address, not a
+ * loopback authority — a request whose Host/Origin is `0.0.0.0` is not
+ * provably same-machine, so treating it as loopback would widen the guard.
+ */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
 /** Strip a `:port` suffix from a Host/authority, tolerating IPv6 `[::1]`. */
 function hostname(authority: string): string {

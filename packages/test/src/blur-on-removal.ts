@@ -26,9 +26,13 @@
 export function emulateBlurOnRemoval(doc: Document = document): () => void {
   const nodeProto = Node.prototype
   const elementProto = Element.prototype
+  const rangeProto = Range.prototype
   const origRemoveChild = nodeProto.removeChild
   const origReplaceChild = nodeProto.replaceChild
   const origRemove = elementProto.remove
+  const origReplaceChildren = elementProto.replaceChildren
+  const origDeleteContents = rangeProto.deleteContents
+  const origExtractContents = rangeProto.extractContents
 
   // The focused element must be captured BEFORE the native detach: afterwards
   // jsdom has already reset `activeElement` to <body> and the removed subtree no
@@ -37,6 +41,20 @@ export function emulateBlurOnRemoval(doc: Document = document): () => void {
     const active = doc.activeElement
     if (active == null || active === doc.body) return null
     return removed === active || removed.contains(active) ? active : null
+  }
+
+  // The `each` bulk-clear path removes a run of rows with `range.deleteContents()`
+  // rather than per-node `removeChild`, so the focused input inside a cleared row
+  // is detached without any of the patched Node methods firing. Decide containment
+  // by whether the focused node intersects the range, up front.
+  const focusedInRange = (range: Range): Element | null => {
+    const active = doc.activeElement
+    if (active == null || active === doc.body) return null
+    try {
+      return range.intersectsNode(active) ? active : null
+    } catch {
+      return null
+    }
   }
 
   const dispatchBlur = (el: Element): void => {
@@ -64,10 +82,38 @@ export function emulateBlurOnRemoval(doc: Document = document): () => void {
     return removed
   }
 
+  // Root swaps clear a container with `replaceChildren()` (or replace all its
+  // children). Capture the focused descendant first, then fire only if it is NOT
+  // among the replacement nodes (i.e. it actually left the subtree).
+  elementProto.replaceChildren = function (this: Element, ...nodes: (Node | string)[]): void {
+    const active = doc.activeElement
+    const candidate = active != null && active !== doc.body && this.contains(active) ? active : null
+    origReplaceChildren.apply(this, nodes)
+    if (candidate && !this.contains(candidate)) dispatchBlur(candidate)
+  }
+
+  rangeProto.deleteContents = function (this: Range): void {
+    const blurred = focusedInRange(this)
+    origDeleteContents.call(this)
+    if (blurred) dispatchBlur(blurred)
+  }
+
+  // `extractContents` MOVES the range's nodes into a returned fragment — the
+  // focused node still leaves the live document, so the fixup blur fires.
+  rangeProto.extractContents = function (this: Range): DocumentFragment {
+    const blurred = focusedInRange(this)
+    const frag = origExtractContents.call(this)
+    if (blurred) dispatchBlur(blurred)
+    return frag
+  }
+
   return () => {
     nodeProto.removeChild = origRemoveChild
     nodeProto.replaceChild = origReplaceChild
     elementProto.remove = origRemove
+    elementProto.replaceChildren = origReplaceChildren
+    rangeProto.deleteContents = origDeleteContents
+    rangeProto.extractContents = origExtractContents
   }
 }
 

@@ -709,7 +709,39 @@ export function transformNodeExpr(
           eachPos,
         )
       }
-      if (items && opts && ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots)) {
+      // The fast path below reads ONLY `key:`/`render:` PropertyAssignments — any
+      // other property is silently dropped. So a `transition: fade()` would be lost
+      // and a shorthand `key` would be skipped (leaving `keySrc` at the identity
+      // default). Bail to the verbatim runtime `each`, which honors every opt,
+      // whenever opts carries anything that isn't a plain `key:`/`render:`
+      // PropertyAssignment (a shorthand, a spread, a computed name, or another opt).
+      const eachOptsLowerable =
+        !!opts &&
+        ts.isObjectLiteralExpression(opts) &&
+        opts.properties.every(
+          (p) =>
+            ts.isPropertyAssignment(p) &&
+            !ts.isComputedPropertyName(p.name) &&
+            (p.name.getText(sf) === 'key' || p.name.getText(sf) === 'render'),
+        )
+      if (
+        items &&
+        opts &&
+        ts.isObjectLiteralExpression(opts) &&
+        isSignalExpr(items, roots) &&
+        !eachOptsLowerable
+      ) {
+        // A recognized-shape each carrying an unsupported opt (esp. `transition`)
+        // or a shorthand `key` — fall through to verbatim rather than mis-lower.
+        reportBail('each-direct', 'unsupported-opt', eachPos)
+      }
+      if (
+        items &&
+        opts &&
+        ts.isObjectLiteralExpression(opts) &&
+        isSignalExpr(items, roots) &&
+        eachOptsLowerable
+      ) {
         let keySrc = '(x) => x'
         let renderFn: ts.Expression | null = null
         let itemParam = 'item'

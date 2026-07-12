@@ -18,7 +18,7 @@ import {
 import type { SignalScope } from './runtime.js'
 import type { Renderable } from './element.js'
 import {
-  isRowLocalDep,
+  itemsSourceRowLocal,
   rebaseComponentDep,
   rebaseRowDep,
   rebaseRowSpecs,
@@ -258,12 +258,7 @@ function buildSignalEach<T>(
   // the combined ctx so `item`/`index` resolve; a component-state source
   // (`state.map(…)`) reads `ctx.state`. For a top-level each the input IS the
   // component state and both coincide.
-  const itemsRowLocal =
-    source.componentRooted === true
-      ? false
-      : source.componentRooted === false
-        ? true
-        : source.deps.length > 0 && source.deps.every(isRowLocalDep)
+  const itemsRowLocal = itemsSourceRowLocal(source)
   // Direct-construction rows from a `rowFactory` share one template, so every
   // row's specs carry identical deps → identical PathTable + masks. Build that
   // shape once (from the first row) and reuse it for all rows, skipping per-row

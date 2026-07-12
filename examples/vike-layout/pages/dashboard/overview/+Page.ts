@@ -1,14 +1,18 @@
 import { component, div, h1, p, ul, li, button, text, each } from '@llui/dom'
 
-type OverviewState = { widgets: readonly string[] }
+type Widget = { id: number; label: string }
+// `nextId` is a monotonic counter so each widget gets a stable, never-reused key
+// — reusing the label as the key (e.g. `widget-4`) collides after a remove+add
+// cycle regenerates the same label, corrupting `each`'s keyed reconcile.
+type OverviewState = { widgets: readonly Widget[]; nextId: number }
 type OverviewMsg =
   /** @intent("Append a new widget to the overview list") */
   | { type: 'add' }
   /**
-   * @intent("Remove the widget at the given index from the overview list")
-   * @example({"type":"remove","idx":0})
+   * @intent("Remove the widget with the given id from the overview list")
+   * @example({"type":"remove","id":1})
    */
-  | { type: 'remove'; idx: number }
+  | { type: 'remove'; id: number }
 
 /**
  * Dashboard / Overview — mounted inside the nested chain
@@ -21,13 +25,29 @@ type OverviewMsg =
  */
 export const Page = component<OverviewState, OverviewMsg, never>({
   name: 'DashboardOverviewPage',
-  init: () => [{ widgets: ['users', 'revenue', 'latency'] }, []],
+  init: () => [
+    {
+      widgets: [
+        { id: 1, label: 'users' },
+        { id: 2, label: 'revenue' },
+        { id: 3, label: 'latency' },
+      ],
+      nextId: 4,
+    },
+    [],
+  ],
   update: (state, msg) => {
     switch (msg.type) {
       case 'add':
-        return [{ widgets: [...state.widgets, `widget-${state.widgets.length + 1}`] }, []]
+        return [
+          {
+            widgets: [...state.widgets, { id: state.nextId, label: `widget-${state.nextId}` }],
+            nextId: state.nextId + 1,
+          },
+          [],
+        ]
       case 'remove':
-        return [{ widgets: state.widgets.filter((_, i) => i !== msg.idx) }, []]
+        return [{ ...state, widgets: state.widgets.filter((w) => w.id !== msg.id) }, []]
     }
   },
   view: ({ state, send }) => [
@@ -40,14 +60,14 @@ export const Page = component<OverviewState, OverviewMsg, never>({
       ]),
       ul({ class: 'widget-list' }, [
         each(state.at('widgets'), {
-          key: (w) => w,
-          render: (item, index) => [
+          key: (w) => w.id,
+          render: (item) => [
             li([
-              text(item),
+              text(item.at('label')),
               button(
                 {
                   class: 'remove',
-                  onClick: () => send({ type: 'remove', idx: index.peek() }),
+                  onClick: () => send({ type: 'remove', id: item.peek().id }),
                 },
                 [text('remove')],
               ),

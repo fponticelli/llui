@@ -77,9 +77,17 @@ export interface Runner {
  *
  * Plugins registered via `.use()` run FIRST, on every dispatch level (including
  * effects nested in `sequence`/`race`/`retry`/`cancel`), so a plugin can intercept
- * a built-in kind. A plugin that claims an effect returns `false` here (we can't
- * know whether it dispatched). An effect no plugin and no runner claims is handed
- * to the terminal `custom` handler.
+ * a built-in kind. An effect no plugin and no runner claims is handed to the
+ * terminal `custom` handler.
+ *
+ * For a plugin- or custom-handled effect the completes-without-dispatch signal is
+ * inferred: we wrap `send` and observe whether the handler dispatched a message
+ * SYNCHRONOUSLY. If it did, the caller (e.g. `sequence`) already advanced through
+ * that wrapped send, so we report `false` (not-complete). If the handler returned
+ * without dispatching, we report `true` — a fire-and-forget custom/plugin step
+ * then advances the chain instead of stalling it forever. (A handler that only
+ * dispatches ASYNCHRONOUSLY is treated as completes-without-dispatch by this
+ * default; gate the chain on it with a runner-backed effect if that is wrong.)
  */
 export function createDispatch(runners: readonly Runner[]): DispatchFn {
   const map = new Map<string, Runner>()
@@ -88,13 +96,22 @@ export function createDispatch(runners: readonly Runner[]): DispatchFn {
   }
 
   return function dispatch(effect, send, signal, deps): boolean {
+    let dispatchedSync = false
+    const trackedSend: InternalSend = (msg) => {
+      dispatchedSync = true
+      send(msg)
+    }
     for (const plugin of deps.plugins) {
-      if (plugin({ effect, send: send as unknown as (msg: unknown) => void, signal })) return false
+      if (plugin({ effect, send: trackedSend as unknown as (msg: unknown) => void, signal })) {
+        // Claimed by a plugin: complete-without-dispatch unless it sent synchronously.
+        return !dispatchedSync
+      }
     }
     const runner = map.get(effect.type)
     if (!runner) {
-      deps.custom(effect, send, signal)
-      return false
+      deps.custom(effect, trackedSend, signal)
+      // Terminal custom handler: same inference as plugins.
+      return !dispatchedSync
     }
     const dynamic = runner.run(effect, send, signal, deps)
     return dynamic ?? runner.completesWithoutDispatch

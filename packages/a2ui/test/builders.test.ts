@@ -119,7 +119,8 @@ describe('Button', () => {
       { href: 'https://ex.com' },
     )
     only('.a2ui-button').click()
-    expect(open).toHaveBeenCalledWith('https://ex.com', '_blank')
+    // openUrl now resolves the URL and opens it with noopener,noreferrer.
+    expect(open).toHaveBeenCalledWith('https://ex.com/', '_blank', 'noopener,noreferrer')
     open.mockRestore()
   })
 })

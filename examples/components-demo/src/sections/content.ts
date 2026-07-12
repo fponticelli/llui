@@ -1,5 +1,5 @@
 import { div, button, span, p, a, ul, li, img, input, each, branch, onMount, text } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { toc } from '@llui/components/toc'
 import { cascadeSelect } from '@llui/components/cascade-select'
 import { asyncList, type AsyncListState, type AsyncListMsg } from '@llui/components/async-list'
@@ -124,7 +124,7 @@ export const update = mergeHandlers<State, Msg, never>(
   },
 )
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const tc = toc.connect(state.at('toc'), (m) => send({ type: 'toc', msg: m }))
   const cs = cascadeSelect.connect(state.at('cascade'), (m) => send({ type: 'cascade', msg: m }), {
     id: 'cs-demo',
@@ -168,7 +168,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // A theme option button: reuses the part bag for a11y (role/aria-pressed/
   // data-theme) but overrides onClick to BOTH send the message and apply the
   // resolved theme to <html> right away (direct calls are fine in handlers).
-  const themeOption = (theme: Theme, label: string): Node => {
+  const themeOption = (theme: Theme, label: string): Mountable => {
     const part = tw.option(theme)
     return button(
       {
@@ -189,7 +189,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
 
   // A region button — active highlight tracks the level-1 selection (component
   // state, read fine inside the branch arm); click sets the region.
-  const regionButton = (code: string, label: string): Node =>
+  const regionButton = (code: string, label: string): Mountable =>
     button(
       {
         class: state

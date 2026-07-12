@@ -79,6 +79,16 @@ describe('transformNodeExpr — elements', () => {
       "el(\"div\", {}, [el(\"span\", {}, [signalText((s) => s.a, ['a'])]), staticText('lit'), signalText((s) => s.b, ['b'])])",
     )
   })
+  // `svg` is NAMESPACED in the runtime (createElementNS); lowering to
+  // `el('svg', …)`/`createElement('svg')` builds an HTMLUnknownElement that
+  // renders nothing. It must route through the runtime authoring helper verbatim.
+  it('leaves svg VERBATIM (namespaced runtime helper) — never el("svg", …)', () => {
+    const src = "svg({ viewBox: '0 0 1 1' }, [])"
+    const out = tx(src)
+    expect(out).toBe(src)
+    expect(out).not.toContain('el("svg"')
+    expect(out).not.toContain('createElement')
+  })
 })
 
 describe('transformNodeExpr — structural primitives', () => {
@@ -239,6 +249,33 @@ describe('transformNodeExpr — structural primitives', () => {
   it('leaves an each VERBATIM when the render block has a NON-decl statement', () => {
     const src =
       "each(state.at('rows'), { key: (r) => r.id, render: (item) => { doSideEffect(); return [text(item.at('name'))] } })"
+    expect(tx(src)).toBe(src)
+  })
+
+  // The fast path reads only `key:`/`render:`; any other opt (esp. `transition`)
+  // would be silently dropped. Bail to verbatim so the runtime each honors it.
+  it('leaves an each VERBATIM when opts carry a `transition` (must not drop it)', () => {
+    const src =
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [text(item.at('name'))], transition: fade() })"
+    const out = tx(src)
+    expect(out).toBe(src)
+    // the transition must survive — and it must NOT lower into signalEach(Direct)
+    expect(out).toContain('transition: fade()')
+    expect(out).not.toContain('signalEach')
+  })
+
+  // A shorthand `key` must NOT be treated as the identity `(x) => x` default —
+  // that would silently change the reconcile identity. Bail to verbatim.
+  it('leaves an each VERBATIM when `key` is a shorthand property', () => {
+    const src = "each(state.at('rows'), { key, render: (item) => [text(item.at('name'))] })"
+    const out = tx(src)
+    expect(out).toBe(src)
+    expect(out).not.toContain('signalEach')
+    expect(out).not.toContain('(x) => x')
+  })
+
+  it('leaves an each VERBATIM when opts are spread', () => {
+    const src = "each(state.at('rows'), { ...opts, render: (item) => [text(item.at('name'))] })"
     expect(tx(src)).toBe(src)
   })
 

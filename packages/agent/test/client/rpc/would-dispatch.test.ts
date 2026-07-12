@@ -4,6 +4,20 @@ import {
   type WouldDispatchHost,
 } from '../../../src/client/rpc/would-dispatch.js'
 import type { MsgSchemaShape } from '../../../src/client/factory.js'
+import type { MessageAnnotations } from '../../../src/protocol.js'
+
+function ann(over: Partial<MessageAnnotations> = {}): MessageAnnotations {
+  return {
+    intent: null,
+    alwaysAffordable: false,
+    requiresConfirm: false,
+    dispatchMode: 'shared',
+    examples: [],
+    warning: null,
+    emits: [],
+    ...over,
+  }
+}
 
 function mkHost(opts: {
   state: unknown
@@ -11,11 +25,13 @@ function mkHost(opts: {
     | ((msg: { type: string; [k: string]: unknown }) => { state: unknown; effects: unknown[] })
     | null
   schema?: MsgSchemaShape | null
+  annotations?: Record<string, MessageAnnotations> | null
 }): WouldDispatchHost {
   return {
     getState: () => opts.state,
     runReducer: opts.reducer ?? (() => null),
     getMsgSchema: () => opts.schema ?? null,
+    getMsgAnnotations: () => opts.annotations ?? null,
   }
 }
 
@@ -95,6 +111,69 @@ describe('handleWouldDispatch', () => {
     if (result.status === 'rejected') {
       expect(result.reason).toBe('unsupported')
     }
+  })
+
+  // ── Annotation gate (shared with send_message) ────────────────
+
+  it('rejects a human-only variant WITHOUT running the reducer (no gate bypass)', () => {
+    // Regression: `would_dispatch` used to run the reducer for any
+    // variant, letting an agent probe a `human-only` transition that
+    // `send_message` refuses. It now applies the same gate.
+    const reducer = vi.fn(() => ({ state: { deleted: true }, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({
+        state: { deleted: false },
+        reducer,
+        annotations: {
+          Delete: ann({ dispatchMode: 'human-only', intent: 'Delete the workspace' }),
+        },
+      }),
+      { msg: { type: 'Delete' } },
+    )
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected' && result.reason !== 'schema-mismatch') {
+      expect(result.reason).toBe('human-only')
+      expect(result.detail).toContain('Delete the workspace')
+    } else {
+      throw new Error('expected human-only rejection')
+    }
+    expect(reducer).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown variant when annotations are present', () => {
+    const reducer = vi.fn(() => ({ state: {}, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({ state: {}, reducer, annotations: { Known: ann() } }),
+      { msg: { type: 'Bogus' } },
+    )
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected' && result.reason !== 'schema-mismatch') {
+      expect(result.reason).toBe('invalid')
+    } else {
+      throw new Error('expected invalid rejection')
+    }
+    expect(reducer).not.toHaveBeenCalled()
+  })
+
+  it('predicts a shared variant normally (gate lets it through)', () => {
+    const reducer = vi.fn(() => ({ state: { n: 1 }, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({ state: { n: 0 }, reducer, annotations: { Inc: ann({ dispatchMode: 'shared' }) } }),
+      { msg: { type: 'Inc' } },
+    )
+    expect(result.status).toBe('predicted')
+    expect(reducer).toHaveBeenCalledOnce()
+  })
+
+  it('skips the gate when no annotation metadata is available (permissive)', () => {
+    // Test harnesses / older builds without annotations keep the prior
+    // permissive behavior — the reducer still runs.
+    const reducer = vi.fn(() => ({ state: {}, effects: [] }))
+    const result = handleWouldDispatch(mkHost({ state: {}, reducer, annotations: null }), {
+      msg: { type: 'AnythingGoes' },
+    })
+    expect(result.status).toBe('predicted')
+    expect(reducer).toHaveBeenCalledOnce()
   })
 
   // ── Schema-driven preflight ───────────────────────────────────

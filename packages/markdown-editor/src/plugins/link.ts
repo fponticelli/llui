@@ -14,6 +14,7 @@ import { $findMatchingParent } from '@lexical/utils'
 import { $isLinkNode, $toggleLink } from '@lexical/link'
 import type { DialogMsg, DialogState } from '@llui/components/dialog'
 import { linkDialog } from '../surfaces/link-dialog.js'
+import { sanitizeLinkUrl } from '../security.js'
 import { definePluginUI } from './ui.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
@@ -66,8 +67,9 @@ export interface LinkPluginOptions {
 
 export function linkPlugin(opts: LinkPluginOptions = {}): MarkdownPlugin {
   // Selection saved when the dialog opens (the modal steals focus/selection),
-  // restored on commit. Encapsulated in the plugin instance — not the core editor.
-  let savedSelection: BaseSelection | null = null
+  // restored on commit. Keyed by the per-mount editor so two mounts of the same
+  // plugin instance never cross-wire their saved selection.
+  const savedSelection = new WeakMap<LexicalEditor, BaseSelection | null>()
 
   const item: CommandItem = {
     id: 'link',
@@ -114,19 +116,27 @@ export function linkPlugin(opts: LinkPluginOptions = {}): MarkdownPlugin {
         const editor = ctx.editor()
         if (!editor) return
         if (effect.type === 'begin') {
-          savedSelection = editor.getEditorState().read(() => {
-            const selection = $getSelection()
-            return selection ? selection.clone() : null
-          })
+          savedSelection.set(
+            editor,
+            editor.getEditorState().read(() => {
+              const selection = $getSelection()
+              return selection ? selection.clone() : null
+            }),
+          )
           ctx.send({ type: 'show', url: readLinkUrl(editor) })
           return
         }
-        const url = effect.url.trim()
+        // Enforce the URL-scheme allowlist at commit: a `javascript:`/`data:`
+        // href sanitizes to null → no link is created (unlink). The global
+        // LinkNode transform is the backstop, but blocking here avoids ever
+        // materializing the unsafe link.
+        const safe = sanitizeLinkUrl(effect.url.trim())
+        const saved = savedSelection.get(editor) ?? null
         editor.update(() => {
-          if (savedSelection) $setSelection(savedSelection.clone())
-          $toggleLink(url === '' ? null : url)
+          if (saved) $setSelection(saved.clone())
+          $toggleLink(safe === null || safe === '' ? null : safe)
         })
-        savedSelection = null
+        savedSelection.delete(editor)
       },
     }),
   }

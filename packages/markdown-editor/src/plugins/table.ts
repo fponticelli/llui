@@ -92,12 +92,15 @@ function $runTableOp(id: string): void {
 }
 
 function splitRow(line: string): string[] {
-  return line
+  // Strip the OUTER table pipes (always unescaped delimiters), then split on
+  // unescaped `|` only — an escaped `\|` is literal cell content and must NOT
+  // split the cell (export writes `\|` for a pipe in a cell; see TABLE_TRANSFORMER
+  // export). Finally unescape `\|` → `|` so the round-trip is lossless.
+  const inner = line
     .trim()
     .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((c) => c.trim().replace(/\\\|/g, '|'))
+    .replace(/(?<!\\)\|$/, '')
+  return inner.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'))
 }
 
 function isSeparator(line: string | undefined): boolean {

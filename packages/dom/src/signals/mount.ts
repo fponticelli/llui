@@ -129,6 +129,11 @@ export function mountSignal(
     },
     dispose(): void {
       for (const tdn of built.teardowns.splice(0)) tdn()
+      // Remove the mounted tree so `dispose()` means the same for both target kinds
+      // (the anchor path removes its bracketed region). Otherwise a container mount
+      // left the nodes + their dead listeners attached. Guard by the node's CURRENT
+      // parent — a node may have been reparented (portal) or already detached.
+      for (const n of built.nodes) n.parentNode?.removeChild(n)
     },
     getDescriptors: built.getDescriptors,
   }

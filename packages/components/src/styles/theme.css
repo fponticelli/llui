@@ -1,6 +1,14 @@
 /*
  * @llui/components — opt-in base theme
  *
+ * REQUIRES TAILWIND CSS v4. The design tokens below live in an `@theme {}`
+ * at-rule, which is a Tailwind v4 construct: it is only resolved to real CSS
+ * custom properties by Tailwind's build. Without a Tailwind v4 pipeline this
+ * file emits no usable tokens and the components render unstyled. Tailwind is
+ * declared as an OPTIONAL peer dependency (`tailwindcss@^4`); if you are not
+ * using Tailwind, define the same `--color-*` custom properties yourself on
+ * `:root` (see `theme-dark.css` for the plain-`:root` shape).
+ *
  * Import once at app root:
  *   import '@llui/components/styles/theme.css'
  *

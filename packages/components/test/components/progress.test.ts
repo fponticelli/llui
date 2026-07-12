@@ -65,6 +65,12 @@ describe('progress.connect', () => {
     expect(read(parts.valueText, init({ value: null }))).toBe('Loading…')
   })
 
+  it('valueText honors min offset (matches the rendered bar)', () => {
+    const s = init({ value: 75, min: 50, max: 100 })
+    // (75-50)/(100-50) = 50% — must match the range bar, not value/max (75%).
+    expect(read(parts.valueText, s)).toBe('50%')
+  })
+
   it('custom formatter', () => {
     const p = connect(rootSignal(), vi.fn(), {
       format: (v, max) => (v === null ? '?' : `${v}/${max}`),

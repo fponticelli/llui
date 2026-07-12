@@ -16,6 +16,7 @@ import {
   type JsonValue,
 } from './protocol.js'
 import { resolvePointer } from './pointer.js'
+import { hasOwn, sanitizeUrl } from './security.js'
 
 /** Coerce any JSON value to a display string. */
 export function displayString(value: JsonValue | undefined): string {
@@ -50,8 +51,10 @@ export function evalDynamic(
     return resolvePointer(src, value.path)
   }
   if (isFunctionCall(value)) {
-    const fn = catalog.functions[value.call]
-    if (!fn) {
+    // Guard against prototype-chain lookups: a server-supplied `call` like
+    // "__proto__"/"toString"/"constructor" must not reach a prototype member.
+    const fn = hasOwn(catalog.functions, value.call) ? catalog.functions[value.call] : undefined
+    if (typeof fn !== 'function') {
       warnOnce(`No catalog function "${value.call}" — binding resolves to empty`)
       return undefined
     }
@@ -127,6 +130,22 @@ export function bindString(
     return mapReactive(bindFunction(ctx, scope, dyn), displayString)
   }
   return typeof dyn === 'string' ? dyn : displayString(dyn as JsonValue)
+}
+
+/**
+ * Reactive URL binding for media `src` (Image/Video/AudioPlayer). Routes the
+ * bound string through the scheme allowlist so a server can't set `src` to a
+ * `javascript:`/`file:`/… URL; a rejected URL resolves to `''` (no load).
+ */
+export function bindUrl(
+  ctx: RenderContext,
+  scope: RenderScope,
+  dyn: DynamicString | undefined,
+  allowedProtocols: readonly string[],
+): Reactive<string> {
+  const r = bindString(ctx, scope, dyn)
+  const clean = (s: string): string => sanitizeUrl(s, allowedProtocols) ?? ''
+  return isSignalHandle(r) ? (r as Signal<string>).map(clean) : clean(r as string)
 }
 
 function toNumber(value: JsonValue | undefined): number {

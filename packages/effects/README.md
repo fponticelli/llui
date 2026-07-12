@@ -52,7 +52,7 @@ const onEffect = handleEffects<Effect, Msg>().else(({ effect, send, signal }) =>
 | `cancel(token, inner?)`                                    | Cancel by token, optionally replace with inner  |
 | `debounce(key, ms, inner)`                                 | Debounce inner effect by key                    |
 | `timeout(ms, msg)`                                         | Fire msg after delay                            |
-| `interval(ms, msg)`                                        | Fire msg on interval                            |
+| `interval(key, ms, msg)`                                   | Fire msg on a keyed interval                    |
 | `storageSet(key, value, storage?)`                         | Write to localStorage/sessionStorage            |
 | `storageGet(key, onResult, storage?)`                      | Read from storage                               |
 | `storageRemove(key, storage?)`                             | Remove from storage                             |

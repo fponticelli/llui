@@ -84,6 +84,61 @@ describe('sequence', () => {
     vi.unstubAllGlobals()
   })
 
+  it('advances past a custom step that dispatches nothing (no deadlock)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    // A terminal custom handler that handles the `noop` effect but sends no
+    // message. Before the fix, `dispatch` reported not-complete for a custom
+    // effect, so the sequence stalled here forever.
+    const handler = handleEffects<Effect | { type: 'noop' }>().else(() => {})
+
+    handler({
+      effect: sequence([
+        { type: 'noop' } as unknown as Effect,
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/after-noop',
+          onSuccess: (data) => ({ type: 'done', payload: data }),
+          onError: (err) => ({ type: 'err', error: err }),
+        }),
+      ]),
+      send,
+      signal,
+    })
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(send.mock.calls[0]![0]).toEqual({ type: 'done', payload: { ok: 1 } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('advances past a plugin step that claims the effect but dispatches nothing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: 2 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const handler = handleEffects<Effect | { type: 'analytics' }>()
+      .use((ctx) => ctx.effect.type === 'analytics') // claim, dispatch nothing
+      .else(() => {})
+
+    handler({
+      effect: sequence([
+        { type: 'analytics' } as unknown as Effect,
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/after-plugin',
+          onSuccess: (data) => ({ type: 'done', payload: data }),
+          onError: (err) => ({ type: 'err', error: err }),
+        }),
+      ]),
+      send,
+      signal,
+    })
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(send.mock.calls[0]![0]).toEqual({ type: 'done', payload: { ok: 2 } })
+
+    vi.unstubAllGlobals()
+  })
+
   it('does not fast-forward later async steps when a step emits multiple messages', async () => {
     // A never-resolving fetch: lets us observe how many http steps were dispatched
     // synchronously without any of them completing.

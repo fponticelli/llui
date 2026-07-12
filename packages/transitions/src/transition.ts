@@ -1,7 +1,17 @@
 import type { TransitionOptions } from '@llui/dom'
 import type { TransitionSpec } from './types.js'
-import { applyValue, removeValue, asElements, detectDuration, forceReflow } from './style-utils.js'
-import { waitForEnd, createRunScope } from './anim.js'
+import {
+  applyValue,
+  removeValue,
+  asElements,
+  detectDuration,
+  forceReflow,
+  styleKeysOf,
+  snapshotInline,
+  restoreInline,
+  removeClassesOnly,
+} from './style-utils.js'
+import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
 
 /**
  * Build a `TransitionOptions` bundle (`{ enter, leave }`) from a class/style spec.
@@ -45,19 +55,42 @@ export function transition(spec: TransitionSpec): TransitionOptions {
   // never clobbers a sibling bundle merged onto the same element.
   const runs = createRunScope()
 
+  const reducedMotion = (): boolean => spec.respectReducedMotion !== false && prefersReducedMotion()
+
   const runEnter = (nodes: Node[]): Promise<void> => {
     const els = asElements(nodes)
     if (els.length === 0) return Promise.resolve()
 
-    // Roll back any in-flight run, then claim a new one per element.
+    // Reduced motion: skip the from-state entirely so the element simply appears
+    // in its final (natural) resting state, and resolve at once.
+    if (reducedMotion()) {
+      for (const el of els) {
+        runs.supersede(el)
+        applyValue(el, spec.enterTo)
+      }
+      return Promise.resolve()
+    }
+
+    // Roll back any in-flight run, then claim a new one per element. Cleanup
+    // RESTORES each touched inline style to its pre-transition value (rather than
+    // blanking it), so an element with an author-set inline `opacity`/`transform`
+    // keeps it after the transition. Class portions are simply removed.
     for (const el of els) runs.supersede(el)
-    const tokens = els.map((el) =>
-      runs.register(el, () => {
-        removeValue(el, spec.enterFrom)
-        removeValue(el, spec.enterActive)
-        removeValue(el, spec.enterTo)
-      }),
-    )
+    const cleanups = els.map((el) => {
+      const keys = [
+        ...styleKeysOf(spec.enterFrom),
+        ...styleKeysOf(spec.enterActive),
+        ...styleKeysOf(spec.enterTo),
+      ]
+      const snapshot = snapshotInline(el, keys)
+      return () => {
+        restoreInline(el, snapshot)
+        removeClassesOnly(el, spec.enterFrom)
+        removeClassesOnly(el, spec.enterActive)
+        removeClassesOnly(el, spec.enterTo)
+      }
+    })
+    const tokens = els.map((el, i) => runs.register(el, cleanups[i]!))
 
     // Apply from + active
     for (const el of els) {
@@ -81,8 +114,7 @@ export function transition(spec: TransitionSpec): TransitionOptions {
         waitForEnd(el, duration).then(() => {
           // Superseded by a newer run — leave cleanup to that run.
           if (!runs.isCurrent(el, tokens[i]!)) return
-          removeValue(el, spec.enterActive)
-          removeValue(el, spec.enterTo)
+          cleanups[i]!()
           runs.end(el, tokens[i]!)
         }),
       ),
@@ -93,14 +125,31 @@ export function transition(spec: TransitionSpec): TransitionOptions {
     const els = asElements(nodes)
     if (els.length === 0) return Promise.resolve()
 
+    // Reduced motion: resolve immediately so the runtime removes the element now,
+    // with no leave animation.
+    if (reducedMotion()) {
+      for (const el of els) runs.supersede(el)
+      return Promise.resolve()
+    }
+
+    // Rollback (only fired if a newer run supersedes this leave before it ends,
+    // e.g. an enter re-shows the element) restores the pre-transition inline
+    // styles rather than blanking them.
     for (const el of els) runs.supersede(el)
-    const tokens = els.map((el) =>
-      runs.register(el, () => {
-        removeValue(el, spec.leaveFrom)
-        removeValue(el, spec.leaveActive)
-        removeValue(el, spec.leaveTo)
-      }),
-    )
+    const tokens = els.map((el) => {
+      const keys = [
+        ...styleKeysOf(spec.leaveFrom),
+        ...styleKeysOf(spec.leaveActive),
+        ...styleKeysOf(spec.leaveTo),
+      ]
+      const snapshot = snapshotInline(el, keys)
+      return runs.register(el, () => {
+        restoreInline(el, snapshot)
+        removeClassesOnly(el, spec.leaveFrom)
+        removeClassesOnly(el, spec.leaveActive)
+        removeClassesOnly(el, spec.leaveTo)
+      })
+    })
 
     for (const el of els) {
       applyValue(el, spec.leaveFrom)

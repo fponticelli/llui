@@ -9,6 +9,7 @@
  */
 
 import type { CatalogFunction, EvalEnv } from '../catalog.js'
+import { warnOnce } from '../catalog.js'
 import type { JsonValue } from '../protocol.js'
 import { resolvePointer } from '../pointer.js'
 import { displayString } from '../binding.js'
@@ -30,14 +31,43 @@ const required: CatalogFunction = (_call, env) => {
   return true
 }
 
+// Server-controlled RegExps run reactively (per keystroke), so cap pattern and
+// input length to bound ReDoS blast radius, and cache compiled patterns so the
+// same pattern isn't recompiled on every evaluation.
+const MAX_REGEX_PATTERN = 1_000
+const MAX_REGEX_INPUT = 10_000
+const MAX_REGEX_CACHE = 256
+const regexCache = new Map<string, RegExp | null>()
+
+function compileRegex(pattern: string): RegExp | null {
+  if (pattern.length > MAX_REGEX_PATTERN) return null
+  const cached = regexCache.get(pattern)
+  if (cached !== undefined) return cached
+  let re: RegExp | null
+  try {
+    re = new RegExp(pattern)
+  } catch {
+    re = null
+  }
+  // Bound cache growth: distinct patterns are also server-controlled.
+  if (regexCache.size >= MAX_REGEX_CACHE) regexCache.clear()
+  regexCache.set(pattern, re)
+  return re
+}
+
 const regex: CatalogFunction = (_call, env) => {
   const value = displayString(env.arg('value') ?? '')
   const pattern = displayString(env.arg('pattern') ?? '')
-  try {
-    return new RegExp(pattern).test(value)
-  } catch {
+  if (pattern.length > MAX_REGEX_PATTERN) {
+    warnOnce(`Rejecting regex pattern over ${MAX_REGEX_PATTERN} chars`)
     return false
   }
+  if (value.length > MAX_REGEX_INPUT) {
+    warnOnce(`Rejecting regex input over ${MAX_REGEX_INPUT} chars`)
+    return false
+  }
+  const re = compileRegex(pattern)
+  return re ? re.test(value) : false
 }
 
 const length: CatalogFunction = (_call, env) => {

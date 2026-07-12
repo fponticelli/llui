@@ -18,23 +18,25 @@ export interface EffectConfig {
   applyValue: (editor: LexicalEditor, value: string) => void
 }
 
-/** Build the component's `onEffect`. `getEditor` returns the live editor (set at
- * mount via the foreign `onReady`); `items` is the merged id → command map. */
+/** Build the component's `onEffect`. `resolveEditor` maps the per-mount effect
+ * `api` (whose `send` identifies the mount) to that mount's live editor — so two
+ * mounts of one definition dispatch to their own editors; `items` is the merged
+ * id → command map. */
 export function makeOnEffect(
-  getEditor: () => LexicalEditor | null,
+  resolveEditor: (api: EffectApi) => LexicalEditor | null,
   items: ReadonlyMap<string, CommandItem>,
   config: EffectConfig,
 ): (effect: EditorEffect, api: EffectApi) => void {
   return (effect, api) => {
     switch (effect.type) {
       case 'execCommand': {
-        const editor = getEditor()
+        const editor = resolveEditor(api)
         const item = items.get(effect.id)
         if (editor && item) item.run(editor, { send: api.send })
         return
       }
       case 'applyValue': {
-        const editor = getEditor()
+        const editor = resolveEditor(api)
         if (editor) config.applyValue(editor, effect.value)
         return
       }

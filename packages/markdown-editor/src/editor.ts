@@ -20,6 +20,7 @@ import {
 import { corePlugin } from './plugins/core.js'
 import { linkPlugin } from './plugins/link.js'
 import { registerMarkdownPaste } from './paste.js'
+import { registerLinkSanitizer } from './security.js'
 import { toolbar as renderToolbar } from './surfaces/toolbar.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
 import type { PluginUI } from './plugins/ui.js'
@@ -108,6 +109,15 @@ function defaultPlugins(): MarkdownPlugin[] {
   return [corePlugin(), linkPlugin()]
 }
 
+/** The per-mount `send` closure — the WeakMap key that ties a live editor to the
+ * one mount it belongs to. */
+type EditorSend = (msg: EditorMsg) => void
+
+/** Per-mount live state: the Lexical editor captured by that mount's `onReady`. */
+interface MountContext {
+  editor: LexicalEditor | null
+}
+
 /**
  * Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(...))`
  * or compose it inside a larger component.
@@ -128,11 +138,23 @@ export function markdownEditor(
     .map((p) => ({ name: p.name, ui: p.ui }))
   const pluginUIByName = new Map(pluginUIs.map((p) => [p.name, p.ui]))
 
-  // The live editor, captured at mount; effects dispatch through it.
-  let editorRef: LexicalEditor | null = null
-  const getEditor = (): LexicalEditor | null => editorRef
+  // Per-MOUNT live-editor context, keyed by the mount's stable `send` closure —
+  // the SAME object the runtime hands to both `view` and `onEffect`. A single
+  // definition can be mounted more than once (or re-mounted); each mount gets its
+  // own editor reference here, so effects and plugin handlers dispatch to their
+  // own editor and unmount clears only that mount's reference (no cross-wiring,
+  // no leaked disposed editor). Entries are collected with their `send` key.
+  const mountContexts = new WeakMap<EditorSend, MountContext>()
+  const contextFor = (send: EditorSend): MountContext => {
+    let ctx = mountContexts.get(send)
+    if (!ctx) {
+      ctx = { editor: null }
+      mountContexts.set(send, ctx)
+    }
+    return ctx
+  }
 
-  const baseOnEffect = makeOnEffect(getEditor, itemsById, {
+  const baseOnEffect = makeOnEffect((api) => contextFor(api.send).editor, itemsById, {
     onChange: config.onChange,
     onFormatChange: config.onFormatChange,
     applyValue: (editor, value) =>
@@ -192,9 +214,10 @@ export function markdownEditor(
     api: { send: (msg: EditorMsg) => void; state: Signal<EditorState> },
   ): void => {
     if (effect.type === 'pluginEffect') {
+      const mount = contextFor(api.send)
       const ui = pluginUIByName.get(effect.name)
       ui?.onEffect?.(effect.effect, {
-        editor: getEditor,
+        editor: () => mount.editor,
         send: (msg) => api.send({ type: 'plugin', name: effect.name, msg }),
         emit: (msg) => api.send(msg as EditorMsg),
       })
@@ -210,6 +233,10 @@ export function markdownEditor(
     state: Signal<EditorState>
     send: (msg: EditorMsg) => void
   }): Renderable => {
+    // This mount's live-editor slot (keyed by this mount's `send`). `onReady`
+    // fills it; effects/plugins read it through `contextFor(api.send)`.
+    const mount = contextFor(send)
+
     // Build the collab binding (once, at mount) from the consumer's factory,
     // injecting the markdown seed + status sinks that mirror into `state.collab`.
     const collabBinding: CollabBinding | null = config.collab
@@ -245,17 +272,26 @@ export function markdownEditor(
         ? { changeDebounceMs: config.changeDebounceMs }
         : {}),
       register: (editor) => {
-        const disposers = [registerMarkdownShortcuts(editor, transformers)]
+        const disposers = [
+          registerMarkdownShortcuts(editor, transformers),
+          // Global scheme allowlist for links: the single backstop covering the
+          // link dialog, pasted/imported markdown, and the typed `[x](url)`
+          // shortcut. Image src is enforced in the image transformer.
+          registerLinkSanitizer(editor),
+        ]
         if (config.pasteMarkdown !== false)
           disposers.push(registerMarkdownPaste(editor, transformers))
         if (decorators.length > 0) disposers.push(registerDecoratorBridges(editor, decorators))
         if (collabBinding) disposers.push(collabBinding.register(editor))
         return () => {
           for (const dispose of disposers) dispose()
+          // Release this mount's editor reference so a disposed editor never
+          // leaks and stale effects can't reach a torn-down editor.
+          mount.editor = null
         }
       },
       onReady: (editor) => {
-        editorRef = editor
+        mount.editor = editor
         if (config.placeholder) {
           editor.getRootElement()?.setAttribute('data-placeholder', config.placeholder)
         }
@@ -278,7 +314,7 @@ export function markdownEditor(
       const rendered = ui.view({
         state: state.at(`plugins.${name}`),
         send: (msg) => send({ type: 'plugin', name, msg }),
-        editor: getEditor,
+        editor: () => mount.editor,
       })
       return Array.isArray(rendered) ? rendered : [rendered]
     })

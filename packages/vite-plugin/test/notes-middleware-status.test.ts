@@ -68,6 +68,26 @@ function stopFixture(f: Fixture): Promise<void> {
 
 let f: Fixture
 
+/** POST a single status transition. */
+async function postStatus(
+  base: string,
+  id: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return fetch(`${base}/_llui/notes/${id}/status`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+/** Drive a note through a legal sequence of statuses (by: 'human'). */
+async function walkTo(base: string, id: string, ...statuses: string[]): Promise<void> {
+  for (const to of statuses) {
+    await postStatus(base, id, { to, by: 'human' })
+  }
+}
+
 beforeEach(async () => {
   f = await startFixture()
 })
@@ -131,25 +151,77 @@ describe('POST /_llui/notes/:id/status', () => {
     expect(res.status).toBe(400)
   })
 
-  it("'accepted' always transitions to 'applied' (direct-edit architecture)", async () => {
+  it("'accepted' (from 'proposed') transitions to 'applied' (direct-edit architecture)", async () => {
     // With direct-edit semantics, Accept is a no-op — the LLM already
-    // wrote the files during the spawn. No git-apply step to fail.
+    // wrote the files during the spawn. No git-apply step to fail. Accept is
+    // only reachable from 'proposed' (the state carrying a reviewable diff).
     const note = createNote(f.notesRoot, {
       body: 'orphan task',
       frontmatter: { ...fmBase, intent: 'task' },
       noteBody: {},
     })
-    const res = await fetch(`${f.base}/_llui/notes/${note.id}/status`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to: 'accepted', by: 'human' }),
-    })
+    await walkTo(f.base, note.id, 'open', 'claimed', 'proposed')
+    const res = await postStatus(f.base, note.id, { to: 'accepted', by: 'human' })
     const json = (await res.json()) as { apply: { ok: boolean } }
     expect(json.apply.ok).toBe(true)
     const status = await fetch(`${f.base}/_llui/notes/${note.id}/status`).then(
       (r) => r.json() as Promise<{ current: string }>,
     )
     expect(status.current).toBe('applied')
+  })
+})
+
+describe('POST /_llui/notes/:id/status — validation', () => {
+  it('rejects a bogus "to" status with 400', async () => {
+    const note = createNote(f.notesRoot, {
+      body: 'x',
+      frontmatter: { ...fmBase, intent: 'task' },
+      noteBody: {},
+    })
+    const res = await postStatus(f.base, note.id, { to: 'totally-not-a-status', by: 'human' })
+    expect(res.status).toBe(400)
+    expect((await res.json()) as { error: string }).toMatchObject({ error: expect.any(String) })
+  })
+
+  it('rejects an illegal transition (open→accepted without proposed) with 409', async () => {
+    const note = createNote(f.notesRoot, {
+      body: 'x',
+      frontmatter: { ...fmBase, intent: 'task' },
+      noteBody: {},
+    })
+    await walkTo(f.base, note.id, 'open')
+    const res = await postStatus(f.base, note.id, { to: 'accepted', by: 'human' })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: string }).error).toMatch(/illegal status transition/i)
+    // The illegal edge must not have moved the note.
+    const status = await fetch(`${f.base}/_llui/notes/${note.id}/status`).then(
+      (r) => r.json() as Promise<{ current: string }>,
+    )
+    expect(status.current).toBe('open')
+  })
+
+  it('rejects null→rejected (no proposal) with 409 and runs no revert', async () => {
+    const note = createNote(f.notesRoot, {
+      body: 'x',
+      frontmatter: { ...fmBase, intent: 'task' },
+      noteBody: {},
+    })
+    const res = await postStatus(f.base, note.id, { to: 'rejected', by: 'human' })
+    expect(res.status).toBe(409)
+  })
+
+  it("coerces a client-forged by:'llm' down to 'human'", async () => {
+    const note = createNote(f.notesRoot, {
+      body: 'x',
+      frontmatter: { ...fmBase, intent: 'task' },
+      noteBody: {},
+    })
+    // A same-origin client cannot self-attest as the LLM.
+    await postStatus(f.base, note.id, { to: 'open', by: 'llm' })
+    const res = await fetch(`${f.base}/_llui/notes/${note.id}/status`)
+    const json = (await res.json()) as { history: Array<{ to: string; by: string }> }
+    const openTxn = json.history.find((h) => h.to === 'open')!
+    expect(openTxn.by).toBe('human')
   })
 })
 
@@ -194,16 +266,9 @@ describe('GET /_llui/queue', () => {
       frontmatter: { ...fmBase, intent: 'task' },
       noteBody: {},
     })
-    await fetch(`${f.base}/_llui/notes/${a.id}/status`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to: 'open', by: 'human' }),
-    })
-    await fetch(`${f.base}/_llui/notes/${b.id}/status`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to: 'rejected', by: 'human' }),
-    })
+    await walkTo(f.base, a.id, 'open')
+    // 'rejected' is only reachable from 'proposed' — walk the legal path.
+    await walkTo(f.base, b.id, 'open', 'claimed', 'proposed', 'rejected')
     const res = await fetch(`${f.base}/_llui/queue?status=rejected`)
     const json = (await res.json()) as { queue: Array<{ noteId: string }> }
     expect(json.queue).toHaveLength(1)

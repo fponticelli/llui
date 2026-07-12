@@ -232,7 +232,9 @@ function connectA2ui(
 
 ### `defineCatalog()`
 
-Build a catalog, optionally layering over a base.
+Build a catalog, optionally layering over a base. Registry records use a
+null prototype so a server-supplied component/function name like
+"**proto**"/"toString"/"constructor" can't resolve to a prototype member.
 
 ```typescript
 function defineCatalog(spec: CatalogSpec): Catalog
@@ -730,6 +732,14 @@ export interface RenderScope {
    * component repeated across template rows gets independent state per row.
    */
   readonly keyPrefix: string
+  /**
+   * Ids of the components currently being rendered on the path from the surface
+   * root down to (but not including) this scope's component. Threaded so
+   * {@link RenderContext.renderById} can detect a cyclic adjacency list
+   * (`root → children:['root']`, or A → B → A) and refuse to recurse instead of
+   * overflowing the stack on one malformed envelope.
+   */
+  readonly ancestors: ReadonlySet<ComponentId>
 }
 ```
 

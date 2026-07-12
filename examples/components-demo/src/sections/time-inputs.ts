@@ -1,5 +1,5 @@
 import { div, button, span, input, p, onMount, text } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { timer } from '@llui/components/timer'
 import { angleSlider } from '@llui/components/angle-slider'
 import { dateInput } from '@llui/components/date-input'
@@ -33,7 +33,7 @@ export const init = (): [State, never[]] => [
 
 export const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const tm = timer.connect(state.at('timer'), (m) => send({ type: 'timer', msg: m }))
   const ag = angleSlider.connect(state.at('angle'), (m) => send({ type: 'angle', msg: m }))
   // Pointer-click on the angle-slider control: compute angle from the
@@ -202,7 +202,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
               },
               [
                 text(
-                  '• llui • headless components • TEA architecture • compile-time bitmasks • hover to pause ',
+                  '• llui • headless components • TEA architecture • chunked-mask reactivity • hover to pause ',
                 ),
               ],
             ),

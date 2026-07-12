@@ -155,9 +155,24 @@ export function wsSend(key: string, data: unknown): WebSocketSendEffect {
 
 export function retry(
   inner: HttpEffect,
-  opts: { maxAttempts: number; delayMs: number },
+  opts: {
+    maxAttempts: number
+    delayMs: number
+    /**
+     * Predicate deciding whether a failure is retriable. Defaults to retrying
+     * only transient errors (`network`/`timeout`/`ratelimit`/5xx `server`); a
+     * `401`/`403`/`404`/`validation` error is NOT retried. See {@link RetryEffect.retryOn}.
+     */
+    retryOn?: (error: ApiError, attempt: number) => boolean
+  },
 ): RetryEffect {
-  return { type: 'retry', inner, maxAttempts: opts.maxAttempts, delayMs: opts.delayMs }
+  return {
+    type: 'retry',
+    inner,
+    maxAttempts: opts.maxAttempts,
+    delayMs: opts.delayMs,
+    retryOn: opts.retryOn,
+  }
 }
 
 // ── Upload ──────────────────────────────────────────────

@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { extractMsgAnnotations } from '../src/msg-annotations.js'
+import {
+  extractMsgAnnotations,
+  hasNonDefaultAnnotation,
+  isDefaultAnnotation,
+  sparseMsgAnnotations,
+  type MessageAnnotations,
+} from '../src/msg-annotations.js'
+
+const DEFAULT: MessageAnnotations = {
+  intent: null,
+  alwaysAffordable: false,
+  requiresConfirm: false,
+  dispatchMode: 'shared',
+  examples: [],
+  warning: null,
+  emits: [],
+  routeGate: null,
+  routeGateReason: null,
+}
 
 describe('extractMsgAnnotations', () => {
   it('reads @intent, @requiresConfirm, @humanOnly, @alwaysAffordable from union member JSDoc', () => {
@@ -387,5 +405,62 @@ type Msg =
     const r = extractMsgAnnotations(src)
     expect(r?.go?.routeGate).toBe('state.ready')
     expect(r?.go?.routeGateReason).toBeNull()
+  })
+})
+
+describe('isDefaultAnnotation / hasNonDefaultAnnotation', () => {
+  it('treats an all-default record as default', () => {
+    expect(isDefaultAnnotation({ ...DEFAULT })).toBe(true)
+    expect(hasNonDefaultAnnotation({ a: { ...DEFAULT } })).toBe(false)
+  })
+  // Regression: the old helper missed examples/warning/emits, so a variant
+  // annotated ONLY with @example/@warning/@emits was wrongly treated as default.
+  it('counts examples/warning/emits as non-default (previously missed)', () => {
+    expect(isDefaultAnnotation({ ...DEFAULT, examples: ['x'] })).toBe(false)
+    expect(isDefaultAnnotation({ ...DEFAULT, warning: 'careful' })).toBe(false)
+    expect(isDefaultAnnotation({ ...DEFAULT, emits: ['http'] })).toBe(false)
+    expect(hasNonDefaultAnnotation({ a: { ...DEFAULT }, b: { ...DEFAULT, emits: ['http'] } })).toBe(
+      true,
+    )
+  })
+})
+
+describe('sparseMsgAnnotations', () => {
+  it('returns null when every variant is fully default', () => {
+    expect(sparseMsgAnnotations({ a: { ...DEFAULT }, b: { ...DEFAULT } })).toBeNull()
+  })
+  it('omits default variants and default-valued fields', () => {
+    const sparse = sparseMsgAnnotations({
+      inc: { ...DEFAULT },
+      del: { ...DEFAULT, intent: 'Delete', requiresConfirm: true },
+    })
+    expect(sparse).toEqual({ del: { intent: 'Delete', requiresConfirm: true } })
+  })
+  it('retains every non-default field including examples/warning/emits/gates', () => {
+    const sparse = sparseMsgAnnotations({
+      m: {
+        ...DEFAULT,
+        intent: 'Go',
+        alwaysAffordable: true,
+        dispatchMode: 'agent-only',
+        examples: ['a', 'b'],
+        warning: 'irreversible',
+        emits: ['http', 'log'],
+        routeGate: 'state.ready',
+        routeGateReason: 'wait for ready',
+      },
+    })
+    expect(sparse).toEqual({
+      m: {
+        intent: 'Go',
+        alwaysAffordable: true,
+        dispatchMode: 'agent-only',
+        examples: ['a', 'b'],
+        warning: 'irreversible',
+        emits: ['http', 'log'],
+        routeGate: 'state.ready',
+        routeGateReason: 'wait for ready',
+      },
+    })
   })
 })

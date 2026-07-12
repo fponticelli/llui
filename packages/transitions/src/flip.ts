@@ -1,9 +1,12 @@
 import type { TransitionOptions } from '@llui/dom'
 import { asElements } from './style-utils.js'
+import { prefersReducedMotion } from './anim.js'
 
 export interface FlipOptions {
   duration?: number
   easing?: string
+  /** Honor `prefers-reduced-motion` (default: true) — skip the reorder animation (rows jump) when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 /**
@@ -41,6 +44,7 @@ export interface FlipOptions {
 export function flip(opts: FlipOptions = {}): TransitionOptions {
   const duration = opts.duration ?? 300
   const easing = opts.easing ?? 'ease-out'
+  const respectReduced = opts.respectReducedMotion !== false
   // Weak: entries vanish with their elements. No strong retention of rows.
   const positions = new WeakMap<Element, DOMRect>()
 
@@ -79,7 +83,12 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         const next = child.getBoundingClientRect()
 
         // Entering rows have no meaningful "First" yet — just record a baseline.
-        if (prev && !entering.has(child) && (prev.left !== next.left || prev.top !== next.top)) {
+        if (
+          prev &&
+          !entering.has(child) &&
+          !(respectReduced && prefersReducedMotion()) &&
+          (prev.left !== next.left || prev.top !== next.top)
+        ) {
           const dx = prev.left - next.left
           const dy = prev.top - next.top
           if (typeof child.animate === 'function') {

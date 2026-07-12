@@ -4,6 +4,7 @@ import { component, div, text } from '@llui/dom'
 import { pageSlot } from '../src/page-slot.js'
 import {
   createOnRenderClient,
+  getLayoutChain,
   _resetChainForTest,
   _mountChainSuffix,
 } from '../src/on-render-client.js'
@@ -220,5 +221,55 @@ describe('client pageSlot with comment anchor', () => {
     expect(anchor.parentNode).toBe(parent)
     expect(parent.childNodes[0]).toBe(outerText)
     expect(parent.lastChild).toBe(afterText)
+  })
+})
+
+describe('mount-suffix failure + double-hydration guards', () => {
+  beforeEach(() => {
+    _resetChainForTest()
+    document.body.innerHTML = '<div id="app"></div>'
+    delete (window as Record<string, unknown>).__LLUI_STATE__
+  })
+
+  it('finding 9: a mid-chain mount failure rolls back already-mounted layers', () => {
+    const root = document.getElementById('app')!
+    // Layout (valid, calls pageSlot) → PageA (a layout position, but NO pageSlot)
+    // → PageB. The second layer throws because it is not innermost yet placed no
+    // slot; the already-mounted Layout must be disposed and unregistered.
+    expect(() =>
+      _mountChainSuffix(
+        [Layout, PageA, PageB],
+        [undefined, undefined, undefined],
+        0,
+        root,
+        undefined,
+        { mode: 'mount' },
+      ),
+    ).toThrow(/pageSlot/)
+
+    // No layer must remain registered — the successfully-mounted Layout was
+    // rolled back, not leaked.
+    expect(getLayoutChain().length).toBe(0)
+  })
+
+  it('finding 10: a second hydration over a live chain throws', async () => {
+    const root = document.getElementById('app')!
+    root.innerHTML =
+      '<div class="shell">L:0' +
+      '<!--llui-page-slot-->' +
+      '<div class="page-a">a-from-server</div>' +
+      '<!--llui-mount-end-->' +
+      '</div>'
+    ;(window as Record<string, unknown>).__LLUI_STATE__ = {
+      v: 2,
+      layers: ['TestLayout', 'PageA'],
+    }
+
+    const render = createOnRenderClient({ Layout })
+    await render({ Page: PageA, isHydration: true })
+    expect(getLayoutChain().length).toBeGreaterThan(0)
+
+    // A second hydration render must refuse to stack another chain.
+    await expect(render({ Page: PageA, isHydration: true })).rejects.toThrow(/double-hydration/)
   })
 })

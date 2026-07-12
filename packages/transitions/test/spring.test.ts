@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { spring } from '../src/spring'
 
 function withHiddenTab<T>(fn: () => T): T {
@@ -112,6 +112,46 @@ describe('spring()', () => {
       // Enter snaps straight to the target rather than staying at "from".
       expect(el.style.getPropertyValue('opacity')).toBe('1')
     })
+  })
+
+  // ── Finding 7: interruption — a stale enter loop must not snap over leave ──
+  it('interrupting an enter leaves the element at the leave target, not enter’s', async () => {
+    const el = makeEl()
+    // Manual rAF pump so we can interrupt mid-flight deterministically.
+    const queue: FrameRequestCallback[] = []
+    const rafSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        queue.push(cb)
+        return queue.length
+      })
+    const pump = (time: number): void => {
+      const cbs = queue.splice(0)
+      for (const cb of cbs) cb(time)
+    }
+
+    try {
+      const t = spring({ property: 'opacity', from: 0, to: 1, stiffness: 170, damping: 26 })
+      t.enter!([el]) // enter loop A: opacity 0 → 1
+      pump(16)
+      pump(32)
+      const mid = parseFloat(el.style.getPropertyValue('opacity'))
+      expect(mid).toBeGreaterThan(0)
+      expect(mid).toBeLessThan(1)
+
+      // Interrupt with a leave (opacity → 0). This must cancel loop A so its
+      // dying frame does NOT snap the element back to enter's target (1).
+      const leaving = t.leave!([el])
+
+      // Pump generously — both the stale A frame and the live B loop run.
+      for (let time = 48; time < 20000 && queue.length > 0; time += 16) pump(time)
+      await leaving
+
+      // Rests at the leave target (0), never the enter target (1).
+      expect(parseFloat(el.style.getPropertyValue('opacity'))).toBe(0)
+    } finally {
+      rafSpy.mockRestore()
+    }
   })
 
   it('spring settles to target (simulated)', async () => {

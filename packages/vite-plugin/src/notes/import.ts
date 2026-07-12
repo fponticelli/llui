@@ -41,6 +41,18 @@ export interface ImportBundleResult {
 const SESSION_RE = /^session-[A-Za-z0-9._-]+$/
 const SAFE_BASENAME_RE = /^[A-Za-z0-9._-]+$/
 
+/** Zip-bomb guard bounds. A bundle is a small collection of markdown notes +
+ *  screenshots; anything expanding past these is malformed or hostile. */
+const DEFAULT_MAX_ENTRY_BYTES = 16 * 1024 * 1024 // 16 MB per decompressed entry
+const DEFAULT_MAX_TOTAL_BYTES = 64 * 1024 * 1024 // 64 MB total decompressed
+
+export interface ImportBundleOptions {
+  /** Max decompressed size of a single zip entry. Default 16 MB. */
+  maxEntryBytes?: number
+  /** Max total decompressed size across all entries. Default 64 MB. */
+  maxTotalBytes?: number
+}
+
 function parseManifest(files: Record<string, Uint8Array>): BundleManifest {
   const raw = files['bundle.json']
   if (!raw) throw new Error('import: bundle.json missing — not a valid LLui notes bundle')
@@ -65,8 +77,34 @@ function parseManifest(files: Record<string, Uint8Array>): BundleManifest {
  * Import an export bundle (zip bytes) into `notesRoot`. Returns a summary;
  * throws on a malformed bundle, schema mismatch, or unsafe entry paths.
  */
-export function importBundle(notesRoot: string, zip: Uint8Array): ImportBundleResult {
-  const files = unzipSync(zip)
+export function importBundle(
+  notesRoot: string,
+  zip: Uint8Array,
+  options: ImportBundleOptions = {},
+): ImportBundleResult {
+  const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES
+  const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES
+  // Zip-bomb guard: the `filter` callback runs against each entry's central-
+  // directory metadata BEFORE fflate decompresses it, so throwing here aborts
+  // the inflate instead of buffering a multi-GB payload into memory. We cap
+  // both per-entry and cumulative decompressed size.
+  let totalDecompressed = 0
+  const files = unzipSync(zip, {
+    filter: (file) => {
+      if (file.originalSize > maxEntryBytes) {
+        throw new Error(
+          `import: entry ${JSON.stringify(file.name)} decompresses to ${file.originalSize} bytes, exceeding the ${maxEntryBytes}-byte per-entry limit`,
+        )
+      }
+      totalDecompressed += file.originalSize
+      if (totalDecompressed > maxTotalBytes) {
+        throw new Error(
+          `import: bundle decompresses beyond the ${maxTotalBytes}-byte total limit (zip bomb?)`,
+        )
+      }
+      return true
+    },
+  })
   const manifest = parseManifest(files)
   const bundleKey = manifest.contentHash.slice(0, 8)
   const knownSessions = new Set(manifest.sessions)

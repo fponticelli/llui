@@ -31,9 +31,10 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5",
-    "@llui/lexical": "^0.2.8",
-    "@llui/components": "^0.12.2",
+    "@llui/dom": "workspace:^",
+    "@llui/lexical": "workspace:^",
+    "@llui/components": "workspace:^",
+    "@llui/markdown": "workspace:^",
     "lexical": "^0.46.0",
     "@lexical/markdown": "^0.46.0",
     "@lexical/rich-text": "^0.46.0",
@@ -48,6 +49,7 @@
     "@llui/dom": "workspace:*",
     "@llui/lexical": "workspace:*",
     "@llui/components": "workspace:*",
+    "@llui/markdown": "workspace:*",
     "lexical": "^0.46.0",
     "@lexical/headless": "^0.46.0",
     "@lexical/markdown": "^0.46.0",

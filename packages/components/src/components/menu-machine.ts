@@ -240,6 +240,22 @@ function applySelect<S extends MenuTreeState>(state: S, value: string): [S, neve
   return [{ ...state, ...closedPatch(state) }, []]
 }
 
+/** The deepest open submenu level (its subTrigger value), or `''` for the root. */
+export function deepestMenuLevel(state: Pick<MenuTreeState, 'openPath'>): string {
+  return state.openPath.length > 0 ? state.openPath[state.openPath.length - 1]! : ''
+}
+
+/**
+ * The value highlighted at the deepest open submenu level — what a virtual-focus
+ * root `content` should announce via `aria-activedescendant`. When no submenu is
+ * open this is the root-level highlight, so the root case is unchanged.
+ */
+export function activeMenuHighlight(
+  state: Pick<MenuTreeState, 'openPath' | 'highlights'>,
+): string | null {
+  return state.highlights[deepestMenuLevel(state)] ?? null
+}
+
 /**
  * Reduce a message shared by every menu-tree component, preserving any extra
  * component state fields (e.g. context-menu's x/y). Returns the SAME state
@@ -595,39 +611,74 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       'highlightFirst',
       'highlightLast',
       'selectHighlighted',
+      'openSub',
+      'closeSub',
       'close',
       'typeahead',
     ],
     (e: KeyboardEvent): void => {
-      switch (e.key) {
+      // Virtual (aria-activedescendant) focus keeps DOM focus on the root
+      // content, so ONLY this handler ever fires — even when a submenu is
+      // open. Route every navigation key to the DEEPEST open submenu level
+      // (its subTrigger value) so arrow/typeahead/select act inside the open
+      // submenu; the subTrigger/subContent handlers never receive DOM focus.
+      const s = state.peek()
+      const openPath = s?.openPath ?? []
+      const level = openPath.length > 0 ? openPath[openPath.length - 1]! : ''
+      const highlighted = s?.highlights[level] ?? null
+      const isSubTrigger = (value: string | null): boolean => {
+        if (value === null || s === undefined) return false
+        const item = findItem(s.items, value)
+        return item != null && !item.disabled && !!item.children && item.children.length > 0
+      }
+      const key = flipArrow(e.key, s?.dir ?? null)
+      switch (key) {
         case 'ArrowDown':
           e.preventDefault()
-          send({ type: 'highlightNext', level: '' })
+          send({ type: 'highlightNext', level })
           return
         case 'ArrowUp':
           e.preventDefault()
-          send({ type: 'highlightPrev', level: '' })
+          send({ type: 'highlightPrev', level })
           return
         case 'Home':
           e.preventDefault()
-          send({ type: 'highlightFirst', level: '' })
+          send({ type: 'highlightFirst', level })
           return
         case 'End':
           e.preventDefault()
-          send({ type: 'highlightLast', level: '' })
+          send({ type: 'highlightLast', level })
+          return
+        case 'ArrowRight':
+          // Open/enter the submenu when the deepest-level highlight is a
+          // subtrigger; otherwise ArrowRight is a no-op on a leaf item.
+          if (isSubTrigger(highlighted)) {
+            e.preventDefault()
+            send({ type: 'openSub', value: highlighted! })
+          }
+          return
+        case 'ArrowLeft':
+          // Close the deepest open submenu, stepping back toward the root.
+          if (openPath.length > 0) {
+            e.preventDefault()
+            send({ type: 'closeSub' })
+          }
           return
         case 'Enter':
         case ' ':
+          // selectHighlighted opens a highlighted subtrigger (via applySelect)
+          // and selects a leaf — one message covers both.
           e.preventDefault()
-          send({ type: 'selectHighlighted', level: '' })
+          send({ type: 'selectHighlighted', level })
           return
         case 'Escape':
           e.preventDefault()
-          send({ type: 'close' })
+          // Escape closes the deepest submenu first, then the whole menu.
+          send(openPath.length > 0 ? { type: 'closeSub' } : { type: 'close' })
           return
         default:
           if (isTypeaheadKey(e)) {
-            send({ type: 'typeahead', level: '', char: e.key, now: Date.now() })
+            send({ type: 'typeahead', level, char: e.key, now: Date.now() })
           }
       }
     },

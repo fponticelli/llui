@@ -16,6 +16,7 @@ import type {
   Theme,
 } from './protocol.js'
 import { applyPointer } from './pointer.js'
+import { warnOnce } from './catalog.js'
 
 /** A single live A2UI surface. */
 export interface Surface {
@@ -113,8 +114,16 @@ export function applyEnvelope(state: A2uiState, envelope: ServerToClientEnvelope
   if (envelope.updateComponents) {
     const { surfaceId, components } = envelope.updateComponents
     const surface = state.surfaces[surfaceId]
-    if (!surface) return state
-    const merged: Record<ComponentId, ComponentNode> = { ...surface.components }
+    if (!surface) {
+      warnOnce(`updateComponents for unknown surface "${surfaceId}" — dropped`)
+      return state
+    }
+    // Null-prototype adjacency map: a server-supplied component id can never
+    // resolve to a prototype member on lookup.
+    const merged: Record<ComponentId, ComponentNode> = Object.assign(
+      Object.create(null),
+      surface.components,
+    )
     for (const node of components) merged[node.id] = node
     const rootId = ROOT_ID in merged ? ROOT_ID : surface.rootId
     return withSurface(state, surfaceId, { ...surface, components: merged, rootId })
@@ -123,19 +132,26 @@ export function applyEnvelope(state: A2uiState, envelope: ServerToClientEnvelope
   if (envelope.updateDataModel) {
     const { surfaceId, path, value } = envelope.updateDataModel
     const surface = state.surfaces[surfaceId]
-    if (!surface) return state
+    if (!surface) {
+      warnOnce(`updateDataModel for unknown surface "${surfaceId}" — dropped`)
+      return state
+    }
     const dataModel = applyPointer(surface.dataModel, path ?? '/', value)
     return withSurface(state, surfaceId, { ...surface, dataModel })
   }
 
   if (envelope.deleteSurface) {
     const { surfaceId } = envelope.deleteSurface
-    if (!state.surfaces[surfaceId]) return state
+    if (!state.surfaces[surfaceId]) {
+      warnOnce(`deleteSurface for unknown surface "${surfaceId}" — dropped`)
+      return state
+    }
     const surfaces = { ...state.surfaces }
     delete surfaces[surfaceId]
     return { surfaces, order: state.order.filter((id) => id !== surfaceId) }
   }
 
+  warnOnce('Envelope matched no known A2UI message — dropped')
   return state
 }
 

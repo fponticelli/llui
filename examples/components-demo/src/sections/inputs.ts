@@ -14,7 +14,7 @@ import {
   onMount,
   text,
 } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { switchMachine } from '@llui/components/switch'
 import { toggle } from '@llui/components/toggle'
 import { checkbox } from '@llui/components/checkbox'
@@ -91,22 +91,14 @@ const profileSchema: LocalSchema = {
 
 // ── Wizard validators ────────────────────────────────────────────────
 //
-// Step 0 requires a non-empty name. The validator is async (returns a
-// Promise) so `wizard.update`'s `next` always emits a `validateStep`
-// EFFECT rather than resolving synchronously — that routes the decision
-// through this section's exported `onEffect`. The name lives in a
-// module-local captured by the step-0 input handler (demo-simple; the
-// reducer stays pure + JSON-serializable).
-let wizardName = ''
-
+// Step 0 requires a non-empty name. The validator returns a Promise so
+// `wizard.update`'s `next` always emits a `validateStep` EFFECT rather than
+// resolving synchronously — that routes the decision through this section's
+// exported `onEffect`, which reads the name from the section STATE slice (see
+// `wizardName` below) at dispatch time. The Promise's resolved value is never
+// awaited by `wizard.update`; it only signals "decide asynchronously".
 const wizardValidators: WizardValidators = {
-  0: () => Promise.resolve(wizardName.trim().length > 0),
-}
-
-/** Run a wizard validator synchronously for the demo's onEffect. */
-function runWizardStep(step: number): boolean {
-  if (step === 0) return wizardName.trim().length > 0
-  return true
+  0: () => Promise.resolve(true),
 }
 
 // Wizard module wrapper: injects the async validators into `wizard.update`
@@ -140,12 +132,33 @@ const children = {
   wizard: wizardModule,
 } as const
 
-export type State = ModulesState<typeof children>
-export type Msg = ModulesMsg<typeof children>
+// The section state extends the composed module slices with two plain form
+// values that used to live in module globals: the wizard's step-0 name and the
+// form-field's { email, username }. Keeping them in state (driven by messages)
+// makes them serializable, time-travel-friendly, and free of shared mutable
+// module state.
+export type State = ModulesState<typeof children> & {
+  wizardName: string
+  profileValues: { email: string; username: string }
+}
+export type Msg =
+  | ModulesMsg<typeof children>
+  /**
+   * @intent("Set the wizard step-0 account name")
+   * @example({"type":"setWizardName","value":"Ada"})
+   */
+  | { type: 'setWizardName'; value: string }
+  /**
+   * @intent("Set a form-field profile value")
+   * @example({"type":"setProfileValue","field":"email","value":"a@b.com"})
+   */
+  | { type: 'setProfileValue'; field: 'email' | 'username'; value: string }
 export type Effect = WizardEffect
 
-export const init = (): [State, never[]] => [
+export const init = (): [State, Effect[]] => [
   {
+    wizardName: '',
+    profileValues: { email: '', username: '' },
     switch: switchMachine.init({ checked: false }),
     toggle: toggle.init({ pressed: false }),
     checkbox: checkbox.init({ checked: 'indeterminate' }),
@@ -175,16 +188,24 @@ export const init = (): [State, never[]] => [
 
 export const update = mergeHandlers<State, Msg, Effect>(
   composeModules<State, Msg, Effect>(children),
+  (state, msg): [State, Effect[]] | null => {
+    if (msg.type === 'setWizardName') return [{ ...state, wizardName: msg.value }, []]
+    if (msg.type === 'setProfileValue') {
+      return [{ ...state, profileValues: { ...state.profileValues, [msg.field]: msg.value } }, []]
+    }
+    return null
+  },
 )
 
 /**
  * Route this section's effects. Only the wizard emits effects: a
  * `validateStep` asks us to run the step's validator and dispatch the
- * `stepValid` / `stepInvalid` result back into `wizard.update`.
+ * `stepValid` / `stepInvalid` result. The step-0 name is read from the section
+ * STATE (passed in by the root's `onEffect`), not a module global.
  */
-export function onEffect(effect: Effect, send: Send<Msg>): void {
+export function onEffect(effect: Effect, send: Send<Msg>, state: State): void {
   if (effect.type === 'validateStep') {
-    const ok = runWizardStep(effect.step)
+    const ok = effect.step === 0 ? state.wizardName.trim().length > 0 : true
     send({
       type: 'wizard',
       msg: ok
@@ -194,12 +215,7 @@ export function onEffect(effect: Effect, send: Send<Msg>): void {
   }
 }
 
-// Plain mirror of the form-field input values, kept in a module-local so the
-// hand-rolled schema can validate them without threading a separate state
-// slice through the demo's module map. (Demo-only convenience.)
-const profileValues = { email: '', username: '' }
-
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const sw = switchMachine.connect(state.at('switch'), (m) => send({ type: 'switch', msg: m }))
   const tog = toggle.connect(state.at('toggle'), (m) => send({ type: 'toggle', msg: m }))
   const cb = checkbox.connect(state.at('checkbox'), (m) => send({ type: 'checkbox', msg: m }))
@@ -295,7 +311,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     }
   })
 
-  const progressBtn = (txt: string, v: number | null): Node =>
+  const progressBtn = (txt: string, v: number | null): Mountable =>
     button(
       {
         class: 'btn btn-secondary text-xs',
@@ -304,7 +320,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       [text(txt)],
     )
 
-  const meterBtn = (txt: string, v: number): Node =>
+  const meterBtn = (txt: string, v: number): Mountable =>
     button(
       {
         class: 'btn btn-secondary text-xs',
@@ -321,7 +337,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     placeholder: string,
     fieldName: 'email' | 'username',
     type: string,
-  ): Node =>
+  ): Mountable =>
     div({ ...parts.root, class: 'flex flex-col gap-1' }, [
       label({ ...parts.label, class: 'text-sm font-medium' }, [text(labelText)]),
       input({
@@ -329,8 +345,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
         type,
         placeholder,
         class: 'input',
+        value: state.at('profileValues').at(fieldName),
         onInput: (e: Event) => {
-          profileValues[fieldName] = (e.target as HTMLInputElement).value
+          send({
+            type: 'setProfileValue',
+            field: fieldName,
+            value: (e.target as HTMLInputElement).value,
+          })
         },
       }),
       p({ ...parts.description, class: 'text-xs text-text-muted' }, [text(description)]),
@@ -680,7 +701,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                   msg: {
                     type: 'validate',
                     schema: profileSchema,
-                    values: profileValues,
+                    values: state.at('profileValues').peek(),
                   },
                 })
               },
@@ -718,9 +739,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
                 id: 'wizard-name-input',
                 placeholder: 'Required to continue',
                 class: 'input',
-                value: '',
+                value: state.at('wizardName'),
                 onInput: (e: Event) => {
-                  wizardName = (e.target as HTMLInputElement).value
+                  send({ type: 'setWizardName', value: (e.target as HTMLInputElement).value })
                 },
               }),
               p({ class: 'text-xs text-text-muted' }, [

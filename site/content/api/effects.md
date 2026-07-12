@@ -380,14 +380,13 @@ function race(effects: BuiltinEffect[]): RaceEffect
 
 ### `resolveEffects()`
 
-Execute all HTTP effects from the effect list, apply responses
-to state via update(), return the final loaded state.
-Requests are built with the SAME `buildRequest`/`parseResponse` core the live
-`http` runner uses, so SSR pre-loading derives identical requests (real headers,
-content-type, pass-through bodies, `responseType`) and passes the response's real
-`Headers` to `onSuccess`. A rejected fetch (network failure / timeout) is mapped
-through the effect's `onError` rather than silently dropped, so SSR and the client
-converge on the same failure state.
+Execute all HTTP effects reachable from the effect list, apply the resulting
+messages to state via update(), and return the final loaded state.
+Http effects nested inside composite builtins (`sequence`/`race`/`retry`/
+`cancel`/`debounce`) are unwrapped recursively — a `sequence([http(...)])`
+pre-resolves on the server just like a bare `http(...)`. Top-level effects run
+in parallel; a `sequence`'s inner effects run in order; messages are applied in
+effect order. Recurses if the responses produce more effects (up to a depth limit).
 
 ```typescript
 function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
@@ -401,7 +400,19 @@ function resolveEffects<S, M extends { type: string }, E extends { type: string 
 ### `retry()`
 
 ```typescript
-function retry(inner: HttpEffect, opts: { maxAttempts: number; delayMs: number }): RetryEffect
+function retry(
+  inner: HttpEffect,
+  opts: {
+    maxAttempts: number
+    delayMs: number
+    /**
+     * Predicate deciding whether a failure is retriable. Defaults to retrying
+     * only transient errors (`network`/`timeout`/`ratelimit`/5xx `server`); a
+     * `401`/`403`/`404`/`validation` error is NOT retried. See {@link RetryEffect.retryOn}.
+     */
+    retryOn?: (error: ApiError, attempt: number) => boolean
+  },
+): RetryEffect
 ```
 
 ### `sequence()`
@@ -763,6 +774,15 @@ export interface RetryEffect {
   inner: HttpEffect
   maxAttempts: number
   delayMs: number
+  /**
+   * Decide whether a given failure should be retried. `attempt` is 1-based (the
+   * attempt that just failed). Defaults to retrying only transient failures —
+   * `network`, `timeout`, `ratelimit`, and 5xx `server` errors — so a `401`,
+   * `403`, `404`, or `validation` error fails fast instead of hammering the
+   * server. On a `ratelimit` error carrying `retryAfter`, the wait honors it
+   * (`max(retryAfter*1000, backoff)`).
+   */
+  retryOn?: (error: ApiError, attempt: number) => boolean
 }
 ```
 

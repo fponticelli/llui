@@ -122,21 +122,26 @@ export {
 // Canonical home of the MCP/agent-relay contract. Lives in the signal runtime
 // so it survives legacy-runtime deletion. installSignalDebug registers the
 // required subset; binding/scope/effect introspection methods are optional.
-export {
-  installSignalDebug,
-  type LluiDebugAPI,
-  type SignalDebugHooks,
-  type SignalMessageRecord,
-  type MessageRecord,
-  type StateDiff,
-  type ValidationError,
-  type BindingDebugInfo,
-  type UpdateExplanation,
-  type ComponentInfo,
-  type MessageSchemaInfo,
-  type BindingLocation,
-  type ElementReport,
-  type HydrationDivergence,
+//
+// Only the debug TYPES are re-exported here (the MCP/agent packages import them as
+// `import type { LluiDebugAPI } from '@llui/dom'`). The VALUES `installSignalDebug`
+// / `startRelay` are deliberately NOT re-exported — they live behind the dedicated
+// `@llui/dom/devtools` subpath so the relay + WebSocket machinery stays out of
+// production bundles (see the note in `src/index.ts`).
+export type {
+  LluiDebugAPI,
+  SignalDebugHooks,
+  SignalMessageRecord,
+  MessageRecord,
+  StateDiff,
+  ValidationError,
+  BindingDebugInfo,
+  UpdateExplanation,
+  ComponentInfo,
+  MessageSchemaInfo,
+  BindingLocation,
+  ElementReport,
+  HydrationDivergence,
 } from './devtools.js'
 // Runtime-agnostic data shapes used by the debug API / MCP tools.
 export type { CoverageSnapshot } from '../tracking/coverage.js'

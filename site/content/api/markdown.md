@@ -72,7 +72,16 @@ function incrementalParse(
   cache: ParseCache | undefined,
   source: string,
   parse: (src: string) => Root,
+  allowPrefixReuse = true,
 ): IncrementalResult
+```
+
+### `keyingHashComputations()`
+
+Test/benchmark hook: reads (and optionally resets) the from-scratch hash count.
+
+```typescript
+function keyingHashComputations(reset = false): number
 ```
 
 ### `makeContext()`
@@ -249,6 +258,14 @@ export interface MarkdownOptions {
   extensions?: FromMarkdownOptions['extensions']
   /** Extra mdast extensions matching the syntax extensions above. */
   mdastExtensions?: FromMarkdownOptions['mdastExtensions']
+  /** Opt in to incremental (tail-reuse) parsing for a REACTIVE source even when
+   * custom `extensions`/`mdastExtensions` are present. Off by default: the
+   * incremental parser's seal invariant is only proven for CommonMark + GFM, so a
+   * custom extension whose syntax can retro-reclassify an earlier block (crossing a
+   * blank-line seal) would leave a stale prefix. Set `true` ONLY when your
+   * extensions are seal-safe (no cross-block/document-global effects). Ignored when
+   * no custom extensions are configured (built-in reuse always applies). */
+  sealSafeExtensions?: boolean
   /** Sanitizer for raw HTML nodes. Raw HTML is **dropped by default**
    * (safe for untrusted/LLM content). To render it, supply a function
    * that takes the raw HTML and returns a sanitized string (e.g. wrap
@@ -307,6 +324,7 @@ export interface ResolvedOptions {
   renderers: ResolvedRenderers
   extensions: FromMarkdownOptions['extensions']
   mdastExtensions: FromMarkdownOptions['mdastExtensions']
+  sealSafeExtensions: boolean
   sanitizeHtml: ((html: string) => string) | undefined
   allowedProtocols: string[]
   transformLink: TransformLink | undefined
@@ -316,6 +334,17 @@ export interface ResolvedOptions {
 ```
 
 ## Constants
+
+### `defaultAllowedProtocols`
+
+The schemes permitted by default in links/images. Relative URLs (no scheme)
+are always allowed regardless of this list. Exported so downstream packages
+(e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
+hand-rolling a divergent allowlist.
+
+```typescript
+const defaultAllowedProtocols: readonly string[]
+```
 
 ### `defaultRenderers`
 

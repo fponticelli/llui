@@ -7,6 +7,20 @@
  */
 
 import type { JsonValue, JsonObject } from './protocol.js'
+import { warnOnce } from './catalog.js'
+
+/**
+ * Absolute cap on any array index written via a pointer. A server-supplied
+ * `/items/999999999` must not be allowed to balloon a sparse array to a
+ * billion slots (OOM/DoS from a ~60-byte envelope). Writes may append
+ * (`i === arr.length`) but never open a gap, and never exceed this cap.
+ */
+const MAX_ARRAY_INDEX = 100_000
+
+/** Pointer tokens that must never be written at an object level (prototype
+ * pollution defense-in-depth): writing `obj['__proto__'] = …` on a plain object
+ * mutates its prototype. */
+const RESERVED_TOKENS: ReadonlySet<string> = new Set(['__proto__', 'prototype', 'constructor'])
 
 function unescapeToken(token: string): string {
   return token.replace(/~1/g, '/').replace(/~0/g, '~')
@@ -56,6 +70,12 @@ function setIn(
   if (isIndexToken(token) && (Array.isArray(node) || node === undefined || node === null)) {
     const arr: JsonValue[] = Array.isArray(node) ? node.slice() : []
     const i = Number(token)
+    // Reject out-of-range writes: append at the end is fine, but never open a
+    // gap or exceed the absolute cap (would grow a sparse array without bound).
+    if (i > arr.length || i >= MAX_ARRAY_INDEX) {
+      warnOnce(`Refusing out-of-range array write at index ${i} (length ${arr.length})`)
+      return arr
+    }
     if (isLast) {
       if (value === undefined) {
         // Preserve indices: null out the slot rather than reindexing.
@@ -69,7 +89,11 @@ function setIn(
     return arr
   }
 
-  // An object level.
+  // An object level. Reserved tokens are refused (prototype pollution).
+  if (RESERVED_TOKENS.has(token)) {
+    warnOnce(`Refusing to write reserved pointer token "${token}"`)
+    return node === null || node === undefined ? {} : node
+  }
   const obj: Record<string, JsonValue> =
     node !== null && typeof node === 'object' && !Array.isArray(node)
       ? { ...(node as JsonObject) }

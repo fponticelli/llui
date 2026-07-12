@@ -158,6 +158,7 @@ export function incrementalParse(
   cache: ParseCache | undefined,
   source: string,
   parse: (src: string) => Root,
+  allowPrefixReuse = true,
 ): IncrementalResult {
   const full = (): IncrementalResult => {
     const root = parse(source)
@@ -168,6 +169,11 @@ export function incrementalParse(
   if (oldSource === source) {
     return { root: oldRoot, cache, reused: oldRoot.children.length }
   }
+
+  // Prefix reuse's seal invariant is proven only for CommonMark + GFM. When the
+  // caller runs custom (non-seal-safe) syntax extensions, a changed source is
+  // re-parsed in full — a stale prefix is worse than the extra parse cost.
+  if (!allowPrefixReuse) return full()
 
   const lcp = commonPrefixLength(oldSource, source)
   if (lcp === 0) return full()

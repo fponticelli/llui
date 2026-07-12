@@ -458,14 +458,6 @@ function hydrateSignalApp<S, M, E = never>(
 ): SignalComponentHandle<S, M>
 ```
 
-### `installSignalDebug()`
-
-Build the signal debug API and register it. Returns an unregister function.
-
-```typescript
-function installSignalDebug(hooks: SignalDebugHooks): () => void
-```
-
 ### `isMountable()`
 
 ```typescript

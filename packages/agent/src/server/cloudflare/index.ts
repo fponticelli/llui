@@ -15,9 +15,17 @@
  *
  * export class AgentDO {
  *   private agent: AgentPairingDurableObject
- *   constructor(_state: DurableObjectState, _env: Env) {
+ *   constructor(_state: DurableObjectState, env: Env) {
  *     // Tokens are opaque (see token.ts) — no signing key needed.
- *     this.agent = new AgentPairingDurableObject({})
+ *     // SHARDED RECIPE: inject ONE shared TokenStore (a KV/D1-backed
+ *     // adapter) into EVERY DO — a token minted on `__root` is otherwise
+ *     // invisible to a per-tid DO and `/__resolve` (and every LAP auth
+ *     // check) 401s. See AgentPairingDurableObject docs. To avoid a
+ *     // shared store entirely, don't shard: route everything through the
+ *     // root DO via `resolveTid: () => Promise.resolve('__root')`.
+ *     this.agent = new AgentPairingDurableObject({
+ *       tokenStore: new KvTokenStore(env.AGENT_KV), // your TokenStore adapter
+ *     })
  *   }
  *   fetch(req: Request) {
  *     return this.agent.fetch(req)

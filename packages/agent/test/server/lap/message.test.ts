@@ -100,6 +100,26 @@ describe('handleLapMessage', () => {
     expect(sendSpy).toHaveBeenCalledWith('t1', { t: 'confirm-expire', confirmId: 'c1' })
   })
 
+  it('returns 413 when the declared Content-Length exceeds the LAP size cap', async () => {
+    // Hardening: the LAP surface had no message-size limit. An oversized
+    // declared Content-Length is rejected up front, before the body is
+    // buffered or parsed (real Node http requests always carry a
+    // Content-Length or are chunked; the check runs before auth).
+    const req = new Request('https://app/lap/v1/message', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${bearer}`,
+        'content-type': 'application/json',
+        'content-length': String(1024 * 1024 + 16),
+      },
+      body: JSON.stringify({ msg: { type: 'inc' } }),
+    })
+    const res = await handleLapMessage(req, deps())
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('payload-too-large')
+  })
+
   it('rejects missing msg.type with 400', async () => {
     const res = await handleLapMessage(mkReq({}), deps())
     expect(res.status).toBe(400)

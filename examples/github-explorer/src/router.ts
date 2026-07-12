@@ -5,12 +5,16 @@ import type { Route } from './types'
 export const router = createRouter<Route>(
   [
     route([], () => ({ page: 'search', q: '', p: 1, data: { type: 'idle' } })),
-    route(['search'], { query: ['q', 'p'] }, ({ q, p }) => ({
-      page: 'search',
-      q: q ?? '',
-      p: p ? parseInt(p, 10) : 1,
-      data: { type: 'loading' },
-    })),
+    route(['search'], { query: ['q', 'p'] }, ({ q, p }) => {
+      // Guard against a garbage ?p= value (e.g. ?p=abc → NaN); fall back to page 1.
+      const parsed = p ? parseInt(p, 10) : 1
+      return {
+        page: 'search',
+        q: q ?? '',
+        p: Number.isFinite(parsed) && parsed > 0 ? parsed : 1,
+        data: { type: 'loading' },
+      }
+    }),
     route([param('owner'), param('name')], ({ owner, name }) => ({
       page: 'repo',
       owner,

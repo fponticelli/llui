@@ -145,6 +145,15 @@ export function createRouter<R>(
     return params
   }
 
+  // With no routes there is nothing to derive a fallback from — require an
+  // explicit one rather than crashing on `defs[0]!` (a TypeError).
+  if (defs.length === 0 && config?.fallback === undefined) {
+    throw new Error(
+      '[llui/router] createRouter requires at least one route definition, or a ' +
+        '`fallback` in config when the route list is empty.',
+    )
+  }
+
   // Fallback: an explicit config value, else the first route built with sample
   // params so a param-reading builder does not crash createRouter.
   const fallback: R =
@@ -189,12 +198,17 @@ export function createRouter<R>(
   })
 
   function matchPathname(pathname: string): R {
+    // Drop the URL fragment first — it is client-only and never part of route
+    // matching. A `#` sits after the query (`path?query#frag`), so stripping it
+    // up front also keeps it out of the parsed query values.
+    const hashIdx = pathname.indexOf('#')
+    const noFrag = hashIdx !== -1 ? pathname.slice(0, hashIdx) : pathname
     // Separate path from query string
     let queryParams: Record<string, string> = {}
-    const qIdx = pathname.indexOf('?')
-    const rawPath = qIdx !== -1 ? pathname.slice(0, qIdx) : pathname
+    const qIdx = noFrag.indexOf('?')
+    const rawPath = qIdx !== -1 ? noFrag.slice(0, qIdx) : noFrag
     if (qIdx !== -1) {
-      queryParams = parseQuery(pathname.slice(qIdx + 1))
+      queryParams = parseQuery(noFrag.slice(qIdx + 1))
     }
 
     const path = rawPath.replace(/^\/+|\/+$/g, '')
@@ -279,8 +293,11 @@ export function createRouter<R>(
     if (!base) return pathname
     if (pathname === base || pathname === base + '/') return '/'
     if (pathname.startsWith(base + '/')) return pathname.slice(base.length)
-    if (pathname.startsWith(base + '?')) return '/' + pathname.slice(base.length + 1)
-    if (pathname.startsWith(base + '#')) return '/' + pathname.slice(base.length + 1)
+    // `base` immediately followed by a query/hash delimiter: the path is just
+    // `/`, and the `?`/`#` tail must be PRESERVED (dropping the delimiter would
+    // fold the query into the path, e.g. `/app?q=x` → `/q=x`).
+    if (pathname.startsWith(base + '?') || pathname.startsWith(base + '#'))
+      return '/' + pathname.slice(base.length)
     return null
   }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["tsconfig.json", "eslint.config.ts", ".prettierrc"],
+  "globalDependencies": ["tsconfig.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -10,12 +10,16 @@
     "check": {
       "dependsOn": ["^build"]
     },
-    "lint": {},
+    "lint": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/eslint.config.ts"]
+    },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"]
     },
     "test:coverage": {
       "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"],
       "outputs": ["coverage/**"]
     }
   }

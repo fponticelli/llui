@@ -1,8 +1,9 @@
 import { svg, rect, line, path, circle, text, svgText as svgTextEl } from '@llui/dom'
+import type { Mountable } from '@llui/dom'
 
 // Small convenience over the framework's `svgText` element helper: accept plain
 // string children (charts are static presentation — no reactive bindings).
-function svgText(props: Record<string, string>, children: readonly string[]): Node {
+function svgText(props: Record<string, string>, children: readonly string[]): Mountable {
   return svgTextEl(
     props,
     children.map((c) => text(c)),
@@ -20,7 +21,7 @@ interface BarDatum {
 export function barChart(
   data: BarDatum[],
   opts: { width?: number; barHeight?: number; color?: string } = {},
-): Node {
+): Mountable {
   const w = opts.width ?? 500
   const barH = opts.barHeight ?? 24
   const gap = 8
@@ -73,7 +74,7 @@ export function barChart(
 export function lineChart(
   data: number[],
   opts: { width?: number; height?: number; color?: string } = {},
-): Node {
+): Mountable {
   const w = opts.width ?? 500
   const h = opts.height ?? 200
   const color = opts.color ?? '#22c55e'

@@ -498,7 +498,20 @@ export function mountSignalComponent<S, M, E = never>(
         // protocol's state-update frames missed devtools-driven changes.
         state = s as S
         pendingCommit = true
-        commitPending()
+        // Commit under the SAME reentrancy guard the send/flush commit paths use.
+        // The reconcile can re-enter `send` (e.g. a blur fired by removing a focused
+        // node) — that send must ENQUEUE and let this drain finish, not start a
+        // nested drain mid-reconcile (which corrupts the scope tree → NotFoundError).
+        // Save/restore `draining` (rather than force false) so a setState poked from
+        // inside an active drain doesn't strand the outer loop. (See `flushFrame`.)
+        const prevDraining = draining
+        draining = true
+        try {
+          commitPending()
+          if (queue.length > 0) drain() // reentrant (commit-induced) messages settle here
+        } finally {
+          draining = prevDraining
+        }
       },
       send: (m) => send(m as M),
       pureUpdate: (s, m) => normalizeUpdateResult<S, E>(updateFn(s as S, m as M)),

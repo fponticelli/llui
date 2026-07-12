@@ -4,6 +4,7 @@
 
 import { component, div, header, button, span, text, label, input, show, foreign } from '@llui/dom'
 import { markdown } from '@llui/markdown'
+import { delay, handleEffects, asOnEffect, type TimeoutEffect } from '@llui/effects'
 import { SAMPLE } from './sample.js'
 import { fancyRenderers } from './renderers.js'
 
@@ -27,8 +28,10 @@ type Msg =
   | { type: 'streamTick' }
   | { type: 'stopStream' }
 
-/** Schedule the next streaming tick (handled imperatively in onEffect). */
-type Effect = { type: 'scheduleTick' }
+// The streaming demo advances one token per timer tick. Scheduling the next tick
+// is a side effect, expressed as data via @llui/effects `delay(ms, msg)` and run
+// by the `handleEffects` chain in `onEffect` — the timer auto-cancels on unmount.
+type Effect = TimeoutEffect
 
 const STREAM_MS = 45
 
@@ -49,7 +52,10 @@ export const App = component<State, Msg, Effect>({
       case 'startStream': {
         // tokenize the sample into words (keeping whitespace) and stream them in
         const tokens = SAMPLE.match(/\s+|\S+/g) ?? []
-        return [{ ...s, source: '', streaming: true, queue: tokens }, [{ type: 'scheduleTick' }]]
+        return [
+          { ...s, source: '', streaming: true, queue: tokens },
+          [delay(STREAM_MS, { type: 'streamTick' })],
+        ]
       }
       case 'streamTick': {
         if (!s.streaming || s.queue.length === 0) return [{ ...s, streaming: false, queue: [] }, []]
@@ -57,7 +63,7 @@ export const App = component<State, Msg, Effect>({
         const done = rest.length === 0
         return [
           { ...s, source: s.source + next, queue: rest, streaming: !done },
-          done ? [] : [{ type: 'scheduleTick' }],
+          done ? [] : [delay(STREAM_MS, { type: 'streamTick' })],
         ]
       }
       case 'stopStream':
@@ -65,11 +71,7 @@ export const App = component<State, Msg, Effect>({
     }
   },
 
-  onEffect: (e, api) => {
-    if (e.type !== 'scheduleTick') return
-    const id = setTimeout(() => api.send({ type: 'streamTick' }), STREAM_MS)
-    return () => clearTimeout(id)
-  },
+  onEffect: asOnEffect(handleEffects<Effect, Msg>().else(() => {})),
 
   view: ({ state, send }) => [
     div({ class: state.at('dark').map((d) => (d ? 'app dark' : 'app')) }, [

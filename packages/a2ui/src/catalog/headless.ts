@@ -277,12 +277,22 @@ const Slider: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
         el.setPointerCapture(e.pointerId)
         const move = (ev: PointerEvent) => at(ev)
         const up = (): void => {
-          el.releasePointerCapture(e.pointerId)
+          try {
+            el.releasePointerCapture(e.pointerId)
+          } catch {
+            // capture may already be lost (e.g. lostpointercapture fired first)
+          }
           el.removeEventListener('pointermove', move)
           el.removeEventListener('pointerup', up)
+          // Also tear down on cancel/lost-capture so the move handler never
+          // leaks when the gesture ends without a pointerup.
+          el.removeEventListener('pointercancel', up)
+          el.removeEventListener('lostpointercapture', up)
         }
         el.addEventListener('pointermove', move)
         el.addEventListener('pointerup', up)
+        el.addEventListener('pointercancel', up)
+        el.addEventListener('lostpointercapture', up)
       },
     },
     [

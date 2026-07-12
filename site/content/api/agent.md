@@ -794,6 +794,15 @@ Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
   `pending-confirmation` / `still-pending` rather than lie about a
   rejection. Pairing drop maps to `timeout` for the same reason — the
   user wasn't present to cancel, they simply weren't reachable.
+  LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
+  `/message` and `/confirm-result` long-poll in series: each tears its
+  subscriber down on timeout, and the next re-arms a fresh one. If the
+  user approves in that inter-poll gap, an edge-triggered subscriber
+  would miss the frame forever (the action ran but the agent polls
+  `still-pending` indefinitely). To close that gap, the registry buffers
+  every `confirm-resolved` outcome keyed by `confirmId` with a TTL, and
+  this helper checks that buffer BEFORE subscribing — returning
+  immediately when the resolution already arrived.
 
 ```typescript
 function waitForConfirm(
@@ -2454,6 +2463,20 @@ export interface PairingRegistry {
    */
   readonly recentLogCap: number
 
+  /**
+   * Level-triggered confirm-resolution buffer. The browser emits a
+   * `confirm-resolved` frame exactly once; the registry records its
+   * outcome keyed by `confirmId` with a TTL, independently of whether
+   * any subscriber is currently armed. `waitForConfirm` reads this
+   * BEFORE subscribing so an approval arriving in the gap between one
+   * long-poll's subscriber teardown and the next re-arming is not lost.
+   *
+   * Returns the recorded frame if one landed within the TTL window,
+   * else `null`. Idempotent: repeated reads return the same outcome
+   * until it ages out (confirmIds are UUIDs, so no cross-confirm reuse).
+   */
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -2541,8 +2564,28 @@ here because the DO is a persistent addressable entity, not a
 one-shot Worker isolate.
 Users instantiate one of these inside their DO class's constructor
 and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
-WebSocket upgrades, and the optional MCP endpoint all flow through
-this single entry.
+WebSocket upgrades, the optional MCP endpoint, and the internal
+`/__resolve` token-resolution endpoint all flow through this single
+entry.
+── SHARDED-DEPLOYMENT REQUIREMENT ────────────────────────────────
+`routeToAgentDO` shards by `tid`: the root DO (`__root`) owns
+`/agent/mint` and friends, while LAP/WS calls route to a per-tid DO.
+Because each DO defaults to its own `InMemoryTokenStore`, a token
+minted on the root DO is INVISIBLE to a per-tid DO — `/__resolve`
+(and every LAP auth check) would 401. So the sharded recipe REQUIRES
+a single shared external `TokenStore` (a KV/D1-backed implementation
+of the `TokenStore` interface) injected into EVERY DO:
+
+```ts
+const tokenStore = new KvTokenStore(env.AGENT_KV) // your adapter
+this.agent = new AgentPairingDurableObject({ tokenStore })
+```
+
+The only no-shared-store option is to NOT shard — route everything
+through the root DO by passing `() => Promise.resolve('__root')` as
+`resolveTid`. Then all state (tokens + pairings) lives in one DO and
+the default `InMemoryTokenStore` is sufficient, at the cost of a
+single-DO bottleneck.
 
 ```typescript
 class AgentPairingDurableObject {
@@ -2550,6 +2593,7 @@ class AgentPairingDurableObject {
   mcpRouter: ((req: Request) => Promise<Response | null>) | null
   constructor(opts: DurableObjectOptions)
   fetch(req: Request): Promise<Response>
+  resolveToken(req: Request): Promise<Response>
 }
 ```
 
@@ -2574,12 +2618,15 @@ class InMemoryPairingRegistry implements PairingRegistry {
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
   recentLog
+  confirmOutcomes
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
     } = {},
   )
   getRecentLog(tid: string, n: number): LogEntry[]
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
+  recordConfirmOutcome(tid: string, frame: ConfirmResolvedFrame): void
   register(tid: string, conn: PairingConnection): void
   unregister(tid: string): void
   isPaired(tid: string): boolean

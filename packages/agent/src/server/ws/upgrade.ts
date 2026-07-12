@@ -53,8 +53,17 @@ function selfOriginOf(req: IncomingMessage): string {
  *
  * Spec §10.2, §10.4.
  */
+/**
+ * Hard ceiling on a single inbound WebSocket frame (bytes). LAP client
+ * frames (`hello`, `rpc-reply`, `state-update` snapshots) are small; a
+ * multi-MB frame is either a bug or an abuse attempt. `ws` closes the
+ * socket with 1009 (message too big) when a frame exceeds this, bounding
+ * per-connection memory instead of buffering an unbounded payload.
+ */
+const MAX_WS_PAYLOAD_BYTES = 4 * 1024 * 1024
+
 export function createWsUpgradeHandler(deps: UpgradeDeps) {
-  const wss = new WebSocketServer({ noServer: true })
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES })
 
   return async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
     // Path check

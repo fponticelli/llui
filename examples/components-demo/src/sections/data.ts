@@ -18,7 +18,7 @@ import {
   each,
   onMount,
 } from '@llui/dom'
-import type { Send, Signal, Mountable } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -218,7 +218,7 @@ export function onEffect(effect: Effect, send: Send<Msg>): void {
   send({ type: 'dataTable', msg: loaded })
 }
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const ta = tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }), {
     id: 'tabs-demo',
   })
@@ -259,7 +259,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     paginationLabel: 'Table pages',
   })
 
-  const accItem = (v: string, title: string, body: string): Node => {
+  const accItem = (v: string, title: string, body: string): Mountable => {
     const p = ac.item(v)
     return div({ ...p.item }, [
       h3([
@@ -299,7 +299,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     ])
   }
 
-  const stepItem = (idx: number, labelText: string): Node => {
+  const stepItem = (idx: number, labelText: string): Mountable => {
     const p = st.item(idx)
     return div({ ...p.item }, [
       button({ ...p.trigger }, [text(String(idx + 1))]),
@@ -308,16 +308,21 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     ])
   }
 
-  const pgItem = (page: number): Node => button({ ...pg.item(page) }, [text(String(page))])
+  const pgItem = (page: number): Mountable => button({ ...pg.item(page) }, [text(String(page))])
 
   const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
   const colors = ['#0e7490', '#0369a1', '#14532d', '#b45309']
-  const renderSlides = (): Node[] =>
+  const renderSlides = (): Renderable =>
     slides.map((s, i) => div({ ...cr.slide(i).slide, style: `background:${colors[i]}` }, [text(s)]))
-  const renderIndicators = (): Node[] =>
+  const renderIndicators = (): Renderable =>
     slides.map((_, i) => button({ ...cr.slide(i).indicator }, []))
 
-  const treeBranch = (id: string, label: string, depth: number, treeChildren: Node[]): Node => {
+  const treeBranch = (
+    id: string,
+    label: string,
+    depth: number,
+    treeChildren: Renderable,
+  ): Mountable => {
     const p = tv.item(id, depth, true)
     return div([
       div({ ...p.item }, [
@@ -346,7 +351,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
       ),
     ])
   }
-  const treeLeaf = (id: string, label: string, depth: number): Node => {
+  const treeLeaf = (id: string, label: string, depth: number): Mountable => {
     const p = tv.item(id, depth, false)
     return div({ ...p.item, class: 'pl-5' }, [span([text(label)])])
   }
@@ -689,7 +694,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
           accItem(
             'how',
             'How does it work?',
-            'Vite plugin extracts access paths + bitmasks for zero runtime overhead.',
+            'Vite plugin extracts access paths into chunked masks for minimal runtime overhead.',
           ),
         ]),
       ]),

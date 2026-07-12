@@ -553,6 +553,105 @@ describe('menu.connect submenu parts', () => {
   })
 })
 
+describe('menu.connect submenu nav via root content (virtual focus)', () => {
+  // Virtual focus keeps DOM focus on the root content, so rootKeyNav (bound to
+  // content.onKeyDown) is the ONLY handler that fires — it must drive the open
+  // submenu on the deepest level.
+  const subTree: MenuItem[] = [
+    { value: 'new', kind: 'action' },
+    {
+      value: 'share',
+      kind: 'action',
+      children: [
+        { value: 'email', kind: 'action' },
+        { value: 'link', kind: 'action' },
+      ],
+    },
+  ]
+
+  const rootHighlighting = (value: string) => ({
+    ...init({ items: subTree, open: true }),
+    highlights: { '': value },
+  })
+
+  const submenuOpen = (highlight: string) => ({
+    ...init({ items: subTree, open: true }),
+    openPath: ['share'],
+    highlights: { '': 'share', share: highlight },
+  })
+
+  const key = (k: string) => new KeyboardEvent('keydown', { key: k, cancelable: true })
+
+  it('ArrowRight on a highlighted subtrigger opens the submenu', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(rootHighlighting('share')), send, { id: 'x' })
+    const ev = key('ArrowRight')
+    p.content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'share' })
+  })
+
+  it('ArrowRight on a leaf item is a no-op', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(rootHighlighting('new')), send, { id: 'x' })
+    const ev = key('ArrowRight')
+    p.content.onKeyDown(ev)
+    expect(send).not.toHaveBeenCalled()
+    expect(ev.defaultPrevented).toBe(false)
+  })
+
+  it('ArrowDown routes to the deepest open submenu level', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(submenuOpen('email')), send, { id: 'x' })
+    p.content.onKeyDown(key('ArrowDown'))
+    expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: 'share' })
+  })
+
+  it('Enter selects the highlighted item at the deepest level', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(submenuOpen('email')), send, { id: 'x' })
+    p.content.onKeyDown(key('Enter'))
+    expect(send).toHaveBeenCalledWith({ type: 'selectHighlighted', level: 'share' })
+  })
+
+  it('ArrowLeft closes the deepest open submenu', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(submenuOpen('email')), send, { id: 'x' })
+    const ev = key('ArrowLeft')
+    p.content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('ArrowLeft at the root (no submenu open) is a no-op', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(rootHighlighting('new')), send, { id: 'x' })
+    p.content.onKeyDown(key('ArrowLeft'))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('Escape closes the deepest submenu before the whole menu', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(submenuOpen('email')), send, { id: 'x' })
+    p.content.onKeyDown(key('Escape'))
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
+  })
+
+  it('typeahead is scoped to the deepest open submenu level', () => {
+    const send = vi.fn()
+    const p = connect(signalOf(submenuOpen('email')), send, { id: 'x' })
+    p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'l' }))
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'typeahead', level: 'share', char: 'l' }),
+    )
+  })
+
+  it('content aria-activedescendant reflects the deepest open level highlight', () => {
+    const parts = connect(rootSignal(), vi.fn(), { id: 'm1' })
+    expect(read(parts.content['aria-activedescendant'], submenuOpen('link'))).toBe('m1:item:link')
+  })
+})
+
 describe('menu RTL', () => {
   it('init defaults dir to ltr; respects opts.dir', () => {
     expect(init({ items: flat }).dir).toBe('ltr')

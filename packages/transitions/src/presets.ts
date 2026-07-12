@@ -2,12 +2,14 @@ import type { TransitionOptions } from '@llui/dom'
 import type { Styles } from './types.js'
 import { transition } from './transition.js'
 import { asElements, forceReflow } from './style-utils.js'
-import { waitForEnd, createRunScope } from './anim.js'
+import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
 
 export interface FadeOptions {
   duration?: number
   easing?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 export function fade(opts: FadeOptions = {}): TransitionOptions {
@@ -16,6 +18,7 @@ export function fade(opts: FadeOptions = {}): TransitionOptions {
   const active: Styles = { transition: `opacity ${duration}ms ${easing}` }
   return transition({
     appear: opts.appear,
+    respectReducedMotion: opts.respectReducedMotion,
     duration,
     enterActive: active,
     enterFrom: { opacity: 0 },
@@ -38,6 +41,8 @@ export interface SlideOptions {
   /** Also animate opacity (default: true). */
   fade?: boolean
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 export function slide(opts: SlideOptions = {}): TransitionOptions {
@@ -60,6 +65,7 @@ export function slide(opts: SlideOptions = {}): TransitionOptions {
 
   return transition({
     appear: opts.appear,
+    respectReducedMotion: opts.respectReducedMotion,
     duration,
     enterActive: active,
     enterFrom: hidden,
@@ -93,6 +99,8 @@ export interface ScaleOptions {
   /** Transform origin (default: 'center'). */
   origin?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 export function scale(opts: ScaleOptions = {}): TransitionOptions {
@@ -117,6 +125,7 @@ export function scale(opts: ScaleOptions = {}): TransitionOptions {
 
   return transition({
     appear: opts.appear,
+    respectReducedMotion: opts.respectReducedMotion,
     duration,
     enterActive: active,
     enterFrom: hidden,
@@ -133,6 +142,8 @@ export interface CollapseOptions {
   duration?: number
   easing?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 /**
@@ -158,6 +169,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const appear = opts.appear !== false
   const sizeProp = axis === 'y' ? 'height' : 'width'
   const runs = createRunScope()
+  const reducedMotion = (): boolean => opts.respectReducedMotion !== false && prefersReducedMotion()
 
   // Snapshot the element's clean baseline (after rolling back any in-flight
   // run) and return a restore closure for it.
@@ -178,6 +190,12 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const els = asElements(nodes)
     if (els.length === 0) return Promise.resolve()
     const el = els[0]!
+
+    // Reduced motion: leave the element at its natural size, no collapse.
+    if (reducedMotion()) {
+      runs.supersede(el)
+      return Promise.resolve()
+    }
 
     const restore = snapshotRestore(el)
     const token = runs.register(el, restore)
@@ -203,6 +221,12 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const els = asElements(nodes)
     if (els.length === 0) return Promise.resolve()
     const el = els[0]!
+
+    // Reduced motion: resolve at once so the runtime removes the element now.
+    if (reducedMotion()) {
+      runs.supersede(el)
+      return Promise.resolve()
+    }
 
     const restore = snapshotRestore(el)
     const token = runs.register(el, restore)

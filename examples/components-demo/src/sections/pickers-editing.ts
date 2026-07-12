@@ -1,5 +1,5 @@
 import { div, button, span, label, input, each, onMount, text } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { datePicker, type DayCell, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
 import { colorPicker } from '@llui/components/color-picker'
@@ -34,11 +34,12 @@ export type Msg =
    */
   | { type: 'copyText'; value: string }
 
-let localSend: (m: Msg) => void = () => {
-  throw new Error('send not initialized')
-}
+// The clipboard write and the delayed "Copied!" reset are side effects, so they
+// leave the reducer as an Effect and run in `onEffect` (the impure boundary) —
+// no module-global `send`, no `setTimeout` inside `update`.
+export type Effect = { type: 'copyToClipboard'; value: string }
 
-export const init = (): [State, never[]] => [
+export const init = (): [State, Effect[]] => [
   {
     datePicker: datePicker.init({ value: '2026-04-15' }),
     timePicker: timePicker.init({ value: { hours: 14, minutes: 30, seconds: 0 }, format: '12' }),
@@ -51,16 +52,27 @@ export const init = (): [State, never[]] => [
   [],
 ]
 
-export const update = mergeHandlers<State, Msg, never>(
-  composeModules<State, Msg, never>(children),
+export const update = mergeHandlers<State, Msg, Effect>(
+  composeModules<State, Msg, Effect>(children),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
-    void copyToClipboard(msg.value).catch(() => {})
+    // Optimistically flip the clipboard component to its "Copied!" state; the
+    // actual clipboard write + delayed reset run in `onEffect`.
     const [cb] = clipboard.update(state.clipboard, { type: 'copy' })
-    setTimeout(() => localSend({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
-    return [{ ...state, clipboard: cb }, []]
+    return [{ ...state, clipboard: cb }, [{ type: 'copyToClipboard', value: msg.value }]]
   },
 )
+
+/**
+ * Route this section's effects. `copyToClipboard` performs the async clipboard
+ * write and schedules the "Copied!" reset. `setTimeout` here is legitimate — an
+ * effect handler is the impure boundary; the reducer stays pure.
+ */
+export function onEffect(effect: Effect, send: Send<Msg>): void {
+  if (effect.type !== 'copyToClipboard') return
+  void copyToClipboard(effect.value).catch(() => {})
+  setTimeout(() => send({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
+}
 
 function todayIsoString(): string {
   const d = new Date()
@@ -68,8 +80,7 @@ function todayIsoString(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
-  localSend = send
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const dp = datePicker.connect(state.at('datePicker'), (m) => send({ type: 'datePicker', msg: m }))
   const tp = timePicker.connect(state.at('timePicker'), (m) => send({ type: 'timePicker', msg: m }))
   const cp = colorPicker.connect(state.at('colorPicker'), (m) =>
@@ -140,7 +151,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
     }
   })
 
-  const dpGrid = (): Node[] => {
+  const dpGrid = (): Renderable => {
     const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
     // to dp.grid via attribute selector. Flatten rows with `display: contents`

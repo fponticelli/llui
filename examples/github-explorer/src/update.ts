@@ -29,7 +29,7 @@ function repoHttp(owner: string, name: string) {
   return http<Msg>({
     url: repoUrl(owner, name),
     headers: JSON_HEADERS,
-    onSuccess: (data) => ({ type: 'repoOk', payload: data as Repo }),
+    onSuccess: (data) => ({ type: 'repoOk', owner, name, payload: data as Repo }),
     onError: (error) => ({ type: 'apiError', error }),
   })
 }
@@ -40,6 +40,8 @@ function contentsHttp(owner: string, name: string, path: string) {
     headers: JSON_HEADERS,
     onSuccess: (data) => ({
       type: 'contentsOk',
+      owner,
+      name,
       payload: data as TreeEntry[] | FileContent,
     }),
     onError: (error) => ({ type: 'contentsError', error }),
@@ -50,7 +52,7 @@ function readmeHttp(owner: string, name: string) {
   return http<Msg>({
     url: readmeUrl(owner, name),
     headers: HTML_HEADERS,
-    onSuccess: (data) => ({ type: 'readmeOk', payload: data as string }),
+    onSuccess: (data) => ({ type: 'readmeOk', owner, name, payload: data as string }),
     onError: (error) => ({ type: 'readmeError', error }),
   })
 }
@@ -59,9 +61,17 @@ function issuesHttp(owner: string, name: string) {
   return http<Msg>({
     url: issuesUrl(owner, name),
     headers: JSON_HEADERS,
-    onSuccess: (data) => ({ type: 'issuesOk', payload: data as Issue[] }),
+    onSuccess: (data) => ({ type: 'issuesOk', owner, name, payload: data as Issue[] }),
     onError: (error) => ({ type: 'apiError', error }),
   })
+}
+
+// True when the current route targets the given repo. A resource response whose
+// owner/name doesn't match has been superseded by a later navigation, so it must
+// be dropped rather than merged into the now-current route's data.
+function routeMatches(state: State, owner: string, name: string): boolean {
+  const r = state.route
+  return (r.page === 'repo' || r.page === 'tree') && r.owner === owner && r.name === name
 }
 
 export function update(state: State, msg: Msg): [State, Effect[]] {
@@ -125,15 +135,20 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     }
 
     case 'repoOk':
+      // Drop a response the user has navigated away from (stale race winner).
+      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
       return withRepoLoaded(state, msg.payload)
 
     case 'contentsOk':
+      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
       return withContentsLoaded(state, msg.payload)
 
     case 'readmeOk':
+      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
       return withReadmeLoaded(state, msg.payload)
 
     case 'issuesOk':
+      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
       return withIssuesLoaded(state, msg.payload)
 
     case 'apiError':
@@ -189,18 +204,26 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
       return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
 
     case 'repo':
-      effects.push(repoHttp(r.owner, r.name))
+      // Each resource fetch is keyed so a new navigation cancels any in-flight
+      // request of the same kind (belt; the owner/name guard in `update` is the
+      // suspenders). Together they prevent repo A's response landing in repo B.
+      effects.push(cancel('repo', repoHttp(r.owner, r.name)))
       if (r.tab === 'code') {
-        effects.push(contentsHttp(r.owner, r.name, ''))
-        effects.push(readmeHttp(r.owner, r.name))
+        effects.push(cancel('contents', contentsHttp(r.owner, r.name, '')))
+        effects.push(cancel('readme', readmeHttp(r.owner, r.name)))
+        effects.push(cancel('issues'))
       } else {
-        effects.push(issuesHttp(r.owner, r.name))
+        effects.push(cancel('issues', issuesHttp(r.owner, r.name)))
+        effects.push(cancel('contents'))
+        effects.push(cancel('readme'))
       }
       return [{ ...state, route: r }, effects]
 
     case 'tree':
-      effects.push(repoHttp(r.owner, r.name))
-      effects.push(contentsHttp(r.owner, r.name, r.path))
+      effects.push(cancel('repo', repoHttp(r.owner, r.name)))
+      effects.push(cancel('contents', contentsHttp(r.owner, r.name, r.path)))
+      effects.push(cancel('readme'))
+      effects.push(cancel('issues'))
       return [{ ...state, route: r }, effects]
   }
 }
@@ -231,20 +254,15 @@ function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {
 function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'code' && Array.isArray(payload)) {
-    const prev =
-      r.data.type === 'success'
-        ? r.data.data
-        : { repo: null as unknown as Repo, tree: [], readme: '' }
+    const prev = r.data.type === 'success' ? r.data.data : { repo: null, tree: [], readme: '' }
     return [
       { ...state, route: { ...r, data: { type: 'success', data: { ...prev, tree: payload } } } },
       [],
     ]
   }
   if (r.page === 'tree') {
-    const prevRepo =
-      r.data.type === 'success' && 'repo' in r.data.data
-        ? r.data.data.repo
-        : (null as unknown as Repo)
+    const prevRepo: Repo | null =
+      r.data.type === 'success' && 'repo' in r.data.data ? r.data.data.repo : null
     if (Array.isArray(payload)) {
       return [
         {
@@ -268,10 +286,7 @@ function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [
 function withReadmeLoaded(state: State, readme: string): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'code') {
-    const prev =
-      r.data.type === 'success'
-        ? r.data.data
-        : { repo: null as unknown as Repo, tree: [], readme: '' }
+    const prev = r.data.type === 'success' ? r.data.data : { repo: null, tree: [], readme: '' }
     return [{ ...state, route: { ...r, data: { type: 'success', data: { ...prev, readme } } } }, []]
   }
   return [state, []]
@@ -280,8 +295,7 @@ function withReadmeLoaded(state: State, readme: string): [State, Effect[]] {
 function withIssuesLoaded(state: State, issues: Issue[]): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'issues') {
-    const prev =
-      r.data.type === 'success' ? r.data.data : { repo: null as unknown as Repo, issues: [] }
+    const prev = r.data.type === 'success' ? r.data.data : { repo: null, issues: [] }
     return [{ ...state, route: { ...r, data: { type: 'success', data: { ...prev, issues } } } }, []]
   }
   return [state, []]

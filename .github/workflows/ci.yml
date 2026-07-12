@@ -71,7 +71,13 @@ jobs:
         run: pnpm format:check
 
       - name: Build
-        run: pnpm turbo build
+        # Exclude @llui/site: its build runs 4 generators + a Vike prerender +
+        # 12 example Vite bundles, and deploy-docs.yml rebuilds it from scratch
+        # anyway. The drift job already excludes it identically. Verify only
+        # needs the publishable packages built (+ the example apps, which are
+        # their OWN packages with their own build task — the smoke step below
+        # boots their dist, so they must and do still build here).
+        run: pnpm turbo build --filter=!@llui/site
 
       - name: Type check
         run: pnpm turbo check
@@ -91,6 +97,16 @@ jobs:
         # vitest already forks ~ncpu workers, so running many suites in parallel
         # oversubscribes the 4-core runner ~10x and starves timer-sensitive
         # tests. Two at a time keeps load gentle (~2x).
+        #
+        # HYPOTHESIS for a future turbo migration: the 24-min post-run stall is
+        # most likely turbo's background DAEMON doing I/O after the tasks exit
+        # (telemetry is already disabled via the top-level env). If so, running
+        # `TURBO_DAEMON=false pnpm turbo test --concurrency=2` (or `--no-daemon`)
+        # would exit cleanly AND pick up the shared turbo cache — turbo.json's
+        # `test` task now lists `$TURBO_ROOT$/vitest.shared.ts` as an input, so a
+        # cached replay is already cache-correct against a define flip. Left on
+        # `pnpm -r` until someone can confirm the daemon fix inside the GH
+        # container; the `-r` path always runs fresh (no stale-cache risk).
         run: pnpm -r --workspace-concurrency=2 run test
 
       # Boot every built example in headless Chromium and fail on any

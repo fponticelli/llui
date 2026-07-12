@@ -70,19 +70,114 @@ export type MiddlewareHandler = (
   next: (err?: unknown) => void,
 ) => void
 
+// ── Status-machine validation ─────────────────────────────────────────────
+// The `/notes/:id/status` endpoint drives destructive side effects (a
+// `to: 'rejected'` runs `git checkout HEAD -- <file>` / `unlink`, discarding
+// the developer's uncommitted edits; a `to: 'accepted'` deletes transient
+// note files). Untrusted, same-origin callers must not be able to jump the
+// note straight into those states with an arbitrary `to`. We validate the
+// requested status against the `NoteStatus` union AND a legal-transition
+// graph before appending anything.
+//
+// TODO(notes-format): this table describes the SAME status machine that
+// `@llui/notes-format` owns (it replays transitions). It lives here for now
+// because notes-format exports no runtime transition table; it should move
+// there so the producer and validator share one source of truth.
+const NOTE_STATUSES: readonly NoteStatus[] = [
+  'open',
+  'claimed',
+  'in-progress',
+  'proposed',
+  'accepted',
+  'applied',
+  'rejected',
+  'wontfix',
+  'failed',
+]
+const NOTE_STATUS_SET: ReadonlySet<string> = new Set(NOTE_STATUSES)
+
+function isNoteStatus(v: unknown): v is NoteStatus {
+  return typeof v === 'string' && NOTE_STATUS_SET.has(v)
+}
+
+// Legal outgoing edges per status. The security-critical invariant is that
+// `accepted` (deletes files) and `rejected` (reverts the working tree) are
+// only reachable from `proposed` — the one state that actually carries a
+// reviewable proposedDiff — and `applied` only from `accepted`. Non-
+// destructive setup/lifecycle edges are permissive.
+const LEGAL_TRANSITIONS: Record<NoteStatus, readonly NoteStatus[]> = {
+  open: ['claimed', 'in-progress', 'proposed', 'wontfix', 'failed'],
+  claimed: ['in-progress', 'proposed', 'wontfix', 'failed', 'open'],
+  'in-progress': ['proposed', 'claimed', 'wontfix', 'failed', 'open'],
+  proposed: ['accepted', 'rejected', 'wontfix', 'failed', 'in-progress'],
+  accepted: ['applied'],
+  applied: [],
+  rejected: ['open'],
+  wontfix: ['open'],
+  failed: ['open', 'claimed'],
+}
+// From a note with no prior status (null), only non-destructive entry states
+// are reachable — never accepted/rejected/applied/proposed directly.
+const NULL_START_TARGETS: readonly NoteStatus[] = ['open', 'claimed', 'in-progress']
+
+function isLegalTransition(from: NoteStatus | null, to: NoteStatus): boolean {
+  const allowed = from === null ? NULL_START_TARGETS : LEGAL_TRANSITIONS[from]
+  return allowed.includes(to)
+}
+
 const ROUTE_PREFIX = '/_llui'
 const DEFAULT_CAPTURE_TIMEOUT_MS = 30_000
+/** Default request-body cap (bytes). Bounds JSON routes and the /import
+ *  bundle upload so a single request can't buffer unbounded memory. */
+const DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
+
+/** Thrown by `readBody` when a request body exceeds the configured cap.
+ *  The route dispatcher maps it to a 413 (Payload Too Large). */
+class BodyTooLargeError extends Error {
+  constructor(readonly limit: number) {
+    super(`request body exceeds ${limit} bytes`)
+    this.name = 'BodyTooLargeError'
+  }
+}
 
 interface Body {
   raw: Buffer
   json: () => unknown
 }
 
-async function readBody(req: IncomingMessage): Promise<Body> {
+async function readBody(
+  req: IncomingMessage,
+  maxBytes: number = DEFAULT_MAX_BODY_BYTES,
+): Promise<Body> {
   return new Promise((resolve, reject) => {
+    // Fast reject on a declared Content-Length over the cap — no need to
+    // read a single byte of the (attacker-controlled) body. We PAUSE rather
+    // than destroy so the dispatcher can still write a 413 response; the
+    // 413 handler closes the connection to abort any remaining upload.
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      req.pause()
+      reject(new BodyTooLargeError(maxBytes))
+      return
+    }
     const chunks: Buffer[] = []
-    req.on('data', (c: Buffer) => chunks.push(c))
+    let total = 0
+    let aborted = false
+    req.on('data', (c: Buffer) => {
+      if (aborted) return
+      total += c.length
+      // Enforce the cap on the ACCUMULATED size too — a chunked/streamed
+      // body can omit or lie about Content-Length.
+      if (total > maxBytes) {
+        aborted = true
+        req.pause()
+        reject(new BodyTooLargeError(maxBytes))
+        return
+      }
+      chunks.push(c)
+    })
     req.on('end', () => {
+      if (aborted) return
       const raw = Buffer.concat(chunks)
       resolve({
         raw,
@@ -92,7 +187,9 @@ async function readBody(req: IncomingMessage): Promise<Body> {
         },
       })
     })
-    req.on('error', reject)
+    req.on('error', (err) => {
+      if (!aborted) reject(err)
+    })
   })
 }
 
@@ -193,6 +290,18 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
 
     // Route table. Order matters: more-specific paths first.
     void route(req, res, path, method, url).catch((err) => {
+      if (err instanceof BodyTooLargeError) {
+        // Answer 413 and close the connection: the client may still be
+        // streaming the oversized body, so `Connection: close` aborts the
+        // upload after the response flushes instead of buffering the rest.
+        if (!res.headersSent) {
+          res.statusCode = 413
+          res.setHeader('content-type', 'application/json')
+          res.setHeader('connection', 'close')
+          res.end(JSON.stringify({ error: err.message }))
+        }
+        return
+      }
       const message = err instanceof Error ? err.message : String(err)
       sendError(res, 500, message)
     })
@@ -314,13 +423,33 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
           return sendError(res, 400, 'invalid JSON body')
         }
         if (!payload?.to) return sendError(res, 400, '"to" status is required')
+        // Validate against the NoteStatus union — an arbitrary string must
+        // never reach appendStatus / the destructive apply+revert paths.
+        if (!isNoteStatus(payload.to)) {
+          return sendError(res, 400, `invalid "to" status: ${JSON.stringify(payload.to)}`)
+        }
         const before = currentStatus(sessionDir, id)
+        // Enforce the legal-transition graph. Reject illegal edges (e.g.
+        // open→accepted without a proposal) with 409 so a same-origin caller
+        // can't force the destructive accepted/rejected side effects.
+        if (!isLegalTransition(before, payload.to)) {
+          return sendError(
+            res,
+            409,
+            `illegal status transition: ${before ?? '(none)'} → ${payload.to}`,
+          )
+        }
+        // Provenance: this endpoint is a same-origin, human-driven dev action.
+        // A client cannot self-attest as the LLM — only the server-side router
+        // legitimately records `by: 'llm'`. Coerce a forged/unknown `by` down
+        // to 'human' ('system' is allowed for internal tooling).
+        const by: Author | 'system' = payload.by === 'system' ? 'system' : 'human'
         const transition: StatusTransition = {
           ts: new Date().toISOString(),
           noteId: id,
           from: before,
           to: payload.to,
-          by: payload.by ?? 'system',
+          by,
           ...(payload.reason ? { reason: payload.reason } : {}),
         }
         appendStatus(sessionDir, transition)

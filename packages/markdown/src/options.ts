@@ -2,8 +2,7 @@
 
 import type { MarkdownOptions, ResolvedOptions } from './types.js'
 import { mergeRenderers } from './renderers/index.js'
-
-const DEFAULT_PROTOCOLS = ['http', 'https', 'mailto', 'tel']
+import { defaultAllowedProtocols } from './security.js'
 
 export function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions {
   return {
@@ -11,8 +10,9 @@ export function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions {
     renderers: mergeRenderers(opts.renderers),
     extensions: opts.extensions,
     mdastExtensions: opts.mdastExtensions,
+    sealSafeExtensions: opts.sealSafeExtensions ?? false,
     sanitizeHtml: opts.sanitizeHtml,
-    allowedProtocols: opts.allowedProtocols ?? DEFAULT_PROTOCOLS,
+    allowedProtocols: opts.allowedProtocols ?? [...defaultAllowedProtocols],
     transformLink: opts.transformLink,
     class: opts.class ?? 'markdown-body',
     keyOf: opts.keyOf,

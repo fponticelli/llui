@@ -21,6 +21,7 @@ import {
   firstNav,
   setHighlight,
   createMenuTreeParts,
+  activeMenuHighlight,
 } from './menu-machine.js'
 
 /**
@@ -321,7 +322,7 @@ export function connect(
       id: contentId,
       'aria-labelledby': triggerId,
       'aria-activedescendant': state.map((s) => {
-        const v = s.highlights['']
+        const v = activeMenuHighlight(s)
         return v == null ? undefined : itemId(v)
       }),
       tabindex: -1,

@@ -133,6 +133,45 @@ describe('WsPairingRegistry', () => {
     expect(await p).toEqual({ outcome: 'confirmed', stateAfter: { ok: true } })
   })
 
+  it('buffers a confirm-resolved outcome for level-triggered pickup (poll-gap liveness)', async () => {
+    // Regression: confirm resolution used to be edge-triggered. If the
+    // user approved in the gap between one long-poll tearing its
+    // subscriber down and the next re-arming, the frame dispatched to
+    // zero subscribers and was lost — the action ran but the agent polled
+    // `still-pending` forever. Now the registry buffers the outcome and
+    // `waitForConfirm` reads it BEFORE subscribing.
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    // Resolution lands while NO waitForConfirm subscriber is armed.
+    f.emit({
+      t: 'confirm-resolved',
+      confirmId: 'c-gap',
+      outcome: 'confirmed',
+      stateAfter: { ok: 1 },
+    })
+    // Level-triggered: the outcome is readable after the fact.
+    expect(reg.getConfirmOutcome('t1', 'c-gap')).toMatchObject({ outcome: 'confirmed' })
+    // The next wait returns it IMMEDIATELY (tiny timeout) instead of
+    // blocking out and mapping to `timeout` (→ still-pending).
+    const res = await reg.waitForConfirm('t1', 'c-gap', 5)
+    expect(res).toEqual({ outcome: 'confirmed', stateAfter: { ok: 1 } })
+  })
+
+  it('getConfirmOutcome returns null for an unresolved confirmId', () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    expect(reg.getConfirmOutcome('t1', 'never')).toBeNull()
+  })
+
+  it('waitForConfirm still resolves via subscriber when armed before the frame', async () => {
+    // The buffer must not break the normal (already-subscribed) path.
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const p = reg.waitForConfirm('t1', 'c-live', 1000)
+    f.emit({ t: 'confirm-resolved', confirmId: 'c-live', outcome: 'user-cancelled' })
+    expect(await p).toEqual({ outcome: 'user-cancelled' })
+  })
+
   it('waitForChange() arms a watch and resolves on the matching (id-correlated) state-update', async () => {
     const f = mkFake()
     reg.register('t1', getConn(f))

@@ -116,6 +116,31 @@ describe('testView — interactive', () => {
     v.unmount()
   })
 
+  it('fire() delivers KeyboardEvent details (event.key)', () => {
+    type KS = { lastKey: string }
+    type KM = { type: 'key'; key: string }
+    const KeyComp = component<KS, KM, never>({
+      name: 'KeyComp',
+      init: () => [{ lastKey: '' }, []],
+      update: (s, m) => (m.type === 'key' ? [{ ...s, lastKey: m.key }, []] : [s, []]),
+      view: ({ state, send }) => [
+        div({ class: 'root' }, [
+          span({ class: 'key' }, [text(state.map((s) => s.lastKey))]),
+          input({
+            class: 'field',
+            onKeyDown: (e: KeyboardEvent) => send({ type: 'key', key: e.key }),
+          }),
+        ]),
+      ],
+    })
+
+    const v = testView(KeyComp, { lastKey: '' })
+    // Before the fix, a bare Event dropped `key`, so this arrived empty.
+    v.fire('.field', 'keydown', { key: 'Enter' })
+    expect(v.text('.key')).toBe('Enter')
+    v.unmount()
+  })
+
   it('unmount disposes and clears the container; is idempotent', () => {
     const v = testView(Counter, { count: 0, label: '' })
     expect(v.query('.root')).not.toBeNull()

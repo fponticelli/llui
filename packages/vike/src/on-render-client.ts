@@ -348,6 +348,16 @@ async function renderClient(
   const newChainData: readonly unknown[] = [...layoutData, pageContext.data]
 
   if (pageContext.isHydration) {
+    // Double-hydration guard: a hydration render must start from an empty chain.
+    // If one is already mounted, appending another would silently stack a second
+    // live chain over the first (leaked handles + duplicated DOM bindings).
+    if (chainHandles.length > 0) {
+      throw new Error(
+        `@llui/vike: hydration ran while a layout chain of ${chainHandles.length} ` +
+          `layer(s) is already mounted. This is a double-hydration — hydrate exactly ` +
+          `once per page load (call _resetChainForTest() between hydrations in tests).`,
+      )
+    }
     // First load — hydrate every layer against server-rendered HTML. Init
     // effects RUN by default here (the server ran none): opt out with
     // `runInitEffectsOnHydrate: false`.
@@ -475,6 +485,32 @@ interface MountOpts {
  * anchor-mount/dispose contracts directly with hand-built DOM.
  */
 export function _mountChainSuffix(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+  startAt: number,
+  initialTarget: HTMLElement | Comment,
+  initialContexts: ReadonlyMap<symbol, unknown> | undefined,
+  opts: MountOpts,
+): void {
+  // Layers are registered into `chainHandles` as they mount. If a LATER layer
+  // throws (e.g. a missing/errant `pageSlot()`), the layers this invocation
+  // already mounted must be torn down too — otherwise they leak: live handles
+  // and DOM left registered in `chainHandles`. Capture the pre-invocation length
+  // and, on throw, dispose everything pushed since, innermost-first.
+  const startLen = chainHandles.length
+
+  try {
+    mountChain(chain, chainData, startAt, initialTarget, initialContexts, opts)
+  } catch (err) {
+    for (let i = chainHandles.length - 1; i >= startLen; i--) {
+      chainHandles[i]!.handle.dispose()
+    }
+    chainHandles = chainHandles.slice(0, startLen)
+    throw err
+  }
+}
+
+function mountChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
   startAt: number,

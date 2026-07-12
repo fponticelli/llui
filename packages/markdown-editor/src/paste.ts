@@ -17,6 +17,7 @@ import {
   type LexicalEditor,
 } from 'lexical'
 import { $convertFromMarkdownString, type Transformer } from '@lexical/markdown'
+import { $sanitizeLinkNodes } from './security.js'
 
 /**
  * Parse `markdown` with `transformers` and insert the produced nodes at the
@@ -40,6 +41,10 @@ export function $insertMarkdownAtSelection(
   // touches the scratch node, not the live document.
   const scratch = $createParagraphNode()
   $convertFromMarkdownString(markdown, transformers, scratch)
+  // Untrusted source: neutralize any `javascript:`/`data:` link the markdown
+  // carried BEFORE the nodes are spliced into the live document. (Image src is
+  // enforced in the image transformer; links go through here.)
+  $sanitizeLinkNodes(scratch)
   const nodes = scratch.getChildren()
   if (nodes.length === 0) return false
 

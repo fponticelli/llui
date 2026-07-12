@@ -14,7 +14,7 @@ import {
   text,
   each,
 } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 import {
   formatNumber,
   formatRelativeTime,
@@ -71,6 +71,11 @@ type Msg =
    */
   | { type: 'setTheme'; theme: Theme }
 
+// Applying a theme mutates the document (<html> data attributes / class) — an
+// imperative DOM side effect. Reducers stay pure; the change is returned as an
+// Effect and performed in `onEffect`.
+type Effect = { type: 'applyTheme'; theme: Theme }
+
 const INITIAL_PRIORITIES: Priority[] = [
   { id: 'p1', title: 'Migrate billing service to new API', impact: 'high' },
   { id: 'p2', title: 'Investigate Q3 revenue drop', impact: 'high' },
@@ -81,7 +86,7 @@ const INITIAL_PRIORITIES: Priority[] = [
 
 // ── Component ────────────────────────────────────────────────────
 
-const Dashboard = component<State, Msg, never>({
+const Dashboard = component<State, Msg, Effect>({
   name: 'Dashboard',
   init: () => [
     {
@@ -91,7 +96,8 @@ const Dashboard = component<State, Msg, never>({
       sort: sortable.init(),
       theme: 'system' as Theme,
     },
-    [],
+    // Apply the initial theme via an effect (no DOM work in init).
+    [{ type: 'applyTheme', theme: 'system' as Theme }],
   ],
   update: (state, msg) => {
     switch (msg.type) {
@@ -119,26 +125,29 @@ const Dashboard = component<State, Msg, never>({
       case 'reorderPriorities':
         return [{ ...state, priorities: sortable.reorder(state.priorities, msg.from, msg.to) }, []]
       case 'setTheme':
-        themeSwitch.applyTheme(themeSwitch.resolveTheme(msg.theme))
-        return [{ ...state, theme: msg.theme }, []]
+        return [{ ...state, theme: msg.theme }, [{ type: 'applyTheme', theme: msg.theme }]]
+    }
+  },
+  onEffect: (effect) => {
+    if (effect.type === 'applyTheme') {
+      themeSwitch.applyTheme(themeSwitch.resolveTheme(effect.theme))
     }
   },
   view: ({ state, send }) => {
-    // Apply current theme on mount + wire up inView observer for chart animation
-    onMount((container) => {
-      themeSwitch.applyTheme(themeSwitch.resolveTheme('system'))
-      // Wait a frame so bindings settle, then locate the charts section
-      requestAnimationFrame(() => {
-        const section = container.querySelector('.charts-section') as HTMLElement | null
+    return [
+      // Wire up the inView observer for chart animation. onMount runs after the
+      // view's nodes are inserted, so the charts section already exists — no
+      // requestAnimationFrame needed. The onMount mountable MUST be placed in the
+      // view array to register (a discarded onMount(...) statement is inert).
+      onMount((root) => {
+        const section = root.querySelector('.charts-section') as HTMLElement | null
         if (!section) return
         inView.createObserver(section, (m) => send({ type: 'charts', msg: m }), {
           threshold: 0.1,
           once: true,
         })
-      })
-    })
+      }),
 
-    return [
       div({ class: 'dashboard' }, [
         // Header
         div({ class: 'header' }, [
@@ -269,7 +278,7 @@ interface ActivityDatum {
   ago: number
 }
 
-function activityItem(item: Signal<ActivityDatum>, locale: Signal<string>): Node {
+function activityItem(item: Signal<ActivityDatum>, locale: Signal<string>): Mountable {
   // ACTIVITY is static, so the per-row value is fixed for its lifetime — read
   // it once (plain value) and close over it in the locale-derived slot.
   const entry = item.peek()
@@ -303,7 +312,7 @@ function prioritiesSection(
   priorities: Signal<Priority[]>,
   sort: Signal<SortableState>,
   send: Send<Msg>,
-): Node {
+): Mountable {
   const sortSend = (m: SortableMsg): void => send({ type: 'sort', msg: m })
   const parts = sortable.connect(sort, sortSend, { id: 'priorities' })
 
@@ -329,7 +338,7 @@ function priorityItem(
   item: Signal<Priority>,
   index: Signal<number>,
   parts: ReturnType<typeof sortable.connect>,
-): Node {
+): Mountable {
   const id = item.peek().id
   const idx = index.peek()
   return li(
@@ -352,7 +361,7 @@ function priorityItem(
   )
 }
 
-function themeBtn(theme: Signal<Theme>, send: Send<Msg>, t: Theme, icon: string): Node {
+function themeBtn(theme: Signal<Theme>, send: Send<Msg>, t: Theme, icon: string): Mountable {
   return button(
     {
       class: theme.map((cur) => `theme-btn${cur === t ? ' active' : ''}`),
@@ -364,7 +373,7 @@ function themeBtn(theme: Signal<Theme>, send: Send<Msg>, t: Theme, icon: string)
   )
 }
 
-function themeToggle(theme: Signal<Theme>, send: Send<Msg>): Node {
+function themeToggle(theme: Signal<Theme>, send: Send<Msg>): Mountable {
   return div({ class: 'theme-switch', role: 'group', 'aria-label': 'Theme' }, [
     themeBtn(theme, send, 'light', '☀'),
     themeBtn(theme, send, 'dark', '☽'),
@@ -372,7 +381,12 @@ function themeToggle(theme: Signal<Theme>, send: Send<Msg>): Node {
   ])
 }
 
-function localeBtn(locale: Signal<string>, send: Send<Msg>, code: string, label: string): Node {
+function localeBtn(
+  locale: Signal<string>,
+  send: Send<Msg>,
+  code: string,
+  label: string,
+): Mountable {
   return button(
     {
       class: locale.map((cur) => `locale-btn${cur === code ? ' active' : ''}`),
@@ -383,7 +397,7 @@ function localeBtn(locale: Signal<string>, send: Send<Msg>, code: string, label:
   )
 }
 
-function localeSwitch(locale: Signal<string>, send: Send<Msg>): Node {
+function localeSwitch(locale: Signal<string>, send: Send<Msg>): Mountable {
   // Build buttons explicitly (not via locales.map) — a plain Array.map building
   // DOM is indistinguishable to the compiler from a signal .map, which forbids
   // node construction in its body.
@@ -400,7 +414,7 @@ function kpiCard(
   valueFn: (locale: string) => string,
   change: string,
   positive: boolean,
-): Node {
+): Mountable {
   return div({ class: 'kpi-card' }, [
     span({ class: 'kpi-title' }, [text(title)]),
     div({ class: 'kpi-value' }, [span([text(locale.map(valueFn))])]),

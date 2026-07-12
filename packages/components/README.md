@@ -35,7 +35,7 @@ Peer dependency: `@llui/dom`.
 Each component exports `init`, `update`, `connect`, and a barrel object:
 
 ```typescript
-import { component, div, button } from '@llui/dom'
+import { component, div, button, text } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 
 type State = { tabs: tabs.TabsState }
@@ -46,14 +46,10 @@ const App = component<State, Msg, never>({
   init: () => [{ tabs: tabs.init({ items: ['a', 'b', 'c'], value: 'a' }) }, []],
   update: (s, m) => {
     const [t] = tabs.update(s.tabs, m.msg)
-    return [{ tabs: t }, []]
+    return [{ ...s, tabs: t }, []]
   },
-  view: ({ send, text }) => {
-    const t = tabs.connect<State>(
-      (s) => s.tabs,
-      (m) => send({ type: 'tabs', msg: m }),
-      { id: 'demo' },
-    )
+  view: ({ state, send }) => {
+    const t = tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }), { id: 'demo' })
     return [
       div({ ...t.root }, [
         div({ ...t.list }, [
@@ -74,24 +70,8 @@ const App = component<State, Msg, never>({
 
 1. **`init(opts?)`** — creates the initial state
 2. **`update(state, msg)`** — pure reducer, returns `[newState, effects[]]`
-3. **`connect(get, send, opts?)`** — returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
+3. **`connect(state: Signal<Slice>, send, opts?)`** — takes a signal handle for the component's state slice (e.g. `state.at('tabs')`), returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
 4. **Overlay helpers** (dialog, popover, menu, etc.) — `overlay()` wires up portals, focus traps, dismiss layers, and positioning
-
-### Composition with `sliceHandler`
-
-```typescript
-import { mergeHandlers, sliceHandler } from '@llui/dom'
-
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.tabs,
-    set: (s, v) => ({ ...s, tabs: v }),
-    narrow: (m) => (m.type === 'tabs' ? m.msg : null),
-    sub: tabs.update,
-  }),
-  // ... more slices
-)
-```
 
 ## Components (66)
 
@@ -289,7 +269,7 @@ import { timer } from '@llui/components/timer'
 Input components accept an optional `validate` callback on `ConnectOptions` that gates state changes:
 
 ```typescript
-const parts = editable.connect<S>(get, send, {
+const parts = editable.connect(state.at('name'), send, {
   validate: (value) => {
     if (value.length < 3) return ['Too short']
     return null // valid

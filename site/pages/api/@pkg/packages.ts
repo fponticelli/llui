@@ -45,7 +45,7 @@ export const PACKAGES: PackageMeta[] = [
     category: 'libraries',
     blurb: 'http, debounce, race, websocket, retry, upload',
   },
-  { slug: 'components', category: 'libraries', blurb: '58 headless components + opt-in theme' },
+  { slug: 'components', category: 'libraries', blurb: '66 headless components + opt-in theme' },
   { slug: 'router', category: 'libraries', blurb: 'Path matching, history/hash, guards, links' },
   {
     slug: 'transitions',

@@ -117,7 +117,7 @@ const App = component<State, Msg, never>({
               id: 'toggle-all',
               type: 'checkbox',
               checked: state.at('todos').map((ts) => ts.every((t) => t.completed)),
-              onClick: () => send({ type: 'toggleAll' }),
+              onChange: () => send({ type: 'toggleAll' }),
             }),
             label({ for: 'toggle-all', class: 'toggle-all-label' }, [text('Mark all as complete')]),
             ul({ class: 'todo-list' }, [
@@ -141,7 +141,7 @@ const App = component<State, Msg, never>({
                           class: 'toggle',
                           type: 'checkbox',
                           checked: item.at('completed'),
-                          onClick: () => send({ type: 'toggle', id: item.at('id').peek() }),
+                          onChange: () => send({ type: 'toggle', id: item.at('id').peek() }),
                         }),
                         label({}, [text(item.at('text'))]),
                         button(

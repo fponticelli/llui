@@ -30,7 +30,11 @@ import { perfDiagnosticsForFile } from './perf-diagnostics.js'
 import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
-import { extractMsgAnnotations } from '../msg-annotations.js'
+import {
+  extractMsgAnnotations,
+  sparseMsgAnnotations,
+  type MessageAnnotations,
+} from '../msg-annotations.js'
 import { computeSchemaHash } from '../schema-hash.js'
 
 /** Options controlling introspection metadata emission (mirrors the legacy
@@ -47,7 +51,7 @@ export interface SignalTransformOptions {
   preExtracted?: {
     msgSchema?: unknown
     effectSchema?: unknown
-    msgAnnotations?: Record<string, unknown> | null
+    msgAnnotations?: Record<string, MessageAnnotations> | null
   }
   /** cross-file resolved external type sources (for `State`, which isn't a union
    * so composition doesn't apply — extract from its declaring file). */
@@ -252,8 +256,14 @@ export function transformSignalComponentSourceWithMap(
     if (msgSchema) props.push(`__msgSchema: ${JSON.stringify(msgSchema)}`)
     if (effectSchema) props.push(`__effectSchema: ${JSON.stringify(effectSchema)}`)
     if (stateSchema) props.push(`__stateSchema: ${JSON.stringify(stateSchema)}`)
-    if (msgAnnotations && Object.keys(msgAnnotations).length > 0) {
-      props.push(`__msgAnnotations: ${JSON.stringify(msgAnnotations)}`)
+    // Emit a SPARSE annotation map: variants (and per-variant fields) still at
+    // their default are omitted — the runtime reconstructs them from absence. A
+    // Msg with zero source annotations emits no `__msgAnnotations` at all. The
+    // schema hash below still hashes the FULL record so hash stability doesn't
+    // depend on this size optimization.
+    const sparseAnnotations = msgAnnotations ? sparseMsgAnnotations(msgAnnotations) : null
+    if (sparseAnnotations) {
+      props.push(`__msgAnnotations: ${JSON.stringify(sparseAnnotations)}`)
     }
     props.push(
       `__schemaHash: ${JSON.stringify(

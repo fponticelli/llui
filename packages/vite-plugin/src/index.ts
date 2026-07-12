@@ -334,20 +334,24 @@ export interface DevmodeAnnotateConfig {
    * clicks "Solve" in the HUD) and spawns the configured LLM CLI to
    * propose a fix. Accepts:
    *
-   *  - `false` — disable. The HUD hides its "Solve" button; notes
-   *              still save to disk so MCP-side consumers can act on
-   *              them.
-   *  - `'claude' | 'codex' | 'gemini'` — preset; everything defaults.
+   *  - unset / `undefined` — DISABLED (the default). The router is
+   *              OPT-IN: it spawns an LLM CLI with tool access in the
+   *              project root, so it never turns on implicitly. Notes
+   *              still save to disk; the HUD hides its "Solve" button.
+   *  - `false` — explicitly disable (same effect as unset).
+   *  - `'claude' | 'codex' | 'gemini'` — enable with a preset.
    *  - `LlmRouterConfig` — preset + overrides (model, timeoutMs,
    *              concurrency, env, extraArgs), or a fully custom
    *              invocation `{ command, args, promptVia }` (omit
-   *              `preset` to opt out of preset defaults entirely).
+   *              `preset` to opt out of preset defaults entirely). Set
+   *              `dangerouslySkipPermissions: true` to run the agent
+   *              fully unattended (no approval prompts) — dangerous.
    *
    * When the chosen CLI isn't on PATH the router degrades silently
    * to save-only and the HUD hides the Solve button — the user gets
    * a one-line install hint in the console.
    *
-   * Default: `'claude'`.
+   * Default: disabled (opt-in).
    */
   router?: false | LlmPreset | LlmRouterConfig
   /** Override the per-task timeout for the router's spawn. Default
@@ -498,15 +502,21 @@ function resolveDevmodeAnnotateEntry(root: string): string | null {
  * shape (or null when disabled). Accepts `false`, a preset string, or
  * a full config object. Used in `configResolved` so the rest of the
  * plugin (router startup + HUD bootstrap) sees one canonical shape.
+ *
+ * OPT-IN by default: an unset `router` resolves to `null` (disabled). The
+ * attention router auto-spawns an LLM CLI (with tool access) in the project
+ * root, so it must never turn on implicitly — a forgeable same-origin/loopback
+ * task note reaching a default-on router is a local-RCE path. Enabling it
+ * requires an explicit `router: 'claude'` (or a full config object).
  */
-function resolveRouterInput(
+export function resolveRouterInput(
   router: false | LlmPreset | LlmRouterConfig | undefined,
   legacyTimeoutMs: number | undefined,
 ): LlmRouterConfig | null {
   if (router === false) return null
-  if (router === undefined) {
-    return legacyTimeoutMs ? { preset: 'claude', timeoutMs: legacyTimeoutMs } : { preset: 'claude' }
-  }
+  // Unset → disabled. The deprecated `routerTimeoutMs` alias alone does NOT
+  // enable the router; the user must explicitly select a preset/config.
+  if (router === undefined) return null
   if (typeof router === 'string') {
     const base: LlmRouterConfig = { preset: router }
     return legacyTimeoutMs ? { ...base, timeoutMs: legacyTimeoutMs } : base
@@ -1315,14 +1325,19 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // parse on irrelevant files. (`@llui/dom/internal`, `/ssr/*`, `/devtools`
       // don't match the closing-quote-anchored pattern, so type-only or SSR-env
       // imports never trip it.)
-      const hasComponentCall = /component\s*[<(]/.test(code)
+      // Left-anchored: `\b` before `component` so `myComponent(` (a call to
+      // an unrelated helper) does NOT match — only a real `component(`/`component<`
+      // token arms the routing + integrity signal.
+      const hasComponentCall = /\bcomponent\s*[<(]/.test(code)
       if (
         (hasComponentCall || /\beach\s*\(/.test(code)) &&
         /from\s*['"]@llui\/dom['"]/.test(code)
       ) {
-        // The build-integrity scan ("did anything compile?") keys off real
-        // component files only — a helper-only match must not arm it.
-        if (hasComponentCall) sawSignalComponent = true
+        // NOTE: the build-integrity flag is NOT armed here. A loose pre-check
+        // is too weak a "fail closed" guarantee — it fires before the transform
+        // runs, so a false-positive string match would vacuously satisfy the
+        // check. We arm `sawSignalComponent` below, keyed on the transform
+        // actually producing a rewrite (`transformed.map !== null`).
         // Record provenance for the post-bundle rename pass: this module ran
         // through the signal transform, so its chunk may carry renameable
         // LLui-emitted property names.
@@ -1431,6 +1446,12 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           preExtracted: signalPreExtracted,
           typeSources: signalTypeSources?.state ? { state: signalTypeSources.state } : undefined,
         })
+        // Arm the build-integrity flag from the ACTUAL transform result: a
+        // non-null map means the signal transform genuinely rewrote a
+        // `component()` file (view lowering / metadata emission). Helper-only
+        // modules (no `component(`) never arm it, even when they carry an
+        // `each(` the transform touched — `hasComponentCall` gates that.
+        if (hasComponentCall && transformed.map !== null) sawSignalComponent = true
         let out = transformed.code
         // Dev + MCP: signal files bypass the legacy compiler that injects the
         // relay, so inject startRelay (guarded to fire once) + the HMR handshake.

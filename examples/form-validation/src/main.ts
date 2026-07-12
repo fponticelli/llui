@@ -14,7 +14,7 @@ import {
   show,
   derived,
 } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Mountable } from '@llui/dom'
 import { form, validateSchema } from '@llui/components'
 import type { FormState } from '@llui/components'
 import { z } from 'zod'
@@ -211,7 +211,7 @@ function field(
   name: FieldName,
   labelText: string,
   inputType: string,
-): Node {
+): Mountable {
   const fieldTouched = touched.at(name).map(Boolean)
   const error = derived([values, fieldTouched], (vals, isTouched) =>
     errorFor(vals, isTouched, name),

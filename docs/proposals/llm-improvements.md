@@ -1,6 +1,6 @@
 # Proposals: Improving LLui for LLM Usage
 
-> **Status (2026-06-02): PARTIAL.** DONE: P1 MCP server (`packages/mcp/`), P2 consolidated `.d.ts` (`packages/dom/llui.d.ts`), P4 eval pipeline (`evaluation/runner.ts`), P9 `whyDidUpdate`/`searchState` (`signals/devtools.ts`). OBSOLETE (pre-signals API — dead bitmask / `child()` / `item()` model): P5, P6, P10. STILL OPEN: P3 `@llui/lint-idiomatic` (idiomatic checks currently ship as compiler diagnostics instead) and P7 `setFields`/`applyField`.
+> **Status (2026-06-02): PARTIAL.** DONE: P1 MCP server (`packages/mcp/`), P2 consolidated `.d.ts` (`packages/dom/llui.d.ts`), P4 eval pipeline (`evaluation/runner.ts`), P9 `searchState` (`signals/devtools.ts`). OBSOLETE (pre-signals API — dead bitmask / `child()` / `item()` model): P5, P6, P10. STILL OPEN: P3 `@llui/lint-idiomatic` (idiomatic checks currently ship as compiler diagnostics instead), P7 `setFields`/`applyField`, and the P9 `whyDidUpdate` half (only declared as an optional `SignalDebugHooks` member in `signals/devtools.ts` — never implemented in the installed debug API).
 
 Based on a deep analysis of the codebase, design docs, and the gap between what's specified and what's implemented, here are concrete proposals ordered by expected impact on LLM code generation quality.
 

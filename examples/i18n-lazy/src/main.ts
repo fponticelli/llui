@@ -1,5 +1,5 @@
 import { component, mountApp, div, h1, h2, p, button, text, show, lazy, provide } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable } from '@llui/dom'
 import { LocaleContext, en, formatDate, formatRelativeTime, dialog } from '@llui/components'
 import type { Locale, DialogState, DialogMsg } from '@llui/components'
 
@@ -154,7 +154,7 @@ type Msg =
 // Mirrors `dir` + `lang` onto the document's <html> so RTL scripts
 // flip the whole document layout. Imperative DOM is a side effect;
 // updates return it as an Effect instead of mutating directly.
-type Effect = { kind: 'syncHtmlLocale'; key: LocaleKey }
+type Effect = { type: 'syncHtmlLocale'; key: LocaleKey }
 
 // ── Component ───────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ const App = component<State, Msg, Effect>({
   update: (state, msg) => {
     switch (msg.type) {
       case 'setLocale':
-        return [{ ...state, localeKey: msg.key }, [{ kind: 'syncHtmlLocale', key: msg.key }]]
+        return [{ ...state, localeKey: msg.key }, [{ type: 'syncHtmlLocale', key: msg.key }]]
       case 'loadStats':
         return [{ ...state, showStats: true }, []]
       case 'dialog':
@@ -172,7 +172,7 @@ const App = component<State, Msg, Effect>({
     }
   },
   onEffect: (effect) => {
-    if (effect.kind === 'syncHtmlLocale' && typeof document !== 'undefined') {
+    if (effect.type === 'syncHtmlLocale' && typeof document !== 'undefined') {
       document.documentElement.dir = getDir(effect.key)
       document.documentElement.lang = getBcp47(effect.key)
     }
@@ -287,7 +287,7 @@ const App = component<State, Msg, Effect>({
   },
 })
 
-function localeBtn(localeKey: Signal<LocaleKey>, send: Send<Msg>, key: LocaleKey): Node {
+function localeBtn(localeKey: Signal<LocaleKey>, send: Send<Msg>, key: LocaleKey): Mountable {
   return button(
     {
       class: localeKey.map((k) => `locale-btn${k === key ? ' active' : ''}`),

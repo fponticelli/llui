@@ -36,4 +36,10 @@ export interface TransitionSpec {
   duration?: number
   /** If true, run the enter transition on initial mount (default: true). */
   appear?: boolean
+  /**
+   * Honor the user's `prefers-reduced-motion: reduce` setting (default: true).
+   * When reduced motion is requested, enter/leave resolve instantly to the final
+   * state instead of animating. Set `false` to always animate.
+   */
+  respectReducedMotion?: boolean
 }

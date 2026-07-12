@@ -1,7 +1,9 @@
 import { computeStateDiff } from '../../state-diff.js'
 import type { StateDiff } from '../../state-diff.js'
 import { validatePayload, type ValidationError } from './validate-payload.js'
+import { checkDispatchGate } from './dispatch-gate.js'
 import type { MsgSchemaShape } from '../factory.js'
+import type { MessageAnnotations } from '../../protocol.js'
 
 /**
  * Predict the result of dispatching `msg` without actually applying
@@ -55,6 +57,15 @@ export type WouldDispatchHost = {
    * keeping the tool permissive (the reducer still runs).
    */
   getMsgSchema?(): MsgSchemaShape | null
+  /**
+   * The compiler-emitted Msg annotations, when available. Used to apply
+   * the SAME dispatch gate `send_message` enforces — `human-only` and
+   * unknown variants are rejected before the reducer runs, so an agent
+   * can't use prediction to probe a transition it's forbidden to
+   * dispatch. Hosts without annotation metadata return null and the gate
+   * is skipped (the reducer still runs), matching `send_message`.
+   */
+  getMsgAnnotations?(): Record<string, MessageAnnotations> | null
 }
 
 export type WouldDispatchArgs = {
@@ -69,7 +80,7 @@ export type WouldDispatchResult =
       /** Effects the reducer would emit. Order matches the reducer's return. */
       effects: unknown[]
     }
-  | { status: 'rejected'; reason: 'invalid' | 'unsupported'; detail?: string }
+  | { status: 'rejected'; reason: 'invalid' | 'unsupported' | 'human-only'; detail?: string }
   | {
       /**
        * The candidate Msg failed schema validation BEFORE the reducer
@@ -109,6 +120,18 @@ export function handleWouldDispatch(
 ): WouldDispatchResult {
   if (!args.msg || typeof args.msg.type !== 'string') {
     return { status: 'rejected', reason: 'invalid', detail: 'msg.type must be a string' }
+  }
+
+  // Annotation gate — the SAME policy `send_message` enforces. Applied
+  // before the reducer runs so `would_dispatch` can't be used to probe a
+  // `human-only` (or undeclared) transition the agent is forbidden to
+  // dispatch. Permissive when no annotation metadata is available.
+  const annotations = host.getMsgAnnotations?.() ?? null
+  if (annotations) {
+    const gate = checkDispatchGate(args.msg.type, annotations)
+    if (!gate.ok) {
+      return { status: 'rejected', reason: gate.reason, detail: gate.detail }
+    }
   }
 
   // Schema-driven preflight. Permissive when no schema is available —

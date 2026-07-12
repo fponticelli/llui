@@ -2,6 +2,7 @@ import { randomUUID } from '../uuid.js'
 import { handleListActions, type ListActionsHost } from './list-actions.js'
 import { computeStateDiff } from '../../state-diff.js'
 import { validatePayload } from './validate-payload.js'
+import { checkDispatchGate } from './dispatch-gate.js'
 import type {
   LapActionsResponse,
   LapDrainMeta,
@@ -80,27 +81,13 @@ export async function handleSendMessage(
   const annotations = host.getMsgAnnotations() ?? {}
   const ann = annotations[args.msg.type]
 
-  // If annotations map is non-empty and this variant isn't in it, it's an
-  // unknown msg type that the app never declared — reject early so the
-  // browser never dispatches an unrecognised variant into update().
-  const hasAnnotations = Object.keys(annotations).length > 0
-  if (hasAnnotations && !ann) {
-    return { status: 'rejected', reason: 'invalid', detail: `unknown variant: ${args.msg.type}` }
-  }
-
-  if (ann?.dispatchMode === 'human-only') {
-    // Enrich the rejection with a human-readable reason so the agent learns
-    // WHY (not just the bare `human-only` code). Route-gate enforcement is
-    // deliberately NOT applied on dispatch: `@routeGated` is an affordance-
-    // visibility concern (surfaced in list_actions as available:false), and a
-    // broken/throwing predicate must never be able to block a real dispatch.
-    return {
-      status: 'rejected',
-      reason: 'human-only',
-      detail: ann.intent
-        ? `"${ann.intent}" can only be triggered by the user (human-only action)`
-        : 'this action can only be triggered by the user (human-only)',
-    }
+  // Shared annotation gate (unknown-variant + human-only). `would_dispatch`
+  // applies the exact same policy so an agent can neither run NOR probe a
+  // gated transition. Route-gate enforcement is deliberately NOT part of
+  // this gate — see `checkDispatchGate`.
+  const gate = checkDispatchGate(args.msg.type, annotations)
+  if (!gate.ok) {
+    return { status: 'rejected', reason: gate.reason, detail: gate.detail }
   }
 
   // Schema validation: when the compiler emitted a `__msgSchema`,

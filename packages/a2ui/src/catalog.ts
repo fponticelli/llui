@@ -49,6 +49,14 @@ export interface RenderScope {
    * component repeated across template rows gets independent state per row.
    */
   readonly keyPrefix: string
+  /**
+   * Ids of the components currently being rendered on the path from the surface
+   * root down to (but not including) this scope's component. Threaded so
+   * {@link RenderContext.renderById} can detect a cyclic adjacency list
+   * (`root → children:['root']`, or A → B → A) and refuse to recurse instead of
+   * overflowing the stack on one malformed envelope.
+   */
+  readonly ancestors: ReadonlySet<ComponentId>
 }
 
 /** Everything a builder needs to render one component and recurse into children. */
@@ -113,12 +121,22 @@ export interface CatalogSpec {
   readonly extends?: Catalog
 }
 
-/** Build a catalog, optionally layering over a base. */
+/** Build a catalog, optionally layering over a base. Registry records use a
+ * null prototype so a server-supplied component/function name like
+ * "__proto__"/"toString"/"constructor" can't resolve to a prototype member. */
 export function defineCatalog(spec: CatalogSpec): Catalog {
   return {
     id: spec.id ?? spec.extends?.id,
-    components: { ...(spec.extends?.components ?? {}), ...spec.components },
-    functions: { ...(spec.extends?.functions ?? {}), ...(spec.functions ?? {}) },
+    components: Object.assign(
+      Object.create(null) as Record<string, ComponentBuilder>,
+      spec.extends?.components ?? {},
+      spec.components,
+    ),
+    functions: Object.assign(
+      Object.create(null) as Record<string, CatalogFunction>,
+      spec.extends?.functions ?? {},
+      spec.functions ?? {},
+    ),
   }
 }
 

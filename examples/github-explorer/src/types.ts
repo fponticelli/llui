@@ -46,10 +46,14 @@ export interface Issue {
 // ── Route ────────────────────────────────────────────────────────
 
 export type SearchData = { repos: Repo[]; total: number }
-export type RepoCodeData = { repo: Repo; tree: TreeEntry[]; readme: string }
-export type RepoIssuesData = { repo: Repo; issues: Issue[] }
-export type TreeDirData = { repo: Repo; tree: TreeEntry[] }
-export type TreeFileData = { repo: Repo; file: FileContent }
+// `repo` is `Repo | null` because the sub-resource responses (contents / readme /
+// issues) can arrive before the repo metadata does, so the page can enter its
+// `success` state with the repo not yet loaded. Views render `—` placeholders
+// until `repoOk` fills it in. Modeling it honestly avoids a `null as Repo` lie.
+export type RepoCodeData = { repo: Repo | null; tree: TreeEntry[]; readme: string }
+export type RepoIssuesData = { repo: Repo | null; issues: Issue[] }
+export type TreeDirData = { repo: Repo | null; tree: TreeEntry[] }
+export type TreeFileData = { repo: Repo | null; file: FileContent }
 
 export type Route =
   | { page: 'search'; q: string; p: number; data: Async<SearchData, ApiError> }
@@ -92,14 +96,17 @@ export type Msg =
   | { type: 'submitSearch' }
   /** @humanOnly */
   | { type: 'searchOk'; payload: { total_count: number; items: Repo[] } }
+  // Each resource response carries the {owner, name} it was requested for, so the
+  // reducer can drop a late response from a repo the user has since navigated away
+  // from (guarding against A→B navigation races) instead of merging it into B.
   /** @humanOnly */
-  | { type: 'repoOk'; payload: Repo }
+  | { type: 'repoOk'; owner: string; name: string; payload: Repo }
   /** @humanOnly */
-  | { type: 'contentsOk'; payload: TreeEntry[] | FileContent }
+  | { type: 'contentsOk'; owner: string; name: string; payload: TreeEntry[] | FileContent }
   /** @humanOnly */
-  | { type: 'readmeOk'; payload: string }
+  | { type: 'readmeOk'; owner: string; name: string; payload: string }
   /** @humanOnly */
-  | { type: 'issuesOk'; payload: Issue[] }
+  | { type: 'issuesOk'; owner: string; name: string; payload: Issue[] }
   /** @humanOnly */
   | { type: 'apiError'; error: ApiError }
   /** @humanOnly */

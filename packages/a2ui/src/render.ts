@@ -21,6 +21,7 @@ import type {
 } from './protocol.js'
 import { isChildTemplate } from './protocol.js'
 import { resolvePointer } from './pointer.js'
+import { hasOwn, safeCssValue } from './security.js'
 import type { A2uiMsg, A2uiState, Surface } from './state.js'
 
 // ── Structural identity ────────────────────────────────────────────
@@ -84,8 +85,19 @@ function rowKey(item: JsonValue, segment: string): string {
 // ── Theme → CSS custom properties ──────────────────────────────────
 function themeStyle(theme: Theme): string {
   const parts: string[] = []
-  if (theme.primaryColor) parts.push(`--a2ui-primary: ${theme.primaryColor}`)
-  if (theme.font) parts.push(`font-family: ${theme.font}, system-ui, sans-serif`)
+  // Theme values are server-controlled: validate before interpolating into the
+  // inline style string, so a `primaryColor` like `red; background: url(evil)`
+  // can't inject extra declarations.
+  if (typeof theme.primaryColor === 'string') {
+    const color = safeCssValue('color', theme.primaryColor)
+    if (color !== null) parts.push(`--a2ui-primary: ${color}`)
+    else warnOnce(`Ignoring unsafe theme primaryColor "${theme.primaryColor}"`)
+  }
+  if (typeof theme.font === 'string') {
+    const font = safeCssValue('font-family', `${theme.font}, system-ui, sans-serif`)
+    if (font !== null) parts.push(`font-family: ${font}`)
+    else warnOnce(`Ignoring unsafe theme font "${theme.font}"`)
+  }
   return parts.join('; ')
 }
 
@@ -105,16 +117,31 @@ function makeContext(
     send,
     catalog,
     setUi: (componentId, value) => send({ type: 'setUi', surfaceId, componentId, value }),
-    getComponent: (id) => components[id],
+    getComponent: (id) => (hasOwn(components, id) ? components[id] : undefined),
     renderById: (id, scope) => {
+      // Own-property guard: a server-supplied child id like "__proto__"/
+      // "toString" must not resolve to a prototype member of the adjacency map.
+      if (!hasOwn(components, id)) return [] // referenced-before-defined: fills in on the next build
       const node = components[id]
-      if (!node) return [] // referenced-before-defined: fills in on the next structural build
-      const builder = catalog.components[node.component]
-      if (!builder) {
+      if (!node) return []
+      // Cycle guard: refuse to re-enter a component already on the ancestor path
+      // (a cyclic adjacency list would otherwise recurse to a stack overflow).
+      if (scope.ancestors.has(id)) {
+        warnOnce(`Cyclic A2UI component reference at "${id}" — skipping`)
+        return []
+      }
+      const builder = hasOwn(catalog.components, node.component)
+        ? catalog.components[node.component]
+        : undefined
+      if (typeof builder !== 'function') {
         warnOnce(`No builder for A2UI component "${node.component}"`)
         return []
       }
-      return builder({ node, ctx, scope })
+      const childScope: RenderScope = {
+        ...scope,
+        ancestors: new Set(scope.ancestors).add(id),
+      }
+      return builder({ node, ctx, scope: childScope })
     },
     renderChildren: (children, scope) => renderChildren(ctx, children, scope),
   }
@@ -163,6 +190,7 @@ function renderChildren(
         uiState: rowSig.map((r) => r.uiState),
         absPath: (p) => joinPointer(collectionBase, segment, p.startsWith('/') ? p.slice(1) : p),
         keyPrefix: joinPointer(collectionBase, segment),
+        ancestors: scope.ancestors,
       }
       return ctx.renderById(tpl.componentId, itemScope)
     },
@@ -205,6 +233,7 @@ function renderSurface(
         uiState,
         absPath: (p) => (p.startsWith('/') ? p : `/${p}`),
         keyPrefix: '',
+        ancestors: new Set<string>(),
       }
       return ctx.renderById(su.rootId, rootScope)
     },

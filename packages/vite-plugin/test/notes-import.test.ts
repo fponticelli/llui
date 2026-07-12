@@ -140,4 +140,35 @@ describe('importBundle', () => {
     // Two-pass validation aborts before any write — no partial import folder.
     expect(existsSync(join(notesRoot, `${SESSION}-import-aaaaaaaa`))).toBe(false)
   })
+
+  it('rejects a single over-large decompressed entry (zip bomb) before inflating it', () => {
+    // A highly compressible 4 MB entry. With a tiny per-entry cap the filter
+    // aborts on the central-directory size, before fflate inflates the payload.
+    const bomb = makeBundle({
+      extraFiles: { [`${SESSION}/big.bin`]: new Uint8Array(4 * 1024 * 1024) },
+    })
+    expect(() =>
+      importBundle(notesRoot, bomb, { maxEntryBytes: 1024, maxTotalBytes: 1024 * 1024 }),
+    ).toThrow(/per-entry limit|exceeding/)
+  })
+
+  it('rejects a bundle whose total decompressed size exceeds the bound', () => {
+    // Several entries, each under the per-entry cap but over the total cap.
+    const bomb = makeBundle({
+      extraFiles: {
+        [`${SESSION}/a.bin`]: new Uint8Array(256 * 1024),
+        [`${SESSION}/b.bin`]: new Uint8Array(256 * 1024),
+        [`${SESSION}/c.bin`]: new Uint8Array(256 * 1024),
+      },
+    })
+    expect(() =>
+      importBundle(notesRoot, bomb, { maxEntryBytes: 512 * 1024, maxTotalBytes: 400 * 1024 }),
+    ).toThrow(/total limit|zip bomb/)
+  })
+
+  it('accepts a normal bundle under the default caps', () => {
+    // Sanity: the guard doesn't reject a legitimate small bundle.
+    const res = importBundle(notesRoot, makeBundle())
+    expect(res.notesImported).toBe(2)
+  })
 })

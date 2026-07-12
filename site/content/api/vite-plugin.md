@@ -56,6 +56,27 @@ The compiler emits warnings for common issues:
 
 <!-- auto-api:start -->
 
+## Functions
+
+### `resolveRouterInput()`
+
+Normalize the user's `router` setting into the public `LlmRouterConfig`
+shape (or null when disabled). Accepts `false`, a preset string, or
+a full config object. Used in `configResolved` so the rest of the
+plugin (router startup + HUD bootstrap) sees one canonical shape.
+OPT-IN by default: an unset `router` resolves to `null` (disabled). The
+attention router auto-spawns an LLM CLI (with tool access) in the project
+root, so it must never turn on implicitly — a forgeable same-origin/loopback
+task note reaching a default-on router is a local-RCE path. Enabling it
+requires an explicit `router: 'claude'` (or a full config object).
+
+```typescript
+function resolveRouterInput(
+  router: false | LlmPreset | LlmRouterConfig | undefined,
+  legacyTimeoutMs: number | undefined,
+): LlmRouterConfig | null
+```
+
 ## Types
 
 ### `AgentPluginConfig`
@@ -325,20 +346,24 @@ export interface DevmodeAnnotateConfig {
    * clicks "Solve" in the HUD) and spawns the configured LLM CLI to
    * propose a fix. Accepts:
    *
-   *  - `false` — disable. The HUD hides its "Solve" button; notes
-   *              still save to disk so MCP-side consumers can act on
-   *              them.
-   *  - `'claude' | 'codex' | 'gemini'` — preset; everything defaults.
+   *  - unset / `undefined` — DISABLED (the default). The router is
+   *              OPT-IN: it spawns an LLM CLI with tool access in the
+   *              project root, so it never turns on implicitly. Notes
+   *              still save to disk; the HUD hides its "Solve" button.
+   *  - `false` — explicitly disable (same effect as unset).
+   *  - `'claude' | 'codex' | 'gemini'` — enable with a preset.
    *  - `LlmRouterConfig` — preset + overrides (model, timeoutMs,
    *              concurrency, env, extraArgs), or a fully custom
    *              invocation `{ command, args, promptVia }` (omit
-   *              `preset` to opt out of preset defaults entirely).
+   *              `preset` to opt out of preset defaults entirely). Set
+   *              `dangerouslySkipPermissions: true` to run the agent
+   *              fully unattended (no approval prompts) — dangerous.
    *
    * When the chosen CLI isn't on PATH the router degrades silently
    * to save-only and the HUD hides the Solve button — the user gets
    * a one-line install hint in the console.
    *
-   * Default: `'claude'`.
+   * Default: disabled (opt-in).
    */
   router?: false | LlmPreset | LlmRouterConfig
   /** Override the per-task timeout for the router's spawn. Default

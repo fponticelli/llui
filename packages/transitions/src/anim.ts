@@ -14,6 +14,21 @@
 export const TIMING_BUFFER_MS = 16
 
 /**
+ * True when the user has requested reduced motion via the OS/browser setting
+ * (`prefers-reduced-motion: reduce`). Every transition helper consults this and,
+ * unless opted out (`respectReducedMotion: false`), resolves enter/leave to an
+ * instant completion — the final visual state with no animation. Safe off-browser
+ * or where `matchMedia` is unavailable (returns false).
+ */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+/**
  * Resolve after `ms` (+ buffer). Used where no element/event is available
  * (pure delay). Resolves synchronously for non-positive durations.
  */

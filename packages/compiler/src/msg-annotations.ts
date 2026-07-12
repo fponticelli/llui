@@ -11,14 +11,61 @@ export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
  */
 export function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean {
   for (const v of Object.values(a)) {
-    if (v.intent !== null) return true
-    if (v.alwaysAffordable) return true
-    if (v.requiresConfirm) return true
-    if (v.dispatchMode !== 'shared') return true
-    if (v.routeGate != null) return true
-    if (v.routeGateReason != null) return true
+    if (!isDefaultAnnotation(v)) return true
   }
   return false
+}
+
+/**
+ * Whether a single variant's annotations are ALL at their default value —
+ * i.e. carry no authored information. Covers every field, including
+ * `examples`/`warning`/`emits` (the previous `hasNonDefaultAnnotation`
+ * missed these three, so a variant annotated only with `@example`/`@warning`/
+ * `@emits` was wrongly treated as default). The runtime reconstructs a
+ * fully-default variant from absence, so these are emission-redundant.
+ */
+export function isDefaultAnnotation(v: MessageAnnotations): boolean {
+  return (
+    v.intent === null &&
+    !v.alwaysAffordable &&
+    !v.requiresConfirm &&
+    v.dispatchMode === 'shared' &&
+    v.examples.length === 0 &&
+    v.warning === null &&
+    v.emits.length === 0 &&
+    v.routeGate == null &&
+    v.routeGateReason == null
+  )
+}
+
+/**
+ * Build a JSON-ready annotation map that drops emission-redundant bytes:
+ *   - variants whose every field is default are OMITTED entirely, and
+ *   - within a retained variant, fields still at their default are OMITTED.
+ * The runtime treats an absent variant / field as the default (see
+ * `list-actions.ts`, which reads every field as `ann?.field ?? default`), so
+ * this is a pure size optimization with no semantic change. Returns null when
+ * every variant is fully default — the caller then skips `__msgAnnotations`.
+ */
+export function sparseMsgAnnotations(
+  a: Record<string, MessageAnnotations>,
+): Record<string, Partial<MessageAnnotations>> | null {
+  const out: Record<string, Partial<MessageAnnotations>> = {}
+  for (const [variant, ann] of Object.entries(a)) {
+    if (isDefaultAnnotation(ann)) continue
+    const sparse: Partial<MessageAnnotations> = {}
+    if (ann.intent !== null) sparse.intent = ann.intent
+    if (ann.alwaysAffordable) sparse.alwaysAffordable = true
+    if (ann.requiresConfirm) sparse.requiresConfirm = true
+    if (ann.dispatchMode !== 'shared') sparse.dispatchMode = ann.dispatchMode
+    if (ann.examples.length > 0) sparse.examples = ann.examples
+    if (ann.warning !== null) sparse.warning = ann.warning
+    if (ann.emits.length > 0) sparse.emits = ann.emits
+    if (ann.routeGate != null) sparse.routeGate = ann.routeGate
+    if (ann.routeGateReason != null) sparse.routeGateReason = ann.routeGateReason
+    out[variant] = sparse
+  }
+  return Object.keys(out).length === 0 ? null : out
 }
 
 /**

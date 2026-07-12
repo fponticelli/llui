@@ -189,12 +189,19 @@ export function connect(
   const decrementLabel = opts.decrementLabel ?? locale.numberInput.decrement
   const validate = opts.validate
 
-  const trySetValue = (value: number) => {
+  // Commit the in-progress text (blur / Enter). We never commit live from
+  // `onInput` — clamping/snapping mid-keystroke destroys in-progress typing
+  // (e.g. "1." → "1", or step:5 "12" → "10"). `validate` gates the commit:
+  // when it reports errors we leave the raw text untouched and skip the commit.
+  const commitFromEvent = (target: HTMLInputElement) => {
     if (validate) {
-      const errors = validate(value)
-      if (errors && errors.length > 0) return
+      const parsed = parseFloat(target.value)
+      if (!isNaN(parsed)) {
+        const errors = validate(parsed)
+        if (errors && errors.length > 0) return
+      }
     }
-    send({ type: 'setValue', value })
+    send({ type: 'commit' })
   }
 
   return {
@@ -220,10 +227,8 @@ export function connect(
       onInput: tagSend(send, ['setRawText'], (e) => {
         const text = (e.target as HTMLInputElement).value
         send({ type: 'setRawText', text })
-        const parsed = parseFloat(text)
-        if (!isNaN(parsed)) trySetValue(parsed)
       }),
-      onBlur: tagSend(send, ['commit'], () => send({ type: 'commit' })),
+      onBlur: tagSend(send, ['commit'], (e) => commitFromEvent(e.target as HTMLInputElement)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax', 'commit'], (e) => {
         switch (e.key) {
           case 'ArrowUp':
@@ -252,7 +257,7 @@ export function connect(
             return
           case 'Enter':
             e.preventDefault()
-            send({ type: 'commit' })
+            commitFromEvent(e.target as HTMLInputElement)
             return
         }
       }),

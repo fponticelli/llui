@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Always operate from the repo root, regardless of the caller's cwd. Every path
+# below (packages/*, scripts/*.mjs) is repo-root-relative, so running this from
+# anywhere else silently resolved nothing. Resolve to the script's parent dir.
+cd "$(dirname "$0")/.."
+
 # Publish @llui packages to npm in dependency order.
 #
 # Uses `pnpm publish`, which automatically rewrites `workspace:*` /
@@ -145,6 +150,23 @@ for pkg in "${PKGS[@]}"; do
 
   name="$(pkg_name "$pkg")"
   version=$(node -e "process.stdout.write(require('./$dir/package.json').version)")
+
+  # Idempotency probe: if this exact name@version is ALREADY on the registry
+  # (a prior run of this script published it before failing further down the
+  # list), record it as a SUCCESS and move on WITHOUT cascading. Re-attempting
+  # would make `npm publish` reject the duplicate as a hard error, which then
+  # cascade-skipped every downstream dependent — turning one mid-list failure
+  # into an unrecoverable release. `npm view <name>@<version> version` prints the
+  # version on a hit and exits non-zero (E404) on a miss; the `|| true` keeps
+  # `set -e` from aborting on the expected miss. Because a hit is NOT added to
+  # FAILED_NAMES, dependents of an already-published package publish normally.
+  published_version="$(npm view "$name@$version" version 2>/dev/null || true)"
+  if [ "$published_version" = "$version" ]; then
+    echo "✓ $name@$version already on registry — skipping (idempotent re-run)."
+    SUCCEEDED+=("$name@$version (already published)")
+    echo ""
+    continue
+  fi
 
   # Failure cascade: if any in-repo dependency (transitive) already failed or was
   # skipped, do NOT publish this package — it would ship pointing at a dependency

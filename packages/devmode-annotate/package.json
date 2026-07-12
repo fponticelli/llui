@@ -54,7 +54,7 @@
     "lexical": "^0.46.0"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5"
+    "@llui/dom": "workspace:^"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

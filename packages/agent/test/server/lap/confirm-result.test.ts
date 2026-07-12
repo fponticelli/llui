@@ -3,6 +3,7 @@ import { handleLapConfirmResult } from '../../../src/server/lap/confirm-result.j
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import type { RateLimiter } from '../../../src/server/rate-limit.js'
+import type { ClientFrame, ServerFrame } from '../../../src/protocol.js'
 import { seedToken } from '../_token-helper.js'
 
 let store: InMemoryTokenStore
@@ -92,6 +93,31 @@ describe('handleLapConfirmResult', () => {
     const body = (await res.json()) as { status: string }
     expect(body.status).toBe('rejected')
     expect(sendSpy).toHaveBeenCalledWith('t1', { t: 'confirm-expire', confirmId: 'c1' })
+  })
+
+  it('returns confirmed (NOT still-pending) when approval arrived in the inter-poll gap', async () => {
+    // End-to-end poll-gap regression, using the REAL registry +
+    // waitForConfirm (no mock). The browser emits `confirm-resolved` while
+    // no subscriber is armed — exactly the gap between `/message` timing
+    // out and this `/confirm-result` arming. The next poll must return the
+    // buffered resolution, not `still-pending` forever.
+    let onFrame: (f: ClientFrame) => void = () => {}
+    const conn = {
+      send: (_f: ServerFrame) => {},
+      onFrame: (h: (f: ClientFrame) => void) => {
+        onFrame = h
+      },
+      onClose: (_h: () => void) => {},
+      close: () => {},
+    }
+    registry.register('t1', conn)
+    // Approval lands in the gap, before any waitForConfirm subscribes.
+    onFrame({ t: 'confirm-resolved', confirmId: 'c1', outcome: 'confirmed', stateAfter: { n: 9 } })
+
+    const res = await handleLapConfirmResult(req({ confirmId: 'c1', timeoutMs: 10 }), deps())
+    const body = (await res.json()) as { status: string; stateAfter?: unknown }
+    expect(body.status).toBe('confirmed')
+    expect(body.stateAfter).toEqual({ n: 9 })
   })
 
   it('rejects missing confirmId', async () => {

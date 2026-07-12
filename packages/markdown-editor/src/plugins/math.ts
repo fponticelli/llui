@@ -11,7 +11,7 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { component, div, span, text, type Mountable, type Signal } from '@llui/dom'
+import { div, span, text, type Mountable, type Signal } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
 import { renderedPreview, type PreviewRender } from './_preview.js'
 
@@ -24,8 +24,6 @@ interface MathData {
 function isMathData(value: unknown): value is MathData {
   return typeof value === 'object' && value !== null && typeof (value as MathData).tex === 'string'
 }
-
-type MathMsg = { type: 'commit'; tex: string }
 
 const stop = (e: Event): void => e.stopPropagation()
 
@@ -40,44 +38,32 @@ export interface MathPluginOptions {
 }
 
 export function mathPlugin(opts: MathPluginOptions = {}): MarkdownPlugin {
-  const bridge = decoratorBridge<MathData, MathData, MathMsg, never>(BRIDGE_TYPE, (data, api) =>
-    component<MathData, MathMsg, never>({
-      name: 'Math',
-      init: () => ({ tex: data.tex }),
-      update: (state, msg) => {
-        if (msg.type === 'commit') {
-          if (msg.tex === state.tex) return state
-          api.update({ tex: msg.tex })
-          return { tex: msg.tex }
-        }
-        return state
-      },
-      view: ({ state, send }) => {
-        const children: Mountable[] = [
-          span(
-            {
-              'data-part': 'source',
-              contenteditable: 'true',
-              role: 'textbox',
-              'aria-label': 'TeX source',
-              onKeyDown: stop,
-              onBeforeInput: stop,
-              onPaste: stop,
-              onBlur: (e: FocusEvent) =>
-                send({ type: 'commit', tex: (e.target as HTMLElement).textContent ?? '' }),
-            },
-            [text(state.at('tex') as Signal<string>)],
-          ),
-        ]
-        if (opts.render) {
-          children.push(renderedPreview(state.at('tex') as Signal<string>, opts.render, 'span'))
-        }
-        return [
-          div({ 'data-scope': 'md-math', 'data-part': 'root', contenteditable: 'false' }, children),
-        ]
-      },
-    }),
-  )
+  const bridge = decoratorBridge<MathData>(BRIDGE_TYPE, (data, api) => {
+    const children: Mountable[] = [
+      span(
+        {
+          'data-part': 'source',
+          contenteditable: 'true',
+          role: 'textbox',
+          'aria-label': 'TeX source',
+          onKeyDown: stop,
+          onBeforeInput: stop,
+          onPaste: stop,
+          onBlur: (e: FocusEvent) => {
+            const tex = (e.target as HTMLElement).textContent ?? ''
+            if (tex !== data.peek().tex) api.update({ tex })
+          },
+        },
+        [text(data.at('tex') as Signal<string>)],
+      ),
+    ]
+    if (opts.render) {
+      children.push(renderedPreview(data.at('tex') as Signal<string>, opts.render, 'span'))
+    }
+    return [
+      div({ 'data-scope': 'md-math', 'data-part': 'root', contenteditable: 'false' }, children),
+    ]
+  })
 
   const transformer: ElementTransformer = {
     dependencies: [LLuiDecoratorNode],

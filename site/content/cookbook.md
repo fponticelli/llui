@@ -296,8 +296,9 @@ import { storageLoad, storageSet, storageWatch } from '@llui/effects'
 init: () => {
   const saved = storageLoad<{ theme: string }>('prefs')
   return [{ theme: saved?.theme ?? 'light' }, [
-    // Optionally subscribe to cross-tab changes:
-    storageWatch('prefs', 'prefsChanged'),
+    // Optionally subscribe to cross-tab changes (2nd arg maps the new
+    // value to a Msg; optional 3rd arg is the scope, defaults to 'local'):
+    storageWatch('prefs', (value) => ({ type: 'prefsChanged' as const, value })),
   ]]
 }
 
@@ -1120,12 +1121,15 @@ running in the browser.
 
 ### How it works
 
-In dev mode the Vite plugin injects two things and exposes one HTTP endpoint:
+In dev mode the runtime and Vite plugin cooperate on three things:
 
-1. **`enableDevTools()`** — installs `window.__lluiDebug` on every mounted
-   component. This is always active in dev builds and costs nothing if
-   unused.
-2. **`startRelay(port)`** — on page load, fetches `/__llui_mcp_status` from
+1. **`installSignalDebug`** — the runtime calls this automatically when a
+   component mounts in dev, installing `window.__lluiDebug` (the active
+   component) and `window.__lluiComponents` (all mounts). There is no
+   `enableDevTools()` call to make — it is always active in dev builds and
+   costs nothing if unused.
+2. **`startRelay(port)`** — injected by the plugin, on page load it fetches
+   `/__llui_mcp_status` from
    the dev server. If the MCP server is running, the response gives the
    actual port and the browser connects automatically — no console steps
    needed, no retry spam, no race conditions.
@@ -1140,42 +1144,42 @@ listener forwards to `__lluiConnect`.
 
 ### Setup
 
-MCP is **opt-in** — pass a port to the Vite plugin to enable it:
-
-```typescript
-// vite.config.ts
-import llui from '@llui/vite-plugin'
-
-export default {
-  plugins: [llui({ mcpPort: 5200 })],
-}
-```
-
-Then run both processes:
+MCP is **on by default**. Whenever `@llui/mcp` is resolvable from your
+project root, the Vite plugin auto-enables the relay on port `5200` and
+spawns the MCP server for you — no config entry and no separate process:
 
 ```bash
-# 1. Start the MCP server (separate terminal)
-npx @llui/mcp
-
-# 2. Start your dev server
-npx vite
+pnpm add -D @llui/mcp
 ```
-
-Without `mcpPort`, the plugin skips the discovery endpoint entirely
-— no 404 polling, no browser-side relay code. Opt in only when you
-actually want interactive debugging.
-
-Configure a custom port via the plugin option:
 
 ```typescript
 // vite.config.ts
 import llui from '@llui/vite-plugin'
 
 export default {
-  plugins: [llui({ mcpPort: 5201 })], // custom port
-  // or: llui({ mcpPort: false })       // disable relay entirely
+  plugins: [llui()], // MCP auto-detected + spawned when @llui/mcp is installed
 }
 ```
+
+One `npx vite` (or `pnpm dev`) now starts both the dev server and the
+MCP server. If `@llui/mcp` is not installed, the plugin leaves MCP
+disabled and skips the discovery endpoint entirely.
+
+Use the `mcpPort` option to override the default:
+
+```typescript
+// vite.config.ts
+import llui from '@llui/vite-plugin'
+
+export default {
+  plugins: [llui({ mcpPort: 5201 })], // wire to an externally-managed server on a custom port
+  // or: llui({ mcpPort: false })       // disable MCP even when @llui/mcp is installed
+}
+```
+
+Passing a number switches to **wire** mode (the plugin connects to a
+server you started yourself, e.g. `npx llui-mcp`, instead of spawning
+one); passing `false` opts out.
 
 ### Manual connection
 
@@ -1194,44 +1198,80 @@ __lluiConnect(5201) // connect to a custom port
 Once connected, the MCP server exposes these tools to any MCP client
 (Claude Desktop, Claude Code, etc.):
 
-| Tool                      | Description                                                                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `llui_get_state`          | Get the current component state                                                                                                                                              |
-| `llui_send_message`       | Send a message and return new state + effects                                                                                                                                |
-| `llui_eval_update`        | Dry-run a message without applying it                                                                                                                                        |
-| `llui_get_bindings`       | List all bindings with mask, kind, and last value                                                                                                                            |
-| `llui_why_did_update`     | Explain why a specific binding updated (mask match, value diff)                                                                                                              |
-| `llui_validate_message`   | Validate a message against the compiled schema                                                                                                                               |
-| `llui_get_message_schema` | Get the discriminated union schema for Msg                                                                                                                                   |
-| `llui_decode_mask`        | Translate a dirty-mask number to field names                                                                                                                                 |
-| `llui_search_state`       | Dot-path lookup into state (e.g. `route.data.repos`)                                                                                                                         |
-| `llui_export_trace`       | Export message history as a replayable trace                                                                                                                                 |
-| `llui_snapshot_state`     | Checkpoint the current state                                                                                                                                                 |
-| `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                       |
-| `llui_list_components`    | List all mounted components                                                                                                                                                  |
-| `llui_select_component`   | Switch the active debug target                                                                                                                                               |
-| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s signal lint rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
-| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                     |
-| `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                         |
-| `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                      |
-| `llui_dispatch_event`     | Synthesize a browser event on a selector; returns the Msgs produced and resulting state.                                                                                     |
-| `llui_get_focus`          | Return active-element info: selector, tag name, and text selection range.                                                                                                    |
-| `llui_force_rerender`     | Re-evaluate all bindings and return the indices that produced a new value.                                                                                                   |
-| `llui_each_diff`          | Show per-each-site add/remove/move/reuse counts for the last update.                                                                                                         |
-| `llui_scope_tree`         | Return the scope hierarchy annotated with kind (root/show/each/branch/child/portal).                                                                                         |
-| `llui_disposer_log`       | List recent scope disposals with the cause of each disposal.                                                                                                                 |
-| `llui_list_dead_bindings` | Return bindings that are currently dead or have never changed value.                                                                                                         |
-| `llui_binding_graph`      | Invert the compiler mask legend: map state paths to the binding indices they gate.                                                                                           |
-| `llui_pending_effects`    | List effects that are currently queued or in-flight.                                                                                                                         |
-| `llui_effect_timeline`    | Phased log of every effect: dispatched → in-flight → resolved/cancelled.                                                                                                     |
-| `llui_mock_effect`        | Register a match→response mock; the next matching effect resolves with the mock value.                                                                                       |
-| `llui_resolve_effect`     | Manually resolve a specific pending effect by id.                                                                                                                            |
-| `llui_step_back`          | Rewind N messages by replaying from init (pure mode by default).                                                                                                             |
-| `llui_coverage`           | Return per-Msg variant fire counts and a list of never-fired variants.                                                                                                       |
-| `llui_diff_state`         | Produce a structured JSON diff between two state values.                                                                                                                     |
-| `llui_assert`             | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path.                                                                                                           |
-| `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                              |
-| `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                     |
+**State & messaging**
+
+| Tool                       | Description                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `llui_get_state`           | Get the current component state                                               |
+| `llui_describe_state`      | Return the State _type_ shape (field descriptors), not its value              |
+| `llui_search_state`        | Dot-path lookup into state (e.g. `cart.items`)                                |
+| `llui_diff_state`          | Structured JSON diff between two state values (`{ added, removed, changed }`) |
+| `llui_assert`              | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path             |
+| `llui_send_message`        | Send a message; returns the new state + effects (validated first)             |
+| `llui_eval_update`         | Dry-run a message without applying it                                         |
+| `llui_validate_message`    | Validate a message against the compiled Msg type                              |
+| `llui_list_messages`       | List all Msg variants with their field types                                  |
+| `llui_list_effects`        | List all Effect variants with their field types                               |
+| `llui_get_message_history` | Chronological message history with state transitions + effects (paginated)    |
+| `llui_search_history`      | Filter history by type, state-path change, effect type, or index range        |
+| `llui_clear_log`           | Clear the message and effects history                                         |
+
+**Components, snapshots & traces**
+
+| Tool                    | Description                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `llui_component_info`   | Component name + source location (file + line) of the `component()` decl      |
+| `llui_list_components`  | List all mounted components and which one is active                           |
+| `llui_select_component` | Switch the active component (target of subsequent tool calls)                 |
+| `llui_snapshot_state`   | Capture the current state (deep clone) for later rollback                     |
+| `llui_restore_state`    | Overwrite state with a snapshot and re-render (bypasses `update()`)           |
+| `llui_export_trace`     | Export the session as a replayable `LluiTrace` JSON                           |
+| `llui_replay_trace`     | Generate a ready-to-run vitest file that replays the message history          |
+| `llui_eval`             | Run arbitrary JS in the page context; returns result + observability envelope |
+
+**Source, tests & lint** (project-source tools, no running app required)
+
+| Tool                        | Description                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `llui_find_msg_producers`   | Find all `send({ type: '…' })` call sites in project source                 |
+| `llui_find_msg_handlers`    | Find all `update()` branches that handle a Msg variant                      |
+| `llui_run_test`             | Run a vitest file (optionally one test); returns pass/fail + output         |
+| `llui_lint`                 | Lint one file against the signal lint rules (pass `{ path }`); see below    |
+| `llui_compiler_diagnostics` | Run the signal lint rules over every `.ts`/`.tsx` in a directory            |
+| `llui_static_show_compiled` | Read a file from disk and return pre- vs post-transform source              |
+| `llui_static_collect_paths` | Return the reactive dependency paths the compiler would extract from a file |
+
+**Browser (CDP transport only)**
+
+| Tool                   | Description                                                           |
+| ---------------------- | --------------------------------------------------------------------- |
+| `llui_screenshot`      | Screenshot the page or a specific element (base64 PNG/JPEG)           |
+| `llui_a11y_tree`       | Accessibility tree for the page or an element                         |
+| `llui_console_tail`    | Recent browser console entries captured since the CDP session started |
+| `llui_network_tail`    | Recent network requests (URL, method, status, timing, failures)       |
+| `llui_uncaught_errors` | Recent uncaught JS exceptions                                         |
+| `llui_browser_close`   | Close the Playwright-owned fallback browser + clear CDP buffers       |
+
+**SSR (requires `@llui/vike`)**
+
+| Tool                    | Description                                             |
+| ----------------------- | ------------------------------------------------------- |
+| `llui_ssr_render`       | Server-render the active component at its current state |
+| `llui_hydration_report` | Compare server-rendered HTML against the client DOM     |
+
+**Notebook** (devmode-annotate — shared human/LLM notes)
+
+| Tool                   | Description                                                       |
+| ---------------------- | ----------------------------------------------------------------- |
+| `llui_list_notes`      | List notes in the notebook (frontmatter summaries)                |
+| `llui_read_note`       | Read one note: frontmatter, prose, and body JSON block            |
+| `llui_capture`         | Ask the HUD (or headless Playwright) to screenshot + write a note |
+| `llui_list_sessions`   | List all known notebook sessions on disk                          |
+| `llui_current_session` | Metadata about the active notebook session                        |
+| `llui_rotate_session`  | Start a fresh notebook session                                    |
+| `llui_queue`           | List task-workflow notes by status                                |
+| `llui_claim_note`      | Atomically claim a task note for processing                       |
+| `llui_reply_to_note`   | Write a reply note (optionally with a proposed diff)              |
 
 ## Agent Visibility Surface
 
@@ -1373,24 +1413,33 @@ A typical multi-step run reads as: `narrate("about to do X") → send_message(..
 
 Even without the MCP server, the debug API is available directly:
 
+The console surface is exactly what `installSignalDebug` registers — no
+more, no less:
+
 ```javascript
 __lluiDebug.getState()
 __lluiDebug.send({ type: 'increment' })
-__lluiDebug.getBindings()
-__lluiDebug.decodeMask(5) // → ['route', 'query']
-__lluiDebug.whyDidUpdate(3) // → { matched, changed, ... }
+__lluiDebug.evalUpdate({ type: 'increment' }) // → { state, effects } (dry-run)
+__lluiDebug.searchState('cart.items') // → dot-path lookup
+__lluiDebug.getMessageHistory() // → chronological log with before/after
+__lluiDebug.validateMessage({ type: 'increment' }) // → errors or null
 __lluiDebug.getMessageSchema() // → discriminant + variants
-__lluiDebug.snapshotState() // → deep clone
-__lluiDebug.restoreState(snapshot) // → overwrite + re-render
+__lluiDebug.getStateSchema() // → State type shape
+__lluiDebug.getEffectSchema() // → Effect type shape
+__lluiDebug.getComponentInfo() // → { name, file, line, runtime }
+__lluiDebug.exportTrace() // → replayable LluiTrace JSON
+__lluiDebug.clearLog() // → reset history
 
-// Phase 1 additions:
-__lluiDebug.inspectElement('#btn') // → rich element report
-__lluiDebug.getPendingEffects() // → list of queued/in-flight effects
-__lluiDebug.mockEffect({ type: 'http' }, { data: 'fake' }) // → { mockId }
-__lluiDebug.stepBack(3, 'pure') // → rewind 3 messages
-__lluiDebug.getCoverage() // → { fired, neverFired }
+const snap = __lluiDebug.snapshotState() // → deep clone (hold the return value)
+__lluiDebug.restoreState(snap) // → overwrite + re-render
 
 // Multi-component apps:
 __lluiComponents // → { Counter: api, Dashboard: api }
 __lluiDebug = __lluiComponents.Dashboard // switch target
 ```
+
+> Binding/mask/scope/effect-timeline methods (`getBindings`,
+> `whyDidUpdate`, `decodeMask`, `inspectElement`, `getPendingEffects`,
+> `mockEffect`, `stepBack`, `getCoverage`, …) are legacy-runtime concepts
+> the signal runtime does not implement — they are **not** installed on
+> `__lluiDebug`.

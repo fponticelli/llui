@@ -36,11 +36,19 @@ describe('handleEffects().use()', () => {
 
     handler({ effect: { type: 'unknown' }, send, signal: new AbortController().signal })
 
-    expect(elseFn).toHaveBeenCalledWith({
-      effect: { type: 'unknown' },
-      send,
-      signal: expect.anything(),
-    })
+    // The terminal handler receives the effect, its signal, and a
+    // completion-tracking send that forwards to the caller's send (the wrapper
+    // lets `sequence` learn whether a custom step dispatched synchronously).
+    expect(elseFn).toHaveBeenCalledTimes(1)
+    const ctx = elseFn.mock.calls[0]![0] as {
+      effect: unknown
+      send: (msg: unknown) => void
+      signal: unknown
+    }
+    expect(ctx.effect).toEqual({ type: 'unknown' })
+    expect(ctx.signal).toBeDefined()
+    ctx.send({ type: 'forwarded' })
+    expect(send).toHaveBeenCalledWith({ type: 'forwarded' })
   })
 
   it('chains multiple plugins — first match wins', () => {

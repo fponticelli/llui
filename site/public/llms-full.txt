@@ -253,7 +253,7 @@ const TodoApp = component<State, Msg, never>({
     }
   },
 
-  // The bag is `{ state, send }`. Element/structural helpers are imports.
+  // The bag is `{ state, send, batch }`. Element/structural helpers are imports.
   view: ({ state, send }) => [
     div({ class: 'app' }, [
       div({ class: 'input-row' }, [
@@ -344,7 +344,7 @@ view: ({ state, send }) => [
 Side effects are data — plain objects returned from `update()`. The runtime dispatches them:
 
 ```typescript
-import { http, cancel, debounce, handleEffects } from '@llui/effects'
+import { http, cancel, debounce, handleEffects, asOnEffect } from '@llui/effects'
 
 type Effect = ReturnType<typeof http> | ReturnType<typeof cancel> | ReturnType<typeof debounce>
 
@@ -373,9 +373,12 @@ const App = component<State, Msg, Effect>({
       // ...
     }
   },
-  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
-    console.warn('Unhandled effect:', effect)
-  }),
+  // asOnEffect(...) adapts the chain to the runtime's onEffect(effect, api) shape.
+  onEffect: asOnEffect(
+    handleEffects<Effect, Msg>().else(({ effect }) => {
+      console.warn('Unhandled effect:', effect)
+    }),
+  ),
 })
 ```
 
@@ -387,7 +390,7 @@ state; the child renders a slice.
 
 ```typescript
 import { div, text, button } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 // A reusable row — takes a per-row signal, not an accessor callback.
 function todoItem(item: Signal<Todo>, send: Send<Msg>): Renderable {
@@ -724,8 +727,9 @@ import { storageLoad, storageSet, storageWatch } from '@llui/effects'
 init: () => {
   const saved = storageLoad<{ theme: string }>('prefs')
   return [{ theme: saved?.theme ?? 'light' }, [
-    // Optionally subscribe to cross-tab changes:
-    storageWatch('prefs', 'prefsChanged'),
+    // Optionally subscribe to cross-tab changes (2nd arg maps the new
+    // value to a Msg; optional 3rd arg is the scope, defaults to 'local'):
+    storageWatch('prefs', (value) => ({ type: 'prefsChanged' as const, value })),
   ]]
 }
 
@@ -1548,12 +1552,15 @@ running in the browser.
 
 ### How it works
 
-In dev mode the Vite plugin injects two things and exposes one HTTP endpoint:
+In dev mode the runtime and Vite plugin cooperate on three things:
 
-1. **`enableDevTools()`** — installs `window.__lluiDebug` on every mounted
-   component. This is always active in dev builds and costs nothing if
-   unused.
-2. **`startRelay(port)`** — on page load, fetches `/__llui_mcp_status` from
+1. **`installSignalDebug`** — the runtime calls this automatically when a
+   component mounts in dev, installing `window.__lluiDebug` (the active
+   component) and `window.__lluiComponents` (all mounts). There is no
+   `enableDevTools()` call to make — it is always active in dev builds and
+   costs nothing if unused.
+2. **`startRelay(port)`** — injected by the plugin, on page load it fetches
+   `/__llui_mcp_status` from
    the dev server. If the MCP server is running, the response gives the
    actual port and the browser connects automatically — no console steps
    needed, no retry spam, no race conditions.
@@ -1568,42 +1575,42 @@ listener forwards to `__lluiConnect`.
 
 ### Setup
 
-MCP is **opt-in** — pass a port to the Vite plugin to enable it:
-
-```typescript
-// vite.config.ts
-import llui from '@llui/vite-plugin'
-
-export default {
-  plugins: [llui({ mcpPort: 5200 })],
-}
-```
-
-Then run both processes:
+MCP is **on by default**. Whenever `@llui/mcp` is resolvable from your
+project root, the Vite plugin auto-enables the relay on port `5200` and
+spawns the MCP server for you — no config entry and no separate process:
 
 ```bash
-# 1. Start the MCP server (separate terminal)
-npx @llui/mcp
-
-# 2. Start your dev server
-npx vite
+pnpm add -D @llui/mcp
 ```
-
-Without `mcpPort`, the plugin skips the discovery endpoint entirely
-— no 404 polling, no browser-side relay code. Opt in only when you
-actually want interactive debugging.
-
-Configure a custom port via the plugin option:
 
 ```typescript
 // vite.config.ts
 import llui from '@llui/vite-plugin'
 
 export default {
-  plugins: [llui({ mcpPort: 5201 })], // custom port
-  // or: llui({ mcpPort: false })       // disable relay entirely
+  plugins: [llui()], // MCP auto-detected + spawned when @llui/mcp is installed
 }
 ```
+
+One `npx vite` (or `pnpm dev`) now starts both the dev server and the
+MCP server. If `@llui/mcp` is not installed, the plugin leaves MCP
+disabled and skips the discovery endpoint entirely.
+
+Use the `mcpPort` option to override the default:
+
+```typescript
+// vite.config.ts
+import llui from '@llui/vite-plugin'
+
+export default {
+  plugins: [llui({ mcpPort: 5201 })], // wire to an externally-managed server on a custom port
+  // or: llui({ mcpPort: false })       // disable MCP even when @llui/mcp is installed
+}
+```
+
+Passing a number switches to **wire** mode (the plugin connects to a
+server you started yourself, e.g. `npx llui-mcp`, instead of spawning
+one); passing `false` opts out.
 
 ### Manual connection
 
@@ -1622,44 +1629,80 @@ __lluiConnect(5201) // connect to a custom port
 Once connected, the MCP server exposes these tools to any MCP client
 (Claude Desktop, Claude Code, etc.):
 
-| Tool                      | Description                                                                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `llui_get_state`          | Get the current component state                                                                                                                                              |
-| `llui_send_message`       | Send a message and return new state + effects                                                                                                                                |
-| `llui_eval_update`        | Dry-run a message without applying it                                                                                                                                        |
-| `llui_get_bindings`       | List all bindings with mask, kind, and last value                                                                                                                            |
-| `llui_why_did_update`     | Explain why a specific binding updated (mask match, value diff)                                                                                                              |
-| `llui_validate_message`   | Validate a message against the compiled schema                                                                                                                               |
-| `llui_get_message_schema` | Get the discriminated union schema for Msg                                                                                                                                   |
-| `llui_decode_mask`        | Translate a dirty-mask number to field names                                                                                                                                 |
-| `llui_search_state`       | Dot-path lookup into state (e.g. `route.data.repos`)                                                                                                                         |
-| `llui_export_trace`       | Export message history as a replayable trace                                                                                                                                 |
-| `llui_snapshot_state`     | Checkpoint the current state                                                                                                                                                 |
-| `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                       |
-| `llui_list_components`    | List all mounted components                                                                                                                                                  |
-| `llui_select_component`   | Switch the active debug target                                                                                                                                               |
-| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s signal lint rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
-| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                     |
-| `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                         |
-| `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                      |
-| `llui_dispatch_event`     | Synthesize a browser event on a selector; returns the Msgs produced and resulting state.                                                                                     |
-| `llui_get_focus`          | Return active-element info: selector, tag name, and text selection range.                                                                                                    |
-| `llui_force_rerender`     | Re-evaluate all bindings and return the indices that produced a new value.                                                                                                   |
-| `llui_each_diff`          | Show per-each-site add/remove/move/reuse counts for the last update.                                                                                                         |
-| `llui_scope_tree`         | Return the scope hierarchy annotated with kind (root/show/each/branch/child/portal).                                                                                         |
-| `llui_disposer_log`       | List recent scope disposals with the cause of each disposal.                                                                                                                 |
-| `llui_list_dead_bindings` | Return bindings that are currently dead or have never changed value.                                                                                                         |
-| `llui_binding_graph`      | Invert the compiler mask legend: map state paths to the binding indices they gate.                                                                                           |
-| `llui_pending_effects`    | List effects that are currently queued or in-flight.                                                                                                                         |
-| `llui_effect_timeline`    | Phased log of every effect: dispatched → in-flight → resolved/cancelled.                                                                                                     |
-| `llui_mock_effect`        | Register a match→response mock; the next matching effect resolves with the mock value.                                                                                       |
-| `llui_resolve_effect`     | Manually resolve a specific pending effect by id.                                                                                                                            |
-| `llui_step_back`          | Rewind N messages by replaying from init (pure mode by default).                                                                                                             |
-| `llui_coverage`           | Return per-Msg variant fire counts and a list of never-fired variants.                                                                                                       |
-| `llui_diff_state`         | Produce a structured JSON diff between two state values.                                                                                                                     |
-| `llui_assert`             | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path.                                                                                                           |
-| `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                              |
-| `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                     |
+**State & messaging**
+
+| Tool                       | Description                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| `llui_get_state`           | Get the current component state                                               |
+| `llui_describe_state`      | Return the State _type_ shape (field descriptors), not its value              |
+| `llui_search_state`        | Dot-path lookup into state (e.g. `cart.items`)                                |
+| `llui_diff_state`          | Structured JSON diff between two state values (`{ added, removed, changed }`) |
+| `llui_assert`              | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path             |
+| `llui_send_message`        | Send a message; returns the new state + effects (validated first)             |
+| `llui_eval_update`         | Dry-run a message without applying it                                         |
+| `llui_validate_message`    | Validate a message against the compiled Msg type                              |
+| `llui_list_messages`       | List all Msg variants with their field types                                  |
+| `llui_list_effects`        | List all Effect variants with their field types                               |
+| `llui_get_message_history` | Chronological message history with state transitions + effects (paginated)    |
+| `llui_search_history`      | Filter history by type, state-path change, effect type, or index range        |
+| `llui_clear_log`           | Clear the message and effects history                                         |
+
+**Components, snapshots & traces**
+
+| Tool                    | Description                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `llui_component_info`   | Component name + source location (file + line) of the `component()` decl      |
+| `llui_list_components`  | List all mounted components and which one is active                           |
+| `llui_select_component` | Switch the active component (target of subsequent tool calls)                 |
+| `llui_snapshot_state`   | Capture the current state (deep clone) for later rollback                     |
+| `llui_restore_state`    | Overwrite state with a snapshot and re-render (bypasses `update()`)           |
+| `llui_export_trace`     | Export the session as a replayable `LluiTrace` JSON                           |
+| `llui_replay_trace`     | Generate a ready-to-run vitest file that replays the message history          |
+| `llui_eval`             | Run arbitrary JS in the page context; returns result + observability envelope |
+
+**Source, tests & lint** (project-source tools, no running app required)
+
+| Tool                        | Description                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `llui_find_msg_producers`   | Find all `send({ type: '…' })` call sites in project source                 |
+| `llui_find_msg_handlers`    | Find all `update()` branches that handle a Msg variant                      |
+| `llui_run_test`             | Run a vitest file (optionally one test); returns pass/fail + output         |
+| `llui_lint`                 | Lint one file against the signal lint rules (pass `{ path }`); see below    |
+| `llui_compiler_diagnostics` | Run the signal lint rules over every `.ts`/`.tsx` in a directory            |
+| `llui_static_show_compiled` | Read a file from disk and return pre- vs post-transform source              |
+| `llui_static_collect_paths` | Return the reactive dependency paths the compiler would extract from a file |
+
+**Browser (CDP transport only)**
+
+| Tool                   | Description                                                           |
+| ---------------------- | --------------------------------------------------------------------- |
+| `llui_screenshot`      | Screenshot the page or a specific element (base64 PNG/JPEG)           |
+| `llui_a11y_tree`       | Accessibility tree for the page or an element                         |
+| `llui_console_tail`    | Recent browser console entries captured since the CDP session started |
+| `llui_network_tail`    | Recent network requests (URL, method, status, timing, failures)       |
+| `llui_uncaught_errors` | Recent uncaught JS exceptions                                         |
+| `llui_browser_close`   | Close the Playwright-owned fallback browser + clear CDP buffers       |
+
+**SSR (requires `@llui/vike`)**
+
+| Tool                    | Description                                             |
+| ----------------------- | ------------------------------------------------------- |
+| `llui_ssr_render`       | Server-render the active component at its current state |
+| `llui_hydration_report` | Compare server-rendered HTML against the client DOM     |
+
+**Notebook** (devmode-annotate — shared human/LLM notes)
+
+| Tool                   | Description                                                       |
+| ---------------------- | ----------------------------------------------------------------- |
+| `llui_list_notes`      | List notes in the notebook (frontmatter summaries)                |
+| `llui_read_note`       | Read one note: frontmatter, prose, and body JSON block            |
+| `llui_capture`         | Ask the HUD (or headless Playwright) to screenshot + write a note |
+| `llui_list_sessions`   | List all known notebook sessions on disk                          |
+| `llui_current_session` | Metadata about the active notebook session                        |
+| `llui_rotate_session`  | Start a fresh notebook session                                    |
+| `llui_queue`           | List task-workflow notes by status                                |
+| `llui_claim_note`      | Atomically claim a task note for processing                       |
+| `llui_reply_to_note`   | Write a reply note (optionally with a proposed diff)              |
 
 ## Agent Visibility Surface
 
@@ -1801,27 +1844,36 @@ A typical multi-step run reads as: `narrate("about to do X") → send_message(..
 
 Even without the MCP server, the debug API is available directly:
 
+The console surface is exactly what `installSignalDebug` registers — no
+more, no less:
+
 ```javascript
 __lluiDebug.getState()
 __lluiDebug.send({ type: 'increment' })
-__lluiDebug.getBindings()
-__lluiDebug.decodeMask(5) // → ['route', 'query']
-__lluiDebug.whyDidUpdate(3) // → { matched, changed, ... }
+__lluiDebug.evalUpdate({ type: 'increment' }) // → { state, effects } (dry-run)
+__lluiDebug.searchState('cart.items') // → dot-path lookup
+__lluiDebug.getMessageHistory() // → chronological log with before/after
+__lluiDebug.validateMessage({ type: 'increment' }) // → errors or null
 __lluiDebug.getMessageSchema() // → discriminant + variants
-__lluiDebug.snapshotState() // → deep clone
-__lluiDebug.restoreState(snapshot) // → overwrite + re-render
+__lluiDebug.getStateSchema() // → State type shape
+__lluiDebug.getEffectSchema() // → Effect type shape
+__lluiDebug.getComponentInfo() // → { name, file, line, runtime }
+__lluiDebug.exportTrace() // → replayable LluiTrace JSON
+__lluiDebug.clearLog() // → reset history
 
-// Phase 1 additions:
-__lluiDebug.inspectElement('#btn') // → rich element report
-__lluiDebug.getPendingEffects() // → list of queued/in-flight effects
-__lluiDebug.mockEffect({ type: 'http' }, { data: 'fake' }) // → { mockId }
-__lluiDebug.stepBack(3, 'pure') // → rewind 3 messages
-__lluiDebug.getCoverage() // → { fired, neverFired }
+const snap = __lluiDebug.snapshotState() // → deep clone (hold the return value)
+__lluiDebug.restoreState(snap) // → overwrite + re-render
 
 // Multi-component apps:
 __lluiComponents // → { Counter: api, Dashboard: api }
 __lluiDebug = __lluiComponents.Dashboard // switch target
 ```
+
+> Binding/mask/scope/effect-timeline methods (`getBindings`,
+> `whyDidUpdate`, `decodeMask`, `inspectElement`, `getPendingEffects`,
+> `mockEffect`, `stepBack`, `getCoverage`, …) are legacy-runtime concepts
+> the signal runtime does not implement — they are **not** installed on
+> `__lluiDebug`.
 
 
 ---
@@ -2251,14 +2303,6 @@ effects are skipped by default (already run on the server); pass
 
 ```typescript
 function hydrateSignalApp<S, M, E = never>(target: Element | MountTarget, def: SignalComponentDef<S, M, E>, serverState: S, options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> }): SignalComponentHandle<S, M>
-```
-
-### `installSignalDebug()`
-
-Build the signal debug API and register it. Returns an unregister function.
-
-```typescript
-function installSignalDebug(hooks: SignalDebugHooks): () => void
 ```
 
 ### `isMountable()`
@@ -4786,6 +4830,19 @@ function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
 function injectScopeVariantRegistrations(node: ts.SourceFile, f: ts.NodeFactory): InjectResult
 ```
 
+### `isDefaultAnnotation()`
+
+Whether a single variant's annotations are ALL at their default value —
+i.e. carry no authored information. Covers every field, including
+`examples`/`warning`/`emits` (the previous `hasNonDefaultAnnotation`
+missed these three, so a variant annotated only with `@example`/`@warning`/
+`@emits` was wrongly treated as default). The runtime reconstructs a
+fully-default variant from absence, so these are emission-redundant.
+
+```typescript
+function isDefaultAnnotation(v: MessageAnnotations): boolean
+```
+
 ### `isMemoCallWithArrowArg()`
 
 Recognize `memo(arrow)` / `memo(fn)` calls so the inner accessor can
@@ -4987,6 +5044,20 @@ accessor is also `(s) => …`.
 
 ```typescript
 function shadowsStateParam(parameters: ts.NodeArray<ts.ParameterDeclaration>, stateParam: string): boolean
+```
+
+### `sparseMsgAnnotations()`
+
+Build a JSON-ready annotation map that drops emission-redundant bytes:
+  - variants whose every field is default are OMITTED entirely, and
+  - within a retained variant, fields still at their default are OMITTED.
+The runtime treats an absent variant / field as the default (see
+`list-actions.ts`, which reads every field as `ann?.field ?? default`), so
+this is a pure size optimization with no semantic change. Returns null when
+every variant is fully default — the caller then skips `__msgAnnotations`.
+
+```typescript
+function sparseMsgAnnotations(a: Record<string, MessageAnnotations>): Record<string, Partial<MessageAnnotations>> | null
 ```
 
 ### `stateTypeToLiteral()`
@@ -6029,6 +6100,24 @@ The compiler emits warnings for common issues:
 | Spread children       | Spread in children array defeats static analysis |
 
 
+## Functions
+
+### `resolveRouterInput()`
+
+Normalize the user's `router` setting into the public `LlmRouterConfig`
+shape (or null when disabled). Accepts `false`, a preset string, or
+a full config object. Used in `configResolved` so the rest of the
+plugin (router startup + HUD bootstrap) sees one canonical shape.
+OPT-IN by default: an unset `router` resolves to `null` (disabled). The
+attention router auto-spawns an LLM CLI (with tool access) in the project
+root, so it must never turn on implicitly — a forgeable same-origin/loopback
+task note reaching a default-on router is a local-RCE path. Enabling it
+requires an explicit `router: 'claude'` (or a full config object).
+
+```typescript
+function resolveRouterInput(router: false | LlmPreset | LlmRouterConfig | undefined, legacyTimeoutMs: number | undefined): LlmRouterConfig | null
+```
+
 ## Types
 
 ### `AgentPluginConfig`
@@ -6279,20 +6368,24 @@ export interface DevmodeAnnotateConfig {
    * clicks "Solve" in the HUD) and spawns the configured LLM CLI to
    * propose a fix. Accepts:
    *
-   *  - `false` — disable. The HUD hides its "Solve" button; notes
-   *              still save to disk so MCP-side consumers can act on
-   *              them.
-   *  - `'claude' | 'codex' | 'gemini'` — preset; everything defaults.
+   *  - unset / `undefined` — DISABLED (the default). The router is
+   *              OPT-IN: it spawns an LLM CLI with tool access in the
+   *              project root, so it never turns on implicitly. Notes
+   *              still save to disk; the HUD hides its "Solve" button.
+   *  - `false` — explicitly disable (same effect as unset).
+   *  - `'claude' | 'codex' | 'gemini'` — enable with a preset.
    *  - `LlmRouterConfig` — preset + overrides (model, timeoutMs,
    *              concurrency, env, extraArgs), or a fully custom
    *              invocation `{ command, args, promptVia }` (omit
-   *              `preset` to opt out of preset defaults entirely).
+   *              `preset` to opt out of preset defaults entirely). Set
+   *              `dangerouslySkipPermissions: true` to run the agent
+   *              fully unattended (no approval prompts) — dangerous.
    *
    * When the chosen CLI isn't on PATH the router degrades silently
    * to save-only and the HUD hides the Solve button — the user gets
    * a one-line install hint in the console.
    *
-   * Default: `'claude'`.
+   * Default: disabled (opt-in).
    */
   router?: false | LlmPreset | LlmRouterConfig
   /** Override the per-task timeout for the router's spawn. Default
@@ -7168,14 +7261,13 @@ function race(effects: BuiltinEffect[]): RaceEffect
 
 ### `resolveEffects()`
 
-Execute all HTTP effects from the effect list, apply responses
-to state via update(), return the final loaded state.
-Requests are built with the SAME `buildRequest`/`parseResponse` core the live
-`http` runner uses, so SSR pre-loading derives identical requests (real headers,
-content-type, pass-through bodies, `responseType`) and passes the response's real
-`Headers` to `onSuccess`. A rejected fetch (network failure / timeout) is mapped
-through the effect's `onError` rather than silently dropped, so SSR and the client
-converge on the same failure state.
+Execute all HTTP effects reachable from the effect list, apply the resulting
+messages to state via update(), and return the final loaded state.
+Http effects nested inside composite builtins (`sequence`/`race`/`retry`/
+`cancel`/`debounce`) are unwrapped recursively — a `sequence([http(...)])`
+pre-resolves on the server just like a bare `http(...)`. Top-level effects run
+in parallel; a `sequence`'s inner effects run in order; messages are applied in
+effect order. Recurses if the responses produce more effects (up to a depth limit).
 
 ```typescript
 function resolveEffects<S, M extends { type: string }, E extends { type: string }>(state: S, effects: E[], update: UpdateFn<S, M, E>, maxDepth = 3): Promise<S>
@@ -7184,7 +7276,16 @@ function resolveEffects<S, M extends { type: string }, E extends { type: string 
 ### `retry()`
 
 ```typescript
-function retry(inner: HttpEffect, opts: { maxAttempts: number; delayMs: number }): RetryEffect
+function retry(inner: HttpEffect, opts: {
+    maxAttempts: number
+    delayMs: number
+    /**
+     * Predicate deciding whether a failure is retriable. Defaults to retrying
+     * only transient errors (`network`/`timeout`/`ratelimit`/5xx `server`); a
+     * `401`/`403`/`404`/`validation` error is NOT retried. See {@link RetryEffect.retryOn}.
+     */
+    retryOn?: (error: ApiError, attempt: number) => boolean
+  }): RetryEffect
 ```
 
 ### `sequence()`
@@ -7537,6 +7638,15 @@ export interface RetryEffect {
   inner: HttpEffect
   maxAttempts: number
   delayMs: number
+  /**
+   * Decide whether a given failure should be retried. `attempt` is 1-based (the
+   * attempt that just failed). Defaults to retrying only transient failures —
+   * `network`, `timeout`, `ratelimit`, and 5xx `server` errors — so a `401`,
+   * `403`, `404`, or `validation` error fails fast instead of hammering the
+   * server. On a `ratelimit` error carrying `retryAfter`, the wait honors it
+   * (`max(retryAfter*1000, backoff)`).
+   */
+  retryOn?: (error: ApiError, attempt: number) => boolean
 }
 ```
 
@@ -9686,38 +9796,42 @@ pnpm add @llui/transitions
 
 ## Usage
 
-```ts
-import { fade, slide, mergeTransitions } from '@llui/transitions'
-import { div } from '@llui/dom'
+Presets return a `TransitionOptions` bundle. Pass it **positionally** as the trailing `transition` argument to `show`/`branch`, or as the `transition:` option to `each` — never spread it. Element and structural helpers are module imports from `@llui/dom`; the view bag is `{ state, send }`.
 
-// Fade + slide on a show block
-view({ show, text }) {
-  show({
-    when: (s) => s.visible,
-    render: () => div([text((s) => s.message)]),
-    ...mergeTransitions(fade(), slide({ direction: 'down' })),
-  })
-}
+```ts
+import { show, div, text } from '@llui/dom'
+import { fade, slide, mergeTransitions } from '@llui/transitions'
+
+// Inside a component's view({ state, send }):
+// Fade + slide on a show block (transition is the 4th positional arg)
+show(
+  state.at('visible'),
+  () => div({}, text(state.map((s) => s.message))),
+  undefined, // no orElse arm
+  mergeTransitions(fade(), slide({ direction: 'down' })),
+)
 ```
 
 ## API
 
 ### Core
 
-| Function                       | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `transition({ enter, leave })` | Core transition -- define custom enter/leave animations |
-| `mergeTransitions(a, b)`       | Combine two transitions into one                        |
+| Function                     | Description                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transition(spec)`           | Core primitive -- build a custom transition from a class/style spec (`enterFrom`, `enterTo`, `enterActive`, `leaveFrom`, `leaveTo`, `leaveActive`, plus `duration`, `appear`) |
+| `mergeTransitions(...parts)` | Combine multiple transitions into one (chains their `enter`, `leave`, and `onTransition` handlers)                                                                            |
+
+All presets and the core primitive return a `TransitionOptions` bundle — `{ enter?, leave?, onTransition? }` hooks that operate on raw DOM `Node`s.
 
 ### Presets
 
-| Function             | Options                           | Description                                          |
-| -------------------- | --------------------------------- | ---------------------------------------------------- |
-| `fade(options?)`     | `duration`, `easing`              | Fade in/out                                          |
-| `slide(options?)`    | `direction`, `duration`, `easing` | Slide from direction (`up`, `down`, `left`, `right`) |
-| `scale(options?)`    | `from`, `duration`, `easing`      | Scale transform in/out                               |
-| `collapse(options?)` | `duration`, `easing`              | Height collapse/expand                               |
-| `flip(options?)`     | `duration`, `easing`              | FLIP reorder animation for `each()`                  |
+| Function             | Options                                                         | Description                                                                             |
+| -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `fade(options?)`     | `duration`, `easing`, `appear`                                  | Fade in/out                                                                             |
+| `slide(options?)`    | `direction`, `distance`, `duration`, `easing`, `fade`, `appear` | Slide from direction (`up`, `down`, `left`, `right`)                                    |
+| `scale(options?)`    | `from`, `duration`, `easing`, `fade`, `origin`, `appear`        | Scale transform in/out                                                                  |
+| `collapse(options?)` | `axis`, `duration`, `easing`, `appear`                          | Collapse/expand along `y` (height) or `x` (width); measures the natural size at runtime |
+| `flip(options?)`     | `duration`, `easing`                                            | FLIP reorder animation for `each()`                                                     |
 
 ### Spring Physics
 
@@ -9728,17 +9842,19 @@ view({ show, text }) {
 Uses a damped spring simulation instead of CSS easing. The animation runs via `requestAnimationFrame` and settles naturally based on physics parameters.
 
 ```ts
+import { show } from '@llui/dom'
 import { spring } from '@llui/transitions'
 
-// Default: opacity 0 -> 1 with react-spring-like defaults
-show({ when: (s) => s.open, render: () => content(), ...spring() })
+// Default: opacity 0 → 1 with react-spring-like defaults
+show(state.at('open'), () => content(), undefined, spring())
 
 // Custom spring feel
-show({
-  when: (s) => s.open,
-  render: () => content(),
-  ...spring({ stiffness: 300, damping: 15, property: 'opacity' }),
-})
+show(
+  state.at('open'),
+  () => content(),
+  undefined,
+  spring({ stiffness: 300, damping: 15, property: 'opacity' }),
+)
 ```
 
 ### Route Transitions
@@ -9750,23 +9866,25 @@ show({
 Convenience wrapper for animating page transitions in a `branch()`:
 
 ```ts
+// @doc-skip — uses `[...]` render-result placeholders
+import { branch } from '@llui/dom'
 import { routeTransition, fade } from '@llui/transitions'
 
 // Default: fade + slight upward slide (250ms)
-branch({
-  on: (s) => s.route.page,
-  cases: { home: () => [...], about: () => [...] },
-  ...routeTransition(),
-})
+branch(
+  state.map((s) => s.route.page),
+  { home: () => [...], about: () => [...] },
+  routeTransition(),
+)
 
 // Custom duration
-branch({ on, cases, ...routeTransition({ duration: 200 }) })
+branch(state.map((s) => s.route.page), arms, routeTransition({ duration: 200 }))
 
 // Fade only (no slide)
-branch({ on, cases, ...routeTransition({ duration: 200, slide: false }) })
+branch(state.map((s) => s.route.page), arms, routeTransition({ duration: 200, slide: false }))
 
 // Pass any preset directly
-branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
+branch(state.map((s) => s.route.page), arms, routeTransition(fade({ duration: 200 })))
 ```
 
 ### Stagger
@@ -9775,29 +9893,31 @@ branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
 | ------------------------------- | ---------------------------- | ------------------------------------------------- |
 | `stagger(transition, options?)` | `delayPerItem`, `leaveOrder` | Stagger enter/leave animations for `each()` items |
 
-Wraps any transition preset so batch-entered items animate with incremental delays:
+Wraps any transition preset so batch-entered items animate with incremental delays. Pass the result as `each`'s `transition:` option:
 
 ```ts
+// @doc-skip — uses `[...]` render-result placeholder
+import { each } from '@llui/dom'
 import { stagger, fade, slide } from '@llui/transitions'
 
-each({
-  items: (s) => s.items,
+each(state.at('items'), {
   key: (i) => i.id,
-  render: ({ item }) => [...],
-  ...stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
+  render: (item) => [...],
+  transition: stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
 })
 
 // Works with any preset
-each({
-  items: (s) => s.items,
+each(state.at('items'), {
   key: (i) => i.id,
-  render: ({ item }) => [...],
-  ...stagger(slide({ direction: 'up' }), { delayPerItem: 50 }),
+  render: (item) => [...],
+  transition: stagger(slide({ direction: 'up' }), { delayPerItem: 50 }),
 })
 
 // Stagger leave animations too (default is simultaneous)
-each({
-  ...stagger(fade(), { delayPerItem: 30, leaveOrder: 'sequential' }),
+each(state.at('items'), {
+  key: (i) => i.id,
+  render: (item) => [...],
+  transition: stagger(fade(), { delayPerItem: 30, leaveOrder: 'sequential' }),
 })
 ```
 
@@ -9805,22 +9925,20 @@ Items entering within the same microtask are considered a "batch" and get sequen
 
 ### Integration
 
-Presets return `{ enter, leave }` objects that spread directly into `show`, `branch`, or `each`:
+Presets return a `TransitionOptions` object (`{ enter?, leave?, onTransition? }`). Pass it **positionally** to `show`/`branch` (the trailing `transition` argument) or as the `transition:` option to `each` — do not spread it. Row `render` callbacks receive a `Signal` handle (e.g. `item` is `Signal<T>`).
 
 ```ts
-// show with fade
-show({ when: (s) => s.open, render: () => content(), ...fade() })
+import { show, each, li, text } from '@llui/dom'
+import { fade, flip } from '@llui/transitions'
 
-// each with FLIP reorder
-each({
-  items: (s) => s.list,
+// show with fade — transition is the 4th positional arg
+show(state.at('open'), () => content(), undefined, fade())
+
+// each with FLIP reorder — transition is an option in the second arg
+each(state.at('list'), {
   key: (item) => item.id,
-  render: (item) =>
-    li(
-      {},
-      text(() => item.name),
-    ),
-  ...flip({ duration: 200 }),
+  render: (item) => li({}, text(item.map((i) => i.name))),
+  transition: flip({ duration: 200 }),
 })
 ```
 
@@ -9951,7 +10069,12 @@ When `requestAnimationFrame` can't drive the loop — server render, or a
 hidden/background tab where rAF is paused — the animation settles instantly
 to its target and the returned Promise still resolves. This matters for the
 `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
-not hang (e.g. `fromTransition(spring())` route navigation).
+not hang (e.g. `fromTransition(spring())` route navigation). Honoring
+`prefers-reduced-motion` takes the same instant-settle path.
+Interruption: enter and leave on the SAME element supersede each other. A new
+phase cancels the previous element's loop WITHOUT letting it snap to its own
+(now-stale) target, so an enter interrupted by a leave rests at the leave
+target rather than being clobbered back to the enter target by the dying loop.
 Passed as the trailing transition argument to the signal `show`/`branch`/`each`
 primitives to spring an arm/row in and defer its leave, e.g.
 `show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
@@ -10055,6 +10178,8 @@ export interface CollapseOptions {
   duration?: number
   easing?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10065,6 +10190,8 @@ export interface FadeOptions {
   duration?: number
   easing?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10074,6 +10201,8 @@ export interface FadeOptions {
 export interface FlipOptions {
   duration?: number
   easing?: string
+  /** Honor `prefers-reduced-motion` (default: true) — skip the reorder animation (rows jump) when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10105,6 +10234,8 @@ export interface ScaleOptions {
   /** Transform origin (default: 'center'). */
   origin?: string
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10121,6 +10252,8 @@ export interface SlideOptions {
   /** Also animate opacity (default: true). */
   fade?: boolean
   appear?: boolean
+  /** Honor `prefers-reduced-motion` (default: true) — resolve instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10142,6 +10275,8 @@ export interface SpringOptions {
   from?: number
   /** End value (default: 1). */
   to?: number
+  /** Honor `prefers-reduced-motion` (default: true) — jump to the target instantly when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10154,6 +10289,8 @@ export interface StaggerOptions {
   /** How to stagger leave animations: 'sequential' (same order as enter),
    *  'reverse', or 'simultaneous' (no stagger). Default: 'simultaneous'. */
   leaveOrder?: 'sequential' | 'reverse' | 'simultaneous'
+  /** Honor `prefers-reduced-motion` (default: true) — drop the per-item stagger delays when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -10181,6 +10318,12 @@ export interface TransitionSpec {
   duration?: number
   /** If true, run the enter transition on initial mount (default: true). */
   appear?: boolean
+  /**
+   * Honor the user's `prefers-reduced-motion: reduce` setting (default: true).
+   * When reduced motion is requested, enter/leave resolve instantly to the final
+   * state instead of animating. Set `false` to always animate.
+   */
+  respectReducedMotion?: boolean
 }
 ```
 
@@ -12260,6 +12403,15 @@ later approval may still fire, so callers must surface
 `pending-confirmation` / `still-pending` rather than lie about a
 rejection. Pairing drop maps to `timeout` for the same reason — the
 user wasn't present to cancel, they simply weren't reachable.
+LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
+`/message` and `/confirm-result` long-poll in series: each tears its
+subscriber down on timeout, and the next re-arms a fresh one. If the
+user approves in that inter-poll gap, an edge-triggered subscriber
+would miss the frame forever (the action ran but the agent polls
+`still-pending` indefinitely). To close that gap, the registry buffers
+every `confirm-resolved` outcome keyed by `confirmId` with a TTL, and
+this helper checks that buffer BEFORE subscribing — returning
+immediately when the resolution already arrived.
 
 ```typescript
 function waitForConfirm(registry: PairingRegistry, tid: string, confirmId: string, timeoutMs: number): Promise<ConfirmWaitResult>
@@ -13913,6 +14065,20 @@ export interface PairingRegistry {
    */
   readonly recentLogCap: number
 
+  /**
+   * Level-triggered confirm-resolution buffer. The browser emits a
+   * `confirm-resolved` frame exactly once; the registry records its
+   * outcome keyed by `confirmId` with a TTL, independently of whether
+   * any subscriber is currently armed. `waitForConfirm` reads this
+   * BEFORE subscribing so an approval arriving in the gap between one
+   * long-poll's subscriber teardown and the next re-arming is not lost.
+   *
+   * Returns the recorded frame if one landed within the TTL window,
+   * else `null`. Idempotent: repeated reads return the same outcome
+   * until it ages out (confirmIds are UUIDs, so no cross-confirm reuse).
+   */
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -14000,8 +14166,26 @@ here because the DO is a persistent addressable entity, not a
 one-shot Worker isolate.
 Users instantiate one of these inside their DO class's constructor
 and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
-WebSocket upgrades, and the optional MCP endpoint all flow through
-this single entry.
+WebSocket upgrades, the optional MCP endpoint, and the internal
+`/__resolve` token-resolution endpoint all flow through this single
+entry.
+── SHARDED-DEPLOYMENT REQUIREMENT ────────────────────────────────
+`routeToAgentDO` shards by `tid`: the root DO (`__root`) owns
+`/agent/mint` and friends, while LAP/WS calls route to a per-tid DO.
+Because each DO defaults to its own `InMemoryTokenStore`, a token
+minted on the root DO is INVISIBLE to a per-tid DO — `/__resolve`
+(and every LAP auth check) would 401. So the sharded recipe REQUIRES
+a single shared external `TokenStore` (a KV/D1-backed implementation
+of the `TokenStore` interface) injected into EVERY DO:
+```ts
+const tokenStore = new KvTokenStore(env.AGENT_KV) // your adapter
+this.agent = new AgentPairingDurableObject({ tokenStore })
+```
+The only no-shared-store option is to NOT shard — route everything
+through the root DO by passing `() => Promise.resolve('__root')` as
+`resolveTid`. Then all state (tokens + pairings) lives in one DO and
+the default `InMemoryTokenStore` is sufficient, at the cost of a
+single-DO bottleneck.
 
 ```typescript
 class AgentPairingDurableObject {
@@ -14009,6 +14193,7 @@ class AgentPairingDurableObject {
   mcpRouter: ((req: Request) => Promise<Response | null>) | null
   constructor(opts: DurableObjectOptions)
   fetch(req: Request): Promise<Response>
+  resolveToken(req: Request): Promise<Response>
 }
 ```
 
@@ -14033,10 +14218,13 @@ class InMemoryPairingRegistry implements PairingRegistry {
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
   recentLog
+  confirmOutcomes
   constructor(opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
     } = {})
   getRecentLog(tid: string, n: number): LogEntry[]
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
+  recordConfirmOutcome(tid: string, frame: ConfirmResolvedFrame): void
   register(tid: string, conn: PairingConnection): void
   unregister(tid: string): void
   isPaired(tid: string): boolean
@@ -15784,7 +15972,9 @@ function connectA2ui(container: Element, transport: A2uiTransport, options: A2ui
 
 ### `defineCatalog()`
 
-Build a catalog, optionally layering over a base.
+Build a catalog, optionally layering over a base. Registry records use a
+null prototype so a server-supplied component/function name like
+"__proto__"/"toString"/"constructor" can't resolve to a prototype member.
 
 ```typescript
 function defineCatalog(spec: CatalogSpec): Catalog
@@ -16274,6 +16464,14 @@ export interface RenderScope {
    * component repeated across template rows gets independent state per row.
    */
   readonly keyPrefix: string
+  /**
+   * Ids of the components currently being rendered on the path from the surface
+   * root down to (but not including) this scope's component. Threaded so
+   * {@link RenderContext.renderById} can detect a cyclic adjacency list
+   * (`root → children:['root']`, or A → B → A) and refuse to recurse instead of
+   * overflowing the stack on one malformed envelope.
+   */
+  readonly ancestors: ReadonlySet<ComponentId>
 }
 ```
 
@@ -16477,7 +16675,15 @@ identical to `parse(source)` — reuse only ever changes which node OBJECTS are
 shared with the previous tree (so their keys, and thus their DOM, survive).
 
 ```typescript
-function incrementalParse(cache: ParseCache | undefined, source: string, parse: (src: string) => Root): IncrementalResult
+function incrementalParse(cache: ParseCache | undefined, source: string, parse: (src: string) => Root, allowPrefixReuse = true): IncrementalResult
+```
+
+### `keyingHashComputations()`
+
+Test/benchmark hook: reads (and optionally resets) the from-scratch hash count.
+
+```typescript
+function keyingHashComputations(reset = false): number
 ```
 
 ### `makeContext()`
@@ -16642,6 +16848,14 @@ export interface MarkdownOptions {
   extensions?: FromMarkdownOptions['extensions']
   /** Extra mdast extensions matching the syntax extensions above. */
   mdastExtensions?: FromMarkdownOptions['mdastExtensions']
+  /** Opt in to incremental (tail-reuse) parsing for a REACTIVE source even when
+   * custom `extensions`/`mdastExtensions` are present. Off by default: the
+   * incremental parser's seal invariant is only proven for CommonMark + GFM, so a
+   * custom extension whose syntax can retro-reclassify an earlier block (crossing a
+   * blank-line seal) would leave a stale prefix. Set `true` ONLY when your
+   * extensions are seal-safe (no cross-block/document-global effects). Ignored when
+   * no custom extensions are configured (built-in reuse always applies). */
+  sealSafeExtensions?: boolean
   /** Sanitizer for raw HTML nodes. Raw HTML is **dropped by default**
    * (safe for untrusted/LLM content). To render it, supply a function
    * that takes the raw HTML and returns a sanitized string (e.g. wrap
@@ -16700,6 +16914,7 @@ export interface ResolvedOptions {
   renderers: ResolvedRenderers
   extensions: FromMarkdownOptions['extensions']
   mdastExtensions: FromMarkdownOptions['mdastExtensions']
+  sealSafeExtensions: boolean
   sanitizeHtml: ((html: string) => string) | undefined
   allowedProtocols: string[]
   transformLink: TransformLink | undefined
@@ -16709,6 +16924,17 @@ export interface ResolvedOptions {
 ```
 
 ## Constants
+
+### `defaultAllowedProtocols`
+
+The schemes permitted by default in links/images. Relative URLs (no scheme)
+are always allowed regardless of this list. Exported so downstream packages
+(e.g. `@llui/markdown-editor`) enforce the SAME baseline policy instead of
+hand-rolling a divergent allowlist.
+
+```typescript
+const defaultAllowedProtocols: readonly string[]
+```
 
 ### `defaultRenderers`
 
@@ -17667,14 +17893,17 @@ function $readBaseFormat(): BaseFormat
 
 ### `decoratorBridge()`
 
-Author-facing constructor for a {@link DecoratorBridge}. Preserves the
-sub-component's `State`/`Msg`/`Effect` and the node `Data` type at the
-definition site; only the node's serialized payload is narrowed back to
-`Data` at mount time (the single deserialization-boundary cast, exactly like
-`JSON.parse` returning a declared type).
+Author-facing constructor for a {@link DecoratorBridge}. The `view` builder
+receives a REACTIVE `Signal<Data>` (not a snapshot) plus the node api, and
+returns the sub-view's DOM. The bridge wraps it in a tiny host component whose
+single state field IS the data, so a later `mount.update(next)` simply drives
+that signal — the sub-view re-renders in place, never remounting (the fix for
+focus/selection loss on every data commit). `Data` is narrowed from the node's
+serialized payload at mount (the single deserialization-boundary cast, exactly
+like `JSON.parse` returning a declared type).
 
 ```typescript
-function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(type: string, factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>): DecoratorBridge
+function decoratorBridge<Data>(type: string, view: (data: Signal<Data>, api: DecoratorApi<Data>) => Renderable): DecoratorBridge
 ```
 
 ### `isMacPlatform()`
@@ -17814,18 +18043,19 @@ export interface DecoratorApi<Data> {
 
 ### `DecoratorBridge`
 
-Bridges a custom node type to an LLui sub-view. The sub-view's
-`State`/`Msg`/`Effect` and `Data` types are fully erased here: a bridge is
-stored monomorphically in the registry, and `mount` builds + mounts the
-sub-app, returning a disposer. Authors construct bridges with the typed
-{@link decoratorBridge} helper, which captures concrete types in a closure.
+Bridges a custom node type to an LLui sub-view. The sub-view's `Data` type is
+erased here: a bridge is stored monomorphically in the registry, and `mount`
+builds + mounts the sub-app ONCE, returning a {@link DecoratorMount} whose
+`update` channel reactively pushes later data changes in place. Authors
+construct bridges with the typed {@link decoratorBridge} helper.
 
 ```typescript
 export interface DecoratorBridge {
   /** The id used by the contributing markdown transformer. */
   type: string
-  /** Mount the sub-view for a node's (deserialized) data; returns a disposer. */
-  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => () => void
+  /** Mount the sub-view for a node's (deserialized) data ONCE; returns a live
+   * {@link DecoratorMount} (dispose + reactive data-push). */
+  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => DecoratorMount
 }
 ```
 

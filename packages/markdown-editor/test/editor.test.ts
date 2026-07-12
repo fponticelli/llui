@@ -119,4 +119,42 @@ describe('markdownEditor', () => {
     const state = app.getState() as { format: { blockType: string } }
     expect(state.format.blockType).toBe('h1')
   })
+
+  it('routes effects to each mount’s OWN editor (per-mount, no cross-wiring)', async () => {
+    const c1 = document.createElement('div')
+    const c2 = document.createElement('div')
+    document.body.append(c1, c2)
+    // ONE definition, mounted twice. Each mount's `onReady` fires with its own
+    // editor — before the per-mount fix a single def-level ref cross-wired them.
+    const editors: LexicalEditor[] = []
+    const def = markdownEditor({ defaultValue: 'para', onReady: (e) => editors.push(e) })
+    const app1 = mountApp(c1, def)
+    const app2 = mountApp(c2, def)
+    expect(editors).toHaveLength(2)
+
+    // Put a caret in mount 1's editor and run the h1 command THROUGH mount 1.
+    editors[0]!.update(() => $getRoot().getFirstDescendant()?.selectStart(), { discrete: true })
+    app1.send({ type: 'runCommand', id: 'h1' })
+    await wait(0)
+
+    // Only mount 1's DOM became a heading; mount 2 is untouched.
+    expect(c1.querySelector('h1')).not.toBeNull()
+    expect(c2.querySelector('h1')).toBeNull()
+
+    // Disposing mount 1 leaves mount 2 fully functional (its ref survives).
+    app1.dispose()
+    editors[1]!.update(() => $getRoot().getFirstDescendant()?.selectStart(), { discrete: true })
+    app2.send({ type: 'runCommand', id: 'h1' })
+    await wait(0)
+    expect(c2.querySelector('h1')).not.toBeNull()
+    app2.dispose()
+  })
+
+  it('neutralizes a javascript: link seeded from defaultValue (live XSS guard)', () => {
+    // Paren-free scheme so the markdown importer forms a real LinkNode; the global
+    // sanitizer transform must unwrap it so no clickable javascript: link renders.
+    app = mountApp(container, markdownEditor({ defaultValue: 'a [danger](javascript:evil) link' }))
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    expect(container.textContent).toContain('danger')
+  })
 })

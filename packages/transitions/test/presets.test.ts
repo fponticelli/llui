@@ -18,6 +18,17 @@ describe('fade()', () => {
     expect(el.style.opacity).toBe('1')
   })
 
+  it('restores an author-set inline opacity after the transition (finding 8)', async () => {
+    const el = makeEl()
+    el.style.opacity = '0.5' // author-set inline value
+    const t = fade({ duration: 100 })
+    t.enter!([el])
+    // Drive the fallback timer so the enter completes and cleanup runs.
+    await vi.advanceTimersByTimeAsync(200)
+    // Cleanup must RESTORE the pre-transition inline value, not blank it.
+    expect(el.style.opacity).toBe('0.5')
+  })
+
   it('sets opacity 1 → 0 on leave', () => {
     const el = makeEl()
     const t = fade({ duration: 100 })

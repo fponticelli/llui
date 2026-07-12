@@ -17,4 +17,22 @@ describe('consoleAuditSink', () => {
     expect(spy).toHaveBeenCalledWith(expect.stringMatching(/\n$/))
     spy.mockRestore()
   })
+
+  it('falls back to console.log (no throw) when process.stdout is unavailable', () => {
+    // Regression: the default sink is installed by the runtime-neutral
+    // core, which targets Cloudflare Workers / Deno where `process.stdout`
+    // does not exist. Touching `process.stdout.write` there threw and
+    // turned `/agent/mint` into a 500.
+    const stdoutDesc = Object.getOwnPropertyDescriptor(process, 'stdout')
+    const logSpy = vi.spyOn(globalThis.console, 'log').mockImplementation(() => {})
+    try {
+      Object.defineProperty(process, 'stdout', { value: undefined, configurable: true })
+      const entry: AuditEntry = { at: 1, tid: 't1', uid: null, event: 'claim', detail: {} }
+      expect(() => consoleAuditSink.write(entry)).not.toThrow()
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"claim"'))
+    } finally {
+      if (stdoutDesc) Object.defineProperty(process, 'stdout', stdoutDesc)
+      logSpy.mockRestore()
+    }
+  })
 })

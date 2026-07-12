@@ -8,6 +8,12 @@
 // rules' copy was missing `strong`/`tbody`/`em`/… so those calls escaped the
 // lint. Keep this list in sync with `@llui/dom`'s element helpers; the compiler
 // intentionally has no `@llui/dom` dependency, so the set is mirrored here.
+//
+// NAMESPACED helpers (`svg`, `path`, `circle`, …) are DELIBERATELY excluded:
+// the runtime builds them via `createElementNS` (SVG namespace), whereas
+// lowering to `el('svg', …)` / `createElement('svg')` produces a non-namespaced
+// HTMLUnknownElement that renders nothing. They must route through the runtime
+// authoring helper verbatim, so they are NOT element helpers here.
 
 /** DOM element-helper callee names — tags that produce an element with props. */
 export const ELEMENT_HELPERS: ReadonlySet<string> = new Set([
@@ -36,7 +42,6 @@ export const ELEMENT_HELPERS: ReadonlySet<string> = new Set([
   'h5',
   'h6',
   'img',
-  'svg',
   'table',
   'thead',
   'tbody',
@@ -63,4 +68,13 @@ export const ELEMENT_HELPERS: ReadonlySet<string> = new Set([
   'dialog',
   'fieldset',
   'legend',
+  'blockquote',
+  'hr',
+  'br',
+  'optgroup',
+  'dl',
+  'dt',
+  'dd',
+  'caption',
+  'time',
 ])

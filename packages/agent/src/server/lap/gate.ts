@@ -70,6 +70,16 @@ export type LapGateDeps = {
 }
 
 /**
+ * Hard ceiling on a LAP request JSON body (bytes), enforced via the
+ * declared `Content-Length` before any handler parses it. LAP payloads
+ * (a Msg + a few options) are tiny; a multi-MB body is a bug or an abuse
+ * attempt. Oversized requests get a 413 instead of being buffered and
+ * `JSON.parse`d. Requests without a `Content-Length` (rare for these
+ * JSON POSTs) fall through to the handler's own `.json()` parse.
+ */
+const MAX_LAP_BODY_BYTES = 1024 * 1024
+
+/**
  * Canonical JSON responder — one copy instead of the seven byte-identical
  * private `json()` helpers that used to live in each handler file.
  */
@@ -155,6 +165,15 @@ export function withLapGates(
   handler: (ctx: LapContext) => Promise<Response>,
 ): (req: Request, deps: LapGateDeps) => Promise<Response> {
   return async (req, deps) => {
+    // Cap the request body before doing any work: a declared
+    // Content-Length over the ceiling is rejected with 413 rather than
+    // parsed. Bounds memory on the LAP surface (there was previously no
+    // message-size limit).
+    const contentLength = Number(req.headers.get('content-length') ?? '0')
+    if (Number.isFinite(contentLength) && contentLength > MAX_LAP_BODY_BYTES) {
+      return json({ error: { code: 'payload-too-large' } }, 413)
+    }
+
     const auth = await verifyAndReadTid(req, deps.tokenStore, { slidingTtlMs: deps.slidingTtlMs })
     if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 

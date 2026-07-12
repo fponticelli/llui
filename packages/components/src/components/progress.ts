@@ -103,7 +103,9 @@ export function connect(
   opts: ConnectOptions = {},
 ): ProgressParts {
   const label = opts.label
-  const format = opts.format ?? defaultFormat
+  const format = opts.format
+  const valueText = (s: ProgressState): string =>
+    format ? format(s.value, s.max) : defaultFormat(s)
 
   return {
     root: {
@@ -134,14 +136,14 @@ export function connect(
       'data-scope': 'progress',
       'data-part': 'label',
     },
-    valueText: state.map((s) => format(s.value, s.max)),
+    valueText: state.map((s) => valueText(s)),
   }
 }
 
-function defaultFormat(value: number | null, max: number): string {
-  if (value === null) return en.progress.loading
-  const pct = Math.round((value / max) * 100)
-  return `${pct}%`
+function defaultFormat(state: ProgressState): string {
+  const p = percent(state)
+  if (p === null) return en.progress.loading
+  return `${Math.round(p)}%`
 }
 
 function rangeStyle(state: ProgressState): string {

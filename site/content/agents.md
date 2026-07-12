@@ -30,11 +30,11 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. Eleven LLui tools become available:
-`connect_session`, `disconnect_session`, `describe_app`,
-`get_state`, `list_actions`, `send_message`, `get_confirm_result`,
-`wait_for_change`, `query_dom`, `describe_visible_content`,
-`describe_context`.
+Restart Claude Desktop. Sixteen LLui tools become available:
+`connect_session`, `disconnect_session`, `observe`, `describe_app`,
+`get_state`, `query_state`, `describe_recent_actions`, `would_dispatch`,
+`list_actions`, `send_message`, `get_confirm_result`, `wait_for_change`,
+`narrate`, `query_dom`, `describe_visible_content`, `describe_context`.
 
 ## Install (Claude Code CLI)
 
@@ -43,7 +43,7 @@ claude mcp add --transport stdio llui -- npx -y llui-agent
 ```
 
 Run `/mcp` inside Claude Code to confirm the server connected (or start
-a new session). The same eleven tools become available.
+a new session). The same sixteen tools become available.
 
 > **If you run Claude Code in auto mode** (`permissions.defaultMode: "auto"`
 > in `~/.claude/settings.json`), the auto-classifier silently rejects

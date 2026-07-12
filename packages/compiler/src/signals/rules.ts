@@ -97,7 +97,20 @@ const NODE_HELPERS = new Set<string>([...ELEMENT_TAGS, 'text', 'el', 'signalText
 const REACTIVE_METHODS = new Set(['peek', 'at', 'map'])
 // Elements that are natively focusable/clickable — an onClick on these needs no
 // extra role/tabIndex for keyboard accessibility.
-const INTERACTIVE_TAGS = new Set(['button', 'a', 'input', 'select', 'textarea', 'option'])
+// `summary` is natively interactive: it toggles its parent `<details>` and is
+// keyboard-focusable/activatable (Enter/Space) with no author-supplied
+// role/tabindex, so an `onClick` on it is fine. `label` forwards activation to
+// its associated control (which carries the keyboard story), so it's exempt too.
+const INTERACTIVE_TAGS = new Set([
+  'button',
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'option',
+  'summary',
+  'label',
+])
 // Attribute names with a canonical LLui spelling, keyed by the LOWERCASE form of
 // what an author might write. `kind`:
 //   'convention' — a multiword DOM attribute written in camelCase. LLui authors
@@ -792,6 +805,28 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           'controlled-input',
           `Controlled <${tag}> has a reactive \`value\` but no \`onInput\`/\`onChange\` — the binding overwrites the user's typing on every state update. Add an onInput handler that sends the new value.`,
           value,
+        )
+      }
+    }
+
+    // controlled-input (checkbox/radio): a reactive `checked` with no
+    // onChange/onInput has the same overwrite bug as `value` — the binding
+    // re-asserts state on every update and discards the user's toggle.
+    if (tag === 'input') {
+      const checked = findProp(props, 'checked')
+      if (
+        checked &&
+        isReactiveSignal(checked.initializer, roots) &&
+        !hasProp(props, 'onInput') &&
+        !hasProp(props, 'onChange') &&
+        // readonly / disabled inputs can't be toggled, so re-asserting state is fine
+        !hasTruthyProp(props, 'readonly') &&
+        !hasTruthyProp(props, 'disabled')
+      ) {
+        push(
+          'controlled-input',
+          `Controlled <input> has a reactive \`checked\` but no \`onChange\`/\`onInput\` — the binding overwrites the user's toggle on every state update. Add an onChange handler that sends the new checked state.`,
+          checked,
         )
       }
     }

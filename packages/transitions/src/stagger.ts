@@ -1,4 +1,5 @@
 import type { TransitionOptions } from '@llui/dom'
+import { prefersReducedMotion } from './anim.js'
 
 export interface StaggerOptions {
   /** Delay between each item in milliseconds (default: 30). */
@@ -6,6 +7,8 @@ export interface StaggerOptions {
   /** How to stagger leave animations: 'sequential' (same order as enter),
    *  'reverse', or 'simultaneous' (no stagger). Default: 'simultaneous'. */
   leaveOrder?: 'sequential' | 'reverse' | 'simultaneous'
+  /** Honor `prefers-reduced-motion` (default: true) — drop the per-item stagger delays when reduced motion is requested. */
+  respectReducedMotion?: boolean
 }
 
 /**
@@ -30,6 +33,10 @@ export interface StaggerOptions {
 export function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions {
   const delayPerItem = opts?.delayPerItem ?? 30
   const leaveOrder = opts?.leaveOrder ?? 'simultaneous'
+  const respectReduced = opts?.respectReducedMotion !== false
+  // Reduced motion: drop the per-item delays entirely — the wrapped preset runs
+  // immediately per item (and itself resolves instantly if it honors the setting).
+  const reducedMotion = (): boolean => respectReduced && prefersReducedMotion()
 
   // ── Enter stagger ──────────────────────────────────────────────
   let enterIndex = 0
@@ -56,6 +63,7 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
   if (spec.enter) {
     const baseEnter = spec.enter
     out.enter = (nodes: Node[]) => {
+      if (reducedMotion()) return baseEnter(nodes)
       const idx = enterIndex++
       if (!enterResetScheduled) {
         enterResetScheduled = true
@@ -81,7 +89,7 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
   if (spec.leave) {
     const baseLeave = spec.leave
     out.leave = (nodes: Node[]) => {
-      if (leaveOrder === 'simultaneous') {
+      if (leaveOrder === 'simultaneous' || reducedMotion()) {
         return baseLeave(nodes)
       }
 

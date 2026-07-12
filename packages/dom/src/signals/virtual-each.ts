@@ -14,7 +14,12 @@ import {
 } from './build-context.js'
 import type { SignalScope } from './runtime.js'
 import type { Renderable } from './element.js'
-import { rebaseRowDep, rebaseRowSpecs } from './row-rebase.js'
+import {
+  itemsSourceRowLocal,
+  rebaseComponentDep,
+  rebaseRowDep,
+  rebaseRowSpecs,
+} from './row-rebase.js'
 import { buildAndPublishScope } from './scope-build.js'
 import { RowStateGate } from './row-state-gate.js'
 import { EMPTY_ROW_NODES, EMPTY_ROW_TEARDOWNS, type RowCtx } from './row.js'
@@ -73,6 +78,13 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   // combined ctx (so rows window/mount against it, not the enclosing row ctx).
   const inRow = c.inRow
   const overscan = spec.overscan ?? 3
+
+  // Does the items source read ROW-LOCAL state (`item.at('children')`) or the
+  // COMPONENT state (`state.at('list')`)? Same rooting decision as `signalEach`
+  // (shared helper) — a row-local source must resolve against the enclosing row's
+  // combined ctx, NOT the component state, or a nested `virtualEach` renders the
+  // wrong (component-rooted) list.
+  const itemsRowLocal = itemsSourceRowLocal(spec)
 
   const scroll = doc.createElement('div') as HTMLElement
   scroll.setAttribute('data-virtual-container', '')
@@ -208,16 +220,24 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     if (row.wrapper.parentNode === spacer) spacer.removeChild(row.wrapper)
   }
 
-  const reconcile = (state: unknown): void => {
-    lastState = state
-    const items = spec.items(state)
+  const reconcile = (input: unknown): void => {
+    // The structural binding passes the scope state straight through — the combined
+    // row ctx when nested in a row, the component state at top level. Derive the two
+    // states `signalEach` derives: `rowState` (COMPONENT state — every row's ctx
+    // `.state` and the state-fanout gate read it) and `itemsState` (what the items
+    // source reads: the combined ctx for a row-local source, the component state
+    // otherwise). `lastState` keeps the raw input so a pure scroll re-derives both.
+    lastState = input
+    const rowState = inRow ? (input as { state: unknown }).state : input
+    const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
+    const items = spec.items(itemsState)
     ensureMetrics(items)
     spacer.style.setProperty('height', `${totalHeight(items.length)}px`)
 
     // State-fanout gate: must existing windowed rows re-run for a state change?
     // Only when a component-state path they read changed since the last reconcile;
     // a scroll (same state) or an unrelated-field change skips the sweep.
-    const sweepState = gate.shouldSweep(state)
+    const sweepState = gate.shouldSweep(rowState)
 
     const [start, end] = computeRange(items.length)
     const seen = new Set<string>()
@@ -232,7 +252,7 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         wrapper.setAttribute('data-virtual-item', '')
         wrapper.setAttribute('data-virtual-key', k)
         positionWrapper(wrapper, index)
-        const rowCtx: RowCtx<T> = { item, state, index }
+        const rowCtx: RowCtx<T> = { item, state: rowState, index }
         // The row record is created first so the render closure can capture it
         // as the live-ctx box (same pattern as signalEach).
         const created: Row = {
@@ -269,9 +289,9 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
       // lazy spare (first update allocates; reused after); the row is the
       // live-ctx box, so swapping row.ctx keeps handles' .peek() current.
       if (sweepState || item !== row.ctx.item || index !== row.ctx.index) {
-        const next = row.spare ?? { item, state, index }
+        const next = row.spare ?? { item, state: rowState, index }
         next.item = item
-        next.state = state
+        next.state = rowState
         next.index = index
         row.scope!.update(row.ctx, next)
         row.spare = row.ctx
@@ -305,11 +325,23 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   // (so a state-only change still fires the reconcile and refreshes visible rows
   // reading component state). produce returns the component state so reconcile can
   // build row ctxs; the state-fanout gate above keeps the per-change cost bounded.
-  const specDeps =
-    spec.extraDeps && spec.extraDeps.length > 0 ? [...spec.deps, ...spec.extraDeps] : spec.deps
+  // Nested in a row, rebase the gating deps onto the combined ctx exactly as
+  // `signalEach` does: the items deps by the source's locality (row-local items
+  // keep, component-rooted items → `state.*`), and the extra component-state deps
+  // always → `state.*`. `produce` passes the scope state straight through (the
+  // combined row ctx when nested, the component state at top level) — `reconcile`
+  // derives the items-source state and the rows' mount state from it.
+  const rebaseItems = itemsRowLocal ? rebaseRowDep : rebaseComponentDep
+  const baseDeps = inRow ? spec.deps.map(rebaseItems) : spec.deps
+  const hasExtra = spec.extraDeps !== undefined && spec.extraDeps.length > 0
+  const extra = hasExtra
+    ? inRow
+      ? spec.extraDeps!.map(rebaseComponentDep)
+      : spec.extraDeps!
+    : undefined
   c.specs.push({
-    deps: inRow ? specDeps.map(rebaseRowDep) : specDeps,
-    produce: inRow ? (s) => (s as { state: unknown }).state : (s) => s,
+    deps: extra ? [...baseDeps, ...extra] : baseDeps,
+    produce: (s) => s,
     commit: (s) => reconcile(s),
     structural: true,
   })

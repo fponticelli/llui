@@ -56,16 +56,19 @@ function $readBaseFormat(): BaseFormat
 
 ### `decoratorBridge()`
 
-Author-facing constructor for a {@link DecoratorBridge}. Preserves the
-sub-component's `State`/`Msg`/`Effect` and the node `Data` type at the
-definition site; only the node's serialized payload is narrowed back to
-`Data` at mount time (the single deserialization-boundary cast, exactly like
-`JSON.parse` returning a declared type).
+Author-facing constructor for a {@link DecoratorBridge}. The `view` builder
+receives a REACTIVE `Signal<Data>` (not a snapshot) plus the node api, and
+returns the sub-view's DOM. The bridge wraps it in a tiny host component whose
+single state field IS the data, so a later `mount.update(next)` simply drives
+that signal — the sub-view re-renders in place, never remounting (the fix for
+focus/selection loss on every data commit). `Data` is narrowed from the node's
+serialized payload at mount (the single deserialization-boundary cast, exactly
+like `JSON.parse` returning a declared type).
 
 ```typescript
-function decoratorBridge<Data, S, M extends { type: string }, E extends { type: string } = never>(
+function decoratorBridge<Data>(
   type: string,
-  factory: (data: Data, api: DecoratorApi<Data>) => SignalComponentDef<S, M, E>,
+  view: (data: Signal<Data>, api: DecoratorApi<Data>) => Renderable,
 ): DecoratorBridge
 ```
 
@@ -209,18 +212,19 @@ export interface DecoratorApi<Data> {
 
 ### `DecoratorBridge`
 
-Bridges a custom node type to an LLui sub-view. The sub-view's
-`State`/`Msg`/`Effect` and `Data` types are fully erased here: a bridge is
-stored monomorphically in the registry, and `mount` builds + mounts the
-sub-app, returning a disposer. Authors construct bridges with the typed
-{@link decoratorBridge} helper, which captures concrete types in a closure.
+Bridges a custom node type to an LLui sub-view. The sub-view's `Data` type is
+erased here: a bridge is stored monomorphically in the registry, and `mount`
+builds + mounts the sub-app ONCE, returning a {@link DecoratorMount} whose
+`update` channel reactively pushes later data changes in place. Authors
+construct bridges with the typed {@link decoratorBridge} helper.
 
 ```typescript
 export interface DecoratorBridge {
   /** The id used by the contributing markdown transformer. */
   type: string
-  /** Mount the sub-view for a node's (deserialized) data; returns a disposer. */
-  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => () => void
+  /** Mount the sub-view for a node's (deserialized) data ONCE; returns a live
+   * {@link DecoratorMount} (dispose + reactive data-push). */
+  mount: (container: Element, data: unknown, api: DecoratorApi<unknown>) => DecoratorMount
 }
 ```
 

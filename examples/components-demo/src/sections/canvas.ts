@@ -1,5 +1,5 @@
 import { div, button, span, p, img, svg, path, foreign, onMount, text } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { signaturePad } from '@llui/components/signature-pad'
 import { imageCropper } from '@llui/components/image-cropper'
 import { sectionGroup, card } from '../shared/ui'
@@ -52,7 +52,7 @@ const PLACEHOLDER_IMG =
       '</svg>',
   )
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const sp = signaturePad.connect(state.at('sig'), (m) => send({ type: 'sig', msg: m }))
   const ic = imageCropper.connect(state.at('crop'), (m) => send({ type: 'crop', msg: m }))
 

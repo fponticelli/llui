@@ -131,6 +131,13 @@ describe('meter.connect', () => {
     expect(read(parts.root['aria-valuetext'], init({ value: 75 }))).toBe('75%')
   })
 
+  it('aria-valuetext honors min offset (matches the rendered bar)', () => {
+    const s = init({ value: 75, min: 50, max: 100 })
+    // (75-50)/(100-50) = 50% — must match the range bar, not value/max (75%).
+    expect(read(parts.root['aria-valuetext'], s)).toBe('50%')
+    expect(read(parts.valueText, s)).toBe('50%')
+  })
+
   it('aria-valuetext honors a custom formatter', () => {
     const p = connect(rootSignal(), vi.fn(), {
       format: (v, max) => `${v} of ${max} GB`,

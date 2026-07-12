@@ -172,9 +172,18 @@ export class ArmController<K> {
 
     const leave = immediate || this.place.ssr ? undefined : this.place.transition?.leave
     if (leave && this.place.collectRegion && this.place.detach) {
-      // Deferred leave: keep the arm's scope registered + its nodes in the DOM while
-      // the animation runs. Capture the exact leaving footprint NOW (before any
-      // replacement arm is inserted before the same anchor).
+      // Deferred leave: keep the arm's NODES in the DOM while the animation runs, but
+      // FREEZE it first — remove its scope from the owner NOW so it stops receiving
+      // state updates. A leaving arm that stayed registered would re-run its bindings
+      // on every subsequent update, evaluating against state it no longer matches
+      // (e.g. `show(state.at('user'), …)` toggling off because `user` became
+      // undefined would re-evaluate the leaving arm against `undefined` and can throw
+      // out of `send()`). Mirrors `each`, which drops a leaving row from its reconcile
+      // set. There is no arm-resurrection path that needs it to stay live — an
+      // interrupting switch finalizes it and builds a fresh arm. Capture the exact
+      // leaving footprint NOW (before any replacement arm is inserted before the same
+      // anchor).
+      this.place.ownerHost.scope?.removeChild(m.scope)
       const pending: PendingLeave = {
         scope: m.scope,
         nodes: this.place.collectRegion(m.nodes),

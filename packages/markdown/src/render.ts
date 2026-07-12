@@ -77,8 +77,16 @@ export function createMarkdown(parse: ParseFn) {
     let cache: ParseCache | undefined
     const parseSource = (src: string): Root => parse(src, opts)
 
+    // Custom syntax extensions can retro-reclassify earlier blocks across a
+    // blank-line seal (the incremental parser only proves its seal invariant for
+    // CommonMark + GFM), so prefix reuse is disabled when they're present unless
+    // the caller vouches they're seal-safe.
+    const hasCustomExtensions =
+      (options.extensions?.length ?? 0) > 0 || (options.mdastExtensions?.length ?? 0) > 0
+    const allowPrefixReuse = options.sealSafeExtensions || !hasCustomExtensions
+
     const units = source.map((src): RenderUnit[] => {
-      const result = incrementalParse(cache, src, parseSource)
+      const result = incrementalParse(cache, src, parseSource, allowPrefixReuse)
       let root = result.root
       cache = result.cache
 

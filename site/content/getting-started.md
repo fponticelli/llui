@@ -83,7 +83,7 @@ const TodoApp = component<State, Msg, never>({
     }
   },
 
-  // The bag is `{ state, send }`. Element/structural helpers are imports.
+  // The bag is `{ state, send, batch }`. Element/structural helpers are imports.
   view: ({ state, send }) => [
     div({ class: 'app' }, [
       div({ class: 'input-row' }, [
@@ -174,7 +174,7 @@ view: ({ state, send }) => [
 Side effects are data — plain objects returned from `update()`. The runtime dispatches them:
 
 ```typescript
-import { http, cancel, debounce, handleEffects } from '@llui/effects'
+import { http, cancel, debounce, handleEffects, asOnEffect } from '@llui/effects'
 
 type Effect = ReturnType<typeof http> | ReturnType<typeof cancel> | ReturnType<typeof debounce>
 
@@ -203,9 +203,12 @@ const App = component<State, Msg, Effect>({
       // ...
     }
   },
-  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
-    console.warn('Unhandled effect:', effect)
-  }),
+  // asOnEffect(...) adapts the chain to the runtime's onEffect(effect, api) shape.
+  onEffect: asOnEffect(
+    handleEffects<Effect, Msg>().else(({ effect }) => {
+      console.warn('Unhandled effect:', effect)
+    }),
+  ),
 })
 ```
 
@@ -217,7 +220,7 @@ state; the child renders a slice.
 
 ```typescript
 import { div, text, button } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Signal, Send, Renderable } from '@llui/dom'
 
 // A reusable row — takes a per-row signal, not an accessor callback.
 function todoItem(item: Signal<Todo>, send: Send<Msg>): Renderable {

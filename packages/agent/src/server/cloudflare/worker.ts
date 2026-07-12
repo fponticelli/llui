@@ -55,6 +55,15 @@ export async function routeToAgentDO(
   const url = new URL(req.url)
   const path = url.pathname
 
+  // Internal DO-to-DO endpoints (`/__resolve`, any future `/__*`) are
+  // NEVER publicly routable — they are reachable only via a direct
+  // internal DO stub (`stub.fetch('http://internal/__resolve', …)` from
+  // the `resolveTid` callback). Reject them at the public edge so a
+  // token-resolution oracle can't be reached from outside the Worker.
+  if (path.startsWith('/__')) {
+    return new Response('Not Found', { status: 404 })
+  }
+
   // Non-LAP / non-WS management endpoints (mint, resume, sessions,
   // revoke, mcp) — there's no per-tid routing and no bearer token
   // required; use the root DO which owns the shared token store +

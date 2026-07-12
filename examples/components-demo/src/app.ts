@@ -54,6 +54,7 @@ type Effect =
   | { type: 'inputs'; effect: inputs.Effect }
   | { type: 'data'; effect: data.Effect }
   | { type: 'overlays'; effect: overlays.Effect }
+  | { type: 'pickersEditing'; effect: pickersEditing.Effect }
 
 export const App = component<State, Msg, Effect>({
   name: 'ComponentsDemo',
@@ -97,8 +98,11 @@ export const App = component<State, Msg, Effect>({
         return [{ ...state, data: s }, fx.map((effect) => ({ type: 'data' as const, effect }))]
       }
       case 'pickersEditing': {
-        const [s] = pickersEditing.update(state.pickersEditing, msg.msg)
-        return [{ ...state, pickersEditing: s }, []]
+        const [s, fx] = pickersEditing.update(state.pickersEditing, msg.msg)
+        return [
+          { ...state, pickersEditing: s },
+          fx.map((effect) => ({ type: 'pickersEditing' as const, effect })),
+        ]
       }
       case 'timeInputs': {
         const [s] = timeInputs.update(state.timeInputs, msg.msg)
@@ -118,14 +122,25 @@ export const App = component<State, Msg, Effect>({
       }
     }
   },
-  onEffect: (effect, { send }) => {
+  onEffect: (effect, { send, state }) => {
     switch (effect.type) {
       case 'inputs':
-        return inputs.onEffect(effect.effect, (m) => send({ type: 'inputs', msg: m }))
+        // inputs' wizard validator needs the current step-0 name, which now
+        // lives in the section's state slice (not a module global) — read it
+        // from the handle at effect-dispatch time.
+        return inputs.onEffect(
+          effect.effect,
+          (m) => send({ type: 'inputs', msg: m }),
+          state.at('inputs').peek(),
+        )
       case 'data':
         return data.onEffect(effect.effect, (m) => send({ type: 'data', msg: m }))
       case 'overlays':
         return overlays.onEffect(effect.effect, (m) => send({ type: 'overlays', msg: m }))
+      case 'pickersEditing':
+        return pickersEditing.onEffect(effect.effect, (m) =>
+          send({ type: 'pickersEditing', msg: m }),
+        )
     }
   },
   view: ({ state, send }) => [

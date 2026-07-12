@@ -18,7 +18,7 @@ import {
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical'
-import type { DecoratorApi, DecoratorBridge } from './plugin.js'
+import type { DecoratorApi, DecoratorBridge, DecoratorMount } from './plugin.js'
 
 export type SerializedLLuiDecoratorNode = Spread<
   { bridgeType: string; data: unknown },
@@ -30,15 +30,22 @@ export type SerializedLLuiDecoratorNode = Spread<
  *  - `registry`  — the merged type→bridge lookup used by `decorate`.
  *  - `typeRefs`  — how many active registrations own each type-id (a type leaves
  *                  the registry only when its last owner disposes).
- *  - `mounts`    — live sub-app disposers, keyed by decorator node.
+ *  - `mounts`    — live sub-app instances (dispose + reactive data-push +
+ *                  their container), keyed by decorator node.
  *  - `registrations` — active `registerDecoratorBridges` calls on this editor;
  *                  the shared decorator/mutation listeners are wired on the first
  *                  and torn down on the last.
  */
+/** A live decorator instance plus the DOM container it owns, kept so a re-decorate
+ * of the same key pushes data into it and returns the same container (no remount). */
+interface MountRecord extends DecoratorMount {
+  container: HTMLElement
+}
+
 interface EditorDecoratorState {
   registry: Map<string, DecoratorBridge>
   typeRefs: Map<string, number>
-  mounts: Map<NodeKey, () => void>
+  mounts: Map<NodeKey, MountRecord>
   registrations: number
   disposeListeners: () => void
 }
@@ -100,12 +107,24 @@ export class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
   }
 
   override decorate(editor: LexicalEditor): HTMLElement {
-    const container = document.createElement('div')
     const state = EDITOR_STATE.get(editor)
     const bridge = state?.registry.get(this.__bridgeType)
-    if (!state || !bridge) return container
+    if (!state || !bridge) return document.createElement('div')
 
     const key = this.getKey()
+
+    // Re-decoration (a data commit — badge click, inline edit, collab remote
+    // edit): the sub-app is ALREADY mounted for this key. Push the new data
+    // through its reactive update channel and return the SAME container, so
+    // nothing remounts — focus, selection, and any editable island survive, and
+    // we skip a full TEA init. Dispose stays tied to the `'destroyed'` mutation.
+    const existing = state.mounts.get(key)
+    if (existing) {
+      existing.update(this.getData())
+      return existing.container
+    }
+
+    const container = document.createElement('div')
     const api: DecoratorApi<unknown> = {
       editor,
       update: (next) =>
@@ -114,10 +133,8 @@ export class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
           if ($isLLuiDecoratorNode(node)) node.setData(next)
         }),
     }
-
-    // Re-decoration (data change): tear the previous sub-app down first.
-    state.mounts.get(key)?.()
-    state.mounts.set(key, bridge.mount(container, this.getData(), api))
+    const mount = bridge.mount(container, this.getData(), api)
+    state.mounts.set(key, { ...mount, container })
     return container
   }
 
@@ -162,7 +179,7 @@ export function registerDecoratorBridges(
     state = {
       registry: new Map<string, DecoratorBridge>(),
       typeRefs: new Map<string, number>(),
-      mounts: new Map<NodeKey, () => void>(),
+      mounts: new Map<NodeKey, MountRecord>(),
       registrations: 0,
       disposeListeners: () => {},
     }
@@ -185,7 +202,7 @@ export function registerDecoratorBridges(
     const unregisterMutation = editor.registerMutationListener(LLuiDecoratorNode, (mutations) => {
       for (const [key, kind] of mutations) {
         if (kind === 'destroyed') {
-          s.mounts.get(key)?.()
+          s.mounts.get(key)?.dispose()
           s.mounts.delete(key)
         }
       }
@@ -215,7 +232,7 @@ export function registerDecoratorBridges(
       }),
     )
     for (const key of ownedKeys) {
-      s.mounts.get(key)?.()
+      s.mounts.get(key)?.dispose()
       s.mounts.delete(key)
     }
 
@@ -235,7 +252,7 @@ export function registerDecoratorBridges(
     s.registrations--
     if (s.registrations <= 0) {
       s.disposeListeners()
-      for (const dispose of s.mounts.values()) dispose()
+      for (const record of s.mounts.values()) record.dispose()
       s.mounts.clear()
       EDITOR_STATE.delete(editor)
     }

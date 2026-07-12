@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { toKeyedBlocks, parseMarkdown, collectDefinitions, resolveOptions } from '../src/index.js'
-import type { Nodes } from 'mdast'
+import {
+  toKeyedBlocks,
+  parseMarkdown,
+  collectDefinitions,
+  resolveOptions,
+  incrementalParse,
+  keyingHashComputations,
+  type ParseCache,
+} from '../src/index.js'
+import type { Nodes, Root } from 'mdast'
 
 const keysFor = (
   src: string,
@@ -69,5 +77,67 @@ describe('toKeyedBlocks — hash field', () => {
       keyOf: (node: Nodes) => `type-${node.type}`,
     })
     expect(keys[0]).toBe('type-heading')
+  })
+})
+
+describe('toKeyedBlocks — per-block hash memoization (streaming O(tail))', () => {
+  const opts = resolveOptions({})
+  const parse = (s: string): Root => parseMarkdown(s)
+  const keysOf = (root: Root, src: string): (string | number)[] =>
+    toKeyedBlocks(root, src, opts, collectDefinitions(root)).map((b) => b.key)
+
+  it('re-hashes only the changed tail across a streamed append, not the whole doc', () => {
+    let cache: ParseCache | undefined
+
+    const s1 = '# Title\n\nfirst paragraph\n\n'
+    const r1 = incrementalParse(cache, s1, parse)
+    cache = r1.cache
+    keyingHashComputations(true) // reset counter
+    keysOf(r1.root, s1)
+    // Cold pass: every block is hashed once.
+    expect(keyingHashComputations(true)).toBe(r1.root.children.length)
+
+    const s2 = s1 + 'second paragraph'
+    const r2 = incrementalParse(cache, s2, parse)
+    cache = r2.cache
+    expect(r2.reused).toBeGreaterThanOrEqual(1) // the incremental parser reused a prefix
+    keyingHashComputations(true) // reset
+    keysOf(r2.root, s2)
+    // The reused prefix blocks (SAME node objects) hit the memo → zero re-hashing;
+    // only the freshly-parsed tail blocks are hashed.
+    expect(keyingHashComputations(true)).toBe(r2.root.children.length - r2.reused)
+  })
+
+  it('keeps produced keys byte-identical to a non-incremental (memo-cold) parse', () => {
+    let cache: ParseCache | undefined
+    const chunks = [
+      '# Doc\n\nintro\n\n',
+      '# Doc\n\nintro\n\nmiddle\n\n',
+      '# Doc\n\nintro\n\nmiddle\n\ntail',
+    ]
+    for (const src of chunks) {
+      const inc = incrementalParse(cache, src, parse)
+      cache = inc.cache
+      const memoKeys = keysOf(inc.root, src)
+      // A cold full parse (new node objects → all memo misses) must key identically.
+      const cold = parse(src)
+      expect(keysOf(cold, src)).toEqual(memoKeys)
+    }
+  })
+
+  it('re-hashes a reused ref-bearing block when a definition it resolves changes', () => {
+    let cache: ParseCache | undefined
+    const s1 = '[a][r]\n\n[r]: /old'
+    const r1 = incrementalParse(cache, s1, parse)
+    cache = r1.cache
+    const k1 = keysOf(r1.root, s1)
+
+    // Same prefix block object `[a][r]` is reused, but the definition url changed —
+    // its content-id (and key) must change, so the memo cannot blindly reuse it.
+    const s2 = '[a][r]\n\n[r]: /new'
+    const r2 = incrementalParse(cache, s2, parse)
+    cache = r2.cache
+    const k2 = keysOf(r2.root, s2)
+    expect(k2[0]).not.toBe(k1[0])
   })
 })

@@ -86,6 +86,56 @@ export function removeValue(el: HTMLElement, value: TransitionValue | undefined)
   removeStyles(el, value)
 }
 
+/**
+ * The inline-style property keys a TransitionValue would set (classes contribute
+ * none). Used to snapshot/restore an element's pre-transition inline styles so
+ * cleanup never blanks an author-set inline value.
+ */
+export function styleKeysOf(value: TransitionValue | undefined): string[] {
+  if (value == null) return []
+  if (typeof value === 'string') return [] // classes only
+  if (Array.isArray(value)) {
+    const keys: string[] = []
+    for (const part of value) {
+      if (typeof part !== 'string') keys.push(...Object.keys(part))
+    }
+    return keys
+  }
+  return Object.keys(value)
+}
+
+/**
+ * Snapshot the element's current inline value for each of `keys`. An unset
+ * property snapshots as `''`, so restoring it later blanks it (its natural
+ * "not inline-set" state) rather than inventing a value.
+ */
+export function snapshotInline(el: HTMLElement, keys: Iterable<string>): Record<string, string> {
+  const decl = el.style as unknown as Record<string, string>
+  const snap: Record<string, string> = {}
+  for (const key of keys) snap[key] = decl[key] ?? ''
+  return snap
+}
+
+/** Restore inline style values captured by {@link snapshotInline}. */
+export function restoreInline(el: HTMLElement, snapshot: Record<string, string>): void {
+  const decl = el.style as unknown as Record<string, string>
+  for (const key in snapshot) decl[key] = snapshot[key]!
+}
+
+/** Remove ONLY the class portions of a TransitionValue, leaving styles untouched. */
+export function removeClassesOnly(el: HTMLElement, value: TransitionValue | undefined): void {
+  if (value == null) return
+  if (typeof value === 'string') {
+    removeClasses(el, value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const part of value) {
+      if (typeof part === 'string') removeClasses(el, part)
+    }
+  }
+}
+
 function applyClasses(el: HTMLElement, raw: string): void {
   const classes = splitClasses(raw)
   if (classes.length > 0) el.classList.add(...classes)

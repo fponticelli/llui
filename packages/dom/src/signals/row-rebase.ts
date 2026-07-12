@@ -24,6 +24,23 @@ export function isRowLocalDep(d: string): boolean {
   )
 }
 
+/** Decide whether an `each`/`virtualEach` items source reads ROW-LOCAL state
+ * (its own `item`/`index`) rather than the COMPONENT state — the single rooting
+ * decision shared by {@link signalEach} and {@link signalVirtualEach} (kept here so
+ * the two don't drift). Prefers the collision-proof `componentRooted` brand (set
+ * from the origin handle); falls back to string inference (`every` dep is
+ * row-local) only for an unbranded source. */
+export function itemsSourceRowLocal(source: {
+  componentRooted?: boolean
+  deps: readonly string[]
+}): boolean {
+  return source.componentRooted === true
+    ? false
+    : source.componentRooted === false
+      ? true
+      : source.deps.length > 0 && source.deps.every(isRowLocalDep)
+}
+
 /** Re-root a single dependency path from the component state onto the combined
  * row ctx: a non-row-local component path `p` becomes `state.p` (and the whole
  * state `''` becomes `state`); row-local paths (`item`/`index`/`state.*`) keep.

@@ -429,6 +429,36 @@ describe('controlled-input', () => {
       'controlled-input',
     )
   })
+  // A reactive `checked` with no handler has the same overwrite bug as `value`.
+  it('flags a checkbox with a reactive checked but no onChange/onInput', () => {
+    expect(rules("input({ type: 'checkbox', checked: state.at('on') }, [])")).toContain(
+      'controlled-input',
+    )
+  })
+  it('does NOT flag reactive checked when onChange/onInput is present', () => {
+    expect(
+      rules("input({ checked: state.at('on'), onChange: (e) => send({ type: 'x' }) }, [])"),
+    ).not.toContain('controlled-input')
+    expect(
+      rules("input({ checked: state.at('on'), onInput: (e) => send({ type: 'x' }) }, [])"),
+    ).not.toContain('controlled-input')
+  })
+  it('does NOT flag reactive checked on a readonly/disabled input', () => {
+    expect(rules("input({ checked: state.at('on'), readonly: true }, [])")).not.toContain(
+      'controlled-input',
+    )
+    expect(rules("input({ checked: state.at('on'), disabled: true }, [])")).not.toContain(
+      'controlled-input',
+    )
+  })
+  it('does NOT flag a static (non-reactive) checked', () => {
+    expect(rules('input({ checked: true }, [])')).not.toContain('controlled-input')
+  })
+  it('quotes `checked` (not `value`) in the checked message', () => {
+    expect(messageFor("input({ checked: state.at('on') }, [])", 'controlled-input')).toContain(
+      'checked',
+    )
+  })
 })
 
 describe('scope-aware rooting (finding 7)', () => {
@@ -472,6 +502,13 @@ describe('a11y', () => {
   it('does NOT flag onClick on a natively interactive element', () => {
     expect(rules("button({ onClick: () => send({ type: 'x' }) }, [])")).not.toContain('a11y')
     expect(rules("a({ href: '/x', onClick: () => 0 }, [])")).not.toContain('a11y')
+  })
+  // `summary` natively toggles its <details> and is keyboard-activatable, so an
+  // onClick on it needs no author-supplied role/tabindex. `label` forwards
+  // activation to its control (which carries the keyboard story).
+  it('does NOT flag onClick on a natively-interactive summary/label', () => {
+    expect(rules("summary({ onClick: () => send({ type: 'x' }) }, [])")).not.toContain('a11y')
+    expect(rules('label({ onClick: () => 0 }, [])')).not.toContain('a11y')
   })
   it('does NOT flag onClick when role is presentation/none (no own functionality)', () => {
     expect(rules("div({ role: 'presentation', onClick: () => 0 }, [])")).not.toContain('a11y')

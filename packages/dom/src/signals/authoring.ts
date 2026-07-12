@@ -452,6 +452,11 @@ export function virtualEach<T>(opts: {
   return signalVirtualEach<T>({
     items: produce,
     deps: opts.items.deps,
+    // Brand the items source with its rooting (same as `each`): a row-local source
+    // (`item.at('children')`) must resolve against the enclosing row ctx, not the
+    // component state — without this a `virtualEach` nested in an `each` row windows
+    // the wrong (component-rooted) list.
+    componentRooted: opts.items.rowLocal !== true,
     // Rows may read component state through the enclosing view's handles (invisible
     // at runtime), so fire the structural binding on ANY state change — same
     // whole-state channel `each`/`eachArm` use. The reconcile's state-fanout gating

@@ -6,7 +6,7 @@
  * significantly for users who never click the button.
  */
 import { component, div, h2, p, ul, li, span, text, each } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { Signal, Mountable } from '@llui/dom'
 import { formatNumber } from '@llui/components'
 
 interface StatItem {
@@ -51,7 +51,7 @@ const StatsModule = component<StatsState, never, never>({
 // STATS is static, so each row's value is fixed for its lifetime — read it
 // once here (plain value) and close over it in the locale-derived slot, so the
 // .map body operates on plain values (its only reactive source is locale).
-function statRow(item: Signal<StatItem>, locale: Signal<string>): Node {
+function statRow(item: Signal<StatItem>, locale: Signal<string>): Mountable {
   const stat = item.peek()
   return li(
     {

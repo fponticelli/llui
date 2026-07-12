@@ -40,14 +40,30 @@ const SIZE_BENCHMARKS = [
   { id: '42_size-compressed', label: 'Gzipped' },
 ]
 
-const FRAMEWORKS = ['llui', 'solid', 'svelte', 'vanillajs', 'react', 'elm']
+// Keys MUST match the framework keys in benchmarks/jfb-baseline.json. The React
+// entry is keyed `react-hooks` in the harness data — using `react` here silently
+// dropped React from every published table.
+const FRAMEWORKS = ['llui', 'solid', 'svelte', 'vanillajs', 'react-hooks', 'elm']
 const DISPLAY_NAMES: Record<string, string> = {
   llui: 'LLui',
   solid: 'Solid',
   svelte: 'Svelte',
   vanillajs: 'vanilla',
-  react: 'React',
+  'react-hooks': 'React',
   elm: 'Elm',
+}
+
+// Fail loudly if a listed framework has no baseline data at all — a missing key
+// used to be swallowed by the per-benchmark `> 0` filter, silently omitting the
+// framework's whole column instead of surfacing the stale name.
+for (const fw of FRAMEWORKS) {
+  if (!data[fw]) {
+    throw new Error(
+      `generate-benchmarks: framework "${fw}" has no data in benchmarks/jfb-baseline.json (keys: ${Object.keys(
+        data,
+      ).join(', ')}). Fix FRAMEWORKS or the baseline.`,
+    )
+  }
 }
 
 function val(fw: string, id: string): number {

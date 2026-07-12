@@ -342,6 +342,19 @@ function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
 function injectScopeVariantRegistrations(node: ts.SourceFile, f: ts.NodeFactory): InjectResult
 ```
 
+### `isDefaultAnnotation()`
+
+Whether a single variant's annotations are ALL at their default value —
+i.e. carry no authored information. Covers every field, including
+`examples`/`warning`/`emits` (the previous `hasNonDefaultAnnotation`
+missed these three, so a variant annotated only with `@example`/`@warning`/
+`@emits` was wrongly treated as default). The runtime reconstructs a
+fully-default variant from absence, so these are emission-redundant.
+
+```typescript
+function isDefaultAnnotation(v: MessageAnnotations): boolean
+```
+
 ### `isMemoCallWithArrowArg()`
 
 Recognize `memo(arrow)` / `memo(fn)` calls so the inner accessor can
@@ -558,6 +571,23 @@ function shadowsStateParam(
   parameters: ts.NodeArray<ts.ParameterDeclaration>,
   stateParam: string,
 ): boolean
+```
+
+### `sparseMsgAnnotations()`
+
+Build a JSON-ready annotation map that drops emission-redundant bytes:
+
+- variants whose every field is default are OMITTED entirely, and
+- within a retained variant, fields still at their default are OMITTED.
+  The runtime treats an absent variant / field as the default (see
+  `list-actions.ts`, which reads every field as `ann?.field ?? default`), so
+  this is a pure size optimization with no semantic change. Returns null when
+  every variant is fully default — the caller then skips `__msgAnnotations`.
+
+```typescript
+function sparseMsgAnnotations(
+  a: Record<string, MessageAnnotations>,
+): Record<string, Partial<MessageAnnotations>> | null
 ```
 
 ### `stateTypeToLiteral()`

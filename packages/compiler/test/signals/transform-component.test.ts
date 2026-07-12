@@ -98,6 +98,44 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain("signalText((s) => s.count, ['count'])")
     })
 
+    it('emits NO __msgAnnotations when the Msg has zero source annotations', () => {
+      // SRC's Msg union carries no @intent/@requiresConfirm/etc. — a fully-default
+      // annotation record is reconstructable from absence, so emitting it is dead bytes.
+      const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
+      expect(out).toContain('__msgSchema:') // schema still emitted
+      expect(out).not.toContain('__msgAnnotations')
+    })
+
+    it('emits a SPARSE __msgAnnotations — only non-default fields of annotated variants', () => {
+      const annotated = [
+        "import { component } from '@llui/dom'",
+        'type Msg =',
+        '  /** @intent("Increment") @example("{ type: \'inc\' }") */',
+        "  | { type: 'inc' }",
+        "  | { type: 'noop' }",
+        'type State = { count: number }',
+        'export const Counter = component({',
+        '  init: () => ({ count: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [text(state.at('count'))],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(annotated, { emitAgentMetadata: true })
+      // isolate the emitted __msgAnnotations object literal (noop also appears in
+      // __msgSchema, so assert against the annotations value specifically).
+      const ann = out.match(/__msgAnnotations: (\{.*?\}\})/)?.[1] ?? ''
+      expect(ann).not.toBe('')
+      // the annotated variant carries only its authored fields...
+      expect(ann).toContain('"inc"')
+      expect(ann).toContain('"intent":"Increment"')
+      expect(ann).toContain('"examples":["{ type: \'inc\' }"]')
+      // ...and NOT the default-valued fields
+      expect(ann).not.toContain('"dispatchMode":"shared"')
+      expect(ann).not.toContain('"alwaysAffordable":false')
+      // the fully-default `noop` variant is omitted entirely
+      expect(ann).not.toContain('"noop"')
+    })
+
     it('infers the component name from the binding (under metadata)', () => {
       const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
       expect(out).toContain('name: "Counter"')

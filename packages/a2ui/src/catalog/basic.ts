@@ -24,9 +24,11 @@ import {
   type Signal,
 } from '@llui/dom'
 import type { BuildArgs, ComponentBuilder } from '../catalog.js'
-import { bindString, firstCheckError, resolveDynamic, type Check } from '../binding.js'
+import { bindString, bindUrl, firstCheckError, resolveDynamic, type Check } from '../binding.js'
+import { warnOnce } from '../catalog.js'
 import type { Action, ComponentNode, JsonObject, JsonValue } from '../protocol.js'
 import { isFunctionCall } from '../protocol.js'
+import { MEDIA_PROTOCOLS, safeHttpUrl } from '../security.js'
 
 // ── shared helpers ─────────────────────────────────────────────────
 
@@ -113,7 +115,13 @@ export function runAction({ node, ctx, scope }: BuildArgs): void {
     const call = action.functionCall
     if (call.call === 'openUrl') {
       const url = resolveDynamic(ctx, scope, call.args?.url)
-      if (typeof url === 'string' && typeof window !== 'undefined') window.open(url, '_blank')
+      if (typeof url === 'string' && typeof window !== 'undefined') {
+        // Only open http(s) targets, and never let the opened page reach back
+        // via window.opener.
+        const safe = safeHttpUrl(url)
+        if (safe) window.open(safe, '_blank', 'noopener,noreferrer')
+        else warnOnce(`Refusing openUrl to non-http(s) URL "${url}"`)
+      }
     }
   }
 }
@@ -145,7 +153,7 @@ const Image: ComponentBuilder = ({ node, ctx, scope }) => {
   return [
     img({
       class: `a2ui-image${node.variant ? ` a2ui-image-${node.variant}` : ''}`,
-      src: bindString(ctx, scope, node.url as never),
+      src: bindUrl(ctx, scope, node.url as never, MEDIA_PROTOCOLS),
       alt: bindString(ctx, scope, node.description as never),
       style: layoutStyle(node, objectFit),
     }),
@@ -167,7 +175,7 @@ const Icon: ComponentBuilder = ({ node }) => {
 const Video: ComponentBuilder = ({ node, ctx, scope }) => [
   elx('video', {
     class: 'a2ui-video',
-    src: bindString(ctx, scope, node.url as never),
+    src: bindUrl(ctx, scope, node.url as never, MEDIA_PROTOCOLS),
     controls: true,
     style: layoutStyle(node),
   }),
@@ -176,7 +184,7 @@ const Video: ComponentBuilder = ({ node, ctx, scope }) => [
 const AudioPlayer: ComponentBuilder = ({ node, ctx, scope }) => [
   elx('audio', {
     class: 'a2ui-audio',
-    src: bindString(ctx, scope, node.url as never),
+    src: bindUrl(ctx, scope, node.url as never, MEDIA_PROTOCOLS),
     controls: true,
     'aria-label': bindString(ctx, scope, node.description as never),
   }),

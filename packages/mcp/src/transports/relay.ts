@@ -1,38 +1,14 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { Server as HttpServer, IncomingMessage } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { LluiDebugAPI } from '@llui/dom'
 import type { RelayTransport } from '../tool-registry.js'
-
-/** Constant-time compare of two ASCII tokens (length-safe). */
-function tokensMatch(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8')
-  const bb = Buffer.from(b, 'utf8')
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}
+import { tokensMatch, isLoopbackOrigin } from '../util/loopback.js'
 
 /** Collapse a possibly-multi-valued header to a single string. */
 function firstHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
-}
-
-/**
- * A bridge WS upgrade is same-origin/local when the Origin header is either
- * absent (a native, non-browser ws client sends none) or a loopback host. A
- * cross-origin browser page (CSWSH / drive-by hijack) presents a non-loopback
- * Origin and is rejected. A literal `Origin: null` (sandboxed/`file:` context)
- * fails `new URL` below and is likewise rejected.
- */
-function isLoopbackOrigin(origin: string | undefined): boolean {
-  if (origin === undefined) return true
-  try {
-    const { hostname } = new URL(origin)
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
-  } catch {
-    return false
-  }
 }
 
 /**

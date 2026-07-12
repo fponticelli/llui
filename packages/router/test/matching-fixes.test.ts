@@ -218,3 +218,46 @@ describe('toPath without round-trip guessing (finding 6)', () => {
     expect(router.toPath({ page: 'editor', slug: 'my-post' })).toBe('/editor/my-post')
   })
 })
+
+describe('stripBase preserves query/hash delimiters (base + ?/#)', () => {
+  type Route = { page: 'search'; q: string } | { page: 'home' }
+  const router = createRouter<Route>(
+    [
+      route([], { query: ['q'] }, ({ q }) => (q ? { page: 'search', q } : { page: 'home' })),
+      route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
+    ],
+    { mode: 'history', base: '/app' },
+  )
+
+  it('matches base + "?query" without folding the query into the path', () => {
+    // Regression: `/app?q=x` used to strip to `/q=x`, parsing `q=x` as a path
+    // segment. It must strip to `/?q=x` so the query parses correctly.
+    expect(router.match('/app?q=x')).toEqual({ page: 'search', q: 'x' })
+  })
+
+  it('matches bare base as the root route', () => {
+    expect(router.match('/app')).toEqual({ page: 'home' })
+    expect(router.match('/app/')).toEqual({ page: 'home' })
+  })
+
+  it('preserves the hash delimiter on base + "#hash"', () => {
+    // `/app#x` must strip to `/#x`, not `/x` — the root route still matches.
+    expect(router.match('/app#x')).toEqual({ page: 'home' })
+  })
+
+  it('matches base + "/path?query" normally', () => {
+    expect(router.match('/app/search?q=y')).toEqual({ page: 'search', q: 'y' })
+  })
+})
+
+describe('createRouter with an empty route list', () => {
+  it('throws a clear error when no routes and no fallback are given', () => {
+    expect(() => createRouter([])).toThrow(/at least one route|fallback/)
+  })
+
+  it('does not throw when an empty route list is paired with a fallback', () => {
+    const fallback = { page: 'home' as const }
+    const router = createRouter<{ page: 'home' }>([], { fallback })
+    expect(router.match('/anything')).toBe(fallback)
+  })
+})

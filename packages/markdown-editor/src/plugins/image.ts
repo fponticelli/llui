@@ -8,6 +8,7 @@ import {
   $setSelection,
   type BaseSelection,
   type ElementNode,
+  type LexicalEditor,
   type LexicalNode,
 } from 'lexical'
 import { $insertNodeToNearestRoot } from '@lexical/utils'
@@ -18,12 +19,13 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { button, component, div, img, input, text, type Signal } from '@llui/dom'
+import { button, div, img, input, text, type Signal } from '@llui/dom'
 import {
   connect as connectDialog,
   overlay as overlayDialog,
   type DialogMsg,
 } from '@llui/components/dialog'
+import { sanitizeImageUrl } from '../security.js'
 import { definePluginUI } from './ui.js'
 import type { MarkdownPlugin } from './types.js'
 
@@ -43,20 +45,11 @@ function isImageData(value: unknown): value is ImageData {
   )
 }
 
-const imageBridge = decoratorBridge<ImageData, ImageData, { type: 'noop' }, never>(
-  BRIDGE_TYPE,
-  (data) =>
-    component<ImageData, { type: 'noop' }, never>({
-      name: 'Image',
-      init: () => ({ src: data.src, alt: data.alt }),
-      update: (state) => state,
-      view: ({ state }) => [
-        div({ 'data-scope': 'md-image', 'data-part': 'root', contenteditable: 'false' }, [
-          img({ src: state.at('src') as Signal<string>, alt: state.at('alt') as Signal<string> }),
-        ]),
-      ],
-    }),
-)
+const imageBridge = decoratorBridge<ImageData>(BRIDGE_TYPE, (data) => [
+  div({ 'data-scope': 'md-image', 'data-part': 'root', contenteditable: 'false' }, [
+    img({ src: data.at('src') as Signal<string>, alt: data.at('alt') as Signal<string> }),
+  ]),
+])
 
 const IMAGE_TRANSFORMER: ElementTransformer = {
   dependencies: [LLuiDecoratorNode],
@@ -67,9 +60,12 @@ const IMAGE_TRANSFORMER: ElementTransformer = {
   },
   regExp: /^!\[([^\]]*)\]\(([^)]+)\)$/,
   replace: (parentNode: ElementNode, _children, match): void => {
-    parentNode.replace(
-      $createLLuiDecoratorNode(BRIDGE_TYPE, { alt: match[1] ?? '', src: match[2] ?? '' }),
-    )
+    // Enforce the image-src allowlist on import/paste: a disallowed scheme
+    // (e.g. `javascript:`) sanitizes to null → drop the image entirely rather
+    // than materialize a decorator node bound to an unsafe src.
+    const src = sanitizeImageUrl(match[2] ?? '')
+    if (src === null) return
+    parentNode.replace($createLLuiDecoratorNode(BRIDGE_TYPE, { alt: match[1] ?? '', src }))
   },
   type: 'element',
 }
@@ -112,7 +108,9 @@ export interface ImagePluginOptions {
 }
 
 export function imagePlugin(opts: ImagePluginOptions = {}): MarkdownPlugin {
-  let savedSelection: BaseSelection | null = null
+  // Keyed by the per-mount editor so two mounts never cross-wire the selection
+  // saved while the insert dialog is open.
+  const savedSelection = new WeakMap<LexicalEditor, BaseSelection | null>()
 
   return {
     name: 'image',
@@ -217,20 +215,25 @@ export function imagePlugin(opts: ImagePluginOptions = {}): MarkdownPlugin {
         const editor = ctx.editor()
         if (!editor) return
         if (effect.type === 'begin') {
-          savedSelection = editor.getEditorState().read(() => {
-            const selection = $getSelection()
-            return selection ? selection.clone() : null
-          })
+          savedSelection.set(
+            editor,
+            editor.getEditorState().read(() => {
+              const selection = $getSelection()
+              return selection ? selection.clone() : null
+            }),
+          )
           return
         }
-        if (effect.src.trim() === '') return
+        // Enforce the image-src allowlist at insert: a disallowed scheme drops
+        // the insertion rather than binding the decorator to an unsafe src.
+        const src = sanitizeImageUrl(effect.src.trim())
+        if (src === null) return
+        const saved = savedSelection.get(editor) ?? null
         editor.update(() => {
-          if (savedSelection) $setSelection(savedSelection.clone())
-          $insertNodeToNearestRoot(
-            $createLLuiDecoratorNode(BRIDGE_TYPE, { src: effect.src.trim(), alt: effect.alt }),
-          )
+          if (saved) $setSelection(saved.clone())
+          $insertNodeToNearestRoot($createLLuiDecoratorNode(BRIDGE_TYPE, { src, alt: effect.alt }))
         })
-        savedSelection = null
+        savedSelection.delete(editor)
       },
     }),
   }

@@ -1,5 +1,5 @@
 import type { PairingRegistry } from './pairing-registry.js'
-import type { ServerFrame } from '../../protocol.js'
+import type { ServerFrame, ConfirmResolvedFrame } from '../../protocol.js'
 
 export type RpcError = {
   code: 'paused' | 'invalid' | 'timeout' | 'schema-error' | 'internal' | string
@@ -79,6 +79,13 @@ export type ConfirmWaitResult =
   | { outcome: 'user-cancelled' }
   | { outcome: 'timeout' }
 
+/** Map a browser `confirm-resolved` frame onto the three-way wait result. */
+function mapConfirmFrame(frame: ConfirmResolvedFrame): ConfirmWaitResult {
+  return frame.outcome === 'confirmed'
+    ? { outcome: 'confirmed', stateAfter: frame.stateAfter }
+    : { outcome: 'user-cancelled' }
+}
+
 /**
  * Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
  *   - `confirmed`      — the user approved (carries `stateAfter`).
@@ -92,6 +99,16 @@ export type ConfirmWaitResult =
  * `pending-confirmation` / `still-pending` rather than lie about a
  * rejection. Pairing drop maps to `timeout` for the same reason — the
  * user wasn't present to cancel, they simply weren't reachable.
+ *
+ * LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
+ * `/message` and `/confirm-result` long-poll in series: each tears its
+ * subscriber down on timeout, and the next re-arms a fresh one. If the
+ * user approves in that inter-poll gap, an edge-triggered subscriber
+ * would miss the frame forever (the action ran but the agent polls
+ * `still-pending` indefinitely). To close that gap, the registry buffers
+ * every `confirm-resolved` outcome keyed by `confirmId` with a TTL, and
+ * this helper checks that buffer BEFORE subscribing — returning
+ * immediately when the resolution already arrived.
  */
 export async function waitForConfirm(
   registry: PairingRegistry,
@@ -100,6 +117,11 @@ export async function waitForConfirm(
   timeoutMs: number,
 ): Promise<ConfirmWaitResult> {
   if (!registry.isPaired(tid)) return { outcome: 'timeout' }
+
+  // Level-triggered fast path: a resolution may have landed in the gap
+  // between the previous poll's subscriber teardown and this one arming.
+  const buffered = registry.getConfirmOutcome(tid, confirmId)
+  if (buffered) return mapConfirmFrame(buffered)
 
   return new Promise((resolve) => {
     let settled = false
@@ -114,9 +136,7 @@ export async function waitForConfirm(
 
     const unsubFrame = registry.subscribe(tid, (frame) => {
       if (frame.t === 'confirm-resolved' && frame.confirmId === confirmId) {
-        if (frame.outcome === 'confirmed')
-          done({ outcome: 'confirmed', stateAfter: frame.stateAfter })
-        else done({ outcome: 'user-cancelled' })
+        done(mapConfirmFrame(frame))
         return true
       }
       return false

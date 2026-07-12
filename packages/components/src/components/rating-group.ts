@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { focusRovingItem } from '../utils/roving.js'
 
 /**
  * Rating group — a sequence of clickable items (stars) representing a
@@ -184,25 +185,39 @@ export function connect(
         }),
         onPointerLeave: tagSend(send, ['hover'], () => send({ type: 'hover', value: null })),
         onKeyDown: tagSend(send, ['incrementValue', 'decrementValue', 'setValue', 'toEnd'], (e) => {
+          // Move real DOM focus to the new roving tab stop after a keyboard
+          // move — state tracks the active item but AT follows DOM focus.
+          const origin = e.currentTarget as Element
+          const focusActive = () => {
+            const active = Math.ceil(state.peek().value) || 1
+            focusRovingItem(origin, 'rating-group', String(active), {
+              itemPart: 'item',
+              attr: 'data-value',
+            })
+          }
           const key = flipArrow(e.key, state.peek().dir)
           switch (key) {
             case 'ArrowRight':
             case 'ArrowUp':
               e.preventDefault()
               send({ type: 'incrementValue' })
+              focusActive()
               return
             case 'ArrowLeft':
             case 'ArrowDown':
               e.preventDefault()
               send({ type: 'decrementValue' })
+              focusActive()
               return
             case 'Home':
               e.preventDefault()
               send({ type: 'setValue', value: 0 })
+              focusActive()
               return
             case 'End':
               e.preventDefault()
               send({ type: 'toEnd' })
+              focusActive()
               return
           }
         }),

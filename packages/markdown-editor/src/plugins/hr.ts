@@ -10,24 +10,14 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { component, hr } from '@llui/dom'
+import { hr } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
 
 const BRIDGE_TYPE = 'hr'
 
-const hrBridge = decoratorBridge<
-  Record<string, never>,
-  Record<string, never>,
-  { type: 'noop' },
-  never
->(BRIDGE_TYPE, () =>
-  component<Record<string, never>, { type: 'noop' }, never>({
-    name: 'HorizontalRule',
-    init: () => ({}),
-    update: (state) => state,
-    view: () => [hr({ 'data-md-hr': '', contenteditable: 'false' })],
-  }),
-)
+const hrBridge = decoratorBridge<Record<string, never>>(BRIDGE_TYPE, () => [
+  hr({ 'data-md-hr': '', contenteditable: 'false' }),
+])
 
 const HR_TRANSFORMER: ElementTransformer = {
   dependencies: [LLuiDecoratorNode],

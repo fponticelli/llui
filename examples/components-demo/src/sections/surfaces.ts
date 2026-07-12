@@ -14,7 +14,7 @@ import {
   onMount,
   text,
 } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { tour, type TourStep } from '@llui/components/tour'
 import { floatingPanel } from '@llui/components/floating-panel'
 import { navigationMenu } from '@llui/components/navigation-menu'
@@ -38,9 +38,10 @@ const tourSteps: TourStep[] = [
     target: '#tour-target',
   },
   {
-    id: 'bitmasks',
-    title: 'Compile-time bitmasks',
-    description: 'Every reactive accessor gets its own bit for zero runtime tracking overhead.',
+    id: 'chunked-mask',
+    title: 'Chunked-mask reactivity',
+    description:
+      'Each binding carries a sparse mask of the state-path chunks it reads, so an update commits only the values that actually changed — no runtime dependency tracking.',
     target: '#tour-target',
   },
   {
@@ -123,7 +124,7 @@ export const init = (): [State, never[]] => [
 
 export const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const tr = tour.connect(state.at('tour'), (m) => send({ type: 'tour', msg: m }), {
     id: 'tour-demo',
   })
@@ -211,7 +212,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
 
   // Render one top-level menu: its trigger plus a dropdown gated on
   // `state.open === id`, using the delegated `menu(id)` part bag.
-  const renderMenu = (id: string, items: Array<{ value: string; kind: string }>): Node => {
+  const renderMenu = (id: string, items: Array<{ value: string; kind: string }>): Mountable => {
     const menuParts = mb.menu(id)
     return div({ class: 'relative' }, [
       button(
@@ -277,7 +278,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   ]
 
   // ---- Toolbar: a roving-focus item button ----
-  const toolbarBtn = (value: string, glyph: string, title: string): Node =>
+  const toolbarBtn = (value: string, glyph: string, title: string): Mountable =>
     button(
       {
         ...tb.item(value).root,

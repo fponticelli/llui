@@ -148,7 +148,8 @@ export function connect(
   opts: ConnectOptions = {},
 ): MeterParts {
   const label = opts.label
-  const format = opts.format ?? defaultFormat
+  const format = opts.format
+  const valueText = (s: MeterState): string => (format ? format(s.value, s.max) : defaultFormat(s))
 
   return {
     root: {
@@ -156,7 +157,7 @@ export function connect(
       'aria-valuemin': state.map((s) => s.min),
       'aria-valuemax': state.map((s) => s.max),
       'aria-valuenow': state.map((s) => s.value),
-      'aria-valuetext': state.map((s) => format(s.value, s.max)),
+      'aria-valuetext': state.map((s) => valueText(s)),
       'aria-label': label,
       'data-state': state.map((s) => thresholdState(s)),
       'data-scope': 'meter',
@@ -177,13 +178,12 @@ export function connect(
       'data-scope': 'meter',
       'data-part': 'label',
     },
-    valueText: state.map((s) => format(s.value, s.max)),
+    valueText: state.map((s) => valueText(s)),
   }
 }
 
-function defaultFormat(value: number, max: number): string {
-  const pct = Math.round((value / max) * 100)
-  return `${pct}%`
+function defaultFormat(state: MeterState): string {
+  return `${Math.round(percent(state))}%`
 }
 
 function rangeStyle(state: MeterState): string {

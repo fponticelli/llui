@@ -79,6 +79,13 @@ interface PresetDefinition {
    *     event: system init, assistant turns, tool calls/results, final
    *     result). Enables live progress events. */
   outputEnvelope: 'text' | 'json' | 'stream-json'
+  /** Flag that disables the CLI's interactive permission prompts, running
+   *  it fully unattended (e.g. claude's `--dangerously-skip-permissions`).
+   *  This is NEVER in the default `args` — it is appended ONLY when the
+   *  user explicitly opts in via `dangerouslySkipPermissions: true`, because
+   *  it grants the spawned agent unattended tool access (file writes, shell)
+   *  in the project root. Presets without such a flag leave this undefined. */
+  skipPermissionsFlag?: string
 }
 
 /**
@@ -97,13 +104,11 @@ const PRESETS: Record<LlmPreset, PresetDefinition> = {
     // `session_id` + total `usage`. The router parses these live and
     // pushes `task-progress` SSE events to the HUD so the user sees
     // tokens / last tool / elapsed time instead of an opaque spinner.
-    args: [
-      '--print',
-      '--dangerously-skip-permissions',
-      '--verbose',
-      '--output-format',
-      'stream-json',
-    ],
+    // NOTE: `--dangerously-skip-permissions` is intentionally NOT in the
+    // default args. It runs the agent fully unattended with tool access
+    // (file writes + shell) in the project root, so it is opt-in only via
+    // `dangerouslySkipPermissions: true` (see `skipPermissionsFlag`).
+    args: ['--print', '--verbose', '--output-format', 'stream-json'],
     modelFlag: '--model',
     promptVia: 'arg',
     // Sonnet is the intermediate tier — fast, capable enough for the
@@ -112,6 +117,7 @@ const PRESETS: Record<LlmPreset, PresetDefinition> = {
     defaultModel: 'sonnet',
     resumeFlag: '--resume',
     outputEnvelope: 'stream-json',
+    skipPermissionsFlag: '--dangerously-skip-permissions',
   },
   codex: {
     command: 'codex',
@@ -174,6 +180,7 @@ export type LlmRouterConfig = Pick<
   | 'contextFiles'
   | 'beforePrompt'
   | 'streaming'
+  | 'dangerouslySkipPermissions'
 >
 
 /**
@@ -206,6 +213,16 @@ export interface RouterConfig {
   /** Extra args appended after preset args + model, before the prompt.
    *  Escape hatch for per-tool flags we haven't promoted. */
   extraArgs?: string[]
+  /**
+   * DANGEROUS, opt-in only. When `true`, append the active preset's
+   * skip-permissions flag (e.g. claude's `--dangerously-skip-permissions`)
+   * so the spawned agent runs fully unattended — no interactive approval
+   * for file writes or shell commands in the project root. Off by default;
+   * only enable when you understand that a task note can then drive
+   * arbitrary local tool use without a human in the loop. Ignored for
+   * presets/commands that expose no such flag.
+   */
+  dangerouslySkipPermissions?: boolean
   /** Extra env vars merged with `process.env`. */
   env?: Record<string, string>
   /** How the prompt reaches the CLI. Defaults per preset. */
@@ -327,9 +344,13 @@ export function resolveCliInvocation(config: RouterConfig): ResolvedCliInvocatio
       : ['--model', effectiveModel]
     : []
   const extraArgs = config.extraArgs ?? []
+  // Skip-permissions is opt-in and preset-specific: only append the flag
+  // when the user explicitly asked AND the active preset exposes one.
+  const skipPermArgs =
+    config.dangerouslySkipPermissions && def?.skipPermissionsFlag ? [def.skipPermissionsFlag] : []
   return {
     command,
-    args: [...baseArgs, ...modelArgs, ...extraArgs],
+    args: [...baseArgs, ...skipPermArgs, ...modelArgs, ...extraArgs],
     promptVia: config.promptVia ?? def?.promptVia ?? 'arg',
     env: { ...process.env, ...(config.env ?? {}) },
   }

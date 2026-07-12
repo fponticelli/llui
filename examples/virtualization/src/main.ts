@@ -92,24 +92,26 @@ const App = component<State, Msg, never>({
     }
   },
   view: ({ state, send }) => {
-    // Observe the virtual scroll container: childList mutations happen
-    // whenever virtualEach adds/removes rows on scroll or state change.
-    // Sending `visibleChanged` keeps the stat reactive without polling.
-    onMount((host) => {
-      const container = host.querySelector<HTMLElement>('.log-table[data-virtual-container]')
-      if (!container) return
-      const spacer = container.firstElementChild
-      if (!spacer) return
-      const report = (): void => {
-        send({ type: 'visibleChanged', n: container.querySelectorAll('.log-row').length })
-      }
-      const obs = new MutationObserver(report)
-      obs.observe(spacer, { childList: true })
-      report()
-      return () => obs.disconnect()
-    })
-
     return [
+      // Observe the virtual scroll container: childList mutations happen
+      // whenever virtualEach adds/removes rows on scroll or state change.
+      // Sending `visibleChanged` keeps the stat reactive without polling.
+      // The onMount mountable MUST be placed in the view array to register —
+      // a discarded onMount(...) statement is inert.
+      onMount((host) => {
+        const container = host.querySelector<HTMLElement>('.log-table[data-virtual-container]')
+        if (!container) return
+        const spacer = container.firstElementChild
+        if (!spacer) return
+        const report = (): void => {
+          send({ type: 'visibleChanged', n: container.querySelectorAll('.log-row').length })
+        }
+        const obs = new MutationObserver(report)
+        obs.observe(spacer, { childList: true })
+        report()
+        return () => obs.disconnect()
+      }),
+
       h1([text('Virtual log viewer')]),
       p({ class: 'subtitle' }, [
         text(

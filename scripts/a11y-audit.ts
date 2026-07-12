@@ -8,7 +8,16 @@ import { readFileSync, existsSync } from 'fs'
 import { resolve, extname } from 'path'
 
 const DEMO_DIR = resolve(import.meta.dirname!, '..', 'examples', 'components-demo', 'dist')
-const AXE_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js'
+// Load axe-core from the pinned node_modules copy (devDependency) rather than a
+// CDN: a network fetch mid-audit is a flaky, unpinnable, offline-hostile
+// dependency, and the CDN version could silently drift from what we test against.
+const AXE_SOURCE_PATH = resolve(
+  import.meta.dirname!,
+  '..',
+  'node_modules',
+  'axe-core',
+  'axe.min.js',
+)
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -45,8 +54,14 @@ async function main() {
 
   await page.goto('http://localhost:4173', { waitUntil: 'networkidle' })
 
-  // Inject axe-core
-  await page.addScriptTag({ url: AXE_CDN })
+  // Inject axe-core from the pinned local copy (no network fetch).
+  if (!existsSync(AXE_SOURCE_PATH)) {
+    console.error(
+      `axe-core not found at ${AXE_SOURCE_PATH} — run \`pnpm install\` (it's a devDependency).`,
+    )
+    process.exit(1)
+  }
+  await page.addScriptTag({ content: readFileSync(AXE_SOURCE_PATH, 'utf8') })
   await page.waitForFunction(
     () => typeof (globalThis as Record<string, unknown>).axe !== 'undefined',
   )

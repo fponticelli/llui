@@ -19,8 +19,8 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.11.5",
-    "@llui/lexical": "^0.2.8",
+    "@llui/dom": "workspace:^",
+    "@llui/lexical": "workspace:^",
     "lexical": "^0.46.0",
     "@lexical/yjs": "^0.46.0",
     "yjs": "^13.6.0"

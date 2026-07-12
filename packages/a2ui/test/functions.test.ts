@@ -25,6 +25,15 @@ describe('validation functions', () => {
     expect(ev({ call: 'regex', args: { value: 'abc', pattern: '^a' } })).toBe(true)
     expect(ev({ call: 'regex', args: { value: 'xyz', pattern: '^a' } })).toBe(false)
   })
+  it('regex rejects over-cap pattern/input (ReDoS guard)', () => {
+    const hugePattern = '(a+)+'.repeat(300) // > 1000 chars
+    expect(ev({ call: 'regex', args: { value: 'aaaa', pattern: hugePattern } })).toBe(false)
+    const hugeInput = 'a'.repeat(20_000) // > 10000 chars
+    expect(ev({ call: 'regex', args: { value: hugeInput, pattern: '^a' } })).toBe(false)
+  })
+  it('regex still matches for within-cap pattern/input', () => {
+    expect(ev({ call: 'regex', args: { value: 'a'.repeat(9_000), pattern: '^a+$' } })).toBe(true)
+  })
   it('length', () => {
     expect(ev({ call: 'length', args: { value: 'abcd', min: 2, max: 3 } })).toBe(false)
     expect(ev({ call: 'length', args: { value: 'ab', min: 2, max: 3 } })).toBe(true)

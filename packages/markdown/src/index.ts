@@ -15,9 +15,9 @@ export const markdown = createMarkdown(parseMarkdown)
 export { renderMarkdown, createMarkdown, type ParseFn } from './render.js'
 export { parseMarkdown } from './parse.js'
 export { defaultRenderers, mergeRenderers } from './renderers/index.js'
-export { sanitizeUrl, resolveUrl } from './security.js'
+export { sanitizeUrl, resolveUrl, defaultAllowedProtocols } from './security.js'
 export { makeContext, collectDefinitions } from './context.js'
-export { toKeyedBlocks, blockSource, type KeyedBlock } from './keying.js'
+export { toKeyedBlocks, blockSource, keyingHashComputations, type KeyedBlock } from './keying.js'
 export { resolveOptions } from './options.js'
 export { incrementalParse, type ParseCache, type IncrementalResult } from './incremental.js'
 

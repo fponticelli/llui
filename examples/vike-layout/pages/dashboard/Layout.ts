@@ -30,13 +30,27 @@ export const DashboardLayout = component<DashboardState, DashboardMsg, never>({
         return [{ lastVisited: msg.route }, []]
     }
   },
-  view: ({ state }) => [
+  view: ({ state, send }) => [
     div({ class: 'dashboard' }, [
       aside({ class: 'dashboard-sidebar' }, [
         div({ class: 'dashboard-title' }, [text('Dashboard')]),
         nav({ class: 'dashboard-nav' }, [
-          a({ href: '/dashboard/overview', class: 'dashboard-nav-link' }, [text('Overview')]),
-          a({ href: '/dashboard/reports', class: 'dashboard-nav-link' }, [text('Reports')]),
+          a(
+            {
+              href: '/dashboard/overview',
+              class: 'dashboard-nav-link',
+              onClick: () => send({ type: 'visit', route: 'Overview' }),
+            },
+            [text('Overview')],
+          ),
+          a(
+            {
+              href: '/dashboard/reports',
+              class: 'dashboard-nav-link',
+              onClick: () => send({ type: 'visit', route: 'Reports' }),
+            },
+            [text('Reports')],
+          ),
         ]),
         div({ class: 'dashboard-footer' }, [
           div({ class: 'dashboard-footer-label' }, [text('Last visited:')]),

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, onMount, span, text, type Signal } from '@llui/dom'
+import { component, input, mountApp, onMount, span, text, type Signal } from '@llui/dom'
 import {
   $getRoot,
   $getNodeByKey,
@@ -12,6 +12,7 @@ import { decoratorBridge } from '../src/plugin.js'
 import {
   LLuiDecoratorNode,
   $createLLuiDecoratorNode,
+  $isLLuiDecoratorNode,
   registerDecoratorBridges,
 } from '../src/decorator.js'
 
@@ -40,22 +41,13 @@ describe('LLuiDecoratorNode bridge', () => {
     const lifecycle: string[] = []
     let editor!: LexicalEditor
 
-    const calloutBridge = decoratorBridge<{ label: string }, { label: string }, AppMsg, never>(
-      'callout',
-      (data) =>
-        component<{ label: string }, AppMsg, never>({
-          name: 'Callout',
-          init: () => ({ label: data.label }),
-          update: (s) => s,
-          view: ({ state }) => [
-            onMount(() => {
-              lifecycle.push('mount')
-              return () => lifecycle.push('cleanup')
-            }),
-            span({ 'data-callout': '' }, [text(state.at('label') as Signal<string>)]),
-          ],
-        }),
-    )
+    const calloutBridge = decoratorBridge<{ label: string }>('callout', (data) => [
+      onMount(() => {
+        lifecycle.push('mount')
+        return () => lifecycle.push('cleanup')
+      }),
+      span({ 'data-callout': '' }, [text(data.at('label') as Signal<string>)]),
+    ])
 
     const def = component<AppState, AppMsg, never>({
       name: 'Host',
@@ -119,20 +111,13 @@ describe('LLuiDecoratorNode bridge', () => {
     let disposeB!: () => void
 
     const bridge = (type: string) =>
-      decoratorBridge<{ label: string }, { label: string }, AppMsg, never>(type, (data) =>
-        component<{ label: string }, AppMsg, never>({
-          name: `Sub-${type}`,
-          init: () => ({ label: data.label }),
-          update: (s) => s,
-          view: ({ state }) => [
-            onMount(() => {
-              lifecycle.push(`${type}-mount`)
-              return () => lifecycle.push(`${type}-cleanup`)
-            }),
-            span({ 'data-sub': type }, [text(state.at('label') as Signal<string>)]),
-          ],
+      decoratorBridge<{ label: string }>(type, (data) => [
+        onMount(() => {
+          lifecycle.push(`${type}-mount`)
+          return () => lifecycle.push(`${type}-cleanup`)
         }),
-      )
+        span({ 'data-sub': type }, [text(data.at('label') as Signal<string>)]),
+      ])
 
     const def = component<AppState, AppMsg, never>({
       name: 'ComposedHost',
@@ -183,5 +168,87 @@ describe('LLuiDecoratorNode bridge', () => {
 
     disposeB()
     expect(lifecycle).toContain('beta-cleanup')
+  })
+
+  it('re-decoration pushes data reactively WITHOUT remounting the sub-app', async () => {
+    const builds: string[] = []
+    const lifecycle: string[] = []
+    let editor!: LexicalEditor
+
+    // The sub-view is BUILT once per mount; `builds`/`lifecycle` count that. It
+    // renders a focusable input (unbound — proves the DOM is not rebuilt) plus a
+    // label bound to the reactive `data` signal (proves the push updates in place).
+    const badgeBridge = decoratorBridge<{ label: string }>('badge', (data) => {
+      builds.push('build')
+      return [
+        onMount(() => {
+          lifecycle.push('mount')
+          return () => lifecycle.push('cleanup')
+        }),
+        input({ 'data-focusable': '' }),
+        span({ 'data-label': '' }, [text(data.at('label') as Signal<string>)]),
+      ]
+    })
+
+    const def = component<AppState, AppMsg, never>({
+      name: 'BadgeHost',
+      init: () => ({ readonly: false }),
+      update: (s) => s,
+      view: ({ state }) => [
+        lexicalForeign({
+          namespace: 'badge-host',
+          nodes: [LLuiDecoratorNode],
+          readonly: state.at('readonly'),
+          serialize: (e) => e.getEditorState().read(() => $getRoot().getTextContent()),
+          deserialize: () => {
+            $getRoot().clear().append($createParagraphNode())
+          },
+          plugins: [
+            { name: 'badge-plugin', register: (e) => registerDecoratorBridges(e, [badgeBridge]) },
+          ],
+          onReady: (e) => {
+            editor = e
+          },
+        }),
+      ],
+    })
+    app = mountApp(container, def)
+
+    let key: NodeKey = ''
+    editor.update(
+      () => {
+        const node = $createLLuiDecoratorNode('badge', { label: 'v1' })
+        key = node.getKey()
+        $getRoot().clear().append(node).append($createParagraphNode())
+      },
+      { discrete: true },
+    )
+    await wait(0)
+
+    const label = container.querySelector('[data-label]')
+    const focusable = container.querySelector('[data-focusable]') as HTMLInputElement
+    expect(label?.textContent).toBe('v1')
+    focusable.focus()
+    expect(document.activeElement).toBe(focusable)
+
+    // Two successive external data commits to the SAME node → two re-decorations.
+    for (const next of ['v2', 'v3']) {
+      editor.update(
+        () => {
+          const node = $getNodeByKey(key)
+          if ($isLLuiDecoratorNode(node)) node.setData({ label: next })
+        },
+        { discrete: true },
+      )
+      await wait(0)
+    }
+
+    // The sub-app was built/mounted exactly once — no re-init, no teardown.
+    expect(builds).toEqual(['build'])
+    expect(lifecycle).toEqual(['mount'])
+    // The reactive push updated the label in place…
+    expect(label?.textContent).toBe('v3')
+    // …and the focused input inside the sub-view survived every update.
+    expect(document.activeElement).toBe(focusable)
   })
 })

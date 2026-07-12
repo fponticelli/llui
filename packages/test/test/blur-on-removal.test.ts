@@ -100,6 +100,74 @@ describe('emulateBlurOnRemoval', () => {
     expect(bBlur).toBe(true)
   })
 
+  it('fires blur when a focused input is cleared via range.deleteContents()', () => {
+    // The `each` bulk-clear path removes a run of rows with deleteContents(),
+    // not per-node removeChild — the emulation must patch it too.
+    uninstall = emulateBlurOnRemoval()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const row = document.createElement('div')
+    const input = document.createElement('input')
+    row.appendChild(input)
+    host.appendChild(row)
+    let blurred = false
+    input.addEventListener('blur', () => (blurred = true))
+    input.focus()
+
+    const range = document.createRange()
+    range.selectNodeContents(host) // spans the row (and the focused input)
+    range.deleteContents()
+    expect(blurred).toBe(true)
+    expect(host.childNodes.length).toBe(0)
+  })
+
+  it('fires blur when a focused input is detached via range.extractContents()', () => {
+    uninstall = emulateBlurOnRemoval()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const input = document.createElement('input')
+    host.appendChild(input)
+    let blurred = false
+    input.addEventListener('blur', () => (blurred = true))
+    input.focus()
+
+    const range = document.createRange()
+    range.selectNodeContents(host)
+    const frag = range.extractContents()
+    expect(blurred).toBe(true)
+    expect(frag.contains(input)).toBe(true)
+  })
+
+  it('fires blur when a focused input is cleared via replaceChildren()', () => {
+    // Root swaps clear the container with replaceChildren().
+    uninstall = emulateBlurOnRemoval()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const input = document.createElement('input')
+    host.appendChild(input)
+    let blurred = false
+    input.addEventListener('blur', () => (blurred = true))
+    input.focus()
+
+    host.replaceChildren() // clear
+    expect(blurred).toBe(true)
+  })
+
+  it('does NOT fire on replaceChildren() when the focused input is re-added', () => {
+    uninstall = emulateBlurOnRemoval()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const input = document.createElement('input')
+    host.appendChild(input)
+    let blurred = false
+    input.addEventListener('blur', () => (blurred = true))
+    input.focus()
+
+    // Preserving the focused node among the replacement children must NOT blur.
+    host.replaceChildren(input, document.createElement('span'))
+    expect(blurred).toBe(false)
+  })
+
   it('uninstall restores the native methods (no leak across tests)', () => {
     const u = emulateBlurOnRemoval()
     u()

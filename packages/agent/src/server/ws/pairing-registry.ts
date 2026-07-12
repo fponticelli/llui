@@ -1,4 +1,10 @@
-import type { ClientFrame, ServerFrame, HelloFrame, LogEntry } from '../../protocol.js'
+import type {
+  ClientFrame,
+  ServerFrame,
+  HelloFrame,
+  LogEntry,
+  ConfirmResolvedFrame,
+} from '../../protocol.js'
 import { LAP_VERSION } from '../../protocol.js'
 import {
   rpc as rpcHelper,
@@ -88,6 +94,20 @@ export interface PairingRegistry {
    */
   readonly recentLogCap: number
 
+  /**
+   * Level-triggered confirm-resolution buffer. The browser emits a
+   * `confirm-resolved` frame exactly once; the registry records its
+   * outcome keyed by `confirmId` with a TTL, independently of whether
+   * any subscriber is currently armed. `waitForConfirm` reads this
+   * BEFORE subscribing so an approval arriving in the gap between one
+   * long-poll's subscriber teardown and the next re-arming is not lost.
+   *
+   * Returns the recorded frame if one landed within the TTL window,
+   * else `null`. Idempotent: repeated reads return the same outcome
+   * until it ages out (confirmIds are UUIDs, so no cross-confirm reuse).
+   */
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -135,6 +155,14 @@ type Pairing = {
  */
 const RECENT_LOG_CAP = 100
 
+/**
+ * How long a buffered `confirm-resolved` outcome stays readable via
+ * `getConfirmOutcome`. Sized to comfortably outlast a human deliberating
+ * on a confirmation prompt (the agent long-polls in ~5s windows the
+ * whole time) while still bounding memory for abandoned confirms.
+ */
+const CONFIRM_OUTCOME_TTL_MS = 5 * 60_000
+
 export class InMemoryPairingRegistry implements PairingRegistry {
   /** @see PairingRegistry.recentLogCap */
   readonly recentLogCap = RECENT_LOG_CAP
@@ -147,6 +175,15 @@ export class InMemoryPairingRegistry implements PairingRegistry {
    * its own activity history with stateDiffs intact.
    */
   private recentLog = new Map<string, LogEntry[]>()
+  /**
+   * Per-tid buffer of the most recent `confirm-resolved` outcome per
+   * confirmId, with arrival timestamps for TTL pruning. Backs the
+   * level-triggered `getConfirmOutcome` fast path in `waitForConfirm`.
+   */
+  private confirmOutcomes = new Map<
+    string,
+    Map<string, { frame: ConfirmResolvedFrame; at: number }>
+  >()
 
   constructor(
     opts: {
@@ -169,6 +206,38 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     if (count === 0) return []
     // Buffer is append-order; return the tail reversed so newest is first.
     return buf.slice(-count).reverse()
+  }
+
+  /** @see PairingRegistry.getConfirmOutcome */
+  getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null {
+    const m = this.confirmOutcomes.get(tid)
+    if (!m) return null
+    const rec = m.get(confirmId)
+    if (!rec) return null
+    if (Date.now() - rec.at > CONFIRM_OUTCOME_TTL_MS) {
+      m.delete(confirmId)
+      if (m.size === 0) this.confirmOutcomes.delete(tid)
+      return null
+    }
+    return rec.frame
+  }
+
+  /**
+   * Record a `confirm-resolved` outcome for level-triggered pickup and
+   * opportunistically prune expired entries for this tid so an abandoned
+   * confirm can't pin memory past its TTL.
+   */
+  private recordConfirmOutcome(tid: string, frame: ConfirmResolvedFrame): void {
+    let m = this.confirmOutcomes.get(tid)
+    if (!m) {
+      m = new Map()
+      this.confirmOutcomes.set(tid, m)
+    }
+    const now = Date.now()
+    m.set(frame.confirmId, { frame, at: now })
+    for (const [cid, rec] of m) {
+      if (now - rec.at > CONFIRM_OUTCOME_TTL_MS) m.delete(cid)
+    }
   }
 
   register(tid: string, conn: PairingConnection): void {
@@ -214,6 +283,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // this session is gone for good, so retaining history would leak.
     this.handleClose(tid, this.pairings.get(tid)?.conn)
     this.recentLog.delete(tid)
+    this.confirmOutcomes.delete(tid)
   }
 
   isPaired(tid: string): boolean {
@@ -291,6 +361,14 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       }
       this.onLogAppend?.(tid, frame.entry)
       return
+    }
+    if (frame.t === 'confirm-resolved') {
+      // Buffer the outcome for level-triggered pickup BEFORE dispatching
+      // to subscribers — so a resolution that lands with no subscriber
+      // armed (the inter-poll gap) is still readable by the next
+      // `waitForConfirm`. We then fall through to deliver it to any
+      // subscriber currently waiting.
+      this.recordConfirmOutcome(tid, frame)
     }
     // Guard against genuinely unknown client frame types (protocol drift /
     // a newer client). The known correlated types are consumed by

@@ -4,7 +4,6 @@
     "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
-    "inlineSources": true,
     "sourceMap": true
   },
   "include": ["src"],

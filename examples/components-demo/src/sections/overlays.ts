@@ -1,5 +1,5 @@
 import { div, button, span, h3, p, input, svg, path, each, text, onMount } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Renderable } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'
@@ -194,7 +194,7 @@ export function onEffect(effect: Effect, _send: Send<Msg>): void {
   }
 }
 
-export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   // Register bus handlers so other sections can trigger toast/confirm
   registerToastHandler((kind, title, description) =>
     send({ type: 'emitToast', kind, title, description }),
@@ -274,13 +274,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
   // Global ⌘K / Ctrl+K hotkey opens the command palette.
   const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
 
-  const selectItems = (): Node[] =>
+  const selectItems = (): Renderable =>
     ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
       div({ ...se.item(v, i).item }, [text(v)]),
     )
-  const menuItems = (): Node[] =>
+  const menuItems = (): Renderable =>
     ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) => div({ ...me.item(v).item }, [text(v)]))
-  const ctxMenuItems = (): Node[] =>
+  const ctxMenuItems = (): Renderable =>
     ['Cut', 'Copy', 'Paste', 'Delete'].map((v) => div({ ...cm.item(v).item }, [text(v)]))
 
   const toastRegion = div({ ...toastParts.region }, [
@@ -541,7 +541,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Node[] {
               [
                 h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
                 p({ class: 'mt-1 text-xs text-text-muted' }, [
-                  text('LLui compiles state paths into bitmasks at build time.'),
+                  text('LLui gives each binding a chunked mask of the state paths it reads.'),
                 ]),
                 button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
                   text('Got it'),

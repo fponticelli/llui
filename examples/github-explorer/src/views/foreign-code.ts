@@ -8,12 +8,21 @@ interface FileProps {
   filename: string
 }
 
+// GitHub returns file contents as newline-wrapped base64. `atob` alone yields a
+// binary string that mangles any multi-byte UTF-8 (é, emoji, CJK…), so decode
+// the bytes through TextDecoder to recover the original text.
+function decodeBase64Utf8(b64: string): string {
+  const binary = atob(b64.replace(/\s/g, ''))
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
 function fileProps(r: Route): FileProps {
   if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) {
     const file = r.data.data.file
     let content: string
     try {
-      content = atob(file.content)
+      content = decodeBase64Utf8(file.content)
     } catch {
       content = file.content
     }

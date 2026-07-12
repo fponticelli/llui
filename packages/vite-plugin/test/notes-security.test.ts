@@ -175,6 +175,58 @@ describe('CSRF / same-origin guard', () => {
     })
     expect(res.status).toBe(415)
   })
+
+  it('rejects a 0.0.0.0 Host (not a loopback authority)', async () => {
+    // 0.0.0.0 is the unspecified/all-interfaces bind address, not loopback —
+    // a request claiming it is not provably same-machine and must be rejected.
+    const res = await raw(f.port, 'POST', '/_llui/notes', {
+      headers: { host: `0.0.0.0:${f.port}`, 'content-type': 'application/json' },
+      body: JSON.stringify(notePayload),
+    })
+    expect(res.status).toBe(403)
+    expect(res.body).toMatch(/non-loopback Host|rejected/i)
+  })
+
+  it('rejects a 0.0.0.0 Origin as cross-origin', async () => {
+    const res = await raw(f.port, 'POST', '/_llui/notes', {
+      headers: {
+        host: `127.0.0.1:${f.port}`,
+        origin: `http://0.0.0.0:${f.port}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(notePayload),
+    })
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('request body size cap', () => {
+  it('rejects an oversized JSON body with 413 (declared Content-Length)', async () => {
+    // A declared Content-Length over the 32 MB cap is rejected before a byte
+    // of the body is read.
+    const res = await raw(f.port, 'POST', '/_llui/notes', {
+      headers: {
+        host: `127.0.0.1:${f.port}`,
+        'content-type': 'application/json',
+        'content-length': String(64 * 1024 * 1024),
+      },
+      body: '{}',
+    })
+    expect(res.status).toBe(413)
+  })
+
+  it('caps the /import upload body with 413', async () => {
+    // The /import route buffers the raw zip bytes; the same body cap bounds
+    // it. A declared Content-Length over the cap is rejected up front.
+    const res = await raw(f.port, 'POST', '/_llui/import', {
+      headers: {
+        host: `127.0.0.1:${f.port}`,
+        'content-length': String(64 * 1024 * 1024),
+      },
+      body: 'x',
+    })
+    expect(res.status).toBe(413)
+  })
 })
 
 describe('sessionId path traversal', () => {
@@ -245,6 +297,9 @@ describe('revert path containment', () => {
         },
         noteBody: {},
       })
+      // 'rejected' (which drives the revert) is only reachable from 'proposed'.
+      await post(`/_llui/notes/${taskId}/status`, { to: 'claimed' })
+      await post(`/_llui/notes/${taskId}/status`, { to: 'proposed' })
       const rej = await post(`/_llui/notes/${taskId}/status`, { to: 'rejected' })
       expect(rej.status).toBe(200)
       // The sentinel must survive — containment rejected the escape.
@@ -278,6 +333,8 @@ describe('revert path containment', () => {
       },
       noteBody: {},
     })
+    await post(`/_llui/notes/${taskId}/status`, { to: 'claimed' })
+    await post(`/_llui/notes/${taskId}/status`, { to: 'proposed' })
     const rej = await post(`/_llui/notes/${taskId}/status`, { to: 'rejected' })
     const parsed = JSON.parse(rej.body) as { revert?: { ok: boolean } }
     expect(parsed.revert?.ok).toBe(false)

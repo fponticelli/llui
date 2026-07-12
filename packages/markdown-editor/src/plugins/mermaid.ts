@@ -15,7 +15,7 @@ import {
   LLuiDecoratorNode,
   decoratorBridge,
 } from '@llui/lexical'
-import { component, div, text, type Mountable, type Signal } from '@llui/dom'
+import { div, text, type Mountable, type Signal } from '@llui/dom'
 import type { MarkdownPlugin } from './types.js'
 import { renderedPreview, type PreviewRender } from './_preview.js'
 
@@ -31,8 +31,6 @@ function isMermaidData(value: unknown): value is MermaidData {
   )
 }
 
-type MermaidMsg = { type: 'commit'; code: string }
-
 const stop = (e: Event): void => e.stopPropagation()
 
 export interface MermaidPluginOptions {
@@ -46,49 +44,32 @@ export interface MermaidPluginOptions {
 }
 
 export function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin {
-  const bridge = decoratorBridge<MermaidData, MermaidData, MermaidMsg, never>(
-    BRIDGE_TYPE,
-    (data, api) =>
-      component<MermaidData, MermaidMsg, never>({
-        name: 'Mermaid',
-        init: () => ({ code: data.code }),
-        update: (state, msg) => {
-          if (msg.type === 'commit') {
-            if (msg.code === state.code) return state
-            api.update({ code: msg.code })
-            return { code: msg.code }
-          }
-          return state
+  const bridge = decoratorBridge<MermaidData>(BRIDGE_TYPE, (data, api) => {
+    const children: Mountable[] = [
+      div(
+        {
+          'data-part': 'source',
+          contenteditable: 'true',
+          role: 'textbox',
+          'aria-label': 'Mermaid source',
+          onKeyDown: stop,
+          onBeforeInput: stop,
+          onPaste: stop,
+          onBlur: (e: FocusEvent) => {
+            const code = (e.target as HTMLElement).textContent ?? ''
+            if (code !== data.peek().code) api.update({ code })
+          },
         },
-        view: ({ state, send }) => {
-          const children: Mountable[] = [
-            div(
-              {
-                'data-part': 'source',
-                contenteditable: 'true',
-                role: 'textbox',
-                'aria-label': 'Mermaid source',
-                onKeyDown: stop,
-                onBeforeInput: stop,
-                onPaste: stop,
-                onBlur: (e: FocusEvent) =>
-                  send({ type: 'commit', code: (e.target as HTMLElement).textContent ?? '' }),
-              },
-              [text(state.at('code') as Signal<string>)],
-            ),
-          ]
-          if (opts.render) {
-            children.push(renderedPreview(state.at('code') as Signal<string>, opts.render))
-          }
-          return [
-            div(
-              { 'data-scope': 'md-mermaid', 'data-part': 'root', contenteditable: 'false' },
-              children,
-            ),
-          ]
-        },
-      }),
-  )
+        [text(data.at('code') as Signal<string>)],
+      ),
+    ]
+    if (opts.render) {
+      children.push(renderedPreview(data.at('code') as Signal<string>, opts.render))
+    }
+    return [
+      div({ 'data-scope': 'md-mermaid', 'data-part': 'root', contenteditable: 'false' }, children),
+    ]
+  })
 
   const transformer: MultilineElementTransformer = {
     dependencies: [LLuiDecoratorNode],

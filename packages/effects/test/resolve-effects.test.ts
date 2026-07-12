@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resolveEffects } from '../src/resolve'
-import { http, type Effect, type ApiError } from '../src/index'
+import { http, sequence, retry, cancel, type Effect, type ApiError } from '../src/index'
 
 type State = { items: string[]; error: string | null }
 type Msg =
@@ -300,6 +300,71 @@ describe('resolveEffects', () => {
 
     expect(seen).not.toBeNull()
     expect(seen!.get('x-total')).toBe('42')
+    vi.unstubAllGlobals()
+  })
+
+  it('pre-resolves http nested inside a sequence', async () => {
+    vi.stubGlobal('fetch', mockFetch({ '/api/items': { ok: true, body: { items: ['a', 'b'] } } }))
+
+    const result = await resolveEffects<State, Msg, Effect>(
+      { items: [], error: null },
+      [
+        sequence([
+          http<{ type: string; payload?: unknown; error?: ApiError }>({
+            url: '/api/items',
+            onSuccess: (data) => ({ type: 'loaded', payload: data }),
+            onError: (err) => ({ type: 'error', error: err }),
+          }),
+        ]),
+      ],
+      update,
+    )
+
+    expect(result.items).toEqual(['a', 'b'])
+    vi.unstubAllGlobals()
+  })
+
+  it('pre-resolves http nested inside retry and cancel-replace', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch({
+        '/api/retry': { ok: true, body: { items: ['r'] } },
+        '/api/cancel': { ok: true, body: { items: ['c'] } },
+      }),
+    )
+
+    const fromRetry = await resolveEffects<State, Msg, Effect>(
+      { items: [], error: null },
+      [
+        retry(
+          http<{ type: string; payload?: unknown; error?: ApiError }>({
+            url: '/api/retry',
+            onSuccess: (data) => ({ type: 'loaded', payload: data }),
+            onError: (err) => ({ type: 'error', error: err }),
+          }),
+          { maxAttempts: 2, delayMs: 10 },
+        ),
+      ],
+      update,
+    )
+    expect(fromRetry.items).toEqual(['r'])
+
+    const fromCancel = await resolveEffects<State, Msg, Effect>(
+      { items: [], error: null },
+      [
+        cancel(
+          'tok',
+          http<{ type: string; payload?: unknown; error?: ApiError }>({
+            url: '/api/cancel',
+            onSuccess: (data) => ({ type: 'loaded', payload: data }),
+            onError: (err) => ({ type: 'error', error: err }),
+          }),
+        ),
+      ],
+      update,
+    )
+    expect(fromCancel.items).toEqual(['c'])
+
     vi.unstubAllGlobals()
   })
 

@@ -1,8 +1,8 @@
 # @llui/dom
 
-Runtime for the [LLui](https://github.com/fponticelli/llui) web framework — The Elm Architecture with compile-time bitmask optimization.
+Runtime for the [LLui](https://github.com/fponticelli/llui) web framework — The Elm Architecture on a compile-time-optimized **signal** runtime.
 
-No virtual DOM. `view()` runs once at mount, building real DOM nodes with reactive bindings that update surgically when state changes.
+No virtual DOM. `view()` runs once at mount, building real DOM nodes with reactive bindings; a **chunked-mask reconciler** updates only the bindings whose dependency paths actually changed.
 
 ## Install
 
@@ -13,25 +13,26 @@ pnpm add @llui/dom
 ## Quick Start
 
 ```typescript
-import { component, mountApp, div, button } from '@llui/dom'
+import { component, mountApp, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
 
-const Counter = component<State, Msg, never>({
+const Counter = component<State, Msg>({
   name: 'Counter',
-  init: () => [{ count: 0 }, []],
+  init: () => ({ count: 0 }),
   update: (state, msg) => {
     switch (msg.type) {
       case 'inc':
-        return [{ ...state, count: state.count + 1 }, []]
+        return { ...state, count: state.count + 1 }
       case 'dec':
-        return [{ ...state, count: state.count - 1 }, []]
+        return { ...state, count: state.count - 1 }
     }
   },
-  view: ({ send, text }) => [
+  // `state` is a Signal<State> — derive reactive values with `.map` / `.at`.
+  view: ({ state, send }) => [
     button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-    text((s) => String(s.count)),
+    text(state.map((s) => String(s.count))),
     button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
   ],
 })
@@ -39,271 +40,153 @@ const Counter = component<State, Msg, never>({
 mountApp(document.getElementById('app')!, Counter)
 ```
 
-## View<S, M> — the helper bundle
+`init()` may return bare state (as above) or a `[state, effects]` tuple; likewise `update()`. Effects are handled in `onEffect` (see [Effects](#effects)).
 
-`view` receives a single `View<S, M>` bag. Destructure what you need — `send` plus any state-bound helpers. TypeScript infers `S` from the component definition, so no per-call generics:
+## The view bag and signal handles
+
+`view` receives `{ state, send, batch }`:
+
+- **`state`** is a **`Signal<State>`** — a read handle, not the value:
+  - `state.at('field')` — narrow to a sub-path signal (`state.at('user').at('name')`).
+  - `state.map((s) => …)` — derive a reactive value; the binding's mask tracks exactly the paths read.
+  - `state.peek()` — one-shot read, for handlers / effects / `onMount` (never as a slot value).
+- **`send(msg)`** dispatches a message. It is synchronous — the reducer runs and the DOM updates before it returns.
+- **`batch(fn)`** coalesces a burst of `send`s into ONE reconcile (reducers/effects still run per message; only the DOM commit is deferred to the outermost `batch` exit).
+
+Element helpers (`div`, `button`, …) and structural primitives (`each`, `show`, `branch`, …) are **module imports**, not bag members. Combine multiple signals with `derived([a, b], (av, bv) => …)`.
+
+## Mountable — everything you build is a lazy description
+
+Every authoring helper (`el`/`div`/`text`/`each`/`show`/`branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal`/`provide`) returns a **`Mountable`** — a recipe materialized into live DOM at the point it is _placed_ (as an element child, or in a view / arm / row return). Consequences:
+
+- **Annotate view helpers `Renderable`** (`readonly Mountable[]` — a list) or **`Mountable`** (a single element) — not `Node`/`Node[]`.
+- **Capture and reuse freely.** A `Mountable` stored in a variable and reused across a `show`/`branch` remount rebuilds fresh each time; placing one twice yields two independent live instances.
+- **Side-effect helpers must be placed.** `onMount(cb)` registers nothing unless its returned `Mountable` is in the view array — it is not an eager side effect.
+- **Raw DOM interop:** wrap an existing node with `mountable(() => node)`.
+
+## Structural primitives
 
 ```typescript
-// @doc-skip — illustrative shape; uses `[...]` placeholders for render results
-view: ({ send, text, show, each, branch, memo }) => [
-  text(s => s.label),                    // s is State — inferred
-  ...show({ when: s => s.visible, render: () => [...] }),
-  ...each({ items: s => s.items, key: i => i.id, render: ({ item }) => [...] }),
-]
+import { show, each, branch } from '@llui/dom'
+
+// Conditional — the condition signal is narrowed for the arm
+show(
+  state.at('user'),
+  (user) => [text(user.map((u) => u.name))],
+  () => [text('signed out')],
+)
+
+// Keyed list — each row gets its own `item` / `index` signal
+each(state.at('todos'), {
+  key: (t) => t.id,
+  render: (item) => [text(item.map((t) => t.label))],
+})
+
+// Discriminated union — each arm receives the narrowed variant signal
+branch(state.at('route'), (r) => r.kind, {
+  home: () => [text('home')],
+  entity: (r) => [text(r.map((e) => e.id))],
+})
+
+// Keyed form: branch(value, arms) when the value is already the key
+branch(
+  state.map((s) => s.tab),
+  { one: () => [text('one')], two: () => [text('two')] },
+)
 ```
 
-Element helpers (`div`, `button`, `span`, etc.) stay as imports — they're stateless and don't need the `S` binding.
+All three accept an optional trailing `transition?: TransitionOptions` (from `@llui/transitions`) to animate arm/row swaps.
+
+## Composition
+
+Factor sub-views as plain functions that take signal handles — they run via the runtime authoring helpers, so they compose without compilation:
+
+```typescript
+import type { Signal, Renderable } from '@llui/dom'
+
+function header(title: Signal<string>, send: (m: Msg) => void): Renderable {
+  return [h1([text(title)]), button({ onClick: () => send({ type: 'menu' }) }, [text('☰')])]
+}
+
+// in view:
+view: ({ state, send }) => [...header(state.at('title'), send)]
+```
+
+## Effects
+
+`update()` returns `[state, effects]`; each effect is passed to the component's `onEffect` handler. Use `@llui/effects` for the builders and `asOnEffect` to adapt a handler chain:
+
+```typescript
+import { http, handleEffects, asOnEffect } from '@llui/effects'
+
+const onEffect = asOnEffect(
+  handleEffects<Effect>().else(({ effect, send }) => {
+    // handle your effect union
+  }),
+)
+
+component<State, Msg, Effect>({ name, init, update, view, onEffect })
+```
 
 ## API
 
 ### Core
 
-| Export                         | Purpose                                                   |
-| ------------------------------ | --------------------------------------------------------- |
-| `component(def)`               | Create a component definition                             |
-| `mountApp(el, def)`            | Mount a component to a DOM element                        |
-| `hydrateApp(el, def)`          | Hydrate server-rendered HTML                              |
-| `mountAtAnchor(anchor, def)`   | Mount a component relative to a comment anchor            |
-| `hydrateAtAnchor(anchor, def)` | Hydrate server-rendered HTML relative to a comment anchor |
-| `flush()`                      | Synchronously flush all pending updates                   |
-| `createView(send)`             | Create a full View bundle (for tests/dynamic use)         |
+| Export                                       | Purpose                                                       |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `component(spec)`                            | Define a component (`init` / `update` / `view` / `onEffect?`) |
+| `mountApp(el, def, opts?)`                   | Mount a component into a container element                    |
+| `mountSignalComponent(target, def, opts?)`   | Lower-level mount — container or `{ anchor }` target          |
+| `hydrateSignalApp(target, def, serverState)` | Hydrate server-rendered HTML                                  |
+| `derived(sigs, fn)`                          | Combine N signals into one derived signal                     |
+| `isSignalHandle(v)`                          | Detect a runtime signal handle                                |
 
-### View Primitives
+### View content
 
-| Primitive                          | Purpose                                     |
-| ---------------------------------- | ------------------------------------------- |
-| `text(accessor)`                   | Reactive text node                          |
-| `show({ when, render })`           | Conditional rendering                       |
-| `branch({ on, cases, default? })`  | Multi-case switching with optional default  |
-| `scope({ on, render })`            | Keyed subtree rebuild on key change         |
-| `each({ items, key, render })`     | Keyed list rendering                        |
-| `portal({ target, render })`       | Render into a different DOM location        |
-| `memo(accessor)`                   | Memoized derived value                      |
-| `sample(selector)`                 | One-shot imperative state read (no binding) |
-| `selector(field)`                  | O(1) one-of-N selection binding             |
-| `onMount(callback)`                | Lifecycle hook (runs once after mount)      |
-| `errorBoundary(opts)`              | Catch render errors                         |
-| `foreign({ create, update })`      | Integrate non-LLui libraries                |
-| `clientOnly({ render, fallback })` | Browser-only subtree (skipped during SSR)   |
-| `slice(h, selector)`               | View over a sub-slice of state              |
-
-### Composition
-
-| Export                                      | Purpose                                                                 |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| `combine({ slice: reducer, ... }, top?)`    | Compose slice reducers by `${slice}/${action}` message-prefix routing   |
-| `mergeHandlers(...handlers)`                | Combine multiple update handlers                                        |
-| `sliceHandler({ get, set, narrow, sub })`   | Route messages to a state slice                                         |
-| `subApp({ reason, def, data?, onHandle? })` | Embed an isolated TEA loop (escape hatch — requires non-empty `reason`) |
+| Export                              | Purpose                                                                     |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `text(value)`                       | Reactive (or static) text node                                              |
+| `unsafeHtml(value)`                 | Render a raw HTML string (escape hatch; caller owns sanitization)           |
+| `each(items, { key, render })`      | Keyed list                                                                  |
+| `show(cond, render, orElse?)`       | Conditional render (the condition signal is narrowed for the arm)           |
+| `branch(value, discriminant, arms)` | Discriminated-union render (or `branch(value, arms)` when value is the key) |
+| `virtualEach(opts)`                 | Windowed keyed list                                                         |
+| `lazy(opts)`                        | Async-loaded child component with `fallback` / `error`                      |
+| `foreign(spec)`                     | Imperative-library boundary (declared signals → LiveSignals)                |
+| `portal(content, target?)`          | Render into a different DOM location (default `document.body`)              |
+| `onMount(cb)`                       | Run after mount; return a cleanup. **Place the returned marker.**           |
+| `mountable(build)`                  | Wrap a build closure / raw node as placeable content                        |
+| element helpers                     | `div`, `span`, `button`, `input`, `a`, `h1`–`h6`, `ul`/`li`, `table`/…, 60+ |
 
 ### Context
 
-| Export                             | Purpose                  |
-| ---------------------------------- | ------------------------ |
-| `createContext(defaultValue)`      | Create a context         |
-| `provide(ctx, accessor, children)` | Provide value to subtree |
-| `useContext(ctx)`                  | Read context value       |
-
-### Element Helpers
-
-50+ typed element constructors: `div`, `span`, `button`, `input`, `a`, `h1`-`h6`, `table`, `tr`, `td`, `ul`, `li`, `img`, `form`, `label`, `select`, `textarea`, `canvas`, `video`, `nav`, `header`, `footer`, `section`, `article`, `p`, `pre`, `code`, and more.
+| Export                          | Purpose                                          |
+| ------------------------------- | ------------------------------------------------ |
+| `createContext(default, name?)` | Create a context                                 |
+| `provide(ctx, value, render)`   | Provide a value to everything `render` builds    |
+| `useContext(ctx)`               | Read the nearest provided value (or the default) |
 
 ### SSR
 
-| Export                            | Purpose                                                                |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| `renderToString(def, state, env)` | Render component to HTML string (requires an env from a sub-entry)     |
-| `renderNodes(def, state, env)`    | Render to DOM nodes + instance for layout composition                  |
-| `browserEnv()`                    | Wrap the browser globals as a `DomEnv` (default for `mountApp`)        |
-| `jsdomEnv()` / `linkedomEnv()`    | Construct per-call SSR envs (from `@llui/dom/ssr/jsdom` / `/linkedom`) |
+Exported from the main `@llui/dom` entry (pass a `DomEnv` from a sub-entry — see below):
 
-## Common patterns
-
-Three shapes that the Counter quick-start doesn't show but that every real app reaches for. Build the wrong shape and the symptom is "the UI froze, my `update()` doesn't seem to take effect" — actually an accessor threw during reconcile and the dev console has the real error. Build the right shape and you skip an hour of debugging.
-
-### Reading state in an event handler
-
-Event handlers run AFTER mount, with no active render context. `h.sample(...)` and the other view primitives throw if you call them from inside `onClick` / `onInput` / etc. The runtime error names the trap explicitly, but the right pattern is to capture the value AT RENDER TIME — `sample` is legal there, because the render IS the construction phase.
-
-```typescript
-// @doc-skip — before/after pairs; the first form intentionally throws.
-// ❌ throws: [LLui] sample() can only be called inside a component's view() function
-button({ onClick: () => send({ type: 'select', id: h.sample((s) => s.id) }) })
-
-// ✅ capture at render time; the captured value is the value at the moment
-//    this view ran. Subsequent state changes don't update `id` — but you're
-//    in an event handler, so "at click time" is what you want anyway.
-const id = h.sample((s) => s.id)
-button({ onClick: () => send({ type: 'select', id }) })
-
-// ✅ for the rare case where the handler genuinely needs *current* state
-//    that wasn't knowable at render time, use the mount handle:
-const handle = mountApp(container, App)
-button({
-  onClick: () => {
-    const current = handle.getState()
-    send({ type: 'select', id: current.id })
-  },
-})
-```
-
-### Iterating a normalized record + reading nested per-item fields
-
-A `Record<id, Entity>` store iterated via `each` is idiomatic TEA. The trap: writing `item.current().field.nested` repeatedly inside the render falls back to a wide bitmask (the compiler can't trace through the `.current()` call to know which state path you read) and fires on every update. Plus, the chained access throws on any commit where the row hasn't been reconciled yet but a parent binding re-fired.
-
-```typescript
-// @doc-skip — before/after pairs with illustrative types.
-interface Entity {
-  id: string
-  facts: Record<string, Fact>
-}
-interface State {
-  entities: Record<string, Entity>
-}
-
-// ❌ FULL_MASK + repeated .current() calls, hard to read, throws if
-//    item.current() is transiently undefined during a reconcile race
-h.each<Entity>({
-  items: (s) => Object.values(s.entities),
-  key: (e) => e.id,
-  render: ({ item }) => [
-    li([
-      h.text(() => item.current().facts.name?.value ?? ''),
-      h.text(() => item.current().facts.population?.value ?? ''),
-    ]),
-  ],
-})
-
-// ✅ destructure `item.current()` once at the top of the accessor, so
-//    one read covers the whole render and the bitmask stays narrow
-h.each<Entity>({
-  items: (s) => Object.values(s.entities),
-  key: (e) => e.id,
-  render: ({ item }) => [
-    li([
-      h.text(() => {
-        const e = item.current()
-        return e.facts.name?.value ?? ''
-      }),
-      h.text(() => {
-        const e = item.current()
-        return e.facts.population?.value ?? ''
-      }),
-    ]),
-  ],
-})
-
-// ✅✅ for entities with a stable shape, project to a row type in
-//     `items` so per-cell accessors are simple field reads on the row.
-//     The compiler can pin a precise mask on each cell.
-h.each<{ id: string; name: string; population: number | null }>({
-  items: (s) =>
-    Object.values(s.entities).map((e) => ({
-      id: e.id,
-      name: e.facts.name?.value ?? '',
-      population: e.facts.population?.value ?? null,
-    })),
-  key: (r) => r.id,
-  render: ({ item }) => [
-    li([
-      h.text(item.name), // shorthand: reactive, narrow mask
-      h.text(() => String(item.current().population ?? '—')),
-    ]),
-  ],
-})
-```
-
-### Forcing a remount on identity change
-
-`branch` reconciles by case key. `branch({ on: s => s.route.name, cases: { entity: ..., list: ... } })` stays mounted across navigations between different entities (`entity:A` → `entity:B`) because the case key (`'entity'`) doesn't change. Bindings inside the case that captured the OLD entity id at render-time keep firing against the old id.
-
-Wrap with `scope` keyed on the identity that should force a remount:
-
-```typescript
-// @doc-skip — before/after pairs; the spread is shown bare for
-//   illustration but only valid inside a view's `[...]` children list.
-// ❌ stale bindings across entity:A → entity:B
-...h.branch({
-  on: (s) => s.route.name,
-  cases: { entity: () => [viewEntity(h)], list: () => [viewList(h)] },
-})
-
-// ✅ scope's key includes the entity id, so navigating between entities
-//    triggers a full remount of the entity view — every binding inside is
-//    fresh and captures the current entity id
-...h.scope({
-  on: (s) => s.route.name === 'entity' ? `entity:${s.route.entityId}` : 'list',
-  render: (sub) => [
-    ...sub.branch({
-      on: (s) => s.route.name,
-      cases: { entity: () => [viewEntity(sub)], list: () => [viewList(sub)] },
-    }),
-  ],
-})
-```
-
-### Global keyboard shortcuts (and other document-level listeners)
-
-`document.addEventListener` belongs in an effect. The effect's `signal: AbortSignal` is wired to the component's lifetime — adding a listener with the signal as `{ signal }` automatically removes it when the component unmounts.
-
-```typescript
-interface Effect {
-  kind: 'bind-keyboard'
-}
-
-function onEffect({
-  effect,
-  send,
-  signal,
-}: {
-  effect: Effect
-  send: (m: Msg) => void
-  signal: AbortSignal
-}): void {
-  if (effect.kind === 'bind-keyboard') {
-    if (typeof document === 'undefined') return
-    document.addEventListener(
-      'keydown',
-      (event) => {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-          event.preventDefault()
-          send({ type: 'open-palette' })
-        }
-      },
-      { signal },
-    )
-  }
-}
-```
-
-Fire the effect at init: `init: () => [{ ... }, [{ kind: 'bind-keyboard' }]]`.
-
-### When an accessor throws
-
-LLui's structural reconcile + binding pipeline can't repair a thrown accessor — a partial DOM mutation is left in place. In **dev mode**, the runtime queues a panic that re-throws on the NEXT commit so you see a hard error with the original throw's stack and the active accessor's label. In **production**, the runtime logs the throw via `console.error` and continues so one bad accessor doesn't brick the whole app.
-
-If you want full control — surface errors via Sentry, render an error boundary, etc. — install a hook via the mount handle:
-
-```typescript
-const handle = mountApp(container, App)
-handle.setOnBindingError((info) => {
-  // info: { kind, key?, message, stack? }
-  Sentry.captureException(new Error(info.message), { extra: { stack: info.stack } })
-})
-```
-
-Installing the hook disables the dev panic — the hook takes responsibility for the error.
+| Export                            | Purpose                                |
+| --------------------------------- | -------------------------------------- |
+| `renderToString(def, state, env)` | Render a component to an HTML string   |
+| `renderNodes(def, state, env)`    | Render to detached nodes (adapter use) |
+| `serializeNodes(nodes)`           | Serialize nodes to an HTML string      |
 
 ## Sub-path Exports
 
 ```typescript
-import { installDevTools } from '@llui/dom/devtools' // dev-only, tree-shaken
-import { renderToString } from '@llui/dom/ssr' // server entry
-import { jsdomEnv } from '@llui/dom/ssr/jsdom' // jsdom-backed DomEnv
-import { linkedomEnv } from '@llui/dom/ssr/linkedom' // linkedom-backed (Workers)
-import { replaceComponent } from '@llui/dom/hmr' // HMR support
+import { installSignalDebug } from '@llui/dom/devtools' // dev/agent relay — kept out of prod bundles
+import { browserEnv, type DomEnv } from '@llui/dom/ssr' // SSR env contract + browser-globals env
+import { jsdomEnv } from '@llui/dom/ssr/jsdom' // server: jsdom-backed DomEnv
+import { linkedomEnv } from '@llui/dom/ssr/linkedom' // server: linkedom-backed DomEnv
+import { subApp } from '@llui/dom/escape-hatch' // isolated child TEA loop (rare)
+// '@llui/dom/internal' — render-context glue for sibling adapter packages (e.g. @llui/vike)
 ```
 
 ## Performance
 
-Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark). 5.8 KB gzipped.
+Competitive with the fastest fine-grained reactive frameworks on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) — see the [benchmarks page](https://llui.dev/benchmarks).

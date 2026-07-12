@@ -1,6 +1,41 @@
 import type { SignalComponentDef, SignalComponentHandle } from '@llui/dom'
 import { mountApp } from '@llui/dom'
 
+/**
+ * Init bag for {@link ViewHarness.fire}. An intersection of the standard event
+ * init shapes, so keyboard (`key`/`code`), mouse (`button`/`clientX`), pointer,
+ * input (`data`/`inputType`), and custom (`detail`) fields are all accepted and
+ * type-checked — and, crucially, actually delivered on the dispatched event.
+ */
+export type FireInit = KeyboardEventInit &
+  MouseEventInit &
+  PointerEventInit &
+  InputEventInit &
+  CustomEventInit
+
+/**
+ * Construct the DOM event best matching `type` so its type-specific fields (e.g.
+ * `KeyboardEvent.key`, `MouseEvent.button`) survive dispatch. A bare `Event`
+ * silently drops them. `bubbles` defaults to true (overridable via `init`).
+ */
+function buildFiredEvent(type: string, init?: FireInit): Event {
+  const opts: FireInit = { bubbles: true, ...init }
+  if (type.startsWith('key')) return new KeyboardEvent(type, opts)
+  if (type.startsWith('pointer') && typeof PointerEvent === 'function') {
+    return new PointerEvent(type, opts)
+  }
+  if (
+    type === 'click' ||
+    type === 'dblclick' ||
+    type.startsWith('mouse') ||
+    type.startsWith('pointer') // PointerEvent unavailable — fall back to MouseEvent
+  ) {
+    return new MouseEvent(type, opts)
+  }
+  if (type === 'input' || type === 'beforeinput') return new InputEvent(type, opts)
+  return new CustomEvent(type, opts)
+}
+
 export interface ViewHarness<S, M> {
   /** Mounted container — useful for advanced cases. */
   readonly container: HTMLElement
@@ -20,8 +55,13 @@ export interface ViewHarness<S, M> {
   click(selector: string): void
   /** Set an input's value and dispatch an 'input' event, then flush. */
   input(selector: string, value: string): void
-  /** Dispatch a custom event and flush. Default bubbles: true. */
-  fire(selector: string, type: string, init?: EventInit): void
+  /**
+   * Dispatch an event and flush. The event constructor is chosen by `type`
+   * (key*→KeyboardEvent, click/mouse*→MouseEvent, pointer*→PointerEvent,
+   * input→InputEvent, else CustomEvent) so type-specific `init` fields like
+   * `key` or `button` are delivered on the event. Default bubbles: true.
+   */
+  fire(selector: string, type: string, init?: FireInit): void
   /** Dispose + remove DOM. Idempotent. */
   unmount(): void
 }
@@ -73,7 +113,7 @@ export function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): V
     },
     fire(selector, type, init) {
       const el = required(selector)
-      el.dispatchEvent(new Event(type, { bubbles: true, ...init }))
+      el.dispatchEvent(buildFiredEvent(type, init))
       handle.flush()
     },
     unmount() {

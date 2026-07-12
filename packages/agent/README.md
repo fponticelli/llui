@@ -1,6 +1,6 @@
 # @llui/agent
 
-Server and browser-client libraries for the [LLui Agent Protocol (LAP)](../../docs/superpowers/specs/2026-04-19-llui-agent-design.md).
+Server and browser-client libraries for the LLui Agent Protocol (LAP). The authoritative wire-protocol definition lives in [`./src/protocol.ts`](./src/protocol.ts); see also the [Agents doc](https://llui.dev/agents).
 
 ## What this buys you
 
@@ -135,17 +135,17 @@ Wire your root state and Msg to include agent sub-slices:
 type State = {
   // ...your app state...
   agent: {
-    connect: agentConnect.State
-    confirm: agentConfirm.State
-    log: agentLog.State
+    connect: agentConnect.AgentConnectState
+    confirm: agentConfirm.AgentConfirmState
+    log: agentLog.AgentLogState
   }
 }
 
 type Msg =
   // ...your app msgs...
-  | { type: 'agent'; sub: 'connect'; msg: agentConnect.Msg }
-  | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.Msg }
-  | { type: 'agent'; sub: 'log'; msg: agentLog.Msg }
+  | { type: 'agent'; sub: 'connect'; msg: agentConnect.AgentConnectMsg }
+  | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.AgentConfirmMsg }
+  | { type: 'agent'; sub: 'log'; msg: agentLog.AgentLogMsg }
 ```
 
 Delegate in `update`:
@@ -174,32 +174,36 @@ update: (state, msg) => {
 
 Render `agentConnect`, `agentConfirm`, and `agentLog` anywhere in your view tree:
 
+`show` (and `branch`) are module imports from `@llui/dom`, not view-bag members. The
+view bag is `{ state, send }`, where `state` is a `Signal<State>` — narrow to the
+agent sub-slices with `state.at(...)` and pass those signal handles to `connect`:
+
 ```ts
-view: ({ send, branch, show }) => {
-  const connectParts = agentConnect.connect(
-    (s) => s.agent.connect,
-    (m) => send({ type: 'agent', sub: 'connect', msg: m }),
+import { div, button, pre, show } from '@llui/dom'
+
+view: ({ state, send }) => {
+  const connectParts = agentConnect.connect(state.at('agent').at('connect'), (m) =>
+    send({ type: 'agent', sub: 'connect', msg: m }),
   )
   // `mintUrl` is optional — the agent effect handler derives it from
   // `EffectHandlerHost.agentBasePath` (default `/agent`). Pass an
   // explicit `{ mintUrl }` only when minting from a non-default path.
 
-  const confirmParts = agentConfirm.connect(
-    (s) => s.agent.confirm,
-    (m) => send({ type: 'agent', sub: 'confirm', msg: m }),
+  const confirmParts = agentConfirm.connect(state.at('agent').at('confirm'), (m) =>
+    send({ type: 'agent', sub: 'confirm', msg: m }),
   )
 
   return [
     // Renders the "Connect with Claude" button + token copy box + session list:
     div(connectParts.root, [
       button(connectParts.mintTrigger, ['Connect with Claude']),
-      ...show({
-        when: (s) => s.agent.connect.pendingToken !== null,
-        render: () => [
+      show(
+        state.map((s) => s.agent.connect.pendingToken !== null),
+        () => [
           pre(connectParts.pendingTokenBox),
           button(connectParts.copyConnectSnippetButton, ['Copy']),
         ],
-      }),
+      ),
     ]),
     // Renders pending confirmation cards:
     div(confirmParts.root),

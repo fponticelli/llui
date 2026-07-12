@@ -295,7 +295,10 @@ For genuine isolation — embedding an independent app whose lifetime is distinc
 host's, a library bundle shipping its own complete TEA loop, or an independent effect
 lifecycle — use a full `subApp()` boundary (imported from `@llui/dom/escape-hatch`; its
 own scope tree and update loop; `lazy()` loads one asynchronously over the same
-machinery). Splice its returned nodes with a spread: `...subApp({ name, init, update, view })`.
+machinery). It takes the component under `def` and a required `reason` string documenting
+why the isolation is warranted; drive it via the `onHandle` handle (the sub-app shares no
+state with the host). It returns a `Mountable`, so place it directly in the view array:
+`subApp({ reason: 'third-party 60fps layer', def: MyWidget })`.
 
 Use it sparingly. A sub-app boundary is a region the unified reactivity model can't see
 across. The chunked-mask reactivity scales precisely with the number of paths read, not

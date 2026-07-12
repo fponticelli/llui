@@ -171,6 +171,15 @@ export interface RetryEffect {
   inner: HttpEffect
   maxAttempts: number
   delayMs: number
+  /**
+   * Decide whether a given failure should be retried. `attempt` is 1-based (the
+   * attempt that just failed). Defaults to retrying only transient failures —
+   * `network`, `timeout`, `ratelimit`, and 5xx `server` errors — so a `401`,
+   * `403`, `404`, or `validation` error fails fast instead of hammering the
+   * server. On a `ratelimit` error carrying `retryAfter`, the wait honors it
+   * (`max(retryAfter*1000, backoff)`).
+   */
+  retryOn?: (error: ApiError, attempt: number) => boolean
 }
 
 export interface ClipboardReadEffect<M = unknown> {

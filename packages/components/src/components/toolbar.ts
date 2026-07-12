@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { focusRovingItem } from '../utils/roving.js'
 
 /**
  * Toolbar — a roving-tabindex container for a set of controls (buttons,
@@ -230,27 +231,36 @@ export function connect(
         tabindex: tabStop(value),
         onFocus: tagSend(send, ['setFocused'], () => send({ type: 'setFocused', value })),
         onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'focusFirst', 'focusLast'], (e) => {
-          const isVertical =
-            (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
-            null
+          const origin = e.currentTarget as HTMLElement | null
+          const isVertical = origin?.closest('[data-orientation="vertical"]') !== null
           const nextKey = isVertical ? 'ArrowDown' : 'ArrowRight'
           const prevKey = isVertical ? 'ArrowUp' : 'ArrowLeft'
+          // Roving tabindex lives in state; AT follows real DOM focus, so after
+          // each move we focus the newly-focused item.
+          const moveFocus = (): void => {
+            const focused = state.peek()?.focused
+            if (focused != null) focusRovingItem(origin, 'toolbar', focused)
+          }
           switch (e.key) {
             case nextKey:
               e.preventDefault()
               send({ type: 'focusNext', from: value })
+              moveFocus()
               return
             case prevKey:
               e.preventDefault()
               send({ type: 'focusPrev', from: value })
+              moveFocus()
               return
             case 'Home':
               e.preventDefault()
               send({ type: 'focusFirst' })
+              moveFocus()
               return
             case 'End':
               e.preventDefault()
               send({ type: 'focusLast' })
+              moveFocus()
               return
           }
         }),

@@ -318,6 +318,10 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
+  /** 0-based row index — addresses the cell for roving DOM focus. */
+  'data-row-index': number
+  /** 0-based column index — addresses the cell for roving DOM focus. */
+  'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
@@ -363,6 +367,21 @@ export function connect(
   const rootId = `${opts.id}:root`
   const headerId = (columnId: string): string => `${opts.id}:colheader:${columnId}`
 
+  // The focused grid cell is tracked in state (roving tabindex), but AT and
+  // keyboard focus follow the real DOM — so after every cell move we must
+  // focus the newly-active cell, addressed by its data-row-index/data-col-index.
+  const focusFocusedCell = (origin: Element | null): void => {
+    if (origin === null) return
+    const fc = state.peek().focusedCell
+    if (fc === null) return
+    const root: ParentNode =
+      origin.closest('[data-scope="table"][data-part="root"]') ?? origin.ownerDocument ?? origin
+    const el = root.querySelector(
+      `[data-scope="table"][data-part="cell"][data-row-index="${fc.rowIndex}"][data-col-index="${fc.colIndex}"]`,
+    )
+    if (el instanceof HTMLElement) el.focus()
+  }
+
   const cellOnKeyDown = (rowIndex: number): ((e: KeyboardEvent) => void) =>
     tagSend(
       send,
@@ -380,38 +399,47 @@ export function connect(
       (e) => {
         const s = state.peek()
         const id = s.rows[rowIndex]
+        const origin = e.currentTarget as Element | null
         switch (e.key) {
           case 'ArrowRight':
             e.preventDefault()
             send({ type: 'moveCell', dRow: 0, dCol: 1 })
+            focusFocusedCell(origin)
             return
           case 'ArrowLeft':
             e.preventDefault()
             send({ type: 'moveCell', dRow: 0, dCol: -1 })
+            focusFocusedCell(origin)
             return
           case 'ArrowDown':
             e.preventDefault()
             send({ type: 'moveCell', dRow: 1, dCol: 0 })
+            focusFocusedCell(origin)
             return
           case 'ArrowUp':
             e.preventDefault()
             send({ type: 'moveCell', dRow: -1, dCol: 0 })
+            focusFocusedCell(origin)
             return
           case 'Home':
             e.preventDefault()
             send(e.ctrlKey || e.metaKey ? { type: 'gridStart' } : { type: 'rowStart' })
+            focusFocusedCell(origin)
             return
           case 'End':
             e.preventDefault()
             send(e.ctrlKey || e.metaKey ? { type: 'gridEnd' } : { type: 'rowEnd' })
+            focusFocusedCell(origin)
             return
           case 'PageDown':
             e.preventDefault()
             send({ type: 'pageDown' })
+            focusFocusedCell(origin)
             return
           case 'PageUp':
             e.preventDefault()
             send({ type: 'pageUp' })
+            focusFocusedCell(origin)
             return
           case ' ':
             e.preventDefault()
@@ -491,6 +519,8 @@ export function connect(
       }),
       'data-scope': 'table',
       'data-part': 'cell',
+      'data-row-index': rowIndex,
+      'data-col-index': colIndex,
       'data-focused': state.map((s) =>
         s.focusedCell !== null &&
         s.focusedCell.rowIndex === rowIndex &&
