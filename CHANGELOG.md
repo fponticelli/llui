@@ -11,6 +11,121 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-13 — @llui/dom@0.11.8 (whole-repo audit remediation + review follow-ups)
+
+**Released:** `@llui/dom@0.11.8`, `@llui/vite-plugin@0.11.7`, `@llui/test@0.11.9`, `@llui/router@0.10.8`, `@llui/transitions@0.10.8`, `@llui/components@0.12.4`, `@llui/vike@0.11.8`; `@llui/compiler@0.11.5`, `@llui/compiler-ssr@0.11.4`, `@llui/effects@0.1.4`, `@llui/mcp@0.13.4`, `@llui/agent@0.11.3`, `llui-agent@0.10.5`; `@llui/markdown@0.11.3`, `@llui/lexical@0.2.10`, `@llui/lexical-collab@0.2.8`, `@llui/markdown-editor@0.2.14`, `@llui/a2ui@0.1.3`, `@llui/devmode-annotate@0.2.12`, `@llui/notes-format@0.1.1`; **new:** `@llui/security@0.1.0`
+
+A second whole-repository audit and remediation: verified correctness bugs across the runtime, compiler, components, agent, and rich-text stacks; security hardening of the dev-server and untrusted-input surfaces; documentation brought back in line with the signal runtime; and running-cost reductions. Plus the code-review follow-ups: a new shared `@llui/security` leaf package that de-duplicates the URL/loopback sanitization, removal of unsafe casts, and a `derivedHandle` memoization that runs a shared `.map` projection once per update instead of once per consumer.
+
+### Breaking
+
+- **`@llui/lexical@0.2.10`** — `decoratorBridge` now takes a reactive view builder `(data: Signal<Data>, api) => Renderable` (was a plain mount callback), and its `mount` returns `{ dispose, update }`. A node's data commit now **updates the mounted sub-view in place** instead of tearing it down and remounting — focus and transient state survive an edit. Consumers building custom decorator bridges must adopt the new signature.
+- **`@llui/vite-plugin@0.11.7`** — the notes **attention router is now opt-in** (was on by default whenever the `claude` CLI was on PATH). Pass `router: 'claude'` (or a config object) to enable auto-solving. `--dangerously-skip-permissions` is no longer in the default preset — it now requires an explicit `dangerouslySkipPermissions: true`. `0.0.0.0` is no longer treated as a loopback authority.
+- **`@llui/dom@0.11.8`** — the root barrel no longer value-exports `installSignalDebug` / `startRelay`; import them from `@llui/dom/devtools` (types are still re-exported from the root). Disposing a **container-target** mount now removes the nodes it inserted (previously it left them attached with dead listeners), matching anchor-target dispose.
+- **`@llui/transitions@0.10.8`** — animations now respect `prefers-reduced-motion: reduce` by default (enter/leave resolve to their final state instantly). Pass `respectReducedMotion: false` on a specific transition to opt out for an essential animation.
+- **`@llui/effects@0.1.4`** — `retry()` no longer retries every `ApiError`: by default it retries only network / timeout / 5xx / rate-limit errors and honors a `Retry-After` header. Pass `retryOn: (error, attempt) => boolean` to customize. The builtin effect union is now generic (`BuiltinEffect<M>`) — source-compatible via a default of `unknown`.
+- **`@llui/components@0.12.4`** — `number-input` no longer commits (clamp/snap) on every keystroke, so decimals and non-step-aligned intermediate values are now typeable; it commits on blur/Enter as before.
+
+### Migration
+
+- **Lexical decorator bridges:** update custom `decoratorBridge` builders to the `(data: Signal<Data>, api) => Renderable` signature and read from the `data` signal reactively; the sub-view is no longer rebuilt per data change.
+- **Notes attention router:** if you relied on the dev HUD auto-spawning a coding agent, set `router: 'claude'` in the vite-plugin options; add `dangerouslySkipPermissions: true` only if you knowingly want the unattended, permission-skipping mode.
+- **dom devtools:** change `import { installSignalDebug } from '@llui/dom'` to `import { installSignalDebug } from '@llui/dom/devtools'`.
+- **Reduced motion:** no action needed unless an animation is essential (e.g. conveys state) — in that case pass `respectReducedMotion: false`.
+- **retry:** if you depended on `retry()` re-issuing 4xx/validation errors, pass an explicit `retryOn` predicate to restore that.
+
+### New package
+
+- **`@llui/security@0.1.0`** — a tiny, dependency-free, browser-safe leaf package that owns the framework's security-sensitive primitives in exactly one place: `sanitizeUrl` / `defaultAllowedProtocols` (the URL scheme allow-list shared by `@llui/markdown`, `@llui/markdown-editor`, and `@llui/a2ui`) and the loopback-authority/origin recognizers (`isLoopbackHost` / `isLoopbackAuthority` / `isLoopbackOrigin`, shared by `@llui/mcp` and `@llui/vite-plugin` for CSRF/CSWSH gating). This replaces byte-for-byte copies that had begun to diverge.
+
+### `@llui/dom@0.11.8`
+
+- **Fixed** a leaving `show` / `branch` arm mid-transition is now frozen — it no longer re-evaluates its bindings against subsequent state, so toggling an arm off because the data it read became `undefined` can no longer throw.
+- **Fixed** the devtools `setState` (time-travel/restore) commit now runs under the same reentrancy guard as normal commits, preventing scope-tree corruption when the commit triggers a reentrant `send`.
+- **Fixed** `virtualEach` nested inside an `each` row now roots a row-local items source against the row (like `each`), instead of resolving it against component state.
+- **Improved** `state.map` / `derived` handles memoize on resolved-input identity, so N bindings (or rows) sharing one projection run it once per update instead of once each — proven equivalent to the un-memoized path by a property-test oracle.
+
+### `@llui/compiler@0.11.5`
+
+- **Fixed** a compiled component view's `each(items, { key, render, transition })` no longer silently drops the `transition` (or a shorthand `key`) — such calls now route through the runtime helper that honors them, so compiled and view-helper forms behave identically.
+- **Fixed** `svg(...)` is no longer lowered to a non-namespaced element (it rendered nothing); it routes through the namespaced runtime helper. Realigned `ELEMENT_HELPERS` with the runtime (adds `blockquote`, `hr`, `br`, `optgroup`, `dl`/`dt`/`dd`, `caption`, `time`), which also closes the lint false-negatives for those tags.
+- **Fixed** the `controlled-input` lint rule now also flags a reactive `checked` with no `onChange`/`onInput`; `summary`/`label` are no longer a11y false-positives.
+- **Improved** `__msgAnnotations` metadata is emitted sparsely (default-valued fields omitted), shrinking agent-enabled production bundles.
+
+### `@llui/vite-plugin@0.11.7`
+
+- **Breaking** attention router is opt-in and no longer passes `--dangerously-skip-permissions` by default; `0.0.0.0` removed from loopback hosts. See top of release block.
+- **Fixed** the notes `POST /notes/:id/status` endpoint validates the target status and the transition graph (rejecting illegal edges with 409), so a forged request can no longer drive the destructive `accepted`/`rejected` file operations from an arbitrary state.
+- **Fixed** request bodies are size-capped (default 32 MB → 413) and bundle imports cap per-entry and total decompressed size, closing an OOM / zip-bomb vector on the dev server.
+- **Fixed** the build-integrity "did a signal component compile" flag is now derived from the transform result rather than a loose regex.
+
+### `@llui/components@0.12.4`
+
+- **Breaking** `number-input` no longer commits live while typing. See top of release block.
+- **Fixed** `table`, `toolbar`, `tags-input`, and `rating-group` now move real DOM focus after keyboard navigation (they previously only updated roving `tabindex` state), so keyboard and screen-reader users are no longer stranded.
+- **Fixed** menu submenus are keyboard-navigable — the root content handler dispatches to the deepest open level and ArrowRight/ArrowLeft open/close submenus; `aria-activedescendant` reflects the active level.
+- **Fixed** `meter` / `progress` default `aria-valuetext` now honors `min` (`(value − min)/(max − min)`), matching the rendered bar.
+- **Added** `tailwindcss` is declared as an optional peer dependency, documenting that `styles/theme.css` requires a Tailwind 4 build.
+
+### `@llui/router@0.10.8`
+
+- **Fixed** `stripBase` no longer corrupts URLs of the form `base + '?query'` / `base + '#hash'` (the delimiter is preserved); `createRouter([])` with no fallback now throws a clear error instead of a `TypeError`.
+
+### `@llui/transitions@0.10.8`
+
+- **Breaking** honors `prefers-reduced-motion` by default. See top of release block.
+- **Fixed** an interrupted `spring()` no longer runs two competing loops that fight over the element; the superseded loop is cancelled without its final snap.
+- **Fixed** `transition()` cleanup restores an element's pre-existing inline styles instead of blanking them, so a bound inline `opacity`/`transform` survives a preset.
+
+### `@llui/test@0.11.9`
+
+- **Fixed** `fire()` now constructs the event type matching the name (`KeyboardEvent`/`MouseEvent`/`PointerEvent`/`InputEvent`), so `fire(sel, 'keydown', { key: 'Enter' })` actually delivers `event.key`.
+- **Fixed** `emulateBlurOnRemoval` also patches `Range.deleteContents`/`extractContents` and `replaceChildren`, so clearing a list containing the focused input fires the emulated blur (matching the runtime's bulk-removal paths).
+
+### `@llui/vike@0.11.8`
+
+- **Fixed** a failed layout-chain suffix mount now rolls back the layers it already mounted (innermost-first) instead of leaving a half-committed chain; a second hydration render throws instead of silently duplicating the chain.
+
+### `@llui/markdown@0.11.3`
+
+- **Fixed** streaming re-keys only the changed tail — per-block content hashes are memoized on node identity, turning per-chunk work from O(document) to O(tail).
+- **Fixed** incremental prefix reuse is disabled (full re-parse) when custom `extensions`/`mdastExtensions` are present, unless explicitly declared seal-safe, closing a stale-prefix hazard for consumer syntax extensions.
+
+### `@llui/markdown-editor@0.2.14`
+
+- **Fixed** link/image/paste ingress now enforce a URL scheme allow-list (via `@llui/security`), so pasted or typed `javascript:` URLs no longer become live links.
+- **Fixed** the live editor reference is per-mount, so mounting the same editor definition twice no longer cross-wires their effects, and a disposed editor is no longer retained by the definition closure.
+- **Fixed** the table transformer splits cells on unescaped `|` only, so a cell containing an escaped pipe round-trips.
+
+### `@llui/a2ui@0.1.3`
+
+- **Fixed** catalog component/function lookups use null-prototype records and own-property + callable guards, so a server-supplied `__proto__`/`toString`/`constructor` can no longer crash the render or invoke a prototype member as a builder.
+- **Fixed** `renderById` guards against cyclic component graphs; JSON-Pointer array writes are bounded (append + absolute cap) so one envelope can't balloon a sparse array into an OOM; reserved pointer tokens are rejected.
+- **Fixed** `openUrl` actions, media `src` bindings, the `regex` check, and theme values are all validated/bounded (scheme allow-list + `noopener`, pattern/input caps, CSS value sanitization); the slider pointer handler is torn down on `pointercancel`.
+
+### `@llui/effects@0.1.4`
+
+- **Breaking** `retry()` is selective and honors `Retry-After`; builtin effect union is generic. See top of release block.
+- **Fixed** `sequence` no longer deadlocks on a custom/plugin step that completes without dispatching; SSR `resolveEffects` unwraps composite effects (`sequence`/`race`/`retry`/`cancel`/`debounce`) to pre-resolve their inner `http`.
+
+### `@llui/mcp@0.13.4`
+
+- **Fixed** message-size caps on the transports; the loopback/token helpers are de-duplicated (loopback recognition now comes from `@llui/security`).
+
+### `@llui/agent@0.11.3` / `llui-agent@0.10.5`
+
+- **Fixed** confirm resolution is level-triggered (buffered by `confirmId`), so an approval arriving in the poll gap is no longer lost while the action reports as forever-pending.
+- **Fixed** `would_dispatch` applies the same `human-only` gate as `send_message`; the default audit sink is runtime-neutral (no longer throws on Cloudflare/Deno); the Cloudflare target gained an internal `/__resolve` endpoint and a shared-`TokenStore` seam so a sharded deployment can resolve tokens.
+
+### Docs
+
+- Rewrote the `@llui/dom`, `@llui/transitions`, `@llui/components`, `@llui/agent`, `@llui/vike`, and `@llui/effects` READMEs (which ship to npm and feed the API pages) to the signal runtime; fixed the `onEffect` wiring examples to use `asOnEffect`; regenerated the MCP tool and lint catalogs to match reality; corrected the published batch speed-up figure to ~2.4× (per the committed ticker baseline); and restored the React column in the generated benchmarks page.
+
+### All packages — build output
+
+- **Fixed** removed `inlineSources` from every package's build, so `.js.map` files no longer duplicate the source that already ships in `src/` — smaller tarballs on every install.
+- **Improved** in-repo `@llui/*` peer ranges are now `workspace:^`, so they are rewritten to the concrete version at pack time and no longer need a hand-bump each release.
+
 ## 2026-07-12 — @llui/dom@0.11.7 (repo-wide audit remediation)
 
 **Released:** `@llui/dom@0.11.7`, `@llui/vite-plugin@0.11.6`, `@llui/test@0.11.8`, `@llui/router@0.10.7`, `@llui/transitions@0.10.7`, `@llui/components@0.12.3`, `@llui/vike@0.11.7`; `@llui/compiler@0.11.4`, `@llui/compiler-ssr@0.11.3`, `@llui/effects@0.1.3`, `@llui/mcp@0.13.3`, `@llui/agent@0.11.2`, `llui-agent@0.10.4`; `@llui/markdown@0.11.2`, `@llui/lexical@0.2.9`, `@llui/lexical-collab@0.2.7`, `@llui/markdown-editor@0.2.13`, `@llui/a2ui@0.1.2`, `@llui/devmode-annotate@0.2.11`; **new:** `@llui/notes-format@0.1.0`

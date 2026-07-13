@@ -1,6 +1,6 @@
 {
   "name": "llui-agent",
-  "version": "0.10.4",
+  "version": "0.10.5",
   "type": "module",
   "bin": {
     "llui-agent": "./dist/cli.js"
