@@ -83,11 +83,15 @@ export interface BuildCtx {
   mounts: Array<(root: Element) => void | (() => void)>
   /** context values in scope during this build (provide/useContext). Inherited
    * into nested builds (each rows, show/branch arms) by SHARING the parent's map
-   * (no clone); `provide` copy-on-writes a private map before mutating, so a build
-   * that never calls `provide` (the vast majority — every plain `each` row) pays no
-   * clone. `ownContexts` tracks whether `contexts` is this build's private copy. */
+   * (no clone); `provide` builds a NEW map for the duration of its `render()` and
+   * restores the previous map REFERENCE afterwards (immutable-by-swap) — it never
+   * mutates a published map. A build that never calls `provide` (every plain `each`
+   * row) shares the parent's map by reference and pays no clone. Structural
+   * primitives SNAPSHOT this reference at their placement/build time and thread it
+   * into their later row/arm builds (via `runBuild`'s `seedContexts`), so a value
+   * provided ABOVE a lazily-built arm/row stays visible even though `provide`'s
+   * synchronous `render()` has long returned and restored the parent map. */
   contexts: ReadonlyMap<symbol, unknown>
-  ownContexts: boolean
   /** True when this build is INSIDE an `each` row's combined `{ item, state, index }`
    * ctx (set by `signalEach` for row builds, inherited by nested arm/row builds via
    * `runBuild`). Structural primitives use it to resolve component-state reads
@@ -283,12 +287,14 @@ export function runBuild(
   const host: { scope: SignalScope | null } = { scope: null }
   const teardowns: Array<() => void> = []
   const mounts: Array<(root: Element) => void | (() => void)> = []
-  // inherit in-scope context values so provide() above an each/show is visible
-  // inside its rows/arms (which build in this nested context). SHARE the parent's
-  // (or seeded) map by reference — `provide` copy-on-writes before mutating, so a
-  // build with no provide never clones. Seeded adapter contexts apply only when
-  // there's no parent build to inherit from.
-  const contexts: ReadonlyMap<symbol, unknown> = parent?.contexts ?? seedContexts ?? EMPTY_CONTEXTS
+  // Context values for this build. An EXPLICIT `seedContexts` wins over the parent's
+  // live map: structural primitives snapshot `c.contexts` at their PLACEMENT (when a
+  // `provide` above them still has its value in the map) and pass it here, so the
+  // value survives even though `provide`'s synchronous `render()` already restored
+  // the parent map by the time the row/arm builds. With no explicit snapshot, SHARE
+  // the parent's map by reference (no clone). Adapter seeds (`@llui/vike`) also flow
+  // through `seedContexts` when there's no parent build to inherit from.
+  const contexts: ReadonlyMap<symbol, unknown> = seedContexts ?? parent?.contexts ?? EMPTY_CONTEXTS
   // SHARE the descriptor registry by reference (root one if present) so row/arm
   // registrations and decrements land in the component's single registry.
   const descriptors = parent?.descriptors ?? new Map<string, number>()
@@ -307,7 +313,6 @@ export function runBuild(
     teardowns,
     mounts,
     contexts,
-    ownContexts: false,
     inRow,
     descriptors,
     headAnon,

@@ -57,6 +57,33 @@ export function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 }
 
+/** Serialize the form-control IDL state (`value`/`checked`/`selected`) of an
+ * element into the attribute string it would have had if authored statically, so a
+ * server render reflects state set via `applyAttr`'s IDL-property path. Only emits
+ * a form of state the attribute doesn't already carry (a statically-authored
+ * `value="…"` stays as-is). Returns the extra attribute text (possibly empty). */
+function serializeFormState(el: Element, tag: string): string {
+  let out = ''
+  if (tag === 'input' || tag === 'textarea') {
+    // `.value` reflects the live IDL value (element.ts sets it for text-like inputs
+    // and textareas). Emit it as a `value` attribute for inputs when not already
+    // present; textareas carry it as child text (handled by the caller).
+    if (tag === 'input') {
+      const input = el as unknown as { value?: string; checked?: boolean; type?: string }
+      const type = (el.getAttribute('type') ?? input.type ?? 'text').toLowerCase()
+      if (type === 'checkbox' || type === 'radio') {
+        if (input.checked && !el.hasAttribute('checked')) out += ' checked'
+      } else if (input.value !== undefined && input.value !== '' && !el.hasAttribute('value')) {
+        out += ` value="${escapeAttr(input.value)}"`
+      }
+    }
+  } else if (tag === 'option') {
+    const opt = el as unknown as { selected?: boolean }
+    if (opt.selected && !el.hasAttribute('selected')) out += ' selected'
+  }
+  return out
+}
+
 function nodeToString(node: Node): string {
   if (node.nodeType === 3) return escapeHtml(node.textContent ?? '') // text
   if (node.nodeType === 8) return `<!--${node.textContent ?? ''}-->` // comment
@@ -79,7 +106,21 @@ function nodeToString(node: Node): string {
     if (/^on[a-z]/.test(attr.name) && attr.name in el) continue
     attrs += ` ${attr.name}="${escapeAttr(attr.value)}"`
   }
+  // Form-control state lives on IDL PROPERTIES, not content attributes:
+  // `applyAttr` routes `value`/`checked`/`selected` to `node.value` / `.checked` /
+  // `.selected` (element.ts), which do NOT reflect to attributes — and the loop
+  // above reads only attributes. Without this, a server-rendered form paints empty
+  // (blank inputs, unchecked boxes, no selected option) until the client hydrate
+  // swaps it in. Serialize the IDL state into the equivalent attribute/text so the
+  // first paint (and the no-JS / SEO output) is correct.
+  attrs += serializeFormState(el, tag)
   if (VOID_ELEMENTS.has(tag)) return `<${tag}${attrs} />`
+  if (tag === 'textarea') {
+    // A textarea's value is its child TEXT, but `applyAttr('value')` set the IDL
+    // `.value` (no child node). Emit the current value as escaped text content.
+    const value = (el as unknown as { value?: string }).value ?? el.textContent ?? ''
+    return `<textarea${attrs}>${escapeHtml(value)}</textarea>`
+  }
   if (RAW_TEXT_ELEMENTS.has(tag)) {
     // Content is verbatim (see RAW_TEXT_ELEMENTS): concatenate raw text, guarded.
     return `<${tag}${attrs}>${guardRawText(el.textContent ?? '', tag)}</${tag}>`

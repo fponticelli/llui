@@ -163,6 +163,11 @@ function buildSignalEach<T>(
 ): Node {
   const c = requireCtx()
   const doc = c.doc
+  // Snapshot the context map at PLACEMENT: rows build lazily on every reconcile, and
+  // a `provide` lexically above this `each` has already restored the parent map by
+  // then. Passing the snapshot as `runBuild`'s seed keeps the provided value visible
+  // in every row (see build-context.ts `runBuild` / `provide`).
+  const capturedContexts = c.contexts
   // Transitions are a live-DOM concern — disabled entirely under SSR.
   const tx = c.ssr ? undefined : transition
   const leaveHook = tx?.leave
@@ -264,6 +269,14 @@ function buildSignalEach<T>(
   // shape once (from the first row) and reuse it for all rows, skipping per-row
   // buildPathTable + bindingMask.
   let directShape: ScopeShape | null = null
+  // Dep signature of the row `directShape` was built from. The direct/compiled path
+  // assumes every row's factory emits an identical binding structure (true for
+  // compiler output). But `eachDirect` is also a public hand-written API, where a
+  // data-conditional factory can emit a DIFFERENT structure per row — reusing the
+  // first row's masks would then gate a binding against paths it doesn't read
+  // (silent stale DOM). Track the signature so a divergent row is caught (dev) or
+  // given its own fresh shape (prod), instead of silently mis-masked.
+  let directDeps: ReadonlyArray<readonly string[]> | null = null
   // Authoring rows (the render-callback path) ALSO usually share a template, so
   // their specs carry identical deps too — but a render MAY be data-conditional
   // (e.g. a block body that branches on `item.peek()`), producing different specs
@@ -363,6 +376,12 @@ function buildSignalEach<T>(
       if (sameOrder && order[index] !== k) sameOrder = false
       seen.add(k)
       let row = rows.get(k)
+      // A resurrected row (see below) must be re-evaluated unconditionally, even when
+      // its item ref and index are unchanged: while it was out of `rows` (animating
+      // out) it was skipped by every intervening reconcile, yet the RowStateGate
+      // snapshot advanced without it — so a `state` change during the leave left its
+      // bindings stale. The identity gate below would wrongly skip it.
+      let resurrected = false
       // Re-add during leave: a key whose row is still animating out resurrects —
       // cancel the pending detach, reuse the live scope + still-connected nodes,
       // and let the existing-row update branch below apply the current item/index.
@@ -375,6 +394,7 @@ function buildSignalEach<T>(
           leaving.delete(k)
           row = reviving.row
           rows.set(k, row)
+          resurrected = true
           // Reverse the interrupted leave animation (the transition run-scope
           // supersedes the in-flight leave); no-op when there's no enter hook.
           if (tx?.enter) tx.enter(Array.from(row.nodes))
@@ -404,7 +424,7 @@ function buildSignalEach<T>(
           created.nodes = dr.nodes
           builtSpecs = dr.bindings
         } else {
-          const b = runBuild(doc, () => renderRow!(() => created.ctx), c, undefined, true)
+          const b = runBuild(doc, () => renderRow!(() => created.ctx), c, capturedContexts, true)
           created.nodes = b.nodes
           builtSpecs = b.specs
           created.teardowns = b.teardowns
@@ -476,11 +496,33 @@ function buildSignalEach<T>(
           ? rebaseRowSpecs(builtSpecs)
           : builtSpecs
         if (rowFactory) {
-          // Direct path: reuse the shared per-each-site shape (built once).
-          // Direct rows own no nested scope, so there is no host to wire.
-          const r = scopeFromSpecs(rowSpecs, directShape ?? undefined)
-          directShape ??= r.shape
-          created.scope = r.scope
+          // Direct path: reuse the shared per-each-site shape when this row's deps
+          // match the one it was built from. A divergent row (only possible for a
+          // hand-written `eachDirect` factory — compiler output is homogeneous) must
+          // NOT reuse the cached masks, which describe a different binding set.
+          if (directShape && !depsSignatureMatches(rowSpecs, directDeps!)) {
+            if (import.meta.env?.DEV === true) {
+              const msg =
+                `eachDirect: row ${index} emitted a different binding structure than ` +
+                `the first row — a direct/compiled each requires every row to have the ` +
+                `same bindings (same deps, same order). A data-conditional factory must ` +
+                `use the authoring \`each\` render path instead. (row deps: ` +
+                `${JSON.stringify(rowSpecs.map((s) => s.deps))})`
+              console.error(msg)
+              throw new Error(msg)
+            }
+            // Prod: build this row its own correct shape rather than mis-masking it.
+            const r = scopeFromSpecs(rowSpecs)
+            created.scope = r.scope
+          } else {
+            // Direct rows own no nested scope, so there is no host to wire.
+            const r = scopeFromSpecs(rowSpecs, directShape ?? undefined)
+            if (!directShape) {
+              directShape = r.shape
+              directDeps = rowSpecs.map((s) => s.deps)
+            }
+            created.scope = r.scope
+          }
         } else if (authorShape && depsSignatureMatches(rowSpecs, authorDeps!)) {
           // Authoring row whose spec structure matches the cached template: reuse
           // the shared shape, skipping per-row buildPathTable + bindingMask.
@@ -508,7 +550,7 @@ function buildSignalEach<T>(
         // last structural primitive to honor.
         row = created
         rows.set(k, row)
-      } else if (sweepAll || item !== row.ctx.item || index !== row.ctx.index) {
+      } else if (resurrected || sweepAll || item !== row.ctx.item || index !== row.ctx.index) {
         // existing row that may have changed: re-run only the bindings whose part
         // of the ctx changed. Reuse the spare ctx buffer (no allocation); swap it
         // in as the new current. old (row.ctx) and new (next) stay distinct refs,

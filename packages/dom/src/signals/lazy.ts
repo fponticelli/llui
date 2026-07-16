@@ -72,6 +72,7 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   const errorArm = new ArmController<'error'>({
     doc,
     buildCtx: c,
+    contexts: c.contexts,
     ownerHost: c.host,
     inRow: false,
     parent: () => anchor.parentNode,

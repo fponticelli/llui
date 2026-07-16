@@ -93,6 +93,7 @@ function buildSignalShow(
   const arm = new ArmController<boolean>({
     doc,
     buildCtx: c,
+    contexts: c.contexts,
     ownerHost: c.host,
     inRow,
     parent: () => end.parentNode,
@@ -172,6 +173,7 @@ function buildSignalBranch(
   const arm = new ArmController<string>({
     doc,
     buildCtx: c,
+    contexts: c.contexts,
     ownerHost: c.host,
     inRow,
     parent: () => end.parentNode,

@@ -57,23 +57,23 @@ export function provide<T>(context: Context<T>, value: T, render: () => Renderab
 
 function buildProvide<T>(context: Context<T>, value: T, render: () => Renderable): Node {
   const c = requireCtx()
-  // Copy-on-write: the build shares its parent's contexts map by reference until
-  // the first provide, which clones a private copy so the mutation doesn't leak to
-  // the parent or sibling builds.
-  if (!c.ownContexts) {
-    c.contexts = new Map(c.contexts)
-    c.ownContexts = true
-  }
-  const m = c.contexts as Map<symbol, unknown>
-  const had = m.has(context.id)
-  const prev = m.get(context.id)
-  m.set(context.id, value)
+  // Immutable-by-swap: build a NEW map (parent's entries + this value) and install it
+  // as `c.contexts` for the duration of `render()`, then restore the PREVIOUS map
+  // reference. We never mutate a published map, so the map that was live during
+  // `render()` — the one a lazily-built `show`/`branch`/`each`/`lazy` arm snapshots at
+  // its placement — keeps this value forever, even though `render()` returns (and this
+  // restores the parent map) long before that arm actually builds. Mutate-and-restore
+  // on the shared map (the old approach) deleted the value before the arm built, so
+  // `useContext` inside any structural arm/row saw only the default.
+  const prevMap = c.contexts
+  const next = new Map(prevMap)
+  next.set(context.id, value)
+  c.contexts = next
   const frag = c.doc.createDocumentFragment()
   try {
     for (const n of render()) frag.appendChild(materialize(n))
   } finally {
-    if (had) m.set(context.id, prev)
-    else m.delete(context.id)
+    c.contexts = prevMap
   }
   return frag
 }

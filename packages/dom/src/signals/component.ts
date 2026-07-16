@@ -239,6 +239,11 @@ export function mountSignalComponent<S, M, E = never>(
   let uninstallDebug: (() => void) | null = null
 
   const runEffect = (effect: E): void => {
+    // Torn down (e.g. an effect earlier in this drain called handle.dispose()): the
+    // lifecycle signal is aborted and teardowns ran, so starting a NEW side effect
+    // now would run past the abort. Drop remaining effects, matching send()'s
+    // after-dispose contract.
+    if (disposed) return
     if (onEffectFn === undefined) {
       // An effect was returned from init()/update() but there is no handler to
       // process it — it is silently dropped. This is the classic footgun (e.g.
@@ -371,6 +376,13 @@ export function mountSignalComponent<S, M, E = never>(
       // times — don't allocate an empty array per drain.
       let pendingEffects: E[] | null = null
       while (queue.length > 0) {
+        // Disposed mid-drain (a commit-fired blur handler, or an effect above, tore
+        // the mount down): stop reducing — advancing state on a dead component and
+        // committing to a null mount is wrong. Abandon the rest of the queue.
+        if (disposed) {
+          queue.length = 0
+          return
+        }
         const m = queue.shift() as M
         const before = state
         const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, m))
@@ -480,7 +492,22 @@ export function mountSignalComponent<S, M, E = never>(
   // "compute on mount" view paints its result on first frame instead of waiting for
   // an unrelated later dispatch. In raf mode the deferred commit is already a
   // scheduled frame, so only force it in sync mode.
-  if (pendingCommit && scheduler === 'sync') commitPending()
+  //
+  // Guard this replay with `draining` exactly like `flushFrame` does: `commitPending`
+  // can re-enter `send` (a `blur` fired when the commit removes a focused node), and
+  // an unguarded commit here (draining === false) would let that reentrant send start
+  // a NESTED drain mid-reconcile — the scope-tree/`removeBetween` corruption the flag
+  // exists to prevent. Queue instead, then settle synchronously.
+  if (pendingCommit && scheduler === 'sync') {
+    const prevDraining = draining
+    draining = true
+    try {
+      commitPending()
+      if (queue.length > 0) drain()
+    } finally {
+      draining = prevDraining
+    }
+  }
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
     for (const e of initialEffects) runEffect(e)
@@ -550,6 +577,10 @@ export function mountSignalComponent<S, M, E = never>(
         rafId = null
       }
       subscribers.clear()
+      // Abandon any messages still queued (dispose can be called from inside a drain,
+      // e.g. an effect that unmounts): a running drain checks `disposed` and bails,
+      // but clear the queue so nothing is left half-processed.
+      queue.length = 0
       const m = mount
       // Null `mount` FIRST so any commit re-entered during teardown (a `blur` from
       // a removed focused node) can't write to the torn-down tree.

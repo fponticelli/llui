@@ -74,6 +74,9 @@ export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Mountable {
 function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
   const c = requireCtx()
   const doc = c.doc
+  // Snapshot contexts at placement so a `provide` above this virtualEach stays
+  // visible in lazily-windowed rows (see each.ts / build-context.ts).
+  const capturedContexts = c.contexts
   // Nested in an enclosing row, reconcile reads the component state from the
   // combined ctx (so rows window/mount against it, not the enclosing row ctx).
   const inRow = c.inRow
@@ -245,6 +248,19 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     for (let index = start; index < end; index++) {
       const item = items[index]!
       const k = String(spec.key(item))
+      // Dev-only duplicate-key guard (mirrors signalEach): two windowed items with
+      // the same key collapse onto one Row — the second never renders, its wrapper
+      // is positioned twice (last write wins), and the window develops a hole. Fail
+      // loudly in dev; prod keeps the tolerant last-write-wins path.
+      if (import.meta.env?.DEV === true && seen.has(k)) {
+        const msg =
+          `virtualEach: duplicate key ${JSON.stringify(k)} at index ${index} — every ` +
+          `row's key must be unique. Duplicate keys corrupt the windowed reconcile ` +
+          `(the rows share one live scope + wrapper). (virtualEach items deps: ` +
+          `${JSON.stringify(spec.deps)})`
+        console.error(msg)
+        throw new Error(msg)
+      }
       seen.add(k)
       const row = rows.get(k)
       if (!row) {
@@ -266,7 +282,13 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
         }
         // forceInRow + rebase the row's value specs to read ctx.state (same as
         // signalEach), so component-state reads in a virtual row resolve correctly.
-        const built = runBuild(doc, () => spec.renderRow(() => created.ctx), c, undefined, true)
+        const built = runBuild(
+          doc,
+          () => spec.renderRow(() => created.ctx),
+          c,
+          capturedContexts,
+          true,
+        )
         built.specs = rebaseRowSpecs(built.specs)
         captureRowStateReads(built.specs)
         const scope = buildAndPublishScope(built)

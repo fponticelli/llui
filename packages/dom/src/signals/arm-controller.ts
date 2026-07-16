@@ -29,6 +29,12 @@ export interface ArmPlacement {
   doc: SignalDoc
   /** The enclosing build's ctx — arms build as nested builds inheriting it. */
   buildCtx: BuildCtx
+  /** The context map SNAPSHOTTED at this primitive's placement/build time. Arms
+   * build lazily (on every switch), long after `provide`'s synchronous `render()`
+   * restored the parent map, so the live `buildCtx.contexts` no longer carries a
+   * value provided above this primitive. Threading the snapshot keeps `useContext`
+   * inside an arm resolving to the provided value. */
+  contexts: ReadonlyMap<symbol, unknown>
   /** The owner scope: mounted arms are added/removed as its children. */
   ownerHost: { scope: SignalScope | null }
   /** Inside an `each` row: rebase arm VALUE specs to read `ctx.state`. */
@@ -131,7 +137,7 @@ export class ArmController<K> {
     this.teardown(false)
 
     if (!armFn) return
-    const built = runBuild(this.place.doc, armFn, this.place.buildCtx)
+    const built = runBuild(this.place.doc, armFn, this.place.buildCtx, this.place.contexts)
     if (this.place.inRow) built.specs = rebaseRowSpecs(built.specs) // value reads → ctx.state
     const scope = buildAndPublishScope(built)
     // Insert FIRST, then mount (bindings commit + first structural reconcile),
