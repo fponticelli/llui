@@ -1,0 +1,23 @@
+{
+  "skill_name": "llui-app-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My counter component renders the initial count but never updates when I click + or -. The clicks do fire (I see console logs in update). What's wrong? Here's the view:\n\n```ts\nimport { component, div, button, text } from '@llui/dom'\n\nexport const Counter = component<{ count: number }, { type: 'inc' } | { type: 'dec' }>({\n  init: () => ({ count: 0 }),\n  update: (s, m) => (m.type === 'inc' ? { count: s.count + 1 } : { count: s.count - 1 }),\n  view: ({ state, send }) => {\n    const n = state.peek().count\n    return [\n      div({ class: 'counter' }, [\n        button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),\n        text(String(n)),\n        button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),\n      ]),\n    ]\n  },\n})\n```",
+      "expected_output": "Identifies the peek-in-slot bug: `state.peek().count` is read once at build time and frozen. Fix: read reactively with `text(state.at('count').map(String))`. Explains that view() runs once (build-once), so peek() gives a stale snapshot; peek() is only for handlers/effects.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "My todo app's list gets janky at ~2000 items. The weird part: it re-renders every row even when I just toggle the 'hide completed' filter, which shouldn't touch the visible rows' content. Here's the list:\n\n```ts\neach(state.map((s) => s.todos.filter((t) => !s.hideCompleted || !t.done)), {\n  key: (t) => t.id,\n  render: (item, index) => [\n    li({ class: state.map((s) => (s.selectedId === item.peek().id ? 'sel' : '')) }, [\n      text(item.at('title')),\n      span({ class: 'idx' }, [text(String(index.peek() + 1))]),\n    ]),\n  ],\n})\n```\n\nHow do I make it fast, and is the row numbering going to be correct after I reorder?",
+      "expected_output": "Flags the ungatable list: the row reads `state.map(...)` for selection (whole-state dep) so every state change sweeps all rows; fix by reading a precise path (e.g. compare selectedId via a derived/at-based binding, or pass selection as a narrowed signal). Also flags the stale index: `index.peek()` captures build-time position, wrong after reorder — read `index` reactively (`index.map(...)`). May suggest virtualEach for 2000 items. Bonus: `item.peek().id` in the class binding is also a non-reactive read.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I have a list component (state has `items: {id,label}[]`). Add a delete-confirmation flow using @llui/components: clicking a row's Delete button opens a confirmation dialog naming the item; confirming removes it, cancel dismisses. Wire it idiomatically — state slice, message routing, the overlay.",
+      "expected_output": "Adds a dialog slice to state, routes dialog messages through the parent Msg union with a case in update that calls dialog.update, uses dialog.connect(state.at('dialog'), ...) with the SLICED signal (not an accessor), places the dialog.overlay(...) Mountable in the view, tracks the pending delete id in state, and removes the item on confirm. Keeps state JSON-serializable and returns new state (no mutation). Uses text/each/show (not signal* names).",
+      "files": []
+    }
+  ]
+}
