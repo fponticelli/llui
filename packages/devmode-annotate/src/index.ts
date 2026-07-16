@@ -203,6 +203,14 @@ export interface MountAnnotateOptions {
   subscribeEvents?: boolean
   rehydrate?: boolean
   solveEnabled?: boolean
+  /** Out-of-band capability token injected by `@llui/vite-plugin` (only when the
+   *  attention router is enabled). The HUD echoes it as the `x-llui-task-capability`
+   *  header on note POSTs so the dev-server middleware can distinguish a real in-HUD
+   *  task submission (which may spawn a CLI agent) from a forged same-origin page
+   *  POST. Without it, task submissions are created but never marked trusted, so
+   *  they never spawn. Ignored when a custom `store` is supplied (the caller owns
+   *  its transport/auth). */
+  taskCapabilityToken?: string
   autoCaptureOnError?: boolean
   repro?: boolean
   elementPick?: boolean
@@ -496,7 +504,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   if (existing?._lluiHandle) return existing._lluiHandle
 
   const origin = opts.origin ?? (typeof location !== 'undefined' ? location.origin : '')
-  const store = opts.store ?? devServerStore(origin)
+  const store = opts.store ?? devServerStore(origin, opts.taskCapabilityToken)
   const llui = opts.llui ?? {
     runtime: (typeof window !== 'undefined' && window.__llui?.runtime) || 'unknown',
     compiler: (typeof window !== 'undefined' && window.__llui?.compiler) || 'unknown',

@@ -263,13 +263,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   // outside the option each(), so the per-row highlight binding compares the
   // row's stable value against it — keeping the highlight correct after the
   // filter shifts positions, without a frozen build-time index.
-  const ssselHighlightValue = state
-    .at('searchSelect')
-    .map((ss) =>
-      ss.combobox.highlightedIndex !== null
-        ? (ss.combobox.filteredItems[ss.combobox.highlightedIndex] ?? null)
-        : null,
-    )
+  const ssselHighlightValue = state.at('searchSelect').map((ss) => ss.combobox.highlightedValue)
 
   // Global ⌘K / Ctrl+K hotkey opens the command palette.
   const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
@@ -499,7 +493,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                       onPointerMove: () =>
                         send({
                           type: 'searchSelect',
-                          msg: { type: 'highlight', index: index.peek() },
+                          msg: { type: 'highlight', value },
                         }),
                       class:
                         'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-surface-hover data-[state=selected]:font-semibold',
@@ -528,7 +522,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     sectionGroup('Overlays', [
       card('Popover', [
         button({ ...po.trigger, class: 'btn btn-primary' }, [text('Show info')]),
-        ...popover.overlay({
+        popover.overlay({
           state: state.at('popover'),
           send: (m) => send({ type: 'popover', msg: m }),
           parts: po,
