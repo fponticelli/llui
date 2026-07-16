@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/fponticelli/llui/main/benchmarks/bundle-baseline.schema.json",
   "$description": "Bundle-size baseline for the jfb bench app. Measures dist/main.js after `pnpm build-prod` (Vite production + minify). Each phase row records uncompressed / gzip (level 9) / brotli (quality 11) bytes plus a short summary of what changed.",
   "$measureCommand": "pnpm tsx benchmarks/measure-bundle.ts",
   "phases": {

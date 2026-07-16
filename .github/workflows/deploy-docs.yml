@@ -1,16 +1,17 @@
 name: Deploy docs
 
+# Deploy ONLY after CI succeeds on main. A `push`-triggered deploy runs
+# independently of CI, so a red commit (e.g. an example bundle that crashes on
+# boot — caught by CI's smoke step) would still redeploy llui.dev from a broken
+# tree. `workflow_run` gates the deploy on the CI conclusion instead. The old
+# per-path filter is dropped: it had already drifted (missing CHANGELOG.md, whose
+# page is a symlink to the site), and the site build is cheap (~75s) with
+# `cancel-in-progress` coalescing redundant runs — correctness over a stale filter.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'site/**'
-      - 'docs/**'
-      - 'examples/**'
-      - 'packages/*/README.md'
-      - 'packages/*/src/**'
-      - 'evaluation/prompts/system-prompt.md'
-      - 'benchmarks/jfb-baseline.json'
   workflow_dispatch:
 
 permissions:
@@ -30,8 +31,17 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Skip when CI failed (or was cancelled) — never deploy from a red main. The
+    # `workflow_dispatch` path has no triggering run, so allow it through too.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # workflow_run checks out the default branch by default; pin to the exact
+          # commit CI validated so the deploy matches what passed.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - uses: pnpm/action-setup@v4
 

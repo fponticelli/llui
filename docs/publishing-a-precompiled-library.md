@@ -17,18 +17,22 @@ whole slice and re-evaluates the binding on every change. A **dependency
 manifest** closes that gap: it records what each helper reads, so the consumer
 narrows the binding to the exact paths — across the npm boundary.
 
-> **Status (current):** the **producer** half is live — `scripts/publish.sh`
-> emits a `dist/__llui_deps.json` for every published package, so the manifests
-> ship today. The **consumer** half is **not wired into the live compiler**:
-> the resolution code (`manifest-resolve.ts`) exists and is unit-tested, but the
-> live signal transform (`transformSignalComponentSource`) never calls it — it
-> has no `ts.Program`/checker, which `manifest-resolve` needs. So a shipped
-> manifest is currently a no-op for consumers — bindings through a package
-> helper still coarsen (see [Soundness](#soundness)). Phase 3 was
-> **evidence-closed (2026-06-10)**: a scan of the real consumers found zero call
-> sites that would benefit (no app renders large lists through rows imported
-> from a _precompiled_ package). Emitting the manifest now is forward-compatible
-> and costs nothing; the rest of this doc describes the intended end state.
+> **Status (current):** the producer tooling (`scripts/emit-deps.mjs`,
+> `build-manifest.ts`) is kept in-repo but **dormant** — `scripts/publish.sh` no
+> longer emits `dist/__llui_deps.json` into published tarballs. The **consumer**
+> half is **not wired into the live compiler**: the resolution code
+> (`manifest-resolve.ts`) exists and is unit-tested, but the live signal transform
+> (`transformSignalComponentSource`) never calls it — it has no
+> `ts.Program`/checker, which `manifest-resolve` needs. So a shipped manifest
+> would be a no-op for consumers — bindings through a package helper still coarsen
+> (see [Soundness](#soundness)). Phase 3 was **evidence-closed (2026-06-10)**: a
+> scan of the real consumers found zero call sites that would benefit (no app
+> renders large lists through rows imported from a _precompiled_ package). Shipping
+> a manifest nothing can read was ~191 KB of dead weight across the published stack
+> (and a public promise the ABI doesn't yet keep), so it was removed from the
+> tarball. When a checker-backed consumer lands, re-enable the emit in
+> `publish.sh` (producer + consumer + E2E test together). The rest of this doc
+> describes the intended end state.
 
 ## The manifest
 

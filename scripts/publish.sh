@@ -190,13 +190,14 @@ for pkg in "${PKGS[@]}"; do
 
   echo "Publishing $name@$version..."
 
-  # Build BEFORE emitting the __llui_deps manifest. `pnpm publish` runs the
-  # package's prepack (which builds), but that happens AFTER emit-deps below —
-  # so on a fresh checkout dist/ would not yet exist when emit-deps looks for it,
-  # and the manifest would be silently skipped. Building here guarantees dist/ is
-  # present for emit-deps (the prepack rebuild during publish is then a cheap
-  # no-op re-emit).
+  # Clean dist/ BEFORE building so the published tarball never carries stale
+  # artifacts: `tsc` never removes outputs of DELETED sources, and `files:
+  # ["dist","src"]` ships whatever is in dist/. Without this, modules deleted from
+  # src/ (e.g. the removed v2c compiler registry) linger in dist/ and get published
+  # forever — zombie code the architecture spec says no longer exists. The prepack
+  # rebuild during `pnpm publish` then recompiles into this clean tree.
   if [ -f "$dir/package.json" ] && node -e "process.exit(require('./$dir/package.json').scripts?.build ? 0 : 1)"; then
+    rm -rf "$dir/dist"
     if ! (cd "$dir" && pnpm run build); then
       echo "✗ $name failed to build — aborting its publish."
       FAILED+=("$name (build)")
@@ -206,14 +207,16 @@ for pkg in "${PKGS[@]}"; do
     fi
   fi
 
-  # Emit the package's __llui_deps.json library-boundary manifest so consumers
-  # can narrow reactive bindings through its helpers (see scripts/emit-deps.mjs).
-  # Requires @llui/compiler to be built. Only packages with a src/ that ships
-  # dist/ benefit; emit-deps no-ops cleanly elsewhere. Non-fatal — a manifest
-  # failure must never block a release.
-  if [ -d "$dir/src" ] && [ -d "$dir/dist" ]; then
-    node scripts/emit-deps.mjs "$dir" || echo "  ⚠ emit-deps skipped for $name"
-  fi
+  # NOTE: the __llui_deps.json library-boundary manifest is intentionally NOT
+  # emitted into the tarball. The consumer-side narrowing that would read it is
+  # dormant (the live string-edit transform lacks the ts.Program/checker it needs;
+  # phase 3 was evidence-closed with zero qualifying call sites), so shipping the
+  # manifest in every package was ~191 KB of bytes across the stack that nothing can
+  # read — and a shipped file reads as a public promise the ABI doesn't yet keep.
+  # `scripts/emit-deps.mjs` stays in-repo as dormant forward-compat: when a
+  # checker-backed consumer lands, re-enable the emit here (producer + consumer +
+  # E2E test together) and add the manifest back to the tarball. See
+  # docs/publishing-a-precompiled-library.md.
 
   # pnpm publish substitutes workspace:* with the concrete dependency
   # version at pack time, so the published tarball has real semver ranges
