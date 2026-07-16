@@ -67,7 +67,11 @@ export interface ComboboxState {
   groups: ComboboxGroup[]
   disabledItems: string[]
   filteredItems: string[]
-  highlightedIndex: number | null
+  /** The highlighted option's VALUE (not its index) in the FILTERED list.
+   * Value-based identity keeps the highlight pinned to the right option as the
+   * list is filtered/reordered and value-keyed rows are reused. May hold the
+   * create sentinel ({@link CREATE_OPTION_VALUE}) in creatable mode. */
+  highlightedValue: string | null
   selectionMode: SelectionMode
   disabled: boolean
   allowCreate: boolean
@@ -98,7 +102,7 @@ export type ComboboxMsg =
   /** @humanOnly */
   | { type: 'highlightLast' }
   /** @humanOnly */
-  | { type: 'highlight'; index: number | null }
+  | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
   /** @humanOnly */
@@ -148,7 +152,7 @@ export function init(opts: ComboboxInit = {}): ComboboxState {
     groups,
     disabledItems,
     filteredItems: computeFiltered(items, inputValue, allowCreate),
-    highlightedIndex: null,
+    highlightedValue: null,
     selectionMode: opts.selectionMode ?? 'single',
     disabled: opts.disabled ?? false,
     allowCreate,
@@ -218,12 +222,35 @@ function applySelection(state: ComboboxState, value: string): string[] {
   return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
 }
 
+/** The value at `idx` in `items`, or null when `idx` is null/out of bounds. */
+function valueAt(items: string[], idx: number | null): string | null {
+  return idx === null ? null : (items[idx] ?? null)
+}
+
+/** The index of `value` in `items`, or null when absent. */
+function indexOfValue(items: string[], value: string | null): number | null {
+  if (value === null) return null
+  const i = items.indexOf(value)
+  return i === -1 ? null : i
+}
+
+/** The first-enabled option's VALUE in `items`, or null. */
+function firstEnabledValue(items: string[], disabled: string[]): string | null {
+  return valueAt(items, firstEnabledIndex(items, disabled))
+}
+
 /** Commit a normal (non-create) option pick. */
 function commitSelection(state: ComboboxState, picked: string): [ComboboxState, ComboboxEffect[]] {
   const value = applySelection(state, picked)
   const inputValue = state.selectionMode === 'single' ? picked : ''
   const filteredItems = computeFiltered(state.items, inputValue, state.allowCreate)
   const open = state.selectionMode === 'single' ? false : state.open
+  // Preserve the highlight only while open AND still present in the recomputed
+  // filtered list; otherwise drop it.
+  const highlightedValue =
+    open && state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
+      ? state.highlightedValue
+      : null
   return [
     {
       ...state,
@@ -231,7 +258,7 @@ function commitSelection(state: ComboboxState, picked: string): [ComboboxState, 
       inputValue,
       filteredItems,
       open,
-      highlightedIndex: open ? state.highlightedIndex : null,
+      highlightedValue,
     },
     [],
   ]
@@ -249,14 +276,14 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           // already-open listbox (the input's ArrowDown/Up handler sends `open`
           // before `highlight*`) must preserve the current highlight, otherwise
           // every arrow keypress resets to the first item and navigation sticks.
-          highlightedIndex: state.open
-            ? state.highlightedIndex
-            : firstEnabledIndex(state.filteredItems, state.disabledItems),
+          highlightedValue: state.open
+            ? state.highlightedValue
+            : firstEnabledValue(state.filteredItems, state.disabledItems),
         },
         [],
       ]
     case 'close':
-      return [{ ...state, open: false, highlightedIndex: null }, []]
+      return [{ ...state, open: false, highlightedValue: null }, []]
     case 'setInputValue': {
       const filteredItems = computeFiltered(state.items, msg.value, state.allowCreate)
       return [
@@ -265,7 +292,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           inputValue: msg.value,
           filteredItems,
           open: true,
-          highlightedIndex: firstEnabledIndex(filteredItems, state.disabledItems),
+          highlightedValue: firstEnabledValue(filteredItems, state.disabledItems),
         },
         [],
       ]
@@ -285,7 +312,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           value: [],
           inputValue: '',
           filteredItems: computeFiltered(state.items, '', state.allowCreate),
-          highlightedIndex: null,
+          highlightedValue: null,
         },
         [],
       ]
@@ -293,17 +320,20 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       // Pointer-move fires a highlight per mouse tick; when the target is
       // already highlighted, return the SAME state reference so the reconciler
       // sees no change and skips the commit entirely.
-      if (state.highlightedIndex === msg.index) return [state, []]
-      return [{ ...state, highlightedIndex: msg.index }, []]
+      if (state.highlightedValue === msg.value) return [state, []]
+      return [{ ...state, highlightedValue: msg.value }, []]
     case 'highlightNext':
       return [
         {
           ...state,
-          highlightedIndex: nextEnabledIndex(
+          highlightedValue: valueAt(
             state.filteredItems,
-            state.disabledItems,
-            state.highlightedIndex,
-            1,
+            nextEnabledIndex(
+              state.filteredItems,
+              state.disabledItems,
+              indexOfValue(state.filteredItems, state.highlightedValue),
+              1,
+            ),
           ),
         },
         [],
@@ -312,29 +342,40 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       return [
         {
           ...state,
-          highlightedIndex: nextEnabledIndex(
+          highlightedValue: valueAt(
             state.filteredItems,
-            state.disabledItems,
-            state.highlightedIndex,
-            -1,
+            nextEnabledIndex(
+              state.filteredItems,
+              state.disabledItems,
+              indexOfValue(state.filteredItems, state.highlightedValue),
+              -1,
+            ),
           ),
         },
         [],
       ]
     case 'highlightFirst':
       return [
-        { ...state, highlightedIndex: firstEnabledIndex(state.filteredItems, state.disabledItems) },
+        {
+          ...state,
+          highlightedValue: firstEnabledValue(state.filteredItems, state.disabledItems),
+        },
         [],
       ]
     case 'highlightLast':
       return [
-        { ...state, highlightedIndex: lastEnabledIndex(state.filteredItems, state.disabledItems) },
+        {
+          ...state,
+          highlightedValue: valueAt(
+            state.filteredItems,
+            lastEnabledIndex(state.filteredItems, state.disabledItems),
+          ),
+        },
         [],
       ]
     case 'selectHighlighted': {
-      if (state.highlightedIndex === null) return [state, []]
-      const v = state.filteredItems[state.highlightedIndex]
-      if (v === undefined) return [state, []]
+      const v = state.highlightedValue
+      if (v === null || !state.filteredItems.includes(v)) return [state, []]
       if (v === CREATE_OPTION_VALUE) {
         return [state, [{ type: 'createOption', value: state.inputValue }]]
       }
@@ -344,11 +385,11 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
       const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
-      // Clamp the highlight to the new list: a shrinking setItems can leave the
-      // previous index out of bounds, which would dangle aria-activedescendant.
-      const highlightedIndex =
-        state.highlightedIndex !== null && state.highlightedIndex < filteredItems.length
-          ? state.highlightedIndex
+      // Value-keyed clamp: keep the highlight only when its value survives in the
+      // new filtered list, otherwise drop it (never dangle aria-activedescendant).
+      const highlightedValue =
+        state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
+          ? state.highlightedValue
           : null
       return [
         {
@@ -356,7 +397,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           items: msg.items,
           disabledItems: disabled,
           filteredItems,
-          highlightedIndex,
+          highlightedValue,
           value,
         },
         [],
@@ -372,7 +413,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           ...state,
           items: msg.items,
           filteredItems: computeFiltered(msg.items, state.inputValue, state.allowCreate),
-          highlightedIndex: null,
+          highlightedValue: null,
           status: 'loaded',
           error: null,
         },
@@ -399,7 +440,9 @@ export interface ComboboxItemParts {
     'data-scope': 'combobox'
     'data-part': 'item'
     'data-value': string
-    'data-index': string
+    /** The option's live position in the FILTERED list (reactive — reused rows
+     * never report a stale index). */
+    'data-index': Signal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -472,7 +515,10 @@ export interface ComboboxParts {
     'data-scope': 'combobox'
     'data-part': 'content'
   }
-  item: (value: string, index: number) => ComboboxItemParts
+  /** Build the parts for an option by VALUE. The optional `index` is accepted
+   * for call-site convenience only — it is NOT used for identity (highlight,
+   * selection and ids are all value-keyed), so a reused row is never stale. */
+  item: (value: string, index?: number) => ComboboxItemParts
   /** Parts for a labelled option group (`<optgroup>`-style section). Pass the
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
@@ -509,7 +555,7 @@ export function connect(
   const base = opts.id
   const inputId = `${base}:input`
   const contentId = `${base}:content`
-  const itemId = (index: number): string => `${base}:item:${index}`
+  const itemId = (value: string): string => `${base}:item:${encodeURIComponent(value)}`
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
 
@@ -529,10 +575,9 @@ export function connect(
       'aria-autocomplete': 'list',
       'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
-      'aria-activedescendant': state.map((s) => {
-        const idx = s.highlightedIndex
-        return idx === null ? undefined : itemId(idx)
-      }),
+      'aria-activedescendant': state.map((s) =>
+        s.highlightedValue === null ? undefined : itemId(s.highlightedValue),
+      ),
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       id: inputId,
       disabled: state.map((s) => s.disabled),
@@ -613,18 +658,18 @@ export function connect(
       'data-scope': 'combobox',
       'data-part': 'content',
     },
-    item: (value: string, index: number): ComboboxItemParts => {
+    item: (value: string): ComboboxItemParts => {
       const isCreate = value === CREATE_OPTION_VALUE
       return {
         item: {
           role: 'option',
-          id: itemId(index),
+          id: itemId(value),
           'aria-selected': state.map((s) => s.value.includes(value)),
           'aria-disabled': state.map((s) =>
             !isCreate && s.disabledItems.includes(value) ? 'true' : undefined,
           ),
           'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
-          'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
+          'data-highlighted': state.map((s) => (s.highlightedValue === value ? '' : undefined)),
           'data-disabled': state.map((s) =>
             !isCreate && s.disabledItems.includes(value) ? '' : undefined,
           ),
@@ -632,14 +677,14 @@ export function connect(
           'data-scope': 'combobox',
           'data-part': 'item',
           'data-value': value,
-          'data-index': String(index),
+          'data-index': state.map((s) => String(s.filteredItems.indexOf(value))),
           onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
           onPointerMove: tagSend(send, ['highlight'], () => {
             // Guard the send too: skip dispatching entirely when the row is
             // already highlighted, so a stationary pointer doesn't re-enter the
             // reducer on every move event.
-            if (state.peek()?.highlightedIndex === index) return
-            send({ type: 'highlight', index })
+            if (state.peek()?.highlightedValue === value) return
+            send({ type: 'highlight', value })
           }),
         },
       }

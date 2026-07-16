@@ -7,6 +7,8 @@ export type { InteractOutsideOptions } from './interact-outside.js'
 export { pushDismissable } from './dismissable.js'
 export type { DismissableOptions, DismissSource } from './dismissable.js'
 
+export { presenceEndHandler } from './presence-end.js'
+
 export { pushFocusTrap } from './focus-trap.js'
 export type { FocusTrapOptions } from './focus-trap.js'
 

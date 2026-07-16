@@ -23,7 +23,7 @@ export type LapNarrateDeps = LapGateDeps
  * runtime is back.
  */
 export const handleLapNarrate = withLapGates({ touchOn: 'completion' }, async (ctx) => {
-  const body = ((await ctx.req.json().catch(() => null)) ?? {}) as LapNarrateRequest
+  const body = (ctx.body ?? {}) as LapNarrateRequest
   if (typeof body.text !== 'string' || body.text.length === 0) {
     return ctx.json({ error: { code: 'invalid', detail: 'text required' } }, 400)
   }

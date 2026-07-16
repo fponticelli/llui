@@ -11,6 +11,7 @@
 
 import { z } from 'zod'
 import {
+  acquireClaimLock,
   appendStatus,
   createNote,
   currentStatus,
@@ -587,6 +588,29 @@ export function registerNotesTools(registry: ToolRegistry): void {
           status: 'already-claimed-by' as const,
           by: last?.reason ?? null,
           currentStatus: before,
+        }
+      }
+      // Arbitrate the claim through an O_CREAT|O_EXCL lock file so two
+      // workers that both saw `open` above can't both append `claimed`.
+      // Exactly one wins the exclusive create; the loser reads the winner's
+      // workerId out of the lock and reports already-claimed.
+      const lock = acquireClaimLock(sessionDir, args.noteId, args.workerId)
+      if (!lock.acquired) {
+        return {
+          status: 'already-claimed-by' as const,
+          by: lock.holder,
+          currentStatus: currentStatus(sessionDir, args.noteId),
+        }
+      }
+      // Re-read status after winning the lock: a non-claim transition
+      // (e.g. a reply moving the task to `proposed`) may have landed while
+      // we were acquiring. If so, yield — don't stomp a later state.
+      const afterLock = currentStatus(sessionDir, args.noteId)
+      if (afterLock !== null && afterLock !== 'open') {
+        return {
+          status: 'already-claimed-by' as const,
+          by: lock.holder,
+          currentStatus: afterLock,
         }
       }
       const transition: StatusTransition = {

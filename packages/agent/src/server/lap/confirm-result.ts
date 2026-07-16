@@ -10,7 +10,7 @@ export const handleLapConfirmResult = withLapGates({ touchOn: 'arrival' }, async
   // (`waitForConfirm`, default 5s, caller-controllable), so touching only
   // after it resolves would let the inactivity expiry kill an agent that
   // is actively polling while a human decides on the confirm.
-  const body = (await ctx.req.json().catch(() => null)) as LapConfirmResultRequest | null
+  const body = ctx.body as LapConfirmResultRequest | null
   if (!body || typeof body.confirmId !== 'string')
     return ctx.json({ error: { code: 'invalid' } }, 400)
   const timeoutMs = body.timeoutMs ?? 5_000

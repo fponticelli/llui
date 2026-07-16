@@ -293,7 +293,7 @@ export function connect(
         ),
         disabledItems: s.commands.filter((c) => c.disabled).map((c) => c.id),
         filteredItems: s.filtered.map((c) => c.id),
-        highlightedIndex: null,
+        highlightedValue: null,
         selectionMode: 'single',
         disabled: false,
         allowCreate: false,

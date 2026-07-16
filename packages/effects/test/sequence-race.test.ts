@@ -139,6 +139,52 @@ describe('sequence', () => {
     vi.unstubAllGlobals()
   })
 
+  it('nested sequence runs strictly in order — outer advances only when inner completes', async () => {
+    const resolvers: Record<string, (v: unknown) => void> = {}
+    const fetchMock = vi.fn().mockImplementation(
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          resolvers[url] = resolve as (v: unknown) => void
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const mk = (url: string, ok: string) =>
+      http<{ type: string; payload?: unknown; error?: ApiError }>({
+        url,
+        onSuccess: (data) => ({ type: ok, payload: data }),
+        onError: (err) => ({ type: 'e', error: err }),
+      })
+
+    const handler = handleEffects<Effect>().else(() => {})
+
+    handler({
+      effect: sequence([sequence([mk('/a', 'a'), mk('/b', 'b')]), mk('/c', 'c')]),
+      send,
+      signal,
+    })
+
+    // Only /a is in flight.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(fetchMock.mock.calls[0]![0]).toBe('/a')
+
+    // Resolving /a must start /b (inner step 2), NOT /c (outer step 2).
+    resolvers['/a']!(mockResponse({ n: 'a' }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[1]![0]).toBe('/b')
+
+    // While /b is in flight, /c must NOT have started (the bug: it ran concurrently).
+    await new Promise((r) => setTimeout(r, 10))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    // Resolving /b completes the inner sequence → the outer sequence advances to /c.
+    resolvers['/b']!(mockResponse({ n: 'b' }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(fetchMock.mock.calls[2]![0]).toBe('/c')
+
+    vi.unstubAllGlobals()
+  })
+
   it('does not fast-forward later async steps when a step emits multiple messages', async () => {
     // A never-resolving fetch: lets us observe how many http steps were dispatched
     // synchronously without any of them completing.

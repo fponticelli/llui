@@ -24,19 +24,25 @@ import { resolvePointer } from './pointer.js'
 import { hasOwn, safeCssValue } from './security.js'
 import type { A2uiMsg, A2uiState, Surface } from './state.js'
 
-// ── Structural identity ────────────────────────────────────────────
-// Tag each distinct component-map object with a stable key so the structural
-// `each` rebuilds only when `updateComponents` produces a new map.
-const structureIds = new WeakMap<object, string>()
-let structureSeq = 0
-function structureKey(components: object): string {
-  let id = structureIds.get(components)
+// ── Per-node structural identity ───────────────────────────────────
+// Tag each distinct ComponentNode object with a stable key. A node's `each`
+// (see `renderNode`) is keyed on this, so it rebuilds ONLY when THAT node's
+// object is replaced by `updateComponents` — unchanged nodes (kept by reference
+// across the merge in `applyEnvelope`) keep their key and their live DOM, focus,
+// scroll and component machines. This makes a streaming component update
+// O(changed nodes), not a whole-surface teardown.
+const nodeIds = new WeakMap<object, string>()
+let nodeSeq = 0
+function nodeKey(node: ComponentNode): string {
+  let id = nodeIds.get(node)
   if (id === undefined) {
-    id = `s${structureSeq++}`
-    structureIds.set(components, id)
+    id = `n${nodeSeq++}`
+    nodeIds.set(node, id)
   }
   return id
 }
+
+const ROOT_ID: ComponentId = 'root'
 
 // ── Pointer joining for template write-back ────────────────────────
 function joinPointer(base: string, ...segments: string[]): string {
@@ -56,6 +62,10 @@ interface RowBase {
 // re-scope to the row item.
 interface TemplateRow extends RowBase {
   readonly uiState: JsonObject
+  readonly components: Readonly<Record<ComponentId, ComponentNode>>
+  /** The row component's node identity — folded into the row key so a template's
+   * component DEFINITION change rebuilds every row. */
+  readonly structKey: string
 }
 
 // Expand a template collection: A2UI iterates arrays (by index) and objects (by
@@ -106,9 +116,9 @@ function makeContext(
   surfaceId: string,
   theme: Signal<Theme>,
   rootData: Signal<JsonValue>,
+  components: Signal<Readonly<Record<ComponentId, ComponentNode>>>,
   send: (msg: A2uiMsg) => void,
   catalog: Catalog,
-  components: Readonly<Record<ComponentId, ComponentNode>>,
 ): RenderContext {
   const ctx: RenderContext = {
     surfaceId,
@@ -117,35 +127,115 @@ function makeContext(
     send,
     catalog,
     setUi: (componentId, value) => send({ type: 'setUi', surfaceId, componentId, value }),
-    getComponent: (id) => (hasOwn(components, id) ? components[id] : undefined),
-    renderById: (id, scope) => {
-      // Own-property guard: a server-supplied child id like "__proto__"/
-      // "toString" must not resolve to a prototype member of the adjacency map.
-      if (!hasOwn(components, id)) return [] // referenced-before-defined: fills in on the next build
-      const node = components[id]
-      if (!node) return []
-      // Cycle guard: refuse to re-enter a component already on the ancestor path
-      // (a cyclic adjacency list would otherwise recurse to a stack overflow).
-      if (scope.ancestors.has(id)) {
-        warnOnce(`Cyclic A2UI component reference at "${id}" — skipping`)
-        return []
-      }
-      const builder = hasOwn(catalog.components, node.component)
-        ? catalog.components[node.component]
-        : undefined
-      if (typeof builder !== 'function') {
-        warnOnce(`No builder for A2UI component "${node.component}"`)
-        return []
-      }
-      const childScope: RenderScope = {
-        ...scope,
-        ancestors: new Set(scope.ancestors).add(id),
-      }
-      return builder({ node, ctx, scope: childScope })
+    getComponent: (id) => {
+      const c = components.peek()
+      return hasOwn(c, id) ? c[id] : undefined
     },
+    renderById: (id, scope) => renderNode(ctx, id, scope),
     renderChildren: (children, scope) => renderChildren(ctx, children, scope),
   }
   return ctx
+}
+
+/** The reactive slice a single node's `each` row carries. Everything the row
+ * reads is threaded through here (never reached for via an outer-scope handle,
+ * which would re-scope to the row item), so bindings and nested `renderNode`
+ * calls stay correctly scoped inside the row. */
+interface NodeUnit {
+  readonly node: ComponentNode
+  readonly components: Readonly<Record<ComponentId, ComponentNode>>
+  readonly data: JsonValue
+  readonly root: JsonValue
+  readonly ui: JsonObject
+}
+
+/** Look up and invoke the catalog builder for a resolved node (no reactivity of
+ * its own — the caller owns the structural boundary). */
+function invokeBuilder(ctx: RenderContext, node: ComponentNode, scope: RenderScope): Renderable {
+  const builder = hasOwn(ctx.catalog.components, node.component)
+    ? ctx.catalog.components[node.component]
+    : undefined
+  if (typeof builder !== 'function') {
+    warnOnce(`No builder for A2UI component "${node.component}"`)
+    return []
+  }
+  return builder({ node, ctx, scope })
+}
+
+/**
+ * Build a component by id ONCE against the current snapshot (no per-id `each`).
+ * Used where a structural primitive can't be the top-level node — the body of a
+ * template row, which must be a stable element the keyed reconcile can move and
+ * remove. The row's key carries the node identity (see {@link renderChildren}),
+ * so a definition change still rebuilds the row.
+ */
+function buildNode(ctx: RenderContext, id: ComponentId, scope: RenderScope): Renderable {
+  if (scope.ancestors.has(id)) {
+    warnOnce(`Cyclic A2UI component reference at "${id}" — skipping`)
+    return []
+  }
+  const components = scope.components.peek()
+  if (!hasOwn(components, id)) return []
+  const node = components[id]
+  if (!node) return []
+  const childScope: RenderScope = { ...scope, ancestors: new Set(scope.ancestors).add(id) }
+  return invokeBuilder(ctx, node, childScope)
+}
+
+/**
+ * Render one component by id as a self-contained reactive unit: an `each` over a
+ * single-element list, keyed by the node's object identity. The node's DATA
+ * bindings update in place when the data model changes (same key → row kept);
+ * the node's whole subtree rebuilds ONLY when its definition object is replaced
+ * (new key → row swapped). Because each child is itself a `renderNode`, changing
+ * one node rebuilds just that node — siblings, ancestors and their DOM/focus/
+ * scroll/component machines are untouched.
+ *
+ * Returns a structural primitive, so place it where a fragment is legal (element
+ * children, a build's returned array) — NOT as the bare top-level of an `each`
+ * row (use {@link buildNode} there).
+ */
+function renderNode(ctx: RenderContext, id: ComponentId, scope: RenderScope): Renderable {
+  // Cycle guard: refuse to re-enter a component already on the ancestor path
+  // (a cyclic adjacency list would otherwise recurse to a stack overflow).
+  if (scope.ancestors.has(id)) {
+    warnOnce(`Cyclic A2UI component reference at "${id}" — skipping`)
+    return []
+  }
+
+  const units: Signal<readonly NodeUnit[]> = derived(
+    scope.components,
+    scope.data,
+    scope.root,
+    scope.uiState,
+    (components, data, root, ui): NodeUnit[] => {
+      // Own-property guard: a server-supplied id like "__proto__"/"toString"
+      // must not resolve to a prototype member of the adjacency map.
+      if (!hasOwn(components, id)) return [] // referenced-before-defined: fills in when it arrives
+      const node = components[id]
+      return node ? [{ node, components, data, root, ui }] : []
+    },
+  )
+
+  return [
+    each(units, {
+      key: (u) => nodeKey(u.node),
+      render: (uSig) => {
+        const node = uSig.peek().node
+        // Derive every scope signal from THIS row's unit so reads stay scoped.
+        const childScope: RenderScope = {
+          data: uSig.map((u) => u.data),
+          root: uSig.map((u) => u.root),
+          uiState: uSig.map((u) => u.ui),
+          components: uSig.map((u) => u.components),
+          absPath: scope.absPath,
+          keyPrefix: scope.keyPrefix,
+          ancestors: new Set(scope.ancestors).add(id),
+        }
+        return invokeBuilder(ctx, node, childScope)
+      },
+    }),
+  ]
 }
 
 function renderChildren(
@@ -156,7 +246,7 @@ function renderChildren(
   if (children === undefined) return []
 
   if (!isChildTemplate(children)) {
-    return children.flatMap((id) => ctx.renderById(id, scope))
+    return children.flatMap((id) => renderNode(ctx, id, scope))
   }
 
   // Template: repeat `componentId` over the collection at `path`.
@@ -164,35 +254,50 @@ function renderChildren(
   const path = tpl.path
   const collectionBase = path.startsWith('/') ? path : scope.absPath(path)
 
-  // Thread the data root and UI state into each row so both flow through the
-  // `each`'s re-scoping and stay valid inside the row.
+  // Thread the data root, UI state and component map into each row so all flow
+  // through the `each`'s re-scoping and stay valid inside the row. `structKey`
+  // is the row component's node identity: folding it into the row key rebuilds
+  // every row when the template's component DEFINITION changes (rows can't use a
+  // per-id `each` — see `buildNode`), while `rowKey` handles data reorder/edits.
   const rows: Signal<readonly TemplateRow[]> = derived(
     scope.root,
     scope.data,
     scope.uiState,
-    (root, dataHere, uiState) => {
+    scope.components,
+    (root, dataHere, uiState, components) => {
       const source = path.startsWith('/') ? root : dataHere
-      return templateRows(resolvePointer(source, path)).map((r) => ({ ...r, uiState }))
+      const compNode = hasOwn(components, tpl.componentId) ? components[tpl.componentId] : undefined
+      const structKey = compNode ? nodeKey(compNode) : 'none'
+      return templateRows(resolvePointer(source, path)).map((r) => ({
+        ...r,
+        uiState,
+        components,
+        structKey,
+      }))
     },
   )
 
   const list = each(rows, {
-    key: (row) => rowKey(row.item, row.segment),
+    key: (row) => `${row.structKey}:${rowKey(row.item, row.segment)}`,
     render: (rowSig) => {
       // Inside a template the item is the local root: per the A2UI spec, both
       // relative (`name`) and leading-slash (`/name`) paths resolve to the item
-      // (`/products/N/name`). So data === root === the item here.
+      // (`/products/N/name`). So data === root === the item here. The component
+      // map stays surface-global (templates don't re-root component definitions).
       const item = rowSig.map((r) => r.item)
       const segment = rowSig.peek().segment
       const itemScope: RenderScope = {
         data: item,
         root: item,
         uiState: rowSig.map((r) => r.uiState),
+        components: rowSig.map((r) => r.components),
         absPath: (p) => joinPointer(collectionBase, segment, p.startsWith('/') ? p.slice(1) : p),
         keyPrefix: joinPointer(collectionBase, segment),
         ancestors: scope.ancestors,
       }
-      return ctx.renderById(tpl.componentId, itemScope)
+      // A template row must be a stable ELEMENT (not a bare `each`), so build the
+      // component directly; nested children inside it still use `renderNode`.
+      return buildNode(ctx, tpl.componentId, itemScope)
     },
   })
   return [list]
@@ -213,32 +318,32 @@ function renderSurface(
   const surfaceId = snapshot.surfaceId
   const catalog = resolveCatalog(snapshot.catalogId) ?? fallbackCatalog
 
-  // Rebuild the tree only when the component map's identity changes; carry the
-  // whole surface in the unit so DATA still derives from a correctly-scoped
-  // signal inside the structural row.
-  const structureUnits = surface.map((su) => [{ key: structureKey(su.components), surface: su }])
+  // Derive every reactive surface slice from the (correctly-scoped) `surface`
+  // row signal handed to us by the outer surfaces `each`. There is NO structural
+  // `each` here anymore: the root is rendered via `renderNode`, whose per-id
+  // `each` reacts to the component map arriving/changing — so `updateComponents`
+  // rebuilds only the nodes that changed, never the whole surface.
+  const rootData: Signal<JsonValue> = surface.map((su) => su.dataModel)
+  const theme: Signal<Theme> = surface.map((su) => su.theme)
+  const uiState: Signal<JsonObject> = surface.map((su) => su.uiState)
+  const components: Signal<Readonly<Record<ComponentId, ComponentNode>>> = surface.map(
+    (su) => su.components,
+  )
 
-  const tree = each(structureUnits, {
-    key: (u) => u.key,
-    render: (unit) => {
-      const rootData: Signal<JsonValue> = unit.map((u) => u.surface.dataModel)
-      const theme: Signal<Theme> = unit.map((u) => u.surface.theme)
-      const uiState: Signal<JsonObject> = unit.map((u) => u.surface.uiState)
-      const su = unit.peek().surface
-      if (!su.rootId || !su.components[su.rootId]) return []
-      const ctx = makeContext(surfaceId, theme, rootData, send, catalog, su.components)
-      const rootScope: RenderScope = {
-        data: rootData,
-        root: rootData,
-        uiState,
-        absPath: (p) => (p.startsWith('/') ? p : `/${p}`),
-        keyPrefix: '',
-        ancestors: new Set<string>(),
-      }
-      return ctx.renderById(su.rootId, rootScope)
-    },
-  })
+  const ctx = makeContext(surfaceId, theme, rootData, components, send, catalog)
+  const rootScope: RenderScope = {
+    data: rootData,
+    root: rootData,
+    uiState,
+    components,
+    absPath: (p) => (p.startsWith('/') ? p : `/${p}`),
+    keyPrefix: '',
+    ancestors: new Set<string>(),
+  }
 
+  // The tree root is always `ROOT_ID` once it arrives (see `applyEnvelope`);
+  // `renderNode` renders nothing until the component map contains it, so a
+  // surface created before its components stream in fills in reactively.
   return [
     div(
       {
@@ -246,7 +351,7 @@ function renderSurface(
         'data-surface-id': surfaceId,
         style: surface.map((su) => themeStyle(su.theme)),
       },
-      [tree],
+      renderNode(ctx, ROOT_ID, rootScope),
     ),
   ]
 }

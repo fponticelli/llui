@@ -154,6 +154,21 @@ export function createRouter<R>(
     )
   }
 
+  // The synthesized fallback is `defs[0]` built from PLACEHOLDER params. When the
+  // first route reads path parameters, those placeholders are fabricated ('1'), so
+  // an unmatched URL would resolve to a bogus route (e.g. `{ page: 'user', id: '1'
+  // }`). Require an explicit `fallback` rather than silently inventing one.
+  if (config?.fallback === undefined && defs.length > 0) {
+    const firstHasParams = defs[0]!.segments.some((seg) => typeof seg !== 'string')
+    if (firstHasParams) {
+      throw new Error(
+        '[llui/router] createRouter needs an explicit `fallback` when the first route ' +
+          'has path parameters — otherwise an unmatched URL would fabricate placeholder ' +
+          'params for it (e.g. `{ id: "1" }`). Pass `config.fallback`.',
+      )
+    }
+  }
+
   // Fallback: an explicit config value, else the first route built with sample
   // params so a param-reading builder does not crash createRouter.
   const fallback: R =
@@ -351,7 +366,11 @@ function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, s
     const seg = def.segments[di]!
 
     if (typeof seg === 'string') {
-      if (si >= pathSegments.length || pathSegments[si] !== seg) return null
+      // Decode the incoming segment before comparing: a non-ASCII literal route
+      // (e.g. `['café']`) arrives percent-encoded from the browser (`caf%C3%A9`),
+      // so an un-decoded comparison would never match. Params/rest are already
+      // decoded below — literals must be too.
+      if (si >= pathSegments.length || safeDecode(pathSegments[si]!) !== seg) return null
       si++
     } else if (seg.__kind === 'param') {
       if (si >= pathSegments.length) return null

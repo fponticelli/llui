@@ -27,10 +27,35 @@ describe('malformed URL decode (finding 3)', () => {
   it('malformed escape in a rest segment does not throw', () => {
     const r = createRouter<{ page: 'docs'; path: string }>(
       [route(['docs', rest('path')], ({ path }) => ({ page: 'docs', path }))],
-      { mode: 'history' },
+      { mode: 'history', fallback: { page: 'docs', path: '' } },
     )
     expect(() => r.match('/docs/a/b%')).not.toThrow()
     expect(r.match('/docs/a/b%')).toEqual({ page: 'docs', path: 'a/b%' })
+  })
+})
+
+describe('non-ASCII literal segments are compared decoded (finding: literal decode)', () => {
+  type Route = { page: 'cafe' } | { page: 'home' }
+  const router = createRouter<Route>(
+    [route([], () => ({ page: 'home' })), route(['café'], () => ({ page: 'cafe' }))],
+    { mode: 'history' },
+  )
+
+  it('matches a non-ASCII literal that arrives percent-encoded from the browser', () => {
+    // A browser percent-encodes the non-ASCII literal in the address bar, so the
+    // matcher must decode each path segment before comparing it to the literal.
+    expect(router.match('/caf%C3%A9')).toEqual({ page: 'cafe' })
+  })
+
+  it('still matches the already-decoded form', () => {
+    expect(router.match('/café')).toEqual({ page: 'cafe' })
+  })
+
+  it('round-trips a non-ASCII literal route through href → match', () => {
+    const href = router.href({ page: 'cafe' })
+    // The browser would encode the href before matching; both forms resolve back.
+    expect(router.match(href)).toEqual({ page: 'cafe' })
+    expect(router.match(encodeURI(href))).toEqual({ page: 'cafe' })
   })
 })
 
@@ -130,7 +155,7 @@ describe('rest segment encoding (finding 5)', () => {
   type Route = { page: 'docs'; path: string }
   const router = createRouter<Route>(
     [route(['docs', rest('path')], ({ path }) => ({ page: 'docs', path }))],
-    { mode: 'history' },
+    { mode: 'history', fallback: { page: 'docs', path: '' } },
   )
 
   it('encodes reserved characters within each rest segment but keeps the slashes', () => {
@@ -159,7 +184,7 @@ describe('toPath without round-trip guessing (finding 6)', () => {
           upper: id!.toUpperCase(),
         })),
       ],
-      { mode: 'history' },
+      { mode: 'history', fallback: { page: 'user', id: '', upper: '' } },
     )
     expect(() => router.toPath({ page: 'user', id: 'ab', upper: 'AB' })).not.toThrow()
     expect(router.toPath({ page: 'user', id: 'ab', upper: 'AB' })).toBe('/user/ab')
@@ -180,7 +205,7 @@ describe('toPath without round-trip guessing (finding 6)', () => {
           tab: 'favorited',
         })),
       ],
-      { mode: 'history' },
+      { mode: 'history', fallback: { page: 'profile', username: '', tab: 'authored' } },
     )
     expect(router.toPath({ page: 'profile', username: 'bob', tab: 'authored' })).toBe(
       '/profile/bob',
@@ -259,5 +284,45 @@ describe('createRouter with an empty route list', () => {
     const fallback = { page: 'home' as const }
     const router = createRouter<{ page: 'home' }>([], { fallback })
     expect(router.match('/anything')).toBe(fallback)
+  })
+})
+
+describe('createRouter requires a fallback when the first route has params', () => {
+  it('throws when the first route reads a param and no fallback is given', () => {
+    // Without a fallback, an unmatched URL would resolve to `defs[0]` built with
+    // fabricated placeholder params (e.g. `{ page: 'user', id: '1' }`).
+    expect(() =>
+      createRouter<{ page: 'user'; id: string }>([
+        route(['user', param('id')], ({ id }) => ({ page: 'user', id })),
+      ]),
+    ).toThrow(/fallback/)
+  })
+
+  it('throws when the first route is a rest route and no fallback is given', () => {
+    expect(() =>
+      createRouter<{ page: 'docs'; path: string }>([
+        route(['docs', rest('path')], ({ path }) => ({ page: 'docs', path })),
+      ]),
+    ).toThrow(/fallback/)
+  })
+
+  it('does not throw when an explicit fallback is provided', () => {
+    expect(() =>
+      createRouter<{ page: 'user'; id: string }>(
+        [route(['user', param('id')], ({ id }) => ({ page: 'user', id }))],
+        { fallback: { page: 'user', id: '' } },
+      ),
+    ).not.toThrow()
+  })
+
+  it('does not throw when the first route is paramless even if a later route has params', () => {
+    // The synthesized fallback is `defs[0]`; a paramless first route fabricates
+    // nothing, so an implicit fallback stays well-defined.
+    expect(() =>
+      createRouter<{ page: 'home' } | { page: 'user'; id: string }>([
+        route([], () => ({ page: 'home' })),
+        route(['user', param('id')], ({ id }) => ({ page: 'user', id })),
+      ]),
+    ).not.toThrow()
   })
 })

@@ -45,6 +45,15 @@ describe('inline rendering', () => {
     expect(strong?.querySelector('em')?.textContent).toBe('italic')
   })
 
+  it('keeps visible text between inline HTML tags when HTML is dropped', () => {
+    // `a <em>word</em> b` splits into text/html fragments; with no sanitizeHtml the
+    // raw tags are dropped, but the intervening text (`word`) must survive.
+    mounted = mountStatic('a <em>word</em> b')
+    const p = body(mounted.container).querySelector('p')
+    expect(p?.textContent).toContain('word')
+    expect(p?.querySelector('em')).toBeNull() // raw HTML tag dropped
+  })
+
   it('resolves reference-style links', () => {
     mounted = mountStatic('[ref][id]\n\n[id]: https://example.com "t"')
     const a = body(mounted.container).querySelector('a')

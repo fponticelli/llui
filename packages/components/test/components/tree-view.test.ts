@@ -534,4 +534,61 @@ describe('tree-view automatic indeterminate / cascade (checkbox mode)', () => {
     expect(s.nodes['p']?.children).toEqual(['c'])
     expect(s.roots).toEqual(['p'])
   })
+
+  it('lazy-loading a CHECKED branch keeps its check and cascades onto new children', () => {
+    // A checked, collapsed hasChildren branch (no children loaded yet).
+    const s0 = init({
+      selectionMode: 'checkbox',
+      ...nodesOf({ a: { hasChildren: true }, b: { children: ['b1'] }, b1: {} }, ['a', 'b']),
+      checked: ['a'],
+    })
+    const [s1] = update(s0, { type: 'expand', id: 'a' })
+    const [s2] = update(s1, {
+      type: 'childrenLoaded',
+      id: 'a',
+      items: [{ id: 'a1' }, { id: 'a2' }],
+    })
+    // The branch keeps its check and cascades DOWN onto the freshly-loaded
+    // enabled descendants (rather than being erased by the roll-up).
+    expect(isChecked(s2, 'a')).toBe(true)
+    expect(isChecked(s2, 'a1')).toBe(true)
+    expect(isChecked(s2, 'a2')).toBe(true)
+    expect(isIndeterminate(s2, 'a')).toBe(false)
+  })
+
+  it('lazy-loading a checked branch does not cascade onto DISABLED children', () => {
+    const s0 = init({
+      selectionMode: 'checkbox',
+      ...nodesOf({ a: { hasChildren: true } }, ['a']),
+      checked: ['a'],
+    })
+    const [s1] = update(s0, { type: 'expand', id: 'a' })
+    const [s2] = update(s1, {
+      type: 'childrenLoaded',
+      id: 'a',
+      items: [{ id: 'a1' }, { id: 'a2', disabled: true }],
+    })
+    // Enabled child cascades checked; disabled child is left untouched.
+    expect(isChecked(s2, 'a1')).toBe(true)
+    expect(isChecked(s2, 'a2')).toBe(false)
+    // a's only enabled descendant a1 is checked → a stays checked.
+    expect(isChecked(s2, 'a')).toBe(true)
+    expect(isIndeterminate(s2, 'a')).toBe(false)
+  })
+
+  it('lazy-loading an UNCHECKED branch stays unchecked (no spurious cascade)', () => {
+    const s0 = init({
+      selectionMode: 'checkbox',
+      ...nodesOf({ a: { hasChildren: true } }, ['a']),
+    })
+    const [s1] = update(s0, { type: 'expand', id: 'a' })
+    const [s2] = update(s1, {
+      type: 'childrenLoaded',
+      id: 'a',
+      items: [{ id: 'a1' }, { id: 'a2' }],
+    })
+    expect(isChecked(s2, 'a')).toBe(false)
+    expect(isChecked(s2, 'a1')).toBe(false)
+    expect(isChecked(s2, 'a2')).toBe(false)
+  })
 })

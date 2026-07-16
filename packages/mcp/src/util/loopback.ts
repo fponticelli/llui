@@ -6,7 +6,7 @@ import { timingSafeEqual } from 'node:crypto'
 // so the transport call sites (`cli.ts`, `relay.ts`) keep their import. The
 // node-crypto `tokensMatch` stays local — it depends on `node:*` builtins and
 // has no browser-safe home in the dependency-free security package.
-export { isLoopbackOrigin } from '@llui/security'
+export { isLoopbackOrigin, isLoopbackAuthority } from '@llui/security'
 
 /**
  * Constant-time comparison of two ASCII tokens. Avoids leaking length /

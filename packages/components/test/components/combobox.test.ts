@@ -40,17 +40,17 @@ describe('combobox reducer', () => {
   it('highlightNext navigates filtered list', () => {
     const s0 = {
       ...init({ items: ['apple', 'apricot', 'banana'] }),
-      highlightedIndex: 0,
+      highlightedValue: 'apple',
       filteredItems: ['apple', 'apricot'],
     }
     const [s] = update(s0, { type: 'highlightNext' })
-    expect(s.highlightedIndex).toBe(1)
+    expect(s.highlightedValue).toBe('apricot')
   })
 
-  it('selectHighlighted uses filteredItems[highlightedIndex]', () => {
+  it('selectHighlighted uses the highlighted VALUE from the filtered list', () => {
     const s0 = {
       ...init({ items: ['apple', 'apricot', 'banana'] }),
-      highlightedIndex: 0,
+      highlightedValue: 'apple',
       inputValue: 'ap',
       filteredItems: ['apple', 'apricot'],
       open: true,
@@ -215,12 +215,11 @@ describe('combobox option groups', () => {
           { id: 'b', label: 'B', items: ['banana'] },
         ],
       }),
-      highlightedIndex: 1,
+      highlightedValue: 'apricot',
     }
     const [s] = update(s0, { type: 'highlightNext' })
-    // index 1 -> 2 (banana), never lands on a header
-    expect(s.highlightedIndex).toBe(2)
-    expect(s.filteredItems[s.highlightedIndex!]).toBe('banana')
+    // apricot -> banana, never lands on a header
+    expect(s.highlightedValue).toBe('banana')
   })
 })
 
@@ -283,7 +282,7 @@ describe('combobox creatable', () => {
       ...init({ items: ['apple'], allowCreate: true }),
       inputValue: 'cherry',
       filteredItems: ['apple', CREATE_OPTION_VALUE],
-      highlightedIndex: 1,
+      highlightedValue: CREATE_OPTION_VALUE,
       open: true,
     }
     const [, effects] = update(s0, { type: 'selectHighlighted' })
@@ -292,8 +291,8 @@ describe('combobox creatable', () => {
 
   it('isCreateOption part flags the synthetic sentinel', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
-    expect(p.item(CREATE_OPTION_VALUE, 0).item['data-create']).toBe('')
-    expect(p.item('apple', 0).item['data-create']).toBe(undefined)
+    expect(p.item(CREATE_OPTION_VALUE).item['data-create']).toBe('')
+    expect(p.item('apple').item['data-create']).toBe(undefined)
   })
 
   // Finding 8: the ARIA combobox role belongs on the input only.
@@ -307,14 +306,62 @@ describe('combobox creatable', () => {
     expect(p.input['aria-controls']).toBe('cb:content')
   })
 
-  // Finding 18: a highlight at the already-highlighted index is a no-op that
+  // Finding 18: a highlight at the already-highlighted value is a no-op that
   // returns the SAME state reference so the reconciler skips the commit.
-  it('highlight to the current index returns the same state reference', () => {
-    const s0 = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 1, open: true }
-    const [s1] = update(s0, { type: 'highlight', index: 1 })
+  it('highlight to the current value returns the same state reference', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), highlightedValue: 'b', open: true }
+    const [s1] = update(s0, { type: 'highlight', value: 'b' })
     expect(s1).toBe(s0)
-    const [s2] = update(s0, { type: 'highlight', index: 2 })
+    const [s2] = update(s0, { type: 'highlight', value: 'c' })
     expect(s2).not.toBe(s0)
-    expect(s2.highlightedIndex).toBe(2)
+    expect(s2.highlightedValue).toBe('c')
+  })
+})
+
+describe('combobox value-based highlight identity', () => {
+  it('highlight follows the VALUE when the filter reorders rows (not a stale index)', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'cb' })
+    // Filter narrows + reorders the list; 'banana' ends up first.
+    const s0 = {
+      ...init({ items: ['apple', 'apricot', 'banana'] }),
+      inputValue: 'an',
+      filteredItems: ['banana'],
+      highlightedValue: 'banana',
+      open: true,
+    }
+    // The row for 'banana' is highlighted wherever it now sits; 'apple' is not.
+    expect(read(p.item('banana').item['data-highlighted'], s0)).toBe('')
+    expect(read(p.item('apple').item['data-highlighted'], s0)).toBeUndefined()
+    // aria-activedescendant points to the value's id, and data-index is live.
+    expect(read(p.input['aria-activedescendant'], s0)).toBe('cb:item:banana')
+    expect(read(p.item('banana').item['data-index'], s0)).toBe('0')
+    // selectHighlighted commits 'banana', not whatever index 0 used to hold.
+    const [s] = update(s0, { type: 'selectHighlighted' })
+    expect(s.value).toEqual(['banana'])
+  })
+
+  it('a filter change that drops the highlighted value re-seeds to the first match', () => {
+    const s0 = {
+      ...init({ items: ['apple', 'apricot', 'banana'] }),
+      highlightedValue: 'apple',
+      open: true,
+    }
+    // Typing 'ban' filters out 'apple' → highlight moves to the first match.
+    const [s] = update(s0, { type: 'setInputValue', value: 'ban' })
+    expect(s.filteredItems).toEqual(['banana'])
+    expect(s.highlightedValue).toBe('banana')
+  })
+
+  it('setItems keeps the highlight only when its value survives the new filtered list', () => {
+    const kept = {
+      ...init({ items: ['apple', 'banana'] }),
+      highlightedValue: 'banana',
+      open: true,
+    }
+    const [s1] = update(kept, { type: 'setItems', items: ['banana', 'cherry'] })
+    expect(s1.highlightedValue).toBe('banana')
+    const [s2] = update(kept, { type: 'setItems', items: ['cherry', 'date'] })
+    expect(s2.highlightedValue).toBeNull()
   })
 })

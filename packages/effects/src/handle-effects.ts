@@ -142,12 +142,18 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
  * runtime's, shared with everything else on the mount).
  *
  * FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
- * caller), the adapter owns one AbortController per mount and the returned cleanup
- * aborts it. It is (re)created lazily — never at factory-call time, since
- * `asOnEffect` typically runs at module top-level where constructing an
- * AbortController throws on Cloudflare Workers — and recreated once aborted so a
- * re-mount of the same definition never inherits a dead signal. The cleanup is
- * memoized per generation so it always targets the controller live at its dispatch.
+ * caller), the adapter owns one AbortController PER MOUNT, keyed off the mount's
+ * `send` identity in a `WeakMap`. The runtime passes ONE stable `send` per mount
+ * for every effect it emits, so all of a mount's effects share that mount's
+ * controller — and two CONCURRENT mounts of the same definition get DISTINCT
+ * controllers (distinct `send`s). That isolation is the point: disposing mount A
+ * must never abort mount B's in-flight http. Controllers are created lazily —
+ * never at factory-call time, since `asOnEffect` typically runs at module
+ * top-level where constructing an AbortController throws on Cloudflare Workers —
+ * and recreated if a stale (aborted) one is found under a reused `send`, so a
+ * re-mount never inherits a dead signal. The returned cleanup captures the
+ * controller live at ITS dispatch, so a late unmount of one mount never tears
+ * down a later mount's effects.
  *
  * Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
  */
@@ -155,21 +161,21 @@ export function asOnEffect<E extends { type: string }, M>(
   chain: (ctx: EffectCtx<E, M>) => void,
 ): (effect: E, api: { send: (msg: M) => void; signal?: AbortSignal }) => () => void {
   const noop = (): void => {}
-  let controller: AbortController | null = null
-  let cleanup: (() => void) | null = null
+  const controllers = new WeakMap<(msg: M) => void, AbortController>()
   return (effect, { send, signal }) => {
     if (signal) {
       // Per-mount signal from the runtime — teardown is the runtime's job.
       chain({ effect, send, signal })
       return noop
     }
-    // Fallback: own a controller per mount, recreating once aborted.
-    if (controller === null || controller.signal.aborted) {
-      const ctrl = new AbortController()
-      controller = ctrl
-      cleanup = () => ctrl.abort() // memoized per generation
+    // Fallback: one controller per mount, keyed off `send`, recreated once aborted.
+    let controller = controllers.get(send)
+    if (controller === undefined || controller.signal.aborted) {
+      controller = new AbortController()
+      controllers.set(send, controller)
     }
-    chain({ effect, send, signal: controller.signal })
-    return cleanup!
+    const ctrl = controller
+    chain({ effect, send, signal: ctrl.signal })
+    return () => ctrl.abort() // targets the controller live at this dispatch
   }
 }

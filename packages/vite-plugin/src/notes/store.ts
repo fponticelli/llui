@@ -10,6 +10,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -40,6 +41,7 @@ import type {
   Author,
   CreateNoteRequest,
   CreateNoteResponse,
+  ListNotesError,
   ListNotesQuery,
   ListNotesResponse,
   NoteFrontmatter,
@@ -50,6 +52,34 @@ import type {
 function listNoteFilenames(sessionDir: string): string[] {
   if (!existsSync(sessionDir)) return []
   return readdirSync(sessionDir).filter((f) => f.endsWith('.md'))
+}
+
+/** True when an fs error is an `EEXIST` (exclusive-create collision). */
+function isEexist(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'EEXIST'
+}
+
+/**
+ * Write `data` to `path` atomically: write a sibling tmp file then
+ * `renameSync` over the target. POSIX rename is atomic within a
+ * filesystem, so a concurrent reader sees either the old file or the
+ * complete new one — never a half-written (torn) file. Mirrors the
+ * session-marker write (`session.ts`).
+ */
+function atomicWriteFileSync(path: string, data: string | Buffer): void {
+  const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
+  try {
+    writeFileSync(tmp, data)
+    renameSync(tmp, path)
+  } catch (err) {
+    // Best-effort cleanup so a failed write doesn't leak a tmp sidecar.
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    } catch {
+      /* ignore */
+    }
+    throw err
+  }
 }
 
 function nextIdAndFilename(
@@ -77,6 +107,53 @@ function nextIdAndFilename(
   return { id, filename }
 }
 
+interface AllocatedNote {
+  id: string
+  filename: string
+  path: string
+  screenshotFilename: string | null
+}
+
+/**
+ * Allocate the note id and write its `.md` atomically. `writeFileSync` with
+ * the `wx` flag is an exclusive create (O_CREAT | O_EXCL): if the derived
+ * filename already exists — a concurrent writer or an out-of-band HUD claimed
+ * it between our scan and our write — it throws `EEXIST`. We then rescan
+ * (picking a fresh id past the newcomer) and retry, instead of silently
+ * clobbering another note. A brand-new file grows from zero in a single
+ * write, so there is no truncate-then-write window for a torn read.
+ */
+function allocateAndWriteNote(
+  sessionDir: string,
+  req: CreateNoteRequest,
+  slug: string,
+  ts: string,
+): AllocatedNote {
+  const MAX_ID_ATTEMPTS = 128
+  for (let attempt = 0; ; attempt++) {
+    const alloc = nextIdAndFilename(sessionDir, req.frontmatter.author, req.frontmatter.kind, slug)
+    const path = join(sessionDir, alloc.filename)
+    // The frontmatter on disk gets server-assigned id + ts. Also rewrite
+    // `screenshot` to point at the actual sibling filename (callers can
+    // pass any placeholder; we own the canonical name).
+    const screenshotFilename = req.screenshot ? alloc.filename.replace(/\.md$/, '.png') : null
+    const frontmatter: NoteFrontmatter = {
+      ...req.frontmatter,
+      id: alloc.id,
+      ts,
+      screenshot: screenshotFilename,
+    }
+    const md = serializeNote({ frontmatter, prose: req.body, body: req.noteBody })
+    try {
+      writeFileSync(path, md, { encoding: 'utf8', flag: 'wx' })
+      return { id: alloc.id, filename: alloc.filename, path, screenshotFilename }
+    } catch (err) {
+      if (isEexist(err) && attempt < MAX_ID_ATTEMPTS) continue
+      throw err
+    }
+  }
+}
+
 export function createNote(
   notesRoot: string,
   req: CreateNoteRequest,
@@ -88,36 +165,15 @@ export function createNote(
   const sessionDir = session.notesDir
 
   const slug = (format.deriveSlug ?? deriveSlug)(req.body)
-  const { id, filename } = nextIdAndFilename(
-    sessionDir,
-    req.frontmatter.author,
-    req.frontmatter.kind,
-    slug,
-  )
+  const ts = new Date().toISOString()
 
-  // The frontmatter on disk gets server-assigned id + ts. Also rewrite
-  // `screenshot` to point at the actual sibling filename (callers can
-  // pass any placeholder; we own the canonical name).
-  const screenshotFilename = req.screenshot ? filename.replace(/\.md$/, '.png') : null
-  const frontmatter: NoteFrontmatter = {
-    ...req.frontmatter,
-    id,
-    ts: new Date().toISOString(),
-    screenshot: screenshotFilename,
-  }
-
-  const serialized: SerializedNote = {
-    frontmatter,
-    prose: req.body,
-    body: req.noteBody,
-  }
-  const md = serializeNote(serialized)
-  const path = join(sessionDir, filename)
-  writeFileSync(path, md, 'utf8')
+  const { id, filename, path, screenshotFilename } = allocateAndWriteNote(sessionDir, req, slug, ts)
 
   if (req.screenshot && screenshotFilename) {
     const pngPath = join(sessionDir, screenshotFilename)
-    writeFileSync(pngPath, Buffer.from(req.screenshot, 'base64'))
+    // Binary payload can be large and multi-write — write atomically so a
+    // reader never sees a partially-decoded screenshot.
+    atomicWriteFileSync(pngPath, Buffer.from(req.screenshot, 'base64'))
   }
 
   return {
@@ -147,10 +203,17 @@ export function resolveSessionDir(notesRoot: string, sessionId: string): string 
 function findNoteFile(sessionDir: string, id: string): string | null {
   if (!existsSync(sessionDir)) return null
   const prefix = `${id}-`
-  for (const f of readdirSync(sessionDir)) {
-    if (f.startsWith(prefix) && f.endsWith('.md')) return f
+  const matches = readdirSync(sessionDir).filter((f) => f.startsWith(prefix) && f.endsWith('.md'))
+  if (matches.length === 0) return null
+  if (matches.length > 1) {
+    // Two notes sharing one id is a corrupt/torn state (a duplicate-id race
+    // that slipped past exclusive-create, or a manual copy). Surface it
+    // loudly rather than silently pick one and mask the corruption.
+    throw new Error(
+      `note store integrity error: multiple files for id ${id}: ${matches.sort().join(', ')}`,
+    )
   }
-  return null
+  return matches[0]!
 }
 
 export function readNote(notesRoot: string, sessionId: string, id: string): SerializedNote {
@@ -180,7 +243,9 @@ export function updateNoteProse(
   if (!filename) throw new Error(`note not found: ${sessionId}/${id}`)
   const existing = parseNote(readFileSync(join(sessionDir, filename), 'utf8'))
   const updated: SerializedNote = { ...existing, prose: newProse }
-  writeFileSync(join(sessionDir, filename), serializeNote(updated), 'utf8')
+  // Overwriting an existing file truncates-then-writes, which a concurrent
+  // reader can catch mid-flight. Write atomically (tmp + rename) instead.
+  atomicWriteFileSync(join(sessionDir, filename), serializeNote(updated))
   return updated
 }
 
@@ -221,6 +286,12 @@ function preview(prose: string, max = 80): string {
   return flat.slice(0, max)
 }
 
+/**
+ * Build a summary for one note file. Returns `null` when the filename is
+ * not a canonical note name (e.g. a stray `README.md` — legitimately not a
+ * note, so silently skipped). THROWS when a canonical note file fails to
+ * parse — that is corruption the caller must surface, not swallow.
+ */
 function noteFileToSummary(
   notesRoot: string,
   sessionId: string,
@@ -230,12 +301,7 @@ function noteFileToSummary(
   if (!parsed) return null
   const sessionDir = resolveSessionDir(notesRoot, sessionId)
   const md = readFileSync(join(sessionDir, filename), 'utf8')
-  let note: SerializedNote
-  try {
-    note = parseNote(md)
-  } catch {
-    return null
-  }
+  const note: SerializedNote = parseNote(md)
   const pngPath = join(sessionDir, filename.replace(/\.md$/, '.png'))
   const fm = note.frontmatter as typeof note.frontmatter & {
     intent?: NoteSummary['intent']
@@ -274,9 +340,18 @@ export function listNotes(notesRoot: string, query: ListNotesQuery): ListNotesRe
   const filenames = listNoteFilenames(sessionDir)
 
   const summaries: NoteSummary[] = []
+  const errors: ListNotesError[] = []
   for (const f of filenames) {
-    const s = noteFileToSummary(notesRoot, sessionId, f)
-    if (s) summaries.push(s)
+    try {
+      const s = noteFileToSummary(notesRoot, sessionId, f)
+      if (s) summaries.push(s)
+    } catch (err) {
+      // A canonical note file that failed to parse (corrupt frontmatter,
+      // torn write, hand-edit). Surface it instead of silently dropping so
+      // a broken note is visible to the HUD / server logs.
+      const message = err instanceof Error ? err.message : String(err)
+      errors.push({ filename: f, message })
+    }
   }
   // Sort ascending by id (natural session order)
   summaries.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }))
@@ -295,7 +370,9 @@ export function listNotes(notesRoot: string, query: ListNotesQuery): ListNotesRe
   const total = filtered.length
   if (query.limit !== undefined) filtered = filtered.slice(0, query.limit)
 
-  return { sessionId, notes: filtered, total }
+  const response: ListNotesResponse = { sessionId, notes: filtered, total }
+  if (errors.length > 0) response.errors = errors
+  return response
 }
 
 export interface SessionListEntry {

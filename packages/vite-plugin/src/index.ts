@@ -10,6 +10,7 @@ interface ServerResponseLike {
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
@@ -811,6 +812,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let resolvedRouter: LlmRouterConfig | null = null
   let solveEnabled = false
 
+  // Per-launch capability token that authorizes marking a task note trusted
+  // (which lets the attention router spawn a local CLI agent — potentially
+  // with --dangerously-skip-permissions). It is injected into the HUD bundle
+  // out-of-band (the bootstrap JSON below) and required on the task-create
+  // POST via the `x-llui-task-capability` header. A same-origin page script
+  // passes the CSRF guard but can't read this token, so it can't forge a
+  // trusted task → can't trigger a local agent spawn. Generated once per
+  // plugin instance so it never touches disk and never persists across runs.
+  const taskCapabilityToken = randomBytes(32).toString('hex')
+
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
   // event so the browser can call __lluiConnect() automatically — without
@@ -960,6 +971,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             hudOptionsJson = JSON.stringify({
               ...(forwarded.hidden ? { hidden: true } : {}),
               solveEnabled,
+              // Out-of-band capability token: the HUD echoes this on the
+              // task-create POST so the middleware can distinguish a real
+              // in-HUD task (router may spawn an agent) from a forged
+              // same-origin POST (created, but never spawned). Only forwarded
+              // when the router is actually enabled — no router, no spawn, no
+              // need to hand the token to the page.
+              ...(solveEnabled ? { taskCapabilityToken } : {}),
               // Production bootstrap turns on server-side rehydrate so
               // a page reload restores in-flight tasks + chain history
               // + Accept toasts. Tests (mountAnnotateHud directly)
@@ -1036,6 +1054,10 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           bus: notesBus,
           registry: notesRegistry,
           trustedTasks: notesTrustedTasks,
+          // Only hand the middleware a live token when the router is enabled;
+          // otherwise no task is ever marked trusted (nothing would spawn
+          // anyway) and a forged POST can't fish for a valid token.
+          ...(solveEnabled ? { taskCapabilityToken } : {}),
           defaultCaptureTimeoutMs: captureTimeoutMs,
           ...(notesConfig.format ? { format: notesConfig.format } : {}),
         })
@@ -1285,7 +1307,12 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     },
 
     async transform(code, id, options) {
-      if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
+      // Strip any Vite query/hash suffix (`foo.tsx?v=abc`, `foo.ts#x`) before
+      // testing the extension — otherwise a queried id would slip past the
+      // gate. Accept `.mts`/`.cts` too (native ESM/CJS TS modules), not just
+      // `.ts`/`.tsx`.
+      const cleanId = id.replace(/[?#][^]*$/, '')
+      if (!/\.(?:ts|tsx|mts|cts)$/.test(cleanId)) return
 
       // `'use client'` directive — SSR builds replace the module with a
       // stub so top-level imports and side effects never run on the
@@ -1329,10 +1356,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // an unrelated helper) does NOT match — only a real `component(`/`component<`
       // token arms the routing + integrity signal.
       const hasComponentCall = /\bcomponent\s*[<(]/.test(code)
-      if (
-        (hasComponentCall || /\beach\s*\(/.test(code)) &&
-        /from\s*['"]@llui\/dom['"]/.test(code)
-      ) {
+      const importsDomLiteral = /from\s*['"]@llui\/dom['"]/.test(code)
+      // Fast-accept: a file that imports `@llui/dom` literally AND has a
+      // `component(`/`each(` site. FALLBACK: route ANY qualifying module with a
+      // real `component(` token even when it does NOT import `@llui/dom`
+      // literally — the runtime surface is frequently re-exported through a
+      // project barrel (`from './framework'`), so requiring the literal import
+      // silently skipped barrel-imported components (they ran un-lowered and,
+      // worse, un-linted). `each(`-only helper modules still require the
+      // literal import: a bare `each(` is too common to arm routing on alone.
+      if (hasComponentCall || (importsDomLiteral && /\beach\s*\(/.test(code))) {
         // NOTE: the build-integrity flag is NOT armed here. A loose pre-check
         // is too weak a "fail closed" guarantee — it fires before the transform
         // runs, so a false-positive string match would vacuously satisfy the

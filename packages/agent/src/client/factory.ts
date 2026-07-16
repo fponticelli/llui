@@ -197,6 +197,7 @@ export type PersistedAgentSession = {
   tid: string
   lapUrl: string
   wsUrl: string
+  /** Hard-expiry, MILLISECONDS-since-epoch (LAP v2 — see MintResponse). */
   expiresAt: number
 }
 
@@ -243,10 +244,13 @@ export function defaultSessionStorage(
       ) {
         return null
       }
-      // `expiresAt` is unix-seconds (server's mint endpoint floors
-      // ms→s). Compare to `Date.now() / 1000` so the same-units
-      // footgun the host code hit doesn't bite the framework too.
-      if (o.expiresAt * 1000 <= Date.now()) return null
+      // `expiresAt` is MILLISECONDS-since-epoch (LAP v2 — the mint/resume
+      // endpoints no longer floor to seconds), the same unit as
+      // `Date.now()`, so the expiry check compares directly with no ×1000
+      // fixup. (Pre-v2 blobs stored seconds; a stale one now reads as long
+      // expired — `secondsValue <= nowMs` — so it's discarded and the user
+      // re-pairs, which is the correct outcome for a cross-version blob.)
+      if (o.expiresAt <= Date.now()) return null
       return {
         token: o.token as AgentToken,
         tid: o.tid,

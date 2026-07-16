@@ -9,7 +9,7 @@
 // pull the proposedDiff out of the related reply note and feed it to
 // `git apply` (handled at the middleware layer, not here).
 
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -38,6 +38,61 @@ function statusPath(sessionDir: string): string {
 export function appendStatus(sessionDir: string, transition: StatusTransition): void {
   const line = JSON.stringify(transition) + '\n'
   appendFileSync(statusPath(sessionDir), line, 'utf8')
+}
+
+export interface ClaimLockOutcome {
+  /** True only for the single caller that created the lock file. */
+  acquired: boolean
+  /** The workerId recorded in the lock file — our own id when we won, the
+   *  prior winner's id when we lost. `null` when the lock is unreadable. */
+  holder: string | null
+}
+
+/**
+ * Acquire an exclusive claim on a note via an `O_CREAT | O_EXCL` lock file
+ * (`<noteId>.claim`) — the arbiter for cross-process claiming. Exactly ONE
+ * caller wins the exclusive create; every other caller gets `EEXIST` and
+ * reads the winner's `workerId` back out of the file. This closes the
+ * read-then-append TOCTOU where two workers both observed `open` status and
+ * both appended a `claimed` transition.
+ *
+ * The lock file is a permanent record (it is NOT released) so a later claim
+ * of the same note is reported as already-claimed by the recorded holder.
+ */
+export function acquireClaimLock(
+  sessionDir: string,
+  noteId: string,
+  workerId: string,
+): ClaimLockOutcome {
+  // `noteId` reaches us from an MCP argument; keep it from escaping the
+  // session dir through the lock filename.
+  if (!/^[A-Za-z0-9._-]+$/.test(noteId) || noteId.includes('..')) {
+    throw new Error(`invalid noteId: ${JSON.stringify(noteId)}`)
+  }
+  const lockPath = join(sessionDir, `${noteId}.claim`)
+  const payload = JSON.stringify({ workerId, ts: new Date().toISOString() })
+  try {
+    // 'wx' = O_CREAT | O_EXCL | O_WRONLY: atomic exclusive create.
+    const fd = openSync(lockPath, 'wx')
+    try {
+      writeSync(fd, payload)
+    } finally {
+      closeSync(fd)
+    }
+    return { acquired: true, holder: workerId }
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'EEXIST') {
+      let holder: string | null = null
+      try {
+        const parsed = JSON.parse(readFileSync(lockPath, 'utf8')) as { workerId?: string }
+        holder = parsed.workerId ?? null
+      } catch {
+        // Lock present but unreadable — still definitively "already claimed".
+      }
+      return { acquired: false, holder }
+    }
+    throw err
+  }
 }
 
 /**

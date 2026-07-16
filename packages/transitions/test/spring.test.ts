@@ -154,6 +154,42 @@ describe('spring()', () => {
     }
   })
 
+  // ── Finding 7: interrupted enter→leave starts from the CURRENT value ──
+  it('leave starts from the element’s current value, not the resting `to`', () => {
+    const el = makeEl()
+    const queue: FrameRequestCallback[] = []
+    const rafSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        queue.push(cb)
+        return queue.length
+      })
+    const pump = (time: number): void => {
+      const cbs = queue.splice(0)
+      for (const cb of cbs) cb(time)
+    }
+
+    try {
+      const t = spring({ property: 'opacity', from: 0, to: 1, stiffness: 170, damping: 26 })
+      t.enter!([el]) // enter 0 → 1
+      pump(16)
+      pump(32)
+      const mid = parseFloat(el.style.getPropertyValue('opacity'))
+      expect(mid).toBeGreaterThan(0)
+      expect(mid).toBeLessThan(1)
+
+      // Interrupt with a leave. animateOne applies the START value inline
+      // synchronously, so the initial leave value must be the CURRENT mid value
+      // (not `to` = 1 — the pre-fix behaviour snapped fully visible first).
+      void t.leave!([el])
+      const leaveStart = parseFloat(el.style.getPropertyValue('opacity'))
+      expect(leaveStart).toBeCloseTo(mid, 5)
+      expect(leaveStart).not.toBe(1)
+    } finally {
+      rafSpy.mockRestore()
+    }
+  })
+
   it('spring settles to target (simulated)', async () => {
     // We can't run rAF in jsdom with real timing, but we can verify
     // the physics engine converges by importing and testing directly.

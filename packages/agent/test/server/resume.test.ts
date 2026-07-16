@@ -99,7 +99,8 @@ describe('handleResumeClaim', () => {
     // bearer can be persisted (mirrors MintResponse).
     expect(body.tid).toBe('t1')
     expect(body.lapUrl).toMatch(/\/agent\/lap\/v1$/)
-    expect(body.expiresAt).toBe(Math.floor((5000 + 3600_000) / 1000))
+    // MILLISECONDS-since-epoch (LAP v2) — same unit as the stored record.
+    expect(body.expiresAt).toBe(5000 + 3600_000)
 
     // The new bearer's hash matches the rotated record's tokenHash.
     const newHash = await tokenHashOf(body.token)

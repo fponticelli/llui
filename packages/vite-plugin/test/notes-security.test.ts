@@ -341,6 +341,104 @@ describe('revert path containment', () => {
   })
 })
 
+describe('task-spawn capability token (S2)', () => {
+  // A task note is only marked trusted (→ the router may spawn a local CLI
+  // agent) when the request presents the per-launch capability token. A
+  // same-origin page script passes the CSRF/loopback guard but cannot read
+  // the token, so a forged task POST must NOT become trusted.
+  const CAP = 'the-secret-capability-token'
+
+  interface CapFixture {
+    notesRoot: string
+    server: Server
+    port: number
+    trusted: ReturnType<typeof createTrustedTaskRegistry>
+  }
+
+  async function startCapFixture(): Promise<CapFixture> {
+    const notesRoot = mkdtempSync(join(tmpdir(), 'llui-cap-test-'))
+    const bus = createEventBus()
+    const registry = createCaptureRegistry()
+    const trusted = createTrustedTaskRegistry()
+    const handler = createNotesMiddleware({
+      notesRoot,
+      bus,
+      registry,
+      trustedTasks: trusted,
+      taskCapabilityToken: CAP,
+      defaultCaptureTimeoutMs: 1000,
+    })
+    const server = createServer((req, res) => {
+      handler(req, res, () => {
+        res.statusCode = 404
+        res.end('not in /_llui')
+      })
+    })
+    return new Promise((resolve) => {
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as AddressInfo
+        resolve({ notesRoot, server, port: addr.port, trusted })
+      })
+    })
+  }
+
+  function postTask(
+    port: number,
+    body: unknown,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<{ status: number; body: string }> {
+    return raw(port, 'POST', '/_llui/notes', {
+      headers: {
+        host: `127.0.0.1:${port}`,
+        origin: `http://127.0.0.1:${port}`,
+        'content-type': 'application/json',
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
+    })
+  }
+
+  const taskBody = { body: 'do a task', frontmatter: { ...fmBase, intent: 'task' }, noteBody: {} }
+
+  it('does NOT mark a forged same-origin task POST (no token) trusted', async () => {
+    const cf = await startCapFixture()
+    try {
+      const res = await postTask(cf.port, taskBody)
+      expect(res.status).toBe(201)
+      const created = JSON.parse(res.body) as { id: string; sessionId: string }
+      // The note is created and enters the queue, but is NOT trusted.
+      expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(false)
+    } finally {
+      rmSync(cf.notesRoot, { recursive: true, force: true })
+      await new Promise<void>((r) => cf.server.close(() => r()))
+    }
+  })
+
+  it('rejects a WRONG capability token', async () => {
+    const cf = await startCapFixture()
+    try {
+      const res = await postTask(cf.port, taskBody, { 'x-llui-task-capability': 'wrong' })
+      const created = JSON.parse(res.body) as { id: string; sessionId: string }
+      expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(false)
+    } finally {
+      rmSync(cf.notesRoot, { recursive: true, force: true })
+      await new Promise<void>((r) => cf.server.close(() => r()))
+    }
+  })
+
+  it('marks a task trusted when the correct capability token is presented', async () => {
+    const cf = await startCapFixture()
+    try {
+      const res = await postTask(cf.port, taskBody, { 'x-llui-task-capability': CAP })
+      const created = JSON.parse(res.body) as { id: string; sessionId: string }
+      expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(true)
+    } finally {
+      rmSync(cf.notesRoot, { recursive: true, force: true })
+      await new Promise<void>((r) => cf.server.close(() => r()))
+    }
+  })
+})
+
 describe('router task provenance', () => {
   it('does not spawn for a note whose id was never marked trusted', async () => {
     const notesRoot = mkdtempSync(join(tmpdir(), 'llui-prov-'))

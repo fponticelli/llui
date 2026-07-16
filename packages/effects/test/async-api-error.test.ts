@@ -176,6 +176,41 @@ describe('ApiError mapping from HTTP status', () => {
     vi.unstubAllGlobals()
   })
 
+  it('maps a 2xx with an invalid JSON body to a parse error (not network)', async () => {
+    const send = vi.fn()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        // A 2xx whose body is not valid JSON: `res.json()` throws a SyntaxError.
+        json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON')),
+        text: () => Promise.resolve('<html>not json</html>'),
+      }),
+    )
+
+    const handler = handleEffects().else(() => {})
+    handler({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
+        url: '/x',
+        responseType: 'json',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
+      send,
+      signal: new AbortController().signal,
+    })
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send).toHaveBeenCalledWith({
+      type: 'err',
+      error: { kind: 'parse', message: expect.stringContaining('JSON') },
+    })
+    vi.unstubAllGlobals()
+  })
+
   it('maps network failure to network error', async () => {
     const send = vi.fn()
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))

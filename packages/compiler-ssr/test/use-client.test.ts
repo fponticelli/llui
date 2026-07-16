@@ -57,6 +57,45 @@ export default component({ name: 'Widget', init: () => [{}, []], update: (s) => 
     expect(result!.output).toContain('export default __clientOnlyStub("default")')
   })
 
+  it('stubs `export default function NAME` as the DEFAULT export (not a named stub)', () => {
+    const src = `'use client'
+export default function Foo() { return null }
+`
+    const result = transformUseClientSsr(src, 'f.ts')
+    expect(result).not.toBeNull()
+    expect(result!.output).toContain('export default __clientOnlyStub("default")')
+    // must NOT emit a phantom named `Foo` stub
+    expect(result!.output).not.toContain('export const Foo =')
+  })
+
+  it('stubs `export default class` (anonymous) as the DEFAULT export', () => {
+    const src = `'use client'
+export default class {}
+`
+    const result = transformUseClientSsr(src, 'c.ts')
+    expect(result).not.toBeNull()
+    expect(result!.output).toContain('export default __clientOnlyStub("default")')
+  })
+
+  it('stubs `export default class NAME` as the DEFAULT export (not a named stub)', () => {
+    const src = `'use client'
+export default class Widget {}
+`
+    const result = transformUseClientSsr(src, 'c.ts')
+    expect(result).not.toBeNull()
+    expect(result!.output).toContain('export default __clientOnlyStub("default")')
+    expect(result!.output).not.toContain('export const Widget =')
+  })
+
+  it('stubs `export enum E` like a const (not silently dropped)', () => {
+    const src = `'use client'
+export enum Mode { A, B }
+`
+    const result = transformUseClientSsr(src, 'e.ts')
+    expect(result).not.toBeNull()
+    expect(result!.output).toContain(`export const Mode = __clientOnlyStub("Mode")`)
+  })
+
   it('stubs `export function`', () => {
     const src = `'use client'
 export function makeWidget() { return null }

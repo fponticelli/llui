@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { presenceEndHandler } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -373,8 +374,8 @@ export function connect(
           onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
           onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
           onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          onAnimationEnd: onEnd,
-          onTransitionEnd: onEnd,
+          onAnimationEnd: presenceEndHandler(onEnd),
+          onTransitionEnd: presenceEndHandler(onEnd),
         },
         title: {
           id: `${toast.id}:title`,

@@ -401,6 +401,14 @@ function emitHandler(init: ts.Expression, sf: ts.SourceFile, rewriteRoots?: Root
   ) {
     autoBatch.used = true
     const params = init.parameters.map((p) => p.getText(sf)).join(', ')
+    // A `function` handler binds its own `this`/`arguments`; rewriting it to an arrow
+    // would change those semantics. Keep the `function` form (a nested arrow inside
+    // `batch(…)` preserves the enclosing `this`/`arguments`), and only produce an arrow
+    // when the source was already an arrow.
+    if (ts.isFunctionExpression(init)) {
+      const name = init.name ? ` ${init.name.text}` : ''
+      return `function${name}(${params}) { return batch(() => ${render(init.body)}) }`
+    }
     return `(${params}) => batch(() => ${render(init.body)})`
   }
   return render(init)

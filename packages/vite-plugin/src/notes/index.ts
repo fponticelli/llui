@@ -36,11 +36,13 @@ export { importBundle, type ImportBundleResult } from './import.js'
 export { deriveFilename, deriveSlug, padId } from './slug.js'
 
 export {
+  acquireClaimLock,
   appendStatus,
   currentStatus,
   listQueue,
   readAllTransitions,
   readStatusHistory,
+  type ClaimLockOutcome,
   type QueueEntry,
 } from './status.js'
 

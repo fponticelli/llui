@@ -502,11 +502,17 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       // Re-derive tri-state if a checked ancestor should cascade onto the
       // freshly-loaded enabled descendants, or vice-versa.
       if (state.selectionMode === 'checkbox') {
-        const { checked, indeterminate } = deriveCheckState(
-          nextState.nodes,
-          nextState.roots,
-          new Set(nextState.checked),
-        )
+        const seed = new Set(nextState.checked)
+        // A branch that was FULLY checked before its children existed must
+        // cascade that checked state DOWN onto the freshly-loaded enabled
+        // descendants first. Without this the roll-up sees "no checked
+        // descendants" and erases the branch's own check.
+        if (seed.has(msg.id)) {
+          for (const d of descendantsOf(nextState.nodes, msg.id)) {
+            if (nextState.nodes[d]?.disabled !== true) seed.add(d)
+          }
+        }
+        const { checked, indeterminate } = deriveCheckState(nextState.nodes, nextState.roots, seed)
         return [{ ...nextState, checked, indeterminate }, []]
       }
       return [nextState, []]

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { lintSignals, type SignalDiagnostic } from '../../src/signals/rules.js'
+import { lintSignals, lintSignalSource, type SignalDiagnostic } from '../../src/signals/rules.js'
 
 function lint(src: string): SignalDiagnostic[] {
   const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)
@@ -702,5 +702,58 @@ describe('import-binding recognition (framework calls gated by @llui/dom imports
       "const c = each(state.at('rows').peek(), { render: (item) => [item.at('x') ? 1 : 2] })",
     ].join('\n')
     expect(rules(src)).not.toContain('operator-on-signal')
+  })
+})
+
+describe('module-scope `state` is a plain value, not a signal root', () => {
+  it('does NOT flag operator-on-signal when `state` is a local const', () => {
+    // A module-scope `const state = [...]` shadows the conventional signal root;
+    // `state.at(0) + 1` is plain array/value code, not a signal operation.
+    const src = 'const state = [1, 2, 3]\nconst x = state.at(0) + 1'
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+
+  it('still flags a free/ambient `state` (the component signal)', () => {
+    // No local declaration: `state` is the component signal, so the operator fires.
+    expect(rules("const x = state.at('n') + 1")).toContain('operator-on-signal')
+  })
+
+  it('does NOT flag a method/accessor param named `state`', () => {
+    const src = [
+      'const api = {',
+      '  read(state: number[]) { return state.at(0) + 1 },',
+      '  get first() { return 0 },',
+      '}',
+    ].join('\n')
+    expect(rules(src)).not.toContain('operator-on-signal')
+  })
+})
+
+describe('lintSignalSource — ScriptKind follows the filename extension', () => {
+  const genericArrowComponent = [
+    "import { component, div, text, button } from '@llui/dom'",
+    'const clone = <T>(x: T): T => x',
+    'export const Counter = component({',
+    "  name: 'Counter',",
+    '  init: () => [{ n: 0 }, []],',
+    '  update: (s) => [s, []],',
+    '  view: ({ state, send }) => [',
+    '    div({}, [',
+    "      text(state.at('n').map((n) => clone(String(n)))),",
+    "      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),",
+    '    ]),',
+    '  ],',
+    '})',
+  ].join('\n')
+
+  it('does NOT emit a bogus operator-on-signal for a generic-arrow `.ts` component', () => {
+    const diags = lintSignalSource(genericArrowComponent, 'widget.ts')
+    expect(diags.map((d) => d.rule)).not.toContain('operator-on-signal')
+  })
+
+  it('reproduces the bug: the SAME source misparsed as `.tsx` fires the false error', () => {
+    // Guards against a regression that silently drops the extension-based ScriptKind.
+    const diags = lintSignalSource(genericArrowComponent, 'widget.tsx')
+    expect(diags.map((d) => d.rule)).toContain('operator-on-signal')
   })
 })

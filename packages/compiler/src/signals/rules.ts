@@ -54,6 +54,7 @@ import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-dep
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS } from './element-helpers.js'
 import { HelperBindings, bindingNames } from './helper-bindings.js'
+import { scriptKindForFilename } from './script-kind.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -327,10 +328,21 @@ function fnParamNames(fn: ts.Node): string[] {
  * dropped for that subtree so the lint doesn't treat the plain value as a signal.
  * Mirrors the scope-shadowing the accessor analyzer (analyze-deps.ts) already does. */
 function scopeShadowedNames(node: ts.Node): string[] {
-  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+  if (
+    ts.isArrowFunction(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isFunctionDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  ) {
     return node.parameters.flatMap((p) => bindingNames(p.name))
   }
-  if (ts.isBlock(node)) {
+  // A Block or the SourceFile itself introduces its `const`/`let`/`var` names into
+  // scope — a module-scope `const state = […]` must shed the root so a plain value
+  // named like a signal root isn't linted as one.
+  if (ts.isBlock(node) || ts.isSourceFile(node)) {
     const out: string[] = []
     for (const st of node.statements) {
       if (ts.isVariableStatement(st)) {
@@ -1042,6 +1054,10 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       visit(c, childRoots, childPeek)
     })
   }
+  // Seed `state` as a signal root by convention, but `scopeShadowedNames` sheds it
+  // wherever a local binding (module-scope `const state = […]`, a method param, etc.)
+  // rebinds the name to a plain value — so only a free/ambient `state` (the component
+  // signal) is linted as a signal.
   visit(sf, STATE_ROOTS, false)
   return diags
 }
@@ -1063,7 +1079,16 @@ export interface SignalLintMessage {
  * errors. Call only on confirmed signal components.
  */
 export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // ScriptKind follows the extension: a `.ts` file using the generic-arrow form
+  // (`const id = <T>(x: T): T => x`) misparses as JSX under TSX, which fires a
+  // spurious `operator-on-signal` error.
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindForFilename(fileName),
+  )
   return lintSignals(sf).map((d) => {
     const lc = sf.getLineAndCharacterOfPosition(d.start)
     return {

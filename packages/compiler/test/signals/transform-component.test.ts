@@ -189,6 +189,59 @@ describe('transformSignalComponentSource', () => {
     })
   })
 
+  it('compiles a generic-arrow `.ts` component (not misparsed as JSX)', () => {
+    // `const clone = <T>(x: T): T => x` is a generic arrow in TS but an unterminated
+    // JSX element under TSX — which swallows the whole component so it never compiles.
+    // Selecting ScriptKind from the `.ts` filename fixes it.
+    const src = [
+      "import { component, div, text, button } from '@llui/dom'",
+      'const clone = <T>(x: T): T => x',
+      'export const Counter = component({',
+      '  init: () => ({ n: 0 }),',
+      '  update: (s) => s,',
+      '  view: ({ state, send }) => [',
+      '    div({}, [',
+      "      text(state.at('n').map((n) => clone(String(n)))),",
+      "      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),",
+      '    ]),',
+      '  ],',
+      '})',
+    ].join('\n')
+    const out = transformSignalComponentSource(src, { fileName: 'widget.ts' })
+    // The component was compiled: the view lowered to runtime helpers.
+    expect(out).not.toBe(src)
+    expect(out).toContain('signalText')
+    // The generic arrow survives verbatim.
+    expect(out).toContain('const clone = <T>(x: T): T => x')
+    // Under the OLD TSX behavior the component is swallowed and never lowered.
+    expect(transformSignalComponentSource(src, { fileName: 'widget.tsx' })).toBe(src)
+  })
+
+  it('computes metadata PER component() call — distinct Msg/State get distinct schemas', () => {
+    // Two components in one file with different type args must NOT share the first's
+    // schema/hash. The type NAMES come from each call's own `component<State, Msg>`.
+    const src = [
+      "import { component } from '@llui/dom'",
+      "type MsgA = { type: 'inc' }",
+      "type MsgB = { type: 'toggle' } | { type: 'reset' }",
+      'type StateA = { a: number }',
+      'type StateB = { b: boolean }',
+      "const A = component<StateA, MsgA>({ init: () => ({a:0}), update: (s)=>s, view: ({ state }) => [text(state.at('a'))] })",
+      "const B = component<StateB, MsgB>({ init: () => ({b:false}), update: (s)=>s, view: ({ state }) => [text(state.at('b'))] })",
+    ].join('\n')
+    const out = transformSignalComponentSource(src, { emitAgentMetadata: true })
+    // Each component carries its OWN Msg union's variants.
+    expect(out).toContain('"variants":{"inc":{}}')
+    expect(out).toContain('"variants":{"toggle":{},"reset":{}}')
+    // ...and its OWN State fields.
+    expect(out).toContain('{"fields":{"a":"number"}}')
+    expect(out).toContain('{"fields":{"b":"boolean"}}')
+    // The two schema hashes differ (the bug reused the first for both).
+    const hashes = [...out.matchAll(/__schemaHash: "([^"]+)"/g)].map((m) => m[1])
+    expect(hashes).toHaveLength(2)
+    expect(hashes[0]).not.toBe(hashes[1])
+  })
+
   it('handles multiple signal components in one file', () => {
     const src = [
       "import { component } from '@llui/dom'",
@@ -368,6 +421,19 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain('batch(() =>')
       // exactly one `batch` in the bag (no injection on top of the author's)
       expect(out).toContain('view: ({ state, send, batch })')
+    })
+
+    it('keeps a `function` handler as a function (preserves this/arguments)', () => {
+      const out = transformSignalComponentSource(
+        view("function (e) { send({ type: 'a' }); send({ type: 'b' }) }"),
+      )
+      // The wrapped handler is STILL a function — not rewritten to an arrow, which
+      // would rebind `this`/`arguments`. The batch wrap is a nested arrow (which
+      // preserves the enclosing function's this/arguments).
+      expect(out).toContain('function(e) { return batch(() => {')
+      expect(out).toContain("send({ type: 'a' }); send({ type: 'b' })")
+      // it did NOT become an arrow handler
+      expect(out).not.toContain('onClick: (e) => batch(')
     })
 
     it('respects a renamed send binding', () => {

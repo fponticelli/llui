@@ -12,7 +12,6 @@ export interface EffectApi {
 }
 
 export interface EffectConfig {
-  onChange?: (markdown: string) => void
   onFormatChange?: (format: FormatState) => void
   /** Push markdown into the live editor (deserialize), without echoing onChange. */
   applyValue: (editor: LexicalEditor, value: string) => void
@@ -41,7 +40,10 @@ export function makeOnEffect(
         return
       }
       case 'emitChange': {
-        config.onChange?.(effect.value)
+        // Consumer `onChange` delivery moved to the foreign onChange wrapper (see
+        // editor.ts) so it survives dispose — the loop is torn down before the
+        // dispose-time debounce flush runs, and a `send`-routed effect would be
+        // dropped. This effect now only signals that state changed; no side effect.
         return
       }
       case 'emitFormat': {

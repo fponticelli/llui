@@ -31,6 +31,7 @@ function setup(): {
     armRef = new ArmController<string>({
       doc,
       buildCtx: c,
+      contexts: c.contexts,
       ownerHost: c.host,
       inRow: false,
       parent: () => end.parentNode,

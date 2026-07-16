@@ -13,13 +13,13 @@ describe('select reducer', () => {
     const s0 = init({ items: ['a', 'b', 'c'] })
     const [s] = update(s0, { type: 'open' })
     expect(s.open).toBe(true)
-    expect(s.highlightedIndex).toBe(0)
+    expect(s.highlightedValue).toBe('a')
   })
 
   it('open highlights selected value', () => {
     const s0 = init({ items: ['a', 'b', 'c'], value: ['b'] })
     const [s] = update(s0, { type: 'open' })
-    expect(s.highlightedIndex).toBe(1)
+    expect(s.highlightedValue).toBe('b')
   })
 
   it('single select closes on selection', () => {
@@ -57,10 +57,10 @@ describe('select.connect', () => {
     expect(
       read(p.trigger['aria-activedescendant'], {
         ...init({ items: ['a', 'b'] }),
-        highlightedIndex: 1,
+        highlightedValue: 'b',
         open: true,
       }),
-    ).toBe('sel1:item:1')
+    ).toBe('sel1:item:b')
     expect(read(p.trigger['aria-activedescendant'], init({ items: ['a'] }))).toBeUndefined()
   })
 
@@ -166,19 +166,58 @@ describe('select option groups', () => {
     })
     // items === ['a','b','c','d']; highlight starts null
     const [s1] = update(s0, { type: 'highlightFirst' })
-    expect(s1.highlightedIndex).toBe(0) // 'a'
+    expect(s1.highlightedValue).toBe('a')
     const [s2] = update(s1, { type: 'highlightNext' })
-    expect(s2.highlightedIndex).toBe(3) // skips disabled 'b' and 'c', lands on 'd'
+    expect(s2.highlightedValue).toBe('d') // skips disabled 'b' and 'c', lands on 'd'
     const [s3] = update(s2, { type: 'highlightPrev' })
-    expect(s3.highlightedIndex).toBe(0) // back to 'a'
+    expect(s3.highlightedValue).toBe('a') // back to 'a'
     const [s4] = update(s0, { type: 'highlightLast' })
-    expect(s4.highlightedIndex).toBe(3) // 'd'
+    expect(s4.highlightedValue).toBe('d')
   })
 
-  it('group items() helper indexes against the flat list order', () => {
+  it('group items() helper derives item ids from the option VALUE', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'sel' })
-    // item part ids are stable across groups via flat index
-    expect(p.item('apple', 0).item.id).toBe('sel:item:0')
-    expect(p.item('carrot', 2).item.id).toBe('sel:item:2')
+    // item part ids are value-keyed (stable when the flat list reorders)
+    expect(p.item('apple').item.id).toBe('sel:item:apple')
+    expect(p.item('carrot').item.id).toBe('sel:item:carrot')
+  })
+})
+
+describe('select value-based highlight identity', () => {
+  it('highlight follows the VALUE across a setItems reorder (not a stale index)', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'sel' })
+    // Highlight 'c' (index 2), then reorder so 'c' moves to index 0.
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), open: true, highlightedValue: 'c' }
+    const [s] = update(s0, { type: 'setItems', items: ['c', 'a', 'b'] })
+    expect(s.highlightedValue).toBe('c')
+    // The row for 'c' stays highlighted regardless of its new position; 'a' isn't.
+    expect(read(p.item('c').item['data-highlighted'], s)).toBe('')
+    expect(read(p.item('a').item['data-highlighted'], s)).toBeUndefined()
+    // aria-activedescendant tracks the value's id, not a captured index.
+    expect(read(p.trigger['aria-activedescendant'], s)).toBe('sel:item:c')
+    // data-index reactively reflects the NEW position (0), never a stale 2.
+    expect(read(p.item('c').item['data-index'], s)).toBe('0')
+  })
+
+  it('setItems drops a highlight whose value no longer exists (no dangling activedescendant)', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'sel' })
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), open: true, highlightedValue: 'c' }
+    const [s] = update(s0, { type: 'setItems', items: ['a', 'b'] })
+    expect(s.highlightedValue).toBeNull()
+    expect(read(p.trigger['aria-activedescendant'], s)).toBeUndefined()
+  })
+
+  it('setItems drops a highlight whose value became disabled', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), open: true, highlightedValue: 'b' }
+    const [s] = update(s0, { type: 'setItems', items: ['a', 'b', 'c'], disabled: ['b'] })
+    expect(s.highlightedValue).toBeNull()
+  })
+
+  it('selectHighlighted commits the highlighted VALUE after a reorder', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), open: true, highlightedValue: 'c' }
+    const [reordered] = update(s0, { type: 'setItems', items: ['c', 'a', 'b'] })
+    const [s] = update(reordered, { type: 'selectHighlighted' })
+    // Selection acts on 'c' (the highlighted value), not on whatever now sits at index 2.
+    expect(s.value).toEqual(['c'])
   })
 })

@@ -39,6 +39,14 @@ export interface RenderScope {
    */
   readonly uiState: Signal<JsonObject>
   /**
+   * The surface's component map, as a reactive signal. Threaded through every
+   * scope (like {@link uiState}) so {@link RenderContext.renderById} can subscribe
+   * to a per-id slice and rebuild ONLY the node whose definition changed — a
+   * single `updateComponents` never disposes the whole surface. Templates carry
+   * it unchanged (component definitions are surface-global, not item-scoped).
+   */
+  readonly components: Signal<Readonly<Record<ComponentId, ComponentNode>>>
+  /**
    * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
    * used for two-way write-back. Absolute pointers pass through unchanged.
    */

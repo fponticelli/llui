@@ -84,4 +84,98 @@ describe('replayTrace', () => {
 
     expect(() => replayTrace(WithEffects, trace)).toThrow(/step 0/)
   })
+
+  it('matches an http-shaped effect whose onSuccess/onError callbacks differ by identity', () => {
+    // Effects commonly carry function fields (http onSuccess/onError, storage
+    // onLoad, websocket onMessage). Those functions can never be recorded in a
+    // trace and are fresh instances each `update()`, so the comparison must skip
+    // them and match on the JSON-serializable data (type, url, …).
+    type Eff = {
+      type: 'http'
+      url: string
+      onSuccess: (data: unknown) => Msg
+      onError: (err: unknown) => Msg
+    }
+    const Loader = component<State, Msg, Eff>({
+      name: 'Loader',
+      init: () => [{ count: 0 }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'inc':
+            return [
+              { count: state.count + 1 },
+              [
+                {
+                  type: 'http',
+                  url: '/api/data',
+                  onSuccess: () => ({ type: 'inc' }),
+                  onError: () => ({ type: 'dec' }),
+                },
+              ],
+            ]
+          case 'dec':
+            return [{ count: state.count - 1 }, []]
+        }
+      },
+      view: () => [],
+    })
+
+    const trace: LluiTrace<State, Msg, Eff> = {
+      lluiTrace: 1,
+      component: 'Loader',
+      generatedBy: 'test',
+      timestamp: '2026-04-01',
+      entries: [
+        {
+          msg: { type: 'inc' },
+          expectedState: { count: 1 },
+          // Distinct callback instances — must not cause a false divergence.
+          expectedEffects: [
+            {
+              type: 'http',
+              url: '/api/data',
+              onSuccess: () => ({ type: 'inc' }),
+              onError: () => ({ type: 'dec' }),
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(() => replayTrace(Loader, trace)).not.toThrow()
+  })
+
+  it('still flags a real divergence in an effect carrying callbacks (data differs)', () => {
+    type Eff = { type: 'http'; url: string; onSuccess: (data: unknown) => Msg }
+    const Loader = component<State, Msg, Eff>({
+      name: 'Loader2',
+      init: () => [{ count: 0 }, []],
+      update: (state, msg) =>
+        msg.type === 'inc'
+          ? [
+              { count: state.count + 1 },
+              [{ type: 'http', url: '/api/data', onSuccess: () => ({ type: 'inc' }) }],
+            ]
+          : [{ count: state.count - 1 }, []],
+      view: () => [],
+    })
+
+    const trace: LluiTrace<State, Msg, Eff> = {
+      lluiTrace: 1,
+      component: 'Loader2',
+      generatedBy: 'test',
+      timestamp: '2026-04-01',
+      entries: [
+        {
+          msg: { type: 'inc' },
+          expectedState: { count: 1 },
+          expectedEffects: [
+            { type: 'http', url: '/DIFFERENT', onSuccess: () => ({ type: 'inc' }) },
+          ],
+        },
+      ],
+    }
+
+    expect(() => replayTrace(Loader, trace)).toThrow(/step 0/)
+  })
 })

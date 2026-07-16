@@ -16,7 +16,7 @@ export function makeForwardHandler(
   auditDetail: (tid: string, args: object) => Record<string, unknown> = () => ({}),
 ) {
   return withLapGates({ touchOn: 'completion' }, async (ctx) => {
-    const rawBody = ctx.req.method === 'POST' ? await ctx.req.json().catch(() => null) : null
+    const rawBody = ctx.req.method === 'POST' ? ctx.body : null
     const args = parseArgs(rawBody)
     if (args === null) return ctx.json({ error: { code: 'invalid' } }, 400)
 
@@ -84,7 +84,7 @@ export const handleLapWouldDispatch = makeForwardHandler('would_dispatch', (body
  * registry-owned data instead of forwarding an RPC to the browser.
  */
 export const handleLapRecentActions = withLapGates({ touchOn: 'completion' }, async (ctx) => {
-  const body = ctx.req.method === 'POST' ? await ctx.req.json().catch(() => null) : null
+  const body = ctx.req.method === 'POST' ? ctx.body : null
   const b = (body ?? {}) as { n?: unknown; kind?: unknown }
   const n = typeof b.n === 'number' && b.n > 0 ? Math.floor(b.n) : 10
   // Allow filtering by kind so the agent can ask for "just dispatches"

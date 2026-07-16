@@ -35,9 +35,10 @@ export interface UseClientTransformResult {
  * Every export with a statically-known name is stubbed uniformly:
  *
  *   - `export const/let NAME = …`, `export function NAME()`, `export class
- *     NAME` — each becomes `export const NAME = __clientOnlyStub('NAME')`.
- *     (A stubbed function/class is a value, not a callable/constructable —
- *     SSR must not invoke it; the client build ships the real one.)
+ *     NAME`, `export enum NAME` — each becomes `export const NAME =
+ *     __clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
+ *     a callable/constructable — SSR must not invoke it; the client build ships
+ *     the real one.)
  *   - `export { a, b }` and `export { a as b } from './other.js'` — the
  *     names are known, so each is stubbed (the `from './other.js'` source
  *     module is DROPPED, never pulled into the SSR graph).
@@ -70,15 +71,29 @@ export function transformUseClientSsr(
   const namedExports: string[] = []
   let hasDefaultExport = false
 
+  const hasModifier = (stmt: ts.Statement, kind: ts.SyntaxKind): boolean =>
+    ts.canHaveModifiers(stmt) && (ts.getModifiers(stmt)?.some((m) => m.kind === kind) ?? false)
+
   for (const stmt of sourceFile.statements) {
     // The `'use client'` directive itself — skip.
     if (stmt === first) continue
 
-    // `export const NAME = ...` and `export let NAME = ...`
+    // `export default ...` — checked BEFORE the named-export branches, because a
+    // `export default function NAME` / `export default class NAME` also carries the
+    // `export` modifier and a name (so it would otherwise be mis-stubbed as a NAMED
+    // export, leaving `hasDefaultExport` unset). Covers `export default <expr>`
+    // (ExportAssignment) plus default function/class declarations, named or not.
     if (
-      ts.isVariableStatement(stmt) &&
-      stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+      ts.isExportAssignment(stmt) ||
+      ((ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) &&
+        hasModifier(stmt, ts.SyntaxKind.DefaultKeyword))
     ) {
+      hasDefaultExport = true
+      continue
+    }
+
+    // `export const NAME = ...` and `export let NAME = ...`
+    if (ts.isVariableStatement(stmt) && hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) {
       for (const decl of stmt.declarationList.declarations) {
         if (ts.isIdentifier(decl.name)) {
           namedExports.push(decl.name.text)
@@ -94,7 +109,7 @@ export function transformUseClientSsr(
     // `export function NAME() {}`
     if (
       ts.isFunctionDeclaration(stmt) &&
-      stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) &&
+      hasModifier(stmt, ts.SyntaxKind.ExportKeyword) &&
       stmt.name
     ) {
       namedExports.push(stmt.name.text)
@@ -104,20 +119,17 @@ export function transformUseClientSsr(
     // `export class NAME {}`
     if (
       ts.isClassDeclaration(stmt) &&
-      stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) &&
+      hasModifier(stmt, ts.SyntaxKind.ExportKeyword) &&
       stmt.name
     ) {
       namedExports.push(stmt.name.text)
       continue
     }
 
-    // `export default ...`
-    if (
-      ts.isExportAssignment(stmt) ||
-      (ts.isFunctionDeclaration(stmt) &&
-        stmt.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword))
-    ) {
-      hasDefaultExport = true
+    // `export enum NAME {}` (incl. `export const enum`) — a runtime value like a
+    // const, so its outward name is stubbed (not silently dropped).
+    if (ts.isEnumDeclaration(stmt) && hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) {
+      namedExports.push(stmt.name.text)
       continue
     }
 
@@ -140,7 +152,7 @@ export function transformUseClientSsr(
     // Type-only statements are erased at runtime — nothing to stub.
     if (ts.isTypeAliasDeclaration(stmt) || ts.isInterfaceDeclaration(stmt)) continue
 
-    // Imports, `import type`, enum declarations, plain (non-export)
+    // Imports, `import type`, non-exported enums, plain (non-export)
     // variable statements — dropped from the stub output.
   }
 

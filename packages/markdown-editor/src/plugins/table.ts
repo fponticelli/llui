@@ -7,9 +7,10 @@
 
 import {
   $createParagraphNode,
-  $createTextNode,
   $getSelection,
   $isRangeSelection,
+  type ElementFormatType,
+  type ElementNode,
   type LexicalNode,
 } from 'lexical'
 import { $insertNodeToNearestRoot, mergeRegister } from '@lexical/utils'
@@ -30,11 +31,25 @@ import {
   TableNode,
   TableRowNode,
 } from '@lexical/table'
-import type { MultilineElementTransformer } from '@lexical/markdown'
+import {
+  $convertFromMarkdownString,
+  LINK,
+  type MultilineElementTransformer,
+  type Transformer,
+} from '@lexical/markdown'
 import { button, text } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
+import { INLINE_TEXT_TRANSFORMERS } from '../transformers/gfm.js'
 import type { MarkdownPlugin } from './types.js'
+
+/** Transformers used to parse/serialize a single table cell's INLINE content
+ * (bold/italic/strikethrough/inline-code and links). No block/element or
+ * multiline transformers, so a cell's markdown is always a single inline run —
+ * this is what makes bold/link cells survive an export∘import round-trip instead
+ * of being flattened to bare text. `LINK` needs `LinkNode`, which the core plugin
+ * registers (tables are used alongside it). */
+const CELL_TRANSFORMERS: readonly Transformer[] = [...INLINE_TEXT_TRANSFORMERS, LINK]
 
 interface TableToolsState {
   open: boolean
@@ -107,26 +122,71 @@ function isSeparator(line: string | undefined): boolean {
   return !!line && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(line) && line.includes('-')
 }
 
+/** Is `line` a GFM table row? GFM makes the leading and trailing pipes OPTIONAL
+ * (`a | b` is as valid as `| a | b |`); the only requirement is at least one
+ * unescaped cell delimiter. The old `\|.*\|` test rejected valid pipe-less-edge
+ * rows, truncating imported tables. */
 function isRow(line: string | undefined): boolean {
-  return !!line && /^\s*\|.*\|\s*$/.test(line.trim())
+  if (line === undefined) return false
+  const trimmed = line.trim()
+  return trimmed !== '' && /(?<!\\)\|/.test(trimmed)
 }
 
-function makeCell(textValue: string, header: boolean): TableCellNode {
+/** Map a GFM separator cell (`:---`, `:---:`, `---:`, `---`) to a cell alignment. */
+function parseAlignment(separatorCell: string): ElementFormatType {
+  const t = separatorCell.trim()
+  const left = t.startsWith(':')
+  const right = t.endsWith(':')
+  if (left && right) return 'center'
+  if (right) return 'right'
+  if (left) return 'left'
+  return ''
+}
+
+/** Map a cell's alignment back to its GFM separator token. */
+function alignmentSeparator(format: ElementFormatType): string {
+  switch (format) {
+    case 'center':
+      return ':---:'
+    case 'right':
+    case 'end':
+      return '---:'
+    case 'left':
+    case 'start':
+      return ':---'
+    default:
+      return '---'
+  }
+}
+
+/** Build a cell from its inline markdown, parsing bold/italic/link/etc. through
+ * {@link CELL_TRANSFORMERS} (not a bare text node) and applying its column's
+ * alignment. */
+function makeCell(cellMarkdown: string, header: boolean, align: ElementFormatType): TableCellNode {
   const cell = $createTableCellNode(
     header ? TableCellHeaderStates.COLUMN : TableCellHeaderStates.NO_STATUS,
   )
-  cell.append($createParagraphNode().append($createTextNode(textValue)))
+  // Parse the cell's inline markdown into a paragraph of formatted text nodes.
+  $convertFromMarkdownString(cellMarkdown, [...CELL_TRANSFORMERS], cell)
+  // A blank cell yields no paragraph — keep the cell a well-formed single-paragraph.
+  if (cell.getChildrenSize() === 0) cell.append($createParagraphNode())
+  if (align !== '') cell.setFormat(align)
   return cell
 }
 
-function buildTable(header: string[], body: string[][]): TableNode {
+function buildTable(
+  header: string[],
+  body: string[][],
+  aligns: readonly ElementFormatType[],
+): TableNode {
   const table = $createTableNode()
   const headerRow = $createTableRowNode()
-  for (const h of header) headerRow.append(makeCell(h, true))
+  header.forEach((h, i) => headerRow.append(makeCell(h, true, aligns[i] ?? '')))
   table.append(headerRow)
   for (const row of body) {
     const tr = $createTableRowNode()
-    for (let i = 0; i < header.length; i++) tr.append(makeCell(row[i] ?? '', false))
+    for (let i = 0; i < header.length; i++)
+      tr.append(makeCell(row[i] ?? '', false, aligns[i] ?? ''))
     table.append(tr)
   }
   return table
@@ -134,29 +194,42 @@ function buildTable(header: string[], body: string[][]): TableNode {
 
 const TABLE_TRANSFORMER: MultilineElementTransformer = {
   dependencies: [TableNode, TableRowNode, TableCellNode],
-  export: (node: LexicalNode): string | null => {
+  export: (node: LexicalNode, traverseChildren: (node: ElementNode) => string): string | null => {
     if (!$isTableNode(node)) return null
     const rows = node.getChildren() as TableRowNode[]
     if (rows.length === 0) return null
     const lines: string[] = []
     rows.forEach((row, ri) => {
       const cells = row.getChildren() as TableCellNode[]
-      const texts = cells.map((c) => c.getTextContent().replace(/\|/g, '\\|').replace(/\n/g, ' '))
+      // Serialize each cell's INLINE content through the full transformer set
+      // (so bold/italic/links survive), then escape `|` and flatten newlines so
+      // the cell can't break the row.
+      const texts = cells.map((c) =>
+        traverseChildren(c).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim(),
+      )
       lines.push('| ' + texts.join(' | ') + ' |')
-      if (ri === 0) lines.push('| ' + texts.map(() => '---').join(' | ') + ' |')
+      if (ri === 0) {
+        // Reconstruct the alignment row from the header cells' alignments.
+        const seps = cells.map((c) => alignmentSeparator(c.getFormatType()))
+        lines.push('| ' + seps.join(' | ') + ' |')
+      }
     })
     return lines.join('\n')
   },
-  regExpStart: /^\s*\|(.+)\|\s*$/,
+  // Leading/trailing pipes are optional in GFM; require only one internal pipe.
+  // A false positive is harmless — the header is only accepted when the NEXT line
+  // is a delimiter row (checked below).
+  regExpStart: /^\s*\|?.*(?<!\\)\|.*\|?\s*$/,
   handleImportAfterStartMatch: ({ lines, rootNode, startLineIndex }) => {
     if (!isSeparator(lines[startLineIndex + 1])) return null // header must be followed by a separator
+    const aligns = splitRow(lines[startLineIndex + 1]!).map(parseAlignment)
     let end = startLineIndex + 2
     const body: string[][] = []
     while (end < lines.length && isRow(lines[end]) && !isSeparator(lines[end])) {
       body.push(splitRow(lines[end]!))
       end++
     }
-    rootNode.append(buildTable(splitRow(lines[startLineIndex]!), body))
+    rootNode.append(buildTable(splitRow(lines[startLineIndex]!), body, aligns))
     return [true, end - 1]
   },
   // Import is handled manually above; a multiline transformer still needs replace.
@@ -274,6 +347,7 @@ export function tablePlugin(): MarkdownPlugin {
                   ['', ''],
                   ['', ''],
                 ],
+                ['', ''],
               ),
             ),
           ),

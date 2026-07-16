@@ -77,6 +77,21 @@ export function init(opts: TabsInit = {}): TabsState {
   }
 }
 
+/**
+ * The tab that should carry `tabindex=0` (roving tabindex). Normally the active
+ * tab; but when nothing is selected — e.g. a deselectable tablist whose value is
+ * `''` — no item matches `value`, so fall back to the focused tab and then the
+ * first enabled item. Without this fallback every trigger is `-1` and the whole
+ * tablist becomes unreachable by Tab.
+ */
+function rovingTabValue(s: TabsState): string | null {
+  if (s.items.includes(s.value)) return s.value
+  if (s.focused !== null && s.items.includes(s.focused) && !s.disabledItems.includes(s.focused)) {
+    return s.focused
+  }
+  return firstEnabled(s.items, s.disabledItems)
+}
+
 export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
   switch (msg.type) {
     case 'setValue':
@@ -245,7 +260,7 @@ export function connect(
         'data-scope': 'tabs',
         'data-part': 'trigger',
         'data-value': value,
-        tabindex: state.map((s) => (s.value === value ? 0 : -1)),
+        tabindex: state.map((s) => (rovingTabValue(s) === value ? 0 : -1)),
         onClick: tagSend(send, ['focusTab'], () => {
           send({ type: 'focusTab', value })
           opts.onNavigate?.(value)

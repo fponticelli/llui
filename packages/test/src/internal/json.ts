@@ -11,11 +11,17 @@ export type JsonPatchOp =
   | { op: 'replace'; path: string; value?: unknown }
 
 /**
- * Deep structural equality for JSON-serializable values. `Object.is` at the
- * leaves; arrays compared by length + element-wise; objects by key set +
- * per-key. Non-plain values (functions, class instances) fall through to
- * `Object.is` identity — the harness only ever compares JSON state/effects, so
- * that's the correct contract.
+ * Deep structural equality for the JSON PROJECTION of two values. `Object.is` at
+ * the leaves; arrays compared by length + element-wise; objects by their
+ * JSON-serializable own keys + per-key.
+ *
+ * Object comparison skips own keys whose value is a function or `undefined` — both
+ * vanish under `JSON.stringify`, so they are not part of the value's data. That is
+ * what lets the harness compare effects that carry callbacks (an http effect's
+ * `onSuccess`/`onError`, a storage effect's `onLoad`, a websocket's `onMessage`):
+ * those functions are fresh instances every `update()` and can never be recorded
+ * in a trace, so comparing them by identity would make every such effect diverge
+ * unconditionally. The data fields (`type`, `url`, …) still compare structurally.
  */
 export function jsonEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true
@@ -35,14 +41,22 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
 
   const aObj = a as Record<string, unknown>
   const bObj = b as Record<string, unknown>
-  const aKeys = Object.keys(aObj)
-  const bKeys = Object.keys(bObj)
+  const aKeys = jsonKeys(aObj)
+  const bKeys = jsonKeys(bObj)
   if (aKeys.length !== bKeys.length) return false
   for (const key of aKeys) {
     if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false
     if (!jsonEqual(aObj[key], bObj[key])) return false
   }
   return true
+}
+
+/** Own keys that survive `JSON.stringify` — i.e. whose value is not a function or `undefined`. */
+function jsonKeys(obj: Record<string, unknown>): string[] {
+  return Object.keys(obj).filter((k) => {
+    const v = obj[k]
+    return typeof v !== 'function' && v !== undefined
+  })
 }
 
 /**

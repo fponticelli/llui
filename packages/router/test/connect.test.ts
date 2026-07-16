@@ -15,12 +15,13 @@ describe('connectRouter', () => {
   const routing = connectRouter(router)
 
   describe('push / replace / back / forward', () => {
-    it('push returns a router effect with the formatted path', () => {
+    it('push returns a router effect with the formatted path and original route', () => {
       const effect = routing.push({ page: 'article', slug: 'hello' })
       expect(effect).toEqual({
         type: '__router',
         action: 'push',
         path: '#/article/hello',
+        route: { page: 'article', slug: 'hello' },
       })
     })
 
@@ -30,6 +31,7 @@ describe('connectRouter', () => {
         type: '__router',
         action: 'replace',
         path: '#/',
+        route: { page: 'home' },
       })
     })
 

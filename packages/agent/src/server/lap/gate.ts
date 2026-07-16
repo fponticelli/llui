@@ -70,14 +70,79 @@ export type LapGateDeps = {
 }
 
 /**
- * Hard ceiling on a LAP request JSON body (bytes), enforced via the
- * declared `Content-Length` before any handler parses it. LAP payloads
- * (a Msg + a few options) are tiny; a multi-MB body is a bug or an abuse
- * attempt. Oversized requests get a 413 instead of being buffered and
- * `JSON.parse`d. Requests without a `Content-Length` (rare for these
- * JSON POSTs) fall through to the handler's own `.json()` parse.
+ * Hard ceiling on a LAP request JSON body (bytes). LAP payloads (a Msg +
+ * a few options) are tiny; a multi-MB body is a bug or an abuse attempt.
+ * A declared `Content-Length` over the ceiling is rejected up front, and
+ * the body is ALSO read through a byte-counting reader
+ * ({@link readJsonCapped}) so a chunked / undeclared-length request can't
+ * skip the check and stream an unbounded payload into `JSON.parse`.
  */
 const MAX_LAP_BODY_BYTES = 1024 * 1024
+
+/**
+ * Outcome of {@link readJsonCapped}:
+ *   - `ok`        — the body parsed (or was malformed JSON, surfaced as
+ *     `body: null` so callers keep their existing "invalid → 400" path
+ *     rather than throwing).
+ *   - `empty`     — no body / whitespace-only. Callers that default the
+ *     body (`?? {}`) treat this the same as `{ body: null }`.
+ *   - `too-large` — the byte count crossed `maxBytes` mid-stream; the
+ *     reader was cancelled and the gate answers 413.
+ */
+export type CappedJsonResult =
+  | { status: 'ok'; body: unknown }
+  | { status: 'empty' }
+  | { status: 'too-large' }
+
+/**
+ * Read a request body through a byte-counting stream reader, aborting the
+ * moment the running total crosses `maxBytes`. This is the ONLY size gate
+ * that holds for a chunked / `Transfer-Encoding` request: `Content-Length`
+ * is absent there, so a `req.json()` that trusts the header would buffer
+ * the whole payload. Streaming with a hard cap bounds memory regardless of
+ * how the body is framed.
+ */
+export async function readJsonCapped(req: Request, maxBytes: number): Promise<CappedJsonResult> {
+  const stream = req.body
+  if (!stream) return { status: 'empty' }
+
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {})
+        return { status: 'too-large' }
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (total === 0) return { status: 'empty' }
+
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) {
+    merged.set(c, offset)
+    offset += c.byteLength
+  }
+  const text = new TextDecoder().decode(merged)
+  if (text.trim() === '') return { status: 'empty' }
+  try {
+    return { status: 'ok', body: JSON.parse(text) as unknown }
+  } catch {
+    // Malformed JSON — mirror the handlers' historical `.catch(() => null)`
+    // so a bad body surfaces through their existing invalid-body path.
+    return { status: 'ok', body: null }
+  }
+}
 
 /**
  * Canonical JSON responder — one copy instead of the seven byte-identical
@@ -102,6 +167,15 @@ export type LapContext = {
   deps: LapGateDeps
   tid: string
   rec: TokenRecord
+  /**
+   * The request's JSON body, read ONCE by the gate through a byte-capped
+   * reader (see {@link readJsonCapped}) so a chunked/undeclared-length
+   * body can't bypass the size limit. `null` for an empty body or one
+   * that failed to parse (handlers keep their existing "null → invalid"
+   * checks). Handlers MUST read this instead of `req.json()` — the gate
+   * has already consumed the stream, so a second read would hang/throw.
+   */
+  body: unknown
   /** Resolved wall-clock reader (`deps.now ?? Date.now`). */
   now: () => number
   /** Shared JSON responder (same as the exported `json`). */
@@ -186,6 +260,16 @@ export function withLapGates(
       return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
     }
 
+    // Read + cap the body ONCE, here, through a byte-counting reader. The
+    // Content-Length pre-check above is a cheap early-out; this is the
+    // check that actually holds for a chunked request (no Content-Length),
+    // which previously streamed straight into a handler's `req.json()`.
+    const parsed = await readJsonCapped(req, MAX_LAP_BODY_BYTES)
+    if (parsed.status === 'too-large') {
+      return json({ error: { code: 'payload-too-large' } }, 413)
+    }
+    const body = parsed.status === 'ok' ? parsed.body : null
+
     const nowFn = deps.now ?? (() => Date.now())
 
     // Long-poll endpoints refresh the clock at arrival so a request that
@@ -199,6 +283,7 @@ export function withLapGates(
       deps,
       tid: auth.tid,
       rec,
+      body,
       now: nowFn,
       json,
       paused: () => buildPausedResponse(deps.tokenStore, auth.tid),

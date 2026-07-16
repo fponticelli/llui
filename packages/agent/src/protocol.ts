@@ -8,11 +8,27 @@
  * LAP wire-protocol version. Bumped on a breaking change to frame
  * shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
  * and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
- * ends can detect a mismatch (see the version check in the pairing
- * registry, which logs — rather than hard-fails — an unknown version so
- * a newer client against an older server degrades loudly, not silently).
+ * ends can detect a mismatch.
+ *
+ * v2: every wire timestamp (`MintResponse.expiresAt`,
+ * `ResumeClaimResponse.expiresAt`) is MILLISECONDS-since-epoch, matching
+ * the server-side `TokenRecord` (`createdAt` / `lastSeenAt` / `expiresAt`).
+ * v1 floored `expiresAt` to seconds, which silently disagreed with every
+ * sibling timestamp; a v1 client's persisted-session expiry check would
+ * be off by 1000×. Frames now carry one unit end-to-end.
  */
-export const LAP_VERSION = 1
+export const LAP_VERSION = 2
+
+/**
+ * The oldest LAP wire version this server can still speak to. A client
+ * (`hello.lapVersion`) below this is refused: the version skew is not a
+ * loggable warning but a hard incompatibility, so the pairing is
+ * terminated with an explicit `revoked` frame rather than left to fail
+ * mysteriously on the first mismatched-unit timestamp. A client that
+ * predates versioning entirely (omits `lapVersion`) is treated as legacy
+ * and allowed through (there is nothing older to be incompatible with).
+ */
+export const MIN_SUPPORTED_CLIENT_LAP_VERSION = 2
 
 export type LapErrorCode =
   | 'auth-failed'
@@ -489,95 +505,45 @@ export type LogEntry = {
   stateDiff?: import('./state-diff.js').StateDiff
 }
 
-export type HelloFrame = {
-  t: 'hello'
-  appName: string
-  appVersion: string
-  msgSchema: Record<string, MessageSchemaEntry>
-  stateSchema: object
-  affordancesSample: object[]
-  docs: AgentDocs | null
-  schemaHash: string
-  /**
-   * LAP wire-protocol version the browser runtime speaks (see
-   * {@link LAP_VERSION}). Optional so an older client that predates
-   * versioning (which omits it) is still routable — the server treats a
-   * missing value as "unknown/legacy" and logs it.
-   */
-  lapVersion?: number
-}
+// ── WS relay frames ──────────────────────────────────────────────
+//
+// The frame types + their zod validators live in `./frames.ts`, where the
+// TypeScript types are DERIVED from the schemas (`z.infer`) so the wire
+// contract and the compile-time types cannot drift. Both boundaries — the
+// server WS-upgrade reader and the browser ws-client — validate inbound
+// frames against these schemas (see `parseClientFrame` / `parseServerFrame`)
+// instead of an unchecked `JSON.parse(...) as Frame`. Re-exported here so
+// existing `import { ... } from './protocol.js'` sites keep working.
+//
+// ClientFrame (browser → server): hello | rpc-reply | rpc-error |
+//   confirm-resolved | state-update | log-append.
+// ServerFrame (server → browser): rpc | revoked | active | log-push |
+//   confirm-expire | watch | unwatch | hello-ack.
+export type {
+  HelloFrame,
+  RpcReplyFrame,
+  RpcErrorFrame,
+  ConfirmResolvedFrame,
+  StateUpdateFrame,
+  LogAppendFrame,
+  ClientFrame,
+  RpcFrame,
+  RevokedFrame,
+  ActiveFrame,
+  LogPushFrame,
+  ConfirmExpireFrame,
+  WatchFrame,
+  UnwatchFrame,
+  HelloAckFrame,
+  ServerFrame,
+} from './frames.js'
 
-export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
-export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
-export type ConfirmResolvedFrame = {
-  t: 'confirm-resolved'
-  confirmId: string
-  outcome: 'confirmed' | 'user-cancelled'
-  stateAfter?: unknown
-}
-/**
- * Browser → server: a watched sub-path changed. `id` correlates to the
- * server `watch` frame that armed it (a specific `/wait` long-poll);
- * the browser only emits these for currently-armed watches, so idle
- * sessions cost nothing per commit. `path` echoes the watched pointer
- * for debugging; `stateAfter` is the full redacted+encoded snapshot.
- */
-export type StateUpdateFrame = { t: 'state-update'; id?: string; path: string; stateAfter: unknown }
-export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
-
-export type ClientFrame =
-  | HelloFrame
-  | RpcReplyFrame
-  | RpcErrorFrame
-  | ConfirmResolvedFrame
-  | StateUpdateFrame
-  | LogAppendFrame
-
-export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
-export type RevokedFrame = { t: 'revoked' }
-export type ActiveFrame = { t: 'active' }
-/**
- * Server-pushed log entry. Used today by the `narrate` LAP method:
- * the agent calls `/lap/v1/narrate { text }`, the server synthesizes
- * a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
- * runtime so the in-app activity feed renders the narration in real
- * time. Distinct from the browser-emitted `log-append` frame:
- * `log-append` is browser → server (rpc-derived audit), `log-push`
- * is server → browser (server-originated entries, no echo).
- */
-export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
-
-/**
- * Server → browser: abandon a pending confirmation. Sent when the server
- * has told the agent a confirm is terminally `rejected` (user-cancelled)
- * so a late user Approve on that same `confirmId` can no longer fire a
- * dispatch the agent was told would never run. The browser marks the
- * matching pending confirm entry rejected (idempotent — no-op if already
- * resolved). Distinct from `revoked` (which kills the whole session).
- */
-export type ConfirmExpireFrame = { t: 'confirm-expire'; confirmId: string }
-
-/**
- * Server → browser: arm a state watch. Sent when a `/wait` long-poll
- * begins. The browser resolves `path` (a JSON pointer; `undefined` /
- * `''` watches the whole state) against each commit and emits a
- * `state-update` carrying this `id` only when the resolved value
- * changes. This makes the per-commit broadcast subscription-driven —
- * an idle session with no armed watch ships nothing.
- */
-export type WatchFrame = { t: 'watch'; id: string; path?: string }
-
-/** Server → browser: disarm a previously-armed watch (`id`). */
-export type UnwatchFrame = { t: 'unwatch'; id: string }
-
-export type ServerFrame =
-  | RpcFrame
-  | RevokedFrame
-  | ActiveFrame
-  | LogPushFrame
-  | ConfirmExpireFrame
-  | WatchFrame
-  | UnwatchFrame
+export {
+  clientFrameSchema,
+  serverFrameSchema,
+  parseClientFrame,
+  parseServerFrame,
+} from './frames.js'
 
 // ── Tokens + pairing ─────────────────────────────────────────────
 
@@ -603,6 +569,7 @@ export type TokenRecord = {
   tokenHash: string
   uid: string | null
   status: TokenStatus
+  /** Record-creation time, MILLISECONDS-since-epoch. */
   createdAt: number
   /**
    * Hard-expiry in milliseconds since epoch. The mint endpoint sets
@@ -613,7 +580,12 @@ export type TokenRecord = {
    * record is the single source of truth.
    */
   expiresAt: number
+  /** Last request seen, MILLISECONDS-since-epoch. Backs the sliding TTL. */
   lastSeenAt: number
+  /**
+   * When the `pending-resume` grace window ends, MILLISECONDS-since-epoch,
+   * or `null` when the record is not pending-resume.
+   */
   pendingResumeUntil: number | null
   origin: string
   label: string | null
@@ -623,7 +595,9 @@ export type AgentSession = {
   tid: string
   label: string
   status: 'active' | 'pending-resume' | 'revoked'
+  /** Record-creation time, MILLISECONDS-since-epoch. */
   createdAt: number
+  /** Last request seen, MILLISECONDS-since-epoch. */
   lastSeenAt: number
 }
 
@@ -635,6 +609,12 @@ export type MintResponse = {
   tid: string
   wsUrl: string
   lapUrl: string
+  /**
+   * Hard-expiry as MILLISECONDS-since-epoch — the same unit as the
+   * server-side `TokenRecord.expiresAt` and `createdAt`/`lastSeenAt`.
+   * (LAP v1 floored this to seconds; v2 keeps milliseconds end-to-end so
+   * a client comparing it to `Date.now()` needs no ×1000 fixup.)
+   */
   expiresAt: number
   /** LAP wire-protocol version the server speaks (see {@link LAP_VERSION}). */
   lapVersion?: number
@@ -647,14 +627,19 @@ export type ResumeClaimRequest = { tid: string }
 /**
  * The rotated bearer plus everything the client needs to persist a full
  * session blob (mirrors `MintResponse`), so a resume survives a
- * subsequent refresh the same way a fresh mint does. `expiresAt` is in
- * seconds-since-epoch (same units as `MintResponse.expiresAt`).
+ * subsequent refresh the same way a fresh mint does.
  */
 export type ResumeClaimResponse = {
   token: AgentToken
   tid: string
   wsUrl: string
   lapUrl: string
+  /**
+   * Hard-expiry as MILLISECONDS-since-epoch, matching
+   * `MintResponse.expiresAt` and the server-side `TokenRecord` so the
+   * client's session storage compares units consistently. (Seconds in
+   * LAP v1; milliseconds from v2.)
+   */
   expiresAt: number
 }
 

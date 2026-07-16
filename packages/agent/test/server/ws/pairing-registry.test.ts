@@ -86,6 +86,34 @@ describe('WsPairingRegistry', () => {
     expect(cached?.schemaHash).toBe('hash-1')
   })
 
+  it('answers every hello with a hello-ack carrying the server + min client versions', () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    f.emit({ ...hello(), lapVersion: 2 })
+    const ack = f.send.mock.calls.map((c) => c[0] as ServerFrame).find((fr) => fr.t === 'hello-ack')
+    expect(ack).toMatchObject({ t: 'hello-ack', lapVersion: 2, minClientVersion: 2 })
+    // A compatible client stays paired.
+    expect(reg.isPaired('t1')).toBe(true)
+  })
+
+  it('terminates the pairing when the client speaks a LAP version below the minimum', () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    f.emit({ ...hello(), lapVersion: 1 })
+    // The hello-ack (the explicit reason) was still sent…
+    const ack = f.send.mock.calls.map((c) => c[0] as ServerFrame).find((fr) => fr.t === 'hello-ack')
+    expect(ack).toBeDefined()
+    // …and then the pairing was torn down (hard incompatibility).
+    expect(reg.isPaired('t1')).toBe(false)
+  })
+
+  it('allows a legacy client that omits lapVersion (nothing older to break on)', () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    f.emit(hello()) // no lapVersion
+    expect(reg.isPaired('t1')).toBe(true)
+  })
+
   it('rpc() sends a frame with a generated id and resolves on matching rpc-reply', async () => {
     const f = mkFake()
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
@@ -168,7 +196,12 @@ describe('WsPairingRegistry', () => {
     const f = mkFake()
     reg.register('t1', getConn(f))
     const p = reg.waitForConfirm('t1', 'c-live', 1000)
-    f.emit({ t: 'confirm-resolved', confirmId: 'c-live', outcome: 'user-cancelled' })
+    f.emit({
+      t: 'confirm-resolved',
+      confirmId: 'c-live',
+      outcome: 'user-cancelled',
+      stateAfter: null,
+    })
     expect(await p).toEqual({ outcome: 'user-cancelled' })
   })
 
@@ -212,6 +245,33 @@ describe('WsPairingRegistry', () => {
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
     const p = reg.rpc('t1', 'get_state', {}, { timeoutMs: 10000 })
     f.emitClose()
+    await expect(p).rejects.toMatchObject({ code: 'paused' })
+  })
+
+  it('a reconnect supersede migrates in-flight rpc subscribers so the reply on the NEW socket settles the old promise', async () => {
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    // rpc dispatched on socket A while it is the live pairing.
+    const p = reg.rpc('t1', 'get_state', {}, { timeoutMs: 10000 })
+    const sent = a.send.mock.calls[0]![0]! as ServerFrame
+    if (sent.t !== 'rpc') throw new Error('unreachable')
+    // Reconnect: socket B supersedes A while the rpc is still in flight.
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    // The browser answers on the NEW socket, correlated by the same rpc id.
+    b.emit({ t: 'rpc-reply', id: sent.id, result: { ok: 1 } })
+    expect(await p).toEqual({ ok: 1 })
+  })
+
+  it('a migrated rpc closeHandler rejects paused when the NEW (superseding) socket closes', async () => {
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    const p = reg.rpc('t1', 'get_state', {}, { timeoutMs: 10000 })
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    // The reconnect never delivers a reply and then drops — the in-flight
+    // rpc must still settle (paused), not hang forever.
+    b.emitClose()
     await expect(p).rejects.toMatchObject({ code: 'paused' })
   })
 

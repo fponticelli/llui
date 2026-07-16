@@ -37,12 +37,21 @@ export interface Registry {
 /**
  * Dispatch one effect. Returns whether the effect COMPLETES WITHOUT DISPATCHING a
  * message (see {@link Runner.completesWithoutDispatch}).
+ *
+ * `onComplete` (optional) is an explicit completion signal used by `sequence` to
+ * advance strictly on COMPLETION rather than on the first bubbled message. A leaf
+ * effect completes on its first dispatched message (or synchronously if it
+ * dispatches none); a composite that manages its own completion (see
+ * {@link Runner.managesCompletion}) fires `onComplete` itself — e.g. a NESTED
+ * `sequence` fires it only when its own last step completes, so an outer sequence
+ * never fast-forwards while an inner one is still running. Fired at most once.
  */
 export type DispatchFn = (
   effect: { type: string },
   send: InternalSend,
   signal: AbortSignal,
   deps: Deps,
+  onComplete?: () => void,
 ) => boolean
 
 /** Shared, per-mount context threaded through every (recursive) dispatch. */
@@ -64,11 +73,28 @@ export interface Deps {
  * basis (only `cancel` needs this: bare `cancel` completes without dispatching,
  * but `cancel(token, inner)` may dispatch via its inner effect). Returning
  * `undefined`/`void` falls back to the static `completesWithoutDispatch`.
+ *
+ * `managesCompletion` (default false) marks a COMPOSITE runner that drives the
+ * completion signal itself: instead of `sequence`'s "first bubbled message means
+ * done" leaf heuristic, `dispatch` hands such a runner the `onComplete` callback
+ * (its 5th `run` argument) and the runner fires it explicitly. Only `sequence`
+ * needs this — a nested `sequence` dispatches several messages (one per step), so
+ * first-message completion would let an outer sequence fast-forward past a still
+ * running inner one. (`race`/`retry`/`debounce`/`cancel`-with-inner each dispatch
+ * exactly one terminal message, so the leaf first-message rule is already correct
+ * for them.)
  */
 export interface Runner {
   readonly types: readonly string[]
   readonly completesWithoutDispatch: boolean
-  run(effect: { type: string }, send: InternalSend, signal: AbortSignal, deps: Deps): boolean | void
+  readonly managesCompletion?: boolean
+  run(
+    effect: { type: string },
+    send: InternalSend,
+    signal: AbortSignal,
+    deps: Deps,
+    onComplete?: () => void,
+  ): boolean | void
 }
 
 /**
@@ -95,15 +121,26 @@ export function createDispatch(runners: readonly Runner[]): DispatchFn {
     for (const type of runner.types) map.set(type, runner)
   }
 
-  return function dispatch(effect, send, signal, deps): boolean {
+  return function dispatch(effect, send, signal, deps, onComplete): boolean {
+    let completed = false
+    const fireComplete = (): void => {
+      if (completed) return
+      completed = true
+      onComplete?.()
+    }
+
     let dispatchedSync = false
+    // Leaf semantics: the FIRST dispatched message means "this effect is done", so
+    // it doubles as the completion signal for a `sequence` waiting on this step.
     const trackedSend: InternalSend = (msg) => {
       dispatchedSync = true
       send(msg)
+      fireComplete()
     }
     for (const plugin of deps.plugins) {
       if (plugin({ effect, send: trackedSend, signal })) {
         // Claimed by a plugin: complete-without-dispatch unless it sent synchronously.
+        if (!dispatchedSync) fireComplete()
         return !dispatchedSync
       }
     }
@@ -111,9 +148,20 @@ export function createDispatch(runners: readonly Runner[]): DispatchFn {
     if (!runner) {
       deps.custom(effect, trackedSend, signal)
       // Terminal custom handler: same inference as plugins.
+      if (!dispatchedSync) fireComplete()
       return !dispatchedSync
     }
-    const dynamic = runner.run(effect, send, signal, deps)
-    return dynamic ?? runner.completesWithoutDispatch
+    if (runner.managesCompletion) {
+      // Composite runner drives completion itself: pass the raw `send` (messages
+      // flow straight through, un-latched) plus the explicit `fireComplete`.
+      const dynamic = runner.run(effect, send, signal, deps, fireComplete)
+      return dynamic ?? runner.completesWithoutDispatch
+    }
+    // Leaf runner: completion is its first dispatched message (via `trackedSend`),
+    // or fires synchronously here when it completes without dispatching.
+    const dynamic = runner.run(effect, trackedSend, signal, deps)
+    const completes = dynamic ?? runner.completesWithoutDispatch
+    if (completes) fireComplete()
+    return completes
   }
 }

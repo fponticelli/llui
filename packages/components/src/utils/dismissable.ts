@@ -13,6 +13,14 @@ export interface DismissableOptions {
   ignore?: ElementSource
   /** Called when the user dismisses the layer. */
   onDismiss: (source: DismissSource, event: Event) => void
+  /**
+   * Custom Escape router. When provided it runs for the Escape key INSTEAD of
+   * `onDismiss('escape', …)`, letting the layer unwind an internal level first
+   * (e.g. a menu closes its open submenu before closing the whole menu). Return
+   * `false` to decline — the event is not claimed and propagates as if this
+   * layer had `disableEscape`. Any other return (incl. `undefined`) claims it.
+   */
+  onEscape?: (event: KeyboardEvent) => boolean | void
   /** Disable outside-click dismissal (default: false). */
   disableOutside?: boolean
   /** Disable Escape-key dismissal (default: false). */
@@ -60,6 +68,11 @@ export function pushDismissable(opts: DismissableOptions): () => void {
     element: opts.element,
     handleEscape(event) {
       if (opts.disableEscape) return false
+      if (opts.onEscape) {
+        // A router returning `false` declines the key (propagates); anything
+        // else (incl. undefined) claims it.
+        return opts.onEscape(event) !== false
+      }
       opts.onDismiss('escape', event)
       return true
     },

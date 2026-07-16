@@ -178,8 +178,26 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
     void animateAll(asElements(nodes), from, to)
   }
 
+  // The element's live value for `property`, used as the leave start so an
+  // interrupted enter leaves from wherever it currently sits rather than
+  // snapping to the fully-shown `to`. Prefers computed, then inline, then `to`.
+  const currentValue = (el: HTMLElement): number => {
+    if (typeof getComputedStyle === 'function') {
+      const computed = parseFloat(getComputedStyle(el).getPropertyValue(property))
+      if (!Number.isNaN(computed)) return computed
+    }
+    const inline = parseFloat(el.style.getPropertyValue(property))
+    return Number.isNaN(inline) ? to : inline
+  }
+
   const leave = (nodes: Node[]): Promise<void> => {
-    return animateAll(asElements(nodes), to, from)
+    const els = asElements(nodes)
+    if (els.length === 0) return Promise.resolve()
+    // Per-element start: each leaving element reads its OWN current value, so a
+    // mid-flight enter continues out from where it is instead of jumping to `to`.
+    return Promise.all(els.map((el) => animateOne(el, currentValue(el), from))).then(
+      () => undefined,
+    )
   }
 
   return { enter, leave }

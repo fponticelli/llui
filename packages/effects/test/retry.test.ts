@@ -60,6 +60,44 @@ describe('retry', () => {
     vi.unstubAllGlobals()
   })
 
+  it('does NOT retry a parse error (2xx with invalid JSON) — fails fast', async () => {
+    // A parse error means the server answered 2xx but the body did not decode;
+    // re-issuing would just hit the same broken payload, so it must fail fast.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.reject(new SyntaxError('Unexpected end of JSON input')),
+      text: () => Promise.resolve('oops'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const handler = handleEffects<Effect>().else(() => {})
+    handler({
+      effect: retry(
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
+          url: '/x',
+          responseType: 'json',
+          onSuccess: (data) => ({ type: 'ok', payload: data }),
+          onError: (err) => ({ type: 'err', error: err }),
+        }),
+        { maxAttempts: 3, delayMs: 10 },
+      ),
+      send,
+      signal,
+    })
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(fetchMock).toHaveBeenCalledTimes(1) // no retry
+    expect(send.mock.calls[0]![0]).toEqual({
+      type: 'err',
+      error: { kind: 'parse', message: expect.stringContaining('JSON') },
+    })
+
+    vi.unstubAllGlobals()
+  })
+
   it('does NOT retry a validation error (422) — fails fast', async () => {
     // A 422 with an `errors` body maps to a `validation` ApiError (a 422 with no
     // such body is a generic 5xx-style `server` error, which IS retriable).

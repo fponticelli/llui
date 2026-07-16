@@ -116,6 +116,26 @@ describe('applyPointer (immutable upsert)', () => {
     expect(next.items ?? []).toEqual([])
   })
 
+  it('refuses a non-index token targeting an array and preserves the array (fix 1)', () => {
+    const model = { items: ['a', 'b'] }
+    const next = applyPointer(model, '/items/foo', 'x') as { items: unknown[] }
+    // The array is NOT clobbered into an object — the write is refused.
+    expect(Array.isArray(next.items)).toBe(true)
+    expect(next.items).toEqual(['a', 'b'])
+  })
+
+  it('refuses a non-index token deep inside an array without losing the array', () => {
+    const model = { items: ['a', 'b'] }
+    const next = applyPointer(model, '/items/foo/bar', 'x') as { items: unknown[] }
+    expect(next.items).toEqual(['a', 'b'])
+  })
+
+  it('appends with "-" at the end of an array (RFC 6901)', () => {
+    expect(applyPointer({ items: ['a'] }, '/items/-', 'b')).toEqual({ items: ['a', 'b'] })
+    // Creates a fresh array when the slot is empty.
+    expect(applyPointer({}, '/items/-', 'first')).toEqual({ items: ['first'] })
+  })
+
   it('refuses to write __proto__/constructor/prototype tokens (fix 4)', () => {
     const proto = applyPointer({}, '/__proto__/polluted', true)
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()

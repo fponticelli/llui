@@ -133,4 +133,11 @@ describe('signalToProduce — differential: produce ignores non-dependency chang
     const out2 = run(produce, { ...base, user: { ...base.user, first: 'Q' } })
     expect(out2).not.toBe(out0)
   })
+
+  it('lowered deps include a destructuring-default read (would be stale otherwise)', () => {
+    const src = 'state.map((s) => { const { theme = s.fallbackTheme } = s.prefs; return theme })'
+    const { deps } = lower(src)
+    expect(deps).toContain('fallbackTheme')
+    expect(deps).toContain('prefs.theme')
+  })
 })

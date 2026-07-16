@@ -6,6 +6,13 @@
 // must be on the allowlist; a scheme containing any non-scheme character (control
 // chars, whitespace — e.g. `java\nscript:`) is treated as unsafe.
 //
+// Path-relative URLs (`/x`, `./x`, `#a`, `?q`) carry no scheme and inherit the
+// document's origin, so they are always safe. A PROTOCOL-relative URL (`//host/x`)
+// is different: it also has no colon-scheme, but it points at an arbitrary host
+// under the page's effective protocol (http/https), so it is a live cross-origin
+// request in disguise. It is therefore gated against the allowlist rather than
+// waved through as "relative".
+//
 // This is the ONE canonical implementation shared by `@llui/markdown`,
 // `@llui/markdown-editor`, and `@llui/a2ui`. Per-surface allow-lists (which
 // schemes a given ingress accepts) are DATA passed in `allowedProtocols`, not a
@@ -40,8 +47,17 @@ export function sanitizeUrl(
   let from = 0
   while (from < stripped.length && stripped.charCodeAt(from) <= 0x20) from++
   const value = stripped.slice(from)
+
+  // Protocol-relative (`//host/path`): no colon-scheme, but NOT relative — it
+  // resolves to an arbitrary host under the page's effective protocol. Its
+  // scheme is whichever of http/https the document uses, so it is only safe
+  // when BOTH are permitted; otherwise the effective protocol might be blocked.
+  if (value.startsWith('//')) {
+    return allowedProtocols.includes('http') && allowedProtocols.includes('https') ? value : null
+  }
+
   const colon = value.indexOf(':')
-  if (colon < 0) return value // no scheme → relative/anchor/query, safe
+  if (colon < 0) return value // no scheme → path-relative/anchor/query, safe
 
   const slash = value.indexOf('/')
   const question = value.indexOf('?')

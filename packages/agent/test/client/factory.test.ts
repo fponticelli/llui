@@ -168,7 +168,7 @@ describe('createAgentClient', () => {
     expect(hello.appName).toBe('test-app')
     expect(hello.appVersion).toBe('1.0.0')
     // LAP version negotiation: the client advertises its wire version.
-    expect(hello.lapVersion).toBe(1)
+    expect(hello.lapVersion).toBe(2)
   })
 
   it('AgentOpenWS effect dispatches WsOpened msg via handle.send on open event', async () => {

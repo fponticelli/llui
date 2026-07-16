@@ -132,13 +132,36 @@ function numberFormatOptions(env: EvalEnv): Intl.NumberFormatOptions {
   return opts
 }
 
+// `Intl.NumberFormat` construction is comparatively expensive and runs
+// reactively (per keystroke, per streamed tick). Memoize formatters by their
+// options signature so the same shape isn't rebuilt on every evaluation; bound
+// the cache like `regexCache` since options (decimals/currency) are
+// server-controlled.
+const MAX_INTL_CACHE = 64
+const numberFormatCache = new Map<string, Intl.NumberFormat>()
+
+/** Get a memoized `Intl.NumberFormat` for these options (constructs on miss). */
+export function getNumberFormat(opts: Intl.NumberFormatOptions): Intl.NumberFormat {
+  // Options are plain objects of primitives built in a fixed key order, so the
+  // JSON string is a stable signature.
+  const key = JSON.stringify(opts)
+  const cached = numberFormatCache.get(key)
+  if (cached !== undefined) return cached
+  // Construct BEFORE caching so an invalid options object (e.g. a bad currency
+  // code) throws to the caller and is never cached.
+  const fmt = new Intl.NumberFormat(undefined, opts)
+  if (numberFormatCache.size >= MAX_INTL_CACHE) numberFormatCache.clear()
+  numberFormatCache.set(key, fmt)
+  return fmt
+}
+
 const formatNumber: CatalogFunction = (_call, env) =>
-  new Intl.NumberFormat(undefined, numberFormatOptions(env)).format(toNumber(env.arg('value')))
+  getNumberFormat(numberFormatOptions(env)).format(toNumber(env.arg('value')))
 
 const formatCurrency: CatalogFunction = (_call, env) => {
   const currency = displayString(env.arg('currency') ?? 'USD')
   try {
-    return new Intl.NumberFormat(undefined, {
+    return getNumberFormat({
       ...numberFormatOptions(env),
       style: 'currency',
       currency,
@@ -175,10 +198,14 @@ const formatDate: CatalogFunction = (_call, env) => {
 
 const PLURAL_CATEGORIES = ['zero', 'one', 'two', 'few', 'many', 'other'] as const
 
+// One shared instance — `pluralize` runs reactively and the rules are
+// locale-default, so there is no need to reconstruct it per evaluation.
+export const sharedPluralRules = new Intl.PluralRules()
+
 const pluralize: CatalogFunction = (_call, env) => {
   const n = toNumber(env.arg('value'))
   if (n === 0 && env.arg('zero') !== undefined) return displayString(env.arg('zero'))
-  const category = new Intl.PluralRules().select(n)
+  const category = sharedPluralRules.select(n)
   const chosen = (PLURAL_CATEGORIES as readonly string[]).includes(category)
     ? (env.arg(category) ?? env.arg('other'))
     : env.arg('other')

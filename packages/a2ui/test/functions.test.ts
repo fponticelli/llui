@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { evalDynamic } from '../src/binding.js'
+import { getNumberFormat, sharedPluralRules } from '../src/catalog/functions.js'
 import {
   basicCatalog,
   mountA2ui,
@@ -86,6 +87,19 @@ describe('number / currency / date / pluralize', () => {
       '2024-01-15',
     )
   })
+  it('memoizes Intl.NumberFormat by options signature and shares one PluralRules (fix 5)', () => {
+    // A distinct options shape (unused elsewhere) so cache identity is deterministic.
+    const opts = { useGrouping: false, minimumFractionDigits: 7, maximumFractionDigits: 7 }
+    const a = getNumberFormat(opts)
+    const b = getNumberFormat({ ...opts })
+    expect(a).toBe(b) // reused, not reconstructed per evaluation
+    // Distinct options ⇒ distinct formatter.
+    expect(
+      getNumberFormat({ ...opts, minimumFractionDigits: 6, maximumFractionDigits: 6 }),
+    ).not.toBe(a)
+    expect(sharedPluralRules).toBeInstanceOf(Intl.PluralRules)
+  })
+
   it('pluralize picks the plural category', () => {
     const args = { one: '1 item', other: 'many items', zero: 'none' }
     expect(ev({ call: 'pluralize', args: { value: 1, ...args } })).toBe('1 item')

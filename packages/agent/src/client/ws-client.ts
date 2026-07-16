@@ -1,11 +1,5 @@
-import type {
-  ClientFrame,
-  ServerFrame,
-  HelloFrame,
-  LogEntry,
-  LogKind,
-  MessageAnnotations,
-} from '../protocol.js'
+import type { ClientFrame, HelloFrame, LogEntry, LogKind, MessageAnnotations } from '../protocol.js'
+import { LAP_VERSION, parseServerFrame } from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleQueryState, type QueryStateHost } from './rpc/query-state.js'
 import { handleWouldDispatch, type WouldDispatchHost } from './rpc/would-dispatch.js'
@@ -153,11 +147,47 @@ export function attachWsClient(
     open = false
   })
   ws.addEventListener('message', async (ev) => {
-    let frame: ServerFrame
+    let json: unknown
     try {
       const raw = typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data)
-      frame = JSON.parse(raw) as ServerFrame
+      json = JSON.parse(raw)
     } catch {
+      return
+    }
+    // Validate the frame envelope at the boundary rather than trusting an
+    // unchecked `as ServerFrame`. An invalid frame that is nonetheless a
+    // recognizable rpc REQUEST gets an rpc-error reply so the server's
+    // pending rpc settles instead of hanging until timeout; anything else
+    // is dropped with a warning.
+    const frame = parseServerFrame(json)
+    if (!frame) {
+      const maybe = json as { t?: unknown; id?: unknown }
+      if (
+        maybe !== null &&
+        typeof maybe === 'object' &&
+        maybe.t === 'rpc' &&
+        typeof maybe.id === 'string'
+      ) {
+        sendFrame({
+          t: 'rpc-error',
+          id: maybe.id,
+          code: 'schema-error',
+          detail: 'invalid server frame',
+        })
+      } else {
+        console.warn(`[llui-agent] dropping invalid server frame: ${String(maybe?.t)}`)
+      }
+      return
+    }
+    if (frame.t === 'hello-ack') {
+      // Version negotiation. The server independently terminates the
+      // pairing when this client is too old; surface the incompatibility
+      // here too so it's diagnosable rather than a silent socket drop.
+      if (LAP_VERSION < frame.minClientVersion) {
+        console.warn(
+          `[llui-agent] LAP version too old: client speaks v${LAP_VERSION}, server requires >= v${frame.minClientVersion}`,
+        )
+      }
       return
     }
     if (frame.t === 'revoked') {

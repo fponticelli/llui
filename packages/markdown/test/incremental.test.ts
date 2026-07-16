@@ -112,6 +112,21 @@ describe('incrementalParse — tree equals full parse', () => {
     const reused = feed(['## H\n\n- a\n- b\n\npara', '## H\n\n- a\n- b\n\npara\n\nmore'])
     expect(reused[1]).toBeGreaterThanOrEqual(3) // heading + list + para reused
   })
+
+  it('does not reuse an unclosed fenced code block (EOF-terminated, no seal)', () => {
+    // An unclosed ``` fence runs to EOF: `code\n\nmore` is ALL inside one code
+    // block. The old parse ended the block at EOF (no seal), so a blank line that
+    // only appears in the NEW source must NOT be treated as a seal for reuse.
+    const reused = feed(['```\ncode', '```\ncode\n\nmore'])
+    expect(reused[1]).toBe(0)
+  })
+
+  it('does not reuse an unclosed HTML type-1 block (<pre>, EOF-terminated)', () => {
+    // `<pre>` opens an HTML type-1 block that continues to EOF; the appended blank
+    // line + text stays inside it. No seal existed in the old source → no reuse.
+    const reused = feed(['<pre>\nhi', '<pre>\nhi\n\nmore'])
+    expect(reused[1]).toBe(0)
+  })
 })
 
 describe('incrementalParse — prefix reuse can be disabled (unsafe custom extensions)', () => {

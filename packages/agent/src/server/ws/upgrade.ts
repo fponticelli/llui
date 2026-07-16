@@ -7,6 +7,7 @@ import type { PairingConnection } from './pairing-registry.js'
 import type { AgentCoreHandle } from '../core.js'
 import { checkWsOrigin, composeSelfOrigin } from './origin.js'
 import type { ClientFrame, ServerFrame } from '../../protocol.js'
+import { parseClientFrame } from '../../protocol.js'
 
 export type UpgradeDeps = {
   /**
@@ -114,15 +115,24 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
       let frameHandler: ((f: ClientFrame) => void) | null = null
       ws.on('message', (data: Buffer | string) => {
         const raw = typeof data === 'string' ? data : data.toString('utf8')
-        let parsed: ClientFrame
+        let json: unknown
         try {
-          parsed = JSON.parse(raw) as ClientFrame
+          json = JSON.parse(raw)
         } catch {
-          // Ignore malformed frames.
+          // Ignore malformed JSON.
           return
         }
-        if (frameHandler) frameHandler(parsed)
-        else buffer.push(parsed)
+        // Validate the frame envelope at the boundary — an unchecked
+        // `as ClientFrame` would let a malformed / hostile frame reach
+        // dispatch with wrong-typed correlation fields. Invalid frames are
+        // dropped (there is no client-bound rpc-error channel server-side).
+        const frame = parseClientFrame(json)
+        if (!frame) {
+          console.warn('[llui-agent] dropping invalid client frame')
+          return
+        }
+        if (frameHandler) frameHandler(frame)
+        else buffer.push(frame)
       })
 
       const conn: PairingConnection = {

@@ -9,7 +9,7 @@ export const handleLapWait = withLapGates({ touchOn: 'arrival' }, async (ctx) =>
   // gate (`touchOn: 'arrival'`) — `/wait` is a long poll that can block
   // past `slidingTtlMs`, so touching only after it resolves would let the
   // inactivity expiry kill an actively-polling agent.
-  const body = ((await ctx.req.json().catch(() => null)) ?? {}) as LapWaitRequest
+  const body = (ctx.body ?? {}) as LapWaitRequest
   const timeoutMs = body.timeoutMs ?? 10_000
   const result = await ctx.deps.registry.waitForChange(ctx.tid, body.path, timeoutMs)
   const out: LapWaitResponse = result

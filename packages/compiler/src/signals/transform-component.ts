@@ -27,6 +27,7 @@ import { singleRoot, type Roots } from './extract-deps.js'
 import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
 import type { SourceMap } from 'magic-string'
 import { perfDiagnosticsForFile } from './perf-diagnostics.js'
+import { scriptKindForFilename } from './script-kind.js'
 import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -226,7 +227,16 @@ export function transformSignalComponentSourceWithMap(
   source: string,
   opts: SignalTransformOptions = {},
 ): SignalTransformResult {
-  const sf = ts.createSourceFile('m.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  // Parse with the ScriptKind implied by the filename: a `.ts` file using the
+  // generic-arrow form (`const id = <T>(x: T): T => x`) misparses as JSX under TSX.
+  const fileName = opts.fileName ?? 'm.tsx'
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindForFilename(fileName),
+  )
   const edits: Edit[] = []
   let transformedAny = false
 
@@ -235,23 +245,33 @@ export function transformSignalComponentSourceWithMap(
   // user's own binding of a helper name, and honors lexical shadowing.
   const bindings = HelperBindings.fromSourceFile(sf)
 
-  // Introspection metadata is per-file (Msg/State/Effect follow the `Msg`/`State`/
-  // `Effect` convention). Compute the shared agent fields once, lazily.
+  // Introspection metadata is computed PER `component()` call: the Msg/State/Effect
+  // type NAMES come from the call's own type arguments (`component<State, Msg, Effect>`),
+  // falling back to the `State`/`Msg`/`Effect` convention when the call is untyped. A
+  // second component in the same file with a different Msg union therefore gets its own
+  // schema/hash — not the first component's. Results are memoized per name-tuple so two
+  // components sharing the same types don't re-extract.
   const shouldEmit = Boolean(opts.emitAgentMetadata || opts.devMode)
-  let sharedMeta: string[] | null = null
-  const sharedMetaProps = (): string[] => {
-    if (sharedMeta) return sharedMeta
+  const metaCache = new Map<string, string[]>()
+  const metaPropsFor = (stateName: string, msgName: string, effectName: string): string[] => {
+    const key = `${stateName}\0${msgName}\0${effectName}`
+    const cached = metaCache.get(key)
+    if (cached) return cached
     const pre = opts.preExtracted
     const stateSrc = opts.typeSources?.state
-    // Cross-file pre-extracted schemas take precedence; else extract file-locally.
-    const msgSchema = pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(source, 'Msg')
+    // Cross-file pre-extracted schemas take precedence; else extract file-locally
+    // using the per-call type-argument names.
+    const msgSchema =
+      pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(source, msgName)
     const effectSchema =
-      pre?.effectSchema !== undefined ? pre.effectSchema : extractEffectSchema(source, 'Effect')
+      pre?.effectSchema !== undefined ? pre.effectSchema : extractEffectSchema(source, effectName)
     const msgAnnotations =
-      pre?.msgAnnotations !== undefined ? pre.msgAnnotations : extractMsgAnnotations(source, 'Msg')
+      pre?.msgAnnotations !== undefined
+        ? pre.msgAnnotations
+        : extractMsgAnnotations(source, msgName)
     const stateSchema = stateSrc
       ? extractStateSchema(stateSrc.source, stateSrc.typeName)
-      : extractStateSchema(source, 'State')
+      : extractStateSchema(source, stateName)
     const props: string[] = []
     if (msgSchema) props.push(`__msgSchema: ${JSON.stringify(msgSchema)}`)
     if (effectSchema) props.push(`__effectSchema: ${JSON.stringify(effectSchema)}`)
@@ -270,13 +290,25 @@ export function transformSignalComponentSourceWithMap(
         computeSchemaHash({ msgSchema, stateSchema, msgAnnotations: msgAnnotations ?? null }),
       )}`,
     )
-    sharedMeta = props
+    metaCache.set(key, props)
     return props
+  }
+
+  /** The type name for the `i`th type argument of a `component<…>(…)` call (0 = State,
+   * 1 = Msg, 2 = Effect), or `fallback` when the call is untyped / the argument isn't a
+   * plain type reference. */
+  const typeArgName = (call: ts.CallExpression, i: number, fallback: string): string => {
+    const ta = call.typeArguments?.[i]
+    if (ta && ts.isTypeReferenceNode(ta) && ts.isIdentifier(ta.typeName)) return ta.typeName.text
+    return fallback
   }
 
   /** The metadata property strings to splice into a component config, minus any
    * field the author already wrote (user-provided takes precedence). */
-  const metaForComponent = (config: ts.ObjectLiteralExpression, callNode: ts.Node): string[] => {
+  const metaForComponent = (
+    config: ts.ObjectLiteralExpression,
+    callNode: ts.CallExpression,
+  ): string[] => {
     if (!shouldEmit) return []
     const existing = new Set(
       config.properties.flatMap((p) => (ts.isPropertyAssignment(p) ? [p.name.getText(sf)] : [])),
@@ -290,7 +322,14 @@ export function transformSignalComponentSourceWithMap(
         props.push(`name: ${JSON.stringify(decl.name.text)}`)
       }
     }
-    props.push(...sharedMetaProps().filter((p) => !existing.has(p.split(':')[0]!.trim())))
+    const stateName = typeArgName(callNode, 0, 'State')
+    const msgName = typeArgName(callNode, 1, 'Msg')
+    const effectName = typeArgName(callNode, 2, 'Effect')
+    props.push(
+      ...metaPropsFor(stateName, msgName, effectName).filter(
+        (p) => !existing.has(p.split(':')[0]!.trim()),
+      ),
+    )
     if (opts.devMode && opts.fileName && !existing.has('__componentMeta')) {
       const line = sf.getLineAndCharacterOfPosition(callNode.getStart(sf)).line + 1
       props.push(`__componentMeta: ${JSON.stringify({ file: opts.fileName, line })}`)
@@ -437,7 +476,7 @@ export function transformSignalComponentSourceWithMap(
       const diags = perfDiagnosticsForFile(
         sf,
         source,
-        opts.fileName ?? 'm.tsx',
+        fileName,
         edits,
         loweredEachStarts,
         recordedBails,
@@ -464,5 +503,5 @@ export function transformSignalComponentSourceWithMap(
 
   // Every edit + the import prepend compose through one MagicString instance → a
   // coherent source map.
-  return applyEditsWithMap(source, edits, { fileName: opts.fileName ?? 'm.tsx', prepend })
+  return applyEditsWithMap(source, edits, { fileName, prepend })
 }

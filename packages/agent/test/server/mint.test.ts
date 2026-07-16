@@ -36,15 +36,19 @@ describe('handleMint', () => {
     expect(body.tid).toBe('11111111-1111-1111-1111-111111111111')
     expect(body.lapUrl).toBe('https://app.example/agent/lap/v1')
     expect(body.wsUrl).toMatch(/^wss?:\/\/app\.example\/agent\/ws$/)
-    expect(body.expiresAt).toBeGreaterThan(clock)
+    // expiresAt is MILLISECONDS-since-epoch (LAP v2): now(ms) + 24h default.
+    expect(body.expiresAt).toBe(clock * 1000 + 24 * 60 * 60 * 1000)
     expect(body.token.startsWith('agt_')).toBe(true)
     // LAP version negotiation: mint advertises the server's wire version.
-    expect(body.lapVersion).toBe(1)
+    expect(body.lapVersion).toBe(2)
 
     const stored = await store.findByTid(body.tid)
     expect(stored?.uid).toBe('u1')
     expect(stored?.status).toBe('awaiting-ws')
     expect(stored?.origin).toBe('https://app.example')
+    // D11: the wire `expiresAt` is the SAME unit (ms) as the stored record
+    // — no seconds/ms schism between the wire and the sibling timestamps.
+    expect(body.expiresAt).toBe(stored?.expiresAt)
 
     // The opaque bearer hashes to the record's tokenHash, and the
     // record is reachable by hash on the auth hot path.

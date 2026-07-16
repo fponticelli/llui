@@ -136,13 +136,18 @@ describe('formField reducer', () => {
       type: 'validateAsync',
       schema: asyncFailureSchema,
       values: {},
+      requestId: 1,
     })
     expect(pending.fields.email!.pending).toBe(true)
     expect(fx).toEqual([])
     // resolve the promise produced internally and feed result back
     const result = await asyncFailureSchema['~standard'].validate({})
     const issues = 'issues' in result && result.issues ? result.issues : []
-    const [resolved] = update(pending, { type: 'validateResult', issues: [...issues] })
+    const [resolved] = update(pending, {
+      type: 'validateResult',
+      issues: [...issues],
+      requestId: 1,
+    })
     expect(resolved.fields.email!.pending).toBe(false)
     expect(resolved.fields.email!.invalid).toBe(true)
   })
@@ -153,12 +158,77 @@ describe('formField reducer', () => {
       type: 'validateAsync',
       schema: asyncSuccessSchema,
       values: {},
+      requestId: 1,
     })
     const result = await asyncSuccessSchema['~standard'].validate({})
     const issues = 'issues' in result && result.issues ? result.issues : []
-    const [resolved] = update(pending, { type: 'validateResult', issues: [...issues] })
+    const [resolved] = update(pending, {
+      type: 'validateResult',
+      issues: [...issues],
+      requestId: 1,
+    })
     expect(resolved.fields.email!.pending).toBe(false)
     expect(resolved.fields.email!.invalid).toBe(false)
+  })
+
+  it('a stale validateResult (out-of-order) is dropped — newest validation wins', async () => {
+    const s0 = init({ id: 'signup', fields: ['email'] })
+    // Start validation #1 (would report invalid), then validation #2 (valid)
+    // supersedes it before either resolves.
+    const [p1] = update(s0, {
+      type: 'validateAsync',
+      schema: asyncFailureSchema,
+      values: {},
+      requestId: 1,
+    })
+    const [p2] = update(p1, {
+      type: 'validateAsync',
+      schema: asyncSuccessSchema,
+      values: {},
+      requestId: 2,
+    })
+    // The newer (valid) result resolves FIRST and is applied.
+    const okResult = await asyncSuccessSchema['~standard'].validate({})
+    const okIssues = 'issues' in okResult && okResult.issues ? okResult.issues : []
+    const [afterNew] = update(p2, {
+      type: 'validateResult',
+      issues: [...okIssues],
+      requestId: 2,
+    })
+    expect(afterNew.fields.email!.invalid).toBe(false)
+    expect(afterNew.fields.email!.pending).toBe(false)
+
+    // The older (invalid) result arrives LATE — it must be dropped, not clobber.
+    const failResult = await asyncFailureSchema['~standard'].validate({})
+    const failIssues = 'issues' in failResult && failResult.issues ? failResult.issues : []
+    const [afterStale] = update(afterNew, {
+      type: 'validateResult',
+      issues: [...failIssues],
+      requestId: 1,
+    })
+    expect(afterStale.fields.email!.invalid).toBe(false)
+    expect(afterStale).toEqual(afterNew)
+  })
+
+  it('reset invalidates an in-flight validation (its late result is dropped)', async () => {
+    const s0 = init({ id: 'signup', fields: ['email'] })
+    const [pending] = update(s0, {
+      type: 'validateAsync',
+      schema: asyncFailureSchema,
+      values: {},
+      requestId: 1,
+    })
+    const [afterReset] = update(pending, { type: 'reset' })
+    const result = await asyncFailureSchema['~standard'].validate({})
+    const issues = 'issues' in result && result.issues ? result.issues : []
+    const [afterStale] = update(afterReset, {
+      type: 'validateResult',
+      issues: [...issues],
+      requestId: 1,
+    })
+    // The stale result is dropped; reset state is preserved.
+    expect(afterStale.fields.email!.invalid).toBe(false)
+    expect(afterStale).toEqual(afterReset)
   })
 })
 

@@ -3,6 +3,7 @@ import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { presenceEndHandler } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -244,8 +245,8 @@ export function connect(
       'data-state': state.map(statusOf),
       'data-scope': 'dialog',
       'data-part': 'content',
-      onAnimationEnd: () => send({ type: 'animationEnd' }),
-      onTransitionEnd: () => send({ type: 'transitionEnd' }),
+      onAnimationEnd: presenceEndHandler(() => send({ type: 'animationEnd' })),
+      onTransitionEnd: presenceEndHandler(() => send({ type: 'transitionEnd' })),
     },
     title: {
       id: titleId,

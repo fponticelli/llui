@@ -10,6 +10,7 @@ export type Async<T, E> =
 /** Standard API error type produced by the http() effect. */
 export type ApiError =
   | { kind: 'network'; message: string }
+  | { kind: 'parse'; message: string }
   | { kind: 'timeout' }
   | { kind: 'notfound' }
   | { kind: 'unauthorized' }

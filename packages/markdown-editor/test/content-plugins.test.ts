@@ -134,6 +134,56 @@ describe('content plugins — markdown round-trip', () => {
     expect(cellCount).toBe(2) // two cells, not three
     expect(out).toBe(md)
   })
+
+  it('round-trips inline formatting and column alignment in cells', () => {
+    const t = buildTransformers([tablePlugin(), corePlugin()])
+    const roundtrip = (md: string): string => {
+      const editor = createHeadlessEditor({
+        namespace: `tbl-rt-${Math.random()}`,
+        nodes: [...GFM_NODES, TableNode, TableRowNode, TableCellNode],
+        onError: (e) => {
+          throw e
+        },
+      })
+      let out = ''
+      editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
+      editor.getEditorState().read(() => {
+        out = $convertToMarkdownString(t)
+      })
+      return out
+    }
+    // Bold + italic cell content AND per-column alignment (:---, :---:, ---:)
+    // must all survive export∘import — the old getTextContent()/`---` export
+    // flattened formatting and dropped alignment.
+    const md = [
+      '| Name | Score | Note |',
+      '| :--- | :---: | ---: |',
+      '| **bold** | *italic* | plain |',
+    ].join('\n')
+    expect(roundtrip(md)).toBe(md)
+  })
+
+  it('imports a GFM table whose body rows omit the outer pipes', () => {
+    const t = buildTransformers([tablePlugin(), corePlugin()])
+    const editor = createHeadlessEditor({
+      namespace: 'tbl-no-outer',
+      nodes: [...GFM_NODES, TableNode, TableRowNode, TableCellNode],
+      onError: (e) => {
+        throw e
+      },
+    })
+    // Valid GFM: header + delimiter with pipes, body rows WITHOUT leading/trailing
+    // pipes. The old `isRow` (`\|.*\|`) rejected these, truncating the table.
+    const md = ['| A | B |', '| --- | --- |', '1 | 2', '3 | 4'].join('\n')
+    editor.update(() => $convertFromMarkdownString(md, t), { discrete: true })
+    const rowCount = editor.getEditorState().read(() => {
+      const table = $getRoot().getChildren()[0]
+      return table && (table as TableNode).getType() === 'table'
+        ? (table as TableNode).getChildren().length
+        : 0
+    })
+    expect(rowCount).toBe(3) // header + two body rows (none dropped)
+  })
 })
 
 describe('image plugin (jsdom)', () => {

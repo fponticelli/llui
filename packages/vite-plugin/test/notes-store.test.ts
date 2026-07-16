@@ -370,6 +370,82 @@ describe('format overrides', () => {
   })
 })
 
+describe('atomic + integrity (N22/D2)', () => {
+  it('createNote never leaves a partial .md tmp file behind', () => {
+    const res = createNote(notesRoot, { body: 'atomic', frontmatter: fmBase, noteBody: emptyBody })
+    const sessionDir = join(notesRoot, res.sessionId)
+    const entries = readdirSync(sessionDir)
+    // No leftover `.tmp-*` sidecars from the write.
+    expect(entries.some((f) => f.includes('.tmp-'))).toBe(false)
+    expect(entries).toContain(res.filename)
+  })
+
+  it('createNote png is written atomically with no leftover tmp', () => {
+    const pngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+    const res = createNote(notesRoot, {
+      body: 'shot',
+      frontmatter: { ...fmBase, kind: 'rect', screenshot: 'x.png' },
+      noteBody: emptyBody,
+      screenshot: pngBase64,
+    })
+    const sessionDir = join(notesRoot, res.sessionId)
+    const entries = readdirSync(sessionDir)
+    expect(entries.some((f) => f.includes('.tmp-'))).toBe(false)
+    expect(entries).toContain(res.filename.replace(/\.md$/, '.png'))
+  })
+
+  it('allocates a distinct id when a colliding filename already exists (exclusive create)', () => {
+    const a = createNote(notesRoot, {
+      body: 'same prose',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    })
+    const sessionDir = join(notesRoot, a.sessionId)
+    // Pre-plant the exact natural filename the next allocation would pick,
+    // simulating a racing writer that already claimed id 002.
+    writeFileSync(join(sessionDir, '002-human-text-same-prose.md'), '---\nid: "002"\n---\n\nx\n')
+    const b = createNote(notesRoot, {
+      body: 'same prose',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    })
+    // Must not clobber the pre-planted file; must pick a fresh id.
+    expect(b.id).not.toBe('002')
+    expect(readFileSync(join(sessionDir, '002-human-text-same-prose.md'), 'utf8')).toContain(
+      'id: "002"',
+    )
+  })
+
+  it('findNoteFile treats multiple prefix matches as an integrity error', () => {
+    const res = createNote(notesRoot, { body: 'dupe', frontmatter: fmBase, noteBody: emptyBody })
+    const sessionDir = join(notesRoot, res.sessionId)
+    // Force a second file sharing the same id prefix — a corrupt state.
+    writeFileSync(join(sessionDir, `${res.id}-human-text-dupe-evil.md`), 'x')
+    expect(() => readNote(notesRoot, res.sessionId, res.id)).toThrow(/integrity|multiple/i)
+  })
+
+  it('updateNoteProse writes atomically (no leftover tmp)', () => {
+    const res = createNote(notesRoot, { body: 'v1', frontmatter: fmBase, noteBody: emptyBody })
+    updateNoteProse(notesRoot, res.sessionId, res.id, 'v2')
+    const sessionDir = join(notesRoot, res.sessionId)
+    expect(readdirSync(sessionDir).some((f) => f.includes('.tmp-'))).toBe(false)
+    expect(readNote(notesRoot, res.sessionId, res.id).prose).toBe('v2')
+  })
+
+  it('listNotes surfaces parse failures via an errors field instead of silently dropping', () => {
+    const res = createNote(notesRoot, { body: 'good', frontmatter: fmBase, noteBody: emptyBody })
+    const sessionDir = join(notesRoot, res.sessionId)
+    // A canonically-named but unparseable note file.
+    writeFileSync(join(sessionDir, '900-human-text-broken.md'), 'not valid frontmatter at all')
+    const list = listNotes(notesRoot, { sessionId: res.sessionId })
+    // The good note is still returned.
+    expect(list.notes.map((n) => n.id)).toContain('001')
+    // The broken one is reported, not swallowed.
+    expect(list.errors?.some((e) => e.filename === '900-human-text-broken.md')).toBe(true)
+  })
+})
+
 describe('sessionId path traversal', () => {
   // Regression: `sessionId` arrives from the HTTP query string unvalidated.
   // A `../`-style value previously joined straight into a filesystem path,

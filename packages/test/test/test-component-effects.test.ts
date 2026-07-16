@@ -132,4 +132,86 @@ describe('testComponent withEffects', () => {
       handle.dispose()
     }
   })
+
+  // A component whose every send emits one (inert) effect — no cascade — so pure
+  // and withEffects modes must agree on the batch effects window.
+  type NoteState = { n: number }
+  type NoteMsg = { type: 'tick' }
+  type NoteEffect = { type: 'note'; n: number }
+  const Ticker = component<NoteState, NoteMsg, NoteEffect>({
+    name: 'Ticker',
+    init: () => [{ n: 0 }, []],
+    update: (s) => [{ n: s.n + 1 }, [{ type: 'note', n: s.n + 1 }]],
+    view: () => [],
+    onEffect: () => {}, // notes are inert — no effect-driven send
+  })
+
+  it('pure-mode batch exposes the WHOLE burst of effects (not just the last send)', () => {
+    const t = testComponent(Ticker) // pure mode
+    t.batch(() => {
+      t.send({ type: 'tick' })
+      t.send({ type: 'tick' })
+      t.send({ type: 'tick' })
+    })
+    expect(t.effects).toEqual([
+      { type: 'note', n: 1 },
+      { type: 'note', n: 2 },
+      { type: 'note', n: 3 },
+    ])
+  })
+
+  it('pure and withEffects modes agree on harness.effects after a batch', () => {
+    const pure = testComponent(Ticker)
+    pure.batch(() => {
+      pure.send({ type: 'tick' })
+      pure.send({ type: 'tick' })
+      pure.send({ type: 'tick' })
+    })
+
+    const withE = testComponent(Ticker, { withEffects: true })
+    withE.batch(() => {
+      withE.send({ type: 'tick' })
+      withE.send({ type: 'tick' })
+      withE.send({ type: 'tick' })
+    })
+
+    expect(pure.effects).toEqual(withE.effects)
+  })
+
+  it('a plain send after a batch replaces the window with just its own effects', () => {
+    const t = testComponent(Ticker)
+    t.batch(() => {
+      t.send({ type: 'tick' })
+      t.send({ type: 'tick' })
+    })
+    t.send({ type: 'tick' }) // outside the batch
+    expect(t.effects).toEqual([{ type: 'note', n: 3 }])
+  })
+
+  it('runs onEffect cleanups in FIFO (registration) order on dispose', () => {
+    const order: number[] = []
+    type SubState = { n: number }
+    type SubMsg = { type: 'noop' }
+    type SubEffect = { type: 'sub'; id: number }
+    const Subs = component<SubState, SubMsg, SubEffect>({
+      name: 'Subs',
+      init: () => [
+        { n: 0 },
+        [
+          { type: 'sub', id: 0 },
+          { type: 'sub', id: 1 },
+        ],
+      ],
+      update: (s) => [s, []],
+      view: () => [],
+      onEffect: (effect: SubEffect) => {
+        const id = effect.id
+        return () => order.push(id)
+      },
+    })
+    const t = testComponent(Subs, { withEffects: true })
+    t.dispose()
+    // FIFO: the first-registered cleanup runs first — matching @llui/dom.
+    expect(order).toEqual([0, 1])
+  })
 })

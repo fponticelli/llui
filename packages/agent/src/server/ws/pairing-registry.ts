@@ -5,7 +5,7 @@ import type {
   LogEntry,
   ConfirmResolvedFrame,
 } from '../../protocol.js'
-import { LAP_VERSION } from '../../protocol.js'
+import { LAP_VERSION, MIN_SUPPORTED_CLIENT_LAP_VERSION } from '../../protocol.js'
 import {
   rpc as rpcHelper,
   waitForConfirm as waitForConfirmHelper,
@@ -242,20 +242,35 @@ export class InMemoryPairingRegistry implements PairingRegistry {
 
   register(tid: string, conn: PairingConnection): void {
     // Supersede any still-live pairing for this tid (reconnect while the
-    // old socket hasn't finished closing). We tear the old pairing down
-    // SILENTLY — its close handlers are dropped WITHOUT firing so the
-    // core's `markPendingResume` transition does NOT run mid-re-pair
-    // (the caller, `acceptConnection`, re-marks the record active right
-    // after). The recent-log ring buffer is deliberately preserved so
-    // history survives the re-pair. Then we explicitly close the old
-    // socket so a half-open connection doesn't linger.
+    // old socket hasn't finished closing). We MIGRATE the old pairing's
+    // subscribers + close handlers onto the replacement rather than
+    // dropping them: an in-flight rpc/confirm/change wait correlates by an
+    // id that is stable across the reconnect (rpc/watch ids are UUIDs,
+    // confirmIds are UUIDs, all keyed under the same tid), so a reply that
+    // lands on the NEW socket must still settle the promise the OLD socket
+    // was awaiting — and if the new socket ALSO drops, the migrated close
+    // handler still rejects (`paused`) instead of orphaning the promise
+    // forever. Dropping them (the previous behaviour) silently stranded
+    // every pending `/message` across a reconnect.
+    //
+    // We do NOT fire the close handlers here: the core's `markPendingResume`
+    // transition must not run mid-re-pair (the caller, `acceptConnection`,
+    // re-marks the record active right after). The recent-log ring buffer is
+    // likewise preserved so history survives the re-pair. Then we explicitly
+    // close the old socket so a half-open connection doesn't linger.
+    //
+    // The migration reuses the SAME Set instances on the replacement pairing.
+    // `subscribe()`/`onClose()` return unsub closures that captured the prior
+    // pairing OBJECT and delete from its `.subscribers`/`.closeHandlers`
+    // property — which still references these very Sets — so unsubscription
+    // keeps working transparently after the swap, and `dispatch` on the new
+    // conn delivers to the migrated subscribers.
     const existing = this.pairings.get(tid)
-    if (existing && !existing.closed && existing.conn !== conn) {
-      existing.closed = true
-      existing.subscribers.clear()
-      existing.closeHandlers.clear()
+    const superseded = existing && !existing.closed && existing.conn !== conn ? existing : null
+    if (superseded) {
+      superseded.closed = true
       try {
-        existing.conn.close()
+        superseded.conn.close()
       } catch {
         // Best-effort — the socket may already be tearing down.
       }
@@ -265,8 +280,8 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       // Preserve the last-known hello across a re-pair; the browser
       // re-sends hello on WS open, but keeping it avoids a null window.
       hello: existing?.hello ?? null,
-      subscribers: new Set(),
-      closeHandlers: new Set(),
+      subscribers: superseded ? superseded.subscribers : new Set(),
+      closeHandlers: superseded ? superseded.closeHandlers : new Set(),
       closed: false,
     }
     this.pairings.set(tid, p)
@@ -281,7 +296,21 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // Hard teardown (e.g. revoke): fire close handlers for the current
     // conn AND drop the recent-log buffer — unlike a plain WS close,
     // this session is gone for good, so retaining history would leak.
-    this.handleClose(tid, this.pairings.get(tid)?.conn)
+    const conn = this.pairings.get(tid)?.conn
+    this.handleClose(tid, conn)
+    // Close the underlying socket server-side too. Revoke can't depend on
+    // the browser honouring the `revoked` frame — a buggy or hostile page
+    // that ignores it must not keep a half-open connection alive. A plain
+    // WS close reaches `unregister` never (that path is `handleClose`), so
+    // this close only runs on hard teardown; closing an already-closing
+    // socket is a harmless no-op.
+    if (conn) {
+      try {
+        conn.close()
+      } catch {
+        // Best-effort — the socket may already be tearing down.
+      }
+    }
     this.recentLog.delete(tid)
     this.confirmOutcomes.delete(tid)
   }
@@ -335,13 +364,25 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // here so no per-call subscriber has to pick them up.
     if (frame.t === 'hello') {
       p.hello = frame
-      // LAP version negotiation: log (don't hard-fail) a client whose
-      // wire-protocol version we don't recognise, so a version skew is
-      // diagnosable instead of surfacing as mysterious frame errors.
-      if (frame.lapVersion !== undefined && frame.lapVersion !== LAP_VERSION) {
+      // LAP version negotiation. Answer every hello with a `hello-ack`
+      // carrying the version we speak and the oldest client we accept, so
+      // the browser can surface an incompatibility explicitly.
+      this.send(tid, {
+        t: 'hello-ack',
+        lapVersion: LAP_VERSION,
+        minClientVersion: MIN_SUPPORTED_CLIENT_LAP_VERSION,
+      })
+      // A client below the minimum is a HARD incompatibility (e.g. a v1
+      // client that would read every millisecond timestamp as seconds).
+      // Terminate the pairing rather than let it run and mis-decode — the
+      // hello-ack above is the explicit reason the client can display. A
+      // client that predates versioning (omits `lapVersion`) is treated as
+      // legacy and allowed through: there is nothing older to break on.
+      if (frame.lapVersion !== undefined && frame.lapVersion < MIN_SUPPORTED_CLIENT_LAP_VERSION) {
         console.warn(
-          `[llui-agent] LAP version skew for tid=${tid}: client speaks v${frame.lapVersion}, server speaks v${LAP_VERSION}`,
+          `[llui-agent] terminating pairing tid=${tid}: client LAP v${frame.lapVersion} below minimum v${MIN_SUPPORTED_CLIENT_LAP_VERSION} (server speaks v${LAP_VERSION})`,
         )
+        this.unregister(tid)
       }
       return
     }

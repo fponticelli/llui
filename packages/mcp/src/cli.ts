@@ -7,7 +7,7 @@ import { dirname } from 'node:path'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { LluiMcpServer, mcpActiveFilePath, mcpHttpTokenPath } from './index.js'
-import { tokensMatch, isLoopbackOrigin } from './util/loopback.js'
+import { tokensMatch, isLoopbackOrigin, isLoopbackAuthority } from './util/loopback.js'
 
 /**
  * Parse `--http [port]` from argv. Returns:
@@ -49,23 +49,6 @@ function parseHeadedFlag(argv: string[]): boolean {
  */
 function parseEnableEvalFlag(argv: string[]): boolean {
   return argv.includes('--enable-eval') || process.env['LLUI_MCP_ENABLE_EVAL'] === '1'
-}
-
-/**
- * Reject DNS-rebinding / cross-origin POSTs. Defends a local-only server
- * against a malicious web page in the user's browser POSTing to
- * `http://127.0.0.1:<port>/mcp`. We require:
- *   - the Host header (if present) to be a loopback host, and
- *   - the Origin header (if present) to be loopback OR absent.
- * A native MCP client sends no Origin and a loopback Host, so it passes.
- */
-function isLocalHostHeader(host: string | undefined): boolean {
-  if (host === undefined) return true
-  // Strip an optional `:port` suffix. IPv6 hosts are bracketed
-  // (`[::1]:5200`) so the last colon is the port separator only when the
-  // host is not bracketed; handle both.
-  const hostname = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
 }
 
 /** Collapse a possibly-multi-valued request header to a single string. */
@@ -194,10 +177,16 @@ async function main(): Promise<void> {
     // ── Security gate (BEFORE any MCP handling) ──────────────────────
     // (a) DNS-rebinding / cross-origin defense: a malicious web page in
     //     the user's browser could POST to http://127.0.0.1:<port>/mcp.
-    //     Reject non-loopback Host and cross-origin Origin headers.
+    //     Reject non-loopback Host and cross-origin Origin headers. The
+    //     Host check routes through @llui/security's `isLoopbackAuthority`
+    //     (the single shared implementation, unified with the vite-plugin
+    //     request-guard) so the loopback host set can't drift — notably it
+    //     recognizes an unbracketed IPv6 `::1` authority, which the old
+    //     hand-rolled `host.split(':')[0]` mangled into a rejection. An
+    //     absent Host is NOT provably same-machine, so it is rejected too.
     const hostHeader = singleHeader(req.headers.host)
     const originHeader = singleHeader(req.headers.origin)
-    if (!isLocalHostHeader(hostHeader) || !isLoopbackOrigin(originHeader)) {
+    if (!isLoopbackAuthority(hostHeader) || !isLoopbackOrigin(originHeader)) {
       res.statusCode = 403
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ error: 'forbidden: cross-origin or non-local host rejected' }))

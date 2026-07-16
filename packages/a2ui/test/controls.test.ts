@@ -28,6 +28,59 @@ function data(): Record<string, unknown> {
   return handle.getState().surfaces['s']?.dataModel as Record<string, unknown>
 }
 
+describe('TextField number variant', () => {
+  it('writes a NUMBER back to the data model, not a string (fix 4)', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'TextField',
+          variant: 'number',
+          label: 'Age',
+          value: { path: '/age' },
+        },
+      ],
+      { age: 3 },
+    )
+    const input = container.querySelector<HTMLInputElement>('.a2ui-textfield-input')!
+    expect(input.getAttribute('type')).toBe('number')
+    input.value = '42'
+    input.dispatchEvent(new Event('input'))
+    expect(data().age).toBe(42)
+    expect(typeof data().age).toBe('number')
+  })
+
+  it('skips write on an incomplete numeric entry ("-") instead of writing NaN', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'TextField',
+          variant: 'number',
+          label: 'Age',
+          value: { path: '/age' },
+        },
+      ],
+      { age: 7 },
+    )
+    const input = container.querySelector<HTMLInputElement>('.a2ui-textfield-input')!
+    input.value = '-'
+    input.dispatchEvent(new Event('input'))
+    // Value untouched — no NaN clobber mid-entry.
+    expect(data().age).toBe(7)
+  })
+
+  it('shortText variant still writes a string', () => {
+    mount([{ id: 'root', component: 'TextField', label: 'Name', value: { path: '/name' } }], {
+      name: 'Jo',
+    })
+    const input = container.querySelector<HTMLInputElement>('.a2ui-textfield-input')!
+    input.value = 'Jordan'
+    input.dispatchEvent(new Event('input'))
+    expect(data().name).toBe('Jordan')
+  })
+})
+
 describe('CheckBox (via @llui/components)', () => {
   beforeEach(() => {
     mount([{ id: 'root', component: 'CheckBox', label: 'Agree', value: { path: '/agree' } }], {
@@ -103,6 +156,35 @@ describe('ChoicePicker (via @llui/components combobox)', () => {
 
     container.querySelector<HTMLElement>('.a2ui-cb-item')!.click()
     expect(data().size).toEqual(['l'])
+  })
+
+  it('keeps duplicate labels as distinct rows and selects the right value (fix 6)', () => {
+    mount(
+      [
+        {
+          id: 'root',
+          component: 'ChoicePicker',
+          label: 'Pick',
+          variant: 'mutuallyExclusive',
+          options: [
+            { label: 'Dup', value: 'a' },
+            { label: 'Dup', value: 'b' },
+            { label: 'Other', value: 'c' },
+          ],
+          value: { path: '/choice' },
+        },
+      ],
+      { choice: [] },
+    )
+    container.querySelector<HTMLButtonElement>('.a2ui-cb-trigger')!.click() // open
+    const rows = [...container.querySelectorAll<HTMLElement>('.a2ui-cb-item')]
+    // Both 'Dup' rows survive (not collapsed to one) alongside 'Other'.
+    expect(rows.map((r) => r.textContent)).toEqual(['Dup', 'Dup', 'Other'])
+    expect(rows.map((r) => r.getAttribute('data-value'))).toEqual(['a', 'b', 'c'])
+
+    // Selecting the SECOND 'Dup' writes its own value 'b', not the first's.
+    rows[1]!.click()
+    expect(data().choice).toEqual(['b'])
   })
 
   it('multi-select shows chips and toggles values', () => {

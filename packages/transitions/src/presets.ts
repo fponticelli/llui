@@ -231,7 +231,12 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const restore = snapshotRestore(el)
     const token = runs.register(el, restore)
 
-    const naturalSize = axis === 'y' ? el.scrollHeight : el.scrollWidth
+    // Start from the element's CURRENT rendered size, not its natural size, so an
+    // enter interrupted mid-collapse leaves from the partial size it reached
+    // rather than snapping open to full height first.
+    const rect = el.getBoundingClientRect()
+    const currentSize = axis === 'y' ? rect.height : rect.width
+    const naturalSize = currentSize || (axis === 'y' ? el.scrollHeight : el.scrollWidth)
     const style = el.style
     style.overflow = 'hidden'
     style[sizeProp] = `${naturalSize}px`

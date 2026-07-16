@@ -28,10 +28,17 @@ async function resolveHttp<M>(effect: HttpEffect<M>): Promise<M> {
     const data = await parseResponse(res, effect.responseType)
     return effect.onSuccess(data, res.headers)
   } catch (err: unknown) {
-    const error: ApiError =
-      err instanceof DOMException && err.name === 'TimeoutError'
-        ? { kind: 'timeout' }
-        : { kind: 'network', message: err instanceof Error ? err.message : String(err) }
+    // Mirror the live `http` runner: a timeout is `timeout`, a body-parse failure
+    // (SyntaxError, e.g. a 2xx whose body is not the declared JSON) is `parse`, and
+    // a genuine transport failure is `network`.
+    let error: ApiError
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      error = { kind: 'timeout' }
+    } else if (err instanceof SyntaxError) {
+      error = { kind: 'parse', message: err.message }
+    } else {
+      error = { kind: 'network', message: err instanceof Error ? err.message : String(err) }
+    }
     return effect.onError(error)
   }
 }

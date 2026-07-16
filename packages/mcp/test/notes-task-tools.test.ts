@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNote } from '@llui/vite-plugin/notes'
@@ -67,6 +67,27 @@ describe('llui_claim_note', () => {
     })) as { status: string; currentStatus: string }
     expect(result.status).toBe('already-claimed-by')
     expect(result.currentStatus).toBe('claimed')
+  })
+
+  it('honors a lock another worker holds even before its transition is written', async () => {
+    // Reproduces the cross-process race: worker A won the exclusive claim
+    // lock but has not yet appended its `claimed` transition. Worker B (this
+    // process) sees status still `null`/open, but the lock file arbitrates —
+    // B must NOT double-claim. The old read-then-append had no arbiter and
+    // both workers would win.
+    const note = createNote(notesRoot, { body: 'task', frontmatter: fmBase, noteBody: {} })
+    const sessionDir = join(notesRoot, note.sessionId)
+    // Simulate worker A's in-flight claim: the lock exists, the JSONL does not.
+    writeFileSync(
+      join(sessionDir, `${note.id}.claim`),
+      JSON.stringify({ workerId: 'worker-A', ts: '2026-01-01T00:00:00Z' }),
+    )
+    const result = (await mcp.handleToolCall('llui_claim_note', {
+      noteId: note.id,
+      workerId: 'worker-B',
+    })) as { status: string; by: string | null }
+    expect(result.status).toBe('already-claimed-by')
+    expect(result.by).toBe('worker-A')
   })
 })
 

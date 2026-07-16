@@ -37,8 +37,16 @@ async function httpRequest(
       if (!signal.aborted) send(effect.onError({ kind: 'timeout' }))
       return
     }
-    // A fetch network failure (TypeError) or a body-parse failure (SyntaxError).
-    if (err instanceof TypeError || err instanceof SyntaxError) {
+    // A body-parse failure on an otherwise-OK response (e.g. a 2xx whose body is
+    // not the declared JSON) surfaces as a distinct `parse` error, NOT `network` —
+    // the request reached the server and returned 2xx; only decoding failed, so it
+    // must not be retried as if the connection dropped.
+    if (err instanceof SyntaxError) {
+      if (!signal.aborted) send(effect.onError({ kind: 'parse', message: err.message }))
+      return
+    }
+    // A genuine fetch transport failure (DNS/connection/CORS) is a `TypeError`.
+    if (err instanceof TypeError) {
       if (!signal.aborted) send(effect.onError({ kind: 'network', message: err.message }))
       return
     }

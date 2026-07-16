@@ -214,6 +214,50 @@ describe('vite-plugin — signal component routing', () => {
     expect(warn.mock.calls.every((c) => !String(c[0]).includes('each-verbatim'))).toBe(true)
   })
 
+  it('routes a barrel-imported component with no literal `@llui/dom` import', async () => {
+    // The runtime surface is often re-exported through a project barrel, so
+    // `from '@llui/dom'` never appears literally. The old gate required that
+    // literal and silently SKIPPED these files entirely (no transform, no
+    // relay, no lint). The fallback routes any qualifying module with a
+    // `component(`. Proof of routing: in dev+MCP mode a routed signal file
+    // gets the relay bootstrap injected; a skipped file returns `undefined`.
+    const barrel = [
+      "import { component, text, button } from './framework'",
+      'export const Counter = component({',
+      '  init: () => ({ count: 0 }),',
+      '  update: (s) => ({ count: s.count + 1 }),',
+      "  view: ({ state, send }) => [text(state.at('count')), button({ onClick: () => send({ type: 'inc' }) }, [text('+')])],",
+      '})',
+    ].join('\n')
+    const plugin = llui({ mcpPort: 5200 })
+    await (plugin.configResolved as (c: unknown) => unknown).call(plugin, {
+      command: 'serve',
+      mode: 'development',
+      root: '/tmp',
+    })
+    const out = await runTransform(plugin, barrel, '/tmp/barrel-counter.ts')
+    expect(out).toBeDefined()
+    // Routed → relay bootstrap injected. (Old gate: this file was skipped.)
+    expect(out!.code).toContain('__llui_startRelay(5200)')
+
+    // A control: a plain module with no `component(` and no `@llui/dom` import
+    // is still skipped (returns undefined) — the fallback is component-gated.
+    const plain = 'export const x = 1'
+    expect(await runTransform(plugin, plain, '/tmp/plain.ts')).toBeUndefined()
+  })
+
+  it('routes a queried id and a .mts module', async () => {
+    // A Vite query suffix must not slip the file past the extension gate, and
+    // `.mts`/`.cts` are valid TS module extensions.
+    const queried = await runTransform(llui(), SIGNAL_COMPONENT, '/tmp/counter.tsx?v=abc123')
+    expect(queried).toBeDefined()
+    expect(queried!.code).toContain("signalText((s) => s.count, ['count'])")
+
+    const mts = await runTransform(llui(), SIGNAL_COMPONENT, '/tmp/counter.mts')
+    expect(mts).toBeDefined()
+    expect(mts!.code).toContain("signalText((s) => s.count, ['count'])")
+  })
+
   it('injects the MCP relay startup into signal files in dev (guarded once)', async () => {
     const plugin = llui({ mcpPort: 5200 })
     // simulate Vite dev resolution so devMode + mcpPort are set

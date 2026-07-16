@@ -227,4 +227,66 @@ describe('transition()', () => {
     expect(el.classList.contains('lt')).toBe(true)
     expect(el.classList.contains('la')).toBe(true)
   })
+
+  // ── Finding 7: interrupted enter → leave must not snap to leaveFrom ──
+  it('skips leaveFrom when interrupting an in-flight enter', () => {
+    const el = makeEl()
+    const t = transition({
+      enterFrom: 'ef',
+      enterActive: 'ea',
+      enterTo: 'et',
+      leaveFrom: 'lf',
+      leaveActive: 'la',
+      leaveTo: 'lt',
+      duration: 100,
+    })
+
+    t.enter!([el]) // enter still in flight (an active run is registered)
+
+    // Record class additions during the leave. The swap removes leaveFrom either
+    // way, so post-hoc `contains('lf')` can't distinguish — we must observe that
+    // 'lf' is never ADDED when interrupting.
+    const added: string[] = []
+    const origAdd = el.classList.add.bind(el.classList)
+    el.classList.add = (...tokens: string[]) => {
+      added.push(...tokens)
+      return origAdd(...tokens)
+    }
+
+    void t.leave!([el])
+
+    // Interrupting a live enter: leaveFrom is NEVER applied, so the element does
+    // not snap to its fully-visible resting state before animating out…
+    expect(added).not.toContain('lf')
+    // …while leaveActive + leaveTo still drive the exit.
+    expect(el.classList.contains('la')).toBe(true)
+    expect(el.classList.contains('lt')).toBe(true)
+  })
+
+  it('still applies leaveFrom for a normal (non-interrupting) leave', () => {
+    const el = makeEl()
+    // Spy on applyValue to prove leaveFrom is applied on the normal path. A
+    // resting element (no in-flight run) must keep the leaveFrom → leaveTo swap.
+    const applied: unknown[] = []
+    const t = transition({
+      leaveFrom: 'lf',
+      leaveActive: 'la',
+      leaveTo: 'lt',
+      duration: 100,
+    })
+
+    // Observe the swap ordering: 'lf' is added then removed, 'lt' ends applied.
+    const origAdd = el.classList.add.bind(el.classList)
+    el.classList.add = (...tokens: string[]) => {
+      applied.push(...tokens)
+      return origAdd(...tokens)
+    }
+
+    void t.leave!([el])
+    // leaveFrom WAS applied (added at some point) even though the swap removed it.
+    expect(applied).toContain('lf')
+    // …and the element ends on leaveTo + leaveActive.
+    expect(el.classList.contains('lt')).toBe(true)
+    expect(el.classList.contains('la')).toBe(true)
+  })
 })

@@ -27,6 +27,7 @@ import * as slider from '@llui/components/slider'
 import * as combobox from '@llui/components/combobox'
 import * as datePicker from '@llui/components/date-picker'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
+import { warnOnce } from '../catalog.js'
 import { bindString, firstCheckError } from '../binding.js'
 import { resolvePointer } from '../pointer.js'
 import {
@@ -320,16 +321,29 @@ function toStrList(value: JsonValue | undefined): string[] {
 
 /** ChoicePicker → `@llui/components` combobox: filterable/typeahead select with
  * chips for multi-select. Selection lives in the data model (source of truth);
- * the combobox's UI state (open/input/highlight) lives in the surface UI store. */
+ * the combobox's UI state (open/input/highlight) lives in the surface UI store.
+ *
+ * Identity is the option VALUE, never its label: two options may share a label
+ * (with distinct values) and must render + select independently. The combobox
+ * runs in label space so typeahead matches visible text; every rendered row and
+ * every selection is mapped back to a value here. */
 const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
-  const options = (Array.isArray(node.options) ? node.options : []) as Choice[]
-  // Combobox items are the LABELS (so typeahead matches visible text); we map
-  // label ↔ A2UI value at the data-model boundary.
-  const labels = options.map((o) => (typeof o.label === 'string' ? o.label : String(o.value)))
-  const valueByLabel = new Map(options.map((o, i) => [labels[i] as string, String(o.value)]))
-  const labelByValue = new Map(options.map((o, i) => [String(o.value), labels[i] as string]))
-  const toLabels = (values: string[]): string[] => values.map((v) => labelByValue.get(v) ?? v)
-  const toValues = (ls: string[]): string[] => ls.map((l) => valueByLabel.get(l) ?? l)
+  const rawOptions = (Array.isArray(node.options) ? node.options : []) as Choice[]
+  const labelOf = (o: Choice): string => (typeof o.label === 'string' ? o.label : String(o.value))
+  const options = rawOptions.map((o) => ({ label: labelOf(o), value: String(o.value) }))
+
+  // Values are the identity — a duplicate value makes the later option
+  // unreachable/ambiguous, so warn (once) rather than silently collapse it.
+  const seenValues = new Set<string>()
+  for (const o of options) {
+    if (seenValues.has(o.value)) warnOnce(`ChoicePicker: duplicate option value "${o.value}"`)
+    seenValues.add(o.value)
+  }
+
+  const labels = options.map((o) => o.label)
+  const labelByValue = new Map(options.map((o) => [o.value, o.label]))
+  const toLabels = (values: readonly string[]): string[] =>
+    values.map((v) => labelByValue.get(v) ?? v)
 
   const multiple = node.variant === 'multipleSelection'
   const path = isPathBinding(node.value) ? (node.value as { path: string }).path : undefined
@@ -338,84 +352,123 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   const initial = combobox.init({ items: labels, selectionMode: multiple ? 'multiple' : 'single' })
   const dataValues = (d: JsonValue): string[] => (path ? toStrList(resolvePointer(d, path)) : [])
 
-  // Merge: the combobox's `value` (label list) is projected from the data model;
-  // its UI state comes from the store. `derived` reacts to both.
+  // Mirror the combobox's own (case-insensitive substring) filter, but over the
+  // value-carrying options, so a highlighted filtered index maps back to a VALUE.
+  const filteredOptions = (inputValue: string): { label: string; value: string }[] => {
+    const q = inputValue.toLowerCase()
+    return q === '' ? options : options.filter((o) => o.label.toLowerCase().includes(q))
+  }
+
+  // Combobox state for the shared parts: UI (open/input/highlight) from the
+  // store, selected `value` projected from the data model as labels.
   const state = derived(scope.uiState, scope.data, (ui, d) => {
     const stored = readUi(ui, key, initial)
     return { ...stored, value: toLabels(dataValues(d)) }
   })
-  const send: Send<combobox.ComboboxMsg> = (msg) => {
-    const current = {
-      ...readUi(scope.uiState.peek(), key, initial),
-      value: toLabels(dataValues(scope.data.peek())),
-    }
-    const [next] = combobox.update(current, msg)
-    const nextValues = toValues(next.value)
-    if (abs && JSON.stringify(nextValues) !== JSON.stringify(dataValues(scope.data.peek()))) {
+
+  // Write a value-based selection to the data model (the source of truth).
+  const applySelection = (value: string): void => {
+    const current = dataValues(scope.data.peek())
+    const nextValues = multiple
+      ? current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value]
+      : [value]
+    if (abs && JSON.stringify(nextValues) !== JSON.stringify(current)) {
       ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: nextValues })
+    }
+  }
+
+  // Select an option BY VALUE, then advance the combobox UI (close + show label
+  // on single, clear input on multi). The combobox's own label-space `value` is
+  // reprojected from data on read, so it is never read for identity.
+  const pick = (value: string, label: string): void => {
+    applySelection(value)
+    const stored = readUi(scope.uiState.peek(), key, initial)
+    const [next] = combobox.update(stored, { type: 'selectOption', value: label })
+    ctx.setUi(key, next as unknown as JsonValue)
+  }
+
+  const send: Send<combobox.ComboboxMsg> = (msg) => {
+    // Keyboard Enter selects the highlighted row — resolve it to a VALUE by its
+    // filtered index (unambiguous even when labels repeat).
+    if (msg.type === 'selectHighlighted') {
+      const stored = readUi(scope.uiState.peek(), key, initial)
+      // @llui/components' combobox highlights by VALUE; a2ui feeds it labels, so the
+      // highlighted "value" is a label. Resolve it to the first filtered option with
+      // that label (duplicate labels are display-only; row identity is the value).
+      const hv = stored.highlightedValue
+      const filtered = filteredOptions(stored.inputValue)
+      const chosen = hv !== null ? filtered.find((o) => o.label === hv) : undefined
+      if (chosen) {
+        pick(chosen.value, chosen.label)
+        return
+      }
+    }
+    const stored = readUi(scope.uiState.peek(), key, initial)
+    const [next] = combobox.update(stored, msg)
+    if (msg.type === 'clear' && abs) {
+      ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: [] })
     }
     ctx.setUi(key, next as unknown as JsonValue)
   }
   const parts = combobox.connect(state, send, { id: domId(`cb-${key}`) })
 
-  // Hand-roll item attrs from the each's OWN row signal (correctly scoped).
-  // parts.item() signals read the combobox `state` and would re-scope to the row
-  // item inside this `each` — so we derive selected/highlighted from the unit and
-  // route clicks straight to `send`.
-  const itemUnits = state.map((s) =>
-    s.filteredItems.map((label, i) => ({
-      label,
+  // Render straight from the value-carrying filtered list, keyed by VALUE so
+  // duplicate labels render as independent rows. `selected` comes from the data
+  // model (values); `highlighted` from the combobox's filtered index.
+  const itemUnits = derived(scope.uiState, scope.data, (ui, d) => {
+    const stored = readUi(ui, key, initial)
+    const selectedValues = dataValues(d)
+    return filteredOptions(stored.inputValue).map((o, i) => ({
+      label: o.label,
+      value: o.value,
       index: i,
-      selected: s.value.includes(label),
-      highlighted: s.highlightedIndex === i,
-    })),
-  )
+      selected: selectedValues.includes(o.value),
+      highlighted: stored.highlightedValue === o.label,
+    }))
+  })
   const items = each(itemUnits, {
-    key: (u) => u.label,
-    render: (uSig) => {
-      const label = uSig.peek().label
-      return [
-        elx(
-          'li',
-          {
-            role: 'option',
-            class: 'a2ui-cb-item',
-            'data-value': label,
-            'data-state': uSig.map((u) => (u.selected ? 'selected' : undefined)),
-            'data-highlighted': uSig.map((u) => (u.highlighted ? '' : undefined)),
-            onClick: () => send({ type: 'selectOption', value: label }),
-            onPointerMove: () => send({ type: 'highlight', index: uSig.peek().index }),
-          },
-          [text(label)],
-        ),
-      ]
-    },
+    key: (u) => u.value,
+    render: (uSig) => [
+      elx(
+        'li',
+        {
+          role: 'option',
+          class: 'a2ui-cb-item',
+          'data-value': uSig.peek().value,
+          'data-state': uSig.map((u) => (u.selected ? 'selected' : undefined)),
+          'data-highlighted': uSig.map((u) => (u.highlighted ? '' : undefined)),
+          onClick: () => pick(uSig.peek().value, uSig.peek().label),
+          onPointerMove: () => send({ type: 'highlight', value: uSig.peek().label }),
+        },
+        [text(uSig.map((u) => u.label))],
+      ),
+    ],
   })
 
-  const chips = each(
-    state.map((s) => (multiple ? s.value : [])),
-    {
-      key: (label) => label,
-      render: (labelSig) => {
-        const label = labelSig.peek()
-        return [
-          elx('span', { class: 'a2ui-cb-chip' }, [
-            text(label),
-            elx(
-              'button',
-              {
-                type: 'button',
-                class: 'a2ui-cb-chip-remove',
-                'aria-label': 'Remove',
-                onClick: () => send({ type: 'selectOption', value: label }),
-              },
-              [text('✕')],
-            ),
-          ]),
-        ]
-      },
-    },
+  // Chips (multi-select) come from the data-model values, keyed by VALUE.
+  const chipUnits = scope.data.map((d) =>
+    multiple ? dataValues(d).map((v) => ({ value: v, label: labelByValue.get(v) ?? v })) : [],
   )
+  const chips = each(chipUnits, {
+    key: (c) => c.value,
+    render: (cSig) => [
+      elx('span', { class: 'a2ui-cb-chip' }, [
+        text(cSig.map((c) => c.label)),
+        elx(
+          'button',
+          {
+            type: 'button',
+            class: 'a2ui-cb-chip-remove',
+            'aria-label': 'Remove',
+            onClick: () => applySelection(cSig.peek().value),
+          },
+          [text('✕')],
+        ),
+      ]),
+    ],
+  })
 
   return labelledField(
     [text(bindString(ctx, scope, node.label as DynamicString | undefined))],

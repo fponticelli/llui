@@ -62,6 +62,79 @@ describe('menu.overlay integration', () => {
     return { send: (m) => sendRef(m) }
   }
 
+  function makeAppWithSub(): { send: (m: MenuMsg) => void; peek: () => MenuState } {
+    let sendRef!: (m: MenuMsg) => void
+    let stateRef!: () => MenuState
+    const def = component<Ctx, MenuMsg, never>({
+      name: 'TSub',
+      init: () => [
+        {
+          m: init({
+            items: [
+              { value: 'a', kind: 'action' },
+              {
+                value: 'sub',
+                kind: 'action',
+                children: [
+                  { value: 's1', kind: 'action' },
+                  { value: 's2', kind: 'action' },
+                ],
+              },
+            ],
+            open: true,
+            skipAnimations: true,
+          }),
+        },
+        [],
+      ],
+      update: (state, msg) => {
+        const [next] = update(state.m, msg)
+        return [{ m: next }, []]
+      },
+      view: ({ state, send }) => {
+        sendRef = send
+        stateRef = () => state.peek().m
+        const m = state.map((s) => s.m)
+        const parts = connect(m, send, { id: 'mn' })
+        return [
+          button({ ...parts.trigger }, [text('Menu')]),
+          overlay({
+            state: m,
+            send,
+            parts,
+            content: () => [div({ ...parts.content }, [])],
+          }),
+        ]
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    currentApp = mountApp(container, def)
+    return { send: (m) => sendRef(m), peek: () => stateRef() }
+  }
+
+  it('Escape unwinds one submenu level before closing the whole menu', async () => {
+    const { send, peek } = makeAppWithSub()
+    await new Promise((r) => setTimeout(r, 0))
+    // Open the submenu.
+    send({ type: 'openSub', value: 'sub' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(peek().openPath).toEqual(['sub'])
+
+    // First Escape: only the submenu closes; the menu itself stays open/mounted.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(peek().openPath).toEqual([])
+    expect(peek().open).toBe(true)
+    expect(document.querySelector('[data-part="content"]')).not.toBeNull()
+
+    // Second Escape: the whole menu closes.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(peek().open).toBe(false)
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
   it('content not present when closed', () => {
     makeApp(false)
     expect(document.querySelector('[data-part="content"]')).toBeNull()

@@ -40,8 +40,11 @@ describe('asOnEffect', () => {
       seen.push(signal)
     })
     const onEffect = asOnEffect(chain)
-    onEffect({ type: 'watch' }, { send: vi.fn() })
-    onEffect({ type: 'custom', data: 'x' }, { send: vi.fn() })
+    // The runtime passes ONE stable `send` per mount for every effect it emits, so
+    // the fallback controller is keyed off that `send`: same mount → same signal.
+    const send = vi.fn()
+    onEffect({ type: 'watch' }, { send })
+    onEffect({ type: 'custom', data: 'x' }, { send })
     expect(seen).toHaveLength(2)
     expect(seen[0]).toBe(seen[1]) // same AbortController for the whole mount
     expect(seen[0]!.aborted).toBe(false)
@@ -116,6 +119,30 @@ describe('asOnEffect', () => {
     // Re-running mount 1's (already-spent) cleanup must NOT touch mount 2's signal.
     cleanup1?.()
     expect(mount2Signal!.aborted).toBe(false)
+  })
+
+  // FALLBACK path (no runtime `api.signal`): two CONCURRENT mounts of the same
+  // definition must each own a distinct AbortController, keyed off their distinct
+  // `send` identity. Disposing one must not abort the other's in-flight effects.
+  it('gives two concurrent fallback mounts independent controllers', () => {
+    const seen: AbortSignal[] = []
+    const chain = handleEffects<CustomEffect, Msg>().else(({ signal }) => {
+      seen.push(signal)
+    })
+    const onEffect = asOnEffect(chain)
+
+    const sendA = vi.fn()
+    const sendB = vi.fn()
+    const cleanupA = onEffect({ type: 'watch' }, { send: sendA }) // mount A
+    onEffect({ type: 'watch' }, { send: sendB }) // mount B (concurrent)
+
+    const signalA = seen[0]!
+    const signalB = seen[1]!
+    expect(signalA).not.toBe(signalB) // distinct controllers per mount
+
+    cleanupA?.() // dispose A
+    expect(signalA.aborted).toBe(true)
+    expect(signalB.aborted).toBe(false) // B's in-flight effects untouched
   })
 
   // The signal runtime now hands `onEffect` a per-mount `api.signal`. When present,

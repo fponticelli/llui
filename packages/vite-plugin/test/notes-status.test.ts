@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  acquireClaimLock,
   appendStatus,
   currentStatus,
   listQueue,
@@ -164,5 +165,28 @@ describe('status sidecar', () => {
     })
     const all = readAllTransitions(session())
     expect(all).toHaveLength(2)
+  })
+})
+
+describe('acquireClaimLock (N21 atomic claim arbiter)', () => {
+  it('grants the lock to the first caller and reports EEXIST to the rest', () => {
+    const first = acquireClaimLock(session(), '001', 'worker-1')
+    expect(first).toEqual({ acquired: true, holder: 'worker-1' })
+
+    // A second claim (as another process would) loses the exclusive create
+    // and reads the winner's workerId back out of the lock file.
+    const second = acquireClaimLock(session(), '001', 'worker-2')
+    expect(second.acquired).toBe(false)
+    expect(second.holder).toBe('worker-1')
+  })
+
+  it('locks are per-note, not global', () => {
+    expect(acquireClaimLock(session(), '001', 'w1').acquired).toBe(true)
+    expect(acquireClaimLock(session(), '002', 'w2').acquired).toBe(true)
+  })
+
+  it('rejects a noteId that would escape the session dir', () => {
+    expect(() => acquireClaimLock(session(), '../evil', 'w')).toThrow(/invalid noteId/)
+    expect(() => acquireClaimLock(session(), 'a/b', 'w')).toThrow(/invalid noteId/)
   })
 })

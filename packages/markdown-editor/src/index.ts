@@ -7,6 +7,7 @@ export {
   type CollabHooks,
   type CollabFactory,
   markdownEditor,
+  blockUnderlineFormat,
 } from './editor.js'
 
 export {
@@ -68,18 +69,12 @@ export { tablePlugin } from './plugins/table.js'
 
 export { $insertMarkdownAtSelection, registerMarkdownPaste } from './paste.js'
 
-export { GFM_NODES, GFM_TRANSFORMERS } from './transformers/gfm.js'
+export { GFM_NODES, GFM_TRANSFORMERS, HIGHLIGHT_TRANSFORMER } from './transformers/gfm.js'
 export { buildTransformers, orderTransformers } from './transformers/registry.js'
 
 export { computeFormatState } from './format.js'
 
-export {
-  STRIKETHROUGH_CLASS,
-  UNDERLINE_CLASS,
-  UNDERLINE_STRIKETHROUGH_CLASS,
-  defaultTheme,
-  mergeTheme,
-} from './theme.js'
+export { STRIKETHROUGH_CLASS, defaultTheme, mergeTheme } from './theme.js'
 
 export {
   type ToolbarItemParts,

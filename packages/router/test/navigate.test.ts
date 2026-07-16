@@ -27,6 +27,7 @@ describe('connectedRouter.navigate', () => {
         type: '__router',
         action: 'navigate',
         path: '/article/hello',
+        route: { page: 'article', slug: 'hello' },
       })
     })
 
@@ -148,6 +149,42 @@ describe('connectedRouter.navigate', () => {
       expect(send).not.toHaveBeenCalled()
 
       pushSpy.mockRestore()
+    })
+
+    // The effect carries the ORIGINAL route object, so route fields not
+    // representable in the URL (a `draft` flag, a data payload, …) survive to the
+    // guards and the dispatched message — instead of being lost to `match(path)`.
+    it('preserves non-URL route fields for guards and dispatch', () => {
+      type RichRoute = { page: 'article'; slug: string; draft?: boolean } | { page: 'home' }
+      const richRouter = createRouter<RichRoute>(
+        [
+          route([], () => ({ page: 'home' })),
+          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+        ],
+        { mode: 'history' },
+      )
+
+      const seenByGuard: RichRoute[] = []
+      const routing = connectRouter(richRouter, {
+        beforeEnter: (to) => {
+          seenByGuard.push(to)
+        },
+      })
+      const send = vi.fn()
+
+      routing.handleEffect({
+        effect: routing.navigate({ page: 'article', slug: 'x', draft: true }),
+        send,
+        signal: new AbortController().signal,
+      })
+
+      // The guard saw the FULL route, including the non-URL `draft` field.
+      expect(seenByGuard[0]).toMatchObject({ page: 'article', slug: 'x', draft: true })
+      // The dispatched navigate message carried the full route, not a URL re-match.
+      expect(send).toHaveBeenCalledWith({
+        type: 'navigate',
+        route: { page: 'article', slug: 'x', draft: true },
+      })
     })
   })
 

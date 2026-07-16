@@ -85,6 +85,30 @@ describe('analyzeAccessor — block bodies, aliasing, scope', () => {
     expect(deps).toEqual(['outer'])
     expect(deps).not.toContain('inner')
   })
+
+  it('object destructuring default initializer is a read (must not be missed)', () => {
+    // `theme` may come from the default `s.fallbackTheme` when `s.prefs.theme`
+    // is absent, so `fallbackTheme` is a genuine dependency.
+    const deps = depsOf('(s) => { const { theme = s.fallbackTheme } = s.prefs; return theme }')
+    expect(deps).toContain('fallbackTheme')
+    expect(deps).toContain('prefs.theme')
+  })
+
+  it('array destructuring default initializer is a read', () => {
+    const deps = depsOf('(s) => { const [first = s.fallback] = s.list; return first }')
+    expect(deps).toContain('fallback')
+  })
+
+  it('destructured-parameter default initializer is a read', () => {
+    const deps = depsOf('(s) => { const f = ({ x = s.dflt }) => x; return f(s.obj) }')
+    expect(deps).toContain('dflt')
+  })
+
+  it('object-literal getter/method bodies are analyzed', () => {
+    const deps = depsOf('(s) => ({ get total() { return s.price }, sum() { return s.qty } })')
+    expect(deps).toContain('price')
+    expect(deps).toContain('qty')
+  })
 })
 
 describe('analyzeAccessor — derived (multiple params)', () => {

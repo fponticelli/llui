@@ -66,6 +66,14 @@ export interface IncrementalResult {
  * looseness, retro-changing a block we would have reused. */
 const CONTAINER_TYPES: ReadonlySet<string> = new Set(['list', 'blockquote', 'footnoteDefinition'])
 
+/** Leaf block types that ABSORB later blank lines + text when left unterminated:
+ * an unclosed ``` fence (`code`) and an HTML type-1 block (`html`, e.g. `<pre>`)
+ * run to EOF, swallowing a following blank line rather than being sealed by it.
+ * For these, a blank line present only in the NEW source is not a real seal — the
+ * old parse must ALSO have had a blank-line seal (proving the block was already
+ * closed there, not merely EOF-terminated) before the block can be reused. */
+const EOF_ABSORBING_TYPES: ReadonlySet<string> = new Set(['code', 'html'])
+
 interface MutablePoint {
   line: number
   column: number
@@ -188,6 +196,11 @@ export function incrementalParse(
     if (end == null || end > lcp) continue
     if (CONTAINER_TYPES.has(child.type)) continue
     if (!hasBlankLineSeal(source, end)) continue
+    // For EOF-absorbing leaves (unclosed ``` fence / HTML type-1 block) the seal
+    // must ALSO exist in the OLD source: such a block ran to EOF and would absorb
+    // the appended blank line + text, so a seal seen only in the new source is a
+    // lie and reusing the block would split one block into two.
+    if (EOF_ABSORBING_TYPES.has(child.type) && !hasBlankLineSeal(oldSource, end)) continue
     reuseCount = k + 1
     cut = end
     break

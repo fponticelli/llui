@@ -76,6 +76,13 @@ export interface OverlayDismissConfig {
   /** Extra side effect after the standard `onDismiss()` — popover refocuses the
    * trigger on dismiss. */
   extra?: (els: OverlayElements) => void
+  /**
+   * Custom Escape router. When provided it runs for the Escape key instead of
+   * the standard `onDismiss()`, letting the component unwind an internal level
+   * first — e.g. a menu closes its open submenu before closing the whole menu.
+   * Return `false` to let Escape propagate (decline); any other return claims it.
+   */
+  onEscape?: (els: OverlayElements, event: KeyboardEvent) => boolean | void
 }
 
 export interface OverlayFocusTrapConfig {
@@ -214,6 +221,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
             ignore: () => (els.anchor ? [els.anchor] : []),
             disableEscape: d.disableEscape,
             disableOutside: d.disableOutside,
+            onEscape: d.onEscape ? (event) => d.onEscape!(els, event) : undefined,
             onDismiss: () => {
               opts.onDismiss()
               d.extra?.(els)

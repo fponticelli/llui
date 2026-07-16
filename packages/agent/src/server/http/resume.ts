@@ -92,9 +92,10 @@ export async function handleResumeClaim(req: Request, deps: ResumeDeps): Promise
     tid: rec.tid,
     wsUrl,
     lapUrl,
-    // Seconds-since-epoch, matching MintResponse so the client's session
-    // storage compares units consistently.
-    expiresAt: Math.floor(expiresAt / 1000),
+    // MILLISECONDS-since-epoch (LAP v2), matching MintResponse and the
+    // stored TokenRecord so the client's session storage compares units
+    // consistently.
+    expiresAt,
   }
   return jsonResponse(out, 200)
 }

@@ -307,7 +307,17 @@ export function overlay(opts: OverlayOptions): Mountable {
     mountWhen: isPresent,
     visibleWhen: isVisible,
     onDismiss: () => opts.send({ type: 'close' }),
-    dismiss: {},
+    dismiss: {
+      // Escape unwinds ONE submenu level while a submenu is open; only when no
+      // submenu is open does it close the whole context menu.
+      onEscape: () => {
+        if (opts.state.peek().openPath.length > 0) {
+          opts.send({ type: 'closeSub' })
+        } else {
+          opts.send({ type: 'close' })
+        }
+      },
+    },
     focusOnOpenId: opts.parts.content.id,
   })
 }

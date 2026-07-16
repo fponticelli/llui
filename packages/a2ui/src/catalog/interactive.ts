@@ -43,7 +43,18 @@ const TextField: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   const value = bindString(ctx, scope, node.value as DynamicString | undefined)
   const abs = writeBackPath(node, scope)
   const onInput = abs
-    ? (e: Event) => write(ctx, abs, (e.target as HTMLInputElement | HTMLTextAreaElement).value)
+    ? (e: Event) => {
+        const el = e.target as HTMLInputElement | HTMLTextAreaElement
+        // A number field must write a NUMBER back to the data model (not the
+        // raw string). `valueAsNumber` is NaN mid-entry ("", "-", "1.") — skip
+        // those so an incomplete keystroke never clobbers the value with NaN.
+        if (variant === 'number' && el instanceof HTMLInputElement) {
+          const n = el.valueAsNumber
+          if (Number.isFinite(n)) write(ctx, abs, n)
+          return
+        }
+        write(ctx, abs, el.value)
+      }
     : undefined
 
   const control: Renderable =
@@ -89,7 +100,7 @@ const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   )
 }
 
-function write(ctx: RenderContext, path: string, value: string): void {
+function write(ctx: RenderContext, path: string, value: string | number): void {
   ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path, value })
 }
 

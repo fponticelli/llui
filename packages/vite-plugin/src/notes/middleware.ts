@@ -8,7 +8,9 @@
 // handler)`; tests mount it on a plain node http.Server.
 
 import { execFileSync } from 'node:child_process'
+import { timingSafeEqual } from 'node:crypto'
 import { existsSync, unlinkSync } from 'node:fs'
+import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, relative, resolve } from 'node:path'
 
@@ -55,13 +57,31 @@ export interface NotesMiddlewareConfig {
   /** Override session-folder naming and/or slug derivation. */
   format?: NoteFormatConfig
   /**
-   * Provenance registry for task-intent notes. When provided, every task
-   * note accepted through this (same-origin, authenticated) middleware is
-   * marked here so the attention router only spawns agents for tasks a
-   * trusted in-page writer created. Omit to skip provenance recording
-   * (the router then falls back to on-disk intent — dev/test only).
+   * Provenance registry for task-intent notes. When provided, a task note
+   * accepted through this (same-origin, authenticated) middleware is marked
+   * here — but ONLY when the request also presents the capability token (see
+   * {@link taskCapabilityToken}) — so the attention router only spawns agents
+   * for tasks the trusted in-page HUD actually created. Omit to skip
+   * provenance recording (the router then falls back to on-disk intent —
+   * dev/test only).
    */
   trustedTasks?: TrustedTaskRegistry
+  /**
+   * Per-launch, unforgeable capability token that authorizes marking a task
+   * note trusted (which lets the router spawn a local CLI agent, possibly
+   * with `--dangerously-skip-permissions` → local RCE). The plugin generates
+   * it and injects it into the HUD bundle out-of-band; the HUD echoes it on
+   * the task-create POST via the `x-llui-task-capability` header.
+   *
+   * SECURITY: same-origin passes the CSRF/loopback guard, so a malicious page
+   * script CAN reach this endpoint. It cannot, however, read this token (it
+   * lives in the HUD module's closure, never on `window` or in the DOM), so it
+   * cannot forge a *trusted* task. Without a matching token the note is still
+   * created and enters the status machine, but is NOT marked trusted, so the
+   * router will not spawn for it. When unset, NO task is ever marked trusted
+   * (secure default) — the plugin always sets it in real dev servers.
+   */
+  taskCapabilityToken?: string
 }
 
 export type MiddlewareHandler = (
@@ -266,8 +286,21 @@ function containWithinRoot(rootResolved: string, relPath: string): string | null
   return full
 }
 
+/** Collapse a possibly multi-valued request header to a single string. */
+function singleHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+/** Constant-time string equality (avoids leaking the token via timing). */
+function secretEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
 export function createNotesMiddleware(config: NotesMiddlewareConfig): MiddlewareHandler {
-  const { notesRoot, bus, registry, trustedTasks } = config
+  const { notesRoot, bus, registry, trustedTasks, taskCapabilityToken } = config
   const captureTimeoutMs = config.defaultCaptureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS
   const heartbeatMs = config.sseHeartbeatMs ?? 15_000
   const format = config.format ?? {}
@@ -363,9 +396,22 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       // attention router (and llui_queue) can pick them up. Without
       // this, the note exists on disk but never appears as work.
       if (payload.frontmatter.intent === 'task') {
-        // Record provenance: this task note came through the authenticated,
-        // same-origin middleware, so the router may spawn an agent for it.
-        trustedTasks?.mark(result.sessionId, result.id)
+        // Provenance gate: same-origin alone is NOT sufficient authority to
+        // let the router spawn a local CLI agent (potentially with
+        // --dangerously-skip-permissions → RCE). A page script can pass the
+        // CSRF/loopback guard, but it cannot read the per-launch capability
+        // token the plugin injected into the HUD bundle out-of-band. Mark the
+        // task trusted ONLY when the request echoes that token. Without it the
+        // note is still created and enters the status machine below, but the
+        // router will not spawn for it.
+        const presentedCap = singleHeaderValue(req.headers['x-llui-task-capability'])
+        const capabilityOk =
+          taskCapabilityToken !== undefined &&
+          presentedCap !== undefined &&
+          secretEquals(presentedCap, taskCapabilityToken)
+        if (capabilityOk) {
+          trustedTasks?.mark(result.sessionId, result.id)
+        }
         const sd = resolveSessionDir(notesRoot, result.sessionId)
         appendStatus(sd, {
           ts: new Date().toISOString(),

@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { createHeadlessEditor } from '@lexical/headless'
 import { $convertFromMarkdownString, $convertToMarkdownString } from '@lexical/markdown'
-import { $getRoot } from 'lexical'
+import { $getRoot, $isElementNode, COMMAND_PRIORITY_LOW, FORMAT_TEXT_COMMAND } from 'lexical'
 import { $isListNode, $isListItemNode } from '@lexical/list'
 import { corePlugin } from '../src/plugins/core.js'
 import { buildTransformers } from '../src/transformers/registry.js'
 import { GFM_NODES } from '../src/transformers/gfm.js'
+import { blockUnderlineFormat } from '../src/editor.js'
 
 const transformers = buildTransformers([corePlugin()])
 
@@ -73,6 +74,56 @@ describe('GFM markdown round-trip (in === out)', () => {
         .map((item) => ($isListItemNode(item) ? item.getChecked() : 'not-li'))
     })
     expect(checks).toEqual([true, false])
+  })
+
+  it('does not convert non-GFM ==highlight== syntax (kept as literal text)', () => {
+    // HIGHLIGHT is excluded from the default set: `==..==` is not GFM, so it must
+    // NOT be recognized as a mark — it stays literal and round-trips unchanged.
+    const editor = createHeadlessEditor({
+      namespace: 'no-highlight',
+      nodes: [...GFM_NODES],
+      onError: (e) => {
+        throw e
+      },
+    })
+    editor.update(() => $convertFromMarkdownString('a ==highlight== b', transformers), {
+      discrete: true,
+    })
+    const hasMark = editor.getEditorState().read(() => {
+      const para = $getRoot().getFirstChild()
+      // A single unformatted text run means no highlight node was created.
+      return !$isElementNode(para) || para.getChildrenSize() !== 1
+    })
+    expect(hasMark).toBe(false)
+    expect(roundtrip('a ==highlight== b')).toBe('a ==highlight== b')
+  })
+
+  it('blocks the underline format so it can never be applied (unserializable in GFM)', () => {
+    const editor = createHeadlessEditor({
+      namespace: 'underline-block',
+      nodes: [...GFM_NODES],
+      onError: (e) => {
+        throw e
+      },
+    })
+    // A lower-priority observer stands in for the real FORMAT_TEXT applier
+    // (registerRichText): it records which payloads reach it. The guard runs at
+    // CRITICAL priority, ahead of it, so a swallowed format never gets here.
+    const reached: string[] = []
+    blockUnderlineFormat(editor)
+    editor.registerCommand(
+      FORMAT_TEXT_COMMAND,
+      (payload) => {
+        reached.push(payload)
+        return false
+      },
+      COMMAND_PRIORITY_LOW,
+    )
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')
+    // Underline was swallowed before reaching the applier; others pass through.
+    expect(reached).toEqual(['bold', 'italic'])
   })
 
   it('preserves a multi-block document', () => {

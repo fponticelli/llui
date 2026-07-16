@@ -56,6 +56,39 @@ describe('markdownEditor', () => {
     expect(changes.at(-1)).toBe('hello world')
   })
 
+  it('flushes the final edit to onChange when unmounted within the debounce window', () => {
+    // Regression: the component's dispose marks the TEA loop disposed BEFORE the
+    // foreign unmount's flush runs, so a flush that routed onChange through `send`
+    // was dropped — the last debounce window of typing was lost on unmount.
+    // Consumer delivery must be independent of the loop being alive.
+    let editor!: LexicalEditor
+    const changes: string[] = []
+    app = mountApp(
+      container,
+      markdownEditor({
+        defaultValue: 'seed',
+        changeDebounceMs: 1000, // long: the timer would NOT fire on its own
+        onReady: (e) => {
+          editor = e
+        },
+        onChange: (md) => changes.push(md),
+      }),
+    )
+    editor.update(
+      () => {
+        $getRoot()
+          .clear()
+          .append($createParagraphNode().append($createTextNode('final text')))
+      },
+      { discrete: true },
+    )
+    expect(changes).not.toContain('final text') // still inside the debounce window
+    app.dispose()
+    app = null
+    // The dispose-time flush delivered the final text to the consumer directly.
+    expect(changes).toContain('final text')
+  })
+
   it('surfaces selection format to component state', async () => {
     let editor!: LexicalEditor
     app = mountApp(

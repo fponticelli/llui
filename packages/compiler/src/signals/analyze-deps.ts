@@ -94,6 +94,9 @@ export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): D
           if (ts.isIdentifier(el.name)) bind(el.name.text, new Set())
           continue
         }
+        // A default initializer (`{ x = expr }`) is evaluated when the key is
+        // absent — its reads are genuine dependencies.
+        if (el.initializer) emit(evalExpr(el.initializer))
         const key = el.propertyName
           ? propNameText(el.propertyName)
           : ts.isIdentifier(el.name)
@@ -112,8 +115,25 @@ export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): D
         if (ts.isIdentifier(el.name)) bind(el.name.text, new Set())
         return
       }
+      if (el.initializer) emit(evalExpr(el.initializer)) // `[x = expr]` default read
       bindPattern(el.name, member(base, String(idx)))
     })
+  }
+
+  // Evaluate a function-like scope (arrow, function expression, or object-literal
+  // method/accessor): bind its params (evaluating parameter defaults, which are
+  // real reads) and analyze its body.
+  const evalFnScope = (
+    parameters: readonly ts.ParameterDeclaration[],
+    body: ts.ConciseBody | undefined,
+  ): void => {
+    pushScope()
+    for (const p of parameters) {
+      if (p.initializer) emit(evalExpr(p.initializer))
+      bindPattern(p.name, new Set())
+    }
+    if (body) evalBody(body)
+    popScope()
   }
 
   // Sound coarse fallback: emit the taint of every identifier read in a subtree,
@@ -217,15 +237,21 @@ export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): D
         if (ts.isPropertyAssignment(p)) emit(evalExpr(p.initializer))
         else if (ts.isShorthandPropertyAssignment(p)) emit(lookup(p.name.text) ?? new Set())
         else if (ts.isSpreadAssignment(p)) emit(evalExpr(p.expression))
+        else if (
+          ts.isMethodDeclaration(p) ||
+          ts.isGetAccessorDeclaration(p) ||
+          ts.isSetAccessorDeclaration(p)
+        ) {
+          // A method/getter/setter body is a closure over the enclosing scope —
+          // analyze it like an arrow so its reads aren't missed.
+          evalFnScope(p.parameters, p.body)
+        }
       }
       return new Set()
     }
 
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-      pushScope()
-      for (const p of node.parameters) bindPattern(p.name, new Set())
-      evalBody(node.body)
-      popScope()
+      evalFnScope(node.parameters, node.body)
       return new Set()
     }
 
@@ -288,7 +314,10 @@ export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): D
     }
   }
 
-  fn.parameters.forEach((p, i) => bindPattern(p.name, new Set([enc(i, '')])))
+  fn.parameters.forEach((p, i) => {
+    if (p.initializer) emit(evalExpr(p.initializer)) // top-level parameter default read
+    bindPattern(p.name, new Set([enc(i, '')]))
+  })
   evalBody(fn.body)
 
   return { deps }

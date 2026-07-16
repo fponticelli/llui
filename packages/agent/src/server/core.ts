@@ -174,6 +174,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     rateLimiter,
     lapBasePath,
     allowAnonymous,
+    registry,
   })
 
   const lapRouter = createLapRouter(

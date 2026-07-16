@@ -77,15 +77,23 @@ export interface FormFieldState {
   fields: Record<string, FormFieldSlice>
   /** The issues from the last validation, unaltered. */
   issues: StandardSchemaV1.Issue[]
+  /**
+   * Id of the most recent async validation. `validateAsync` stamps its
+   * `requestId` here; a `validateResult` whose `requestId` no longer matches is
+   * DROPPED (stale-response protection — a slow earlier validation must never
+   * overwrite a newer result). `reset` bumps it so any in-flight validation is
+   * invalidated.
+   */
+  validationId: number
 }
 
 export type FormFieldMsg =
   /** @intent("Validate the given values against a Standard Schema synchronously and update field validity") */
   | { type: 'validate'; schema: StandardSchemaV1<unknown>; values: unknown }
   /** @intent("Begin an async validation — marks every field pending until validateResult arrives") */
-  | { type: 'validateAsync'; schema: StandardSchemaV1<unknown>; values: unknown }
+  | { type: 'validateAsync'; schema: StandardSchemaV1<unknown>; values: unknown; requestId: number }
   /** @intent("Apply the issues from a resolved async validation, clearing the pending state") */
-  | { type: 'validateResult'; issues: StandardSchemaV1.Issue[] }
+  | { type: 'validateResult'; issues: StandardSchemaV1.Issue[]; requestId: number }
   /** @intent("Mark a single field as touched (typically on blur)") */
   | { type: 'touch'; field: string }
   /** @intent("Mark every field as touched (typically on a failed submit attempt)") */
@@ -119,6 +127,7 @@ export function init(opts: FormFieldInit): FormFieldState {
     form: formInit(),
     fields: initSlices(opts),
     issues: [],
+    validationId: 0,
   }
 }
 
@@ -167,18 +176,23 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       // Mark every field pending; the consumer kicks off the async validation
       // (via validateSchemaAsync) and dispatches `validateResult` when it
       // resolves. We do not run the promise here — effects-as-data keeps the
-      // reducer pure and JSON-serializable.
+      // reducer pure and JSON-serializable. The `requestId` is stamped so a
+      // slow earlier validation's result can be dropped when a newer one starts.
       const fields: Record<string, FormFieldSlice> = {}
       for (const [name, slice] of Object.entries(state.fields)) {
         fields[name] = { ...slice, pending: true }
       }
-      return [{ ...state, fields }, []]
+      return [{ ...state, validationId: msg.requestId, fields }, []]
     }
-    case 'validateResult':
+    case 'validateResult': {
+      // Drop responses from superseded validations (stale-response protection):
+      // an earlier, slower validation must never overwrite a newer result.
+      if (msg.requestId !== state.validationId) return [state, []]
       return [
         { ...state, issues: [...msg.issues], fields: applyIssues(state.fields, msg.issues) },
         [],
       ]
+    }
     case 'touch': {
       if (state.form.touched[msg.field]) return [state, []]
       return [
@@ -205,7 +219,9 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       for (const [name, slice] of Object.entries(state.fields)) {
         fields[name] = { ...fieldInit({ id: slice.id }), pending: false }
       }
-      return [{ form: formInit(), fields, issues: [] }, []]
+      // Bump the validation id so any in-flight async validation is invalidated
+      // (its `validateResult` will no longer match and is dropped).
+      return [{ form: formInit(), fields, issues: [], validationId: state.validationId + 1 }, []]
     }
   }
 }

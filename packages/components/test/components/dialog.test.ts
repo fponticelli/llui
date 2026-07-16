@@ -103,6 +103,31 @@ describe('dialog.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
 
+  it('a child animationend bubbling during closing does NOT advance presence (finding 3)', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    const content = document.createElement('div')
+    const child = document.createElement('div')
+    content.appendChild(child)
+    document.body.appendChild(content)
+    content.addEventListener('animationend', p.content.onAnimationEnd)
+    content.addEventListener('transitionend', p.content.onTransitionEnd)
+
+    // A descendant's animation/transition ending mid-exit must be ignored —
+    // otherwise the overlay unmounts before its own exit animation finishes.
+    child.dispatchEvent(new Event('animationend', { bubbles: true }))
+    child.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    expect(send).not.toHaveBeenCalled()
+
+    // The content element's OWN end event still advances the machine.
+    content.dispatchEvent(new Event('animationend', { bubbles: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'animationEnd' })
+    content.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'transitionEnd' })
+
+    document.body.removeChild(content)
+  })
+
   it('closeLabel customizes aria-label', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'x', closeLabel: 'Dismiss' })
     expect(p.closeTrigger['aria-label']).toBe('Dismiss')

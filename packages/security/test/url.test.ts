@@ -48,4 +48,24 @@ describe('sanitizeUrl', () => {
     expect(sanitizeUrl('data:image/png;base64,AAAA', ['data'])).toBe('data:image/png;base64,AAAA')
     expect(sanitizeUrl('https://x', ['data'])).toBeNull()
   })
+
+  it('resolves protocol-relative (//host) URLs against the allowlist instead of passing them as relative', () => {
+    // `//tracker/p.png` has no colon, so a naive "no scheme ⇒ relative ⇒ safe"
+    // check would let an untrusted image issue a live cross-origin request while
+    // dodging the allowlist entirely. Its effective scheme is the page protocol
+    // (http/https), so it is only safe when BOTH http and https are permitted.
+    expect(sanitizeUrl('//tracker/p.png', allowed)).toBe('//tracker/p.png')
+    expect(sanitizeUrl('//example.com/x', ['http', 'https'])).toBe('//example.com/x')
+    // Allowlist missing http (or https) ⇒ the effective protocol may be blocked ⇒ reject.
+    expect(sanitizeUrl('//tracker/p.png', ['https'])).toBeNull()
+    expect(sanitizeUrl('//tracker/p.png', ['http'])).toBeNull()
+    expect(sanitizeUrl('//tracker/p.png', ['mailto'])).toBeNull()
+    // Leading control/space chars must not hide the protocol-relative form.
+    expect(sanitizeUrl('  //tracker/p.png', ['mailto'])).toBeNull()
+    expect(sanitizeUrl('\x01//tracker/p.png', ['mailto'])).toBeNull()
+    // A single leading slash is a genuine path-relative URL and stays safe.
+    expect(sanitizeUrl('/docs/x', ['mailto'])).toBe('/docs/x')
+    // `///x` (empty host) is still protocol-relative in form ⇒ gated the same way.
+    expect(sanitizeUrl('///x', ['mailto'])).toBeNull()
+  })
 })

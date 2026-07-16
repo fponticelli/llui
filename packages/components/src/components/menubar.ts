@@ -364,7 +364,20 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
       flip: opts.flip !== false,
       shift: opts.shift !== false,
     },
-    dismiss: {},
+    dismiss: {
+      // Escape unwinds ONE submenu level of the currently-open menu before
+      // closing the menu itself (which returns focus to its top-level trigger).
+      onEscape: () => {
+        const s = opts.state.peek()
+        const openId = s.open
+        const sub = openId ? s.menuStates[openId] : undefined
+        if (openId && sub && sub.openPath.length > 0) {
+          opts.send({ type: 'menuMsg', id: openId, msg: { type: 'closeSub' } })
+        } else {
+          opts.send({ type: 'closeMenu' })
+        }
+      },
+    },
     focusOnOpenId: opts.parts.content.id,
     restoreFocus: { boundary: 'content' },
   })

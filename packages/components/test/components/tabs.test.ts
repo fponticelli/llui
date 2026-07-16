@@ -125,6 +125,33 @@ describe('tabs.connect', () => {
     expect(read(t.tabindex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
   })
 
+  it('deselected (value ""): exactly one trigger keeps tabindex 0 (first enabled)', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const s = init({ items: ['a', 'b', 'c'], value: '', deselectable: true })
+    const tabindexes = ['a', 'b', 'c'].map((v) => read(p.item(v).trigger.tabindex, s))
+    expect(tabindexes.filter((t) => t === 0)).toHaveLength(1)
+    // Fallback is the first enabled item, so the tablist stays reachable by Tab.
+    expect(read(p.item('a').trigger.tabindex, s)).toBe(0)
+  })
+
+  it('deselected (value ""): the focused tab carries tabindex 0 when set', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const s: ReturnType<typeof init> = {
+      ...init({ items: ['a', 'b', 'c'], value: '', deselectable: true }),
+      focused: 'b',
+    }
+    expect(read(p.item('b').trigger.tabindex, s)).toBe(0)
+    expect(read(p.item('a').trigger.tabindex, s)).toBe(-1)
+    expect(read(p.item('c').trigger.tabindex, s)).toBe(-1)
+  })
+
+  it('deselected with first item disabled: falls back to first ENABLED item', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const s = init({ items: ['a', 'b', 'c'], value: '', disabledItems: ['a'], deselectable: true })
+    expect(read(p.item('a').trigger.tabindex, s)).toBe(-1)
+    expect(read(p.item('b').trigger.tabindex, s)).toBe(0)
+  })
+
   it('panel.hidden reflects inactive', () => {
     const p = parts.item('a').panel
     expect(read(p.hidden, init({ items: ['a', 'b'], value: 'a' }))).toBe(false)

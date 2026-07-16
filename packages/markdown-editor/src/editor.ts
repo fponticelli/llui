@@ -4,7 +4,14 @@
 // live editor through effects, and COMPOSES plugin UI extensions (each plugin's
 // state slice + reducer + view + effects) into the single component.
 
-import { $getRoot, $setSelection, type EditorThemeClasses, type LexicalEditor } from 'lexical'
+import {
+  $getRoot,
+  $setSelection,
+  COMMAND_PRIORITY_CRITICAL,
+  FORMAT_TEXT_COMMAND,
+  type EditorThemeClasses,
+  type LexicalEditor,
+} from 'lexical'
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
@@ -109,13 +116,31 @@ function defaultPlugins(): MarkdownPlugin[] {
   return [corePlugin(), linkPlugin()]
 }
 
+/** Swallow the underline text-format command. `registerRichText` wires Cmd+U to
+ * FORMAT_TEXT 'underline', but the GFM markdown dialect this editor serializes
+ * has no underline representation, so an applied underline would be silently
+ * stripped on save. Intercepting at CRITICAL priority (ahead of rich-text) keeps
+ * the WYSIWYG surface and the serialized dialect in lock-step: underline can be
+ * neither applied nor lost. Returns a disposer. */
+export function blockUnderlineFormat(editor: LexicalEditor): () => void {
+  return editor.registerCommand(
+    FORMAT_TEXT_COMMAND,
+    (payload) => payload === 'underline',
+    COMMAND_PRIORITY_CRITICAL,
+  )
+}
+
 /** The per-mount `send` closure — the WeakMap key that ties a live editor to the
  * one mount it belongs to. */
 type EditorSend = (msg: EditorMsg) => void
 
-/** Per-mount live state: the Lexical editor captured by that mount's `onReady`. */
+/** Per-mount live state: the Lexical editor captured by that mount's `onReady`,
+ * plus the last markdown delivered to the consumer's `onChange` (dedup key). */
 interface MountContext {
   editor: LexicalEditor | null
+  /** Last value handed to `config.onChange` for this mount — guards against
+   * double / redundant consumer notifications. `undefined` = nothing emitted yet. */
+  lastChange: string | undefined
 }
 
 /**
@@ -148,14 +173,17 @@ export function markdownEditor(
   const contextFor = (send: EditorSend): MountContext => {
     let ctx = mountContexts.get(send)
     if (!ctx) {
-      ctx = { editor: null }
+      ctx = { editor: null, lastChange: undefined }
       mountContexts.set(send, ctx)
     }
     return ctx
   }
 
   const baseOnEffect = makeOnEffect((api) => contextFor(api.send).editor, itemsById, {
-    onChange: config.onChange,
+    // NB: consumer `onChange` is delivered DIRECTLY from the foreign onChange
+    // wrapper (see `view` below), NOT through this effect path — the dispose-time
+    // debounce flush runs after the TEA loop is disposed, and a `send` from a
+    // disposed loop is dropped, so effect-routed delivery loses the final edit.
     onFormatChange: config.onFormatChange,
     applyValue: (editor, value) =>
       editor.update(
@@ -273,6 +301,10 @@ export function markdownEditor(
         : {}),
       register: (editor) => {
         const disposers = [
+          // Keep the WYSIWYG surface and the serialized GFM dialect in lock-step:
+          // underline (Cmd+U) has no markdown representation, so it is swallowed
+          // rather than applied-then-silently-stripped on save.
+          blockUnderlineFormat(editor),
           registerMarkdownShortcuts(editor, transformers),
           // Global scheme allowlist for links: the single backstop covering the
           // link dialog, pasted/imported markdown, and the typed `[x](url)`
@@ -297,7 +329,20 @@ export function markdownEditor(
         }
         config.onReady?.(editor)
       },
-      onChange: (value) => send({ type: 'markdownChanged', value }),
+      onChange: (value) => {
+        // Deliver to the consumer DIRECTLY, independent of the TEA loop: the
+        // dispose-time debounce flush runs AFTER the component is disposed, and a
+        // `send` from a disposed loop is dropped — so routing consumer delivery
+        // through `send` would lose the last debounce window of typing on unmount.
+        // Deduped per mount so the same value isn't delivered twice.
+        if (value !== mount.lastChange) {
+          mount.lastChange = value
+          config.onChange?.(value)
+        }
+        // Mirror into TEA state (value/dirty) while the loop is alive; dropped
+        // silently after dispose, which is fine — the consumer was already told.
+        send({ type: 'markdownChanged', value })
+      },
       onSelectionChange: (ctx) => {
         const format = computeFormatState(ctx.editor, ctx)
         const text = ctx.editor.getEditorState().read(() => $getRoot().getTextContent())

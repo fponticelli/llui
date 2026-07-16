@@ -95,6 +95,34 @@ describe('pushDismissable()', () => {
     cleanup()
   })
 
+  it('onEscape router runs instead of onDismiss for Escape and claims the key', () => {
+    const onDismiss = vi.fn()
+    const onEscape = vi.fn()
+    const cleanup = pushDismissable({ element: container, onDismiss, onEscape })
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    const stop = vi.spyOn(event, 'stopPropagation')
+    document.dispatchEvent(event)
+    expect(onEscape).toHaveBeenCalledTimes(1)
+    expect(onDismiss).not.toHaveBeenCalled()
+    // Claimed → propagation stopped so no ancestor layer/handler also acts.
+    expect(stop).toHaveBeenCalled()
+    cleanup()
+  })
+
+  it('onEscape returning false declines the key (propagates, not claimed)', () => {
+    const onDismiss = vi.fn()
+    const onEscape = vi.fn(() => false)
+    const cleanup = pushDismissable({ element: container, onDismiss, onEscape })
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    const stop = vi.spyOn(event, 'stopPropagation')
+    document.dispatchEvent(event)
+    expect(onEscape).toHaveBeenCalledTimes(1)
+    expect(onDismiss).not.toHaveBeenCalled()
+    // Declined → not claimed → propagation NOT stopped.
+    expect(stop).not.toHaveBeenCalled()
+    cleanup()
+  })
+
   it('cleanup removes layer from stack', () => {
     const onDismiss = vi.fn()
     const cleanup = pushDismissable({ element: container, onDismiss })

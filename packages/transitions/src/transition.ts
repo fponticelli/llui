@@ -132,6 +132,14 @@ export function transition(spec: TransitionSpec): TransitionOptions {
       return Promise.resolve()
     }
 
+    // An element with a run already in flight is a mid-animation enter being
+    // interrupted. Applying `leaveFrom` there would snap it to the fully-shown
+    // resting state before animating out (the "snaps to fully-visible" bug), so
+    // for those elements we skip `leaveFrom` and let the leave transition from
+    // the element's current values. A fresh (resting) element keeps the normal
+    // `leaveFrom` → `leaveTo` swap. Captured BEFORE `supersede` clears the run.
+    const interrupting = els.map((el) => runs.isActive(el))
+
     // Rollback (only fired if a newer run supersedes this leave before it ends,
     // e.g. an enter re-shows the element) restores the pre-transition inline
     // styles rather than blanking them.
@@ -151,17 +159,17 @@ export function transition(spec: TransitionSpec): TransitionOptions {
       })
     })
 
-    for (const el of els) {
-      applyValue(el, spec.leaveFrom)
+    els.forEach((el, i) => {
+      if (!interrupting[i]) applyValue(el, spec.leaveFrom)
       applyValue(el, spec.leaveActive)
-    }
+    })
 
     forceReflow(els[0]!)
 
-    for (const el of els) {
-      removeValue(el, spec.leaveFrom)
+    els.forEach((el, i) => {
+      if (!interrupting[i]) removeValue(el, spec.leaveFrom)
       applyValue(el, spec.leaveTo)
-    }
+    })
 
     const duration = spec.duration ?? detectDuration(els[0]!)
     return Promise.all(

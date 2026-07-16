@@ -149,6 +149,45 @@ describe('collapse()', () => {
     expect(el.style.transition).toBe('color 1s')
   })
 
+  // ── Finding 7: leave starts from the element’s CURRENT rendered size ──
+  it('leave starts from the current rendered size, not the natural size', () => {
+    const el = makeEl()
+    // Simulate a partially-open element: current rendered height is 40px while
+    // its natural (scroll) height would be larger. The leave must start the
+    // collapse from 40px, not snap open to the natural size first.
+    el.getBoundingClientRect = () =>
+      ({
+        height: 40,
+        width: 12,
+        top: 0,
+        left: 0,
+        right: 12,
+        bottom: 40,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    // Record every write to style.height so we can inspect the leave's start.
+    const writes: string[] = []
+    let current = ''
+    Object.defineProperty(el.style, 'height', {
+      configurable: true,
+      get: () => current,
+      set: (v: string) => {
+        current = v
+        writes.push(v)
+      },
+    })
+
+    const t = collapse({ duration: 100, axis: 'y' })
+    void t.leave!([el])
+
+    // First height write is the leave's starting size (before the reflow → 0px).
+    expect(writes[0]).toBe('40px')
+    expect(writes[writes.length - 1]).toBe('0px')
+  })
+
   it('a superseding leave rolls back enter and gates enter’s stale restore', async () => {
     const el = makeEl()
     el.style.overflow = 'scroll'

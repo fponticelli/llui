@@ -3,6 +3,7 @@ import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { presenceEndHandler } from '../utils/presence-end.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   type MenuNode,
@@ -330,8 +331,16 @@ export function connect(
       'data-scope': 'menu',
       'data-part': 'content',
       onKeyDown: parts.rootKeyNav,
-      onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
-      onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
+      onAnimationEnd: tagSend(
+        send,
+        ['animationEnd'],
+        presenceEndHandler(() => send({ type: 'animationEnd' })),
+      ),
+      onTransitionEnd: tagSend(
+        send,
+        ['animationEnd'],
+        presenceEndHandler(() => send({ type: 'animationEnd' })),
+      ),
     },
     item: parts.item,
     checkboxItem: parts.checkboxItem,
@@ -388,7 +397,19 @@ export function overlay(opts: OverlayOptions): Mountable {
       shift: opts.shift !== false,
       dir: () => opts.state.peek().dir,
     },
-    dismiss: {},
+    dismiss: {
+      // Escape unwinds ONE submenu level while a submenu is open; only when no
+      // submenu is open does it close the whole menu. Routed through the
+      // dismissable layer because its capture listener claims Escape before the
+      // content's own keydown handler can run.
+      onEscape: () => {
+        if (opts.state.peek().openPath.length > 0) {
+          opts.send({ type: 'closeSub' })
+        } else {
+          opts.send({ type: 'close' })
+        }
+      },
+    },
     focusOnOpenId: opts.parts.content.id,
     restoreFocus: { boundary: 'content' },
   })

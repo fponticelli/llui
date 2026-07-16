@@ -17,6 +17,7 @@ export type {
   CreateNoteResponse,
   CurrentSessionResponse,
   DirtyTraceEntry,
+  ListNotesError,
   ListNotesQuery,
   ListNotesResponse,
   LogLevel,

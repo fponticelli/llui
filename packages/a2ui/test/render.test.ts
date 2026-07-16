@@ -73,6 +73,49 @@ describe('createSurface + updateComponents + updateDataModel', () => {
     expect(container.querySelector('.a2ui-text-h1')).toBe(h1)
   })
 
+  it('updates only the changed component, preserving other nodes (fix 2)', () => {
+    handle = mountA2ui(container)
+    handle.apply([
+      {
+        version: 'v0.9',
+        createSurface: {
+          surfaceId: 'multi',
+          catalogId: 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json',
+        },
+      },
+      {
+        version: 'v0.9',
+        updateComponents: {
+          surfaceId: 'multi',
+          components: [
+            { id: 'root', component: 'Column', children: ['a', 'b', 'c'] },
+            { id: 'a', component: 'Text', text: 'Alpha' },
+            { id: 'b', component: 'Text', text: 'Bravo' },
+            { id: 'c', component: 'Text', text: 'Charlie' },
+          ],
+        },
+      },
+    ])
+    const texts = (): HTMLElement[] => [...container.querySelectorAll<HTMLElement>('.a2ui-text')]
+    const before = texts()
+    expect(before.map((t) => t.textContent)).toEqual(['Alpha', 'Bravo', 'Charlie'])
+
+    // Update ONLY node 'b' — the merge keeps a/c/root by reference.
+    handle.apply({
+      version: 'v0.9',
+      updateComponents: {
+        surfaceId: 'multi',
+        components: [{ id: 'b', component: 'Text', text: 'Bravo!' }],
+      },
+    })
+    const after = texts()
+    expect(after.map((t) => t.textContent)).toEqual(['Alpha', 'Bravo!', 'Charlie'])
+    // Siblings are the SAME live DOM nodes (not rebuilt); only 'b' was replaced.
+    expect(after[0]).toBe(before[0])
+    expect(after[2]).toBe(before[2])
+    expect(after[1]).not.toBe(before[1])
+  })
+
   it('renders components that arrive before their data (streaming)', () => {
     handle = mountA2ui(container)
     handle.apply(stream[0]!)

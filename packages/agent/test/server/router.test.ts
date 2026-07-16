@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createHttpRouter } from '../../src/server/http/router.js'
 import { InMemoryTokenStore } from '../../src/server/token-store.js'
+import { InMemoryPairingRegistry } from '../../src/server/ws/pairing-registry.js'
 
 const mkRouter = () => {
   const store = new InMemoryTokenStore()
@@ -10,6 +11,7 @@ const mkRouter = () => {
     identityResolver: async () => 'u1',
     auditSink: audit,
     lapBasePath: '/agent/lap/v1',
+    registry: new InMemoryPairingRegistry(),
   })
 }
 

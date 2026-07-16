@@ -39,9 +39,18 @@ export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
   LinkNode,
 ]
 
+/** The `==highlight==` transformer. NOT part of the default GFM set: `==..==` is
+ * not GFM, so exporting it produces non-standard markdown other renderers won't
+ * understand. Offered as an opt-in a consumer can add to a plugin's transformers. */
+export const HIGHLIGHT_TRANSFORMER: Transformer = HIGHLIGHT
+
 /** Inline text-format transformers (no block nodes, no node registration). These
  * are the only transformers a single-block / inline-only editor needs; `LINK` is
- * kept separate since it requires `LinkNode` to be registered. */
+ * kept separate since it requires `LinkNode` to be registered.
+ *
+ * `HIGHLIGHT` is deliberately excluded: it round-trips as the non-GFM `==..==`
+ * syntax, so it would silently emit markdown outside the editor's stated dialect.
+ * Opt in with {@link HIGHLIGHT_TRANSFORMER}. */
 export const INLINE_TEXT_TRANSFORMERS: readonly Transformer[] = [
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
@@ -51,7 +60,6 @@ export const INLINE_TEXT_TRANSFORMERS: readonly Transformer[] = [
   ITALIC_UNDERSCORE,
   STRIKETHROUGH,
   INLINE_CODE,
-  HIGHLIGHT,
 ]
 
 /** Markdown ↔ node transformers for the GFM superset. */

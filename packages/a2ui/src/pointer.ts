@@ -66,10 +66,26 @@ function setIn(
   const token = tokens[index] as string
   const isLast = index === tokens.length - 1
 
-  // An array level: the current token indexes into an array.
-  if (isIndexToken(token) && (Array.isArray(node) || node === undefined || node === null)) {
-    const arr: JsonValue[] = Array.isArray(node) ? node.slice() : []
-    const i = Number(token)
+  const nodeIsArray = Array.isArray(node)
+  // RFC 6901: `-` addresses the (nonexistent) element after the last — an
+  // explicit append-at-end.
+  const isAppend = token === '-'
+
+  // An array level: the current token indexes into an existing array, or we
+  // create a fresh array because the token is an index / append marker and the
+  // slot is empty. (An index token targeting an existing OBJECT stays on the
+  // object branch below — numeric string keys on objects are legal.)
+  if (nodeIsArray || ((isIndexToken(token) || isAppend) && (node === undefined || node === null))) {
+    // Container/token mismatch: a non-index, non-append token targeting an
+    // existing array must NOT fall through to the object branch (which would
+    // rebuild a fresh object and silently discard the whole array). Refuse the
+    // write and keep the array intact, exactly like an out-of-range index.
+    if (nodeIsArray && !isIndexToken(token) && !isAppend) {
+      warnOnce(`Refusing to write non-index pointer token "${token}" to an array`)
+      return node as JsonValue
+    }
+    const arr: JsonValue[] = nodeIsArray ? (node as JsonValue[]).slice() : []
+    const i = isAppend ? arr.length : Number(token)
     // Reject out-of-range writes: append at the end is fine, but never open a
     // gap or exceed the absolute cap (would grow a sparse array without bound).
     if (i > arr.length || i >= MAX_ARRAY_INDEX) {

@@ -84,7 +84,14 @@ export function makeContext(
       return renderer ? renderer(node, ctx) : []
     },
     renderChildren: (parent) =>
-      options.renderers.html === defaultRenderers.html
+      // Coalescing an html/text run into one joined string (to sanitize it once)
+      // is only correct when a `sanitizeHtml` hook exists to render that string.
+      // Without one the joined string renders empty — folding intervening `text`
+      // nodes into it would DROP that visible text (`a <em>word</em> b` → "a  b").
+      // So group only when both the default html renderer AND a sanitizer are in
+      // play; otherwise render each child normally, which drops just the `html`
+      // fragments and keeps the text (GitHub-style strip-tags-keep-text).
+      options.renderers.html === defaultRenderers.html && options.sanitizeHtml
         ? renderChildrenGrouped(ctx, parent.children)
         : parent.children.flatMap((child) => ctx.render(child)),
   }

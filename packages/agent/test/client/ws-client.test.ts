@@ -153,6 +153,49 @@ describe('attachWsClient', () => {
     expect(ws.closed).toBe(true)
   })
 
+  it('invalid rpc frame (missing tool) → replies rpc-error so the server rpc settles', async () => {
+    const ws = new FakeWs()
+    attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    // A malformed rpc REQUEST: recognizable envelope (t + id) but no tool.
+    ws.emit('message', JSON.stringify({ t: 'rpc', id: 'req-bad' }))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(ws.sent).toHaveLength(1)
+    const err = JSON.parse(ws.sent[0]!)
+    expect(err.t).toBe('rpc-error')
+    expect(err.id).toBe('req-bad')
+    expect(err.code).toBe('schema-error')
+  })
+
+  it('invalid non-rpc frame → dropped silently (no reply)', async () => {
+    const ws = new FakeWs()
+    attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    ws.emit('message', JSON.stringify({ t: 'watch' })) // missing id
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(ws.sent).toHaveLength(0)
+  })
+
+  it('hello-ack frame → handled without treating it as unknown', async () => {
+    const ws = new FakeWs()
+    attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    // A compatible hello-ack: no reply, no throw.
+    expect(() =>
+      ws.emit('message', JSON.stringify({ t: 'hello-ack', lapVersion: 2, minClientVersion: 2 })),
+    ).not.toThrow()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(ws.sent).toHaveLength(0)
+  })
+
   it('resolveConfirm("confirmed", state) → emits confirm-resolved frame with stateAfter', () => {
     const ws = new FakeWs()
     const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())

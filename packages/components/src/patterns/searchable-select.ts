@@ -85,7 +85,7 @@ export type SearchableSelectMsg =
   /** @humanOnly */
   | { type: 'highlightLast' }
   /** @humanOnly */
-  | { type: 'highlight'; index: number | null }
+  | { type: 'highlight'; value: string | null }
   /** @intent("Select the currently-highlighted option (the only commit path from the keyboard)") */
   | { type: 'selectHighlighted' }
   /** @humanOnly */
@@ -156,7 +156,7 @@ export function update(
       // Reset the filter so the next open is clean and the trigger shows the
       // committed label, never a stale filter.
       const [c2] = comboboxUpdate(c, { type: 'setInputValue', value: '' })
-      return [lift(state, { ...c2, open: false, highlightedIndex: null }), []]
+      return [lift(state, { ...c2, open: false, highlightedValue: null }), []]
     }
     case 'setFilter': {
       const [c] = comboboxUpdate(state.combobox, { type: 'setInputValue', value: msg.value })
@@ -183,7 +183,7 @@ export function update(
       return [lift(state, c), []]
     }
     case 'highlight': {
-      const [c] = comboboxUpdate(state.combobox, { type: 'highlight', index: msg.index })
+      const [c] = comboboxUpdate(state.combobox, { type: 'highlight', value: msg.value })
       return [lift(state, c), []]
     }
     case 'highlightNext': {
@@ -232,7 +232,7 @@ function resetFilter(c: ComboboxState): ComboboxState {
   return {
     ...refiltered,
     open: c.open,
-    highlightedIndex: c.open ? refiltered.highlightedIndex : null,
+    highlightedValue: c.open ? refiltered.highlightedValue : null,
   }
 }
 
@@ -248,7 +248,9 @@ export interface SearchableSelectItemParts {
     'data-scope': 'searchable-select'
     'data-part': 'item'
     'data-value': string
-    'data-index': string
+    /** The option's live position in the filtered list (reactive — reused rows
+     * never report a stale index). */
+    'data-index': Signal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -332,7 +334,10 @@ export interface SearchableSelectParts {
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
-  item: (value: string, index: number) => SearchableSelectItemParts
+  /** Build the parts for an option by VALUE. The optional `index` is accepted
+   * for call-site convenience only — identity is value-keyed, so a reused row is
+   * never stale. */
+  item: (value: string, index?: number) => SearchableSelectItemParts
   group: (id: string) => SearchableSelectGroupParts
   /** Clear-selection trigger. Render only when `hasValue` is true. */
   clear: {
@@ -413,7 +418,7 @@ export function connect(
         send({ type: 'clear' })
         return
       case 'highlight':
-        send({ type: 'highlight', index: m.index })
+        send({ type: 'highlight', value: m.value })
         return
       case 'highlightNext':
         send({ type: 'highlightNext' })
@@ -528,8 +533,8 @@ export function connect(
       'data-scope': SCOPE,
       'data-part': 'content',
     },
-    item: (value: string, index: number): SearchableSelectItemParts => {
-      const inner = cb.item(value, index).item
+    item: (value: string): SearchableSelectItemParts => {
+      const inner = cb.item(value).item
       return {
         item: {
           role: 'option',
@@ -542,7 +547,7 @@ export function connect(
           'data-scope': SCOPE,
           'data-part': 'item',
           'data-value': value,
-          'data-index': String(index),
+          'data-index': inner['data-index'],
           onClick: inner.onClick,
           onPointerMove: inner.onPointerMove,
         },

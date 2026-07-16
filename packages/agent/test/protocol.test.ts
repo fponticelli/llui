@@ -352,7 +352,7 @@ describe('Relay WS frame types', () => {
       },
       { t: 'rpc-reply', id: 'r', result: null },
       { t: 'rpc-error', id: 'r', code: 'invalid' },
-      { t: 'confirm-resolved', confirmId: 'c', outcome: 'user-cancelled' },
+      { t: 'confirm-resolved', confirmId: 'c', outcome: 'user-cancelled', stateAfter: null },
       { t: 'state-update', path: '/', stateAfter: null },
       { t: 'log-append', entry: { id: 'e', at: 0, kind: 'read' } },
     ]

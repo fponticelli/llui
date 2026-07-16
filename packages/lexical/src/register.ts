@@ -58,12 +58,35 @@ function requiredModifiers(combo: ParsedCombo, isMac: boolean): RequiredModifier
   return { meta: false, ctrl: combo.mod || combo.ctrl, shift: combo.shift, alt: combo.alt }
 }
 
+/** The layout-stable `event.code` a single digit/letter maps to (`7`→`Digit7`,
+ * `b`→`KeyB`), or undefined for anything else. */
+function physicalCodeFor(key: string): string | undefined {
+  if (key.length !== 1) return undefined
+  if (key >= '0' && key <= '9') return 'Digit' + key
+  if (key >= 'a' && key <= 'z') return 'Key' + key.toUpperCase()
+  return undefined
+}
+
+/** Does the event's key identify the chord's key? Compares `event.key` directly,
+ * but for a digit/letter chord that declares Shift or Alt it ALSO accepts a match
+ * on `event.code`: those modifiers remap the produced character (Shift+7 → `&`,
+ * macOS Alt transforms digits), so `event.key` no longer equals the chord key —
+ * only the physical `event.code` (`Digit7`/`KeyB`) is stable. */
+function keyMatches(event: KeyboardEvent, combo: ParsedCombo): boolean {
+  const eventKey = event.key.length === 1 ? event.key.toLowerCase() : event.key
+  if (eventKey === combo.key) return true
+  if (combo.shift || combo.alt) {
+    const code = physicalCodeFor(combo.key)
+    if (code && event.code === code) return true
+  }
+  return false
+}
+
 /** Does a keyboard event satisfy a parsed chord? `mod` maps to ⌘ on macOS and
  * Ctrl elsewhere; all four modifier keys must match the resolved requirement
  * exactly (no extras held). */
 export function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean): boolean {
-  const eventKey = event.key.length === 1 ? event.key.toLowerCase() : event.key
-  if (eventKey !== combo.key) return false
+  if (!keyMatches(event, combo)) return false
   const req = requiredModifiers(combo, isMac)
   return (
     event.metaKey === req.meta &&

@@ -5,7 +5,7 @@ import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 export type LapMessageDeps = LapGateDeps
 
 export const handleLapMessage = withLapGates({ touchOn: 'completion' }, async (ctx) => {
-  const body = (await ctx.req.json().catch(() => null)) as LapMessageRequest | null
+  const body = ctx.body as LapMessageRequest | null
   if (!body || !body.msg || typeof body.msg.type !== 'string') {
     return ctx.json({ error: { code: 'invalid' } }, 400)
   }

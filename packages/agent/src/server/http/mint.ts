@@ -149,10 +149,11 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
     tid,
     wsUrl,
     lapUrl,
-    // Wire format keeps the seconds-since-epoch convention from the
-    // pre-0.0.35 JWT-payload `exp` so existing clients reading
-    // `expiresAt` see the same units.
-    expiresAt: Math.floor(expiresAt / 1000),
+    // MILLISECONDS-since-epoch (LAP v2) — the same unit as the stored
+    // `TokenRecord.expiresAt` and every sibling timestamp. v1 floored to
+    // seconds, which disagreed with `createdAt`/`lastSeenAt` and forced a
+    // ×1000 fixup on the client; the wire now carries one unit throughout.
+    expiresAt,
     lapVersion: LAP_VERSION,
   }
   return new Response(JSON.stringify(body), {

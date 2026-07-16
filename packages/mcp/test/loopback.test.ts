@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tokensMatch, isLoopbackOrigin } from '../src/util/loopback.js'
+import { tokensMatch, isLoopbackOrigin, isLoopbackAuthority } from '../src/util/loopback.js'
 
 describe('tokensMatch', () => {
   it('returns true for identical tokens', () => {
@@ -49,5 +49,29 @@ describe('isLoopbackOrigin', () => {
     expect(isLoopbackOrigin('https://evil.example.com')).toBe(false)
     expect(isLoopbackOrigin('http://169.254.169.254')).toBe(false)
     expect(isLoopbackOrigin('http://127.0.0.1.evil.com')).toBe(false)
+  })
+})
+
+describe('isLoopbackAuthority (Host-header gate)', () => {
+  // The MCP HTTP transport gates the request `Host` through this shared
+  // helper instead of a hand-rolled `host.split(':')[0]` check. The old
+  // copy mangled an unbracketed IPv6 `::1` (split on the first colon →
+  // empty string → rejected). Pin the correct behavior here.
+  it('accepts an unbracketed IPv6 ::1 authority the old check rejected', () => {
+    expect(isLoopbackAuthority('::1')).toBe(true)
+  })
+
+  it('accepts loopback authorities with and without a port', () => {
+    expect(isLoopbackAuthority('127.0.0.1:5200')).toBe(true)
+    expect(isLoopbackAuthority('localhost')).toBe(true)
+    expect(isLoopbackAuthority('[::1]:5200')).toBe(true)
+    expect(isLoopbackAuthority('[::1]')).toBe(true)
+  })
+
+  it('rejects a cross-origin Host and an absent Host', () => {
+    expect(isLoopbackAuthority('attacker.example.com')).toBe(false)
+    expect(isLoopbackAuthority('127.0.0.1.evil.com')).toBe(false)
+    // Absent Host is not provably same-machine ⇒ rejected.
+    expect(isLoopbackAuthority(undefined)).toBe(false)
   })
 })

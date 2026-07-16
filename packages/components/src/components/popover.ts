@@ -4,6 +4,7 @@ import { LocaleContext } from '../locale.js'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { presenceEndHandler } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -183,8 +184,8 @@ export function connect(
       'data-state': state.map((st) => st.status),
       'data-scope': 'popover',
       'data-part': 'content',
-      onAnimationEnd: () => send({ type: 'animationEnd' }),
-      onTransitionEnd: () => send({ type: 'transitionEnd' }),
+      onAnimationEnd: presenceEndHandler(() => send({ type: 'animationEnd' })),
+      onTransitionEnd: presenceEndHandler(() => send({ type: 'transitionEnd' })),
     },
     title: {
       id: titleId,

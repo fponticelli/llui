@@ -41,7 +41,10 @@ export interface SelectState {
   groups: SelectGroup[]
   disabledItems: string[]
   selectionMode: SelectionMode
-  highlightedIndex: number | null
+  /** The highlighted option's VALUE (not its index). Value-based identity keeps
+   * the highlight pinned to the right option when the list is filtered or
+   * reordered and rows are reused (value-keyed `each`). */
+  highlightedValue: string | null
   disabled: boolean
   required: boolean
   typeahead: string
@@ -62,7 +65,7 @@ export type SelectMsg =
   /** @intent("Clear all selected values") */
   | { type: 'clear' }
   /** @humanOnly */
-  | { type: 'highlight'; index: number | null }
+  | { type: 'highlight'; value: string | null }
   /** @humanOnly */
   | { type: 'highlightNext' }
   /** @humanOnly */
@@ -100,7 +103,7 @@ export function init(opts: SelectInit = {}): SelectState {
     groups,
     disabledItems: opts.disabledItems ?? [],
     selectionMode: opts.selectionMode ?? 'single',
-    highlightedIndex: null,
+    highlightedValue: null,
     disabled: opts.disabled ?? false,
     required: opts.required ?? false,
     typeahead: '',
@@ -145,41 +148,51 @@ function applySelection(state: SelectState, value: string): string[] {
   return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
 }
 
-/** Index of the first selected item, or null. */
-function firstSelectedIndex(state: SelectState): number | null {
-  if (state.value.length === 0) return null
-  const idx = state.items.indexOf(state.value[0]!)
-  return idx === -1 ? null : idx
+/** The value at `idx` in `items`, or null when `idx` is null/out of bounds. */
+function valueAt(items: string[], idx: number | null): string | null {
+  return idx === null ? null : (items[idx] ?? null)
+}
+
+/** The index of `value` in `items`, or null when absent. */
+function indexOfValue(items: string[], value: string | null): number | null {
+  if (value === null) return null
+  const i = items.indexOf(value)
+  return i === -1 ? null : i
+}
+
+/** The VALUE of the first selected item (when it still exists), or null. */
+function firstSelectedValue(state: SelectState): string | null {
+  const v = state.value[0]
+  if (v === undefined) return null
+  return state.items.includes(v) ? v : null
+}
+
+/** The value to highlight when the listbox opens: the first selected option, or
+ * the first enabled option. */
+function highlightOnOpen(state: SelectState): string | null {
+  return (
+    firstSelectedValue(state) ??
+    valueAt(state.items, firstEnabledIndex(state.items, state.disabledItems))
+  )
 }
 
 export function update(state: SelectState, msg: SelectMsg): [SelectState, never[]] {
   if (state.disabled && msg.type !== 'setItems') return [state, []]
   switch (msg.type) {
-    case 'open': {
-      const highlightedIndex =
-        firstSelectedIndex(state) ?? firstEnabledIndex(state.items, state.disabledItems)
-      return [{ ...state, open: true, highlightedIndex }, []]
-    }
+    case 'open':
+      return [{ ...state, open: true, highlightedValue: highlightOnOpen(state) }, []]
     case 'close':
-      return [{ ...state, open: false, highlightedIndex: null }, []]
+      return [{ ...state, open: false, highlightedValue: null }, []]
     case 'toggle':
       return state.open
-        ? [{ ...state, open: false, highlightedIndex: null }, []]
-        : [
-            {
-              ...state,
-              open: true,
-              highlightedIndex:
-                firstSelectedIndex(state) ?? firstEnabledIndex(state.items, state.disabledItems),
-            },
-            [],
-          ]
+        ? [{ ...state, open: false, highlightedValue: null }, []]
+        : [{ ...state, open: true, highlightedValue: highlightOnOpen(state) }, []]
     case 'selectOption': {
       const value = applySelection(state, msg.value)
       // Single mode closes on selection; multi stays open
       const open = state.selectionMode === 'single' ? false : state.open
-      const highlightedIndex = open ? state.highlightedIndex : null
-      return [{ ...state, value, open, highlightedIndex }, []]
+      const highlightedValue = open ? state.highlightedValue : null
+      return [{ ...state, value, open, highlightedValue }, []]
     }
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
@@ -188,17 +201,20 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
     case 'highlight':
       // No-op when already at the target: return the same reference so the
       // pointer-move storm doesn't trigger a commit on every mouse tick.
-      if (state.highlightedIndex === msg.index) return [state, []]
-      return [{ ...state, highlightedIndex: msg.index }, []]
+      if (state.highlightedValue === msg.value) return [state, []]
+      return [{ ...state, highlightedValue: msg.value }, []]
     case 'highlightNext':
       return [
         {
           ...state,
-          highlightedIndex: nextEnabledIndex(
+          highlightedValue: valueAt(
             state.items,
-            state.disabledItems,
-            state.highlightedIndex,
-            1,
+            nextEnabledIndex(
+              state.items,
+              state.disabledItems,
+              indexOfValue(state.items, state.highlightedValue),
+              1,
+            ),
           ),
         },
         [],
@@ -207,37 +223,58 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
       return [
         {
           ...state,
-          highlightedIndex: nextEnabledIndex(
+          highlightedValue: valueAt(
             state.items,
-            state.disabledItems,
-            state.highlightedIndex,
-            -1,
+            nextEnabledIndex(
+              state.items,
+              state.disabledItems,
+              indexOfValue(state.items, state.highlightedValue),
+              -1,
+            ),
           ),
         },
         [],
       ]
     case 'highlightFirst':
       return [
-        { ...state, highlightedIndex: firstEnabledIndex(state.items, state.disabledItems) },
+        {
+          ...state,
+          highlightedValue: valueAt(
+            state.items,
+            firstEnabledIndex(state.items, state.disabledItems),
+          ),
+        },
         [],
       ]
     case 'highlightLast':
       return [
-        { ...state, highlightedIndex: lastEnabledIndex(state.items, state.disabledItems) },
+        {
+          ...state,
+          highlightedValue: valueAt(
+            state.items,
+            lastEnabledIndex(state.items, state.disabledItems),
+          ),
+        },
         [],
       ]
     case 'selectHighlighted': {
-      if (state.highlightedIndex === null) return [state, []]
-      const v = state.items[state.highlightedIndex]
-      if (v === undefined) return [state, []]
+      const v = state.highlightedValue
+      if (v === null || !state.items.includes(v)) return [state, []]
       const value = applySelection(state, v)
       const open = state.selectionMode === 'single' ? false : state.open
-      return [{ ...state, value, open, highlightedIndex: open ? state.highlightedIndex : null }, []]
+      return [{ ...state, value, open, highlightedValue: open ? state.highlightedValue : null }, []]
     }
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
-      return [{ ...state, items: msg.items, disabledItems: disabled, value }, []]
+      // Drop the highlight when its value no longer exists (or became disabled).
+      const highlightedValue =
+        state.highlightedValue !== null &&
+        msg.items.includes(state.highlightedValue) &&
+        !disabled.includes(state.highlightedValue)
+          ? state.highlightedValue
+          : null
+      return [{ ...state, items: msg.items, disabledItems: disabled, value, highlightedValue }, []]
     }
     case 'typeahead': {
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
@@ -245,14 +282,14 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
         state.items,
         state.disabledItems,
         acc,
-        state.highlightedIndex,
+        indexOfValue(state.items, state.highlightedValue),
       )
       return [
         {
           ...state,
           typeahead: acc,
           typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
-          highlightedIndex: match ?? state.highlightedIndex,
+          highlightedValue: match === null ? state.highlightedValue : valueAt(state.items, match),
         },
         [],
       ]
@@ -272,7 +309,9 @@ export interface SelectItemParts {
     'data-scope': 'select'
     'data-part': 'item'
     'data-value': string
-    'data-index': string
+    /** The option's live position in the flat item list (reactive — reused rows
+     * never report a stale index). */
+    'data-index': Signal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -349,7 +388,10 @@ export interface SelectParts {
     'data-scope': 'select'
     'data-part': 'hidden-option'
   }
-  item: (value: string, index: number) => SelectItemParts
+  /** Build the parts for an option by VALUE. The optional `index` is accepted
+   * for call-site convenience only — it is NOT used for identity (highlight,
+   * selection and ids are all value-keyed), so a reused row is never stale. */
+  item: (value: string, index?: number) => SelectItemParts
   /** Parts for a labelled option group (`<optgroup>`-style section). Pass the
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
@@ -385,7 +427,7 @@ export function connect(
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
-  const itemId = (index: number): string => `${base}:item:${index}`
+  const itemId = (value: string): string => `${base}:item:${encodeURIComponent(value)}`
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const placeholder = opts.placeholder ?? ''
   const separator = opts.separator ?? ', '
@@ -454,7 +496,7 @@ export function connect(
       'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       'aria-activedescendant': state.map((s) =>
-        s.highlightedIndex === null ? undefined : itemId(s.highlightedIndex),
+        s.highlightedValue === null ? undefined : itemId(s.highlightedValue),
       ),
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'aria-required': state.map((s) => (s.required ? 'true' : undefined)),
@@ -501,23 +543,23 @@ export function connect(
       'data-scope': 'select',
       'data-part': 'hidden-option',
     }),
-    item: (value: string, index: number): SelectItemParts => ({
+    item: (value: string): SelectItemParts => ({
       item: {
         role: 'option',
-        id: itemId(index),
+        id: itemId(value),
         'aria-selected': state.map((s) => s.value.includes(value)),
         'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
         'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
-        'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
+        'data-highlighted': state.map((s) => (s.highlightedValue === value ? '' : undefined)),
         'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'select',
         'data-part': 'item',
         'data-value': value,
-        'data-index': String(index),
+        'data-index': state.map((s) => String(s.items.indexOf(value))),
         onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
         onPointerMove: tagSend(send, ['highlight'], () => {
-          if (state.peek()?.highlightedIndex === index) return
-          send({ type: 'highlight', index })
+          if (state.peek()?.highlightedValue === value) return
+          send({ type: 'highlight', value })
         }),
       },
     }),

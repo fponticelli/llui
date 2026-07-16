@@ -95,6 +95,9 @@ export interface RunScope {
   register(el: Element, rollback: () => void): symbol
   /** True while `token` is still the element's current run (not superseded). */
   isCurrent(el: Element, token: symbol): boolean
+  /** True when `el` has any in-flight run — i.e. a phase is mid-animation and
+   * about to be superseded. Lets a leave detect that it is interrupting an enter. */
+  isActive(el: Element): boolean
   /** Clear the run entry if `token` is still current (natural completion). */
   end(el: Element, token: symbol): void
 }
@@ -116,6 +119,9 @@ export function createRunScope(): RunScope {
     },
     isCurrent(el, token) {
       return runs.get(el)?.token === token
+    },
+    isActive(el) {
+      return runs.has(el)
     },
     end(el, token) {
       if (runs.get(el)?.token === token) runs.delete(el)

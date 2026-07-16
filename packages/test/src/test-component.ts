@@ -72,6 +72,13 @@ function pureReducerHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarn
   const lifecycle = new AbortController()
   const [initState, initEffects] = normalizeUpdateResult(def.init())
 
+  // While a `batch` is open, `windowEffects` points at `harness.effects` so every
+  // send in the burst APPENDS there — matching the top-level effects-window
+  // contract (and the withEffects harness). Between batches it is null and each
+  // send REPLACES `harness.effects` with just its own effects.
+  let batchDepth = 0
+  let windowEffects: E[] | null = null
+
   const harness: TestHarness<S, M, E> = {
     state: initState,
     effects: initEffects,
@@ -84,7 +91,11 @@ function pureReducerHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarn
       const [nextState, effects] = normalizeUpdateResult(def.update(prevState, msg))
       harness.history.push({ prevState, msg, nextState, effects })
       harness.state = nextState
-      harness.effects = effects
+      if (windowEffects) {
+        for (const e of effects) windowEffects.push(e)
+      } else {
+        harness.effects = effects
+      }
       harness.allEffects.push(...effects)
     },
 
@@ -93,12 +104,25 @@ function pureReducerHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarn
       return harness.state
     },
 
-    // No commit and no effect dispatch in pure mode, so `batch` is just the
-    // burst of sends run back-to-back — kept for API parity with the runtime
-    // handle and the withEffects harness.
+    // No commit and no effect dispatch in pure mode, but `batch` still opens ONE
+    // top-level effects window spanning the burst (resetting `harness.effects` at
+    // the outermost entry, appending each send's effects) so `harness.effects`
+    // after a batch means the same thing it does in withEffects mode — the whole
+    // burst's effects, not just the last send's.
     batch(fn: () => void) {
       if (lifecycle.signal.aborted) return
-      fn()
+      const outermost = batchDepth === 0
+      if (outermost) {
+        harness.effects = []
+        windowEffects = harness.effects
+      }
+      batchDepth++
+      try {
+        fn()
+      } finally {
+        batchDepth--
+        if (batchDepth === 0) windowEffects = null
+      }
     },
 
     dispose() {
@@ -232,9 +256,10 @@ function effectDrivenHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHar
     dispose() {
       if (lifecycle.signal.aborted) return
       lifecycle.abort()
-      // Run in reverse (LIFO) — the same teardown order the runtime uses.
-      for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-      cleanups.length = 0
+      // Run in REGISTRATION order (FIFO) — the exact teardown order the runtime
+      // uses (`for (const c of cleanups.splice(0)) c()` in @llui/dom
+      // component.ts). A LIFO order here would silently diverge from a real mount.
+      for (const c of cleanups.splice(0)) c()
     },
   }
 

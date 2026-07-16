@@ -82,6 +82,29 @@ describe('WebSocket transport', () => {
     expect(container.querySelector('.a2ui-text')?.textContent).toBe('hi')
   })
 
+  it('delivers a multi-envelope array frame as a single batched apply (fix 3)', () => {
+    handle = connectA2ui(container, webSocketTransport(socket))
+    let notifications = 0
+    handle.subscribe(() => {
+      notifications++
+    })
+    const baseline = notifications
+    socket.receive([
+      { version: 'v0.9', createSurface: { surfaceId: 's', catalogId: CATALOG } },
+      {
+        version: 'v0.9',
+        updateComponents: {
+          surfaceId: 's',
+          components: [{ id: 'root', component: 'Text', text: 'batched' }],
+        },
+      },
+      { version: 'v0.9', updateDataModel: { surfaceId: 's', path: '/', value: {} } },
+    ])
+    // The whole 3-envelope frame collapses into ONE reconcile (not three).
+    expect(notifications - baseline).toBe(1)
+    expect(container.querySelector('.a2ui-text')?.textContent).toBe('batched')
+  })
+
   it('unsubscribes from the socket on dispose', () => {
     handle = connectA2ui(container, webSocketTransport(socket))
     expect(socket.listenerCount).toBe(1)

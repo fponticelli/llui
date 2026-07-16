@@ -4,9 +4,11 @@ import { parseCombo, matchesCombo } from '../src/register.js'
 function kbd(
   key: string,
   mods: Partial<Record<'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey', boolean>> = {},
+  code?: string,
 ): KeyboardEvent {
   return {
     key,
+    code,
     metaKey: mods.metaKey ?? false,
     ctrlKey: mods.ctrlKey ?? false,
     shiftKey: mods.shiftKey ?? false,
@@ -74,6 +76,48 @@ describe('matchesCombo', () => {
   it('rejects a different key', () => {
     const combo = parseCombo('Mod-b')
     expect(matchesCombo(kbd('i', { metaKey: true }), combo, true)).toBe(false)
+  })
+
+  describe('physical-key (event.code) fallback for Shift/Alt chords', () => {
+    it('matches Mod-Shift-7 when Shift remaps the character to "&"', () => {
+      // Real keyboards: Shift+7 emits key "&" but code "Digit7". The digit chord
+      // must still fire — the shipped list shortcuts were dead without this.
+      const combo = parseCombo('Mod-Shift-7')
+      expect(matchesCombo(kbd('&', { metaKey: true, shiftKey: true }, 'Digit7'), combo, true)).toBe(
+        true,
+      )
+    })
+
+    it('matches Mod-Alt-1 when Alt remaps the digit (macOS)', () => {
+      const combo = parseCombo('Mod-Alt-1')
+      expect(matchesCombo(kbd('¡', { metaKey: true, altKey: true }, 'Digit1'), combo, true)).toBe(
+        true,
+      )
+    })
+
+    it('matches a letter chord via event.code', () => {
+      const combo = parseCombo('Mod-Shift-k')
+      expect(matchesCombo(kbd('K', { metaKey: true, shiftKey: true }, 'KeyK'), combo, true)).toBe(
+        true,
+      )
+    })
+
+    it('still matches when the character IS the declared key (no code needed)', () => {
+      const combo = parseCombo('Mod-Shift-7')
+      expect(matchesCombo(kbd('7', { metaKey: true, shiftKey: true }), combo, true)).toBe(true)
+    })
+
+    it('still enforces the exact-modifier check with the code fallback', () => {
+      const combo = parseCombo('Mod-Shift-7')
+      // Right physical key but missing Mod → no match.
+      expect(matchesCombo(kbd('&', { shiftKey: true }, 'Digit7'), combo, true)).toBe(false)
+    })
+
+    it('does not use the code fallback for a plain (no Shift/Alt) chord', () => {
+      const combo = parseCombo('Mod-7')
+      // No Shift/Alt declared, so a mismatched character is not rescued by code.
+      expect(matchesCombo(kbd('&', { metaKey: true }, 'Digit7'), combo, true)).toBe(false)
+    })
   })
 
   describe('explicit Ctrl- chords', () => {

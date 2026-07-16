@@ -8,6 +8,14 @@ export interface RouterEffect {
   type: '__router'
   action: 'push' | 'replace' | 'navigate' | 'back' | 'forward' | 'scroll'
   path?: string
+  /**
+   * The ORIGINAL route object the caller passed to `push`/`replace`/`navigate`.
+   * `path` is a lossy URL projection (only fields representable in the URL survive
+   * `href`), so guards (`beforeEnter`/`beforeLeave`) and the dispatched navigate
+   * message must run against this full object — not against `match(path)`, which
+   * would silently drop non-URL fields (e.g. a `draft` flag or a data payload).
+   */
+  route?: unknown
   x?: number
   y?: number
 }
@@ -208,12 +216,21 @@ export function connectRouter<R>(
     return newRoute
   }
 
+  // The route to run guards/dispatch against: the caller's ORIGINAL object (all
+  // fields intact) when the effect carries one, else the URL re-matched (for a
+  // hand-constructed effect with only `path`). Using `match(path)` unconditionally
+  // would drop any route field not representable in the URL before the guards ever
+  // saw it (finding: non-URL field drop).
+  function targetRoute(effect: RouterEffect): R {
+    return effect.route !== undefined ? (effect.route as R) : router.match(effect.path!)
+  }
+
   function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
     switch (effect.action) {
       case 'push': {
         // URL only. In hash mode, suppress the echo hashchange so the listener
         // does not ALSO dispatch a navigate (finding 2b).
-        const target = router.match(effect.path!)
+        const target = targetRoute(effect)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
@@ -227,7 +244,7 @@ export function connectRouter<R>(
       }
       case 'replace': {
         // URL only. Same echo suppression as push (finding 2b).
-        const target = router.match(effect.path!)
+        const target = targetRoute(effect)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
@@ -252,7 +269,7 @@ export function connectRouter<R>(
         //
         // In hash mode we dispatch here AND suppress the echo hashchange, so
         // the listener does not double-dispatch the same message (finding 2a).
-        const target = router.match(effect.path!)
+        const target = targetRoute(effect)
         const finalRoute = runGuards(target)
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
@@ -279,13 +296,13 @@ export function connectRouter<R>(
 
   return {
     push(route) {
-      return { type: '__router', action: 'push', path: router.href(route) }
+      return { type: '__router', action: 'push', path: router.href(route), route }
     },
     replace(route) {
-      return { type: '__router', action: 'replace', path: router.href(route) }
+      return { type: '__router', action: 'replace', path: router.href(route), route }
     },
     navigate(route) {
-      return { type: '__router', action: 'navigate', path: router.href(route) }
+      return { type: '__router', action: 'navigate', path: router.href(route), route }
     },
     back() {
       return { type: '__router', action: 'back' }
