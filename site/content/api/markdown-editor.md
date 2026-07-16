@@ -88,6 +88,19 @@ paste behaviour instead of silently swallowing the event.
 function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
+### `blockUnderlineFormat()`
+
+Swallow the underline text-format command. `registerRichText` wires Cmd+U to
+FORMAT_TEXT 'underline', but the GFM markdown dialect this editor serializes
+has no underline representation, so an applied underline would be silently
+stripped on save. Intercepting at CRITICAL priority (ahead of rich-text) keeps
+the WYSIWYG surface and the serialized dialect in lock-step: underline can be
+neither applied nor lost. Returns a disposer.
+
+```typescript
+function blockUnderlineFormat(editor: LexicalEditor): () => void
+```
+
 ### `buildTransformers()`
 
 Collect every plugin's transformers (de-duplicated by reference) and order
@@ -228,7 +241,7 @@ function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
 ### `mergeTheme()`
 
 Merge a consumer theme over the default. `text` is merged per-key so a
-consumer overriding (say) `strikethrough` keeps the default `underline`.
+consumer overriding (say) `strikethrough` keeps the other default entries.
 Always returns a FRESH theme (never the shared `defaultTheme` singleton):
 Lexical caches resolved class arrays by MUTATING the `text` object it is
 handed (`text.__lexicalClassNameCache`). Handing it a fresh copy keeps the
@@ -873,22 +886,20 @@ Markdown ↔ node transformers for the GFM superset.
 const GFM_TRANSFORMERS: readonly Transformer[]
 ```
 
+### `HIGHLIGHT_TRANSFORMER`
+
+The `==highlight==` transformer. NOT part of the default GFM set: `==..==` is
+not GFM, so exporting it produces non-standard markdown other renderers won't
+understand. Offered as an opt-in a consumer can add to a plugin's transformers.
+
+```typescript
+const HIGHLIGHT_TRANSFORMER: Transformer
+```
+
 ### `STRIKETHROUGH_CLASS`
 
 ```typescript
 const STRIKETHROUGH_CLASS
-```
-
-### `UNDERLINE_CLASS`
-
-```typescript
-const UNDERLINE_CLASS
-```
-
-### `UNDERLINE_STRIKETHROUGH_CLASS`
-
-```typescript
-const UNDERLINE_STRIKETHROUGH_CLASS
 ```
 
 <!-- auto-api:end -->

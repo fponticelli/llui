@@ -507,7 +507,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `groups`           | `ComboboxGroup[]` |
 | `disabledItems`    | `string[]`        |
 | `filteredItems`    | `string[]`        |
-| `highlightedIndex` | `number \| null`  |
+| `highlightedValue` | `string \| null`  |
 | `selectionMode`    | `SelectionMode`   |
 | `disabled`         | `boolean`         |
 | `allowCreate`      | `boolean`         |
@@ -1293,7 +1293,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `groups`             | `SelectGroup[]`  |
 | `disabledItems`      | `string[]`       |
 | `selectionMode`      | `SelectionMode`  |
-| `highlightedIndex`   | `number \| null` |
+| `highlightedValue`   | `string \| null` |
 | `disabled`           | `boolean`        |
 | `required`           | `boolean`        |
 | `typeahead`          | `string`         |

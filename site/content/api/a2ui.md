@@ -538,8 +538,16 @@ A bidirectional A2UI channel: deliver server→client envelopes, accept actions.
 
 ```typescript
 export interface A2uiTransport {
-  /** Subscribe to inbound server→client envelopes. Returns an unsubscribe. */
-  onEnvelope(handler: (envelope: ServerToClientEnvelope) => void): () => void
+  /**
+   * Subscribe to inbound server→client envelopes. Returns an unsubscribe.
+   *
+   * A single delivery may carry ONE envelope or a whole array of them (a frame
+   * that batched several). Arrays are handed through intact so the consumer can
+   * apply them as one reconcile — never fanned out into per-envelope calls.
+   */
+  onEnvelope(
+    handler: (envelope: ServerToClientEnvelope | readonly ServerToClientEnvelope[]) => void,
+  ): () => void
   /** Send a client→server action to the channel. */
   sendAction(event: A2uiActionEvent): void
 }
@@ -721,6 +729,14 @@ export interface RenderScope {
    * write via {@link RenderContext.setUi}.
    */
   readonly uiState: Signal<JsonObject>
+  /**
+   * The surface's component map, as a reactive signal. Threaded through every
+   * scope (like {@link uiState}) so {@link RenderContext.renderById} can subscribe
+   * to a per-id slice and rebuild ONLY the node whose definition changed — a
+   * single `updateComponents` never disposes the whole surface. Templates carry
+   * it unchanged (component definitions are surface-global, not item-scoped).
+   */
+  readonly components: Signal<Readonly<Record<ComponentId, ComponentNode>>>
   /**
    * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
    * used for two-way write-back. Absolute pointers pass through unchanged.

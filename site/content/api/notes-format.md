@@ -325,6 +325,19 @@ export interface DirtyTraceEntry {
 }
 ```
 
+### `ListNotesError`
+
+A note file that matched the canonical filename but could not be parsed
+(corrupt frontmatter, torn write, hand-edited). Surfaced rather than
+silently dropped so a broken note is visible instead of vanishing.
+
+```typescript
+export interface ListNotesError {
+  filename: string
+  message: string
+}
+```
+
 ### `ListNotesQuery`
 
 ```typescript
@@ -344,6 +357,9 @@ export interface ListNotesResponse {
   sessionId: string
   notes: NoteSummary[]
   total: number
+  /** Present (and non-empty) only when one or more note files failed to
+   *  parse. Absent on the clean path so existing consumers are unaffected. */
+  errors?: ListNotesError[]
 }
 ```
 

@@ -444,6 +444,9 @@ export interface ListNotesResponse {
   sessionId: string
   notes: NoteSummary[]
   total: number
+  /** Present (and non-empty) only when one or more note files failed to
+   *  parse. Absent on the clean path so existing consumers are unaffected. */
+  errors?: ListNotesError[]
 }
 ```
 

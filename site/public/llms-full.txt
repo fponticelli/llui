@@ -6465,6 +6465,9 @@ export interface ListNotesResponse {
     sessionId: string;
     notes: NoteSummary[];
     total: number;
+    /** Present (and non-empty) only when one or more note files failed to
+     *  parse. Absent on the clean path so existing consumers are unaffected. */
+    errors?: ListNotesError[];
 }
 ```
 
@@ -6866,9 +6869,10 @@ The client build is expected to skip this path entirely — Vite passes
 this function.
 Every export with a statically-known name is stubbed uniformly:
   - `export const/let NAME = …`, `export function NAME()`, `export class
-    NAME` — each becomes `export const NAME = __clientOnlyStub('NAME')`.
-    (A stubbed function/class is a value, not a callable/constructable —
-    SSR must not invoke it; the client build ships the real one.)
+    NAME`, `export enum NAME` — each becomes `export const NAME =
+    __clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
+    a callable/constructable — SSR must not invoke it; the client build ships
+    the real one.)
   - `export { a, b }` and `export { a as b } from './other.js'` — the
     names are known, so each is stubbed (the `from './other.js'` source
     module is DROPPED, never pulled into the SSR graph).
@@ -7093,12 +7097,18 @@ own abort listener clears the mount's pending http / debounce / interval /
 websocket resources. We must NOT abort `api.signal` ourselves (it is the
 runtime's, shared with everything else on the mount).
 FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
-caller), the adapter owns one AbortController per mount and the returned cleanup
-aborts it. It is (re)created lazily — never at factory-call time, since
-`asOnEffect` typically runs at module top-level where constructing an
-AbortController throws on Cloudflare Workers — and recreated once aborted so a
-re-mount of the same definition never inherits a dead signal. The cleanup is
-memoized per generation so it always targets the controller live at its dispatch.
+caller), the adapter owns one AbortController PER MOUNT, keyed off the mount's
+`send` identity in a `WeakMap`. The runtime passes ONE stable `send` per mount
+for every effect it emits, so all of a mount's effects share that mount's
+controller — and two CONCURRENT mounts of the same definition get DISTINCT
+controllers (distinct `send`s). That isolation is the point: disposing mount A
+must never abort mount B's in-flight http. Controllers are created lazily —
+never at factory-call time, since `asOnEffect` typically runs at module
+top-level where constructing an AbortController throws on Cloudflare Workers —
+and recreated if a stale (aborted) one is found under a reused `send`, so a
+re-mount never inherits a dead signal. The returned cleanup captures the
+controller live at ITS dispatch, so a late unmount of one mount never tears
+down a later mount's effects.
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
 
 ```typescript
@@ -7375,6 +7385,7 @@ Standard API error type produced by the http() effect.
 ```typescript
 export type ApiError =
   | { kind: 'network'; message: string }
+  | { kind: 'parse'; message: string }
   | { kind: 'timeout' }
   | { kind: 'notfound' }
   | { kind: 'unauthorized' }
@@ -7666,12 +7677,28 @@ a step that never calls `send` would otherwise stall the chain forever.
 basis (only `cancel` needs this: bare `cancel` completes without dispatching,
 but `cancel(token, inner)` may dispatch via its inner effect). Returning
 `undefined`/`void` falls back to the static `completesWithoutDispatch`.
+`managesCompletion` (default false) marks a COMPOSITE runner that drives the
+completion signal itself: instead of `sequence`'s "first bubbled message means
+done" leaf heuristic, `dispatch` hands such a runner the `onComplete` callback
+(its 5th `run` argument) and the runner fires it explicitly. Only `sequence`
+needs this — a nested `sequence` dispatches several messages (one per step), so
+first-message completion would let an outer sequence fast-forward past a still
+running inner one. (`race`/`retry`/`debounce`/`cancel`-with-inner each dispatch
+exactly one terminal message, so the leaf first-message rule is already correct
+for them.)
 
 ```typescript
 export interface Runner {
   readonly types: readonly string[]
   readonly completesWithoutDispatch: boolean
-  run(effect: { type: string }, send: InternalSend, signal: AbortSignal, deps: Deps): boolean | void
+  readonly managesCompletion?: boolean
+  run(
+    effect: { type: string },
+    send: InternalSend,
+    signal: AbortSignal,
+    deps: Deps,
+    onComplete?: () => void,
+  ): boolean | void
 }
 ```
 
@@ -8312,7 +8339,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `groups` | `ComboboxGroup[]` |
 | `disabledItems` | `string[]` |
 | `filteredItems` | `string[]` |
-| `highlightedIndex` | `number \| null` |
+| `highlightedValue` | `string \| null` |
 | `selectionMode` | `SelectionMode` |
 | `disabled` | `boolean` |
 | `allowCreate` | `boolean` |
@@ -9098,7 +9125,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `groups` | `SelectGroup[]` |
 | `disabledItems` | `string[]` |
 | `selectionMode` | `SelectionMode` |
-| `highlightedIndex` | `number \| null` |
+| `highlightedValue` | `string \| null` |
 | `disabled` | `boolean` |
 | `required` | `boolean` |
 | `typeahead` | `string` |
@@ -12395,6 +12422,25 @@ older clients still see something sensible.
 function okResult(body: unknown): CallToolResult
 ```
 
+### `parseClientFrame()`
+
+Parse + validate an inbound ClientFrame. Returns the typed frame on
+success or `null` when the value isn't a well-formed frame — callers
+drop `null` rather than dispatching an unchecked object.
+
+```typescript
+function parseClientFrame(value: unknown): ClientFrame | null
+```
+
+### `parseServerFrame()`
+
+Parse + validate an inbound ServerFrame. Returns the typed frame on
+success or `null` when the value isn't a well-formed frame.
+
+```typescript
+function parseServerFrame(value: unknown): ServerFrame | null
+```
+
 ### `routeToAgentDO()`
 
 Route an incoming Worker `fetch` request to the Durable Object
@@ -12537,7 +12583,7 @@ export type AcceptResult =
 ### `ActiveFrame`
 
 ```typescript
-export type ActiveFrame = { t: 'active' }
+export type ActiveFrame = z.infer<typeof activeFrameSchema>
 ```
 
 ### `AgentClient`
@@ -12743,7 +12789,9 @@ export type AgentSession = {
   tid: string
   label: string
   status: 'active' | 'pending-resume' | 'revoked'
+  /** Record-creation time, MILLISECONDS-since-epoch. */
   createdAt: number
+  /** Last request seen, MILLISECONDS-since-epoch. */
   lastSeenAt: number
 }
 ```
@@ -12795,37 +12843,19 @@ export type AuditSink = {
 ### `ClientFrame`
 
 ```typescript
-export type ClientFrame =
-  | HelloFrame
-  | RpcReplyFrame
-  | RpcErrorFrame
-  | ConfirmResolvedFrame
-  | StateUpdateFrame
-  | LogAppendFrame
+export type ClientFrame = z.infer<typeof clientFrameSchema>
 ```
 
 ### `ConfirmExpireFrame`
 
-Server → browser: abandon a pending confirmation. Sent when the server
-has told the agent a confirm is terminally `rejected` (user-cancelled)
-so a late user Approve on that same `confirmId` can no longer fire a
-dispatch the agent was told would never run. The browser marks the
-matching pending confirm entry rejected (idempotent — no-op if already
-resolved). Distinct from `revoked` (which kills the whole session).
-
 ```typescript
-export type ConfirmExpireFrame = { t: 'confirm-expire'; confirmId: string }
+export type ConfirmExpireFrame = z.infer<typeof confirmExpireFrameSchema>
 ```
 
 ### `ConfirmResolvedFrame`
 
 ```typescript
-export type ConfirmResolvedFrame = {
-  t: 'confirm-resolved'
-  confirmId: string
-  outcome: 'confirmed' | 'user-cancelled'
-  stateAfter?: unknown
-}
+export type ConfirmResolvedFrame = z.infer<typeof confirmResolvedFrameSchema>
 ```
 
 ### `CoreOptions`
@@ -13059,26 +13089,16 @@ belongs to their request.
 export type FrameSubscriber = (frame: ClientFrame) => boolean
 ```
 
+### `HelloAckFrame`
+
+```typescript
+export type HelloAckFrame = z.infer<typeof helloAckFrameSchema>
+```
+
 ### `HelloFrame`
 
 ```typescript
-export type HelloFrame = {
-  t: 'hello'
-  appName: string
-  appVersion: string
-  msgSchema: Record<string, MessageSchemaEntry>
-  stateSchema: object
-  affordancesSample: object[]
-  docs: AgentDocs | null
-  schemaHash: string
-  /**
-   * LAP wire-protocol version the browser runtime speaks (see
-   * {@link LAP_VERSION}). Optional so an older client that predates
-   * versioning (which omits it) is still routable — the server treats a
-   * missing value as "unknown/legacy" and logs it.
-   */
-  lapVersion?: number
-}
+export type HelloFrame = z.infer<typeof helloFrameSchema>
 ```
 
 ### `IdentityResolver`
@@ -13561,7 +13581,7 @@ export type LapWaitResponse =
 ### `LogAppendFrame`
 
 ```typescript
-export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
+export type LogAppendFrame = z.infer<typeof logAppendFrameSchema>
 ```
 
 ### `LogEntry`
@@ -13610,16 +13630,8 @@ export type LogKind =
 
 ### `LogPushFrame`
 
-Server-pushed log entry. Used today by the `narrate` LAP method:
-the agent calls `/lap/v1/narrate { text }`, the server synthesizes
-a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
-runtime so the in-app activity feed renders the narration in real
-time. Distinct from the browser-emitted `log-append` frame:
-`log-append` is browser → server (rpc-derived audit), `log-push`
-is server → browser (server-originated entries, no echo).
-
 ```typescript
-export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
+export type LogPushFrame = z.infer<typeof logPushFrameSchema>
 ```
 
 ### `McpToolDescriptor`
@@ -13702,6 +13714,12 @@ export type MintResponse = {
   tid: string
   wsUrl: string
   lapUrl: string
+  /**
+   * Hard-expiry as MILLISECONDS-since-epoch — the same unit as the
+   * server-side `TokenRecord.expiresAt` and `createdAt`/`lastSeenAt`.
+   * (LAP v1 floored this to seconds; v2 keeps milliseconds end-to-end so
+   * a client comparing it to `Date.now()` needs no ×1000 fixup.)
+   */
   expiresAt: number
   /** LAP wire-protocol version the server speaks (see {@link LAP_VERSION}). */
   lapVersion?: number
@@ -13731,8 +13749,7 @@ export type ResumeClaimRequest = { tid: string }
 
 The rotated bearer plus everything the client needs to persist a full
 session blob (mirrors `MintResponse`), so a resume survives a
-subsequent refresh the same way a fresh mint does. `expiresAt` is in
-seconds-since-epoch (same units as `MintResponse.expiresAt`).
+subsequent refresh the same way a fresh mint does.
 
 ```typescript
 export type ResumeClaimResponse = {
@@ -13740,6 +13757,12 @@ export type ResumeClaimResponse = {
   tid: string
   wsUrl: string
   lapUrl: string
+  /**
+   * Hard-expiry as MILLISECONDS-since-epoch, matching
+   * `MintResponse.expiresAt` and the server-side `TokenRecord` so the
+   * client's session storage compares units consistently. (Seconds in
+   * LAP v1; milliseconds from v2.)
+   */
   expiresAt: number
 }
 ```
@@ -13759,7 +13782,7 @@ export type ResumeListResponse = { sessions: AgentSession[] }
 ### `RevokedFrame`
 
 ```typescript
-export type RevokedFrame = { t: 'revoked' }
+export type RevokedFrame = z.infer<typeof revokedFrameSchema>
 ```
 
 ### `RevokeRequest`
@@ -13786,13 +13809,13 @@ export type RpcError = {
 ### `RpcErrorFrame`
 
 ```typescript
-export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
+export type RpcErrorFrame = z.infer<typeof rpcErrorFrameSchema>
 ```
 
 ### `RpcFrame`
 
 ```typescript
-export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
+export type RpcFrame = z.infer<typeof rpcFrameSchema>
 ```
 
 ### `RpcOptions`
@@ -13804,20 +13827,13 @@ export type RpcOptions = { timeoutMs?: number }
 ### `RpcReplyFrame`
 
 ```typescript
-export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
+export type RpcReplyFrame = z.infer<typeof rpcReplyFrameSchema>
 ```
 
 ### `ServerFrame`
 
 ```typescript
-export type ServerFrame =
-  | RpcFrame
-  | RevokedFrame
-  | ActiveFrame
-  | LogPushFrame
-  | ConfirmExpireFrame
-  | WatchFrame
-  | UnwatchFrame
+export type ServerFrame = z.infer<typeof serverFrameSchema>
 ```
 
 ### `ServerOptions`
@@ -13924,14 +13940,8 @@ export type StateDiff = JsonPatchOp[]
 
 ### `StateUpdateFrame`
 
-Browser → server: a watched sub-path changed. `id` correlates to the
-server `watch` frame that armed it (a specific `/wait` long-poll);
-the browser only emits these for currently-armed watches, so idle
-sessions cost nothing per commit. `path` echoes the watched pointer
-for debugging; `stateAfter` is the full redacted+encoded snapshot.
-
 ```typescript
-export type StateUpdateFrame = { t: 'state-update'; id?: string; path: string; stateAfter: unknown }
+export type StateUpdateFrame = z.infer<typeof stateUpdateFrameSchema>
 ```
 
 ### `TokenRecord`
@@ -13949,6 +13959,7 @@ export type TokenRecord = {
   tokenHash: string
   uid: string | null
   status: TokenStatus
+  /** Record-creation time, MILLISECONDS-since-epoch. */
   createdAt: number
   /**
    * Hard-expiry in milliseconds since epoch. The mint endpoint sets
@@ -13959,7 +13970,12 @@ export type TokenRecord = {
    * record is the single source of truth.
    */
   expiresAt: number
+  /** Last request seen, MILLISECONDS-since-epoch. Backs the sliding TTL. */
   lastSeenAt: number
+  /**
+   * When the `pending-resume` grace window ends, MILLISECONDS-since-epoch,
+   * or `null` when the record is not pending-resume.
+   */
   pendingResumeUntil: number | null
   origin: string
   label: string | null
@@ -13979,10 +13995,8 @@ export type TokenStatus =
 
 ### `UnwatchFrame`
 
-Server → browser: disarm a previously-armed watch (`id`).
-
 ```typescript
-export type UnwatchFrame = { t: 'unwatch'; id: string }
+export type UnwatchFrame = z.infer<typeof unwatchFrameSchema>
 ```
 
 ### `VerifyResult`
@@ -14000,15 +14014,8 @@ export type VerifyResult =
 
 ### `WatchFrame`
 
-Server → browser: arm a state watch. Sent when a `/wait` long-poll
-begins. The browser resolves `path` (a JSON pointer; `undefined` /
-`''` watches the whole state) against each commit and emits a
-`state-update` carrying this `id` only when the resolved value
-changes. This makes the per-commit broadcast subscription-driven —
-an idle session with no armed watch ships nothing.
-
 ```typescript
-export type WatchFrame = { t: 'watch'; id: string; path?: string }
+export type WatchFrame = z.infer<typeof watchFrameSchema>
 ```
 
 ## Interfaces
@@ -14370,6 +14377,12 @@ class InMemoryTokenStore implements TokenStore {
 
 ## Constants
 
+### `clientFrameSchema`
+
+```typescript
+const clientFrameSchema
+```
+
 ### `FORWARDED_TOOL_DESCRIPTORS`
 
 ```typescript
@@ -14381,12 +14394,36 @@ const FORWARDED_TOOL_DESCRIPTORS: McpForwardedToolDescriptor[]
 LAP wire-protocol version. Bumped on a breaking change to frame
 shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
 and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
-ends can detect a mismatch (see the version check in the pairing
-registry, which logs — rather than hard-fails — an unknown version so
-a newer client against an older server degrades loudly, not silently).
+ends can detect a mismatch.
+v2: every wire timestamp (`MintResponse.expiresAt`,
+`ResumeClaimResponse.expiresAt`) is MILLISECONDS-since-epoch, matching
+the server-side `TokenRecord` (`createdAt` / `lastSeenAt` / `expiresAt`).
+v1 floored `expiresAt` to seconds, which silently disagreed with every
+sibling timestamp; a v1 client's persisted-session expiry check would
+be off by 1000×. Frames now carry one unit end-to-end.
 
 ```typescript
 const LAP_VERSION
+```
+
+### `MIN_SUPPORTED_CLIENT_LAP_VERSION`
+
+The oldest LAP wire version this server can still speak to. A client
+(`hello.lapVersion`) below this is refused: the version skew is not a
+loggable warning but a hard incompatibility, so the pairing is
+terminated with an explicit `revoked` frame rather than left to fail
+mysteriously on the first mismatched-unit timestamp. A client that
+predates versioning entirely (omits `lapVersion`) is treated as legacy
+and allowed through (there is nothing older to be incompatible with).
+
+```typescript
+const MIN_SUPPORTED_CLIENT_LAP_VERSION
+```
+
+### `serverFrameSchema`
+
+```typescript
+const serverFrameSchema
 ```
 
 ### `WIRE_TAG`
@@ -14716,9 +14753,12 @@ function defaultSecretRedactor(options: SecretRedactorOptions = {}): (body: Note
 ### `devServerStore()`
 
 Build the dev-server-backed store rooted at `origin` (e.g. `location.origin`).
+When a `taskCapabilityToken` is supplied (injected by `@llui/vite-plugin` when
+the attention router is enabled), it's sent as the `x-llui-task-capability`
+header so the middleware can trust an in-HUD task submission.
 
 ```typescript
-function devServerStore(origin: string): NotesStore
+function devServerStore(origin: string, taskCapabilityToken?: string): NotesStore
 ```
 
 ### `exportBundle()`
@@ -14992,6 +15032,14 @@ export interface MountAnnotateOptions {
   subscribeEvents?: boolean
   rehydrate?: boolean
   solveEnabled?: boolean
+  /** Out-of-band capability token injected by `@llui/vite-plugin` (only when the
+   *  attention router is enabled). The HUD echoes it as the `x-llui-task-capability`
+   *  header on note POSTs so the dev-server middleware can distinguish a real in-HUD
+   *  task submission (which may spawn a CLI agent) from a forged same-origin page
+   *  POST. Without it, task submissions are created but never marked trusted, so
+   *  they never spawn. Ignored when a custom `store` is supplied (the caller owns
+   *  its transport/auth). */
+  taskCapabilityToken?: string
   autoCaptureOnError?: boolean
   repro?: boolean
   elementPick?: boolean
@@ -15548,6 +15596,19 @@ export interface DirtyTraceEntry {
 }
 ```
 
+### `ListNotesError`
+
+A note file that matched the canonical filename but could not be parsed
+ (corrupt frontmatter, torn write, hand-edited). Surfaced rather than
+ silently dropped so a broken note is visible instead of vanishing.
+
+```typescript
+export interface ListNotesError {
+  filename: string
+  message: string
+}
+```
+
 ### `ListNotesQuery`
 
 ```typescript
@@ -15567,6 +15628,9 @@ export interface ListNotesResponse {
   sessionId: string
   notes: NoteSummary[]
   total: number
+  /** Present (and non-empty) only when one or more note files failed to
+   *  parse. Absent on the clean path so existing consumers are unaffected. */
+  errors?: ListNotesError[]
 }
 ```
 
@@ -16377,8 +16441,16 @@ A bidirectional A2UI channel: deliver server→client envelopes, accept actions.
 
 ```typescript
 export interface A2uiTransport {
-  /** Subscribe to inbound server→client envelopes. Returns an unsubscribe. */
-  onEnvelope(handler: (envelope: ServerToClientEnvelope) => void): () => void
+  /**
+   * Subscribe to inbound server→client envelopes. Returns an unsubscribe.
+   *
+   * A single delivery may carry ONE envelope or a whole array of them (a frame
+   * that batched several). Arrays are handed through intact so the consumer can
+   * apply them as one reconcile — never fanned out into per-envelope calls.
+   */
+  onEnvelope(
+    handler: (envelope: ServerToClientEnvelope | readonly ServerToClientEnvelope[]) => void,
+  ): () => void
   /** Send a client→server action to the channel. */
   sendAction(event: A2uiActionEvent): void
 }
@@ -16560,6 +16632,14 @@ export interface RenderScope {
    * write via {@link RenderContext.setUi}.
    */
   readonly uiState: Signal<JsonObject>
+  /**
+   * The surface's component map, as a reactive signal. Threaded through every
+   * scope (like {@link uiState}) so {@link RenderContext.renderById} can subscribe
+   * to a per-id slice and rebuild ONLY the node whose definition changed — a
+   * single `updateComponents` never disposes the whole surface. Templates carry
+   * it unchanged (component definitions are surface-global, not item-scoped).
+   */
+  readonly components: Signal<Readonly<Record<ComponentId, ComponentNode>>>
   /**
    * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
    * used for two-way write-back. Absolute pointers pass through unchanged.
@@ -17149,6 +17229,19 @@ paste behaviour instead of silently swallowing the event.
 function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
+### `blockUnderlineFormat()`
+
+Swallow the underline text-format command. `registerRichText` wires Cmd+U to
+FORMAT_TEXT 'underline', but the GFM markdown dialect this editor serializes
+has no underline representation, so an applied underline would be silently
+stripped on save. Intercepting at CRITICAL priority (ahead of rich-text) keeps
+the WYSIWYG surface and the serialized dialect in lock-step: underline can be
+neither applied nor lost. Returns a disposer.
+
+```typescript
+function blockUnderlineFormat(editor: LexicalEditor): () => void
+```
+
 ### `buildTransformers()`
 
 Collect every plugin's transformers (de-duplicated by reference) and order
@@ -17280,7 +17373,7 @@ function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
 ### `mergeTheme()`
 
 Merge a consumer theme over the default. `text` is merged per-key so a
-consumer overriding (say) `strikethrough` keeps the default `underline`.
+consumer overriding (say) `strikethrough` keeps the other default entries.
 Always returns a FRESH theme (never the shared `defaultTheme` singleton):
 Lexical caches resolved class arrays by MUTATING the `text` object it is
 handed (`text.__lexicalClassNameCache`). Handing it a fresh copy keeps the
@@ -17925,22 +18018,20 @@ Markdown ↔ node transformers for the GFM superset.
 const GFM_TRANSFORMERS: readonly Transformer[]
 ```
 
+### `HIGHLIGHT_TRANSFORMER`
+
+The `==highlight==` transformer. NOT part of the default GFM set: `==..==` is
+not GFM, so exporting it produces non-standard markdown other renderers won't
+understand. Offered as an opt-in a consumer can add to a plugin's transformers.
+
+```typescript
+const HIGHLIGHT_TRANSFORMER: Transformer
+```
+
 ### `STRIKETHROUGH_CLASS`
 
 ```typescript
 const STRIKETHROUGH_CLASS
-```
-
-### `UNDERLINE_CLASS`
-
-```typescript
-const UNDERLINE_CLASS
-```
-
-### `UNDERLINE_STRIKETHROUGH_CLASS`
-
-```typescript
-const UNDERLINE_STRIKETHROUGH_CLASS
 ```
 
 

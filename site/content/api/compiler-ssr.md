@@ -37,9 +37,10 @@ this function.
 Every export with a statically-known name is stubbed uniformly:
 
 - `export const/let NAME = …`, `export function NAME()`, `export class
-NAME` — each becomes `export const NAME = __clientOnlyStub('NAME')`.
-  (A stubbed function/class is a value, not a callable/constructable —
-  SSR must not invoke it; the client build ships the real one.)
+NAME`, `export enum NAME` — each becomes `export const NAME =
+__clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
+  a callable/constructable — SSR must not invoke it; the client build ships
+  the real one.)
 - `export { a, b }` and `export { a as b } from './other.js'` — the
   names are known, so each is stubbed (the `from './other.js'` source
   module is DROPPED, never pulled into the SSR graph).

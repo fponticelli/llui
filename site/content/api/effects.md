@@ -200,12 +200,18 @@ own abort listener clears the mount's pending http / debounce / interval /
 websocket resources. We must NOT abort `api.signal` ourselves (it is the
 runtime's, shared with everything else on the mount).
 FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
-caller), the adapter owns one AbortController per mount and the returned cleanup
-aborts it. It is (re)created lazily — never at factory-call time, since
-`asOnEffect` typically runs at module top-level where constructing an
-AbortController throws on Cloudflare Workers — and recreated once aborted so a
-re-mount of the same definition never inherits a dead signal. The cleanup is
-memoized per generation so it always targets the controller live at its dispatch.
+caller), the adapter owns one AbortController PER MOUNT, keyed off the mount's
+`send` identity in a `WeakMap`. The runtime passes ONE stable `send` per mount
+for every effect it emits, so all of a mount's effects share that mount's
+controller — and two CONCURRENT mounts of the same definition get DISTINCT
+controllers (distinct `send`s). That isolation is the point: disposing mount A
+must never abort mount B's in-flight http. Controllers are created lazily —
+never at factory-call time, since `asOnEffect` typically runs at module
+top-level where constructing an AbortController throws on Cloudflare Workers —
+and recreated if a stale (aborted) one is found under a reused `send`, so a
+re-mount never inherits a dead signal. The returned cleanup captures the
+controller live at ITS dispatch, so a late unmount of one mount never tears
+down a later mount's effects.
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
 
 ```typescript
@@ -511,6 +517,7 @@ Standard API error type produced by the http() effect.
 ```typescript
 export type ApiError =
   | { kind: 'network'; message: string }
+  | { kind: 'parse'; message: string }
   | { kind: 'timeout' }
   | { kind: 'notfound' }
   | { kind: 'unauthorized' }
@@ -803,12 +810,28 @@ a step that never calls `send` would otherwise stall the chain forever.
 basis (only `cancel` needs this: bare `cancel` completes without dispatching,
 but `cancel(token, inner)` may dispatch via its inner effect). Returning
 `undefined`/`void` falls back to the static `completesWithoutDispatch`.
+`managesCompletion` (default false) marks a COMPOSITE runner that drives the
+completion signal itself: instead of `sequence`'s "first bubbled message means
+done" leaf heuristic, `dispatch` hands such a runner the `onComplete` callback
+(its 5th `run` argument) and the runner fires it explicitly. Only `sequence`
+needs this — a nested `sequence` dispatches several messages (one per step), so
+first-message completion would let an outer sequence fast-forward past a still
+running inner one. (`race`/`retry`/`debounce`/`cancel`-with-inner each dispatch
+exactly one terminal message, so the leaf first-message rule is already correct
+for them.)
 
 ```typescript
 export interface Runner {
   readonly types: readonly string[]
   readonly completesWithoutDispatch: boolean
-  run(effect: { type: string }, send: InternalSend, signal: AbortSignal, deps: Deps): boolean | void
+  readonly managesCompletion?: boolean
+  run(
+    effect: { type: string },
+    send: InternalSend,
+    signal: AbortSignal,
+    deps: Deps,
+    onComplete?: () => void,
+  ): boolean | void
 }
 ```
 

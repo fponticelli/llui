@@ -113,9 +113,12 @@ function defaultSecretRedactor(options: SecretRedactorOptions = {}): (body: Note
 ### `devServerStore()`
 
 Build the dev-server-backed store rooted at `origin` (e.g. `location.origin`).
+When a `taskCapabilityToken` is supplied (injected by `@llui/vite-plugin` when
+the attention router is enabled), it's sent as the `x-llui-task-capability`
+header so the middleware can trust an in-HUD task submission.
 
 ```typescript
-function devServerStore(origin: string): NotesStore
+function devServerStore(origin: string, taskCapabilityToken?: string): NotesStore
 ```
 
 ### `exportBundle()`
@@ -392,6 +395,14 @@ export interface MountAnnotateOptions {
   subscribeEvents?: boolean
   rehydrate?: boolean
   solveEnabled?: boolean
+  /** Out-of-band capability token injected by `@llui/vite-plugin` (only when the
+   *  attention router is enabled). The HUD echoes it as the `x-llui-task-capability`
+   *  header on note POSTs so the dev-server middleware can distinguish a real in-HUD
+   *  task submission (which may spawn a CLI agent) from a forged same-origin page
+   *  POST. Without it, task submissions are created but never marked trusted, so
+   *  they never spawn. Ignored when a custom `store` is supplied (the caller owns
+   *  its transport/auth). */
+  taskCapabilityToken?: string
   autoCaptureOnError?: boolean
   repro?: boolean
   elementPick?: boolean
