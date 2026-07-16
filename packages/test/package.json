@@ -1,6 +1,6 @@
 {
   "name": "@llui/test",
-  "version": "0.11.9",
+  "version": "0.12.0",
   "type": "module",
   "sideEffects": false,
   "exports": {

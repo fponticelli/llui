@@ -11,6 +11,116 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-16 — @llui/dom@0.12.0 (audit remediation round 2 — correctness/security + release-pipeline hardening)
+
+**Released:** `@llui/dom@0.12.0`, `@llui/vite-plugin@0.12.0`, `@llui/test@0.12.0`, `@llui/router@0.11.0`, `@llui/transitions@0.11.0`, `@llui/components@0.13.0`, `@llui/vike@0.12.0`; `@llui/compiler@0.12.0`, `@llui/compiler-ssr@0.12.0`, `@llui/effects@0.2.0`, `@llui/mcp@0.14.0`, `@llui/agent@0.12.0`, `llui-agent@0.11.0`; `@llui/markdown@0.12.0`, `@llui/lexical@0.3.0`, `@llui/lexical-collab@0.3.0`, `@llui/markdown-editor@0.3.0`, `@llui/a2ui@0.2.0`, `@llui/devmode-annotate@0.3.0`, `@llui/notes-format@0.2.0`, `@llui/security@0.2.0`
+
+A second whole-repository audit and remediation, applied test-first. Verified correctness bugs fixed across the signal runtime, compiler, components, effects, router, the agent/MCP tooling, and the rich-text stack; security hardening of the dev-server task-spawn and untrusted-URL surfaces; and release-pipeline fixes (docs no longer deploy from a red `main`; tarballs are cleaned of stale build artifacts and the dormant `__llui_deps.json` manifest). All 21 packages are minor-bumped because a `publish.sh` change alters every published tarball.
+
+### Breaking
+
+- **`@llui/agent@0.12.0`** — the LAP wire protocol is now **version 2**. Frames in both directions are zod-validated and invalid frames are rejected; `expiresAt` is **milliseconds** on the wire (was seconds); a version-skewed client is terminated with an explicit `hello-ack` reason instead of silently proceeding. A consumer app's shipped browser client and its server must be on matching LAP versions.
+- **`@llui/components@0.13.0`** — `select` and `combobox` state is now **value-identity based**: `highlightedIndex` → `highlightedValue: string | null`, and the `highlight` message carries `value` (not `index`). This fixes wrong-option highlight/selection under the documented value-keyed `each` + `index.peek()` list pattern (reused rows no longer carry a stale index).
+- **`@llui/router@0.11.0`** — `createRouter` now **throws** when no `fallback` is configured and the first route has path params (it previously fabricated a wrong route with `'1'`-filled params for unmatched URLs). `navigate`/`push`/`replace` now carry the full route object through `beforeEnter`/`beforeLeave` guards and dispatch (non-URL fields are no longer dropped by an `href → match` round-trip).
+- **`@llui/effects@0.2.0`** — `ApiError` gained a `{ kind: 'parse' }` member: a 2xx response whose body fails to parse is no longer reported as `{ kind: 'network' }`. `defaultRetryOn` does not retry `parse`. An exhaustive `switch (error.kind)` needs a new case.
+- **`@llui/markdown-editor@0.3.0`** — **underline** was removed from the editor (Lexical text-format transformers require a symmetric delimiter, so it could never round-trip to Markdown and was silently dropped on every serialize), and `HIGHLIGHT` (`==…==`, non-GFM) was removed from the default transformer set (available as an opt-in `HIGHLIGHT_TRANSFORMER`). The WYSIWYG surface and the serialization dialect now coincide.
+
+### Migration
+
+- **agent / LAP v2:** redeploy the app's browser client (`@llui/agent` client runtime) and its server together — a v1 client paired with a v2 server (or vice versa) is now rejected rather than half-understood. If you read `expiresAt` off a mint/resume response, it is now milliseconds since epoch.
+- **components select/combobox:** replace reads of `state.highlightedIndex` with `state.highlightedValue`, and change `send({ type: 'highlight', index })` to `send({ type: 'highlight', value })`. Derive a highlighted option by value, not by index.
+- **router:** pass an explicit `fallback` to `createRouter` when any route has params. If you relied on `navigate` dropping extra route fields, note they now flow through to guards/dispatch.
+- **effects:** if you `switch` on `error.kind`, add a `parse` case; if you want to retry parse failures, pass an explicit `retryOn`.
+- **markdown-editor:** if you used underline, it is gone (it never survived a round-trip); re-enable `==highlight==` by registering `HIGHLIGHT_TRANSFORMER` if you want the non-standard syntax.
+
+### `@llui/dom@0.12.0`
+
+- **Fixed** `provide()` now reaches everything a structural primitive builds — `show`/`branch`/`each`/`virtualEach`/`lazy` arms and rows. Because arms build lazily (after `provide`'s synchronous `render()` returned), the shared contexts map had already been restored, so `useContext` inside any arm/row silently returned the default. Contexts are now immutable-by-swap and snapshotted at each primitive's placement.
+- **Fixed** a keyed `each` row removed then re-added while its `leave` animation is in flight now re-evaluates state changes it missed while out of the reconcile set (previously it could render stale).
+- **Fixed** the post-mount replay commit runs under the reconcile `draining` guard, so a reentrant `send` from a commit-fired `blur` can no longer start a nested drain mid-reconcile; and `drain()` stops reducing queued messages / dispatching effects once the component is disposed mid-drain.
+- **Fixed** SSR serializes form-control state set via IDL properties — `input` value/checked, `textarea` value, and the selected `option` — so server-rendered forms no longer paint empty before hydration.
+- **Added** a dev-mode duplicate-key guard for `virtualEach` (mirroring `each`), and an `eachDirect` guard that rejects (dev) / rebuilds (prod) a hand-written row factory whose binding structure diverges from the first row instead of silently reusing the wrong masks.
+
+### `@llui/vite-plugin@0.12.0`
+
+- **Fixed** the dev-server task-spawn now requires an unforgeable per-session capability token: a same-origin page script (XSS, malicious dep) can no longer POST a "trusted" task note that spawns a CLI agent in the repo root. The HUD echoes the token as `x-llui-task-capability`.
+- **Fixed** note writes are atomic (tmp + rename) with exclusive (`wx`) id allocation, so concurrent writers (dev server + MCP) can't mint duplicate ids or leave torn files; `findNoteFile` treats multiple prefix matches as an integrity error; and `listNotes` surfaces parse failures instead of silently dropping a corrupted note.
+- **Fixed** component files that import runtime helpers via an app barrel (not a literal `@llui/dom` specifier) are now linted and transformed instead of silently skipping the compile-time safety layer.
+
+### `@llui/compiler@0.12.0`, `@llui/compiler-ssr@0.12.0`
+
+- **Fixed** the dependency analyzer now evaluates destructuring/parameter **default initializers** and object-literal getter/method bodies — a missed dep there produced a mask that gated out a binding it actually reads (permanently stale UI).
+- **Fixed** `.ts`/`.mts`/`.cts` sources parse as TypeScript, not TSX — a generic arrow (`const id = <T>(x: T) => x`) no longer misparses as JSX, which had silently skipped the component's compilation and emitted a bogus non-bypassable `operator-on-signal` error.
+- **Fixed** a module-scope or method-parameter binding named `state` no longer false-triggers `operator-on-signal`; schema metadata (`__msgSchema`/`__schemaHash`) is computed per `component()` call so a second component in one file gets its own Msg union.
+- **Fixed** (`compiler-ssr`) `export default function NAME` / `export default class` are stubbed as real default exports (no phantom named stub), and `export enum` is stubbed instead of dropped.
+- **Improved** the auto-batch transform keeps a `function` handler a function (preserving `this`/`arguments`) instead of rewriting it to an arrow.
+
+### `@llui/components@0.13.0`
+
+- **Breaking** value-based `select`/`combobox` identity — see the top of this release block.
+- **Fixed** pressing Escape in an open submenu now unwinds one level (the dismissable layer was claiming the key and closing the whole menu — the "unwind one level" branch was dead code).
+- **Fixed** a deselectable `tabs` widget keeps a roving `tabindex=0` when nothing is selected, so the tablist stays reachable by keyboard.
+- **Fixed** overlay presence (dialog/popover/menu/toast) advances only on the element's **own** animation/transition end, so a child animation finishing during close no longer unmounts the overlay early.
+- **Fixed** lazy-loading a checked tree-view branch cascades the check onto the freshly-loaded descendants instead of erasing the user's check.
+- **Fixed** `formField` async validation is request-sequenced — a slow earlier validation can no longer overwrite a newer result.
+
+### `@llui/transitions@0.11.0`
+
+- **Fixed** an interrupted enter→leave (fast toggle) now starts the leave from the element's current value/size instead of snapping to the fully-visible resting state first (spring, collapse, and CSS presets).
+
+### `@llui/effects@0.2.0`
+
+- **Breaking** new `parse` `ApiError` kind — see the top of this release block.
+- **Fixed** `sequence` advances to the next step on a step's **completion**, not its first emitted message, so a nested `sequence` runs strictly in order.
+- **Fixed** the `asOnEffect` fallback allocates a fresh `AbortController` per mount (keyed off `send`), so disposing one mount no longer aborts a concurrent mount's in-flight effects.
+
+### `@llui/router@0.11.0`
+
+- **Breaking** `createRouter` fallback requirement + full-route-object guards — see the top of this release block.
+- **Fixed** literal path segments are compared **decoded**, so a route with a non-ASCII literal (`['café']`) matches the percent-encoded URL a browser produces.
+
+### `@llui/test@0.12.0`
+
+- **Fixed** `replayTrace` matches effects that carry callbacks (http/storage/websocket) by comparing the JSON projection, instead of diverging unconditionally on the function-valued keys.
+- **Fixed** the harness runs effect cleanups in **FIFO** (registration) order to match the runtime's real dispose order, and pure-mode `testComponent` opens one effects window per `batch` (matching `withEffects` mode).
+
+### `@llui/a2ui@0.2.0`
+
+- **Improved** a single `updateComponents` now reconciles **per component id** instead of rebuilding the entire surface tree — one changed node no longer disposes every DOM node, binding, and component-state machine (and no longer resets focus/scroll); a WebSocket array frame is applied as one batched reconcile.
+- **Fixed** `applyPointer` refuses a non-index token that targets an array (returns the node unchanged with a warn) instead of silently replacing the whole collection with an object.
+- **Fixed** a number `TextField` writes a `number` to the data model; `ChoicePicker` is keyed by option value (duplicate labels no longer collapse); Intl formatters are memoized instead of reconstructed per reactive evaluation.
+
+### `@llui/markdown@0.12.0`, `@llui/lexical@0.3.0`, `@llui/lexical-collab@0.3.0`, `@llui/markdown-editor@0.3.0`
+
+- **Fixed** (`markdown`) the incremental parser no longer reuses an EOF-terminated block (an unclosed ``` fence or HTML flow block) as sealed when new content is appended — streaming a code block chunk-by-chunk now produces the correct document. Default HTML handling keeps the visible text between inline tags (`a <em>word</em> b` no longer drops "word").
+- **Fixed** (`lexical`) keyboard chords for digits/letters match the physical `event.code` when Shift/Alt is in the chord, so the shipped `Mod-Shift-7/8/9` (list) and `Mod-Alt-1/2/3` (heading) shortcuts actually fire; `lexicalForeign` delivers the final debounce window of edits to the consumer on unmount instead of dropping it through the dying update loop.
+- **Breaking** (`markdown-editor`) underline removed + `HIGHLIGHT` off by default — see the top of this release block. **Fixed** the table transformer preserves inline formatting and column alignment on round-trip and accepts GFM rows without outer pipes.
+- **Improved** (`lexical-collab`) republished for the peer-range bump.
+
+### `@llui/agent@0.12.0`, `@llui/mcp@0.14.0`, `@llui/devmode-annotate@0.3.0`, `@llui/notes-format@0.2.0`, `llui-agent@0.11.0`
+
+- **Breaking** (`agent`) LAP v2 — see the top of this release block.
+- **Fixed** (`agent`) `revoke` tears down the live pairing (frame + unregister + socket close) instead of only flipping the token; a reconnect migrates in-flight RPCs to the new socket instead of orphaning them to a full timeout; the client keeps a level-triggered confirm outbox flushed on every WS `open`, so a user approval during a socket gap is no longer lost; and the LAP body-size cap covers chunked requests.
+- **Fixed** (`mcp`) the loopback `Host`-header check routes through `@llui/security`'s `isLoopbackAuthority` instead of a hand-rolled copy that diverged.
+- **Added** (`devmode-annotate`) the HUD forwards the vite-plugin's task capability token as the `x-llui-task-capability` header so legitimate in-HUD task submissions are trusted.
+- **Improved** (`notes-format`) `listNotes` can report per-note parse failures (`ListNotesError`).
+
+### `@llui/security@0.2.0`
+
+- **Fixed** `sanitizeUrl` now gates protocol-relative URLs (`//host/x`) against the allowlist instead of waving them through as safe-relative — untrusted Markdown can no longer smuggle a live cross-origin image/link request past the sanitizer.
+
+### `@llui/vike@0.12.0`
+
+- **Improved** republished for the peer-range bump and the cleaned tarball (no source changes).
+
+### All packages — build output
+
+- **Improved** published tarballs no longer ship the dormant `__llui_deps.json` library-ABI manifest (~191 KB across the stack, for a consumer path that is evidence-closed and unreadable) and are cleaned of stale artifacts from deleted sources before packing, so no zombie modules ship. `scripts/emit-deps.mjs` stays in-repo as dormant forward-compat.
+
+### Docs / CI
+
+- **Fixed** the docs site (`llui.dev`) now deploys only after CI succeeds on `main` (`workflow_run`, pinned to the validated commit) instead of an independent push, so a red `main` can no longer redeploy a broken site.
+
 ## 2026-07-13 — @llui/dom@0.11.8 (whole-repo audit remediation + review follow-ups)
 
 **Released:** `@llui/dom@0.11.8`, `@llui/vite-plugin@0.11.7`, `@llui/test@0.11.9`, `@llui/router@0.10.8`, `@llui/transitions@0.10.8`, `@llui/components@0.12.4`, `@llui/vike@0.11.8`; `@llui/compiler@0.11.5`, `@llui/compiler-ssr@0.11.4`, `@llui/effects@0.1.4`, `@llui/mcp@0.13.4`, `@llui/agent@0.11.3`, `llui-agent@0.10.5`; `@llui/markdown@0.11.3`, `@llui/lexical@0.2.10`, `@llui/lexical-collab@0.2.8`, `@llui/markdown-editor@0.2.14`, `@llui/a2ui@0.1.3`, `@llui/devmode-annotate@0.2.12`, `@llui/notes-format@0.1.1`; **new:** `@llui/security@0.1.0`
