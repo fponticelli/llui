@@ -11,18 +11,43 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
-## Unreleased
+## 2026-07-20 — @llui/lexical-loro@0.1.0 (new) — Lexical editor stack: Loro CRDT binding, overlay + undo seams, markdown-editor plugins
 
-### `@llui/markdown-editor`
+**Released:** `@llui/lexical-loro@0.1.0`; `@llui/lexical@0.4.0`, `@llui/markdown-editor@0.4.0`; `@llui/lexical-collab@0.3.1`, `@llui/devmode-annotate@0.3.1`
+
+The foundation for driving a collaborative Lexical editor over the Loro CRDT without switching to Yjs: a new binding package, the overlay and undo seams it needs in `@llui/lexical`, and four new `@llui/markdown-editor` plugins. Lexical is upgraded `0.46 → 0.48` across the workspace. Additive throughout — no breaking changes.
+
+### `@llui/lexical-loro@0.1.0`
+
+- **Added** the package — a Loro CRDT collaborative-editing binding for Lexical that does **not** depend on `@lexical/yjs` (which is hard-bound to Yjs types and cannot be parameterized over another CRDT). It reuses `@lexical/yjs`'s _architecture_ — a persistent mirror tree with stable `NodeKey` identity and surgical per-event inbound application — with a Loro backend, plugged into `lexicalForeign`'s CRDT-agnostic seam (`register` + `externalUndo` + `seedMode: 'deferred'`). It is deliberately **not** a port of `loro-prosemirror`, whose whole-document-replace-per-event model would remint every `NodeKey` and tear down every mounted decorator sub-app.
+- **Added** fractional-index child ordering (children are a `LoroMap` of uuid-keyed carriers each holding a `pos`; order is `sort by (pos, uuid)`; a same-parent move is one LWW write) instead of `LoroMovableList`, which has two reproduced defects under concurrent move/delete in loro-crdt 1.13.7 — an uncatchable WASM panic and a silent convergence failure. Both are pinned with `it.fails` in `test/loro-upstream.test.ts`; a fixed loro release turns them red.
+- **Added** Loro-backed **collaborative undo** (`externalUndo` built on Loro's local-scoped `UndoManager`) — local-only by construction, so undo never reverts a remote peer's edits.
+- **Added** `reconcileTargetIntoLoro` — a history-preserving **agent-write** path for full-markdown rewrites. The naive `$convertFromMarkdownString` approach is wholesale (recreates every container, dropping concurrent edits from other windows); this matches existing carriers by content, so unchanged blocks keep their `ContainerID`s and a concurrent edit in another window survives. `@lexical/markdown` is not a runtime dependency — the caller owns the markdown→target-tree parse with its own transformer set.
+- **Known limits (documented + tested):** cross-parent moves and two concurrent splits of one text run inherit the underlying CRDT's behaviour; byte-identical sibling blocks cannot be fully disambiguated on the agent-write path (mitigated by a content+position bias; residual pinned by a test).
+
+### `@llui/lexical@0.4.0`
+
+- **Added** `nodeWidget` — a seam for non-document computed overlay DOM attached to a Lexical node (the equivalent of a ProseMirror `Decoration.widget`, which Lexical lacks). Built on `EditorDOMRenderConfig` (`$decorateDOM` + `$getDOMSlot`), so an outer-tag change re-decorates synchronously in the same commit rather than flickering a frame later; all `@experimental`/`@internal` Lexical imports are confined to one version-pinned module. `lexicalForeign` gains a `widgets` option (composed with each plugin's `widgets`); with none registered, `createEditor` is called exactly as before.
+- **Added** `LexicalPlugin.nodes` (and `lexicalForeign`'s `nodes`) now accept `LexicalNodeConfig`, so a plugin can register the `{ replace, with, withKlass }` node-replacement form (needed to subclass a built-in node, e.g. to reserve a DOM slot boundary).
+- **Improved** upgraded to Lexical `0.48`.
+
+### `@llui/markdown-editor@0.4.0`
 
 - **Fixed (behavioural)** fenced-code **info strings** are now read per CommonMark — _the whole remainder of the fence line_ — instead of `@lexical/markdown`'s single `([\w-]+)?` token. Upstream's `CODE` transformer silently corrupted ordinary Markdown: ` ```c++ ` parsed as language `c` with `++` prepended to the code body, and ` ```lance table ` as language `lance` with `table` prepended. `GFM_TRANSFORMERS` now ships `CODE_INFO_TRANSFORMER` (`transformers/code.ts`) in place of upstream `CODE`, so every consumer gets the correct parse whether or not they enable `codeLanguagePlugin()`, and **plugin order can no longer reintroduce the corruption** — `corePlugin()` and `codeLanguagePlugin()` contribute the same transformer reference and the registry de-duplicates it. One caveat: the original fence _width_ is not preserved across a round-trip (it is recomputed as the narrowest fence that safely encloses the body), so ` ````ts ` around a plain body normalizes to ` ```ts `. Content is never lost and the fence always widens when it must.
-- **Added** `wikilinkPlugin()` — `[[Target]]` / `[[Target|alias]]` as an atomic token node, with a `onNavigate` host-resolution seam routed through the ordinary plugin message/effect cycle. Coexists with Markdown `LINK`; an alias is literal text, so `[[a|**b**]]` displays `**b**` rather than bolding.
+- **Added** `wikilinkPlugin()` — `[[Target]]` / `[[Target|alias]]` as an atomic token node, with a `onNavigate` host-resolution seam routed through the ordinary plugin message/effect cycle. Coexists with Markdown `LINK`; an alias is literal text, so `[[a|**b**]]` displays `**b**` rather than bolding. A wikilink now **preserves surrounding text format** across a round-trip (a formatted `**[[Page]]**` no longer loses its bold), and target/alias values containing `|` or `]]` are sanitized so a link cannot silently mutate on reload.
+- **Added** `frontmatterPlugin()` — YAML frontmatter as an opaque block that round-trips byte-for-byte. Resolves the `---` collision with `hrPlugin` **structurally**: it is a multiline-element transformer, consulted ahead of `hr`'s element transformer regardless of plugin order and whether `hrPlugin` is loaded, and it claims the fence only at document start with a closing `---` — a genuine thematic break still becomes an `<hr>`.
 - **Added** `codeLanguagePlugin()` — an editable badge showing a code block's info string while the caret is inside it. The language is an **opaque label**: stored, shown, re-emitted, never interpreted (the package depends on `@lexical/code-core`, not `@lexical/code`, so no highlighter is bundled). Its optional `languages` option only seeds `<datalist>` suggestions and never constrains input.
 - **Added** `blockDragPlugin()` — a hover-gutter grip that reorders top-level blocks by mouse drag or keyboard (W3C APG drag-and-drop alternative: Enter/Space grabs, arrows move, Escape cancels, with an `aria-live` announcement). A reorder is a single `insertBefore`/`insertAfter` inside one `editor.update`, so it is one undo step and a genuine node move — correct for CRDT bindings that observe node moves rather than DOM mutations. Opt-in; ships `styles/block-drag.css`.
+- **Added** a collab binding may now supply `externalUndo` (threaded through to `lexicalForeign`), so `@llui/lexical-loro`'s CRDT-aware undo works through the editor; previously a collab editor set `history: false` with no external owner and had no undo at all.
+- **Improved** upgraded to Lexical `0.48`.
 
-### `@llui/lexical-loro`
+### `@llui/lexical-collab@0.3.1`
 
-- **Added** the package — Loro CRDT binding for Lexical (container schema, text formats as independent named marks, concurrent-edit merging). Pre-implementation: currently hosts the `expand-semantics` gating spike pinning Lexical's boundary-format behaviour against Loro's `configTextStyle` expand model.
+- **Improved** upgraded to Lexical / `@lexical/yjs` `0.48` (patch; no API change).
+
+### `@llui/devmode-annotate@0.3.1`
+
+- **Improved** upgraded to Lexical `0.48` (patch; no API change).
 
 ## 2026-07-16 — @llui/dom@0.12.0 (audit remediation round 2 — correctness/security + release-pipeline hardening)
 
