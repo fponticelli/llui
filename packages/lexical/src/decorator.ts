@@ -14,6 +14,7 @@ import {
   type EditorConfig,
   type LexicalEditor,
   type LexicalNode,
+  type LexicalUpdateJSON,
   type NodeKey,
   type SerializedLexicalNode,
   type Spread,
@@ -149,7 +150,28 @@ export class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
   }
 
   static override importJSON(json: SerializedLLuiDecoratorNode): LLuiDecoratorNode {
-    return new LLuiDecoratorNode(json.bridgeType, json.data)
+    return new LLuiDecoratorNode(json.bridgeType, json.data).updateFromJSON(json)
+  }
+
+  /**
+   * Apply serialized state to THIS node, in place.
+   *
+   * Lexical's in-place counterpart to {@link importJSON}, and the only
+   * Lexical-idiomatic way to update a node's props without minting a new
+   * `NodeKey`. It is load-bearing here rather than boilerplate: a decorator's
+   * mounted LLui sub-app is disposed on the node's 'destroyed' mutation (see
+   * `registerDecoratorBridges` below), so any path that would otherwise have to
+   * REPLACE the node to change its `data` — a CRDT collaboration binding
+   * applying a remote edit, an undo/redo, an editor-state swap — would tear the
+   * sub-app down and remount it on every such change. With this, the node is
+   * written in place and the mount survives.
+   */
+  override updateFromJSON(json: LexicalUpdateJSON<SerializedLLuiDecoratorNode>): this {
+    const self = super.updateFromJSON(json)
+    const writable = self.getWritable()
+    writable.__bridgeType = json.bridgeType
+    writable.__data = json.data
+    return writable
   }
 }
 

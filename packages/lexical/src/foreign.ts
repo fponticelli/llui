@@ -13,9 +13,8 @@ import {
   COMMAND_PRIORITY_LOW,
   createEditor,
   type EditorThemeClasses,
-  type Klass,
   type LexicalEditor,
-  type LexicalNode,
+  type LexicalNodeConfig,
 } from 'lexical'
 import { registerRichText } from '@lexical/rich-text'
 import { registerHistory, createEmptyHistoryState } from '@lexical/history'
@@ -40,7 +39,7 @@ export interface LexicalForeignOptions<Emit = unknown> {
   namespace: string
   theme?: EditorThemeClasses
   /** Node classes registered in addition to the plugins' own nodes. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  nodes?: ReadonlyArray<LexicalNodeConfig>
   /** Plugins: their `nodes` are merged, `register`/`shortcuts` wired at mount. */
   plugins?: ReadonlyArray<LexicalPlugin<Emit>>
   /** Serialize the live document → string (runs in a read context). */
@@ -112,7 +111,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
   const boot = (el: Element): BootResult => {
     // De-duplicate node classes by reference: registering the same Klass twice
     // (e.g. two decorator plugins sharing LLuiDecoratorNode) throws in Lexical.
-    const nodeSet = new Set<Klass<LexicalNode>>(opts.nodes ?? [])
+    const nodeSet = new Set<LexicalNodeConfig>(opts.nodes ?? [])
     for (const plugin of opts.plugins ?? []) {
       for (const node of plugin.nodes ?? []) nodeSet.add(node)
     }

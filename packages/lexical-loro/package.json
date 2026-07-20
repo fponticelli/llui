@@ -1,0 +1,65 @@
+{
+  "name": "@llui/lexical-loro",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/lexical": "workspace:^",
+    "lexical": "^0.48.0",
+    "loro-crdt": "^1.13.7"
+  },
+  "devDependencies": {
+    "@lexical/headless": "^0.48.0",
+    "@lexical/history": "^0.48.0",
+    "@lexical/list": "^0.48.0",
+    "@lexical/markdown": "^0.48.0",
+    "@lexical/rich-text": "^0.48.0",
+    "@llui/lexical": "workspace:*",
+    "lexical": "^0.48.0",
+    "loro-crdt": "^1.13.7",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "sideEffects": false,
+  "description": "Loro CRDT binding for the LLui ↔ Lexical editor — container schema, text-mark mapping, and concurrent-edit merging",
+  "keywords": [
+    "llui",
+    "lexical",
+    "collaboration",
+    "loro",
+    "crdt",
+    "editor"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/lexical-loro"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/lexical-loro#readme",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

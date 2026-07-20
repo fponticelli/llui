@@ -93,6 +93,11 @@ export const PACKAGES: PackageMeta[] = [
     blurb: 'Low-level Lexical ↔ signal-runtime binding',
   },
   { slug: 'lexical-collab', category: 'rich-text', blurb: 'Opt-in collab — yjsCollab over Yjs' },
+  {
+    slug: 'lexical-loro',
+    category: 'rich-text',
+    blurb: 'Loro CRDT binding for Lexical — loroCollab, container schema, named text marks',
+  },
 ]
 
 /** Just the route slugs — convenience for membership/enumeration checks. */

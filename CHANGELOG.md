@@ -11,6 +11,19 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## Unreleased
+
+### `@llui/markdown-editor`
+
+- **Fixed (behavioural)** fenced-code **info strings** are now read per CommonMark — _the whole remainder of the fence line_ — instead of `@lexical/markdown`'s single `([\w-]+)?` token. Upstream's `CODE` transformer silently corrupted ordinary Markdown: ` ```c++ ` parsed as language `c` with `++` prepended to the code body, and ` ```lance table ` as language `lance` with `table` prepended. `GFM_TRANSFORMERS` now ships `CODE_INFO_TRANSFORMER` (`transformers/code.ts`) in place of upstream `CODE`, so every consumer gets the correct parse whether or not they enable `codeLanguagePlugin()`, and **plugin order can no longer reintroduce the corruption** — `corePlugin()` and `codeLanguagePlugin()` contribute the same transformer reference and the registry de-duplicates it. One caveat: the original fence _width_ is not preserved across a round-trip (it is recomputed as the narrowest fence that safely encloses the body), so ` ````ts ` around a plain body normalizes to ` ```ts `. Content is never lost and the fence always widens when it must.
+- **Added** `wikilinkPlugin()` — `[[Target]]` / `[[Target|alias]]` as an atomic token node, with a `onNavigate` host-resolution seam routed through the ordinary plugin message/effect cycle. Coexists with Markdown `LINK`; an alias is literal text, so `[[a|**b**]]` displays `**b**` rather than bolding.
+- **Added** `codeLanguagePlugin()` — an editable badge showing a code block's info string while the caret is inside it. The language is an **opaque label**: stored, shown, re-emitted, never interpreted (the package depends on `@lexical/code-core`, not `@lexical/code`, so no highlighter is bundled). Its optional `languages` option only seeds `<datalist>` suggestions and never constrains input.
+- **Added** `blockDragPlugin()` — a hover-gutter grip that reorders top-level blocks by mouse drag or keyboard (W3C APG drag-and-drop alternative: Enter/Space grabs, arrows move, Escape cancels, with an `aria-live` announcement). A reorder is a single `insertBefore`/`insertAfter` inside one `editor.update`, so it is one undo step and a genuine node move — correct for CRDT bindings that observe node moves rather than DOM mutations. Opt-in; ships `styles/block-drag.css`.
+
+### `@llui/lexical-loro`
+
+- **Added** the package — Loro CRDT binding for Lexical (container schema, text formats as independent named marks, concurrent-edit merging). Pre-implementation: currently hosts the `expand-semantics` gating spike pinning Lexical's boundary-format behaviour against Loro's `configTextStyle` expand model.
+
 ## 2026-07-16 — @llui/dom@0.12.0 (audit remediation round 2 — correctness/security + release-pipeline hardening)
 
 **Released:** `@llui/dom@0.12.0`, `@llui/vite-plugin@0.12.0`, `@llui/test@0.12.0`, `@llui/router@0.11.0`, `@llui/transitions@0.11.0`, `@llui/components@0.13.0`, `@llui/vike@0.12.0`; `@llui/compiler@0.12.0`, `@llui/compiler-ssr@0.12.0`, `@llui/effects@0.2.0`, `@llui/mcp@0.14.0`, `@llui/agent@0.12.0`, `llui-agent@0.11.0`; `@llui/markdown@0.12.0`, `@llui/lexical@0.3.0`, `@llui/lexical-collab@0.3.0`, `@llui/markdown-editor@0.3.0`, `@llui/a2ui@0.2.0`, `@llui/devmode-annotate@0.3.0`, `@llui/notes-format@0.2.0`, `@llui/security@0.2.0`

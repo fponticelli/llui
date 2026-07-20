@@ -25,6 +25,7 @@
 - @llui/markdown-editor — WYSIWYG Markdown editor for LLui — hides Markdown behind a rich, pluggable editing widget built on Lexical
 - @llui/lexical — Low-level binding between Lexical and the LLui signal runtime — mount Lexical via foreign(), plugin contract, and the DecoratorNode ↔ LLui sub-view bridge
 - @llui/lexical-collab — Opt-in collaborative editing for the LLui ↔ Lexical binding — Yjs CRDT sync, scoped undo, and presence cursors over an injected provider
+- @llui/lexical-loro — Loro CRDT binding for the LLui ↔ Lexical editor — container schema, text-mark mapping, and concurrent-edit merging
 
 ## Documentation
 

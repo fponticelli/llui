@@ -37,21 +37,21 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lexical/code-core": "^0.46.0",
-    "@lexical/link": "^0.46.0",
-    "@lexical/list": "^0.46.0",
-    "@lexical/markdown": "^0.46.0",
-    "@lexical/rich-text": "^0.46.0",
-    "@lexical/selection": "^0.46.0",
-    "@lexical/table": "^0.46.0",
-    "@lexical/utils": "^0.46.0",
+    "@lexical/code-core": "^0.48.0",
+    "@lexical/link": "^0.48.0",
+    "@lexical/list": "^0.48.0",
+    "@lexical/markdown": "^0.48.0",
+    "@lexical/rich-text": "^0.48.0",
+    "@lexical/selection": "^0.48.0",
+    "@lexical/table": "^0.48.0",
+    "@lexical/utils": "^0.48.0",
     "@llui/components": "workspace:^",
     "@llui/lexical": "workspace:^",
     "@llui/markdown-editor": "workspace:^",
     "@llui/notes-format": "workspace:^",
     "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
-    "lexical": "^0.46.0"
+    "lexical": "^0.48.0"
   },
   "peerDependencies": {
     "@llui/dom": "workspace:^"

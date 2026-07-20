@@ -6,7 +6,7 @@
 // It is intentionally markdown-agnostic — `@llui/markdown-editor` extends this
 // contract with markdown transformers and toolbar items.
 
-import type { Klass, LexicalEditor, LexicalNode } from 'lexical'
+import type { LexicalEditor, LexicalNodeConfig } from 'lexical'
 import { component, mountApp, type Renderable, type Signal } from '@llui/dom'
 
 /** A keyboard shortcut bound to an editor action.
@@ -105,8 +105,16 @@ export function decoratorBridge<Data>(
 export interface LexicalPlugin<Emit = unknown> {
   /** Stable identifier (also used for de-duplication and overrides). */
   name: string
-  /** Lexical node classes registered on the editor config. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  /**
+   * Lexical node classes registered on the editor config.
+   *
+   * `LexicalNodeConfig` — not `Klass<LexicalNode>` — so a plugin can register
+   * the `{ replace, with, withKlass }` replacement form. Subclassing a built-in
+   * node (e.g. to reserve a DOM slot boundary via `getDOMSlot`) is only
+   * expressible that way, and the runtime already passes these straight to
+   * `createEditor`.
+   */
+  nodes?: ReadonlyArray<LexicalNodeConfig>
   /** Imperative registration (commands, listeners). Returns a disposer. */
   register?: (editor: LexicalEditor, ctx: PluginContext<Emit>) => () => void
   /** Keyboard shortcuts wired through a single KEY_DOWN command. */

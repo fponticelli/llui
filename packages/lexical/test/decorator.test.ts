@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { createHeadlessEditor } from '@lexical/headless'
 import { component, input, mountApp, onMount, span, text, type Signal } from '@llui/dom'
 import {
   $getRoot,
@@ -250,5 +251,70 @@ describe('LLuiDecoratorNode bridge', () => {
     expect(label?.textContent).toBe('v3')
     // …and the focused input inside the sub-view survived every update.
     expect(document.activeElement).toBe(focusable)
+  })
+})
+
+describe('LLuiDecoratorNode.updateFromJSON', () => {
+  /** A headless editor holding one decorator node. */
+  const withDecorator = (fn: (editor: LexicalEditor, key: NodeKey) => void): void => {
+    const editor = createHeadlessEditor({
+      namespace: 'decorator-json',
+      nodes: [LLuiDecoratorNode],
+      onError: (error: Error) => {
+        throw error
+      },
+    })
+    let key = ''
+    editor.update(
+      () => {
+        const node = $createLLuiDecoratorNode('chart', { n: 1 })
+        $getRoot().clear().append($createParagraphNode().append(node))
+        key = node.getKey()
+      },
+      { discrete: true },
+    )
+    fn(editor, key)
+  }
+
+  it('applies bridgeType and data IN PLACE, preserving the NodeKey', () => {
+    withDecorator((editor, key) => {
+      editor.update(
+        () => {
+          const node = $getNodeByKey(key)
+          if (!$isLLuiDecoratorNode(node)) throw new Error('expected a decorator node')
+          node.updateFromJSON({ bridgeType: 'table', data: { n: 2 } })
+        },
+        { discrete: true },
+      )
+      editor.getEditorState().read(() => {
+        const node = $getNodeByKey(key)
+        if (!$isLLuiDecoratorNode(node)) throw new Error('expected a decorator node')
+        // Same key ⇒ no 'destroyed' mutation ⇒ the mounted sub-app is untouched.
+        expect(node.getKey()).toBe(key)
+        expect(node.getBridgeType()).toBe('table')
+        expect(node.getData()).toEqual({ n: 2 })
+      })
+    })
+  })
+
+  it('round-trips exportJSON: every emitted property is applied back', () => {
+    withDecorator((editor, key) => {
+      editor.update(
+        () => {
+          const source = $createLLuiDecoratorNode('callout', { tone: 'warn', body: ['a'] })
+          const node = $getNodeByKey(key)
+          if (!$isLLuiDecoratorNode(node)) throw new Error('expected a decorator node')
+          node.updateFromJSON(source.exportJSON())
+        },
+        { discrete: true },
+      )
+      editor.getEditorState().read(() => {
+        const node = $getNodeByKey(key)
+        if (!$isLLuiDecoratorNode(node)) throw new Error('expected a decorator node')
+        const json = node.exportJSON()
+        expect(json.bridgeType).toBe('callout')
+        expect(json.data).toEqual({ tone: 'warn', body: ['a'] })
+      })
+    })
   })
 })

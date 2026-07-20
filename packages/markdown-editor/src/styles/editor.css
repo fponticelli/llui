@@ -345,6 +345,40 @@
   background: var(--md-surface-2);
 }
 
+/* ── Code-block language badge ────────────────────────────────────────── */
+[data-scope='md-code-language'][data-part='bar'] {
+  padding: 0.15rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+[data-scope='md-code-language'][data-part='input'] {
+  font: inherit;
+  font-family: var(--md-mono);
+  font-size: 0.72rem;
+  width: 8rem;
+  padding: 0.1rem 0.3rem;
+  color: var(--md-text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+[data-scope='md-code-language'][data-part='input']::placeholder {
+  color: var(--md-muted);
+}
+
+/* ── Wiki links ───────────────────────────────────────────────────────── */
+[data-scope='md-wikilink'][data-part='link'] {
+  color: var(--md-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--md-primary-soft);
+  cursor: pointer;
+}
+[data-scope='md-wikilink'][data-part='link']:hover {
+  border-bottom-color: var(--md-primary);
+}
+
 /* ── Math block ───────────────────────────────────────────────────────── */
 [data-scope='md-math'][data-part='root'] {
   display: flex;
@@ -367,6 +401,36 @@
 }
 [data-scope='md-math'] [data-part='preview'] {
   text-align: center;
+}
+
+/* ── Frontmatter block ────────────────────────────────────────────────── */
+[data-scope='md-frontmatter'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px dashed var(--md-border);
+  border-radius: 8px;
+  background: var(--md-surface-2);
+}
+[data-scope='md-frontmatter'] [data-part='source'] {
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  resize: vertical;
+  background: transparent;
+  font-family: var(--md-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--md-muted);
+  outline: none;
+}
+[data-scope='md-frontmatter'] [data-part='source']:focus {
+  color: var(--md-text);
 }
 
 /* ── Mermaid block ────────────────────────────────────────────────────── */

@@ -21,16 +21,16 @@
   "peerDependencies": {
     "@llui/dom": "workspace:^",
     "@llui/lexical": "workspace:^",
-    "lexical": "^0.46.0",
-    "@lexical/yjs": "^0.46.0",
+    "lexical": "^0.48.0",
+    "@lexical/yjs": "^0.48.0",
     "yjs": "^13.6.0"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
     "@llui/lexical": "workspace:*",
-    "lexical": "^0.46.0",
-    "@lexical/rich-text": "^0.46.0",
-    "@lexical/yjs": "^0.46.0",
+    "lexical": "^0.48.0",
+    "@lexical/rich-text": "^0.48.0",
+    "@lexical/yjs": "^0.48.0",
     "yjs": "^13.6.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
