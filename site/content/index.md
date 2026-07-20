@@ -92,7 +92,8 @@ LLui provides first-class tooling for AI workflows:
 | [`@llui/markdown`](/api/markdown)                 | Reactive Markdown rendering — `markdown()` parses to mdast, builds live reactive DOM, per-node renderer overrides, streaming-friendly keyed blocks                             |
 | [`@llui/lexical`](/api/lexical)                   | Low-level Lexical ↔ signal-runtime binding — `lexicalForeign`, plugin contract, decorator bridge                                                                               |
 | [`@llui/lexical-collab`](/api/lexical-collab)     | Opt-in collaborative editing — `yjsCollab` over an injected Yjs provider: CRDT sync, scoped undo, presence                                                                     |
-| [`@llui/markdown-editor`](/api/markdown-editor)   | WYSIWYG Markdown editor — `markdownEditor()`, transformer registry, GFM/callout plugins, toolbar                                                                               |
+| [`@llui/lexical-loro`](/api/lexical-loro)         | Opt-in collab over the Loro CRDT — `loroCollab`, container schema, text formats as independent named marks                                                                     |
+| [`@llui/markdown-editor`](/api/markdown-editor)   | WYSIWYG Markdown editor — `markdownEditor()`, transformer registry, GFM/callout/wikilink/code-language/block-drag plugins, toolbar                                             |
 
 ## Performance
 

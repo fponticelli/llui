@@ -15,7 +15,6 @@ import {
   UNORDERED_LIST,
   ORDERED_LIST,
   CHECK_LIST,
-  CODE,
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
   BOLD_STAR,
@@ -27,6 +26,7 @@ import {
   HIGHLIGHT,
   LINK,
 } from '@lexical/markdown'
+import { CODE_INFO_TRANSFORMER } from './code.js'
 
 /** Node classes required to render the GFM superset. */
 export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
@@ -71,7 +71,11 @@ export const GFM_TRANSFORMERS: readonly Transformer[] = [
   CHECK_LIST,
   UNORDERED_LIST,
   ORDERED_LIST,
-  CODE,
+  // NOT `@lexical/markdown`'s `CODE`: that one captures the info string as a
+  // single `[\w-]+` token and pushes the remainder of the fence line into the
+  // code body, silently corrupting ```c++ and ```lance table. See
+  // `transformers/code.ts`.
+  CODE_INFO_TRANSFORMER,
   ...INLINE_TEXT_TRANSFORMERS,
   LINK,
 ]

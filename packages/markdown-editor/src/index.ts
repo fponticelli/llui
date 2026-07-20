@@ -57,6 +57,17 @@ export {
   $insertCallout,
 } from './plugins/callout.js'
 export { hrPlugin, $insertHorizontalRule } from './plugins/hr.js'
+export {
+  type FrontmatterData,
+  type FrontmatterPluginOptions,
+  FRONTMATTER_BRIDGE_TYPE,
+  FRONTMATTER_TRANSFORMER,
+  frontmatterPlugin,
+  serializeFrontmatter,
+  splitFrontmatter,
+  $getFrontmatter,
+  $setFrontmatter,
+} from './plugins/frontmatter.js'
 export { slashPlugin } from './plugins/slash.js'
 export { contextMenuPlugin } from './plugins/context-menu.js'
 export { floatingToolbarPlugin } from './plugins/floating-toolbar.js'
@@ -66,11 +77,57 @@ export { type Mention, type MentionPluginOptions, mentionPlugin } from './plugin
 export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
 export { tablePlugin } from './plugins/table.js'
+export {
+  type CodeLanguagePluginOptions,
+  type CodeLanguageState,
+  type CodeLanguageMsg,
+  type CodeLanguageEffect,
+  CODE_LANGUAGE_PLUGIN,
+  codeLanguagePlugin,
+} from './plugins/code-language.js'
+export {
+  type WikiLink,
+  type WikiLinkPluginOptions,
+  type SerializedWikiLinkNode,
+  WikiLinkNode,
+  $createWikiLinkNode,
+  $isWikiLinkNode,
+  parseWikiLinkInner,
+  formatWikiLink,
+  // The representability guards that make `formatWikiLink` the true inverse of
+  // `parseWikiLinkInner`; exported so a host resolving/creating targets can
+  // apply the same normalization before it hands one to `$createWikiLinkNode`.
+  sanitizeWikiLinkTarget,
+  sanitizeWikiLinkAlias,
+  wikilinkPlugin,
+} from './plugins/wikilink.js'
+export {
+  type BlockDragOptions,
+  type BlockRect,
+  type DropTarget,
+  type IndicatorRect,
+  type Place,
+  BLOCK_DRAG_Z,
+  blockAtPoint,
+  findDropTarget,
+  indicatorRect,
+  blockDragPlugin,
+} from './plugins/block-drag.js'
 
 export { $insertMarkdownAtSelection, registerMarkdownPaste } from './paste.js'
 
 export { GFM_NODES, GFM_TRANSFORMERS, HIGHLIGHT_TRANSFORMER } from './transformers/gfm.js'
-export { buildTransformers, orderTransformers } from './transformers/registry.js'
+// The CommonMark-correct fenced-code transformer. Already part of
+// `GFM_TRANSFORMERS`; exported for consumers assembling a transformer set by hand.
+export { CODE_INFO_TRANSFORMER, normalizeCodeInfo } from './transformers/code.js'
+// `setTransformerPrecedence` breaks ties between SAME-rank transformers, so a
+// collision (e.g. wikilink vs upstream LINK, which both match at the same index)
+// is resolved structurally instead of by the order a consumer lists plugins in.
+export {
+  buildTransformers,
+  orderTransformers,
+  setTransformerPrecedence,
+} from './transformers/registry.js'
 
 export { computeFormatState } from './format.js'
 

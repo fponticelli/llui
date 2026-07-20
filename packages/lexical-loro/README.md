@@ -1,0 +1,262 @@
+# @llui/lexical-loro
+
+Loro CRDT binding for the LLui ↔ Lexical editor.
+
+> **Status: document sync, both directions, plus peer-scoped CRDT undo — usable
+> end to end.** No presence and no remote cursors yet. Transport is yours to
+> supply. See [Scope](#scope).
+
+## Usage
+
+```ts
+import { markdownEditor } from '@llui/markdown-editor'
+import { loroCollab } from '@llui/lexical-loro'
+import { LoroDoc } from 'loro-crdt'
+
+const doc = new LoroDoc()
+// …attach your transport to `doc` (subscribeLocalUpdates / import / export)…
+
+markdownEditor({
+  defaultValue: '# Hello',
+  collab: (hooks) => loroCollab({ doc, seed: hooks.seed, shouldBootstrap: isCreator }),
+})
+```
+
+`loroCollab` returns `{ register, externalUndo, doc, root, mapping, bootstrap }`.
+`register` **and** `externalUndo` together satisfy `@llui/markdown-editor`'s
+`CollabBinding` structurally, so that package needs no Loro dependency of its own
+— and, because `externalUndo` is present, the editor turns its built-in
+`@lexical/history` stack off automatically and uses this binding's peer-scoped
+undo instead. Wiring `loroCollab` directly (without `@llui/markdown-editor`),
+pass both to `lexicalForeign`:
+
+```ts
+const collab = loroCollab({ doc })
+lexicalForeign({
+  seedMode: 'deferred',
+  register: collab.register,
+  externalUndo: collab.externalUndo,
+})
+```
+
+**There is no built-in transport, deliberately.** `LoroDoc` already exposes the
+whole wire surface, so a transport is a dozen lines against your own websocket or
+provider — and shipping one here would mean owning a connection lifecycle this
+package cannot test honestly. Call `collab.bootstrap(editor)` again after your
+transport's first sync: an unsynced document looks empty, and seeding one races
+the content about to arrive.
+
+## Design
+
+The two directions are mirror images, and both are built around one rule.
+
+**Never rebuild what you can mutate.** Lexical's `NodeKey` is a bare counter, so
+recreating a node instead of updating it tears down its DOM, its selection, its
+IME composition — and disposes the mounted LLui sub-app of every
+`LLuiDecoratorNode` inside it (`packages/lexical/src/decorator.ts` disposes on
+the `'destroyed'` mutation). So:
+
+- `to-lexical.ts` resolves each remote change to an existing `NodeKey` through
+  the registry and mutates that node in place. It never replaces the document,
+  which is what loro-prosemirror's inbound path does — ProseMirror tolerates
+  that; Lexical cannot.
+- `to-loro.ts` emits one `pos` register write per moved block for a reorder
+  (`n - LIS(n)` writes — the longest increasing subsequence stays put), a
+  cursor-biased single-region diff for a text edit, and explicit per-format
+  `mark`/`unmark` ops for formatting. It returns its op count, and the tests
+  assert on it — so a pruning regression fails a test instead of quietly becoming
+  a slower, mount-destroying binding.
+- `mapping.ts` holds the `ContainerID ↔ NodeKey` bijection the whole thing rests
+  on: `NodeKey` is per-session, `ContainerID` is the stable cross-peer address.
+
+### How sibling order works: fractional indexing
+
+Children are **not** stored in a list. Each child — element **or** text run — is a
+carrier `LoroMap` holding `{ uuid, pos, kind, … }`, filed in its parent's
+`children` map under its own random `uuid`; a text carrier holds its `LoroText`
+under a `text` key, created **once** and never recreated. The rendered order is a
+pure projection of replicated state: **sort by `(pos, uuid)`**.
+
+`pos` is a fractional index — a base-62 string key with one always available
+strictly between any two distinct keys — so a **same-parent move is one
+last-writer-wins write to `pos`**. Nothing is deleted, nothing is recreated, and
+nothing inside the moved subtree is touched. Hence `ContainerID`s (and therefore
+`NodeKey`s, and therefore mounted decorator sub-apps and local carets) survive a
+remote reorder; a move costs under 400 bytes regardless of subtree size; and a
+concurrent edit _into_ a moved block is preserved.
+
+Because order is derived by sorting replicated fields, peers holding the same
+state cannot disagree about it — convergence is true by construction.
+
+#### Why not `LoroMovableList`
+
+That was this package's original design. It was abandoned because `loro-crdt`
+1.13.7 (the latest release) has two defects in concurrent move/delete handling:
+an uncatchable WASM panic, and a silent convergence failure where peers that have
+exchanged full snapshots both ways still render different orders. Both are pinned
+as `it.fails` in `test/loro-upstream.test.ts` — kept as the recorded rationale for
+the schema, and to turn red if a future release fixes them.
+
+#### Accepted tradeoffs
+
+Real costs, deliberately chosen, each demonstrated in `test/constraints.test.ts`:
+
+- **The concurrent-edit guarantee is same-parent only.** A **cross-parent** move
+  is still delete + recreate and **does** lose a concurrent edit into the moved
+  subtree. Not a regression — `LoroMovableList#move` is also single-list.
+- **Delete beats move.** A delete concurrent with a move of the same block wins
+  and the block vanishes, convergently, in both delivery orders. A tombstone
+  mitigation was tried and **refuted by test**: the delete flag and `pos` are
+  separate map keys, so both survive and nothing is rescued. Do not re-add
+  tombstones.
+- **`pos` keys are never rebalanced, and must not be.** A peer that inserted
+  concurrently computed its key against the _old_ keys, so after a rebalance its
+  block lands somewhere unrelated to what the user pointed at — convergent, and
+  silently wrong about intent. It is also unnecessary: growth is linear and
+  bounded (2000 adversarial same-spot inserts reach a 401-character key).
+- **Two concurrent splits of the same text run garble the text.** Ordinal text
+  matching mints a fresh tail container on each peer, so the merge duplicates a
+  fragment. **Pre-existing** — the `LoroMovableList` binding produced the same
+  result on the same history — and a property of text matching, not of the
+  ordering model. Not fixed here.
+
+### Why text formats cannot be one Loro value
+
+`TextNode.__format` is a bitmask (`IS_BOLD = 1`, `IS_ITALIC = 1 << 1`, …).
+Storing it as a single CRDT value makes two peers concurrently toggling **bold**
+and **italic** a last-writer-wins conflict that silently drops one. They are
+therefore independent, named Loro marks, which converge to the union.
+
+Loro's `expand` rule cannot reproduce Lexical's boundary behaviour — a 51-test
+spike (`test/expand-semantics.test.ts`) proved no uniform table works and no
+per-format table can, because Lexical's caret is uniformly left-biased. So the
+outbound direction replays the RESULTING node state as explicit mark/unmark ops,
+and `expand` governs only what happens to text a remote peer inserts
+concurrently at a mark boundary.
+
+### Echo suppression
+
+Three layers, all required; `binding.ts` documents what breaks without each. The
+one with no code to enforce it: this binding **never emits `PROGRAMMATIC_TAG`**,
+because `packages/lexical/src/foreign.ts` reads that tag as "the host pushed
+content — cancel pending outbound work", which would make the host's persistence
+go dark whenever a peer types.
+
+## Agent write (content-keyed rewrite)
+
+When an LLM rewrites a note's **whole markdown**, the naive route — reparse into
+the live editor, which does `root.clear()` + rebuild — mints a fresh `NodeKey`
+for every node, so the outbound sync matches nothing through the registry and
+**recreates every container**. A concurrent edit from another window merges into
+a container this side just deleted and is lost, and every mounted decorator
+sub-app is torn down. Measured at **0% ContainerID survival even for identical
+markdown**.
+
+`reconcileTargetIntoLoro` is the supported alternative — a **sibling** to
+`syncLexicalToLoro`, not a replacement. It reconciles a parsed **target tree**
+directly against the Loro document, matching existing carriers to target children
+by **content** (not by `NodeKey`). Unchanged blocks keep their `ContainerID`s — and
+therefore their `NodeKey`s, their mounted decorator sub-apps, and any concurrent
+peer edit into them; a text-changed block keeps its `LoroText` and diffs the
+characters; only genuinely new / removed / moved blocks touch the ordering.
+
+```ts
+import { reconcileTargetIntoLoro, targetFromEditorState } from '@llui/lexical-loro'
+import { createHeadlessEditor } from '@lexical/headless'
+import { $convertFromMarkdownString } from '@lexical/markdown'
+
+// The CALLER owns the markdown → target-tree parse, with ITS OWN nodes and
+// transformer set (custom nodes/transformers make the tree caller-specific).
+const parser = createHeadlessEditor({ nodes: MY_NODES, onError })
+parser.update(() => $convertFromMarkdownString(agentMarkdown, MY_TRANSFORMERS), {
+  discrete: true,
+})
+const target = targetFromEditorState(parser.getEditorState())
+
+// The reusable CORE takes the parsed tree and writes Loro under 'agent-write'.
+reconcileTargetIntoLoro(collab.doc, collab.root, target)
+```
+
+**Guarantees.** Identical markdown ⇒ **zero ops, 100% survival**. A one-paragraph
+edit ⇒ only that `LoroText` changes. Append / prepend / delete / move ⇒ every
+surviving block keeps its identity, and a move is one `pos` write. The commit
+carries the distinct origin `AGENT_WRITE_ORIGIN`, which `loroCollab` lists among
+the local origins the **inbound** path applies — so an agent write on the shared
+document **bounces into any live editor** bound to it, preserving `NodeKey`s and
+decorator mounts on the way in. It deliberately does **not** consult the
+`ContainerNodeMap`: content matching is the point, and the mapping self-heals on
+the inbound bounce.
+
+**Why the caller owns the markdown parse.** The reconciler is the reusable core;
+the markdown → target parse is caller-specific (custom nodes and transformer set).
+Keeping it in the caller is what lets this package depend on **neither
+`@lexical/markdown` nor `@lexical/headless`** at runtime — they are dev-only here.
+Project the caller's parsed editor state with `targetFromEditorState` (or
+`projectTarget` inside a read); both use only `lexical`.
+
+### The duplicate-block caveat (honest residual)
+
+Content matching cannot fully disambiguate **byte-identical sibling blocks** —
+they have no distinguishing content, and the agent path has no `NodeKey` identity
+to fall back on. The exact-match pass applies a **content + position bias**: among
+identical carriers, a target claims the one whose index is nearest its own. That
+**fixes the common case** — changing the first of two identical blocks now leaves
+that block's carrier free to absorb the change while the unchanged sibling keeps
+its own carrier, so a concurrent edit to the other identical block no longer
+collides.
+
+It is **not a complete solution, and does not claim to be.** When the **count** of
+an identical group changes (delete one of three identical paragraphs), content is
+by definition insufficient to say which carrier the user meant to keep, and
+position proximity is only a guess — the trailing carrier is dropped regardless of
+intent. `NodeKey` identity, unavailable on the agent path, is the only complete
+answer. `test/agent-write.test.ts` pins both the improvement and this residual.
+
+## Scope
+
+- **Document sync + peer-scoped undo.** No presence or remote cursors yet —
+  Loro's `EphemeralStore` makes those additive, later work.
+- **Undo is CRDT-aware and LOCAL-ONLY** (`src/undo.ts`, exposed as
+  `LoroCollab.externalUndo`). It is built on Loro's `UndoManager`, which is
+  operation-based and bound to this peer's PeerID: undo reverts exactly the local
+  user's own last change and **never** a peer's concurrent edit. That is why a
+  host must let the editor turn `@lexical/history` off — `lexicalForeign` does so
+  automatically the moment `externalUndo` is passed, so the snapshot-based local
+  stack (which would rewind remote work for everyone) can never run alongside it.
+  A same-parent block move undoes to its previous fractional index; a text edit,
+  insert, delete and format change each undo to exactly their prior state.
+  `test/undo.test.ts` pins all of it, including the local-scope property.
+  `test/harden.test.ts` keeps a contrast test showing why the built-in snapshot
+  history — deliberately NOT used here — is not collaboration-safe.
+
+- **Text-node `style`, `mode` and `detail` are not represented**; the run model
+  is `{ text, format }`.
+
+## Triaging a suspected convergence bug
+
+Exchange full snapshots between peers and compare `doc.toJSON()`. If the
+**documents** differ, the problem is below this binding and not fixable here.
+Only if the documents agree while the **editors** differ is it ours.
+
+## Testing
+
+`test/network.ts` is a multi-peer in-memory network with delay, reordering and
+disconnect knobs; `test/convergence.test.ts` and `test/convergence-attack.test.ts`
+drive the real binding through it, ending in randomized three-peer property
+tests. Raising their round counts is how you hunt for new bugs — it is what found
+every real defect fixed so far.
+
+`test/constraints.test.ts` is different in kind: rather than testing that the
+code honours the ordering rules, it demonstrates **what breaks without them**. A
+failure there may be the cost of a deliberate tradeoff rather than a bug — read
+the comment before "fixing" one.
+
+## Peer dependencies
+
+`lexical`, `@llui/lexical` and `loro-crdt` are peer dependencies — install them
+in the host application so exactly one copy of each is deduped across the app and
+this package.
+
+## License
+
+MIT

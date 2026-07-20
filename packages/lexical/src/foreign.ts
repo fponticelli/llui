@@ -13,9 +13,8 @@ import {
   COMMAND_PRIORITY_LOW,
   createEditor,
   type EditorThemeClasses,
-  type Klass,
   type LexicalEditor,
-  type LexicalNode,
+  type LexicalNodeConfig,
 } from 'lexical'
 import { registerRichText } from '@lexical/rich-text'
 import { registerHistory, createEmptyHistoryState } from '@lexical/history'
@@ -23,6 +22,7 @@ import { mergeRegister } from '@lexical/utils'
 import { foreign, type LiveSignal, type Mountable, type Signal } from '@llui/dom'
 import type { LexicalPlugin, PluginContext } from './plugin.js'
 import { registerShortcuts } from './register.js'
+import { createWidgetRuntime, type NodeWidget } from './nodewidget.js'
 
 /** Lexical update tag marking a programmatic write (seed / controlled setValue),
  * so the outbound change listener doesn't echo it back to the host. */
@@ -40,9 +40,14 @@ export interface LexicalForeignOptions<Emit = unknown> {
   namespace: string
   theme?: EditorThemeClasses
   /** Node classes registered in addition to the plugins' own nodes. */
-  nodes?: ReadonlyArray<Klass<LexicalNode>>
+  nodes?: ReadonlyArray<LexicalNodeConfig>
   /** Plugins: their `nodes` are merged, `register`/`shortcuts` wired at mount. */
   plugins?: ReadonlyArray<LexicalPlugin<Emit>>
+  /** Non-document overlay DOM registrations, composed with the plugins' own
+   * `widgets`. See {@link nodeWidget}. When the composed list is EMPTY the
+   * editor is created exactly as it was before this option existed — no
+   * render-config override, no experimental API in play. */
+  widgets?: ReadonlyArray<NodeWidget>
   /** Serialize the live document → string (runs in a read context). */
   serialize: (editor: LexicalEditor) => string
   /** Deserialize a string into the document (runs in an update context). */
@@ -112,22 +117,34 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
   const boot = (el: Element): BootResult => {
     // De-duplicate node classes by reference: registering the same Klass twice
     // (e.g. two decorator plugins sharing LLuiDecoratorNode) throws in Lexical.
-    const nodeSet = new Set<Klass<LexicalNode>>(opts.nodes ?? [])
+    const nodeSet = new Set<LexicalNodeConfig>(opts.nodes ?? [])
     for (const plugin of opts.plugins ?? []) {
       for (const node of plugin.nodes ?? []) nodeSet.add(node)
     }
     const nodes = [...nodeSet]
+
+    // Overlay widgets, composed across the direct option and every plugin. The
+    // runtime is built ONLY when at least one is registered: with none, `dom`
+    // stays `undefined` and `createEditor` is called byte-for-byte as before,
+    // so no existing consumer is exposed to the experimental render config.
+    const widgets: NodeWidget[] = [...(opts.widgets ?? [])]
+    for (const plugin of opts.plugins ?? []) widgets.push(...(plugin.widgets ?? []))
+    const widgetRuntime = widgets.length > 0 ? createWidgetRuntime(widgets) : null
 
     const editor = createEditor({
       namespace: opts.namespace,
       nodes,
       theme: opts.theme,
       editable: !opts.readonly.peek(),
+      ...(widgetRuntime ? { dom: widgetRuntime.domConfig } : {}),
       onError: (error: Error) => {
         if (opts.onError) opts.onError(error)
         else throw error
       },
     })
+    // Before `setRootElement` — that triggers the first reconcile, and the
+    // teardown listeners must already be live for nodes created by it.
+    const disposeWidgets = widgetRuntime ? widgetRuntime.attach(editor) : () => {}
     // Vanilla Lexical does NOT make the root editable — the caller must set
     // `contenteditable` (the React `<ContentEditable>` does this). Without it the
     // browser shows no caret and ignores typing.
@@ -272,6 +289,9 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
         // Release the document-level selectionchange listener and detach the
         // editor's DOM subtree; without this every remount leaks both.
         editor.setRootElement(null)
+        // Drop every live widget record + its host. After `setRootElement(null)`
+        // the reconciler won't fire again, so this is the only remaining owner.
+        disposeWidgets()
       },
     }
   }

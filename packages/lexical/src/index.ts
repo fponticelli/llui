@@ -33,6 +33,20 @@ export {
 } from './foreign.js'
 
 export {
+  type WidgetPlacement,
+  type WidgetContext,
+  type WidgetDisposeContext,
+  type WidgetSpec,
+  type NodeWidget,
+  type WidgetRuntime,
+  WIDGET_CLASS,
+  WIDGET_ATTR,
+  nodeWidget,
+  createWidgetRuntime,
+  isNodeWidgetHost,
+} from './nodewidget.js'
+
+export {
   type SerializedLLuiDecoratorNode,
   LLuiDecoratorNode,
   $createLLuiDecoratorNode,

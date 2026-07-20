@@ -18,6 +18,8 @@
 //   61 — context menu                        — pointer-anchored
 //   62 — floating selection toolbar          — selection-anchored bubble
 //   63 — table tools                         — element-anchored, sits over a table
+//   64 — code-block language badge           — element-anchored, may sit INSIDE a
+//                                              table cell, so it must clear 63
 // The values live with each plugin's view; this comment is the source of truth.
 
 import {
@@ -37,6 +39,11 @@ export const OVERLAY_Z = {
   contextMenu: 61,
   floatingToolbar: 62,
   tableTools: 63,
+  // Strictly above `tableTools`: a fenced code block can live inside a table
+  // cell, in which case both surfaces are open at once. At an equal z-index the
+  // clickable one was decided by portal insertion order — i.e. by plugin array
+  // order — which is exactly the no-tie rule this scale exists to prevent.
+  codeLanguage: 64,
 } as const
 
 const toMountables = (r: Renderable): Mountable[] => [...r]
