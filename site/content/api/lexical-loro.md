@@ -611,6 +611,59 @@ every peer, which is what makes this a pure function of the document.
 function orderedChildren(element: ElementContainer): ChildEntry[]
 ```
 
+### `projectTarget()`
+
+Project one Lexical element (or element-mirrored leaf) to a {@link TargetElement}.
+MUST be called inside a Lexical read (`editorState.read(() => …)`), because it
+reads node content. Uses only `lexical` (a peer dependency) — never
+`@lexical/markdown`. See {@link targetFromEditorState} for the common wrapper.
+
+```typescript
+function projectTarget(node: LexicalNode): TargetElement
+```
+
+### `reconcileTargetIntoLoro()`
+
+Reconcile a parsed target tree into an existing Loro document, preserving the
+`ContainerID`s of unchanged and text-edited blocks, and commit under `origin`.
+A SIBLING to `syncLexicalToLoro` — it writes Loro directly rather than mirroring
+a Lexical update, matches by CONTENT rather than by `NodeKey`, and does NOT
+consult the `ContainerNodeMap` (which self-heals on the inbound bounce).
+@param doc the shared document.
+@param root its root element container, as returned by `initDoc`.
+@param target the desired tree, from {@link targetFromEditorState} /
+{@link projectTarget} (the caller owns the markdown parse).
+@param origin the commit origin. Defaults to {@link AGENT_WRITE_ORIGIN}; keep
+it on the inbound target's applied-local-origins list, or a live
+editor bound to the same doc will not see the change.
+@returns the number of Loro write ops emitted. `0` means the target already
+matched the document — nothing committed, no peer sees an event.
+
+```typescript
+function reconcileTargetIntoLoro(
+  doc: LoroDoc,
+  root: ElementContainer,
+  target: TargetElement,
+  origin: string = AGENT_WRITE_ORIGIN,
+): number
+```
+
+### `registerLoroUndo()`
+
+Register Loro-backed undo/redo on an editor.
+Hand this to `lexicalForeign({ externalUndo })` — which forces the built-in
+`@lexical/history` stack off, so the two can never both be live. The returned
+disposer unregisters the commands and frees the manager.
+The manager is constructed HERE rather than at `loroCollab()` time on purpose:
+`lexicalForeign` calls `register` (which bootstraps the document) before
+`externalUndo`, so the boot-time seed is already committed and is NOT on the
+undo stack. A user's first undo can therefore never empty a freshly seeded
+document.
+
+```typescript
+function registerLoroUndo(options: LoroUndoOptions, editor: LexicalEditor): () => void
+```
+
 ### `runsFromDelta()`
 
 Project a `LoroText`'s delta into normalized Lexical-shaped runs.
@@ -663,6 +716,19 @@ peer sees an event. Tests assert on this to catch pruning regressions.
 
 ```typescript
 function syncLexicalToLoro(target: OutboundTarget, update: OutboundUpdate): number
+```
+
+### `targetFromEditorState()`
+
+Project the root of an `EditorState` to a {@link TargetElement}, doing the read
+for you.
+The caller owns the markdown → editor-state parse (its own headless editor and
+`@lexical/markdown` transformer set); this projects the parsed tree into the
+plain, serializable shape {@link reconcileTargetIntoLoro} consumes. Uses only
+`lexical`.
+
+```typescript
+function targetFromEditorState(state: EditorState): TargetElement
 ```
 
 ## Types
@@ -801,6 +867,14 @@ export type PropValue =
   | { [key: string]: PropValue }
 ```
 
+### `TargetChild`
+
+One child of a target element: a text run or a nested element.
+
+```typescript
+export type TargetChild = TargetText | TargetElement
+```
+
 ### `TextCarrier`
 
 A carrier holding one text run's `LoroText`.
@@ -895,12 +969,19 @@ export interface InboundTarget {
    * Commit origins whose LOCAL batches must still be applied.
    *
    * Echo layer (a) drops `by: 'local'` batches — they are this peer's own
-   * outbound writes coming back round. A CRDT-aware undo manager would produce
-   * local batches that are NOT echoes and must be applied; v1 has none (undo is
-   * Lexical's local history), so this is empty and exists so that adding one
-   * later is a configuration change rather than a rewrite.
+   * outbound writes coming back round. But not every local batch is an echo:
+   *
+   *  - the CRDT-aware undo manager (`undo.ts`) produces LOCAL batches from
+   *    `undo()`/`redo()` (`UNDO_ORIGINS`), and
+   *  - the agent-write reconciler (`agent-write.ts`) writes the document directly
+   *    under {@link import('./agent-write.js').AGENT_WRITE_ORIGIN},
+   *
+   * neither of which came FROM the editor, so both MUST be applied to bounce into
+   * it (preserving `NodeKey`s and decorator mounts). `binding.ts` passes those
+   * origins here. A local batch whose origin is on this list is applied; every
+   * other local batch is still dropped as an echo.
    */
-  readonly undoOrigins?: readonly string[]
+  readonly localOrigins?: readonly string[]
 }
 ```
 
@@ -937,15 +1018,18 @@ export interface LoroCollab {
   /** The ContainerID ↔ NodeKey registry. Exposed for tests and diagnostics. */
   readonly mapping: ContainerNodeMap
   /**
-   * Always `undefined` in v1 — this binding does NOT own the undo stack.
+   * Install this binding's CRDT-aware undo/redo on the editor; pass as
+   * `lexicalForeign({ externalUndo })`. Returns a disposer.
    *
-   * Declared so the field is part of the contract rather than an omission a host
-   * has to guess about: `lexicalForeign` turns its built-in history off when an
-   * `externalUndo` owner is present, and a host that disables history for this
-   * binding leaves the user with NO undo at all. When a Loro `UndoManager`
-   * lands, this becomes the registration function and hosts need no change.
+   * Undo is LOCAL-ONLY: it reverts this peer's own commits and leaves every
+   * other peer's concurrent edits standing (`undo.ts`). Registering it forces
+   * `lexicalForeign`'s built-in `@lexical/history` stack off, which is the point
+   * — a snapshot-based local stack would rewind remote work for everyone.
+   *
+   * Registration is SEPARATE from {@link LoroCollab.register} so a host that
+   * genuinely wants its own undo owner can decline it. Do not register it twice.
    */
-  readonly externalUndo?: undefined
+  readonly externalUndo: (editor: LexicalEditor) => () => void
   /** Re-run the boot decision — call after your transport's first sync. */
   bootstrap: (editor: LexicalEditor) => BootstrapOutcome
 }
@@ -974,6 +1058,32 @@ export interface LoroCollabConfig {
   readonly origin?: string
   /** Called after boot with what happened — seeded, adopted, or still waiting. */
   readonly onBootstrap?: (outcome: BootstrapOutcome) => void
+  /**
+   * Tuning for the peer-scoped undo manager installed by
+   * {@link LoroCollab.externalUndo} — merge window, stack depth, excluded
+   * origins. Defaults are in `undo.ts`; the `doc` is supplied by the binding.
+   */
+  readonly undo?: Omit<LoroUndoOptions, 'doc'>
+}
+```
+
+### `LoroUndoOptions`
+
+Tuning for {@link registerLoroUndo}.
+
+```typescript
+export interface LoroUndoOptions {
+  /** The shared document. */
+  readonly doc: LoroDoc
+  /** See {@link DEFAULT_MERGE_INTERVAL}. */
+  readonly mergeInterval?: number
+  /** See {@link DEFAULT_MAX_UNDO_STEPS}. */
+  readonly maxUndoSteps?: number
+  /**
+   * Local commit origins EXCLUDED from the undo stack, by prefix. Use this for
+   * machine-generated writes a user should never be able to undo into.
+   */
+  readonly excludeOriginPrefixes?: readonly string[]
 }
 ```
 
@@ -1018,6 +1128,31 @@ export interface OutboundTarget {
   readonly origin?: string
   /** Tags that suppress the sync. Defaults to {@link OUTBOUND_SKIP_TAGS}. */
   readonly skipTags?: readonly string[]
+}
+```
+
+### `TargetElement`
+
+A Lexical element (paragraph/heading/list/…) or a leaf mirrored as an element
+(`LineBreakNode`, `LLuiDecoratorNode`) whose payload lives entirely in `props`.
+
+```typescript
+export interface TargetElement {
+  readonly kind: 'element'
+  readonly type: string
+  readonly props: Readonly<Record<string, PropValue>>
+  readonly children: readonly TargetChild[]
+}
+```
+
+### `TargetText`
+
+A maximal run of adjacent text nodes — the schema's text unit (see `schema.ts`).
+
+```typescript
+export interface TargetText {
+  readonly kind: 'text'
+  readonly runs: readonly TextRun[]
 }
 ```
 
@@ -1101,6 +1236,19 @@ class ContainerNodeMap {
 
 ## Constants
 
+### `AGENT_WRITE_ORIGIN`
+
+Commit origin stamped on the single agent-write commit.
+Distinct from `to-loro.ts`'s `OUTBOUND_ORIGIN` so the inbound path can tell an
+agent write apart from an echo of its own outbound write: `binding.ts` lists
+this origin among the LOCAL batches the inbound path must still APPLY, which is
+what bounces an agent write into a live editor (preserving `NodeKey`s and
+decorator mounts).
+
+```typescript
+const AGENT_WRITE_ORIGIN
+```
+
 ### `DECORATOR_TYPE`
 
 `type` value used for an `LLuiDecoratorNode`. Its identity lives in
@@ -1108,6 +1256,24 @@ class ContainerNodeMap {
 
 ```typescript
 const DECORATOR_TYPE
+```
+
+### `DEFAULT_MAX_UNDO_STEPS`
+
+Undo steps retained before the oldest is dropped. Loro's own default.
+
+```typescript
+const DEFAULT_MAX_UNDO_STEPS
+```
+
+### `DEFAULT_MERGE_INTERVAL`
+
+Milliseconds within which consecutive local commits merge into ONE undo step.
+Matches `@lexical/history`'s delay, so typing undoes in the chunks a user of
+the non-collaborative editor already expects. `0` disables merging.
+
+```typescript
+const DEFAULT_MERGE_INTERVAL
 ```
 
 ### `DIGITS`
@@ -1245,6 +1411,15 @@ Lexical's `LexicalConstants.ts`). Each becomes an INDEPENDENT named mark.
 const LORO_TEXT_FORMATS
 ```
 
+### `LORO_UNDO_ORIGIN`
+
+The commit origin Loro stamps on the batches produced by `UndoManager#undo`
+and `#redo`. Both use `'undo'`; there is no separate redo origin.
+
+```typescript
+const LORO_UNDO_ORIGIN
+```
+
 ### `OUTBOUND_ORIGIN`
 
 Commit origin stamped on every write this module makes.
@@ -1298,6 +1473,14 @@ Lexical's left-biased caret.
 
 ```typescript
 const TEXT_MARK_EXPAND: ExpandType
+```
+
+### `UNDO_ORIGINS`
+
+Local commit origins the inbound path must apply rather than treat as echo.
+
+```typescript
+const UNDO_ORIGINS: readonly string[]
 ```
 
 <!-- auto-api:end -->

@@ -57,6 +57,25 @@ The Markdown ⇄ editor mapping is a transformer registry. `GFM_TRANSFORMERS` / 
 
 ## Functions
 
+### `$createWikiLinkNode()`
+
+Build a wikilink node. `target`/`alias` are sanitized to values the `[[…]]`
+syntax can express (see {@link sanitizeWikiLinkTarget}); a target with nothing
+usable left falls back to the literal text `Page` rather than yielding an
+invisible token.
+
+```typescript
+function $createWikiLinkNode(target: string, alias: string | null = null): WikiLinkNode
+```
+
+### `$getFrontmatter()`
+
+The document's frontmatter body, or `null` when it has none.
+
+```typescript
+function $getFrontmatter(): string | null
+```
+
 ### `$insertCallout()`
 
 Insert a fresh callout at the current selection; returns the created node.
@@ -88,6 +107,57 @@ paste behaviour instead of silently swallowing the event.
 function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
+### `$isWikiLinkNode()`
+
+```typescript
+function $isWikiLinkNode(node: LexicalNode | null | undefined): node is WikiLinkNode
+```
+
+### `$setFrontmatter()`
+
+Set (or, with `null`, remove) the document's frontmatter. The block is always
+kept as the FIRST child of the root — it is only frontmatter there, and the
+exporter relies on that position (see the transformer's `export`).
+
+```typescript
+function $setFrontmatter(source: string | null): void
+```
+
+### `blockAtPoint()`
+
+The block whose vertical band contains `clientY`, or `null` when the pointer
+is in no block's band.
+TWO passes, and the order matters. A block's OWN rect always wins outright;
+only a point in no block at all falls through to the widened search, where
+the NEAREST band within `tolerance` wins (ties biased upward, matching how a
+reader attributes a gap to the block above it).
+A single widened pass with first-match-wins — which this was — is wrong
+wherever two rects touch or nearly touch, and touching rects are the common
+case, not the exotic one: list items, table rows, consecutive lines, and any
+margin-collapsed heading. With `tolerance = 6` and adjacent rects [0,20] and
+[20,40], every y in [20,26] resolved to the FIRST block, so the block below
+lost the top 6px of its own body — the grip targeted, grabbed and dragged the
+wrong block. Generally, for an inter-block gap `g < tolerance`, block N stole
+the first `tolerance - g` px of block N+1.
+
+```typescript
+function blockAtPoint(
+  blocks: readonly BlockRect[],
+  clientY: number,
+  tolerance: number = HOVER_TOLERANCE,
+): BlockRect | null
+```
+
+### `blockDragPlugin()`
+
+Reorder top-level blocks by dragging a hover gutter grip, or from the keyboard
+(focus the grip, Enter/Space to grab, ↑/↓ to move, Enter/Space to drop, Escape
+to cancel). Every reorder is one Lexical node move, hence one undo step.
+
+```typescript
+function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin
+```
+
 ### `blockUnderlineFormat()`
 
 Swallow the underline text-format command. `registerRichText` wires Cmd+U to
@@ -115,6 +185,12 @@ function buildTransformers(plugins: readonly MarkdownPlugin[]): Transformer[]
 
 ```typescript
 function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin
+```
+
+### `codeLanguagePlugin()`
+
+```typescript
+function codeLanguagePlugin(opts: CodeLanguagePluginOptions = {}): MarkdownPlugin
 ```
 
 ### `computeFormatState()`
@@ -177,10 +253,43 @@ function definePluginUI<S, M, E = never>(spec: PluginUISpec<S, M, E>): PluginUI
 function emojiPlugin(opts: EmojiPluginOptions = {}): MarkdownPlugin
 ```
 
+### `findDropTarget()`
+
+The slot `clientY` points at, expressed relative to a neighbouring block.
+The document has `n + 1` slots for `n` blocks; the slot index is the count of
+blocks whose vertical midpoint is above the pointer. Two of those slots are
+where `sourceKey` already sits — dropping there is a no-op, so both return
+`null` and the caller shows no indicator and commits nothing. That check is
+what stops a 1px twitch from producing a spurious undo entry.
+
+```typescript
+function findDropTarget(
+  blocks: readonly BlockRect[],
+  clientY: number,
+  sourceKey: NodeKey,
+): DropTarget | null
+```
+
 ### `floatingToolbarPlugin()`
 
 ```typescript
 function floatingToolbarPlugin(): MarkdownPlugin
+```
+
+### `formatWikiLink()`
+
+Serialize a wikilink back to markdown. Inverse of {@link parseWikiLinkInner}
+for every link built through this module's constructors — see
+{@link sanitizeWikiLinkTarget} for why that qualifier is load-bearing.
+
+```typescript
+function formatWikiLink(link: WikiLink): string
+```
+
+### `frontmatterPlugin()`
+
+```typescript
+function frontmatterPlugin(opts: FrontmatterPluginOptions = {}): MarkdownPlugin
 ```
 
 ### `hrPlugin()`
@@ -193,6 +302,15 @@ function hrPlugin(): MarkdownPlugin
 
 ```typescript
 function imagePlugin(opts: ImagePluginOptions = {}): MarkdownPlugin
+```
+
+### `indicatorRect()`
+
+Where to draw the indicator line for a resolved {@link DropTarget}: on the
+target's top edge for `before`, its bottom edge for `after`.
+
+```typescript
+function indicatorRect(blocks: readonly BlockRect[], target: DropTarget): IndicatorRect | null
 ```
 
 ### `init()`
@@ -258,12 +376,48 @@ function mergeTheme(theme?: EditorThemeClasses): EditorThemeClasses
 function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin
 ```
 
+### `normalizeCodeInfo()`
+
+Canonicalize a fence info string.
+CommonMark's info string is the remainder of the opening-fence line with the
+surrounding whitespace stripped; a blank one means "no language". Two
+characters are removed rather than preserved, because keeping them would emit
+markdown that no longer re-imports to the same block:
+
+- a backtick — illegal in a backtick-fenced info string (it would terminate
+  or corrupt the fence);
+- a newline — it would end the fence line entirely.
+  Everything else survives verbatim, including spaces (`'lance table'`) and
+  punctuation (`'c++'`, `'objective-c'`).
+
+```typescript
+function normalizeCodeInfo(raw: string | null | undefined): string | null
+```
+
 ### `orderTransformers()`
 
 Stable-sort transformers into the order Lexical expects.
 
 ```typescript
 function orderTransformers(transformers: readonly Transformer[]): Transformer[]
+```
+
+### `parseWikiLinkInner()`
+
+Parse the content BETWEEN the brackets. Returns `null` when the content is not
+a valid wikilink body.
+Deliberate choices, each load-bearing for exact round-tripping:
+
+- split on the FIRST `|` only, so `[[a|b|c]]` has alias `b|c` and re-exports
+  byte-identically;
+- an EMPTY alias (`[[a|]]`) normalizes to no alias — the alternative
+  (keeping `alias: ''`) would render a zero-width, unclickable node;
+- NO trimming. `[[ a ]]` keeps its spaces, because trimming would make
+  import→export lossy. Presentation trimming is the host's call in
+  `onNavigate`/`resolve`, not the document's.
+
+```typescript
+function parseWikiLinkInner(inner: string): WikiLink | null
 ```
 
 ### `registerMarkdownPaste()`
@@ -276,6 +430,40 @@ Plain-text pastes are converted as Markdown. Pastes that also carry
 function registerMarkdownPaste(editor: LexicalEditor, transformers: Array<Transformer>): () => void
 ```
 
+### `sanitizeWikiLinkAlias()`
+
+Sanitize an alias. Returns `null` when nothing usable survives.
+
+```typescript
+function sanitizeWikiLinkAlias(raw: string | null): string | null
+```
+
+### `sanitizeWikiLinkTarget()`
+
+Sanitize a target. Returns `null` when nothing usable survives.
+
+```typescript
+function sanitizeWikiLinkTarget(raw: string): string | null
+```
+
+### `serializeFrontmatter()`
+
+Render the fences back around an opaque body. An empty (or blank-only) body
+collapses to the canonical two-line form so the result stays idempotent.
+
+```typescript
+function serializeFrontmatter(source: string): string
+```
+
+### `setTransformerPrecedence()`
+
+Declare that `transformer` must be consulted before same-rank peers with a
+higher value. Call at module scope, beside the transformer's definition.
+
+```typescript
+function setTransformerPrecedence(transformer: Transformer, value: number): void
+```
+
 ### `singleBlockPlugin()`
 
 ```typescript
@@ -286,6 +474,17 @@ function singleBlockPlugin(opts: SingleBlockPluginOptions = {}): MarkdownPlugin
 
 ```typescript
 function slashPlugin(): MarkdownPlugin
+```
+
+### `splitFrontmatter()`
+
+Split a leading frontmatter block off a markdown string: `[body, rest]`, or
+`null` when the document has none (no line-0 fence, or no closing fence).
+Exported because a consumer often needs the metadata BEFORE building an
+editor — the same predicate the importer uses, so the two never disagree.
+
+```typescript
+function splitFrontmatter(markdown: string): [source: string, rest: string] | null
 ```
 
 ### `tablePlugin()`
@@ -306,6 +505,12 @@ function toolbar(opts: ToolbarOptions): Mountable
 
 ```typescript
 function update(state: EditorState, msg: EditorMsg): [EditorState, EditorEffect[]]
+```
+
+### `wikilinkPlugin()`
+
+```typescript
+function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 ```
 
 ## Types
@@ -336,6 +541,26 @@ export type BlockType =
 
 ```typescript
 export type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+```
+
+### `CodeLanguageEffect`
+
+Write `language` (null clears it) onto the code block with node key `key`.
+
+```typescript
+export type CodeLanguageEffect = { type: 'apply'; key: string; language: string | null }
+```
+
+### `CodeLanguageMsg`
+
+```typescript
+export type CodeLanguageMsg =
+  | { type: 'show'; key: string; x: number; y: number; language: string | null }
+  | { type: 'hide' }
+  | { type: 'edit' }
+  | { type: 'input'; language: string }
+  | { type: 'commit' }
+  | { type: 'cancel' }
 ```
 
 ### `CollabFactory`
@@ -413,7 +638,48 @@ Which floating surface is currently open.
 export type OverlayKind = 'none' | 'floating' | 'slash' | 'context' | 'link'
 ```
 
+### `Place`
+
+Which side of the target block the source lands on.
+
+```typescript
+export type Place = 'before' | 'after'
+```
+
+### `SerializedWikiLinkNode`
+
+```typescript
+export type SerializedWikiLinkNode = Spread<
+  { target: string; alias: string | null },
+  SerializedTextNode
+>
+```
+
 ## Interfaces
+
+### `BlockDragOptions`
+
+```typescript
+export interface BlockDragOptions {
+  /** Gutter grip inset, in px left of the block's left edge. Default 28. */
+  gutterOffset?: number
+}
+```
+
+### `BlockRect`
+
+The measured viewport geometry of one top-level block. Pure data — the unit
+of everything below, so all placement logic is testable without a DOM.
+
+```typescript
+export interface BlockRect {
+  key: NodeKey
+  top: number
+  bottom: number
+  left: number
+  width: number
+}
+```
 
 ### `CalloutData`
 
@@ -433,15 +699,68 @@ export interface CalloutPluginOptions {
 }
 ```
 
+### `CodeLanguagePluginOptions`
+
+```typescript
+export interface CodeLanguagePluginOptions {
+  /** Suggestions offered in the language input's `<datalist>`. Purely advisory —
+   * ANY info string may be typed, including multi-token ones. */
+  languages?: readonly string[]
+  /** Placeholder shown when a block has no language (default `'plain text'`). */
+  placeholder?: string
+  /** Accessible label for the language input (default `'Code block language'`). */
+  label?: string
+}
+```
+
+### `CodeLanguageState`
+
+The language badge's state. JSON-serializable, like every LLui state slice.
+
+```typescript
+export interface CodeLanguageState {
+  /** Whether the badge is shown. */
+  open: boolean
+  /** Viewport x of the anchor (the code block's right edge). */
+  x: number
+  /** Viewport y of the anchor (the code block's top edge). */
+  y: number
+  /** Node key of the anchored code block (`''` when none). */
+  key: string
+  /** The input's current value (the block's info string, or the in-flight edit). */
+  language: string
+  /** The info string as last read from the node — the baseline `cancel` restores
+   * and `commit` diffs against, so a no-op commit never touches the document. */
+  committed: string
+  /** Whether the input has focus; a refresh must not overwrite what's being typed. */
+  editing: boolean
+  /** A `hide` that arrived mid-edit, applied when the edit ends. */
+  pendingHide: boolean
+}
+```
+
 ### `CollabBinding`
 
 Disposer-returning binding the collab layer installs on the live editor.
-`@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
-`@llui/markdown-editor` needs no Yjs dependency of its own.
+`@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
+both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
+nor a Loro dependency of its own.
 
 ```typescript
 export interface CollabBinding {
   register: (editor: LexicalEditor) => () => void
+  /**
+   * A CRDT-aware undo owner, if the binding provides one SEPARATELY from
+   * `register`. When present it is handed to `lexicalForeign({ externalUndo })`,
+   * which forces the built-in `@lexical/history` stack off so the two can never
+   * both be live — this is what gives collab mode real, peer-scoped undo.
+   *
+   * Optional because not every binding splits undo out this way: `yjsCollab`
+   * installs its own undo commands INSIDE `register`, so it leaves this unset and
+   * still owns undo. A binding that sets neither would leave the editor with no
+   * undo at all — see `@llui/lexical-loro`, which sets this.
+   */
+  externalUndo?: (editor: LexicalEditor) => () => void
 }
 ```
 
@@ -517,6 +836,17 @@ export interface CommandItem {
 export interface CorePluginOptions {
   /** Reserved for future core options. */
   readonly _?: never
+}
+```
+
+### `DropTarget`
+
+A resolved drop slot: "put the dragged block `place` this `key`".
+
+```typescript
+export interface DropTarget {
+  key: NodeKey
+  place: Place
 }
 ```
 
@@ -623,6 +953,35 @@ export interface FormatState {
 }
 ```
 
+### `FrontmatterData`
+
+The frontmatter node's payload: the block body, verbatim, with no fences.
+
+```typescript
+export interface FrontmatterData {
+  /** The raw text between the opening and closing `---`. Never interpreted. */
+  source: string
+}
+```
+
+### `FrontmatterPluginOptions`
+
+```typescript
+export interface FrontmatterPluginOptions {
+  /** Render the raw block to a preview (e.g. parse with your own YAML library
+   * and draw a table). Return a DOM `Node` (mounted directly) or a **trusted**
+   * HTML string — see `renderedPreview`'s security note. */
+  render?: PreviewRender
+  /** Accessible label for the raw-source editor (default `'Frontmatter'`). */
+  label?: string
+  /** Placeholder shown for an empty block (default `'key: value'`). */
+  placeholder?: string
+  /** Show the raw source editor. Set false for a `render`-only presentation
+   * (the block still round-trips; it just isn't editable in place). Default true. */
+  editable?: boolean
+}
+```
+
 ### `ImagePluginOptions`
 
 ```typescript
@@ -630,6 +989,18 @@ export interface ImagePluginOptions {
   /** Upload a chosen file and resolve to its URL. When omitted, the file picker
    * is hidden and only URL entry is offered. */
   upload?: (file: File) => Promise<string>
+}
+```
+
+### `IndicatorRect`
+
+Viewport position of the drop-indicator line.
+
+```typescript
+export interface IndicatorRect {
+  x: number
+  y: number
+  width: number
 }
 ```
 
@@ -868,7 +1239,93 @@ export interface ToolbarParts {
 }
 ```
 
+### `WikiLink`
+
+A parsed wikilink. `alias` is `null` when the target is shown verbatim.
+
+```typescript
+export interface WikiLink {
+  target: string
+  alias: string | null
+}
+```
+
+### `WikiLinkPluginOptions`
+
+```typescript
+export interface WikiLinkPluginOptions {
+  /**
+   * Called when the user activates a wikilink. This is the host's resolution
+   * seam: `@llui/markdown-editor` knows nothing about what a target names.
+   *
+   * The notification travels the same route as every other plugin event —
+   * `ctx.emit` → the editor's update loop → this plugin's reducer → an effect —
+   * rather than a raw DOM event, so an activation is an ordinary TEA message
+   * that shows up in devtools, replay and agent traces.
+   */
+  onNavigate?: (link: WikiLink) => void
+  /** Text used as the target when the insert command runs with no selection. */
+  placeholderTarget?: string
+}
+```
+
+## Classes
+
+### `WikiLinkNode`
+
+An atomic inline wikilink. Extends `TextNode` so the caret, selection and
+text formats behave exactly as they do for prose, while `token` mode keeps it
+indivisible: the user can delete it or move past it, but never edit its
+interior into a state where the visible alias disagrees with `__target`.
+
+```typescript
+class WikiLinkNode extends TextNode {
+  __target: string
+  __alias: string | null
+  getType(): string
+  clone(node: WikiLinkNode): WikiLinkNode
+  constructor(target: string, alias: string | null, text?: string, key?: NodeKey)
+  importJSON(serializedNode: SerializedWikiLinkNode): WikiLinkNode
+  updateFromJSON(serializedNode: LexicalUpdateJSON<SerializedWikiLinkNode>): this
+  exportJSON(): SerializedWikiLinkNode
+  createDOM(config: EditorConfig, editor?: LexicalEditor): HTMLElement
+  updateDOM(prevNode: this, dom: HTMLElement, config: EditorConfig): boolean
+  getTarget(): string
+  setTarget(target: string): this
+  getAlias(): string | null
+  setAlias(alias: string | null): this
+  getLink(): WikiLink
+  canInsertTextBefore(): boolean
+  canInsertTextAfter(): boolean
+}
+```
+
 ## Constants
+
+### `BLOCK_DRAG_Z`
+
+Stacking levels for this plugin's two surfaces — deliberately below the
+shared `OVERLAY_Z` scale (60+) so document chrome never covers a menu.
+
+```typescript
+const BLOCK_DRAG_Z
+```
+
+### `CODE_LANGUAGE_PLUGIN`
+
+This plugin's registry name (the `plugin` message envelope's `name`).
+
+```typescript
+const CODE_LANGUAGE_PLUGIN
+```
+
+### `FRONTMATTER_BRIDGE_TYPE`
+
+The decorator bridge id for the frontmatter block.
+
+```typescript
+const FRONTMATTER_BRIDGE_TYPE
+```
 
 ### `GFM_NODES`
 
