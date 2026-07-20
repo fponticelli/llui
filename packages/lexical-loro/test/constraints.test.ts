@@ -576,17 +576,35 @@ describe('resilience of the ordering projection', () => {
     expect(rendered(root)).toEqual(['good'])
   })
 
-  it('sorts a 2000-child element well inside a frame', () => {
-    // The map has no order of its own, so every projection sorts. Measured well
-    // past anything one Lexical element realistically holds.
-    const { doc, root } = freshDoc(1n)
-    const children = elementChildren(root)
-    const keys = allocate(null, null, 2000, jitterFor(1n))
-    for (let i = 0; i < 2000; i++) createTextChild(children, newUuid(), keys[i]!)
-    doc.commit()
+  it('projects in sub-quadratic time (the sort is O(n log n), not O(n^2))', () => {
+    // The children map has no order of its own, so every projection sorts. What
+    // matters is that the sort stays O(n log n): a regression that made it
+    // quadratic (e.g. an indexOf-in-a-loop) would block the main thread on a
+    // large document. We assert that SHAPE via a scaling ratio rather than an
+    // absolute wall-clock bound — a fixed millisecond threshold is unportable
+    // across CI runners (it flaked at 16ms on a shared box), whereas the ratio
+    // between two sizes is machine-speed-invariant. For a 4x size increase,
+    // O(n log n) grows ~4.9x and O(n^2) grows 16x; a threshold of 12 separates
+    // them (a true quadratic still fails hard) while leaving headroom for
+    // measurement noise on a loaded CI runner.
+    const project = (n: number): number => {
+      const { doc, root } = freshDoc(1n)
+      const children = elementChildren(root)
+      const keys = allocate(null, null, n, jitterFor(1n))
+      for (let i = 0; i < n; i++) createTextChild(children, newUuid(), keys[i]!)
+      doc.commit()
+      // Warm up, then average enough iterations that each measurement is
+      // comfortably in the multi-millisecond range (sub-millisecond timing is
+      // pure noise and would make the ratio meaningless).
+      for (let i = 0; i < 3; i++) orderedChildren(root)
+      const iterations = 20
+      const started = performance.now()
+      for (let i = 0; i < iterations; i++) expect(orderedChildren(root)).toHaveLength(n)
+      return (performance.now() - started) / iterations
+    }
 
-    const started = performance.now()
-    for (let i = 0; i < 10; i++) expect(orderedChildren(root)).toHaveLength(2000)
-    expect((performance.now() - started) / 10).toBeLessThan(16)
+    const small = project(500)
+    const large = project(2000) // 4x the size
+    expect(large / small).toBeLessThan(12)
   })
 })
