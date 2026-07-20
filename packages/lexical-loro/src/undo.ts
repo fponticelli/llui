@@ -24,8 +24,8 @@
  * drops as "our own outbound write coming back round". It is not: nothing wrote
  * it to the editor, and dropping it leaves the editor permanently behind the
  * document it mirrors. Loro stamps those batches with the origin
- * {@link LORO_UNDO_ORIGIN} (both undo AND redo use it), and the binding passes
- * {@link UNDO_ORIGINS} as `InboundTarget.undoOrigins` so exactly those local
+ * {@link LORO_UNDO_ORIGIN} (both undo AND redo use it), and the binding lists
+ * {@link UNDO_ORIGINS} in `InboundTarget.localOrigins` so exactly those local
  * batches are applied. The editor update the writeback performs carries
  * `COLLABORATION_TAG`, so echo layer (b) keeps it from bouncing back out.
  *

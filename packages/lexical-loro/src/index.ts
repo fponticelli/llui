@@ -147,3 +147,30 @@ export {
 } from './undo.js'
 
 export { loroCollab, type LoroCollab, type LoroCollabConfig } from './binding.js'
+
+/**
+ * Agent-write: apply an LLM's full-document markdown REWRITE to the shared
+ * document by CONTENT, so unchanged blocks keep their `ContainerID`s (hence their
+ * `NodeKey`s and mounted decorator sub-apps, and any concurrent peer edit into
+ * them) instead of being recreated wholesale.
+ *
+ * `reconcileTargetIntoLoro` is a SIBLING to `syncLexicalToLoro`: it writes Loro
+ * directly under {@link AGENT_WRITE_ORIGIN} and does NOT consult the
+ * `ContainerNodeMap` (content matching is the point; the mapping self-heals on
+ * the inbound bounce into any live editor). The caller owns the markdown → target
+ * parse with its own `@lexical/markdown` transformer set — this package never
+ * depends on `@lexical/markdown` — and projects the parsed editor state with
+ * {@link targetFromEditorState} / {@link projectTarget}.
+ *
+ * Guarantees and the documented DUPLICATE-BLOCK caveat live on the functions and
+ * in the README.
+ */
+export {
+  AGENT_WRITE_ORIGIN,
+  reconcileTargetIntoLoro,
+  projectTarget,
+  targetFromEditorState,
+  type TargetElement,
+  type TargetText,
+  type TargetChild,
+} from './agent-write.js'

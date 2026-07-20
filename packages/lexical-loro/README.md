@@ -142,6 +142,76 @@ because `packages/lexical/src/foreign.ts` reads that tag as "the host pushed
 content — cancel pending outbound work", which would make the host's persistence
 go dark whenever a peer types.
 
+## Agent write (content-keyed rewrite)
+
+When an LLM rewrites a note's **whole markdown**, the naive route — reparse into
+the live editor, which does `root.clear()` + rebuild — mints a fresh `NodeKey`
+for every node, so the outbound sync matches nothing through the registry and
+**recreates every container**. A concurrent edit from another window merges into
+a container this side just deleted and is lost, and every mounted decorator
+sub-app is torn down. Measured at **0% ContainerID survival even for identical
+markdown**.
+
+`reconcileTargetIntoLoro` is the supported alternative — a **sibling** to
+`syncLexicalToLoro`, not a replacement. It reconciles a parsed **target tree**
+directly against the Loro document, matching existing carriers to target children
+by **content** (not by `NodeKey`). Unchanged blocks keep their `ContainerID`s — and
+therefore their `NodeKey`s, their mounted decorator sub-apps, and any concurrent
+peer edit into them; a text-changed block keeps its `LoroText` and diffs the
+characters; only genuinely new / removed / moved blocks touch the ordering.
+
+```ts
+import { reconcileTargetIntoLoro, targetFromEditorState } from '@llui/lexical-loro'
+import { createHeadlessEditor } from '@lexical/headless'
+import { $convertFromMarkdownString } from '@lexical/markdown'
+
+// The CALLER owns the markdown → target-tree parse, with ITS OWN nodes and
+// transformer set (custom nodes/transformers make the tree caller-specific).
+const parser = createHeadlessEditor({ nodes: MY_NODES, onError })
+parser.update(() => $convertFromMarkdownString(agentMarkdown, MY_TRANSFORMERS), {
+  discrete: true,
+})
+const target = targetFromEditorState(parser.getEditorState())
+
+// The reusable CORE takes the parsed tree and writes Loro under 'agent-write'.
+reconcileTargetIntoLoro(collab.doc, collab.root, target)
+```
+
+**Guarantees.** Identical markdown ⇒ **zero ops, 100% survival**. A one-paragraph
+edit ⇒ only that `LoroText` changes. Append / prepend / delete / move ⇒ every
+surviving block keeps its identity, and a move is one `pos` write. The commit
+carries the distinct origin `AGENT_WRITE_ORIGIN`, which `loroCollab` lists among
+the local origins the **inbound** path applies — so an agent write on the shared
+document **bounces into any live editor** bound to it, preserving `NodeKey`s and
+decorator mounts on the way in. It deliberately does **not** consult the
+`ContainerNodeMap`: content matching is the point, and the mapping self-heals on
+the inbound bounce.
+
+**Why the caller owns the markdown parse.** The reconciler is the reusable core;
+the markdown → target parse is caller-specific (custom nodes and transformer set).
+Keeping it in the caller is what lets this package depend on **neither
+`@lexical/markdown` nor `@lexical/headless`** at runtime — they are dev-only here.
+Project the caller's parsed editor state with `targetFromEditorState` (or
+`projectTarget` inside a read); both use only `lexical`.
+
+### The duplicate-block caveat (honest residual)
+
+Content matching cannot fully disambiguate **byte-identical sibling blocks** —
+they have no distinguishing content, and the agent path has no `NodeKey` identity
+to fall back on. The exact-match pass applies a **content + position bias**: among
+identical carriers, a target claims the one whose index is nearest its own. That
+**fixes the common case** — changing the first of two identical blocks now leaves
+that block's carrier free to absorb the change while the unchanged sibling keeps
+its own carrier, so a concurrent edit to the other identical block no longer
+collides.
+
+It is **not a complete solution, and does not claim to be.** When the **count** of
+an identical group changes (delete one of three identical paragraphs), content is
+by definition insufficient to say which carrier the user meant to keep, and
+position proximity is only a guess — the trailing carrier is dropped regardless of
+intent. `NodeKey` identity, unavailable on the agent path, is the only complete
+answer. `test/agent-write.test.ts` pins both the improvement and this residual.
+
 ## Scope
 
 - **Document sync + peer-scoped undo.** No presence or remote cursors yet —

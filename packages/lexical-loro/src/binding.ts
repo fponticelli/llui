@@ -51,6 +51,7 @@
 import type { LexicalEditor } from 'lexical'
 import { LoroDoc } from 'loro-crdt'
 
+import { AGENT_WRITE_ORIGIN } from './agent-write.js'
 import { ContainerNodeMap } from './mapping.js'
 import { bootstrapDocument, type BootstrapOutcome } from './seed.js'
 import { initDoc, type ElementContainer } from './schema.js'
@@ -151,10 +152,14 @@ export function loroCollab(config: LoroCollabConfig = {}): LoroCollab {
 
   const register = (editor: LexicalEditor): (() => void) => {
     const outboundTarget = { doc, root, mapping, origin }
-    // `undoOrigins` is passed whether or not `externalUndo` was registered: only
-    // a Loro `UndoManager` produces that origin, so allowing it is inert without
-    // one — and the inbound path stays independent of registration order.
-    const inboundTarget = { doc, root, mapping, editor, undoOrigins: UNDO_ORIGINS }
+    // `localOrigins` are the local batches the inbound path must still APPLY
+    // rather than drop as an echo (see `to-lexical.ts`). Both are passed
+    // unconditionally: only a Loro `UndoManager` produces `UNDO_ORIGINS` and only
+    // `reconcileTargetIntoLoro` produces `AGENT_WRITE_ORIGIN`, so listing them is
+    // inert until one occurs — and the inbound path stays independent of whether
+    // `externalUndo` was registered or an agent write ever happens.
+    const localOrigins = [...UNDO_ORIGINS, AGENT_WRITE_ORIGIN]
+    const inboundTarget = { doc, root, mapping, editor, localOrigins }
 
     // Inbound BEFORE outbound: the subscription must be live before the
     // bootstrap writes anything, or a document arriving mid-boot is missed.

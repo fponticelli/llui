@@ -130,13 +130,19 @@ export interface InboundTarget {
    * Commit origins whose LOCAL batches must still be applied.
    *
    * Echo layer (a) drops `by: 'local'` batches — they are this peer's own
-   * outbound writes coming back round. The exception is the CRDT-aware undo
-   * manager (`undo.ts`): its `undo()`/`redo()` produce LOCAL batches that are NOT
-   * echoes and MUST be applied, so `binding.ts` passes their origin
-   * (`UNDO_ORIGINS`) here. A local batch whose origin is on this list is applied;
-   * every other local batch is still dropped as an echo.
+   * outbound writes coming back round. But not every local batch is an echo:
+   *
+   *  - the CRDT-aware undo manager (`undo.ts`) produces LOCAL batches from
+   *    `undo()`/`redo()` (`UNDO_ORIGINS`), and
+   *  - the agent-write reconciler (`agent-write.ts`) writes the document directly
+   *    under {@link import('./agent-write.js').AGENT_WRITE_ORIGIN},
+   *
+   * neither of which came FROM the editor, so both MUST be applied to bounce into
+   * it (preserving `NodeKey`s and decorator mounts). `binding.ts` passes those
+   * origins here. A local batch whose origin is on this list is applied; every
+   * other local batch is still dropped as an echo.
    */
-  readonly undoOrigins?: readonly string[]
+  readonly localOrigins?: readonly string[]
 }
 
 /**
@@ -151,7 +157,7 @@ export function applyLoroToLexical(target: InboundTarget, batch: LoroEventBatch)
   // outbound listener already produced it FROM the editor; feeding it back would
   // re-enter `editor.update` from inside a Lexical update listener.
   if (batch.by === 'local') {
-    const origins = target.undoOrigins ?? []
+    const origins = target.localOrigins ?? []
     if (batch.origin === undefined || !origins.includes(batch.origin)) return false
   }
   if (batch.events.length === 0) return false
