@@ -130,10 +130,11 @@ export interface InboundTarget {
    * Commit origins whose LOCAL batches must still be applied.
    *
    * Echo layer (a) drops `by: 'local'` batches — they are this peer's own
-   * outbound writes coming back round. A CRDT-aware undo manager would produce
-   * local batches that are NOT echoes and must be applied; v1 has none (undo is
-   * Lexical's local history), so this is empty and exists so that adding one
-   * later is a configuration change rather than a rewrite.
+   * outbound writes coming back round. The exception is the CRDT-aware undo
+   * manager (`undo.ts`): its `undo()`/`redo()` produce LOCAL batches that are NOT
+   * echoes and MUST be applied, so `binding.ts` passes their origin
+   * (`UNDO_ORIGINS`) here. A local batch whose origin is on this list is applied;
+   * every other local batch is still dropped as an echo.
    */
   readonly undoOrigins?: readonly string[]
 }

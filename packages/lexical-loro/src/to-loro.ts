@@ -66,12 +66,20 @@
  * `index.ts` for the full three-layer contract — in particular that this
  * binding must NEVER emit `PROGRAMMATIC_TAG`.
  *
- * `HISTORIC_TAG` is deliberately NOT suppressed, which is where this diverges
- * from `@lexical/yjs`. There, undo is the Yjs `UndoManager`, so a historic
- * update is the CRDT's own writeback and re-syncing it would echo. Here (v1)
- * undo is Lexical's LOCAL history: a historic update is a genuine local edit
- * that no peer has seen, and dropping it would make undo invisible to everyone
- * else. If CRDT-aware undo ever lands, add `HISTORIC_TAG` to `skipTags`.
+ * `HISTORIC_TAG` is deliberately NOT suppressed, and must stay that way — even
+ * though this binding DOES ship CRDT-aware undo. The reason it can be left
+ * unsuppressed is that the Loro undo owner (`undo.ts`) never routes through
+ * Lexical's history: `manager.undo()` mutates the shared document directly, and
+ * the resulting writeback into the editor carries `COLLABORATION_TAG` (echo
+ * layer b), not `HISTORIC_TAG`. So the CRDT undo path emits no historic update
+ * for this module to see. `lexicalForeign` also forces `@lexical/history` off
+ * whenever `externalUndo` is present, so a shipped app produces no `HISTORIC_TAG`
+ * update at all. Suppressing it here would be inert in that configuration and
+ * actively WRONG for a host that deliberately runs `@lexical/history` without an
+ * `externalUndo` owner (as `test/harden.test.ts` does): there a historic update
+ * is a genuine local edit no peer has seen, and dropping it would make that
+ * undo invisible to everyone else. This differs from `@lexical/yjs`, where undo
+ * IS a historic writeback of the CRDT's own and re-syncing it would echo.
  */
 
 import {

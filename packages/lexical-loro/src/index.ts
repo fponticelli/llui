@@ -1,10 +1,10 @@
 /**
  * `@llui/lexical-loro` — Loro CRDT binding for the LLui ↔ Lexical editor.
  *
- * Start at {@link loroCollab}: it composes everything below into one
- * `register(editor)` you hand to `lexicalForeign({ history: false,
- * seedMode: 'deferred', register })`, and it satisfies
- * `@llui/markdown-editor`'s `CollabBinding` structurally.
+ * Start at {@link loroCollab}: it composes everything below into a
+ * `register(editor)` plus an `externalUndo(editor)` you hand to
+ * `lexicalForeign({ seedMode: 'deferred', register, externalUndo })`, and it
+ * satisfies `@llui/markdown-editor`'s `CollabBinding` structurally.
  *
  * - `schema.ts`     — the Loro container shape mirroring a Lexical EditorState
  * - `order.ts`      — fractional indexing: sibling order as a sortable property
@@ -14,15 +14,17 @@
  * - `to-loro.ts`    — Lexical → Loro: the update-listener-driven mirror
  * - `to-lexical.ts` — Loro → Lexical: the persistent, in-place mirror
  * - `seed.ts`       — boot: seed an empty shared document, or adopt a populated one
+ * - `undo.ts`       — peer-scoped, CRDT-aware undo/redo over Loro's `UndoManager`
  * - `binding.ts`    — `loroCollab`: both directions plus the echo guards
  *
- * ── Scope (v1) ─────────────────────────────────────────────────────────────
+ * ── Scope ──────────────────────────────────────────────────────────────────
  *
- * DOCUMENT SYNC ONLY. No presence, no remote cursors, no CRDT-aware undo — undo
- * stays Lexical's local history, so a host must NOT disable its built-in history
- * for this binding (see `LoroCollab.externalUndo`). Text-node `style`, `mode`
- * and `detail` are not represented: the run model is `{text, format}`. Presence
- * over Loro's `EphemeralStore` is additive, later work.
+ * DOCUMENT SYNC plus LOCAL-ONLY UNDO. Undo is owned by this binding
+ * (`LoroCollab.externalUndo`), so a host MUST disable `@lexical/history` —
+ * `lexicalForeign` does that automatically once `externalUndo` is passed. Still
+ * out of scope: presence and remote cursors (additive, over Loro's
+ * `EphemeralStore`), and text-node `style` / `mode` / `detail` — the run model
+ * is `{text, format}`.
  *
  * ── Echo suppression ───────────────────────────────────────────────────────
  *
@@ -134,5 +136,14 @@ export {
   type BootstrapOutcome,
   type BootstrapTarget,
 } from './seed.js'
+
+export {
+  LORO_UNDO_ORIGIN,
+  UNDO_ORIGINS,
+  DEFAULT_MERGE_INTERVAL,
+  DEFAULT_MAX_UNDO_STEPS,
+  registerLoroUndo,
+  type LoroUndoOptions,
+} from './undo.js'
 
 export { loroCollab, type LoroCollab, type LoroCollabConfig } from './binding.js'

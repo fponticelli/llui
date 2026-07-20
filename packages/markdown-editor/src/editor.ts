@@ -83,10 +83,23 @@ export interface EditorConfig {
 }
 
 /** Disposer-returning binding the collab layer installs on the live editor.
- * `@llui/lexical-collab`'s `YjsCollab` satisfies this structurally, so
- * `@llui/markdown-editor` needs no Yjs dependency of its own. */
+ * `@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
+ * both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
+ * nor a Loro dependency of its own. */
 export interface CollabBinding {
   register: (editor: LexicalEditor) => () => void
+  /**
+   * A CRDT-aware undo owner, if the binding provides one SEPARATELY from
+   * `register`. When present it is handed to `lexicalForeign({ externalUndo })`,
+   * which forces the built-in `@lexical/history` stack off so the two can never
+   * both be live — this is what gives collab mode real, peer-scoped undo.
+   *
+   * Optional because not every binding splits undo out this way: `yjsCollab`
+   * installs its own undo commands INSIDE `register`, so it leaves this unset and
+   * still owns undo. A binding that sets neither would leave the editor with no
+   * undo at all — see `@llui/lexical-loro`, which sets this.
+   */
+  externalUndo?: (editor: LexicalEditor) => () => void
 }
 
 /** Hooks the editor injects into the {@link CollabFactory}: a markdown `seed`
@@ -291,8 +304,18 @@ export function markdownEditor(
       },
       // In collab mode the shared CRDT owns the document: the local undo stack
       // and the boot-time seed are disabled — the binding supplies a scoped undo
-      // manager and a sync-gated bootstrap instead.
-      ...(collabBinding ? { history: false, seedMode: 'deferred' as const } : {}),
+      // manager and a sync-gated bootstrap instead. A binding that owns undo via
+      // a SEPARATE `externalUndo` (Loro) has it wired here; one that owns undo
+      // inside its own `register` (Yjs) leaves the field unset. Either way the
+      // built-in history is off, so a binding that forgot both would show as "no
+      // undo" rather than fighting a local stack.
+      ...(collabBinding
+        ? {
+            history: false as const,
+            seedMode: 'deferred' as const,
+            ...(collabBinding.externalUndo ? { externalUndo: collabBinding.externalUndo } : {}),
+          }
+        : {}),
       defaultValue: collabBinding || config.value ? undefined : (config.defaultValue ?? ''),
       ...(config.value && !collabBinding ? { value: config.value } : {}),
       readonly: state.at('readonly'),

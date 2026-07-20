@@ -2,9 +2,9 @@
 
 Loro CRDT binding for the LLui ↔ Lexical editor.
 
-> **Status: v1 — document sync, both directions, usable end to end.**
-> No presence, no remote cursors, no CRDT-aware undo (undo stays Lexical's local
-> history). Transport is yours to supply. See [Scope](#scope-v1).
+> **Status: document sync, both directions, plus peer-scoped CRDT undo — usable
+> end to end.** No presence and no remote cursors yet. Transport is yours to
+> supply. See [Scope](#scope).
 
 ## Usage
 
@@ -22,9 +22,22 @@ markdownEditor({
 })
 ```
 
-`loroCollab` returns `{ register, doc, root, mapping, bootstrap }`. `register`
-satisfies `@llui/markdown-editor`'s `CollabBinding` structurally, so that package
-needs no Loro dependency of its own.
+`loroCollab` returns `{ register, externalUndo, doc, root, mapping, bootstrap }`.
+`register` **and** `externalUndo` together satisfy `@llui/markdown-editor`'s
+`CollabBinding` structurally, so that package needs no Loro dependency of its own
+— and, because `externalUndo` is present, the editor turns its built-in
+`@lexical/history` stack off automatically and uses this binding's peer-scoped
+undo instead. Wiring `loroCollab` directly (without `@llui/markdown-editor`),
+pass both to `lexicalForeign`:
+
+```ts
+const collab = loroCollab({ doc })
+lexicalForeign({
+  seedMode: 'deferred',
+  register: collab.register,
+  externalUndo: collab.externalUndo,
+})
+```
 
 **There is no built-in transport, deliberately.** `LoroDoc` already exposes the
 whole wire surface, so a transport is a dozen lines against your own websocket or
@@ -129,24 +142,22 @@ because `packages/lexical/src/foreign.ts` reads that tag as "the host pushed
 content — cancel pending outbound work", which would make the host's persistence
 go dark whenever a peer types.
 
-## Scope (v1)
+## Scope
 
-- **Document sync only.** No presence or remote cursors — Loro's
-  `EphemeralStore` makes those additive, later work.
-- **Undo is Lexical's local history, and it is NOT collaboration-safe.** This
-  binding installs no `externalUndo` owner, so a host must **not** disable its
-  built-in history for it. (`@llui/markdown-editor` currently passes
-  `history: false` whenever `collab` is set, which was written for the Yjs
-  binding — with a Loro binding that leaves the user with no undo at all.)
-
-  The sharper limitation: `@lexical/history` has no notion of a collaboration
-  tag, so an inbound remote edit is recorded as if the local user made it.
-  **Undoing after a remote edit re-applies a snapshot predating that edit and
-  removes the remote block for everyone.** The document stays convergent and
-  well-formed, but the result is not what the user asked for. Tagging cannot fix
-  it — the defect is snapshot-vs-operation — so the fix is a CRDT-aware
-  `UndoManager`. Pinned by a test in `test/harden.test.ts` that asserts today's
-  behaviour, ready to turn green when one lands.
+- **Document sync + peer-scoped undo.** No presence or remote cursors yet —
+  Loro's `EphemeralStore` makes those additive, later work.
+- **Undo is CRDT-aware and LOCAL-ONLY** (`src/undo.ts`, exposed as
+  `LoroCollab.externalUndo`). It is built on Loro's `UndoManager`, which is
+  operation-based and bound to this peer's PeerID: undo reverts exactly the local
+  user's own last change and **never** a peer's concurrent edit. That is why a
+  host must let the editor turn `@lexical/history` off — `lexicalForeign` does so
+  automatically the moment `externalUndo` is passed, so the snapshot-based local
+  stack (which would rewind remote work for everyone) can never run alongside it.
+  A same-parent block move undoes to its previous fractional index; a text edit,
+  insert, delete and format change each undo to exactly their prior state.
+  `test/undo.test.ts` pins all of it, including the local-scope property.
+  `test/harden.test.ts` keeps a contrast test showing why the built-in snapshot
+  history — deliberately NOT used here — is not collaboration-safe.
 
 - **Text-node `style`, `mode` and `detail` are not represented**; the run model
   is `{ text, format }`.

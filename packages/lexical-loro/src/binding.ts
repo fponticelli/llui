@@ -35,28 +35,17 @@
  *     no code here to enforce this; there is simply no line that emits it, and
  *     `test/to-lexical.test.ts` pins that.
  *
- * ── Undo (v1) ──────────────────────────────────────────────────────────────
+ * ── Undo ───────────────────────────────────────────────────────────────────
  *
- * Undo stays LEXICAL'S LOCAL HISTORY. This binding does not install an
- * `externalUndo` owner, because there is no CRDT-aware undo manager for it to
- * own — a Loro `UndoManager` is additive, later work. Consequently a host must
- * NOT disable its built-in history for this binding the way it would for a
- * CRDT-owned one; see the note on `LoroCollab.externalUndo`.
+ * This binding OWNS undo, via `externalUndo` (`undo.ts`, a Loro `UndoManager`
+ * scoped to this peer). Hosts must therefore turn their built-in
+ * `@lexical/history` stack off — `lexicalForeign` does that for you the moment
+ * `externalUndo` is present, so the two can never both be live.
  *
- * KNOWN LIMITATION, and hosts should surface it rather than be surprised by it:
- * Lexical's history is SNAPSHOT-based and is not collaboration-aware
- * (`@lexical/history` 0.48 has no notion of `COLLABORATION_TAG`, so our inbound
- * writeback is recorded as though the local user had typed it). Undoing after a
- * remote edit therefore re-applies a snapshot taken BEFORE that edit, which
- * rewinds the REMOTE change — and, since the outbound sync replays the snapshot
- * faithfully, removes it for every peer. Same-parent moves, deletes and text
- * edits all undo correctly when no remote edit has interleaved.
- *
- * This is a property of snapshot-based undo, not of tagging: no update tag
- * avoids it (merging folds the remote state into the current entry and the next
- * undo still pops past it). Only an operation-based, CRDT-aware undo manager
- * fixes it. The behaviour and its blast radius — it stays CONVERGENT, every peer
- * agrees — are pinned in `test/harden.test.ts`.
+ * Loro's manager is operation-based and PeerID-scoped: undo reverts exactly the
+ * local user's own last change and never a peer's, which snapshot-based history
+ * cannot do at any tag setting. See `undo.ts` for why, and for the echo seam the
+ * undo batches travel through.
  */
 
 import type { LexicalEditor } from 'lexical'
@@ -68,6 +57,7 @@ import { initDoc, type ElementContainer } from './schema.js'
 import { LORO_TEXT_FORMATS } from './text.js'
 import { applyLoroToLexical } from './to-lexical.js'
 import { OUTBOUND_ORIGIN, syncLexicalToLoro } from './to-loro.js'
+import { registerLoroUndo, UNDO_ORIGINS, type LoroUndoOptions } from './undo.js'
 
 export interface LoroCollabConfig {
   /** The shared document. Created if omitted — pass your provider's doc. */
@@ -89,6 +79,12 @@ export interface LoroCollabConfig {
   readonly origin?: string
   /** Called after boot with what happened — seeded, adopted, or still waiting. */
   readonly onBootstrap?: (outcome: BootstrapOutcome) => void
+  /**
+   * Tuning for the peer-scoped undo manager installed by
+   * {@link LoroCollab.externalUndo} — merge window, stack depth, excluded
+   * origins. Defaults are in `undo.ts`; the `doc` is supplied by the binding.
+   */
+  readonly undo?: Omit<LoroUndoOptions, 'doc'>
 }
 
 /** Live handle returned by {@link loroCollab}. */
@@ -107,15 +103,18 @@ export interface LoroCollab {
   /** The ContainerID ↔ NodeKey registry. Exposed for tests and diagnostics. */
   readonly mapping: ContainerNodeMap
   /**
-   * Always `undefined` in v1 — this binding does NOT own the undo stack.
+   * Install this binding's CRDT-aware undo/redo on the editor; pass as
+   * `lexicalForeign({ externalUndo })`. Returns a disposer.
    *
-   * Declared so the field is part of the contract rather than an omission a host
-   * has to guess about: `lexicalForeign` turns its built-in history off when an
-   * `externalUndo` owner is present, and a host that disables history for this
-   * binding leaves the user with NO undo at all. When a Loro `UndoManager`
-   * lands, this becomes the registration function and hosts need no change.
+   * Undo is LOCAL-ONLY: it reverts this peer's own commits and leaves every
+   * other peer's concurrent edits standing (`undo.ts`). Registering it forces
+   * `lexicalForeign`'s built-in `@lexical/history` stack off, which is the point
+   * — a snapshot-based local stack would rewind remote work for everyone.
+   *
+   * Registration is SEPARATE from {@link LoroCollab.register} so a host that
+   * genuinely wants its own undo owner can decline it. Do not register it twice.
    */
-  readonly externalUndo?: undefined
+  readonly externalUndo: (editor: LexicalEditor) => () => void
   /** Re-run the boot decision — call after your transport's first sync. */
   bootstrap: (editor: LexicalEditor) => BootstrapOutcome
 }
@@ -152,7 +151,10 @@ export function loroCollab(config: LoroCollabConfig = {}): LoroCollab {
 
   const register = (editor: LexicalEditor): (() => void) => {
     const outboundTarget = { doc, root, mapping, origin }
-    const inboundTarget = { doc, root, mapping, editor }
+    // `undoOrigins` is passed whether or not `externalUndo` was registered: only
+    // a Loro `UndoManager` produces that origin, so allowing it is inert without
+    // one — and the inbound path stays independent of registration order.
+    const inboundTarget = { doc, root, mapping, editor, undoOrigins: UNDO_ORIGINS }
 
     // Inbound BEFORE outbound: the subscription must be live before the
     // bootstrap writes anything, or a document arriving mid-boot is missed.
@@ -171,5 +173,8 @@ export function loroCollab(config: LoroCollabConfig = {}): LoroCollab {
     }
   }
 
-  return { register, doc, root, mapping, bootstrap, externalUndo: undefined }
+  const externalUndo = (editor: LexicalEditor): (() => void) =>
+    registerLoroUndo({ doc, ...config.undo }, editor)
+
+  return { register, doc, root, mapping, bootstrap, externalUndo }
 }

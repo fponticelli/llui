@@ -8,6 +8,7 @@
 
 import type { LexicalEditor, LexicalNodeConfig } from 'lexical'
 import { component, mountApp, type Renderable, type Signal } from '@llui/dom'
+import type { NodeWidget } from './nodewidget.js'
 
 /** A keyboard shortcut bound to an editor action.
  *
@@ -121,4 +122,11 @@ export interface LexicalPlugin<Emit = unknown> {
   shortcuts?: readonly ShortcutSpec[]
   /** Decorator bridges this plugin owns. */
   decorators?: readonly DecoratorBridge[]
+  /**
+   * Non-document overlay DOM this plugin attaches to node types — computed
+   * results, badges, ghosts. Unlike `decorators`, a widget is NOT a node: it is
+   * never serialized, never in the undo stack, never in the clipboard. See
+   * {@link nodeWidget}.
+   */
+  widgets?: readonly NodeWidget[]
 }

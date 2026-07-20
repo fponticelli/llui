@@ -5,11 +5,13 @@
  * The spikes proved the ORDERING MODEL converges. They ran below the editor, so
  * three things stayed open, and each is load-bearing for a real user:
  *
- *  a. UNDO. Undo is Lexical's LOCAL history in v1 (`binding.ts` deliberately
- *     leaves `externalUndo` undefined). History restores a previous EDITOR
- *     STATE, which the outbound sync then reconciles into `pos` writes — so
- *     "does undo restore the previous order" is a question about the binding,
- *     not about Lexical, and it has never been asked.
+ *  a. UNDO. These tests attach Lexical's LOCAL `@lexical/history` explicitly
+ *     (`withHistory`) — NOT the binding's own undo. That is deliberate: they ask
+ *     what snapshot-based history does over this schema (history restores a
+ *     previous EDITOR STATE, which the outbound sync reconciles into `pos`
+ *     writes), and the last one pins WHY it is not collaboration-safe — the exact
+ *     failure the real, CRDT-aware owner in `undo.ts` (tested in `undo.test.ts`)
+ *     exists to avoid. The binding's shipped undo does NOT use this path.
  *  b. SELECTION. Keeping `ContainerID`s — and therefore `NodeKey`s — stable
  *     across a remote reorder is the WHOLE REASON this schema exists. If the
  *     caret still dies when a peer moves the block it is sitting in, the
@@ -352,12 +354,16 @@ describe('hardening — undo and redo of a move', () => {
     network.dispose()
   })
 
-  it('DOCUMENTED v1 LIMITATION: undo also rewinds a remote edit, but converges', () => {
-    // ── Read this before "fixing" undo ──────────────────────────────────────
+  it('WHY snapshot history is not used: @lexical/history undo rewinds a remote edit', () => {
+    // ── The contrast test — this is NOT the binding's shipped undo ───────────
     //
-    // Undo in v1 is Lexical's LOCAL history, which is SNAPSHOT-based: each entry
-    // is a whole `EditorState`, and `undo` re-applies one with
-    // `editor.setEditorState`. `@lexical/history` has NO notion of
+    // The binding OWNS undo via `LoroCollab.externalUndo` (a CRDT-aware Loro
+    // `UndoManager`, tested in `undo.test.ts`). This test attaches Lexical's
+    // LOCAL `@lexical/history` INSTEAD, to pin why that owner had to exist —
+    // i.e. what a host would get wrong by re-enabling the built-in stack.
+    //
+    // `@lexical/history` is SNAPSHOT-based: each entry is a whole `EditorState`,
+    // and `undo` re-applies one with `editor.setEditorState`. It has NO notion of
     // COLLABORATION_TAG — verified by reading its 0.48 source, which never
     // mentions it — so our inbound writeback arrives with dirty nodes, is
     // classified HISTORY_PUSH, and is recorded as if the local user had made it.
@@ -368,18 +374,14 @@ describe('hardening — undo and redo of a move', () => {
     // snapshot, it is then deleted for EVERYONE. The peer's own local append
     // survives, which is precisely backwards from user intent.
     //
-    // Tagging the writeback HISTORY_MERGE_TAG does NOT fix it: merging folds the
-    // remote state into `current`, and the next undo still pops to a snapshot
-    // taken before the remote edit. The defect is snapshot-vs-operation, not
-    // tagging, so no tag choice can resolve it. A correct collaborative undo
-    // needs an operation-based, CRDT-aware manager (Loro's `UndoManager`) wired
-    // through `LoroCollab.externalUndo`, which `binding.ts` documents as absent
-    // in v1 and additive later.
+    // Tagging the writeback HISTORY_MERGE_TAG does NOT fix it: the defect is
+    // snapshot-vs-operation, not tagging, so no tag choice can resolve it — which
+    // is exactly why the operation-based Loro `UndoManager` is the shipped owner.
+    // `undo.test.ts` proves the same scenario keeps the remote edit under it.
     //
-    // What this test therefore defends is the boundary of the damage: the
-    // binding stays CONVERGENT and well-formed. Every peer agrees on the
-    // (regrettable) outcome, no block is duplicated, and nothing is corrupted.
-    // Divergence here would be a different and far worse class of bug.
+    // What this test defends is that even the WRONG choice stays CONVERGENT and
+    // well-formed: every peer agrees on the (regrettable) outcome, no block is
+    // duplicated, nothing is corrupted. Divergence would be a far worse bug.
     const network = collabNetwork()
     const dispose = withHistory(network.a)
     setParagraphs(network.a, ['one', 'two'])
