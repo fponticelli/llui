@@ -404,24 +404,33 @@ describe('keyboard reordering', () => {
 })
 
 describe('keyboard event wiring on the grip', () => {
-  it('responds to Enter, arrows, and Escape', async () => {
-    const { keys, texts } = await mountEditor()
+  const key = (grip: HTMLElement, k: string): void => {
+    grip.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+  }
+
+  it('Enter on a revealed grip opens the actions menu, not a grab', async () => {
+    const { keys } = await mountEditor()
     send({ type: 'hover', key: keys()[0], x: 12, y: 0 })
     await wait(0)
-    const grip = handleEl()!
+    key(handleEl()!, 'Enter')
+    await wait(0)
+    expect(menuEl()).not.toBeNull()
+    // The grip is a menu trigger here — it must NOT have entered grab mode.
+    expect(handleEl()!.getAttribute('aria-pressed')).toBe('false')
+  })
 
-    const key = (k: string): void => {
-      grip.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
-    }
-    key('Enter')
+  it('the keyboard grab protocol (grab, arrows, Escape) works via revealAtSelection', async () => {
+    const { keys, texts } = await mountEditor()
+    // Mod+Shift+D / the "Move block" command reveals AND grabs in one step.
+    send({ type: 'revealAtSelection', key: keys()[0], x: 12, y: 0 })
     await wait(0)
     expect(handleEl()!.getAttribute('aria-pressed')).toBe('true')
 
-    key('ArrowDown')
+    key(handleEl()!, 'ArrowDown')
     await wait(0)
     expect(texts()).toEqual(['bravo', 'alpha', 'charlie'])
 
-    key('Escape')
+    key(handleEl()!, 'Escape')
     await wait(0)
     expect(handleEl()!.getAttribute('aria-pressed')).toBe('false')
   })
@@ -600,5 +609,90 @@ describe('the grab/handle invariant', () => {
       await wait(0)
       expect(handleEl(), `wedged after ${label}`).not.toBeNull()
     }
+  })
+})
+
+// ── Block actions menu (grip click / right-click) ────────────────────────────
+
+const menuEl = (): HTMLElement | null =>
+  document.querySelector('[data-scope="md-block-drag"][data-part="menu"]')
+const menuItems = (): HTMLButtonElement[] => [
+  ...document.querySelectorAll<HTMLButtonElement>(
+    '[data-scope="md-block-drag"][data-part="menu-item"]',
+  ),
+]
+const menuItem = (label: string): HTMLButtonElement | undefined =>
+  menuItems().find((b) => b.textContent === label)
+
+describe('block actions menu', () => {
+  it('opens on openMenu with turn-into + action items', async () => {
+    const { keys } = await mountEditor()
+    expect(menuEl()).toBeNull()
+    send({ type: 'openMenu', key: keys()[0], x: 20, y: 40 })
+    await wait(0)
+    expect(menuEl()).not.toBeNull()
+    const labels = menuItems().map((b) => b.textContent)
+    expect(labels).toContain('Duplicate')
+    expect(labels).toContain('Delete')
+    expect(labels).toContain('Move up')
+    expect(labels).toContain('Move down')
+    // Turn-into items are captured from corePlugin's block commands.
+    expect(labels).toContain('Heading 1')
+    expect(labels).toContain('Quote')
+  })
+
+  it('closeMenu hides it', async () => {
+    const { keys } = await mountEditor()
+    send({ type: 'openMenu', key: keys()[0], x: 20, y: 40 })
+    await wait(0)
+    send({ type: 'closeMenu' })
+    await wait(0)
+    expect(menuEl()).toBeNull()
+  })
+
+  it('Delete removes the target block and closes the menu', async () => {
+    const { keys, texts } = await mountEditor()
+    send({ type: 'openMenu', key: keys()[1], x: 20, y: 40 })
+    await wait(0)
+    menuItem('Delete')!.click()
+    await wait(0)
+    expect(texts()).toEqual(['alpha', 'charlie'])
+    expect(menuEl()).toBeNull()
+  })
+
+  it('Duplicate inserts a copy after the target', async () => {
+    const { keys, texts } = await mountEditor()
+    send({ type: 'openMenu', key: keys()[1], x: 20, y: 40 })
+    await wait(0)
+    menuItem('Duplicate')!.click()
+    await wait(0)
+    expect(texts()).toEqual(['alpha', 'bravo', 'bravo', 'charlie'])
+  })
+
+  it('Move up reorders the target block', async () => {
+    const { keys, texts } = await mountEditor()
+    send({ type: 'openMenu', key: keys()[1], x: 20, y: 40 })
+    await wait(0)
+    menuItem('Move up')!.click()
+    await wait(0)
+    expect(texts()).toEqual(['bravo', 'alpha', 'charlie'])
+  })
+
+  it('Turn into converts the target block type', async () => {
+    const { keys, editor } = await mountEditor()
+    send({ type: 'openMenu', key: keys()[0], x: 20, y: 40 })
+    await wait(0)
+    menuItem('Heading 1')!.click()
+    await wait(0)
+    const firstType = editor.getEditorState().read(() => $getRoot().getFirstChild()?.getType())
+    expect(firstType).toBe('heading')
+  })
+
+  it('a right-click on a block opens the menu', async () => {
+    const { editor } = await mountEditor()
+    const root = editor.getRootElement()!
+    root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 0 }))
+    await wait(0)
+    expect(menuEl()).not.toBeNull()
   })
 })

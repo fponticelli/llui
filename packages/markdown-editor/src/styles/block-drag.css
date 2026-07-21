@@ -61,3 +61,58 @@
       background-color 120ms ease;
   }
 }
+
+/* Block-actions menu (grip click / right-click). Positioned inline by the plugin;
+ * appearance only here. */
+[data-scope='md-block-drag'][data-part='menu'] {
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--md-border, rgba(127, 127, 127, 0.2));
+  border-radius: var(--md-radius, 8px);
+  background: var(--md-surface, #fff);
+  color: var(--md-text, #1f2328);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+[data-scope='md-block-drag'][data-part='menu-label'] {
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--md-muted, #9aa0a6);
+}
+
+[data-scope='md-block-drag'][data-part='menu-item'] {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-scope='md-block-drag'][data-part='menu-item']:hover,
+[data-scope='md-block-drag'][data-part='menu-item']:focus-visible {
+  background: var(--md-hover, rgba(127, 127, 127, 0.14));
+  outline: none;
+}
+
+[data-scope='md-block-drag'][data-part='menu-item']:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--md-accent, #3b82f6);
+}
+
+[data-scope='md-block-drag'][data-part='menu-sep'] {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--md-border, rgba(127, 127, 127, 0.2));
+}

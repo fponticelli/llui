@@ -30,8 +30,10 @@
 // cover a typeahead, the context menu, or the floating toolbar.
 
 import {
+  $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   COMMAND_PRIORITY_LOW,
   KEY_DOWN_COMMAND,
@@ -43,11 +45,11 @@ import { mergeRegister } from '@lexical/utils'
 import { button, div, onMount, text, type Renderable, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { onViewportChange, overlayRoot } from './overlay.js'
-import type { MarkdownPlugin } from './types.js'
+import type { CommandItem, MarkdownPlugin } from './types.js'
 
 /** Stacking levels for this plugin's two surfaces — deliberately below the
  * shared `OVERLAY_Z` scale (60+) so document chrome never covers a menu. */
-export const BLOCK_DRAG_Z = { handle: 58, indicator: 59 } as const
+export const BLOCK_DRAG_Z = { handle: 58, indicator: 59, menu: 62 } as const
 
 /** Pixels of pointer travel before a grip mousedown becomes a drag (below the
  * threshold it is a click, which toggles keyboard grab mode instead). */
@@ -249,6 +251,54 @@ function $shiftBlock(key: NodeKey, direction: -1 | 1): MoveOutcome | null {
   return $moveBlock(key, neighbour.getKey(), direction === 1 ? 'after' : 'before')
 }
 
+/** A node class as seen through its own `importJSON` static — the single typed
+ * boundary for the serialize→deserialize clone below (every registered Lexical
+ * node ships this static). */
+interface NodeKlass {
+  importJSON: (json: ReturnType<LexicalNode['exportJSON']>) => LexicalNode
+}
+
+/** Deep-clone a node with FRESH keys via serialize→deserialize. `constructor.clone`
+ * is unusable here — it preserves the key, so the "copy" would collide with the
+ * original. `importJSON(exportJSON())` mints a new node; element children are not
+ * carried by `exportJSON`, so they are cloned and re-appended recursively. */
+function $cloneNode(node: LexicalNode): LexicalNode {
+  const klass = node.constructor as unknown as NodeKlass
+  const clone = klass.importJSON(node.exportJSON())
+  if ($isElementNode(node) && $isElementNode(clone)) {
+    for (const child of node.getChildren()) clone.append($cloneNode(child))
+  }
+  return clone
+}
+
+/** Insert a deep copy of the top-level block `key` immediately after it. */
+function $duplicateBlock(key: NodeKey): MoveOutcome | null {
+  const node = $getNodeByKey(key)
+  if (node === null) return null
+  const clone = $cloneNode(node)
+  node.insertAfter(clone)
+  return { key: clone.getKey(), announcement: `${blockLabel(node)} duplicated.` }
+}
+
+/** Remove the top-level block `key`. Returns the announcement, or `null` when the
+ * key is stale. */
+function $deleteBlock(key: NodeKey): { announcement: string } | null {
+  const node = $getNodeByKey(key)
+  if (node === null) return null
+  const label = blockLabel(node)
+  node.remove()
+  return { announcement: `${label} deleted.` }
+}
+
+/** Put a collapsed selection at the start of block `key` so a selection-based
+ * command (the turn-into items) acts on THAT block. Returns whether it selected. */
+function $selectBlockStart(key: NodeKey): boolean {
+  const node = $getNodeByKey(key)
+  if (node === null) return false
+  node.selectStart()
+  return true
+}
+
 // ── TEA slice ───────────────────────────────────────────────────────────────
 
 interface BlockDragState {
@@ -264,6 +314,13 @@ interface BlockDragState {
   indicatorWidth: number
   /** Key held in keyboard grab mode (`''` = not grabbed). */
   grabbedKey: string
+  /** The block-actions menu is open (grip click or right-click). */
+  menuOpen: boolean
+  /** Top-level node key the open menu acts on (`''` = none). */
+  menuKey: string
+  /** Viewport anchor of the open menu (grip position, or the right-click point). */
+  menuX: number
+  menuY: number
   /** Live-region text. */
   announce: string
   /**
@@ -293,12 +350,19 @@ type BlockDragMsg =
   | { type: 'toggleGrab' }
   | { type: 'moveGrabbed'; direction: -1 | 1 }
   | { type: 'releaseGrab' }
+  | { type: 'openMenu'; key: string; x: number; y: number }
+  | { type: 'closeMenu' }
+  | { type: 'shiftBlock'; key: string; direction: -1 | 1 }
+  | { type: 'duplicate'; key: string }
+  | { type: 'deleteBlock'; key: string }
   | { type: 'announce'; text: string }
   | { type: 'reposition'; x: number; y: number }
 
 type BlockDragEffect =
   | { type: 'move'; sourceKey: string; targetKey: string; place: Place }
   | { type: 'shift'; key: string; direction: -1 | 1 }
+  | { type: 'duplicate'; key: string }
+  | { type: 'delete'; key: string }
   | { type: 'describe'; key: string; grabbed: boolean }
 
 const INITIAL: BlockDragState = {
@@ -312,6 +376,10 @@ const INITIAL: BlockDragState = {
   indicatorY: 0,
   indicatorWidth: 0,
   grabbedKey: '',
+  menuOpen: false,
+  menuKey: '',
+  menuX: 0,
+  menuY: 0,
   announce: '',
   announceNonce: 0,
   keyboardReveal: false,
@@ -349,9 +417,9 @@ function reduceRaw(
 ): BlockDragState | [BlockDragState, BlockDragEffect[]] {
   switch (msg.type) {
     case 'hover':
-      // While a block is grabbed (or being dragged) the gutter is pinned to it —
-      // a stray pointer move must not silently re-target the pending reorder.
-      if (state.grabbedKey !== '' || state.dragging) return state
+      // While a block is grabbed, being dragged, or the menu is open the gutter is
+      // pinned — a stray pointer move must not silently re-target the pending op.
+      if (state.grabbedKey !== '' || state.dragging || state.menuOpen) return state
       if (
         state.handleVisible &&
         state.hoverKey === msg.key &&
@@ -374,16 +442,24 @@ function reduceRaw(
       // DOM and never in the tab order for a keyboard or screen-reader user, and
       // the unconditional help text ("Press Enter or Space to grab this block…")
       // described an affordance they could not reach. Reordering was mouse-only.
-      return {
-        ...state,
-        handleVisible: true,
-        hoverKey: msg.key,
-        handleX: msg.x,
-        handleY: msg.y,
-        keyboardReveal: true,
-      }
+      // Reveal AND grab in one step: the grip's Enter/Space now opens the actions
+      // menu, so the keyboard reorder path (Mod+Shift+D / the "Move block" command)
+      // enters grab mode directly rather than only revealing a grip the user would
+      // then have to Enter — which would open the menu instead of grabbing.
+      return [
+        {
+          ...state,
+          handleVisible: true,
+          hoverKey: msg.key,
+          handleX: msg.x,
+          handleY: msg.y,
+          keyboardReveal: true,
+          grabbedKey: msg.key,
+        },
+        [{ type: 'describe', key: msg.key, grabbed: true }],
+      ]
     case 'hoverOut':
-      if (state.grabbedKey !== '' || state.dragging) return state
+      if (state.grabbedKey !== '' || state.dragging || state.menuOpen) return state
       return state.handleVisible ? { ...state, handleVisible: false } : state
     case 'dragStart':
       // The grip is hidden for the duration: it sits under the cursor and would
@@ -436,6 +512,23 @@ function reduceRaw(
             announce: 'Reorder cancelled.',
             announceNonce: state.announceNonce + 1,
           }
+    case 'openMenu':
+      // The grip stays visible as the menu's anchor; the hover gate below then
+      // pins the gutter (a stray pointer move must not re-target while the menu
+      // is open). A menu with no target block is meaningless.
+      if (msg.key === '') return state
+      return { ...state, menuOpen: true, menuKey: msg.key, menuX: msg.x, menuY: msg.y }
+    case 'closeMenu':
+      return state.menuOpen ? { ...state, menuOpen: false } : state
+    case 'shiftBlock':
+      return [
+        { ...state, menuOpen: false },
+        [{ type: 'shift', key: msg.key, direction: msg.direction }],
+      ]
+    case 'duplicate':
+      return [{ ...state, menuOpen: false }, [{ type: 'duplicate', key: msg.key }]]
+    case 'deleteBlock':
+      return [{ ...state, menuOpen: false }, [{ type: 'delete', key: msg.key }]]
     case 'announce':
       // The nonce is what makes a REPEATED announcement audible. `aria-live`
       // regions re-announce on text CHANGE, so two identical strings in a row —
@@ -489,9 +582,23 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
   const uid = `md-block-drag-${++seq}`
   const helpId = `${uid}-help`
   const gripId = `${uid}-grip`
+  const menuId = `${uid}-menu`
+
+  // The block-type conversions offered in the actions menu's "Turn into" section,
+  // captured from the merged command items so any plugin's block type appears
+  // automatically. Turn-into items are the block/list-group items that report an
+  // active block type (`isActive`), which excludes inserts and this plugin's own
+  // "Move block" command. Read once at construction.
+  let turnIntoItems: readonly CommandItem[] = []
 
   return {
     name: 'blockDrag',
+
+    onItems: (all) => {
+      turnIntoItems = all.filter(
+        (i) => (i.group === 'block' || i.group === 'list') && i.isActive !== undefined,
+      )
+    },
 
     // The command-surface half of the keyboard entry point (Mod+Shift+D is the
     // direct binding). Without one of these two, the entire reorder protocol —
@@ -613,10 +720,28 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
       }
       revealers.set(editor, revealAtSelection)
 
+      // Right-click a block → the same actions menu, at the pointer. Scoped to the
+      // editor's own content (a contextmenu elsewhere keeps the native menu).
+      const onContextMenu = (event: MouseEvent): void => {
+        if (!editor.isEditable() || session.dragging) return
+        const root = editor.getRootElement()
+        if (!root || !(event.target instanceof Node) || !root.contains(event.target)) return
+        const block = blockAtPoint(readBlockRects(editor), event.clientY)
+        if (!block) return
+        event.preventDefault()
+        ctx.emit({
+          type: 'plugin',
+          name: 'blockDrag',
+          msg: { type: 'openMenu', key: block.key, x: event.clientX, y: event.clientY },
+        })
+      }
+
       document.addEventListener('mousemove', onMouseMove, { passive: true })
+      document.addEventListener('contextmenu', onContextMenu)
       return mergeRegister(
         () => {
           document.removeEventListener('mousemove', onMouseMove)
+          document.removeEventListener('contextmenu', onContextMenu)
           if (pending) cancelAnimationFrame(pending)
           sessions.delete(editor)
           revealers.delete(editor)
@@ -664,21 +789,37 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
 
         // Held in a box rather than a bare `let`: the assignment happens inside
         // the update callback, which TypeScript's control-flow analysis cannot
-        // see, so a plain local would narrow to `null` at every read below.
-        const box: { outcome: MoveOutcome | null } = { outcome: null }
+        // see, so a plain local would narrow to `null` at every read below. `key`
+        // is the block to re-anchor the gutter to (`null` for delete — the block
+        // is gone, so there is nothing to follow).
+        const box: { outcome: { key: NodeKey | null; announcement: string } | null } = {
+          outcome: null,
+        }
         editor.update(
           () => {
-            box.outcome =
-              effect.type === 'move'
-                ? $moveBlock(effect.sourceKey, effect.targetKey, effect.place)
-                : $shiftBlock(effect.key, effect.direction)
+            switch (effect.type) {
+              case 'move':
+                box.outcome = $moveBlock(effect.sourceKey, effect.targetKey, effect.place)
+                break
+              case 'shift':
+                box.outcome = $shiftBlock(effect.key, effect.direction)
+                break
+              case 'duplicate':
+                box.outcome = $duplicateBlock(effect.key)
+                break
+              case 'delete': {
+                const removed = $deleteBlock(effect.key)
+                box.outcome = removed ? { key: null, announcement: removed.announcement } : null
+                break
+              }
+            }
           },
           {
             // Re-measure AFTER reconciliation so the gutter follows the block it
             // is pinned to; measuring inside the update would read the old layout.
             onUpdate: () => {
               const moved = box.outcome
-              if (!moved) return
+              if (!moved || moved.key === null) return
               const el = editor.getElementByKey(moved.key)
               if (!el) return
               const r = el.getBoundingClientRect()
@@ -746,10 +887,12 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
           const onUp = (): void => {
             finish()
             if (!dragging) {
-              // Below the threshold this was a click, not a drag: fall through to
-              // the keyboard protocol so mouse users get the same slow, precise
-              // "grab then arrow" path.
-              send({ type: 'toggleGrab' })
+              // Below the threshold this was a click, not a drag: open the block
+              // actions menu anchored at the grip. (Mouse users still get free
+              // reordering from the drag itself, or Move up/down in the menu;
+              // keyboard-grab is Mod+Shift+D.)
+              const s = state.peek()
+              send({ type: 'openMenu', key: sourceKey, x: s.handleX, y: s.handleY })
               return
             }
             if (target) {
@@ -770,12 +913,16 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
         const onKeyDown = (event: KeyboardEvent): void => {
           switch (event.key) {
             case 'Enter':
-            case ' ':
+            case ' ': {
               // Handled here rather than via `click` so Space cannot ALSO fire the
-              // button's synthetic click and toggle twice.
+              // button's synthetic click and act twice. While grabbed, Enter/Space
+              // DROPS the block; otherwise it opens the actions menu at the grip.
               event.preventDefault()
-              send({ type: 'toggleGrab' })
+              const s = state.peek()
+              if (s.grabbedKey !== '') send({ type: 'toggleGrab' })
+              else send({ type: 'openMenu', key: s.hoverKey, x: s.handleX, y: s.handleY })
               return
+            }
             case 'ArrowUp':
               event.preventDefault()
               send({ type: 'moveGrabbed', direction: -1 })
@@ -792,6 +939,58 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
         }
 
         const grabbed = state.map((s) => s.grabbedKey !== '')
+
+        /** Convert the menu's target block by reusing a merged command item: put a
+         * selection at the block, then run the item (which converts the selection).
+         * A no-op `send` — these items never talk back to the host here. */
+        const runTurnInto = (item: CommandItem): void => {
+          const live = editor()
+          if (!live) return
+          const key = state.peek().menuKey
+          if (key === '') return
+          live.update(() => {
+            $selectBlockStart(key)
+          })
+          item.run(live, { send: () => {} })
+          send({ type: 'closeMenu' })
+        }
+
+        const menuButton = (label: string, onClick: () => void): Renderable[0] =>
+          button(
+            {
+              type: 'button',
+              role: 'menuitem',
+              'data-scope': 'md-block-drag',
+              'data-part': 'menu-item',
+              tabindex: '-1',
+              // `mousedown` preventDefault keeps focus/selection stable; the action
+              // runs on click.
+              onMouseDown: (e: MouseEvent) => e.preventDefault(),
+              onClick,
+            },
+            [text(label)],
+          )
+
+        /** Roving focus + dismissal for the menu. Native click/Enter activates a
+         * focused item; here we add ↑/↓ traversal and Escape-to-close. */
+        const onMenuKeyDown = (event: KeyboardEvent): void => {
+          const menu = event.currentTarget
+          if (!(menu instanceof HTMLElement)) return
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            send({ type: 'closeMenu' })
+            return
+          }
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+          event.preventDefault()
+          const items = [...menu.querySelectorAll<HTMLElement>('[data-part="menu-item"]')]
+          if (items.length === 0) return
+          const active = menu.ownerDocument.activeElement
+          const current = items.findIndex((el) => el === active)
+          const delta = event.key === 'ArrowDown' ? 1 : -1
+          const nextIndex = (current + delta + items.length) % items.length
+          items[nextIndex]?.focus()
+        }
 
         return [
           // The live region and the instructions are rendered UNCONDITIONALLY.
@@ -876,6 +1075,70 @@ export function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin 
                     // when several editors are mounted at once.
                     const grip = root.ownerDocument.getElementById(gripId)
                     grip?.focus()
+                  }),
+                ],
+              ),
+            ],
+          }),
+
+          ...overlayRoot({
+            open: state.at('menuOpen'),
+            x: state.at('menuX'),
+            y: state.at('menuY'),
+            zIndex: BLOCK_DRAG_Z.menu,
+            attrs: { 'data-scope': 'md-block-drag', 'data-part': 'menu-root' },
+            children: () => [
+              div(
+                {
+                  'data-scope': 'md-block-drag',
+                  'data-part': 'menu',
+                  id: menuId,
+                  role: 'menu',
+                  'aria-label': 'Block actions',
+                  onKeyDown: onMenuKeyDown,
+                },
+                [
+                  ...(turnIntoItems.length > 0
+                    ? [
+                        div({ 'data-scope': 'md-block-drag', 'data-part': 'menu-label' }, [
+                          text('Turn into'),
+                        ]),
+                        ...turnIntoItems.map((item) =>
+                          menuButton(item.label, () => runTurnInto(item)),
+                        ),
+                        div({ 'data-scope': 'md-block-drag', 'data-part': 'menu-sep' }, []),
+                      ]
+                    : []),
+                  menuButton('Duplicate', () =>
+                    send({ type: 'duplicate', key: state.peek().menuKey }),
+                  ),
+                  menuButton('Move up', () =>
+                    send({ type: 'shiftBlock', key: state.peek().menuKey, direction: -1 }),
+                  ),
+                  menuButton('Move down', () =>
+                    send({ type: 'shiftBlock', key: state.peek().menuKey, direction: 1 }),
+                  ),
+                  menuButton('Delete', () =>
+                    send({ type: 'deleteBlock', key: state.peek().menuKey }),
+                  ),
+                  // Focus the first item on open, and close on an outside pointer.
+                  // The mousedown listener is armed on the NEXT tick so it never
+                  // catches the very click that opened the menu.
+                  onMount((root) => {
+                    const menu = root.ownerDocument.getElementById(menuId)
+                    menu?.querySelector<HTMLElement>('[data-part="menu-item"]')?.focus()
+                    const onDocDown = (e: MouseEvent): void => {
+                      if (menu && e.target instanceof Node && menu.contains(e.target)) return
+                      send({ type: 'closeMenu' })
+                    }
+                    const armed = setTimeout(
+                      () => document.addEventListener('mousedown', onDocDown),
+                      0,
+                    )
+                    return () => {
+                      clearTimeout(armed)
+                      document.removeEventListener('mousedown', onDocDown)
+                    }
                   }),
                 ],
               ),
