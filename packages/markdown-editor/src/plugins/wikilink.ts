@@ -65,12 +65,18 @@
 
 import {
   $applyNodeReplacement,
+  $createTextNode,
   $getNearestNodeFromDOMNode,
   $getSelection,
   $isRangeSelection,
+  $isTextNode,
   CLICK_COMMAND,
+  COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
+  KEY_ARROW_DOWN_COMMAND,
+  KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_ESCAPE_COMMAND,
   TextNode,
   type EditorConfig,
   type LexicalEditor,
@@ -82,8 +88,10 @@ import {
 } from 'lexical'
 import type { TextMatchTransformer } from '@lexical/markdown'
 import { mergeRegister } from '@lexical/utils'
+import { div, each, text, type Signal } from '@llui/dom'
 import { setTransformerPrecedence } from '../transformers/registry.js'
 import { definePluginUI } from './ui.js'
+import { OVERLAY_Z, overlayRoot } from './overlay.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
 const PLUGIN = 'wikilink'
@@ -420,14 +428,89 @@ setTransformerPrecedence(WIKILINK_TRANSFORMER, -10)
 
 // ── Click → host notification ────────────────────────────────────────────────
 
+/** A document the host offers as a link target while the user types `[[…`. */
+export interface DocCandidate {
+  /** The link target written into the document (`[[target]]`). */
+  readonly target: string
+  /** Human-facing title shown in the results list (defaults to `target`). */
+  readonly title?: string
+  /** A short one-line snippet shown under the title. */
+  readonly snippet?: string
+  /** A longer content excerpt shown in the reference/preview pane. */
+  readonly preview?: string
+}
+
+/** A results row with the active flag the view renders from. */
+interface DocRow {
+  target: string
+  title: string
+  snippet: string
+  preview: string
+  active: boolean
+}
+
 interface WikiLinkState {
   /** The most recently activated link (JSON-serializable, replay-safe). */
   last: WikiLink | null
+  /** Document-search panel: open while typing `[[…` with results to show. */
+  searchOpen: boolean
+  /** The current `[[` query text (what follows `[[`, before the caret). */
+  searchQuery: string
+  searchItems: DocRow[]
+  searchIndex: number
+  searchX: number
+  searchY: number
 }
 
-type WikiLinkMsg = { type: 'activate'; target: string; alias: string | null }
+type WikiLinkMsg =
+  | { type: 'activate'; target: string; alias: string | null }
+  | { type: 'searchShow'; query: string; items: readonly DocCandidate[]; x: number; y: number }
+  | { type: 'searchHide' }
+  | { type: 'searchMove'; delta: number }
+  | { type: 'searchChoose' }
+  | { type: 'searchClick'; index: number }
+  | { type: 'searchHover'; index: number }
 
-type WikiLinkEffect = { type: 'navigate'; link: WikiLink }
+type WikiLinkEffect =
+  | { type: 'navigate'; link: WikiLink }
+  | { type: 'insert'; target: string; query: string }
+
+const MAX_RESULTS = 8
+/** Debounce before firing the host's (possibly async) `search` for a query. */
+const SEARCH_DEBOUNCE_MS = 120
+
+function toRows(items: readonly DocCandidate[], index: number): DocRow[] {
+  return items.map((c, i) => ({
+    target: c.target,
+    title: c.title ?? c.target,
+    snippet: c.snippet ?? '',
+    preview: c.preview ?? '',
+    active: i === index,
+  }))
+}
+
+/** The `[[` query immediately before a collapsed caret, or `null` when the caret
+ * is not inside an open `[[…` (no `[[`, or a `]`/`[`/newline already closed it). */
+function $readWikiQuery(): string | null {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
+  const node = selection.anchor.getNode()
+  if (!$isTextNode(node)) return null
+  const before = node.getTextContent().slice(0, selection.anchor.offset)
+  const match = before.match(/\[\[([^[\]\n|]*)$/)
+  return match ? (match[1] ?? '') : null
+}
+
+/** Viewport point just below the caret, for anchoring the panel. */
+function caretXY(): { x: number; y: number } {
+  if (typeof window === 'undefined') return { x: 0, y: 0 }
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    return { x: rect.left, y: rect.bottom + 4 }
+  }
+  return { x: 0, y: 0 }
+}
 
 /** Resolve the wikilink a click landed on, if any. Must run in an editor scope. */
 function $wikiLinkFromEvent(event: MouseEvent): WikiLinkNode | null {
@@ -473,6 +556,14 @@ export interface WikiLinkPluginOptions {
   onNavigate?: (link: WikiLink) => void
   /** Text used as the target when the insert command runs with no selection. */
   placeholderTarget?: string
+  /**
+   * Document-search seam: as the user types `[[query`, resolve matching
+   * documents to offer as link targets, with an optional content preview shown in
+   * the panel's reference pane. Sync or async (async is debounced; a stale
+   * response for a superseded query is dropped). When omitted, the panel never
+   * opens and `[[target]]` still works by typing the closing `]]`.
+   */
+  search?: (query: string) => readonly DocCandidate[] | Promise<readonly DocCandidate[]>
 }
 
 export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin {
@@ -480,10 +571,10 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 
   const item: CommandItem = {
     id: PLUGIN,
-    label: 'Wiki link',
+    label: 'Document link',
     icon: 'wikilink',
     group: 'inline',
-    keywords: ['wiki', 'wikilink', 'backlink', 'reference', '[['],
+    keywords: ['document', 'doc', 'link', 'wiki', 'wikilink', 'backlink', 'reference', '[['],
     run: (editor) =>
       editor.update(() => {
         const selection = $getSelection()
@@ -508,12 +599,13 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
     transformers: [WIKILINK_TRANSFORMER],
     items: [item],
     register: (editor, ctx) => {
+      const emit = (msg: WikiLinkMsg): void => ctx.emit({ type: 'plugin', name: PLUGIN, msg })
       const activate = (node: WikiLinkNode): true => {
         const { target, alias } = node.getLink()
-        ctx.emit({ type: 'plugin', name: PLUGIN, msg: { type: 'activate', target, alias } })
+        emit({ type: 'activate', target, alias })
         return true
       }
-      return mergeRegister(
+      const navigation = mergeRegister(
         editor.registerCommand(
           CLICK_COMMAND,
           (event: MouseEvent) => {
@@ -540,14 +632,212 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           COMMAND_PRIORITY_LOW,
         ),
       )
+
+      // Document-search typeahead is opt-in: with no `search` seam the panel never
+      // opens and `[[target]]` still works by typing the closing `]]`.
+      const search = opts.search
+      if (search === undefined) return navigation
+
+      let seq = 0
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const clearTimer = (): void => {
+        if (timer !== null) {
+          clearTimeout(timer)
+          timer = null
+        }
+      }
+      const activeQuery = (): string | null => editor.getEditorState().read(() => $readWikiQuery())
+      const isActive = (): boolean => activeQuery() !== null
+
+      const refresh = (): void => {
+        const query = activeQuery()
+        if (query === null) {
+          clearTimer()
+          emit({ type: 'searchHide' })
+          return
+        }
+        clearTimer()
+        const mine = ++seq
+        timer = setTimeout(() => {
+          void Promise.resolve(search(query))
+            .then((results) => {
+              // Drop a superseded response (a later keystroke won) or one whose
+              // query the caret has since left/changed.
+              if (mine !== seq || activeQuery() !== query) return
+              const { x, y } = caretXY()
+              emit({ type: 'searchShow', query, items: results.slice(0, MAX_RESULTS), x, y })
+            })
+            .catch(() => {
+              /* a failed search simply shows nothing */
+            })
+        }, SEARCH_DEBOUNCE_MS)
+      }
+
+      const nav = (delta: number, e: KeyboardEvent | null): boolean => {
+        if (!isActive()) return false
+        e?.preventDefault()
+        emit({ type: 'searchMove', delta })
+        return true
+      }
+
+      return mergeRegister(
+        navigation,
+        editor.registerUpdateListener(() => refresh()),
+        editor.registerCommand(KEY_ARROW_DOWN_COMMAND, (e) => nav(1, e), COMMAND_PRIORITY_HIGH),
+        editor.registerCommand(KEY_ARROW_UP_COMMAND, (e) => nav(-1, e), COMMAND_PRIORITY_HIGH),
+        editor.registerCommand(
+          KEY_ENTER_COMMAND,
+          (e) => {
+            if (!isActive()) return false
+            e?.preventDefault()
+            emit({ type: 'searchChoose' })
+            return true
+          },
+          COMMAND_PRIORITY_HIGH,
+        ),
+        editor.registerCommand(
+          KEY_ESCAPE_COMMAND,
+          () => {
+            if (!isActive()) return false
+            emit({ type: 'searchHide' })
+            return true
+          },
+          COMMAND_PRIORITY_HIGH,
+        ),
+        clearTimer,
+      )
     },
     ui: definePluginUI<WikiLinkState, WikiLinkMsg, WikiLinkEffect>({
-      init: () => ({ last: null }),
-      update: (_state, msg) => {
-        const link: WikiLink = { target: msg.target, alias: msg.alias }
-        return [{ last: link }, [{ type: 'navigate', link }]]
+      init: () => ({
+        last: null,
+        searchOpen: false,
+        searchQuery: '',
+        searchItems: [],
+        searchIndex: 0,
+        searchX: 0,
+        searchY: 0,
+      }),
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'activate': {
+            const link: WikiLink = { target: msg.target, alias: msg.alias }
+            return [{ ...state, last: link }, [{ type: 'navigate', link }]]
+          }
+          case 'searchShow':
+            return {
+              ...state,
+              searchOpen: msg.items.length > 0,
+              searchQuery: msg.query,
+              searchItems: toRows(msg.items, 0),
+              searchIndex: 0,
+              searchX: msg.x,
+              searchY: msg.y,
+            }
+          case 'searchHide':
+            return state.searchOpen ? { ...state, searchOpen: false } : state
+          case 'searchMove': {
+            if (!state.searchOpen || state.searchItems.length === 0) return state
+            const i =
+              (state.searchIndex + msg.delta + state.searchItems.length) % state.searchItems.length
+            return {
+              ...state,
+              searchIndex: i,
+              searchItems: state.searchItems.map((r, idx) => ({ ...r, active: idx === i })),
+            }
+          }
+          case 'searchHover': {
+            if (msg.index < 0 || msg.index >= state.searchItems.length) return state
+            return {
+              ...state,
+              searchIndex: msg.index,
+              searchItems: state.searchItems.map((r, idx) => ({ ...r, active: idx === msg.index })),
+            }
+          }
+          case 'searchChoose': {
+            const row = state.searchItems[state.searchIndex]
+            if (!state.searchOpen || !row) return { ...state, searchOpen: false }
+            return [
+              { ...state, searchOpen: false },
+              [{ type: 'insert', target: row.target, query: state.searchQuery }],
+            ]
+          }
+          case 'searchClick': {
+            const row = state.searchItems[msg.index]
+            if (!row) return state
+            return [
+              { ...state, searchOpen: false },
+              [{ type: 'insert', target: row.target, query: state.searchQuery }],
+            ]
+          }
+        }
       },
-      onEffect: (effect) => opts.onNavigate?.(effect.link),
+      onEffect: (effect, ctx) => {
+        if (effect.type === 'navigate') {
+          opts.onNavigate?.(effect.link)
+          return
+        }
+        // insert: replace the typed `[[query` with a wikilink node + a space.
+        const editor = ctx.editor()
+        if (!editor) return
+        editor.update(() => {
+          const selection = $getSelection()
+          if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
+          const node = selection.anchor.getNode()
+          if (!$isTextNode(node)) return
+          const offset = selection.anchor.offset
+          // Remove the `[[` (2 chars) plus the query text.
+          const start = offset - effect.query.length - 2
+          if (start < 0) return
+          node.spliceText(start, effect.query.length + 2, '', true)
+          const sel = $getSelection()
+          if (!$isRangeSelection(sel)) return
+          sel.insertNodes([$createWikiLinkNode(effect.target, null), $createTextNode(' ')])
+        })
+      },
+      view: ({ state, send }) =>
+        overlayRoot({
+          open: state.at('searchOpen'),
+          x: state.at('searchX'),
+          y: state.at('searchY'),
+          zIndex: OVERLAY_Z.typeahead,
+          attrs: { 'data-scope': 'md-wikilink', 'data-part': 'panel-root' },
+          children: () => [
+            div({ 'data-scope': 'md-wikilink', 'data-part': 'panel' }, [
+              div({ 'data-scope': 'md-wikilink', 'data-part': 'results', role: 'listbox' }, [
+                each(state.at('searchItems') as Signal<DocRow[]>, {
+                  key: (r) => r.target,
+                  render: (item, index) => [
+                    div(
+                      {
+                        'data-scope': 'md-wikilink',
+                        'data-part': 'result',
+                        role: 'option',
+                        'data-active': item.map((r) => (r.active ? '' : undefined)),
+                        onMouseDown: (e: MouseEvent) => {
+                          e.preventDefault()
+                          send({ type: 'searchClick', index: index.peek() })
+                        },
+                        onMouseEnter: () => send({ type: 'searchHover', index: index.peek() }),
+                      },
+                      [
+                        div({ 'data-scope': 'md-wikilink', 'data-part': 'result-title' }, [
+                          text(item.map((r) => r.title)),
+                        ]),
+                        div({ 'data-scope': 'md-wikilink', 'data-part': 'result-snippet' }, [
+                          text(item.map((r) => r.snippet)),
+                        ]),
+                      ],
+                    ),
+                  ],
+                }),
+              ]),
+              // The reference pane: the active candidate's content preview.
+              div({ 'data-scope': 'md-wikilink', 'data-part': 'preview' }, [
+                text(state.map((s) => s.searchItems[s.searchIndex]?.preview ?? '')),
+              ]),
+            ]),
+          ],
+        }),
     }),
   }
 }

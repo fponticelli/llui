@@ -485,6 +485,54 @@
   background: var(--md-primary-soft);
 }
 
+/* ── Document-link (wikilink) search + reference panel ────────────────── */
+[data-scope='md-wikilink'][data-part='panel'] {
+  display: flex;
+  min-width: 22rem;
+  max-width: 34rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+[data-scope='md-wikilink'][data-part='results'] {
+  flex: 0 0 14rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.25rem;
+  border-right: 1px solid var(--md-border);
+}
+[data-scope='md-wikilink'][data-part='result'] {
+  padding: 0.4rem 0.6rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+[data-scope='md-wikilink'][data-part='result'][data-active] {
+  background: var(--md-primary-soft);
+}
+[data-scope='md-wikilink'][data-part='result-title'] {
+  font-size: 0.88rem;
+  color: var(--md-text);
+}
+[data-scope='md-wikilink'][data-part='result-snippet'] {
+  font-size: 0.78rem;
+  color: var(--md-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-scope='md-wikilink'][data-part='preview'] {
+  flex: 1 1 auto;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--md-text-soft, var(--md-muted));
+  white-space: pre-wrap;
+}
+
 /* ── Context menu ─────────────────────────────────────────────────────── */
 [data-scope='md-context'][data-part='backdrop'] {
   position: fixed;

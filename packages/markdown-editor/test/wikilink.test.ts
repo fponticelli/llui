@@ -451,7 +451,8 @@ describe('wikilink click → host notification', () => {
     if (!ui) return
     const next = ui.update?.(ui.init(), { type: 'activate', target: 'Page', alias: 'alias' })
     const slice = Array.isArray(next) ? next[0] : next
-    expect(slice).toEqual({ last: { target: 'Page', alias: 'alias' } })
+    // The slice also carries the search-panel fields at rest; assert the record.
+    expect(slice).toMatchObject({ last: { target: 'Page', alias: 'alias' }, searchOpen: false })
   })
 })
 
