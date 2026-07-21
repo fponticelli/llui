@@ -18388,6 +18388,14 @@ export interface WikiLinkPluginOptions {
   onNavigate?: (link: WikiLink) => void
   /** Text used as the target when the insert command runs with no selection. */
   placeholderTarget?: string
+  /**
+   * Document-search seam: as the user types `[[query`, resolve matching
+   * documents to offer as link targets, with an optional content preview shown in
+   * the panel's reference pane. Sync or async (async is debounced; a stale
+   * response for a superseded query is dropped). When omitted, the panel never
+   * opens and `[[target]]` still works by typing the closing `]]`.
+   */
+  search?: (query: string) => readonly DocCandidate[] | Promise<readonly DocCandidate[]>
 }
 ```
 
