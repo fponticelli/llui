@@ -11,6 +11,51 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-21 — @llui/markdown-editor@0.5.0 — block actions menu + document-link search panel
+
+**Released:** `@llui/markdown-editor@0.5.0`
+
+Two editor UX features: a block-actions menu on the drag handle, and a
+document-link search/reference panel for wikilinks. Both additive; one small
+keyboard behaviour change on the block grip (below).
+
+### Breaking
+
+- **`@llui/markdown-editor@0.5.0`** — the block drag grip's **Enter/Space now
+  opens the block-actions menu** instead of toggling keyboard-grab. Keyboard-grab
+  is preserved and moved to **`Mod+Shift+D`** (and the "Move block" command),
+  which now reveals-and-grabs in one step. Only affects direct keyboard
+  interaction with the grip; pointer drag and every other affordance are
+  unchanged.
+
+### Migration
+
+- If you (or your docs) relied on focusing the block grip and pressing
+  Enter/Space to grab a block, use **`Mod+Shift+D`** instead. Nothing else changes.
+
+### `@llui/markdown-editor@0.5.0`
+
+- **Added** Block-actions menu on `blockDragPlugin`. Clicking the block drag grip
+  — or right-clicking a block — opens a menu: **Turn into** (Paragraph / H1–3 /
+  Quote / Bulleted / Numbered / Task / Code, captured from the merged command
+  items so any plugin's block type appears automatically), **Duplicate**,
+  **Delete**, **Move up/down**. Keyboard-navigable (↑/↓, Escape); an outside
+  pointer dismisses it. Styled under `data-scope="md-block-drag"`
+  `data-part="menu"` / `menu-item` / `menu-label` / `menu-sep`.
+- **Added** Document-link search + reference panel on `wikilinkPlugin`. A new
+  opt-in `search?: (query) => DocCandidate[] | Promise<…>` seam turns typing
+  `[[query` into a searchable, previewable document picker: a results list (title
+  - snippet) beside a content-preview pane; ↑/↓ navigate, Enter/click inserts a
+    `[[target]]` link. Debounced, with a staleness guard that drops a response for a
+    superseded/left query. `DocCandidate = { target, title?, snippet?, preview? }`.
+    The command item is relabelled **"Document link"**. Styled under
+    `data-scope="md-wikilink"` `data-part="panel"` / `results` / `result` /
+    `result-title` / `result-snippet` / `preview`. Backward compatible — with no
+    `search` seam the panel never opens and typing the closing `]]` still forms a
+    wikilink.
+- **Improved** `blockDragPlugin`'s "Move block" command / `Mod+Shift+D` reveals
+  AND grabs the block in one step (previously it only revealed the grip).
+
 ## 2026-07-20 — @llui/lexical-loro@0.1.0 (new) — Lexical editor stack: Loro CRDT binding, overlay + undo seams, markdown-editor plugins
 
 **Released:** `@llui/lexical-loro@0.1.0`; `@llui/lexical@0.4.0`, `@llui/markdown-editor@0.4.0`; `@llui/lexical-collab@0.3.1`, `@llui/devmode-annotate@0.3.1`
