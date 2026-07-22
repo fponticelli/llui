@@ -88,6 +88,9 @@ export {
 export {
   type WikiLink,
   type WikiLinkPluginOptions,
+  // Part of the `search` seam's public contract (`WikiLinkPluginOptions['search']`
+  // resolves to `DocCandidate[]`), so a host implementing that seam can name it.
+  type DocCandidate,
   type SerializedWikiLinkNode,
   WikiLinkNode,
   $createWikiLinkNode,

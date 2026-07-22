@@ -591,11 +591,16 @@
 }
 
 /* ── Link dialog ──────────────────────────────────────────────────────── */
+/* A modal MUST sit above every caret/selection/element overlay (the 60–64
+ * `OVERLAY_Z` tier in plugins/overlay.ts — typeahead 60 … codeLanguage 64).
+ * At the old 50/51 the backdrop and box rendered UNDER the floating selection
+ * toolbar (z 62), so opening the link editor while the toolbar was up left the
+ * dialog stuck behind it. 70/71 is the modal tier: strictly above the overlays. */
 [data-scope='dialog'][data-part='backdrop'] {
   position: fixed;
   inset: 0;
   background: rgba(8, 10, 16, 0.6);
-  z-index: 50;
+  z-index: 70;
 }
 [data-scope='dialog'][data-part='positioner'] {
   position: fixed;
@@ -603,7 +608,7 @@
   display: grid;
   place-items: center;
   padding: 1rem;
-  z-index: 51;
+  z-index: 71;
 }
 [data-md-link='box'] {
   width: min(28rem, 100%);

@@ -20,6 +20,10 @@
 //   63 — table tools                         — element-anchored, sits over a table
 //   64 — code-block language badge           — element-anchored, may sit INSIDE a
 //                                              table cell, so it must clear 63
+//   70/71 — modal dialog (link editor)        — a MODAL, above every overlay
+//                                              above; set in styles/editor.css,
+//                                              NOT here (it's an @llui/components
+//                                              dialog, not an overlayRoot)
 // The values live with each plugin's view; this comment is the source of truth.
 
 import {
