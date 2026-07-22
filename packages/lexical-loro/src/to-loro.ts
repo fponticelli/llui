@@ -473,7 +473,14 @@ function describeChildren(node: ElementNode): DesiredChild[] {
     run = []
   }
   for (const child of node.getChildren()) {
-    if ($isTextNode(child)) {
+    // Only a PLAIN TextNode (getType() === 'text') joins a text run. A TextNode
+    // SUBCLASS (e.g. the wikilink token) carries state beyond text + format — its
+    // `__target` — which a run does NOT store, so merged in it would be rebuilt as
+    // bare text on projection, silently dropping the link. Route it through the
+    // carrier path instead: `syncProps` stores its full `exportJSON` and the
+    // inbound side rebuilds it via `importJSON` (exactly like a decorator leaf).
+    // MUST stay identical to `to-lexical.ts` `groupChildren`.
+    if ($isTextNode(child) && child.getType() === 'text') {
       run.push(child)
     } else {
       flush()

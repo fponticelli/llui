@@ -400,7 +400,10 @@ function groupChildren(node: ElementNode): Group[] {
     run = []
   }
   for (const child of node.getChildren()) {
-    if ($isTextNode(child)) run.push(child)
+    // MUST stay identical to `to-loro.ts` `describeChildren`: only a PLAIN
+    // TextNode joins a run; a subclass (wikilink token, …) is stored as a carrier
+    // so its custom state (`__target`) survives the round-trip.
+    if ($isTextNode(child) && child.getType() === 'text') run.push(child)
     else {
       flush()
       out.push({ kind: 'element', node: child, key: child.getKey() })

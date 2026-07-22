@@ -181,7 +181,12 @@ export function projectTarget(node: LexicalNode): TargetElement {
     run = []
   }
   for (const child of (node as ElementNode).getChildren()) {
-    if ($isTextNode(child)) {
+    // Only a PLAIN TextNode joins a text run (which stores just text + format). A
+    // TextNode SUBCLASS (wikilink token, mention, …) carries extra state — merged
+    // into a run it is flattened to bare text, dropping e.g. a wikilink's target.
+    // Project it as its own carrier (`props` = exportJSON) so it round-trips via
+    // importJSON. Mirrors the same guard in `to-loro.ts` / `to-lexical.ts`.
+    if ($isTextNode(child) && child.getType() === 'text') {
       run.push(child)
     } else {
       flush()
