@@ -11,6 +11,38 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-22 — @llui/markdown-editor@0.6.0, @llui/lexical-loro@0.1.1
+
+**Released:** `@llui/markdown-editor@0.6.0`; `@llui/lexical-loro@0.1.1`
+
+Editable links and document links, plus a Loro-persistence fix for custom inline nodes.
+
+### `@llui/markdown-editor@0.6.0`
+
+- **Added** Document links are editable in place. Clicking a `[[link]]` reopens
+  the search/reference panel prefilled to REPOINT it — choosing a candidate
+  rewrites the target by NodeKey (no re-insert); ⌘/Ctrl-click still navigates. In
+  edit mode the panel carries its own query input, so the document is untouched
+  until you pick a target.
+- **Added** Regular URL links are editable and followable. A plain click opens the
+  link dialog prefilled with the current URL — submitting repoints THAT link by
+  NodeKey (clearing the URL unlinks); ⌘/Ctrl-click follows the URL through a new
+  `onFollow` seam on `linkPlugin` (default opens a new tab; a shell/desktop host
+  wires it to the system browser). Links gain a hover affordance (underline +
+  pointer cursor) matching document links.
+- **Fixed** The floating selection toolbar dismisses on editor blur, so it no
+  longer lingers — visible but dead — over the link dialog's modal backdrop.
+
+### `@llui/lexical-loro@0.1.1`
+
+- **Fixed** Custom `TextNode` subclasses (wikilink tokens, mentions, …) survive the
+  Loro round-trip. All three child-grouping paths (`to-loro`, `to-lexical`,
+  `agent-write`) merged every text node into a plain-text run — which stores only
+  text + format marks — so a subclass's extra state (e.g. a wikilink's `__target`)
+  was dropped and it came back as bare text on any save/sync. A subclass now rides
+  the carrier path (`exportJSON`/`importJSON`), like a decorator leaf; the
+  convergence/fuzz/constraints suite stays green.
+
 ## 2026-07-22 — @llui/markdown-editor@0.5.1
 
 **Released:** `@llui/markdown-editor@0.5.1`
