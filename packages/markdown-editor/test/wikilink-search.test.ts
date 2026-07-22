@@ -5,11 +5,22 @@
 // content-preview pane, and choosing one inserts a `[[target]]` wikilink.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { $createParagraphNode, $createTextNode, $getRoot, type LexicalEditor } from 'lexical'
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getNodeByKey,
+  $getRoot,
+  type LexicalEditor,
+} from 'lexical'
 import { mountApp } from '@llui/dom'
 import { markdownEditor } from '../src/editor.js'
 import { corePlugin } from '../src/plugins/core.js'
-import { wikilinkPlugin, type DocCandidate } from '../src/plugins/wikilink.js'
+import {
+  $createWikiLinkNode,
+  $isWikiLinkNode,
+  wikilinkPlugin,
+  type DocCandidate,
+} from '../src/plugins/wikilink.js'
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -174,5 +185,80 @@ describe('document-link search panel', () => {
     setText(editor, '[[Road')
     await wait(200)
     expect(panelEl()).toBeNull()
+  })
+})
+
+describe('document-link edit (repoint an existing link)', () => {
+  const editInput = (): HTMLInputElement | null =>
+    document.querySelector('[data-scope="md-wikilink"][data-part="edit-input"]')
+
+  /** Put a single `[[target]]` wikilink in the doc and return its NodeKey. */
+  function insertWikiLink(editor: LexicalEditor, target: string): string {
+    let key = ''
+    editor.update(
+      () => {
+        const p = $createParagraphNode()
+        const node = $createWikiLinkNode(target)
+        p.append(node)
+        $getRoot().clear().append(p)
+        key = node.getKey()
+      },
+      { discrete: true },
+    )
+    return key
+  }
+
+  const targetOf = (editor: LexicalEditor, key: string): string | null =>
+    editor.getEditorState().read(() => {
+      const n = $getNodeByKey(key)
+      return $isWikiLinkNode(n) ? n.getTarget() : null
+    })
+
+  it('editOpen shows the panel with a query input prefilled to the current target', async () => {
+    const editor = await mount(() => CANDIDATES)
+    const key = insertWikiLink(editor, 'Welcome')
+    send({ type: 'editOpen', key, query: 'Welcome', items: [CANDIDATES[0]!], x: 10, y: 20 })
+    await wait(0)
+    expect(panelEl()).not.toBeNull()
+    expect(editInput()).not.toBeNull()
+    expect(editInput()!.value).toBe('Welcome')
+  })
+
+  it('typing in the edit input re-runs the search seam and choosing repoints in place', async () => {
+    const queries: string[] = []
+    const editor = await mount((q) => {
+      queries.push(q)
+      return CANDIDATES.filter((c) => c.title!.toLowerCase().includes(q.toLowerCase()))
+    })
+    const key = insertWikiLink(editor, 'Welcome')
+    send({ type: 'editOpen', key, query: 'Welcome', items: [CANDIDATES[0]!], x: 0, y: 0 })
+    await wait(0)
+    // Refine the query — the edit input drives an async re-search (editSearch).
+    send({ type: 'editInput', query: 'Road' })
+    await wait(10)
+    expect(queries).toContain('Road')
+    // Commit: the SAME node is repointed (no new link inserted).
+    send({ type: 'searchChoose' })
+    await wait(0)
+    expect(targetOf(editor, key)).toBe('Roadmap')
+    const md = editor.getEditorState().read(() =>
+      $getRoot()
+        .getChildren()
+        .map((n) => n.getTextContent())
+        .join(''),
+    )
+    expect(md).not.toContain('Welcome')
+    expect(panelEl()).toBeNull()
+  })
+
+  it('clicking a result while editing repoints (does not insert)', async () => {
+    const editor = await mount(() => CANDIDATES)
+    const key = insertWikiLink(editor, 'Welcome')
+    send({ type: 'editOpen', key, query: 'Welcome', items: CANDIDATES, x: 0, y: 0 })
+    await wait(0)
+    // Second row is Roadmap.
+    resultEls()[1]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    await wait(0)
+    expect(targetOf(editor, key)).toBe('Roadmap')
   })
 })

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "pnpm --filter @llui/markdown-editor build && playwright test"
   },
   "dependencies": {
     "@llui/dom": "workspace:*",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",
+    "@playwright/test": "^1.59.1",
     "vite": "^8.0.0"
   }
 }

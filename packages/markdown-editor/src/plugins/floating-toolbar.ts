@@ -3,7 +3,7 @@
 // selection changes and positions/fills the bar; clicking a button runs the
 // command on the still-live selection.
 
-import { $getSelection, $isRangeSelection } from 'lexical'
+import { $getSelection, $isRangeSelection, BLUR_COMMAND, COMMAND_PRIORITY_LOW } from 'lexical'
 import { $findMatchingParent, mergeRegister } from '@lexical/utils'
 import { $isLinkNode } from '@lexical/link'
 import { button, each, span, text, unsafeHtml, type Signal } from '@llui/dom'
@@ -117,6 +117,19 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
         editor.registerUpdateListener(() => refresh()),
         // Keep the bubble glued to the selection while the page scrolls.
         onViewportChange(refresh),
+        // Dismiss when the editor loses focus. Without this the bubble lingers
+        // when something steals focus WITHOUT changing the editor state — most
+        // visibly the link dialog, whose modal input focus leaves the bubble
+        // stranded (and dead) over the backdrop. Toolbar-button clicks keep focus
+        // (their mousedown preventDefaults), so this never fires mid-interaction.
+        editor.registerCommand(
+          BLUR_COMMAND,
+          () => {
+            ctx.emit({ type: 'plugin', name: 'floatingToolbar', msg: { type: 'hide' } })
+            return false
+          },
+          COMMAND_PRIORITY_LOW,
+        ),
       )
     },
     ui: definePluginUI<FloatState, FloatMsg, FloatEffect>({

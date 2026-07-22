@@ -59,6 +59,12 @@
 }
 [data-lexical-editor] a {
   color: var(--md-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--md-primary-soft);
+  cursor: pointer;
+}
+[data-lexical-editor] a:hover {
+  border-bottom-color: var(--md-primary);
 }
 [data-lexical-editor] code[data-lexical-text='true'] {
   background: var(--md-surface-2);
@@ -502,6 +508,22 @@
   overflow: auto;
   padding: 0.25rem;
   border-right: 1px solid var(--md-border);
+}
+[data-scope='md-wikilink'][data-part='edit-input'] {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--md-bg);
+  color: var(--md-text);
+  border: 1px solid var(--md-border);
+  border-radius: 5px;
+  outline: none;
+}
+[data-scope='md-wikilink'][data-part='edit-input']:focus {
+  border-color: var(--md-primary);
 }
 [data-scope='md-wikilink'][data-part='result'] {
   padding: 0.4rem 0.6rem;

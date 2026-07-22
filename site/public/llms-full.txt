@@ -17961,6 +17961,23 @@ export interface CorePluginOptions {
 }
 ```
 
+### `DocCandidate`
+
+A document the host offers as a link target while the user types `[[…`.
+
+```typescript
+export interface DocCandidate {
+  /** The link target written into the document (`[[target]]`). */
+  readonly target: string
+  /** Human-facing title shown in the results list (defaults to `target`). */
+  readonly title?: string
+  /** A short one-line snippet shown under the title. */
+  readonly snippet?: string
+  /** A longer content excerpt shown in the reference/preview pane. */
+  readonly preview?: string
+}
+```
+
 ### `DropTarget`
 
 A resolved drop slot: "put the dragged block `place` this `key`".
@@ -18162,6 +18179,13 @@ export interface LinkDialogOptions {
 export interface LinkPluginOptions {
   /** Default URL pre-filled when there's no existing link (default ''). */
   defaultUrl?: string
+  /**
+   * Follow (open) a link's URL on ⌘/Ctrl-click. The host owns how a URL opens —
+   * a plain browser wants a new tab, a Tauri/Electron shell wants the external
+   * browser — so this is a seam. When omitted, a browser default opens the URL in
+   * a new tab; off-browser (no `window`) it is a no-op.
+   */
+  onFollow?: (url: string) => void
 }
 ```
 

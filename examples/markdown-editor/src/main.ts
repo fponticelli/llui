@@ -19,6 +19,8 @@ import {
   slashPlugin,
   contextMenuPlugin,
   floatingToolbarPlugin,
+  blockDragPlugin,
+  wikilinkPlugin,
   mathPlugin,
   mermaidPlugin,
   tablePlugin,
@@ -26,9 +28,11 @@ import {
   emojiPlugin,
   calloutPlugin,
   singleBlockPlugin,
+  type DocCandidate,
   type EditorState,
 } from '@llui/markdown-editor'
 import '@llui/markdown-editor/styles/editor.css'
+import '@llui/markdown-editor/styles/block-drag.css'
 import './main.css'
 
 const WELCOME_MD = [
@@ -104,12 +108,54 @@ const fullApp = mountApp(
       mermaidPlugin(),
       tablePlugin(),
       corePlugin(),
-      linkPlugin(),
+      linkPlugin({
+        onFollow: (url) => {
+          // eslint-disable-next-line no-console
+          console.log('[link] follow →', url)
+        },
+      }),
       imagePlugin(),
       hrPlugin(),
       slashPlugin(),
       contextMenuPlugin(),
       floatingToolbarPlugin(),
+      blockDragPlugin(),
+      wikilinkPlugin({
+        onNavigate: (link) => {
+          // eslint-disable-next-line no-console
+          console.log('[wikilink] navigate →', link.target)
+        },
+        search: (query: string): DocCandidate[] => {
+          const docs: DocCandidate[] = [
+            {
+              target: 'Getting Started',
+              title: 'Getting Started',
+              snippet: 'intro',
+              preview: 'How to get going with LLui.',
+            },
+            {
+              target: 'Roadmap',
+              title: 'Roadmap',
+              snippet: 'plan',
+              preview: 'Q3 goals and milestones.',
+            },
+            {
+              target: 'Architecture',
+              title: 'Architecture',
+              snippet: 'design',
+              preview: 'The signal runtime and reconciler.',
+            },
+            {
+              target: 'Cookbook',
+              title: 'Cookbook',
+              snippet: 'recipes',
+              preview: 'Common patterns and how-tos.',
+            },
+          ]
+          const q = query.trim().toLowerCase()
+          return q.length === 0 ? docs : docs.filter((d) => d.title!.toLowerCase().includes(q))
+        },
+      }),
       mathPlugin(),
       mentionPlugin(),
       emojiPlugin(),

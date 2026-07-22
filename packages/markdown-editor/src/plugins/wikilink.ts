@@ -67,6 +67,7 @@ import {
   $applyNodeReplacement,
   $createTextNode,
   $getNearestNodeFromDOMNode,
+  $getNodeByKey,
   $getSelection,
   $isRangeSelection,
   $isTextNode,
@@ -88,7 +89,7 @@ import {
 } from 'lexical'
 import type { TextMatchTransformer } from '@lexical/markdown'
 import { mergeRegister } from '@lexical/utils'
-import { div, each, text, type Signal } from '@llui/dom'
+import { div, each, input, onMount, show, text, type Signal } from '@llui/dom'
 import { setTransformerPrecedence } from '../transformers/registry.js'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, overlayRoot } from './overlay.js'
@@ -460,11 +461,28 @@ interface WikiLinkState {
   searchIndex: number
   searchX: number
   searchY: number
+  /**
+   * The NodeKey of the wikilink being repointed, or `null` in typing mode.
+   * When set, the panel is in EDIT mode: it carries its own query input (the
+   * doc is untouched until a candidate is chosen) and choosing repoints the
+   * node rather than inserting a new one.
+   */
+  editKey: string | null
 }
 
 type WikiLinkMsg =
   | { type: 'activate'; target: string; alias: string | null }
   | { type: 'searchShow'; query: string; items: readonly DocCandidate[]; x: number; y: number }
+  | {
+      type: 'editOpen'
+      key: string
+      query: string
+      items: readonly DocCandidate[]
+      x: number
+      y: number
+    }
+  | { type: 'editInput'; query: string }
+  | { type: 'editResults'; query: string; items: readonly DocCandidate[] }
   | { type: 'searchHide' }
   | { type: 'searchMove'; delta: number }
   | { type: 'searchChoose' }
@@ -474,6 +492,8 @@ type WikiLinkMsg =
 type WikiLinkEffect =
   | { type: 'navigate'; link: WikiLink }
   | { type: 'insert'; target: string; query: string }
+  | { type: 'repoint'; key: string; target: string }
+  | { type: 'editSearch'; query: string }
 
 const MAX_RESULTS = 8
 /** Debounce before firing the host's (possibly async) `search` for a query. */
@@ -487,6 +507,14 @@ function toRows(items: readonly DocCandidate[], index: number): DocRow[] {
     preview: c.preview ?? '',
     active: i === index,
   }))
+}
+
+/** The commit effect for a chosen candidate: repoint the existing link (edit
+ *  mode) or insert a new one at the caret (typing mode). */
+function commit(state: WikiLinkState, target: string): WikiLinkEffect {
+  return state.editKey !== null
+    ? { type: 'repoint', key: state.editKey, target }
+    : { type: 'insert', target, query: state.searchQuery }
 }
 
 /** The `[[` query immediately before a collapsed caret, or `null` when the caret
@@ -605,14 +633,59 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
         emit({ type: 'activate', target, alias })
         return true
       }
+      const search = opts.search
+
+      // Viewport anchor for an existing link's rendered element (caret fallback).
+      const linkXY = (key: NodeKey): { x: number; y: number } => {
+        const el = editor.getElementByKey(key)
+        const rect = el?.getBoundingClientRect()
+        return rect ? { x: rect.left, y: rect.bottom + 4 } : caretXY()
+      }
+
+      // True while a click-opened EDIT panel is up. The click that opens it also
+      // moves the selection, which fires the update listener below; without this
+      // guard that listener would see "no `[[` query" and immediately hide the
+      // panel we just opened.
+      let editing = false
+
       const navigation = mergeRegister(
         editor.registerCommand(
           CLICK_COMMAND,
           (event: MouseEvent) => {
             const node = $wikiLinkFromEvent(event)
-            if (!node) return false
+            if (!node) {
+              // A click elsewhere dismisses an open edit panel.
+              if (editing) {
+                editing = false
+                emit({ type: 'searchHide' })
+              }
+              return false
+            }
             event.preventDefault()
-            return activate(node)
+            // Modifier-click always navigates; a plain click with no search seam
+            // has no edit UI to offer, so it navigates too.
+            if (search === undefined || event.metaKey || event.ctrlKey) return activate(node)
+            // Plain click → open the repoint panel, prefilled with the current
+            // target. The document is untouched until a candidate is chosen.
+            editing = true
+            const key = node.getKey()
+            const target = node.getTarget()
+            const { x, y } = linkXY(key)
+            void Promise.resolve(search(target))
+              .then((items) =>
+                emit({
+                  type: 'editOpen',
+                  key,
+                  query: target,
+                  items: items.slice(0, MAX_RESULTS),
+                  x,
+                  y,
+                }),
+              )
+              .catch(() => {
+                editing = false
+              })
+            return true
           },
           COMMAND_PRIORITY_LOW,
         ),
@@ -635,7 +708,6 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 
       // Document-search typeahead is opt-in: with no `search` seam the panel never
       // opens and `[[target]]` still works by typing the closing `]]`.
-      const search = opts.search
       if (search === undefined) return navigation
 
       let seq = 0
@@ -653,9 +725,13 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
         const query = activeQuery()
         if (query === null) {
           clearTimer()
-          emit({ type: 'searchHide' })
+          // Leave a click-opened edit panel alone — it is driven by the panel's
+          // own input, not the caret.
+          if (!editing) emit({ type: 'searchHide' })
           return
         }
+        // A live `[[` query supersedes any edit panel.
+        editing = false
         clearTimer()
         const mine = ++seq
         timer = setTimeout(() => {
@@ -716,6 +792,7 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
         searchIndex: 0,
         searchX: 0,
         searchY: 0,
+        editKey: null,
       }),
       update: (state, msg) => {
         switch (msg.type) {
@@ -724,6 +801,7 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
             return [{ ...state, last: link }, [{ type: 'navigate', link }]]
           }
           case 'searchShow':
+            // A live `[[` typing result: typing mode (editKey cleared).
             return {
               ...state,
               searchOpen: msg.items.length > 0,
@@ -732,9 +810,33 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
               searchIndex: 0,
               searchX: msg.x,
               searchY: msg.y,
+              editKey: null,
             }
+          case 'editOpen':
+            // Repoint an existing link: the panel opens with its own query input
+            // (the doc is untouched) and remembers which node to repoint.
+            return {
+              ...state,
+              searchOpen: true,
+              searchQuery: msg.query,
+              searchItems: toRows(msg.items, 0),
+              searchIndex: 0,
+              searchX: msg.x,
+              searchY: msg.y,
+              editKey: msg.key,
+            }
+          case 'editInput':
+            return [
+              { ...state, searchQuery: msg.query },
+              [{ type: 'editSearch', query: msg.query }],
+            ]
+          case 'editResults':
+            // Drop a stale response (the input moved on) or one for the typing panel.
+            return state.editKey !== null && msg.query === state.searchQuery
+              ? { ...state, searchItems: toRows(msg.items, 0), searchIndex: 0 }
+              : state
           case 'searchHide':
-            return state.searchOpen ? { ...state, searchOpen: false } : state
+            return state.searchOpen ? { ...state, searchOpen: false, editKey: null } : state
           case 'searchMove': {
             if (!state.searchOpen || state.searchItems.length === 0) return state
             const i =
@@ -755,44 +857,64 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           }
           case 'searchChoose': {
             const row = state.searchItems[state.searchIndex]
-            if (!state.searchOpen || !row) return { ...state, searchOpen: false }
-            return [
-              { ...state, searchOpen: false },
-              [{ type: 'insert', target: row.target, query: state.searchQuery }],
-            ]
+            if (!state.searchOpen || !row) return { ...state, searchOpen: false, editKey: null }
+            return [{ ...state, searchOpen: false, editKey: null }, [commit(state, row.target)]]
           }
           case 'searchClick': {
             const row = state.searchItems[msg.index]
             if (!row) return state
-            return [
-              { ...state, searchOpen: false },
-              [{ type: 'insert', target: row.target, query: state.searchQuery }],
-            ]
+            return [{ ...state, searchOpen: false, editKey: null }, [commit(state, row.target)]]
           }
         }
       },
       onEffect: (effect, ctx) => {
-        if (effect.type === 'navigate') {
-          opts.onNavigate?.(effect.link)
-          return
+        switch (effect.type) {
+          case 'navigate':
+            opts.onNavigate?.(effect.link)
+            return
+          case 'editSearch': {
+            // Re-run the host search for the edit input's query; feed it back.
+            const s = opts.search
+            if (!s) return
+            const q = effect.query
+            void Promise.resolve(s(q))
+              .then((items) => ctx.send({ type: 'editResults', query: q, items }))
+              .catch(() => {
+                /* a failed search simply shows nothing */
+              })
+            return
+          }
+          case 'repoint': {
+            // Edit mode: repoint the existing link in place (no re-insert).
+            const editor = ctx.editor()
+            if (!editor) return
+            editor.update(() => {
+              const node = $getNodeByKey(effect.key)
+              if ($isWikiLinkNode(node)) node.setTarget(effect.target)
+            })
+            return
+          }
+          case 'insert': {
+            // Typing mode: replace the typed `[[query` with a wikilink + a space.
+            const editor = ctx.editor()
+            if (!editor) return
+            editor.update(() => {
+              const selection = $getSelection()
+              if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
+              const node = selection.anchor.getNode()
+              if (!$isTextNode(node)) return
+              const offset = selection.anchor.offset
+              // Remove the `[[` (2 chars) plus the query text.
+              const start = offset - effect.query.length - 2
+              if (start < 0) return
+              node.spliceText(start, effect.query.length + 2, '', true)
+              const sel = $getSelection()
+              if (!$isRangeSelection(sel)) return
+              sel.insertNodes([$createWikiLinkNode(effect.target, null), $createTextNode(' ')])
+            })
+            return
+          }
         }
-        // insert: replace the typed `[[query` with a wikilink node + a space.
-        const editor = ctx.editor()
-        if (!editor) return
-        editor.update(() => {
-          const selection = $getSelection()
-          if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
-          const node = selection.anchor.getNode()
-          if (!$isTextNode(node)) return
-          const offset = selection.anchor.offset
-          // Remove the `[[` (2 chars) plus the query text.
-          const start = offset - effect.query.length - 2
-          if (start < 0) return
-          node.spliceText(start, effect.query.length + 2, '', true)
-          const sel = $getSelection()
-          if (!$isRangeSelection(sel)) return
-          sel.insertNodes([$createWikiLinkNode(effect.target, null), $createTextNode(' ')])
-        })
       },
       view: ({ state, send }) =>
         overlayRoot({
@@ -804,6 +926,46 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           children: () => [
             div({ 'data-scope': 'md-wikilink', 'data-part': 'panel' }, [
               div({ 'data-scope': 'md-wikilink', 'data-part': 'results', role: 'listbox' }, [
+                // Edit mode (repointing a clicked link) carries its own query
+                // input — the document is untouched, so the caret can't drive the
+                // search the way the `[[…` typing path does.
+                show(
+                  state.map((s) => s.editKey !== null),
+                  () => [
+                    input({
+                      'data-scope': 'md-wikilink',
+                      'data-part': 'edit-input',
+                      type: 'text',
+                      value: state.at('searchQuery'),
+                      placeholder: 'Repoint to…',
+                      'aria-label': 'Repoint document link',
+                      onInput: (e: Event) =>
+                        send({ type: 'editInput', query: (e.target as HTMLInputElement).value }),
+                      onKeyDown: (e: KeyboardEvent) => {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          send({ type: 'searchMove', delta: 1 })
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          send({ type: 'searchMove', delta: -1 })
+                        } else if (e.key === 'Enter') {
+                          e.preventDefault()
+                          send({ type: 'searchChoose' })
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          send({ type: 'searchHide' })
+                        }
+                      },
+                    }),
+                    onMount((root) => {
+                      const el = root.querySelector<HTMLInputElement>(
+                        '[data-scope="md-wikilink"][data-part="edit-input"]',
+                      )
+                      el?.focus()
+                      el?.select()
+                    }),
+                  ],
+                ),
                 each(state.at('searchItems') as Signal<DocRow[]>, {
                   key: (r) => r.target,
                   render: (item, index) => [
