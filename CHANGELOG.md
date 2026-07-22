@@ -11,6 +11,26 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-07-22 — @llui/markdown-editor@0.5.1
+
+**Released:** `@llui/markdown-editor@0.5.1`
+
+Follow-up fixes to the 0.5.0 editor surfaces.
+
+### `@llui/markdown-editor@0.5.1`
+
+- **Fixed** the link dialog rendered _under_ the floating selection toolbar. Its
+  backdrop/positioner were styled at `z-index: 50/51` — below the 60–64
+  `OVERLAY_Z` overlay tier, so the toolbar (z 62) covered the modal whenever both
+  were open (and, in a host that also styles `[data-scope='dialog']`, the generic
+  rule could drag every dialog down with it). Raised to a modal tier (70/71),
+  strictly above every caret/selection/element overlay, and documented the tier in
+  `OVERLAY_Z`.
+- **Added** `DocCandidate` to the package's public exports. It is part of the
+  document-link `search` seam's contract (`WikiLinkPluginOptions['search']`
+  resolves to `DocCandidate[]`), so a host implementing the seam can now name the
+  type directly instead of deriving it.
+
 ## 2026-07-21 — @llui/markdown-editor@0.5.0 — block actions menu + document-link search panel
 
 **Released:** `@llui/markdown-editor@0.5.0`
