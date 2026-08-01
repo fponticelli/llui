@@ -5,7 +5,7 @@ user_invocable: true
 
 # /publish — Prepare a release and print the publish command
 
-Detect which `@llui/*` packages have changed since the last release, bump their versions, update runtime `peerDependencies` on cascaded packages, write a new `CHANGELOG.md` entry, run the full verify matrix, commit, push — and **print the final `./scripts/publish.sh` command** for the user to run. The skill **does not publish to npm itself**; that step stays in the user's hands so they can review and run it when ready.
+Detect which `@llui/*` packages have changed since the last release, decide the cascade with the user, bump their versions, write a new `CHANGELOG.md` entry, run the full verify matrix, commit, push — and **print the final `./scripts/publish.sh` command** for the user to run. The skill **does not publish to npm itself**; that step stays in the user's hands so they can review and run it when ready.
 
 ## Usage
 
@@ -99,43 +99,44 @@ Tier 3 (depend on tier 2):
 
 Cascade rules:
 
-- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `markdown`, `lexical`, `lexical-collab`, `markdown-editor`, `devmode-annotate`, `vike`, `mcp`, `agent`, `a2ui`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
+- `dom` changed → **it depends on the bump size.** Every `@llui/dom` peer is now declared `workspace:^`, which `pnpm publish` rewrites at pack time to `^<resolved dom version>`. So an already-published dependent declares `^X.Y.0`, and caret-on-0.x admits any `0.Y.*`:
+  - **patch** (`0.12.0 → 0.12.1`) → **no cascade**. The published ranges already admit the new dom, so consumers pick the fix up on their next install. Republishing 13 packages with no source change is pure version churn and makes "what changed in `components@0.13.1`?" unanswerable. (Precedent cuts the other way — `2eafd6f5` cascaded a dom patch to five packages with zero source changes — but that predates `workspace:^`.)
+  - **minor / major** (`0.12.x → 0.13.0`) → **cascade to every package whose `peerDependencies["@llui/dom"]` is set**, because `^0.12.0` does NOT admit `0.13.0`; without a republish, consumers get an unsatisfiable peer. Derive the list from the snippet below, never by hand.
+
+  Either way, **ask the user** — this materially changes what lands on npm.
+
 - `compiler` changed → add `compiler-ssr` (the remaining opt-in compiler module) plus its in-repo consumers `vite-plugin` and `mcp`.
 - `lexical` changed → add `markdown-editor` (peer-depends on `@llui/lexical`).
 - `components` changed → add `markdown-editor` (peer-depends on `@llui/components`).
 - `effects` has no in-repo dependents today — no cascade.
 
-Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These must be updated to the new `dom` version during the bump (step 5):
+**Peer ranges normally need NO manual edit.** Every in-repo `@llui/*` peer is declared `workspace:^`, which `pnpm publish` rewrites at pack time to `^<resolved version>` — so the committed `package.json` never names a version and can't go stale. This includes `@llui/markdown-editor`'s extra `@llui/lexical` and `@llui/components` peers.
 
-- `packages/components/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/router/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/transitions/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/markdown/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/lexical/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/vike/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/test/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/mcp/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/agent/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/markdown-editor/package.json` → `peerDependencies["@llui/dom"]`
-- `packages/a2ui/package.json` → `peerDependencies["@llui/dom"]`
-
-**`@llui/markdown-editor` carries two more `@llui` peer ranges than the dom-only cascade above** — `peerDependencies["@llui/lexical"]` and `peerDependencies["@llui/components"]`. When `lexical` or `components` bumps, `markdown-editor`'s peer range for that package must bump too, exactly like the `@llui/dom` updates. The step-5 bump script only rewrites `@llui/dom`, so add `@llui/lexical` / `@llui/components` to its rewrite block (or hand-edit `packages/markdown-editor/package.json`) whenever either is in the changed set.
-
-**Always derive this list from the actual files**, not from this README — run the snippet below before bumping to catch any package that's quietly grown or lost a peer:
+That was not always true: peers used to be pinned (`^0.0.14`), and step 5 existed to rewrite them. **Verify before assuming** — run the snippet below. Any peer that is NOT `workspace:^` is a pinned holdover and MUST be bumped by hand (or converted to `workspace:^`), otherwise it declares compatibility with an old dom while importing from a new one.
 
 ```bash
 node -e '
 const fs = require("fs");
+let pinned = 0;
 for (const dir of fs.readdirSync("packages")) {
   const p = `packages/${dir}/package.json`;
   if (!fs.existsSync(p)) continue;
   const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-  if (pkg.peerDependencies?.["@llui/dom"]) {
-    console.log(`${pkg.name}: peer @llui/dom = ${pkg.peerDependencies["@llui/dom"]}`);
+  for (const [dep, range] of Object.entries(pkg.peerDependencies ?? {})) {
+    if (!dep.startsWith("@llui/")) continue;
+    if (range === "workspace:^" || range === "workspace:*") {
+      console.log(`✓ ${pkg.name}: peer ${dep} = ${range}`);
+    } else {
+      console.error(`✗ ${pkg.name}: peer ${dep} = ${range}  (PINNED — bump by hand)`);
+      pinned++;
+    }
   }
 }
+process.exit(pinned ? 1 : 0);
 '
 ```
+
+If this exits non-zero, hand-bump each pinned range to the new version (or convert it to `workspace:^`) before continuing. If it exits 0 — the current state — there is nothing to edit and step 5 reduces to bumping `version` fields.
 
 Other cross-package references use `workspace:*` which `pnpm publish` rewrites automatically — no manual update needed for those.
 
@@ -199,55 +200,47 @@ Do the edits via a Node one-liner (NOT Edit/Write — this is a bulk mechanical 
 ```bash
 node -e '
 const fs = require("fs");
-const DOM_FROM = "0.0.14", DOM_TO = "0.0.15";
 const bumps = {
-  "packages/dom/package.json":         ["0.0.14", "0.0.15"],
-  "packages/vite-plugin/package.json": ["0.0.14", "0.0.15"],
-  // ... one entry per changed package
+  "packages/dom/package.json":         ["0.12.0", "0.12.1"],
+  // ... one entry per changed package, with its OWN current version
 };
 for (const [f, [from, to]] of Object.entries(bumps)) {
   const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
   if (pkg.version !== from) { console.error(f, "expected", from, "got", pkg.version); process.exit(1); }
   pkg.version = to;
-  // Runtime dependency on @llui/dom (components/router/transitions)
-  if (pkg.peerDependencies && pkg.peerDependencies["@llui/dom"] === "^" + DOM_FROM) {
-    pkg.peerDependencies["@llui/dom"] = "^" + DOM_TO;
-  }
-  if (pkg.dependencies && pkg.dependencies["@llui/dom"] === "^" + DOM_FROM) {
-    pkg.dependencies["@llui/dom"] = "^" + DOM_TO;
-  }
   fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + "\n");
   console.log("bumped", pkg.name, from, "→", to);
 }
 '
 ```
 
-After the script runs, **verify the peerDependency updates actually landed across every package that declares one** — don't hard-code the list, derive it:
+The script bumps `version` and nothing else — `workspace:^` peers need no rewrite (step 3). **Only if step 3's check reported a PINNED peer** does it also need a rewrite block; add one for that specific package rather than reinstating a blanket `@llui/dom` rewrite.
+
+After the script runs, confirm nothing became pinned and every intended version landed:
 
 ```bash
-DOM_TO="0.0.15"  # set to the new dom version
 node -e '
 const fs = require("fs");
-const want = process.env.DOM_TO;
 let bad = 0;
 for (const dir of fs.readdirSync("packages")) {
   const p = `packages/${dir}/package.json`;
   if (!fs.existsSync(p)) continue;
   const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-  const peer = pkg.peerDependencies?.["@llui/dom"];
-  if (!peer) continue;
-  if (peer !== `^${want}`) {
-    console.error(`✗ ${pkg.name}: peer @llui/dom = ${peer} (expected ^${want})`);
-    bad++;
-  } else {
-    console.log(`✓ ${pkg.name}: peer @llui/dom = ${peer}`);
+  for (const [dep, range] of Object.entries(pkg.peerDependencies ?? {})) {
+    if (!dep.startsWith("@llui/")) continue;
+    if (range !== "workspace:^" && range !== "workspace:*") {
+      console.error(`✗ ${pkg.name}: peer ${dep} = ${range}  (PINNED — must name the new version)`);
+      bad++;
+    }
   }
 }
+console.log(bad ? "FAIL" : "✓ no pinned @llui/* peers — pnpm rewrites all of them at pack time");
 process.exit(bad ? 1 : 0);
-' DOM_TO="$DOM_TO"
+'
+git --no-pager diff --stat -- 'packages/*/package.json'
 ```
 
-Every package declaring a `@llui/dom` peer must show `^<new dom version>`. The bump script only updates packages in the explicit `bumps` map, so any peer holder missing from that map is silently skipped — this check catches it. The bump script can also miss packages whose peer range was specified differently (e.g. `~0.0.14` instead of `^0.0.14`) — fix the bump script equality check or hand-edit before continuing.
+The `git diff --stat` is the real check: it must list **exactly** the packages you meant to bump, nothing more.
 
 ### 6. Write the CHANGELOG entry
 
@@ -352,14 +345,37 @@ Turbo caches aggressively, so `--force` on the build is required to actually reb
 Quick sanity check on the build output:
 
 ```bash
-# Relative imports should keep their .js extensions
-grep -o "from '[^']*'" packages/dom/dist/mount.js | head -3
-
-# Sourcemaps should have inline sources
-node -e 'console.log("has sourcesContent:", Array.isArray(JSON.parse(require("fs").readFileSync("packages/dom/dist/mount.js.map", "utf8")).sourcesContent))'
+# Every relative import in the published output must carry a .js extension.
+# Scans the whole dist rather than one hand-named file — the source tree moves
+# (mount.ts now lives under src/signals/), and a path that no longer exists makes
+# this check silently vacuous.
+node --input-type=module -e '
+import { readdirSync, readFileSync, statSync } from "fs"
+const bad = []
+const PATTERNS = [/\bfrom\s*([\x27"])(\.[^\x27"]*)\1/g, /\bimport\s*\(\s*([\x27"])(\.[^\x27"]*)\1/g]
+;(function walk(dir) {
+  for (const e of readdirSync(dir)) {
+    const f = `${dir}/${e}`
+    if (statSync(f).isDirectory()) walk(f)
+    else if (f.endsWith(".js")) {
+      const src = readFileSync(f, "utf8")
+      for (const re of PATTERNS)
+        for (const m of src.matchAll(re)) if (!m[2].endsWith(".js")) bad.push(`${f}: ${m[2]}`)
+    }
+  }
+})("packages/dom/dist")
+if (bad.length) {
+  console.error("✗ extensionless relative imports:")
+  bad.slice(0, 10).forEach((b) => console.error("   " + b))
+  process.exit(1)
+}
+console.log("✓ all relative imports carry .js")
+'
 ```
 
-Both should succeed. If `.js` extensions are missing, the `scripts/add-js-extensions.mjs` pass hasn't run or is broken — fix it before publishing. Broken ESM imports were literally one of the bugs the 0.0.14 release shipped a fix for; don't regress it.
+If extensions are missing, the `scripts/add-js-extensions.mjs` pass hasn't run or is broken — fix it before publishing. Broken ESM imports were literally one of the bugs the 0.0.14 release shipped a fix for; don't regress it.
+
+**Note on sourcemaps:** this step used to also assert `sourcesContent` is populated. It never can be — no tsconfig in the repo sets `inlineSources`, so `sourceMap: true` alone emits maps whose `sourcesContent` is `false`, and published sourcemaps have no inline sources. The assertion passed only because it read a path (`dist/mount.js.map`) that no longer exists and therefore threw before asserting anything. Either set `inlineSources: true` in `tsconfig.json` and reinstate the check, or accept sourceless maps — but don't re-add an assertion that can only fail.
 
 ### 8. Commit the release
 
@@ -372,7 +388,7 @@ release: @llui/{dom,vite-plugin,test,router,transitions,components,vike}@X.Y.Z, 
 
 <one-line summary of what this release ships>
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+<the Co-Authored-By / Claude-Session trailers your harness specifies — don't hard-code a model name here, it goes stale>
 EOF
 )"
 ```

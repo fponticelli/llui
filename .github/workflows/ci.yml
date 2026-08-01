@@ -153,8 +153,8 @@ jobs:
       - name: Build packages
         run: pnpm turbo build --filter=!@llui/site
 
-      - name: Regenerate site content
-        run: pnpm --filter @llui/site run generate
-
+      # Regenerates, then diffs ALL of site/ — from a clean checkout anything that
+      # moved is generated output by definition, so this also catches a generator
+      # growing a new output that the (narrower) local check doesn't know about.
       - name: Fail on drift in generated pages
-        run: git diff --exit-code site/content/api site/content/examples
+        run: pnpm check:generated -- --strict
