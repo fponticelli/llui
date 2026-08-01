@@ -79,6 +79,12 @@ jobs:
         # boots their dist, so they must and do still build here).
         run: pnpm turbo build --filter=!@llui/site
 
+      # Published-tarball invariants that are invisible in-repo: relative imports
+      # must carry .js (Node ESM won't guess), sourcemap sources must exist and be
+      # in `files`, and no orphaned artifacts of deleted sources.
+      - name: Dist integrity
+        run: pnpm check:dist
+
       - name: Type check
         run: pnpm turbo check
 

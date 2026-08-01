@@ -100,7 +100,7 @@ Tier 3 (depend on tier 2):
 Cascade rules:
 
 - `dom` changed → **it depends on the bump size.** Every `@llui/dom` peer is now declared `workspace:^`, which `pnpm publish` rewrites at pack time to `^<resolved dom version>`. So an already-published dependent declares `^X.Y.0`, and caret-on-0.x admits any `0.Y.*`:
-  - **patch** (`0.12.0 → 0.12.1`) → **no cascade**. The published ranges already admit the new dom, so consumers pick the fix up on their next install. Republishing 13 packages with no source change is pure version churn and makes "what changed in `components@0.13.1`?" unanswerable. (Precedent cuts the other way — `2eafd6f5` cascaded a dom patch to five packages with zero source changes — but that predates `workspace:^`.)
+  - **patch** (`0.12.0 → 0.12.1`) → **no cascade**. The published ranges already admit the new dom, so consumers pick the fix up on their next install. Republishing 13 packages with no source change is pure version churn and makes "what changed in `components@0.13.1`?" unanswerable. (Older releases DID cascade a dom patch — `2eafd6f5` bumped five packages with zero source changes — but that was **necessary then and is not now**: at that commit the peers were pinned `^0.11.5`, so the range had to be rewritten, and rewriting it means republishing. `2526fde8` moved them all to `workspace:^`, which removed the reason. Verified, not assumed.)
   - **minor / major** (`0.12.x → 0.13.0`) → **cascade to every package whose `peerDependencies["@llui/dom"]` is set**, because `^0.12.0` does NOT admit `0.13.0`; without a republish, consumers get an unsatisfiable peer. Derive the list from the snippet below, never by hand.
 
   Either way, **ask the user** — this materially changes what lands on npm.
@@ -345,37 +345,38 @@ Turbo caches aggressively, so `--force` on the build is required to actually reb
 Quick sanity check on the build output:
 
 ```bash
-# Every relative import in the published output must carry a .js extension.
-# Scans the whole dist rather than one hand-named file — the source tree moves
-# (mount.ts now lives under src/signals/), and a path that no longer exists makes
-# this check silently vacuous.
-node --input-type=module -e '
-import { readdirSync, readFileSync, statSync } from "fs"
-const bad = []
-const PATTERNS = [/\bfrom\s*([\x27"])(\.[^\x27"]*)\1/g, /\bimport\s*\(\s*([\x27"])(\.[^\x27"]*)\1/g]
-;(function walk(dir) {
-  for (const e of readdirSync(dir)) {
-    const f = `${dir}/${e}`
-    if (statSync(f).isDirectory()) walk(f)
-    else if (f.endsWith(".js")) {
-      const src = readFileSync(f, "utf8")
-      for (const re of PATTERNS)
-        for (const m of src.matchAll(re)) if (!m[2].endsWith(".js")) bad.push(`${f}: ${m[2]}`)
-    }
-  }
-})("packages/dom/dist")
-if (bad.length) {
-  console.error("✗ extensionless relative imports:")
-  bad.slice(0, 10).forEach((b) => console.error("   " + b))
-  process.exit(1)
-}
-console.log("✓ all relative imports carry .js")
-'
+pnpm check:dist
 ```
 
-If extensions are missing, the `scripts/add-js-extensions.mjs` pass hasn't run or is broken — fix it before publishing. Broken ESM imports were literally one of the bugs the 0.0.14 release shipped a fix for; don't regress it.
+`scripts/check-dist.mjs` verifies three things about EVERY publishable package's
+`dist/`, all of which are invisible in-repo and only bite a consumer who installs
+the tarball:
 
-**Note on sourcemaps:** this step used to also assert `sourcesContent` is populated. It never can be — no tsconfig in the repo sets `inlineSources`, so `sourceMap: true` alone emits maps whose `sourcesContent` is `false`, and published sourcemaps have no inline sources. The assertion passed only because it read a path (`dist/mount.js.map`) that no longer exists and therefore threw before asserting anything. Either set `inlineSources: true` in `tsconfig.json` and reinstate the check, or accept sourceless maps — but don't re-add an assertion that can only fail.
+1. **Every relative import carries a `.js` extension.** Node's ESM resolver does
+   not guess — an extensionless specifier is a hard `ERR_MODULE_NOT_FOUND`.
+   `scripts/add-js-extensions.mjs` adds them post-`tsc`; if that pass breaks,
+   nothing else notices. (Broken ESM imports were one of the bugs the 0.0.14
+   release shipped a fix for; don't regress it.)
+2. **Every sourcemap's `sources` resolve to a file that actually ships.**
+3. **No orphaned artifacts** — `tsc` never deletes the output of a REMOVED
+   source, so a stale `dist/` ships dead modules. `publish.sh` `rm -rf dist`
+   before building, so a tarball is safe either way, but a hit here means your
+   local `dist` is stale: clean-rebuild before trusting anything else it says.
+
+It parses with the TypeScript compiler rather than grepping, because this repo's
+own compiler sources quote `export { X } from './y'` inside comments and a text
+scan reports those as violations — a release gate that cries wolf gets disabled.
+
+**On sourcemaps and `inlineSources`:** these packages deliberately do NOT set it.
+`files` already includes `src`, so the `.ts` sources ship verbatim and the maps
+point at them relatively (`../../src/signals/mount.ts`) — verified resolving
+inside the packed tarball. Embedding them again would duplicate ~340KB per
+package for no gain. An earlier version of this step asserted `sourcesContent`
+was populated, which could never pass; it only appeared to because it read a
+`dist/mount.js.map` path that had not existed for some time and threw first.
+Check 2 above is the invariant that actually matters — if someone drops `src`
+from `files` or moves `outDir`, every published sourcemap silently resolves to
+nothing.
 
 ### 8. Commit the release
 
