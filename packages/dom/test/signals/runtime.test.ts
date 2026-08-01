@@ -5,7 +5,7 @@ import {
   type SparseMask,
   type PathTable,
 } from '../../src/signals/mask'
-import { createSignalScope, type SignalBinding } from '../../src/signals/runtime'
+import { createSignalScope, withBindingErrors, type SignalBinding } from '../../src/signals/runtime'
 
 interface State {
   count: number
@@ -134,5 +134,127 @@ describe('createSignalScope', () => {
     // count unchanged (1===1), user.name unchanged ('ab'==='ab') -> nothing.
     // (items changed but no binding depends on it.)
     expect(log).toEqual([])
+  })
+})
+
+// A STRUCTURAL binding (show/branch/each/virtualEach) has an identity `produce`,
+// so output-equality would compare the STATE BUFFER's identity rather than the
+// binding's output. `each` recycles two ctx buffers per row and rotates them on
+// every row update while `last[i]` advances only on commit, so one gated-out
+// update desynchronises them and every later reconcile is suppressed (issue #52).
+// Structural bindings are therefore exempt from the check.
+describe('createSignalScope — structural bindings are exempt from output-equality', () => {
+  interface Ctx {
+    item: { mode: string }
+    state: { tick: number }
+  }
+
+  // Mirrors the real row scope: a value binding on `item.mode` plus a structural
+  // binding with the same dep and an identity produce, driven by two RECYCLED ctx
+  // buffers that rotate exactly like `each`'s row ctx.
+  function rowScope() {
+    const table = buildPathTable(['item.mode', 'state.tick'])
+    const seen: string[] = []
+    const value: SignalBinding = {
+      produce: (s) => (s as Ctx).item.mode,
+      commit: (v) => seen.push(`text=${String(v)}`),
+    }
+    const structural: SignalBinding = {
+      produce: (s) => s, // identity — the reconcile needs the whole state
+      structural: true,
+      commit: (s) => seen.push(`arm=${(s as Ctx).item.mode}`),
+    }
+    const bindings = [value, structural]
+    const scope = createSignalScope(table, bindings, [
+      bindingMask(['item.mode'], table),
+      bindingMask(['item.mode'], table),
+    ])
+    const buffers: Ctx[] = [
+      { item: { mode: 'a' }, state: { tick: 0 } },
+      { item: { mode: 'a' }, state: { tick: 0 } },
+    ]
+    let cur = 0
+    scope.mount(buffers[0]!)
+    // Rotate buffers on every update, exactly as `each` does for a row.
+    const send = (mode: string, tick: number): void => {
+      const next = buffers[1 - cur]!
+      next.item = { mode }
+      next.state = { tick }
+      scope.update(buffers[cur]!, next)
+      cur = 1 - cur
+    }
+    return { seen, send }
+  }
+
+  it('reconciles after a gated-out update rotated the ctx buffers', () => {
+    const { seen, send } = rowScope()
+    seen.length = 0
+    // `item.mode` is clean -> both bindings gate out, but the buffers still rotate.
+    send('a', 1)
+    expect(seen).toEqual([])
+    // Now flip the discriminant: the structural binding must commit even though its
+    // identity produce returns the buffer already sitting in `last`.
+    send('b', 1)
+    expect(seen).toEqual(['text=b', 'arm=b'])
+  })
+
+  it('reconciles at every parity of gated-out updates', () => {
+    const { seen, send } = rowScope()
+    for (let noops = 0; noops < 4; noops++) {
+      const mode = noops % 2 === 0 ? 'b' : 'a'
+      seen.length = 0
+      for (let i = 0; i < noops; i++) send(mode === 'b' ? 'a' : 'b', i)
+      seen.length = 0
+      send(mode, 99)
+      expect(seen).toEqual([`text=${mode}`, `arm=${mode}`])
+    }
+  })
+
+  it('still gates a structural binding out when its deps are clean', () => {
+    const { seen, send } = rowScope()
+    seen.length = 0
+    send('a', 7) // only state.tick moved; neither binding depends on it
+    expect(seen).toEqual([])
+  })
+
+  // `update` has TWO loops — a try/catch-free fast path and the safe path taken
+  // while a binding-error hook is installed. The exemption must hold in both.
+  it('holds on the binding-error-hook path too', () => {
+    const { seen, send } = rowScope()
+    withBindingErrors(
+      () => {
+        throw new Error('no binding should throw here')
+      },
+      () => {
+        seen.length = 0
+        send('a', 1) // gated out; buffers rotate
+        expect(seen).toEqual([])
+        send('b', 1)
+      },
+    )
+    expect(seen).toEqual(['text=b', 'arm=b'])
+  })
+
+  it('leaves value bindings in a mixed scope under output-equality', () => {
+    const table = buildPathTable(['item.mode', 'item.label'])
+    const seen: string[] = []
+    const bindings: SignalBinding[] = [
+      {
+        produce: (s) => (s as { item: { label: string } }).item.label.length,
+        commit: (v) => seen.push(`len=${String(v)}`),
+      },
+      { produce: (s) => s, structural: true, commit: () => seen.push('arm') },
+    ]
+    const scope = createSignalScope(table, bindings, [
+      bindingMask(['item.label'], table),
+      bindingMask(['item.mode'], table),
+    ])
+    const s0 = { item: { mode: 'a', label: 'ab' } }
+    scope.mount(s0)
+    seen.length = 0
+    // label 'ab' -> 'cd': the value binding gates in and produces, but its OUTPUT
+    // (the length) is unchanged, so the structural exemption must not leak to it.
+    scope.update(s0, { item: { mode: 'a', label: 'cd' } })
+    expect(seen).toEqual([])
   })
 })

@@ -13,7 +13,7 @@
 // PLACED (see `element.ts`'s `populate` and `runBuild` below), which is what makes
 // capture-and-reuse correct by construction.
 
-import type { SignalScope } from './runtime.js'
+import type { SignalBinding, SignalScope } from './runtime.js'
 
 /** The minimal node-factory surface the signal build needs from its document.
  * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
@@ -43,16 +43,14 @@ export type Producer = (state: unknown) => unknown
 
 /** A reactive binding: the dependency paths it reads + an accessor (`produce`)
  * and a `commit` that applies the value. This is the compiler transform's output
- * target, and the contract a {@link DirectRow} (compiled `each` row) supplies. */
-export interface BindingSpec {
+ * target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
+ *
+ * A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
+ * stores specs as-is (see `scopeFromSpecs`), so it EXTENDS the runtime contract
+ * rather than restating it; `produce`/`commit`/`structural` have exactly one
+ * declaration, in `runtime.ts`. */
+export interface BindingSpec extends SignalBinding {
   deps: readonly string[]
-  produce: Producer
-  commit: (value: unknown) => void
-  // A structural primitive's spec (show/branch/each): its `produce` is identity
-  // and `commit` reconciles arms/rows owning child scopes. Structural specs make
-  // themselves row-aware at build time (see `c.inRow`), so the enclosing `each`'s
-  // value-spec rebasing must SKIP them rather than rewrite their identity produce.
-  structural?: boolean
   // Root discriminant for row rebasing — set from the ORIGIN handle, so row
   // locality never depends on string-inferring `item`/`index`/`state` prefixes
   // (which collide with a component-state field literally named that). `true` ⇒

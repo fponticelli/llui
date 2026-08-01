@@ -12,6 +12,19 @@
 //   3. output-equality: calls produce, commits only if the value actually
 //      changed — so a coarse dependency wastes a produce but never a DOM write.
 //
+// Step 3 applies to VALUE bindings only. A STRUCTURAL binding (`show`/`branch`/
+// `each`/`virtualEach`) has an IDENTITY `produce`, because its `commit` reconciles
+// arms/rows and needs the whole state to mount them against — so output-equality
+// would compare the STATE BUFFER's identity, not the binding's output. Inside an
+// `each` row that buffer is one of two recycled ctx objects the row rotates on
+// every update, while `last[i]` advances only on commit: a single gated-out row
+// update desynchronises the two, and from then on `produce()` returns the very
+// object already in `last[i]`, suppressing every later reconcile (issue #52 — a
+// `branch` that stops swapping arms after an odd number of unrelated row updates).
+// Structural bindings are therefore exempt: they are already gated by their deps,
+// and they de-duplicate internally (`ArmController.switchTo` short-circuits on an
+// unchanged arm key; `each`'s reconcile has its own same-structure fast path).
+//
 // See docs/proposals/signals/README.md "Runtime — output equality check".
 
 import { type PathTable, type SparseMask, computeDirtyInto, intersects } from './mask.js'
@@ -69,15 +82,28 @@ function reportBindingError(err: unknown): void {
 export interface SignalBinding<V = unknown> {
   /** evaluate the compiled accessor expression against the current state */
   produce(state: unknown): V
-  /** apply the produced value (DOM mutation) — called only when it changed */
+  /** apply the produced value (DOM mutation) — called only when it changed
+   * (always, for a {@link SignalBinding.structural} binding) */
   commit(value: V): void
+  /** A structural primitive's binding (`show`/`branch`/`each`/`virtualEach`): its
+   * `produce` is the IDENTITY function, because `commit` reconciles arms/rows (and
+   * owns their child scopes) and so needs the whole state to mount them against.
+   *
+   * Two consequences, both load-bearing:
+   *  - RUNTIME: such a binding is EXEMPT from the output-equality check — see
+   *    {@link SignalScope.update} and the file header.
+   *  - BUILD: structural specs make themselves row-aware at build time (see
+   *    `BuildCtx.inRow`), so the enclosing `each`'s value-spec rebasing must SKIP
+   *    them rather than rewrite their identity produce. */
+  structural?: boolean
 }
 
 export interface SignalScope {
   /** mount: run every binding once against the initial state */
   mount(state: unknown): void
-  /** update: gate by dirty bits, commit only changed values, then propagate to
-   * child scopes (mounted content of conditional/structural primitives). */
+  /** update: gate by dirty bits, commit only changed values (STRUCTURAL bindings
+   * commit whenever their gate passes — see {@link SignalBinding.structural}), then
+   * propagate to child scopes (mounted content of conditional/structural primitives). */
   update(oldState: unknown, newState: unknown): void
   /** register a child scope that should receive the same state updates (e.g.
    * `show`/`branch` content that reads the owning component's state). */
@@ -159,8 +185,11 @@ class SignalScopeImpl implements SignalScope {
           if (!intersects(masks[i]!, d)) continue // gate: irrelevant binding
           const b = bindings[i]!
           const v = b.produce(newState)
-          if (!Object.is(v, last[i])) {
+          if (b.structural === true || !Object.is(v, last[i])) {
             b.commit(v) // output-equality: only commit real changes
+            // Structural bindings never READ `last[i]` (the check above short-
+            // circuits), but keep writing it: the slot would otherwise pin the
+            // MOUNT-time state object for the scope's lifetime.
             last[i] = v
           }
         }
@@ -170,7 +199,7 @@ class SignalScopeImpl implements SignalScope {
           const b = bindings[i]!
           try {
             const v = b.produce(newState)
-            if (!Object.is(v, last[i])) {
+            if (b.structural === true || !Object.is(v, last[i])) {
               b.commit(v) // output-equality: only commit real changes
               last[i] = v
             }

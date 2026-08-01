@@ -515,6 +515,17 @@ the last-written value and **skip the DOM mutation if unchanged**. This makes an
 residual coarse dependency cheap: a coarse binding wastes a (microsecond) body
 re-evaluation but never a DOM write unless the value actually changed.
 
+**Value bindings only.** A structural binding (`show`/`branch`/`each`/
+`virtualEach`) produces the state ITSELF — its commit reconciles arms/rows and
+must mount them against the whole state — so the check would compare the state
+object's identity, not the binding's output. Inside an `each` row that object is
+one of two ctx buffers the row recycles and rotates on every update, while the
+last-written slot advances only on commit; a single gated-out row update
+desynchronises them and suppresses every later reconcile (issue #52). Structural
+bindings are exempt: they are already gated by their deps and de-duplicate inside
+their own reconcile (`ArmController.switchTo` short-circuits on an unchanged arm
+key; `each` has its same-structure fast path).
+
 ### The one escape case
 
 A signal that escapes static traceability (stored in an array, conditionally

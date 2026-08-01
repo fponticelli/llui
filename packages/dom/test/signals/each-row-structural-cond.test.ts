@@ -1,6 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import ts from 'typescript'
-import { transformSignalComponentSource } from '@llui/compiler'
 import { mountSignalComponent } from '../../src/signals/component'
 import {
   signalText,
@@ -12,6 +10,7 @@ import {
   signalBranch,
 } from '../../src/signals/dom'
 import { derived } from '../../src/signals/handle'
+import { compileAndLoad, identityComponent } from './compile-and-load'
 import { div, ul, li, span, input, text, each, show } from '../../src/signals/authoring'
 import type { Renderable } from '../../src/signals/dom'
 import type { Signal } from '../../src/signals/types'
@@ -29,36 +28,29 @@ import type { Signal } from '../../src/signals/types'
 //   3. A bare structural primitive as a row's top-level node corrupts reorder/
 //      removal (empty-fragment anchor). Fixed: a clear authoring error.
 
-function compileAndLoad(
-  authored: string,
-  name: string,
-): Parameters<typeof mountSignalComponent>[1] {
-  const lowered = transformSignalComponentSource(authored)
-  const body = lowered
-    .split('\n')
-    .filter((l) => !l.trimStart().startsWith('import '))
-    .join('\n')
-    .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalBranch, derived, component){
-    ${body}
-    return { ${name} }
-  })`
-  const js = ts.transpileModule(wrapped, {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText
-  const factory = eval(js) as (...args: unknown[]) => Record<string, unknown>
-  return factory(
-    signalText,
-    staticText,
-    el,
-    react,
-    signalShow,
-    signalEach,
-    signalBranch,
-    derived,
-    (s: unknown) => s,
-  )[name] as Parameters<typeof mountSignalComponent>[1]
+/** The runtime symbols the lowered SIDEBAR fixture below references. */
+const RUNTIME = {
+  signalText,
+  staticText,
+  el,
+  react,
+  signalShow,
+  signalEach,
+  signalBranch,
+  derived,
+  component: identityComponent,
 }
+
+interface SidebarItem {
+  id: number
+  kind: 'folder' | 'file'
+  name: string
+}
+interface SidebarS {
+  items: SidebarItem[]
+  editingId: number | null
+}
+type SidebarM = { type: 'edit'; id: number } | { type: 'stop' } | { type: 'reorder' }
 
 describe('compiled: structural conditions reading the row item / mixed state+item', () => {
   // The lance sidebar shape: each row is a stable <li>; an item-cond show splits
@@ -104,7 +96,7 @@ describe('compiled: structural conditions reading the row item / mixed state+ite
   `
 
   it('mounts: item cond splits folder/file (bug 1)', () => {
-    const App = compileAndLoad(SIDEBAR, 'App')
+    const App = compileAndLoad<SidebarS, SidebarM>(SIDEBAR, 'App', RUNTIME)
     const c = document.createElement('div')
     mountSignalComponent(c, App)
     expect(c.querySelector('.folder')?.textContent).toBe('docs')
@@ -117,10 +109,10 @@ describe('compiled: structural conditions reading the row item / mixed state+ite
   })
 
   it('reacts to the derived(state, item) cond when component state changes (bug 2)', () => {
-    const App = compileAndLoad(SIDEBAR, 'App')
+    const App = compileAndLoad<SidebarS, SidebarM>(SIDEBAR, 'App', RUNTIME)
     const c = document.createElement('div')
     const h = mountSignalComponent(c, App)
-    h.send({ type: 'edit', id: 2 } as never)
+    h.send({ type: 'edit', id: 2 })
     // exactly the matching file row swaps to the input; folder + other file stay
     const inputs = c.querySelectorAll('input.edit')
     expect(inputs.length).toBe(1)
@@ -129,14 +121,14 @@ describe('compiled: structural conditions reading the row item / mixed state+ite
   })
 
   it('moves the edit-arm between rows and reverts (no leak, no dupes)', () => {
-    const App = compileAndLoad(SIDEBAR, 'App')
+    const App = compileAndLoad<SidebarS, SidebarM>(SIDEBAR, 'App', RUNTIME)
     const c = document.createElement('div')
     const h = mountSignalComponent(c, App)
-    h.send({ type: 'edit', id: 2 } as never)
-    h.send({ type: 'edit', id: 3 } as never)
+    h.send({ type: 'edit', id: 2 })
+    h.send({ type: 'edit', id: 3 })
     expect(c.querySelectorAll('input.edit').length).toBe(1)
     expect((c.querySelector('input.edit') as HTMLInputElement).value).toBe('b.md')
-    h.send({ type: 'stop' } as never)
+    h.send({ type: 'stop' })
     expect(c.querySelector('input.edit')).toBeNull()
     expect(Array.from(c.querySelectorAll('.file')).map((n) => n.textContent)).toEqual([
       'a.md',
@@ -145,10 +137,10 @@ describe('compiled: structural conditions reading the row item / mixed state+ite
   })
 
   it('a folder row cannot enter rename (item cond keeps it on the folder arm)', () => {
-    const App = compileAndLoad(SIDEBAR, 'App')
+    const App = compileAndLoad<SidebarS, SidebarM>(SIDEBAR, 'App', RUNTIME)
     const c = document.createElement('div')
     const h = mountSignalComponent(c, App)
-    h.send({ type: 'edit', id: 1 } as never) // id 1 is the folder
+    h.send({ type: 'edit', id: 1 }) // id 1 is the folder
     expect(c.querySelector('input.edit')).toBeNull()
     expect(c.querySelector('.folder')?.textContent).toBe('docs')
   })

@@ -96,6 +96,17 @@ interface PendingLeave {
  */
 export class ArmController<K> {
   private mounted: MountedArm<K> | null = null
+  // The last key `switchTo` RECONCILED to, whether or not that key mounted an arm.
+  // The mounted arm's key CANNOT serve as the same-key short-circuit: a key with no
+  // arm (a falsy `show` with no `orElse`, an absent `branch` arm) leaves `mounted`
+  // null, so a redundant same-key call would fall through to `finalizePendingLeaves`
+  // and hard-detach an arm that is still animating out — cutting its `leave` short.
+  // Redundant same-key calls are routine (a structural binding reconciles whenever
+  // its deps dirty, even when the discriminant's VALUE is unchanged), so the
+  // short-circuit has to be total. Kept as a flag + slot rather than `K | null`
+  // because `K` legitimately includes `false` (and could include `null`).
+  private hasKey = false
+  private lastKey: K | undefined = undefined
   // Arms whose `leave` animation is in flight. At most one accumulates in normal
   // use — a new switch finalizes any prior pending leaves first (see switchTo) — but
   // a Set keeps the finalize/resurrect bookkeeping robust regardless.
@@ -123,8 +134,8 @@ export class ArmController<K> {
    */
   switchTo(key: K, armFn: (() => Renderable) | undefined, mountState: unknown): void {
     const parent = this.place.parent()
-    if (!parent) return
-    if (this.mounted && this.mounted.key === key) return // same arm — inner scope handles updates
+    if (!parent) return // detached: the reconcile ran off-DOM, so don't record the key
+    if (this.hasKey && this.lastKey === key) return // same arm — inner scope handles updates
 
     // Interruption safety: finalize any arm still animating out from a PRIOR switch
     // before starting a new one. This supersedes the pending leave (hard-detaching
@@ -135,6 +146,11 @@ export class ArmController<K> {
     this.finalizePendingLeaves()
 
     this.teardown(false)
+
+    // Record the reconciled key BEFORE the no-arm bail: a key that mounts nothing
+    // is still the current key, and must short-circuit its own repeats.
+    this.hasKey = true
+    this.lastKey = key
 
     if (!armFn) return
     const built = runBuild(this.place.doc, armFn, this.place.buildCtx, this.place.contexts)
@@ -165,6 +181,10 @@ export class ArmController<K> {
   dispose(): void {
     this.finalizePendingLeaves()
     this.teardown(true)
+    // Drop the reconciled key too: a disposed controller holds no arm, so nothing
+    // may short-circuit against what it used to show.
+    this.hasKey = false
+    this.lastKey = undefined
   }
 
   /** Tear down the currently-mounted arm. With `immediate` false and a `leave` hook

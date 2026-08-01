@@ -1,6 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import ts from 'typescript'
-import { transformSignalComponentSource } from '@llui/compiler'
 import { mountSignalComponent } from '../../src/signals/component'
 import {
   signalText,
@@ -12,6 +10,7 @@ import {
   signalEachDirect,
   signalBranch,
 } from '../../src/signals/dom'
+import { compileAndLoad, identityComponent } from './compile-and-load'
 
 // End-to-end: take AUTHORED signal source, run it through the real compiler
 // transform (transformSignalComponentSource — the same call the Vite plugin
@@ -19,42 +18,21 @@ import {
 // via the runtime and assert real DOM behavior. This proves authored signal code
 // actually compiles and runs across the whole pipeline.
 
-interface Defs {
-  [name: string]: Parameters<typeof mountSignalComponent>[1]
-}
-
-function compileAndLoad(authored: string, names: string[]): Defs {
-  const lowered = transformSignalComponentSource(authored)
-  // strip imports + exports, return the named component defs
-  const body = lowered
-    .split('\n')
-    .filter((l) => !l.trimStart().startsWith('import '))
-    .join('\n')
-    .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalEachDirect, signalBranch, derived, component){
-    ${body}
-    return { ${names.join(', ')} }
-  })`
-  const js = ts.transpileModule(wrapped, {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText
-  const factory = eval(js) as (...args: unknown[]) => Defs
-  const identityComponent = (spec: unknown): unknown => spec
-  const derivedStub = (): never => {
+/** Runtime symbols the lowered fixtures reference. `derived` must not be reached
+ * by these fixtures — a stub that throws proves it. */
+const RUNTIME = {
+  signalText,
+  staticText,
+  el,
+  react,
+  signalShow,
+  signalEach,
+  signalEachDirect,
+  signalBranch,
+  derived: (): never => {
     throw new Error('derived used outside a slot')
-  }
-  return factory(
-    signalText,
-    staticText,
-    el,
-    react,
-    signalShow,
-    signalEach,
-    signalEachDirect,
-    signalBranch,
-    derivedStub,
-    identityComponent,
-  )
+  },
+  component: identityComponent,
 }
 
 describe('authored signal source — end-to-end (transform -> transpile -> mount)', () => {
@@ -81,7 +59,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
         ],
       })
     `
-    const Counter = compileAndLoad(SRC, ['Counter']).Counter!
+    const Counter = compileAndLoad(SRC, 'Counter', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, Counter)
 
@@ -123,7 +101,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
         ],
       })
     `
-    const Todos = compileAndLoad(SRC, ['Todos']).Todos!
+    const Todos = compileAndLoad(SRC, 'Todos', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, Todos)
     const titles = (): string[] =>
@@ -171,7 +149,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
         ],
       })
     `
-    const Panel = compileAndLoad(SRC, ['Panel']).Panel!
+    const Panel = compileAndLoad(SRC, 'Panel', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, Panel)
 
@@ -216,7 +194,7 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
         ],
       })
     `
-    const Profile = compileAndLoad(SRC, ['Profile']).Profile!
+    const Profile = compileAndLoad(SRC, 'Profile', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, Profile)
 

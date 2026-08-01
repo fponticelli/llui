@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import ts from 'typescript'
 import { transformSignalComponentSource } from '@llui/compiler'
 import { mountSignalComponent } from '../../src/signals/component'
 import {
@@ -15,47 +14,43 @@ import {
 } from '../../src/signals/dom'
 import { ul, li, button, span, text, show, eachDirect, eachArm } from '../../src/signals/authoring'
 import { derived, rowHandle } from '../../src/signals/handle'
+import { compileAndLoad, identityComponent } from './compile-and-load'
 
-/** Compile + load a source that uses view-HELPER functions (authoring ul/li/text +
- * the handle-consuming eachDirect), for the cross-function transform-coverage tests.
- * Provides the authoring helpers the lowered helper bodies reference, on top of the
- * compiled-runtime set. */
-function compileAndLoadWithHelpers(
-  authored: string,
-  name: string,
-): Parameters<typeof mountSignalComponent>[1] {
-  const lowered = transformSignalComponentSource(authored)
-  const body = lowered
-    .split('\n')
-    .filter((l) => !l.trimStart().startsWith('import '))
-    .join('\n')
-    .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalEachDirect, eachDirect, eachArm, rowHandle, applyAttr, ul, li, button, span, text, show, component){
-    ${body}
-    return { ${name} }
-  })`
-  const js = ts.transpileModule(wrapped, {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText
-  const factory = eval(js) as (...args: unknown[]) => Record<string, unknown>
-  return factory(
-    signalText,
-    staticText,
-    el,
-    react,
-    signalEachDirect,
-    eachDirect,
-    eachArm,
-    rowHandle,
-    applyAttr,
-    ul,
-    li,
-    button,
-    span,
-    text,
-    show,
-    (s: unknown) => s,
-  )[name] as Parameters<typeof mountSignalComponent>[1]
+/** Runtime symbols for the compiled-runtime fixtures (the direct/each tiers). */
+const RUNTIME = {
+  signalText,
+  staticText,
+  el,
+  react,
+  signalShow,
+  signalEach,
+  signalEachDirect,
+  applyAttr,
+  signalBranch,
+  derived,
+  component: identityComponent,
+}
+
+/** Symbols for sources that use view-HELPER functions, for the cross-function
+ * transform-coverage tests: the lowered helper bodies reference the AUTHORING
+ * helpers (ul/li/text + the handle-consuming eachDirect) on top of the runtime set. */
+const HELPER_RUNTIME = {
+  signalText,
+  staticText,
+  el,
+  react,
+  signalEachDirect,
+  eachDirect,
+  eachArm,
+  rowHandle,
+  applyAttr,
+  ul,
+  li,
+  button,
+  span,
+  text,
+  show,
+  component: identityComponent,
 }
 
 // The compiler's direct-construction fast path: a static-skeleton `each` row
@@ -64,39 +59,6 @@ function compileAndLoadWithHelpers(
 // per-row authoring/Mountable/populate/pathHandle machinery. Richer rows
 // (reactive attrs, handlers, structural children) fall back to `signalEach`.
 // See docs/proposals/v2-compiler/compiled-row-construction.md.
-
-function compileAndLoad(
-  authored: string,
-  name: string,
-): Parameters<typeof mountSignalComponent>[1] {
-  const lowered = transformSignalComponentSource(authored)
-  const body = lowered
-    .split('\n')
-    .filter((l) => !l.trimStart().startsWith('import '))
-    .join('\n')
-    .replace(/export\s+const/g, 'const')
-  const wrapped = `(function(signalText, staticText, el, react, signalShow, signalEach, signalEachDirect, applyAttr, signalBranch, derived, component){
-    ${body}
-    return { ${name} }
-  })`
-  const js = ts.transpileModule(wrapped, {
-    compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText
-  const factory = eval(js) as (...args: unknown[]) => Record<string, unknown>
-  return factory(
-    signalText,
-    staticText,
-    el,
-    react,
-    signalShow,
-    signalEach,
-    signalEachDirect,
-    applyAttr,
-    signalBranch,
-    derived,
-    (s: unknown) => s,
-  )[name] as Parameters<typeof mountSignalComponent>[1]
-}
 
 const ROWS = `
   import { component, ul, li, span, a, text, each } from '@llui/dom'
@@ -129,7 +91,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
   })
 
   it('renders, updates, reorders (node reuse), and removes correctly', () => {
-    const def = compileAndLoad(ROWS, 'App')
+    const def = compileAndLoad(ROWS, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const ul = container.querySelector('ul')!
@@ -185,7 +147,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     `
     expect(transformSignalComponentSource(REACTIVE_ATTR)).toContain('signalEachDirect(')
 
-    const def = compileAndLoad(REACTIVE_ATTR, 'App')
+    const def = compileAndLoad(REACTIVE_ATTR, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const li = (): HTMLElement => container.querySelector('li')!
@@ -213,7 +175,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
       })
     `
     expect(transformSignalComponentSource(VALUE_ROW)).toContain('signalEachDirect(')
-    const def = compileAndLoad(VALUE_ROW, 'App')
+    const def = compileAndLoad(VALUE_ROW, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const inp = (): HTMLInputElement => container.querySelector('input')!
@@ -264,7 +226,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('getCtx().item.id') // handler reads the live row id
     expect(out).toContain('applyAttr(') // reactive checked routed through applyAttr
 
-    const def = compileAndLoad(TODOS, 'App')
+    const def = compileAndLoad(TODOS, 'App', RUNTIME)
     const container = document.createElement('div')
     mountSignalComponent(container, def)
     const boxes = (): HTMLInputElement[] => [...container.querySelectorAll('input')]
@@ -310,7 +272,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         ],
       })
     `
-    const def = compileAndLoad(TODOS, 'App')
+    const def = compileAndLoad(TODOS, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const buttons = (): HTMLButtonElement[] => [...container.querySelectorAll('button')]
@@ -376,7 +338,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('batch(() =>') // wrapped
     expect(out).toContain('({ batch, state, send })') // bag injected
 
-    const def = compileAndLoad(MULTI, 'App')
+    const def = compileAndLoad(MULTI, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     let commits = 0
@@ -420,7 +382,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).not.toContain('signalEach(') // not the authoring fallback
     expect(out).toContain("const isDir = getCtx().item.type === 'dir'")
 
-    const def = compileAndLoad(FILES, 'App')
+    const def = compileAndLoad(FILES, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const icons = (): string[] =>
@@ -472,7 +434,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('eachDirect(items, (r) => r.id,') // helper each lowered, items verbatim
     expect(out).toContain('getCtx().item.id') // handler reads live row id
 
-    const def = compileAndLoadWithHelpers(HELPER, 'App')
+    const def = compileAndLoad(HELPER, 'App', HELPER_RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const labels = (): string[] =>
@@ -526,7 +488,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('show(flag') // structural child stays verbatim inside the arm
     expect(out).not.toMatch(/(?<![A-Za-z])eachDirect\(/)
 
-    const def = compileAndLoadWithHelpers(ARM, 'App')
+    const def = compileAndLoad(ARM, 'App', HELPER_RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const txt = (sel: string): string[] =>
@@ -574,7 +536,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain("const item = rowHandle(getCtx, 'item')")
     expect(out).toContain('badge(item)')
 
-    const def = compileAndLoadWithHelpers(LEAK, 'App')
+    const def = compileAndLoad(LEAK, 'App', HELPER_RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const badges = (): string[] =>
@@ -631,7 +593,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('signalEachDirect(') // helper inlined → row lowers
     expect(out).toContain('const u = getCtx().item') // peek local inlined to live ctx
 
-    const def = compileAndLoad(INLINE, 'App')
+    const def = compileAndLoad(INLINE, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const txt = (sel: string): string[] =>
@@ -683,7 +645,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
     expect(out).toContain('const uid = getCtx().item.id') // helper's peek local inlined
     expect(out).toContain('_sk[1]') // two skeleton roots cloned per row
 
-    const def = compileAndLoad(BARE, 'App')
+    const def = compileAndLoad(BARE, 'App', RUNTIME)
     const container = document.createElement('div')
     const h = mountSignalComponent(container, def)
     const txt = (sel: string): string[] =>
