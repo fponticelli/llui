@@ -9,7 +9,50 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **How to read this file:** entries are anchored by **release date**. Inside each release, fixes are grouped by **`@llui/<package>@<version>`** sub-sections so you always know exactly which package and version a bullet applies to. Cross-cutting changes that affect every package (like build-output fixes) live under a shared "All packages" section. Breaking changes and migration notes sit at the top of each release block because they usually cut across multiple packages.
 
-Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/agent`, and `llui-agent` have their own cadence. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
+**Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package declares `@llui/dom` as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
+
+## 2026-08-01 — @llui/dom@0.12.1
+
+**Released:** `@llui/dom@0.12.1`
+
+A reactivity fix: structural primitives inside an `each` row could silently stop
+reconciling.
+
+### `@llui/dom@0.12.1`
+
+- **Fixed** A `show()`, `branch()`, or nested `each()` inside an `each` row could
+  silently stop swapping arms — deterministically, after an ODD number of row
+  updates that didn't commit its binding. An ordinary `text()` on the same signal
+  kept updating, so the row visibly held the new value underneath a stale arm.
+  ([#52](https://github.com/fponticelli/llui/issues/52))
+
+  A structural binding's accessor is the IDENTITY function — its commit reconciles
+  arms/rows and needs the whole state to mount them against — so the reconciler's
+  output-equality check was comparing the state BUFFER's identity rather than the
+  binding's output. `each` recycles two ctx buffers per row and rotates them on
+  every row update, while the last-committed slot advances only on commit: one
+  gated-out row update desynchronises the two, and from then on the accessor
+  returns the very object already in that slot, suppressing every later reconcile
+  regardless of the discriminant. Output equality is now understood as a
+  VALUE-binding optimization; structural bindings are exempt (they are already
+  gated by their deps and de-duplicate inside their own reconcile). No measurable
+  cost to the update loop or to scope construction.
+
+  The only reliable workaround was folding the discriminant into the `each` key,
+  which forced a DOM rebuild per arm change — that can now be reverted.
+
+- **Fixed** `ArmController.switchTo` short-circuited on the MOUNTED arm's key, which
+  is absent for a key that mounts no arm (a falsy `show` with no `orElse`, a missing
+  `branch` arm). A redundant same-key reconcile then fell through and hard-detached
+  an arm that was still animating out, cutting its `leave` transition short. It now
+  short-circuits on the last RECONCILED key. Pre-existing, but the fix above makes
+  redundant structural commits routine, so it surfaces far more easily.
+
+### Docs
+
+- The structural-binding exemption is recorded in
+  [Architecture](https://llui.dev/architecture) as part of the update cycle, and as
+  an invariant in `CLAUDE.md`.
 
 ## 2026-07-22 — @llui/markdown-editor@0.6.0, @llui/lexical-loro@0.1.1
 
