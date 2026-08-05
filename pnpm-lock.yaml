@@ -888,6 +888,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/transitions':
+        specifier: workspace:*
+        version: link:../transitions
 
   packages/vite-plugin:
     dependencies:

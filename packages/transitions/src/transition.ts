@@ -42,7 +42,11 @@ import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
  *
  * Interruption: enter/leave on a reused element are guarded by a per-element run
  * token — a new phase first rolls back the previous phase's transient values,
- * and a superseded phase's delayed cleanup is skipped.
+ * and a superseded phase's delayed cleanup is skipped. This holds for a leave
+ * that already COMPLETED too: it keeps its resting values (the arm is about to
+ * be detached) but stays registered, so if the element is instead reused — the
+ * route seam calls `enter` on the very element it just left — the enter clears
+ * that residue before snapshotting its own baseline.
  *
  * Duration (used only for the fallback timer / when no CSS transition fires):
  *  - If `duration` is given, it is used verbatim.
@@ -175,10 +179,17 @@ export function transition(spec: TransitionSpec): TransitionOptions {
     return Promise.all(
       els.map((el, i) =>
         waitForEnd(el, duration).then(() => {
-          // Leave completed — the element is about to be removed by the
-          // runtime, so we don't strip its resting values, just release the
-          // run token (if still ours).
-          runs.end(el, tokens[i]!)
+          // Leave completed. We don't strip its resting values: under
+          // show/branch/each the element is about to be removed, and blanking
+          // `opacity: 0` here would flash the outgoing content back for a frame.
+          // But we SETTLE rather than `end` the run, so its rollback stays
+          // registered — at the route seam (`fromTransition`) the very same
+          // element is then handed to `enter`, whose `supersede` uses that
+          // rollback to clear this residue BEFORE snapshotting. Without it the
+          // enter snapshots `opacity: 0` as an author value and restores it on
+          // cleanup, parking the page slot invisible. When the element really is
+          // removed, the WeakMap entry goes with it and the rollback never runs.
+          runs.settle(el, tokens[i]!)
         }),
       ),
     ).then(() => undefined)

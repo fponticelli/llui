@@ -313,23 +313,6 @@ function spring(opts: SpringOptions = {}): TransitionOptions
 
 ### `stagger()`
 
-Wrap any transition preset so that batch-entered items get staggered delays.
-Items entering within the same microtask are considered a "batch" and get
-sequential delays (`index * delayPerItem`). The counter resets after the
-microtask, so the next batch starts from 0.
-
-```ts
-stagger(fade({ duration: 150 }), { delayPerItem: 30 })
-```
-
-The signal `each()` primitive invokes the `enter`/`leave` hooks per row, so a
-staggered bundle passed as `each`'s trailing transition argument gives batch-
-inserted rows their sequential delays:
-
-```ts
-each(state.at('items'), (i) => i.id, row, undefined, stagger(fade({ duration: 150 })))
-```
-
 ```typescript
 function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions
 ```
@@ -359,7 +342,11 @@ The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
   → resolve on `transitionend` (timer fallback) so DOM removal is deferred.
   Interruption: enter/leave on a reused element are guarded by a per-element run
   token — a new phase first rolls back the previous phase's transient values,
-  and a superseded phase's delayed cleanup is skipped.
+  and a superseded phase's delayed cleanup is skipped. This holds for a leave
+  that already COMPLETED too: it keeps its resting values (the arm is about to
+  be detached) but stays registered, so if the element is instead reused — the
+  route seam calls `enter` on the very element it just left — the enter clears
+  that residue before snapshotting its own baseline.
   Duration (used only for the fallback timer / when no CSS transition fires):
 - If `duration` is given, it is used verbatim.
 - Otherwise, computed `transition-duration + transition-delay` is read after

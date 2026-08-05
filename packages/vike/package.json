@@ -43,7 +43,8 @@
     }
   },
   "devDependencies": {
-    "@llui/dom": "workspace:*"
+    "@llui/dom": "workspace:*",
+    "@llui/transitions": "workspace:*"
   },
   "description": "LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks",
   "keywords": [

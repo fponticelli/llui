@@ -71,6 +71,13 @@ interface RunEntry {
   token: symbol
   /** Undo this run's transient mutations; invoked when a newer run supersedes it. */
   rollback: () => void
+  /**
+   * True once the phase finished animating but deliberately left its resting
+   * values on the element (a completed `leave`). The entry STAYS registered so
+   * a later phase on a REUSED element can still roll those values back, but it
+   * no longer counts as in-flight for {@link RunScope.isActive}.
+   */
+  settled: boolean
 }
 
 /**
@@ -95,10 +102,30 @@ export interface RunScope {
   register(el: Element, rollback: () => void): symbol
   /** True while `token` is still the element's current run (not superseded). */
   isCurrent(el: Element, token: symbol): boolean
-  /** True when `el` has any in-flight run — i.e. a phase is mid-animation and
-   * about to be superseded. Lets a leave detect that it is interrupting an enter. */
+  /**
+   * True when `el` has an IN-FLIGHT run — i.e. a phase is mid-animation and
+   * about to be superseded. Lets a leave detect that it is interrupting an
+   * enter. A {@link RunScope.settle}d run is registered but not in flight, so
+   * it reads as false.
+   */
   isActive(el: Element): boolean
-  /** Clear the run entry if `token` is still current (natural completion). */
+  /**
+   * Mark `token`'s run finished while KEEPING its rollback registered, for a
+   * phase that intentionally leaves resting values on the element (a completed
+   * `leave`, which stays hidden until the runtime detaches it). If the element
+   * is instead REUSED — the `@llui/vike` route seam calls `enter` on the very
+   * element it just left — the next phase's `supersede` restores the pre-leave
+   * inline styles before it snapshots, so the residue is never mistaken for an
+   * author-set value. When the element really is removed, the WeakMap entry is
+   * collected with it and the rollback simply never runs. No-op if `token` has
+   * already been superseded.
+   */
+  settle(el: Element, token: symbol): void
+  /**
+   * Clear the run entry outright if `token` is still current, WITHOUT firing its
+   * rollback. For a phase that already restored the element itself (a completed
+   * `enter`), so there is nothing left for a later phase to undo.
+   */
   end(el: Element, token: symbol): void
 }
 
@@ -114,14 +141,19 @@ export function createRunScope(): RunScope {
     },
     register(el, rollback) {
       const token = Symbol('run')
-      runs.set(el, { token, rollback })
+      runs.set(el, { token, rollback, settled: false })
       return token
     },
     isCurrent(el, token) {
       return runs.get(el)?.token === token
     },
     isActive(el) {
-      return runs.has(el)
+      const entry = runs.get(el)
+      return entry !== undefined && !entry.settled
+    },
+    settle(el, token) {
+      const entry = runs.get(el)
+      if (entry?.token === token) entry.settled = true
     },
     end(el, token) {
       if (runs.get(el)?.token === token) runs.delete(el)

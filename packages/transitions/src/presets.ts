@@ -245,9 +245,12 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     style[sizeProp] = '0px'
 
     return waitForEnd(el, duration).then(() => {
-      // Leave finished — the runtime removes the element next, so keep the
-      // collapsed state; just release the token if still ours.
-      runs.end(el, token)
+      // Leave finished — under show/branch/each the runtime removes the element
+      // next, so keep the collapsed state. SETTLE rather than `end` the run: on
+      // a REUSED element (the `@llui/vike` route seam calls enter on the element
+      // it just left) the retained restore is what lets the next phase undo this
+      // collapsed `height`/`overflow` before it snapshots its own baseline.
+      runs.settle(el, token)
     })
   }
 
