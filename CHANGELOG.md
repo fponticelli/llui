@@ -11,6 +11,58 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package declares `@llui/dom` as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-08-05 — @llui/transitions@0.11.1
+
+**Released:** `@llui/transitions@0.11.1`
+
+Two independent bugs with one symptom: an element left mounted, laid out, and
+permanently invisible — no error, clean console.
+
+### Migration
+
+- Nothing to change. If you dropped `fromTransition(routeTransition(...))` from
+  your `createOnRenderClient` config to work around blank pages after every
+  navigation, put it back.
+
+### `@llui/transitions@0.11.1`
+
+- **Fixed** a completed `leave` no longer poisons a later phase on the same
+  element. `transition()` — and every preset built on it (`fade`, `slide`,
+  `scale`) — deliberately keeps its leave resting values (`opacity: 0`) on the
+  element: under `show`/`branch`/`each` it is about to be detached, and blanking
+  them would flash the outgoing content back for a frame. But it also DISCARDED
+  the rollback that would undo them, which is only safe when the element really
+  is removed.
+
+  At the route seam it is not. `fromTransition` in `@llui/vike/client` calls
+  `leave` and then `enter` on the SAME persistent element — the surviving
+  layer's page slot, which is never removed. With the rollback gone, `enter`
+  snapshotted the residue as though it were an author-set inline style, animated
+  `0 → 1` correctly, and then restored that snapshot on cleanup — parking the
+  page slot at `opacity: 0` one duration AFTER it had visibly faded in, on every
+  client navigation. The DOM was correct the whole time, so it presented as a
+  hydration or data-loading bug rather than a transition one.
+
+  Runs now _settle_ instead of ending: the rollback stays registered so a later
+  phase on a reused element restores the pre-leave inline styles before it takes
+  its own snapshot, while the run is marked no longer in-flight so a subsequent
+  leave isn't mistaken for an interrupted enter. When the element really is
+  removed, the entry is collected with it and the rollback never runs — the
+  `show`/`branch`/`each` contract is unchanged.
+
+- **Fixed** `collapse()` had the identical defect, leaving a reused element stuck
+  at `height: 0` / `overflow: hidden`.
+
+- **Fixed** `stagger()` can now cancel a phase it has deferred but not yet
+  started. With `leaveOrder: 'sequential'` or `'reverse'`, a staggered leave
+  still waiting out its delay would fire on a row that `each()` had meanwhile
+  RESURRECTED and re-entered — leaving it mounted, laid out and permanently
+  invisible. Deferred phases are now tracked per node and cancelled by the
+  opposite phase (per node, not per batch), and a cancelled phase still resolves
+  its promise, which the runtime gates DOM removal on. The symmetric case is
+  fixed too: a leave cancels a not-yet-started staggered enter that would
+  otherwise animate a departing row back in.
+
 ## 2026-08-01 — @llui/dom@0.12.1
 
 **Released:** `@llui/dom@0.12.1`
