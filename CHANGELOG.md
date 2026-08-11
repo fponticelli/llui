@@ -11,6 +11,70 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package declares `@llui/dom` as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-08-10 — @llui/markdown-editor@0.7.0
+
+**Released:** `@llui/markdown-editor@0.7.0`; `@llui/devmode-annotate@0.3.2`
+
+A render-time seam for image URLs — and the CommonMark correctness the seam
+needed to be worth having, since it turned out to be fed by a parser that
+mangled ordinary documents in silence.
+
+### Migration
+
+- Nothing to change; the defaults are unchanged. If you worked around unresolved
+  image `src` values by rewriting the attribute behind Lexical's reconciler, or
+  by writing absolute machine-local URLs into your markdown files, drop both and
+  pass `imagePlugin({ resolveSrc })` instead.
+- If you match image markdown yourself, note that `![a](x.png "Title")` now
+  yields `src: 'x.png'` + `title: 'Title'` rather than a `src` with the title
+  glued onto it. That was never a usable URL, so nothing that worked before
+  stops working.
+
+### `@llui/markdown-editor@0.7.0`
+
+- **Added** `imagePlugin({ resolveSrc })` — map a stored image `src` to the URL
+  the `<img>` actually loads. It applies **only when building the DOM**: node
+  data, the markdown the editor emits, and the URL the insert dialog shows all
+  keep the stored value, so a document that stores a portable relative path
+  (`attachments/a.png`) keeps storing it while the editor displays what the host
+  can load (`asset://localhost/…/attachments/a.png`). Two properties worth
+  knowing: the argument is the stored value **after** the image-src allowlist
+  has run (an unsafe URL never reaches your resolver), and the **result** is
+  deliberately not re-checked — returning an app-private scheme is the point.
+- **Fixed** image markdown is now parsed as CommonMark instead of by regex. The
+  old `\(([^)]+)\)` capture swallowed a title into the `src`
+  (`![a](img.png "T")` → `src: 'img.png "T"'`), kept angle-bracket destinations
+  verbatim (`![a](<my file.png>)`), and declined any filename containing
+  parentheses (`attachments/img(1).png`) or any line with trailing whitespace,
+  leaving them as literal text. All of it was silent: the export re-emitted
+  whatever it captured, so a round-trip looked correct while the `<img>` never
+  loaded. Image titles now round-trip as titles.
+- **Fixed** a document no longer loses a line when an image's URL scheme is
+  refused. Importing `![x](javascript:boom)` deleted the line outright — the
+  markdown importer truncates a matched line's text before the transformer runs,
+  so refusing the image left an empty paragraph. Refused lines now survive as
+  text.
+- **Fixed** the render path sanitizes the stored `src` for itself. `importJSON`
+  / `updateFromJSON` write node data raw — the collaboration path, undo, an
+  editor-state swap, a pasted decorator node — so the ingress sanitizers cannot
+  cover them. An unsafe value now renders `<img data-blocked="true">` with no
+  `src` attribute: nothing is requested, the alt text shows, and the bundled
+  stylesheet marks it as a deliberate placeholder.
+- **Added** `IMAGE_BRIDGE_TYPE`, `IMAGE_TRANSFORMER`, `ImageData`, `isImageData`,
+  `parseImageLine`, and `formatImageLine` to the public surface.
+  `formatImageLine` is the exact inverse of `parseImageLine`, for hosts that
+  write image references themselves (a paste handler saving an attachment) and
+  need the editor's own spelling. `IMAGE_BRIDGE_TYPE` names the deeper escape
+  hatch: a plugin listed after `imagePlugin()` that contributes a decorator
+  bridge of that type replaces the image rendering wholesale — now covered by a
+  test, so it is a contract rather than an accident.
+
+### `@llui/devmode-annotate@0.3.2`
+
+- **Improved** republished against `@llui/markdown-editor@0.7.0`. No source
+  change; its dependency range could not otherwise reach the new minor, which
+  would have left an app using both with two copies of the editor.
+
 ## 2026-08-05 — @llui/transitions@0.11.1
 
 **Released:** `@llui/transitions@0.11.1`
