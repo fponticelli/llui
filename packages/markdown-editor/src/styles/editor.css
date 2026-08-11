@@ -301,6 +301,16 @@
   border: 1px solid var(--md-border);
   display: block;
 }
+/* A src whose scheme the image allowlist refuses renders with NO `src` attribute
+   (nothing is requested) — so the browser falls back to the alt text. Style it as
+   a deliberate placeholder rather than letting it read as a failed load. */
+[data-scope='md-image'] img[data-blocked] {
+  padding: 0.5rem 0.75rem;
+  min-height: 1.5rem;
+  border-style: dashed;
+  color: var(--md-muted);
+  font-size: 0.9em;
+}
 [data-md-hr] {
   border: none;
   border-top: 1px solid var(--md-border);

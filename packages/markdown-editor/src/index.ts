@@ -76,6 +76,18 @@ export { type MermaidPluginOptions, mermaidPlugin } from './plugins/mermaid.js'
 export { type Mention, type MentionPluginOptions, mentionPlugin } from './plugins/mention.js'
 export { type EmojiPluginOptions, DEFAULT_EMOJI, emojiPlugin } from './plugins/emoji.js'
 export { type ImagePluginOptions, imagePlugin } from './plugins/image.js'
+export {
+  type ImageData,
+  IMAGE_BRIDGE_TYPE,
+  IMAGE_TRANSFORMER,
+  isImageData,
+  // The CommonMark image line ⇄ data pair `IMAGE_TRANSFORMER` is built from.
+  // Exported for hosts that resolve/create image references themselves (a paste
+  // handler writing an attachment path) and need the editor's exact spelling —
+  // `formatImageLine` is the true inverse of `parseImageLine`.
+  parseImageLine,
+  formatImageLine,
+} from './transformers/image.js'
 export { tablePlugin } from './plugins/table.js'
 export {
   type CodeLanguagePluginOptions,

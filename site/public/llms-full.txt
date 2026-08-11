@@ -17172,9 +17172,32 @@ Features are plugins you compose into the `plugins` list — only what you pass 
 
 Author your own with `definePluginUI` and the `MarkdownPlugin` / `CommandItem` contract — the same shape the built-ins use.
 
+## Images: displaying a `src` the document doesn't store
+
+A document whose images are files next to it stores **relative** paths — `![](attachments/a.png)` — because that is what keeps the file portable. A webview resolves a relative `src` against its own origin, not the document's folder, so the image is broken until something maps it. `resolveSrc` is that seam:
+
+```ts
+imagePlugin({
+  resolveSrc: (src) => (isRelative(src) ? convertFileSrc(join(vaultRoot, src)) : src),
+})
+```
+
+It applies **only when building the DOM**. The node's data, the markdown the editor emits, and the URL the insert dialog shows all keep the stored value, so the file of record stays portable and the same document opens correctly from another machine.
+
+Two properties worth stating, because both are easy to assume backwards:
+
+- The argument is the stored `src` **after** the image-src allowlist has run — an unsafe URL never reaches your resolver (the image renders blocked instead, `<img data-blocked="true">` with no `src`, so nothing is requested).
+- The **result** is not re-checked against the allowlist. That is deliberate: returning an app-private scheme (`asset:`, `tauri:`) is the whole point, and re-running the allowlist would drop exactly the URLs the seam exists to produce. Treat it as trusted code, and return `src` unchanged for anything you do not own.
+
+The read-only renderer's counterpart is [`@llui/markdown`](/api/markdown)'s `transformLink`, which sees links and images with their mdast node. One host function can back both, so a preview and the editor resolve identically.
+
+When the **rendering** itself has to change — not just the URL — a plugin listed after `imagePlugin()` that contributes a decorator bridge of type `IMAGE_BRIDGE_TYPE` replaces the image sub-view wholesale (bridges are registered per editor; the last registration wins). That is the deeper escape hatch: it also means re-declaring the element's markup, so prefer `resolveSrc` when a URL is all that differs.
+
 ## Transformers
 
 The Markdown ⇄ editor mapping is a transformer registry. `GFM_TRANSFORMERS` / `GFM_NODES` add GitHub-Flavored Markdown (tables, task lists, strikethrough); `buildTransformers` / `orderTransformers` let a plugin contribute its own (the callout plugin, for instance, registers a `> [!NOTE]` transformer).
+
+Image lines are parsed with the CommonMark parser from `@llui/markdown` rather than a regex, so titles (`![a](x.png "Title")`), angle-bracket destinations (`![a](<my file.png>)`), and filenames carrying parentheses all mean what CommonMark says they mean. A line that is not exactly one image — an inline image, two on a line, a linked image — is declined and left as text rather than mangled into a block image. `parseImageLine` / `formatImageLine` are exported for hosts that need the editor's exact spelling (a paste handler writing an attachment path, say); `formatImageLine` is the true inverse of `parseImageLine`.
 
 ## Toolbar
 
@@ -17389,6 +17412,17 @@ function findDropTarget(blocks: readonly BlockRect[], clientY: number, sourceKey
 function floatingToolbarPlugin(): MarkdownPlugin
 ```
 
+### `formatImageLine()`
+
+Render {@link ImageData} back to a markdown line — the exact inverse of
+{@link parseImageLine} for every value the parser can produce (and for
+hand-built node data too: control characters are percent-encoded rather than
+emitted into a line they would break).
+
+```typescript
+function formatImageLine(data: ImageData): string
+```
+
 ### `formatWikiLink()`
 
 Serialize a wikilink back to markdown. Inverse of {@link parseWikiLinkInner}
@@ -17430,6 +17464,12 @@ function indicatorRect(blocks: readonly BlockRect[], target: DropTarget): Indica
 
 ```typescript
 function init(opts: InitOptions): [EditorState, EditorEffect[]]
+```
+
+### `isImageData()`
+
+```typescript
+function isImageData(value: unknown): value is ImageData
 ```
 
 ### `linkDialog()`
@@ -17510,6 +17550,19 @@ Stable-sort transformers into the order Lexical expects.
 
 ```typescript
 function orderTransformers(transformers: readonly Transformer[]): Transformer[]
+```
+
+### `parseImageLine()`
+
+Parse a single line as CommonMark and return its image, or `null` when the
+line is not EXACTLY one image (inline image, two images, a linked image, an
+image in a list item or blockquote, plain text).
+`src` keeps whatever the document spelled — percent-encoding included; only
+CommonMark's own escapes and character references are resolved, because those
+are markdown syntax rather than part of the URL.
+
+```typescript
+function parseImageLine(line: string): ImageData | null
 ```
 
 ### `parseWikiLinkInner()`
@@ -18108,6 +18161,21 @@ export interface FrontmatterPluginOptions {
 }
 ```
 
+### `ImageData`
+
+An image node's serialized data — exactly the three CommonMark fields, so the
+markdown is the source of truth and the node holds nothing derived. `src` is
+stored VERBATIM (a document-relative path stays document-relative); mapping it
+to a loadable URL is a render-time concern.
+
+```typescript
+export interface ImageData {
+  src: string
+  alt: string
+  title?: string
+}
+```
+
 ### `ImagePluginOptions`
 
 ```typescript
@@ -18115,6 +18183,29 @@ export interface ImagePluginOptions {
   /** Upload a chosen file and resolve to its URL. When omitted, the file picker
    * is hidden and only URL entry is offered. */
   upload?: (file: File) => Promise<string>
+  /**
+   * Map the stored `src` to the URL the `<img>` should load. RENDER-TIME ONLY:
+   * the node's data, the serialized markdown, and the URL the insert dialog shows
+   * are all unchanged, so a document that stores a portable relative path
+   * (`attachments/a.png`) keeps storing it while the editor displays whatever the
+   * host can actually load (`asset://localhost/…/attachments/a.png`).
+   *
+   * The argument is the stored value after the image-src allowlist has run, so it
+   * is never a `javascript:` URL; an unsafe src never reaches the resolver at all
+   * (the image renders blocked instead). The RESULT is not re-checked — returning
+   * an app-private scheme is the point — so treat it as the trusted boundary it
+   * is, and return `src` unchanged for anything the host does not own.
+   *
+   * Called during rendering, so it must be a pure function of `src` for the
+   * lifetime of the mount: it re-runs when the node's `src` changes, not when
+   * something the closure captured does. If the mapping itself changes (the host
+   * opens a different vault), remount the editor.
+   *
+   * The read-only renderer's counterpart is `@llui/markdown`'s `transformLink`,
+   * which sees links and images with their mdast node; one host function can back
+   * both. Defaults to identity.
+   */
+  resolveSrc?: (src: string) => string
 }
 ```
 
@@ -18492,6 +18583,19 @@ understand. Offered as an opt-in a consumer can add to a plugin's transformers.
 
 ```typescript
 const HIGHLIGHT_TRANSFORMER: Transformer
+```
+
+### `IMAGE_BRIDGE_TYPE`
+
+The decorator bridge id an image node renders through. Exported because it is
+the address a consumer needs to REPLACE the image rendering wholesale: a plugin
+listed after `imagePlugin()` contributing a bridge of this type wins (bridges
+are registered per editor, last registration first). Reach for that only when
+the rendering itself must change — mapping the URL is what
+`ImagePluginOptions.resolveSrc` is for.
+
+```typescript
+const IMAGE_BRIDGE_TYPE
 ```
 
 ### `STRIKETHROUGH_CLASS`
