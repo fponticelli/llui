@@ -155,3 +155,17 @@ Major architectural changes in flight. Read before touching the relevant package
   **Dormant-but-kept:** The cross-package library ABI (`__llui_deps.json`, schema v2). The producer tooling (`build-manifest.ts`, `scripts/emit-deps.mjs`) is kept in-repo but **no longer emitted into published tarballs** — `scripts/publish.sh` stopped shipping it (it was ~191 KB of dead weight across the stack for a consumer that doesn't exist). The **consumer** narrowing is **not wired into the live transform** (it needs a `ts.Program`/checker the string-edit transform lacks; phase 3 was evidence-closed 2026-06-10 — zero qualifying call sites in real consumers). `manifest-resolve.ts` is kept as dormant forward-compat; `collect-deps.ts` / `track-utils.ts` stay because the producer uses them. If a checker-backed consumer ever lands, re-enable the emit in `publish.sh` (producer + consumer + E2E test together). See the status note in `docs/publishing-a-precompiled-library.md`.
 
   Note there is no runtime `track()` _primitive_ in `@llui/dom` — only the compiler annotation. The proposal predates the signal runtime, so its references to the legacy runtime (`update-loop.ts`), the deleted `@llui/eslint-plugin`, and the two-word bitmask are historical — read it for the module-system direction, not the runtime model.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `fponticelli/llui`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
