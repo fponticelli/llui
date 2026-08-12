@@ -45,10 +45,20 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
   const bKeys = jsonKeys(bObj)
   if (aKeys.length !== bKeys.length) return false
   for (const key of aKeys) {
-    if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false
+    if (!hasOwn(bObj, key)) return false
     if (!jsonEqual(aObj[key], bObj[key])) return false
   }
   return true
+}
+
+/**
+ * Own-key presence. The `in` operator walks the prototype chain, so it reports
+ * `toString`/`constructor` as present on `{}` — every walk in this file means
+ * OWN keys (`jsonKeys` enumerates own keys), and mixing the two notions is the
+ * kind of drift this module exists to prevent.
+ */
+function hasOwn(obj: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key)
 }
 
 /** Own keys that survive `JSON.stringify` — i.e. whose value is not a function or `undefined`. */
@@ -59,20 +69,46 @@ function jsonKeys(obj: Record<string, unknown>): string[] {
   })
 }
 
+/** Options for {@link partialMatch}. */
+export interface PartialMatchOptions {
+  /**
+   * Exact mode: an object in `actual` may carry no data key beyond those the
+   * matching `expected` object names — applied at every level the template
+   * reaches. Off by default, because ignoring extra keys is the DEFINITION of
+   * partial matching and tightening it would silently break callers.
+   *
+   * The two rules about `undefined` are deliberately ASYMMETRIC, because they
+   * answer different questions. On the ACTUAL side an `undefined` key is not
+   * data (it vanishes under `JSON.stringify`), so exact mode does not count it
+   * as unexpected: `{ a: 1, b: undefined }` matches `{ a: 1 }`. On the EXPECTED
+   * side an `undefined` is an assertion of presence, so `{ a: 1 }` does NOT
+   * match `{ a: 1, b: undefined }` — `b` must be there. Extra `undefined`s are
+   * tolerated; demanded ones are not.
+   */
+  readonly exact?: boolean
+}
+
 /**
  * Partial deep match: does `actual` contain everything `expected` specifies?
- * `undefined` in `expected` matches anything (an unspecified field). Primitives
- * match by `===`.
+ * Primitives match by `===`. An expected key that is simply ABSENT is the way
+ * to leave a field unconstrained.
+ *
+ * `undefined` in `expected` is an ASSERTION, not a wildcard: it demands that
+ * `actual` hold `undefined` at that position. A wildcard `undefined` made
+ * `{ url: undefined }` pass against every url (issue #66) — a test that reads
+ * like it pins a field but pins nothing.
  *
  * ARRAY SEMANTICS (explicit and documented): arrays match **by index with a
  * length check** — `expected` and `actual` must have the same `length`, and
  * each element is matched positionally (recursively, so a partial object at
  * index `i` still matches). An `expected` array is therefore a full positional
- * template, NOT a subset/subsequence: `[a]` does NOT match `[a, b]`. Use
- * `undefined` at a position to leave that element unconstrained.
+ * template, NOT a subset/subsequence: `[a]` does NOT match `[a, b]`.
  */
-export function partialMatch(actual: unknown, expected: unknown): boolean {
-  if (expected === undefined) return true
+export function partialMatch(
+  actual: unknown,
+  expected: unknown,
+  options: PartialMatchOptions = {},
+): boolean {
   if (actual === expected) return true
   if (expected === null || actual === null) return actual === expected
   if (typeof expected !== 'object' || typeof actual !== 'object') return false
@@ -84,7 +120,7 @@ export function partialMatch(actual: unknown, expected: unknown): boolean {
   if (expIsArr && actIsArr) {
     if (expected.length !== actual.length) return false
     for (let i = 0; i < expected.length; i++) {
-      if (!partialMatch(actual[i], expected[i])) return false
+      if (!partialMatch(actual[i], expected[i], options)) return false
     }
     return true
   }
@@ -92,7 +128,23 @@ export function partialMatch(actual: unknown, expected: unknown): boolean {
   const expObj = expected as Record<string, unknown>
   const actObj = actual as Record<string, unknown>
   for (const key of Object.keys(expObj)) {
-    if (!partialMatch(actObj[key], expObj[key])) return false
+    // An expected `undefined` asserts the key is PRESENT and holds `undefined`.
+    // Reading `actObj[key]` cannot tell an absent key from one whose value is
+    // `undefined` — both read back `undefined` — so an explicit presence test is
+    // the only available discriminator, and without it the two collapse into
+    // one outcome.
+    if (expObj[key] === undefined && !hasOwn(actObj, key)) return false
+    if (!partialMatch(actObj[key], expObj[key], options)) return false
+  }
+  if (options.exact) {
+    // Compare against the JSON PROJECTION of `actual`, the same notion
+    // `jsonEqual` uses: an effect's callbacks (`onSuccess`/`onError`/…) and its
+    // explicitly-`undefined` fields carry no data and cannot be written into an
+    // expected literal, so counting them as "unexpected" would make exact mode
+    // unusable on exactly the effects it is most wanted for.
+    for (const key of jsonKeys(actObj)) {
+      if (!hasOwn(expObj, key)) return false
+    }
   }
   return true
 }
