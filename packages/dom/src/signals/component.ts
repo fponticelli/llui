@@ -15,6 +15,7 @@ import type { Renderable } from './element.js'
 import { withBindingErrors, toBindingError, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
+import { createCommitScheduler, type CommitHost } from './commit-scope.js'
 import { COMPILER_META_KEYS, type CompilerMetadata } from './compiler-keys.js'
 import type { Signal } from './types.js'
 
@@ -267,6 +268,13 @@ export function mountSignalComponent<S, M, E = never>(
     }
   }
 
+  // The update loop's SCHEDULING half lives in `commit-scope.ts`: the queue, the
+  // reentrancy guard, the batch depth and the frame scheduling are private to that
+  // module, reachable only through a commit token it hands out inside a scope whose
+  // `finally` releases the guard. This file supplies the other half — the reducer,
+  // the reconcile, the effect dispatch — as a `CommitHost`, and can reach a commit
+  // ONLY through the scheduler's surface (see that file's header for why).
+  //
   // `send` is reentrancy-safe AND reconcile-coalescing: a message dispatched WHILE
   // another is being processed (the classic case: removing a focused node during
   // `mount.update` fires `blur` synchronously, whose handler calls `send`) is
@@ -281,74 +289,77 @@ export function mountSignalComponent<S, M, E = never>(
   // synchronous turn), so coalescing is render-equivalent. From a top-level caller
   // `send` stays synchronous: the queue is fully drained and committed before it
   // returns, so the "send applies immediately" contract holds at the call boundary.
-  const queue: M[] = []
-  let draining = false
-  // While `batchDepth > 0` (inside `batch(fn)`), reducers still run and effects
-  // still fire, but the single commit is deferred to the outermost `batch` exit —
-  // extending the per-drain coalescing across several top-level sends (the
-  // streaming / bulk-dispatch fast path). `pendingCommit` records that state moved
-  // since the last reconcile, gating the commit.
-  let batchDepth = 0
-  let pendingCommit = false
-  // Frame-scheduled mode (`scheduler: 'raf'`): a drain that would commit
-  // schedules ONE flush at the next animation frame instead; every send until
-  // then coalesces into it. `flushing` makes the nested drain inside that
-  // flush (commit-induced sends — a blur from a node removal, a subscriber
-  // dispatch) commit synchronously, so a frame settles fully with no cascade.
-  const scheduler = opts?.scheduler ?? 'sync'
-  let frameScheduled = false
-  let rafId: number | null = null
-  let flushing = false
 
-  function flushFrame(): void {
-    frameScheduled = false
-    rafId = null
-    if (disposed) return
-    // SAVE/RESTORE the prior flags rather than force them false on exit: a
-    // `flush()` can be called from inside an `onEffect` that is ITSELF running
-    // under an active drain (raf mode). Blindly clearing `draining` on the way out
-    // would leave the still-running outer drain thinking it isn't draining, so its
-    // next `send` would start a NESTED drain and reorder/double-process the queue.
-    const prevFlushing = flushing
-    const prevDraining = draining
-    flushing = true
-    draining = true
-    try {
-      commitPending()
-      if (queue.length > 0) drain() // commit-induced messages settle synchronously
-    } finally {
-      draining = prevDraining
-      flushing = prevFlushing
-    }
+  // The OPEN effect frame: effects collected by the reducers of the settle round
+  // currently in progress, dispatched once that round has committed. Lazily
+  // allocated — most messages emit none, and a 1k-send burst opens 1k frames, so
+  // don't allocate an empty array per round.
+  //
+  // Frames NEST, and the displaced one travels on the scheduler's call stack
+  // rather than in a second field here (see `CommitHost.beginEffects`): a settle
+  // provoked from inside this round's commit — a devtools poke from a subscriber —
+  // must not release, or lose, what this round has collected and not yet
+  // dispatched.
+  let pendingEffects: E[] | null = null
+
+  const commitHost: CommitHost<M, E[] | null> = {
+    reduce: (m: M): boolean => {
+      const before = state
+      const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, m))
+      const moved = !Object.is(next, state)
+      if (moved) state = next
+      if (dev) {
+        history.push({
+          index: msgIndex++,
+          timestamp: Date.now(),
+          msg: m,
+          stateBefore: before,
+          stateAfter: state,
+          effects,
+        })
+        if (history.length > 1000) history.shift()
+      }
+      if (effects.length > 0) {
+        if (pendingEffects === null) pendingEffects = []
+        for (const e of effects) pendingEffects.push(e)
+      }
+      return moved
+    },
+    beginEffects: (): E[] | null => {
+      const prev = pendingEffects
+      pendingEffects = null
+      return prev
+    },
+    dispatchEffects: (): void => {
+      const es = pendingEffects
+      // Take the frame BEFORE dispatching: an effect that provokes a further round
+      // must collect into a fresh frame rather than append to the one being walked.
+      pendingEffects = null
+      if (es !== null) for (const e of es) runEffect(e)
+    },
+    endEffects: (prev: E[] | null): void => {
+      // Unconditional: whatever is still open is this round's, and the round is
+      // over. On the normal path `dispatchEffects` already emptied it; on the
+      // throw and disposed-bail paths it holds effects the round never reached,
+      // and dropping them is the pre-refactor behaviour (see `drain`).
+      pendingEffects = prev
+    },
+    isDisposed: (): boolean => disposed,
+    commit: commitToDom,
   }
 
-  function scheduleCommit(): void {
-    if (frameScheduled || disposed) return
-    frameScheduled = true
-    if (typeof requestAnimationFrame === 'function') {
-      rafId = requestAnimationFrame(flushFrame)
-    } else {
-      // Non-browser fallback (SSR / plain jsdom / headless agent): a microtask.
-      // It can't be cancelled — flushFrame/commitPending no-op once nothing is
-      // pending, so an already-flushed task is harmless.
-      queueMicrotask(flushFrame)
-    }
-  }
-
-  // Reconcile + notify ONCE against the current state, if it moved since the last
-  // commit. The commit can re-enter `send` (a `blur` fired by a node removal), so
-  // callers loop until the queue is empty afterwards.
-  function commitPending(): void {
-    if (!pendingCommit) return
+  // Reconcile + notify against the current state. Called at most once per settle,
+  // and only from inside a commit scope — `commit-scope.ts` owns the pending flag,
+  // so this reports liveness and cannot forget to leave an undelivered commit owed.
+  function commitToDom(): boolean {
     // During the initial `mount = mountSignal(...)` call below, onMount callbacks
     // run synchronously BEFORE `mount` is assigned. A state-changing send from an
     // onMount callback (or an effect it kicks off whose continuation is synchronous)
     // advances `state` and reaches here while `mount` is still null — committing now
     // would `mount?.update()` no-op and silently drop the reconcile, so the view
-    // would stay frozen until a later, unrelated dispatch. Leave `pendingCommit`
-    // set and bail; the post-mount flush replays it once `mount` is live.
-    if (mount === null) return
-    pendingCommit = false
+    // would stay frozen until a later, unrelated dispatch. Report NOT-LIVE; the
+    // scheduler keeps the commit pending and the post-mount replay lands it.
+    if (mount === null) return false
     const next = state
     // Hot per-send path: skip the withBindingErrors wrapper (and its per-commit
     // closure) when no error handler is installed — the common case; a 1k-send
@@ -385,7 +396,10 @@ export function mountSignalComponent<S, M, E = never>(
         }
       }
     }
+    return true
   }
+
+  const commits = createCommitScheduler(commitHost, opts?.scheduler ?? 'sync')
 
   // Surface an isolated subscriber throw instead of swallowing it: the console
   // for a human, and the binding-error hook — the agent's `drain.errors` channel
@@ -420,55 +434,6 @@ export function mountSignalComponent<S, M, E = never>(
     }
   }
 
-  // Process the queue to quiescence: run all queued reducers (collecting their
-  // effects), commit once (unless batching), then run the collected effects after
-  // the DOM is live — matching the historical per-message "reconcile, then effect"
-  // order at settle granularity. A commit or effect may enqueue more (blur, an
-  // effect that sends), so loop until the queue drains.
-  function drain(): void {
-    do {
-      // Lazy: most messages emit no effects, and a 1k-send burst drains 1k
-      // times — don't allocate an empty array per drain.
-      let pendingEffects: E[] | null = null
-      while (queue.length > 0) {
-        // Disposed mid-drain (a commit-fired blur handler, or an effect above, tore
-        // the mount down): stop reducing — advancing state on a dead component and
-        // committing to a null mount is wrong. Abandon the rest of the queue.
-        if (disposed) {
-          queue.length = 0
-          return
-        }
-        const m = queue.shift() as M
-        const before = state
-        const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, m))
-        if (!Object.is(next, state)) {
-          state = next
-          pendingCommit = true
-        }
-        if (dev) {
-          history.push({
-            index: msgIndex++,
-            timestamp: Date.now(),
-            msg: m,
-            stateBefore: before,
-            stateAfter: state,
-            effects,
-          })
-          if (history.length > 1000) history.shift()
-        }
-        if (effects.length > 0) {
-          if (pendingEffects === null) pendingEffects = []
-          for (const e of effects) pendingEffects.push(e)
-        }
-      }
-      if (batchDepth === 0) {
-        if (scheduler === 'sync' || flushing) commitPending()
-        else scheduleCommit()
-      }
-      if (pendingEffects !== null) for (const e of pendingEffects) runEffect(e)
-    } while (queue.length > 0)
-  }
-
   function send(msg: M): void {
     if (disposed) {
       // The mount is torn down: no reducer, no commit to a detached tree. Drop the
@@ -482,22 +447,12 @@ export function mountSignalComponent<S, M, E = never>(
       }
       return
     }
-    queue.push(msg)
-    if (draining) return
-    draining = true
-    try {
-      drain()
-    } finally {
-      draining = false
-    }
+    commits.dispatch(msg)
   }
 
   // Coalesce a burst of `send`s into one reconcile (see the handle's `batch` doc).
-  // Reentrancy-safe via `batchDepth` (nested `batch` flushes only at the outermost
-  // exit). An external batch (not nested in an active drain) drives its own commit
-  // drain on exit; a batch entered DURING a drain (e.g. from an effect) leaves the
-  // commit to that drain's loop. Flushes even if `fn` throws — state already
-  // advanced, so the DOM must catch up to stay consistent.
+  // Reentrancy-safe via the scheduler's batch depth (nested `batch` flushes only at
+  // the outermost exit).
   function batch(fn: () => void): void {
     if (disposed) {
       if (dev) {
@@ -508,20 +463,7 @@ export function mountSignalComponent<S, M, E = never>(
       }
       return
     }
-    batchDepth++
-    try {
-      fn()
-    } finally {
-      batchDepth--
-      if (batchDepth === 0 && !draining) {
-        draining = true
-        try {
-          drain()
-        } finally {
-          draining = false
-        }
-      }
-    }
+    commits.batch(fn)
   }
 
   withBindingErrors(onBindingError, () => {
@@ -542,27 +484,20 @@ export function mountSignalComponent<S, M, E = never>(
     )
   })
   // onMount callbacks ran synchronously inside mountSignal above, before `mount`
-  // was assigned. If one dispatched a state-changing send, `commitPending` deferred
-  // the reconcile (mount was still null); replay it now that `mount` is live so a
+  // was assigned. If one dispatched a state-changing send, `commitToDom` reported
+  // NOT-LIVE (mount was still null) and the scheduler kept the commit pending;
+  // replay it now that `mount` is live so a
   // "compute on mount" view paints its result on first frame instead of waiting for
   // an unrelated later dispatch. In raf mode the deferred commit is already a
   // scheduled frame, so only force it in sync mode.
   //
-  // Guard this replay with `draining` exactly like `flushFrame` does: `commitPending`
-  // can re-enter `send` (a `blur` fired when the commit removes a focused node), and
-  // an unguarded commit here (draining === false) would let that reentrant send start
-  // a NESTED drain mid-reconcile — the scope-tree/`removeBetween` corruption the flag
-  // exists to prevent. Queue instead, then settle synchronously.
-  if (pendingCommit && scheduler === 'sync') {
-    const prevDraining = draining
-    draining = true
-    try {
-      commitPending()
-      if (queue.length > 0) drain()
-    } finally {
-      draining = prevDraining
-    }
-  }
+  // The replay opens a commit scope like every other commit path — it cannot do
+  // otherwise: the commit machinery is unreachable without one. `commitToDom` can
+  // re-enter `send` (a `blur` fired when the commit removes a focused node), and an
+  // unguarded commit here would let that reentrant send start a NESTED drain
+  // mid-reconcile — the scope-tree/`removeBetween` corruption the guard exists to
+  // prevent. The scheduler queues it instead, then settles synchronously.
+  commits.replayPostMountCommit()
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
     for (const e of initialEffects) runEffect(e)
@@ -574,26 +509,16 @@ export function mountSignalComponent<S, M, E = never>(
       getState: () => state,
       setState: (s) => {
         // Route devtools state pokes (setState / restoreState / time-travel)
-        // through the NORMAL commit path — pendingCommit + commitPending — so the
-        // reconcile AND subscriber notification fire exactly as a real `send`
-        // would. Poking `mount.update` directly skipped subscribers, so the agent
-        // protocol's state-update frames missed devtools-driven changes.
+        // through the NORMAL commit path so the reconcile AND subscriber
+        // notification fire exactly as a real `send` would. Poking `mount.update`
+        // directly skipped subscribers, so the agent protocol's state-update frames
+        // missed devtools-driven changes.
         state = s as S
-        pendingCommit = true
-        // Commit under the SAME reentrancy guard the send/flush commit paths use.
-        // The reconcile can re-enter `send` (e.g. a blur fired by removing a focused
-        // node) — that send must ENQUEUE and let this drain finish, not start a
-        // nested drain mid-reconcile (which corrupts the scope tree → NotFoundError).
-        // Save/restore `draining` (rather than force false) so a setState poked from
-        // inside an active drain doesn't strand the outer loop. (See `flushFrame`.)
-        const prevDraining = draining
-        draining = true
-        try {
-          commitPending()
-          if (queue.length > 0) drain() // reentrant (commit-induced) messages settle here
-        } finally {
-          draining = prevDraining
-        }
+        // Same commit scope every other path uses — the save/restore of the guard
+        // (so a poke from inside an active drain doesn't strand the outer loop) and
+        // the settle of commit-induced messages are the scope's job, not this
+        // call site's.
+        commits.pokeCommit()
       },
       send: (m) => send(m as M),
       pureUpdate: (s, m) => normalizeUpdateResult<S, E>(updateFn(s as S, m as M)),
@@ -614,14 +539,8 @@ export function mountSignalComponent<S, M, E = never>(
     send,
     batch,
     getState: () => state,
-    flush: () => {
-      // sync mode: send already committed — nothing to flush.
-      if (scheduler === 'sync' || disposed) return
-      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rafId)
-      }
-      flushFrame()
-    },
+    // sync mode: send already committed — `flushNow` is a no-op there.
+    flush: () => commits.flushNow(),
     dispose: () => {
       if (disposed) return
       disposed = true
@@ -629,15 +548,10 @@ export function mountSignalComponent<S, M, E = never>(
       // mounts of the same def are unaffected) — before running cleanups, so an
       // effect's `signal.addEventListener('abort', …)` fires as part of teardown.
       lifecycle.abort()
-      if (rafId !== null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rafId)
-        rafId = null
-      }
       subscribers.clear()
-      // Abandon any messages still queued (dispose can be called from inside a drain,
-      // e.g. an effect that unmounts): a running drain checks `disposed` and bails,
-      // but clear the queue so nothing is left half-processed.
-      queue.length = 0
+      // Cancels any scheduled frame and abandons the queue (a running drain also
+      // checks `isDisposed` and bails).
+      commits.shutdown()
       const m = mount
       // Null `mount` FIRST so any commit re-entered during teardown (a `blur` from
       // a removed focused node) can't write to the torn-down tree.

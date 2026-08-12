@@ -71,7 +71,7 @@ export function withBindingErrors(
  * `setOnBindingError` hook receives. Exported because not every isolated throw
  * happens INSIDE a `withBindingErrors` scope: the component's post-commit
  * subscriber sweep runs after that scope has exited, so it has to reach its
- * handler directly instead of through the stack (see `commitPending`). Routing
+ * handler directly instead of through the stack (see `commitToDom`). Routing
  * it through this one shaper keeps the envelope — and therefore the agent's
  * `drain.errors` entries — identical whichever path reports. */
 export function toBindingError(err: unknown, kind: BindingErrorKind): BindingError {
