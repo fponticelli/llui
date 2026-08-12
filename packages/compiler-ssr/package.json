@@ -23,11 +23,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/compiler": "workspace:^",
-    "typescript": "^6.0.2"
+    "@llui/compiler": "workspace:^"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0 <7.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.2"
   },
   "description": "LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.",
   "keywords": [

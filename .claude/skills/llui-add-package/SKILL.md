@@ -20,8 +20,10 @@ Copy the closest skeleton: `packages/security/` (a pure leaf, no `@llui/dom`) or
 1. **`packages/<name>/`** with `src/index.ts` and `test/`.
 2. **`package.json`** (copy security's):
    - `"name": "@llui/<name>"`, `"version": "0.1.0"`, `"type": "module"`,
-     `"sideEffects": false` (or an array of CSS files), `"main": "dist/index.js"`,
-     `"types": "dist/index.d.ts"`.
+     `"sideEffects": false` — or, when a shipped module DOES something at import time,
+     an array naming those files (CSS entries, and a `bin` entry like `llui-agent`'s
+     `./dist/cli.js`, whose top-level `main()` a bundler drops under a bare `false`) —
+     `"main": "dist/index.js"`, `"types": "dist/index.d.ts"`.
    - **`exports` map** — `.` plus any subpaths, each
      `{ "types": "./dist/<x>.d.ts", "import": "./dist/<x>.js" }`.
    - **`"files": ["dist", "src"]`** — ship source for go-to-definition sourcemaps.

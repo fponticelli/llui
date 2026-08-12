@@ -23,12 +23,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "magic-string": "^0.30.21",
-    "typescript": "^6.0.2"
+    "magic-string": "^0.30.21"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0 <7.0.0"
   },
   "devDependencies": {
     "@jridgewell/sourcemap-codec": "^1.5.5",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.2"
   },
   "description": "LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin.",
   "keywords": [
