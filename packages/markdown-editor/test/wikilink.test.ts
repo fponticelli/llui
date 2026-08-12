@@ -22,6 +22,8 @@ import {
   type WikiLink,
 } from '../src/plugins/wikilink.js'
 import type { MarkdownPlugin } from '../src/plugins/types.js'
+import type { EditorOutMsg } from '../src/state.js'
+import { createCommitHub } from '@llui/lexical'
 
 // The recommended plugin order: wikilink BEFORE core, so that at an equal match
 // start index the wikilink transformer beats `@lexical/markdown`'s LINK.
@@ -399,12 +401,13 @@ describe('wikilink click → host notification', () => {
         slice = result
       }
     }
-    const dispose = plugin.register?.(editor, {
-      emit: (msg) => {
-        const m = msg as { type: string; name: string; msg: unknown }
+    const dispose = plugin.register?.(
+      editor,
+      createCommitHub(editor, (msg: EditorOutMsg) => {
+        const m: { type: string; name?: string; msg?: unknown } = msg
         if (m.type === 'plugin' && m.name === 'wikilink') send(m.msg)
-      },
-    })
+      }),
+    )
     void dispose
     return emitted
   }

@@ -89,6 +89,7 @@ import {
 } from 'lexical'
 import type { TextMatchTransformer } from '@lexical/markdown'
 import { mergeRegister } from '@lexical/utils'
+import type { CommitFacts } from '@llui/lexical'
 import { div, each, input, onMount, show, text, type Signal } from '@llui/dom'
 import { setTransformerPrecedence } from '../transformers/registry.js'
 import { definePluginUI } from './ui.js'
@@ -518,26 +519,25 @@ function commit(state: WikiLinkState, target: string): WikiLinkEffect {
 }
 
 /** The `[[` query immediately before a collapsed caret, or `null` when the caret
- * is not inside an open `[[…` (no `[[`, or a `]`/`[`/newline already closed it). */
-function $readWikiQuery(): string | null {
-  const selection = $getSelection()
-  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
-  const node = selection.anchor.getNode()
-  if (!$isTextNode(node)) return null
-  const before = node.getTextContent().slice(0, selection.anchor.offset)
-  const match = before.match(/\[\[([^[\]\n|]*)$/)
+ * is not inside an open `[[…` (no `[[`, or a `]`/`[`/newline already closed it).
+ * Derived from the shared commit facts — no selection walk of its own. */
+function wikiQuery(facts: CommitFacts): string | null {
+  if (facts.textBeforeCaret === null) return null
+  const match = facts.textBeforeCaret.match(/\[\[([^[\]\n|]*)$/)
   return match ? (match[1] ?? '') : null
 }
 
-/** Viewport point just below the caret, for anchoring the panel. */
-function caretXY(): { x: number; y: number } {
-  if (typeof window === 'undefined') return { x: 0, y: 0 }
+/** Viewport point just below a rect, for anchoring the panel. */
+function below(rect: DOMRect | null | undefined): { x: number; y: number } {
+  return rect ? { x: rect.left, y: rect.bottom + 4 } : { x: 0, y: 0 }
+}
+
+/** The DOM caret's rect, measured directly. For the CLICK path only — on the
+ * commit path use `facts.caretRect()`, which is shared and measured once. */
+function domCaretRect(): DOMRect | null {
+  if (typeof window === 'undefined') return null
   const sel = window.getSelection()
-  if (sel && sel.rangeCount > 0) {
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
-    return { x: rect.left, y: rect.bottom + 4 }
-  }
-  return { x: 0, y: 0 }
+  return sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null
 }
 
 /** Resolve the wikilink a click landed on, if any. Must run in an editor scope. */
@@ -636,11 +636,8 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
       const search = opts.search
 
       // Viewport anchor for an existing link's rendered element (caret fallback).
-      const linkXY = (key: NodeKey): { x: number; y: number } => {
-        const el = editor.getElementByKey(key)
-        const rect = el?.getBoundingClientRect()
-        return rect ? { x: rect.left, y: rect.bottom + 4 } : caretXY()
-      }
+      const linkXY = (key: NodeKey): { x: number; y: number } =>
+        below(editor.getElementByKey(key)?.getBoundingClientRect() ?? domCaretRect())
 
       // True while a click-opened EDIT panel is up. The click that opens it also
       // moves the selection, which fires the update listener below; without this
@@ -718,11 +715,15 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           timer = null
         }
       }
-      const activeQuery = (): string | null => editor.getEditorState().read(() => $readWikiQuery())
-      const isActive = (): boolean => activeQuery() !== null
+      // The query as of the last commit. A keydown always arrives BEFORE the
+      // commit it causes, and a debounced search resolves between commits, so
+      // this is the same value a fresh read would return at either point.
+      let liveQuery: string | null = null
+      const isActive = (): boolean => liveQuery !== null
 
-      const refresh = (): void => {
-        const query = activeQuery()
+      const refresh = (facts: CommitFacts): void => {
+        const query = wikiQuery(facts)
+        liveQuery = query
         if (query === null) {
           clearTimer()
           // Leave a click-opened edit panel alone — it is driven by the panel's
@@ -739,9 +740,13 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
             .then((results) => {
               // Drop a superseded response (a later keystroke won) or one whose
               // query the caret has since left/changed.
-              if (mine !== seq || activeQuery() !== query) return
-              const { x, y } = caretXY()
-              emit({ type: 'searchShow', query, items: results.slice(0, MAX_RESULTS), x, y })
+              if (mine !== seq || liveQuery !== query) return
+              // The commit's facts expired with its read context, so derive a
+              // fresh set for this one caret measurement.
+              ctx.withFacts((live) => {
+                const { x, y } = below(live.caretRect())
+                emit({ type: 'searchShow', query, items: results.slice(0, MAX_RESULTS), x, y })
+              })
             })
             .catch(() => {
               /* a failed search simply shows nothing */
@@ -758,7 +763,7 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 
       return mergeRegister(
         navigation,
-        editor.registerUpdateListener(() => refresh()),
+        ctx.onCommit(refresh),
         editor.registerCommand(KEY_ARROW_DOWN_COMMAND, (e) => nav(1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(KEY_ARROW_UP_COMMAND, (e) => nav(-1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(

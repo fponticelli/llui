@@ -14,6 +14,7 @@ import { $createHeadingNode, $createQuoteNode, HeadingNode, QuoteNode } from '@l
 import { $createListItemNode, $createListNode, ListItemNode, ListNode } from '@lexical/list'
 import { LinkNode } from '@lexical/link'
 import { mountApp } from '@llui/dom'
+import { createCommitHub } from '@llui/lexical'
 import { registerRichText } from '@lexical/rich-text'
 import { mergeRegister } from '@lexical/utils'
 import { singleBlockPlugin } from '../src/plugins/single-block.js'
@@ -39,7 +40,10 @@ function roundTrip(markdown: string, plugin = singleBlockPlugin()): string {
   })
   const dispose = mergeRegister(
     registerRichText(editor),
-    plugin.register!(editor, { emit: () => {} }),
+    plugin.register!(
+      editor,
+      createCommitHub(editor, () => {}),
+    ),
   )
   editor.update(() => $convertFromMarkdownString(markdown, transformers), { discrete: true })
   let out = ''
@@ -90,7 +94,10 @@ describe('singleBlockPlugin — structural constraint (headless)', () => {
     })
     const dispose = mergeRegister(
       registerRichText(editor),
-      plugin.register!(editor, { emit: () => {} }),
+      plugin.register!(
+        editor,
+        createCommitHub(editor, () => {}),
+      ),
     )
     editor.update(
       () => {
@@ -122,7 +129,10 @@ describe('singleBlockPlugin — structural constraint (headless)', () => {
     const editor = createHeadlessEditor({ namespace: 's', onError: (e: Error) => throwErr(e) })
     const dispose = mergeRegister(
       registerRichText(editor),
-      singleBlockPlugin().register!(editor, { emit: () => {} }),
+      singleBlockPlugin().register!(
+        editor,
+        createCommitHub(editor, () => {}),
+      ),
     )
     editor.update(() => $convertFromMarkdownString('just text', transformers), { discrete: true })
     expect(rootChildCount(editor)).toBe(1)
@@ -141,7 +151,10 @@ describe('singleBlockPlugin — Enter handling (headless)', () => {
     const editor = createHeadlessEditor({ namespace: 'enter', onError: (e: Error) => throwErr(e) })
     const dispose = mergeRegister(
       registerRichText(editor),
-      plugin.register!(editor, { emit: () => {} }),
+      plugin.register!(
+        editor,
+        createCommitHub(editor, () => {}),
+      ),
     )
     editor.update(() => $convertFromMarkdownString('text', transformers), { discrete: true })
     editor.update(
@@ -164,7 +177,10 @@ describe('singleBlockPlugin — Enter handling (headless)', () => {
     })
     const dispose = mergeRegister(
       registerRichText(editor),
-      plugin.register!(editor, { emit: () => {} }),
+      plugin.register!(
+        editor,
+        createCommitHub(editor, () => {}),
+      ),
     )
     editor.update(() => $convertFromMarkdownString('before', transformers), { discrete: true })
     editor.update(

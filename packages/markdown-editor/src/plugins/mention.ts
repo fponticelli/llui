@@ -14,6 +14,7 @@ import {
   KEY_ESCAPE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
+import type { CommitFacts } from '@llui/lexical'
 import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
@@ -62,24 +63,17 @@ function withActive(items: readonly Mention[], index: number): Row[] {
   return items.map((it, i) => ({ id: it.id, label: it.label, active: i === index }))
 }
 
-function $readQuery(): string | null {
-  const selection = $getSelection()
-  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
-  const node = selection.anchor.getNode()
-  if (!$isTextNode(node)) return null
-  const before = node.getTextContent().slice(0, selection.anchor.offset)
-  const match = before.match(TRIGGER)
+/** The active `@` query before the collapsed caret, or null. Derived from the
+ * shared commit facts — no selection walk of its own. */
+function mentionQuery(facts: CommitFacts): string | null {
+  if (facts.textBeforeCaret === null) return null
+  const match = facts.textBeforeCaret.match(TRIGGER)
   return match ? (match[1] ?? '') : null
 }
 
-function caretXY(): { x: number; y: number } {
-  if (typeof window === 'undefined') return { x: 0, y: 0 }
-  const sel = window.getSelection()
-  if (sel && sel.rangeCount > 0) {
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
-    return { x: rect.left, y: rect.bottom + 4 }
-  }
-  return { x: 0, y: 0 }
+function caretXY(facts: CommitFacts): { x: number; y: number } {
+  const rect = facts.caretRect()
+  return rect ? { x: rect.left, y: rect.bottom + 4 } : { x: 0, y: 0 }
 }
 
 export interface MentionPluginOptions {
@@ -96,16 +90,20 @@ export function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin {
   return {
     name: 'mention',
     register: (editor, ctx) => {
-      const isActive = (): boolean => editor.getEditorState().read(() => $readQuery() !== null)
+      // See the note in `slash.ts`: a keydown precedes the commit it causes, so
+      // the last commit's query is what a fresh read would return.
+      let liveQuery: string | null = null
+      const isActive = (): boolean => liveQuery !== null
 
-      const refresh = (): void => {
-        const query = editor.getEditorState().read(() => $readQuery())
+      const refresh = (facts: CommitFacts): void => {
+        const query = mentionQuery(facts)
+        liveQuery = query
         if (query === null) {
           ctx.emit({ type: 'plugin', name: 'mention', msg: { type: 'hide' } })
           return
         }
         const items = [...source(query)].slice(0, 8)
-        const { x, y } = caretXY()
+        const { x, y } = caretXY(facts)
         ctx.emit({ type: 'plugin', name: 'mention', msg: { type: 'show', query, items, x, y } })
       }
 
@@ -117,7 +115,7 @@ export function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin {
       }
 
       return mergeRegister(
-        editor.registerUpdateListener(() => refresh()),
+        ctx.onCommit(refresh),
         editor.registerCommand(KEY_ARROW_DOWN_COMMAND, (e) => nav(1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(KEY_ARROW_UP_COMMAND, (e) => nav(-1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(

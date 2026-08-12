@@ -22,6 +22,7 @@ import {
   $deleteTableRowAtSelection,
   $getTableCellNodeFromLexicalNode,
   $getTableNodeFromLexicalNodeOrThrow,
+  $isTableCellNode,
   $insertTableColumnAtSelection,
   $insertTableRowAtSelection,
   $isTableNode,
@@ -37,6 +38,7 @@ import {
   type MultilineElementTransformer,
   type Transformer,
 } from '@lexical/markdown'
+import type { CommitFacts } from '@llui/lexical'
 import { button, text } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
@@ -249,25 +251,43 @@ export function tablePlugin(): MarkdownPlugin {
       let lastKey: string | null = null
       let lastX = NaN
       let lastY = NaN
-      const refresh = (): void => {
-        const tableKey = editor.getEditorState().read(() => {
-          const selection = $getSelection()
-          // RangeSelection = caret in a cell; TableSelection = multi-cell drag.
-          if (!$isRangeSelection(selection) && !$isTableSelection(selection)) return null
-          const cell = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
-          return cell ? $getTableNodeFromLexicalNodeOrThrow(cell).getKey() : null
-        })
-        const el = tableKey ? editor.getElementByKey(tableKey) : null
-        if (!el) {
-          if (lastKey !== null) {
-            lastKey = null
-            lastX = NaN
-            lastY = NaN
-            ctx.emit({ type: 'plugin', name: 'table', msg: { type: 'hide' } })
-          }
+      const hide = (): void => {
+        if (lastKey === null) return
+        lastKey = null
+        lastX = NaN
+        lastY = NaN
+        ctx.emit({ type: 'plugin', name: 'table', msg: { type: 'hide' } })
+      }
+      const refresh = (facts: CommitFacts): void => {
+        const selection = facts.selection
+        // RangeSelection = caret in a cell; TableSelection = multi-cell drag.
+        // The hub cannot resolve a TableSelection's anchor for us without taking
+        // a dependency on `@lexical/table` — which is exactly the dependency
+        // issue #75 is removing — so this plugin resolves it and asks the hub for
+        // that node's chain. In the RangeSelection case (every keystroke) it is
+        // the anchor the hub already walked, so the memo hits.
+        const anchor =
+          $isRangeSelection(selection) || $isTableSelection(selection)
+            ? selection.anchor.getNode()
+            : null
+        // `$getTableCellNodeFromLexicalNode` IS `$findMatchingParent(n, $isTableCellNode)`.
+        const cell = facts.ancestorsOf(anchor).find($isTableCellNode)
+        const tableKey = cell ? $getTableNodeFromLexicalNodeOrThrow(cell).getKey() : null
+        if (tableKey === null) {
+          hide()
           return
         }
-        const rect = el.getBoundingClientRect()
+        // The forced layout this plugin used to pay on EVERY commit. A commit
+        // that dirtied nothing wrote no DOM, so the same table's box cannot have
+        // moved — and moving the caret between cells of the same table is
+        // exactly that commit. (Scroll/resize arrive via `withFacts`, where
+        // `selectionOnly` is false, so those still measure.)
+        if (tableKey === lastKey && facts.selectionOnly) return
+        const rect = facts.elementRect(tableKey)
+        if (rect === null) {
+          hide()
+          return
+        }
         // Typing inside a cell never moves the table's top-left; skip the redundant
         // emit so the overlay isn't reconciled on every keystroke.
         if (tableKey === lastKey && rect.left === lastX && rect.top === lastY) return
@@ -281,8 +301,8 @@ export function tablePlugin(): MarkdownPlugin {
         })
       }
       return mergeRegister(
-        editor.registerUpdateListener(() => refresh()),
-        onViewportChange(refresh),
+        ctx.onCommit(refresh),
+        onViewportChange(() => ctx.withFacts(refresh)),
       )
     },
     ui: definePluginUI<TableToolsState, TableToolsMsg, TableToolsEffect>({

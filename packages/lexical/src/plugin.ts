@@ -8,6 +8,7 @@
 
 import type { LexicalEditor, LexicalNodeConfig } from 'lexical'
 import { component, mountApp, type Renderable, type Signal } from '@llui/dom'
+import type { CommitListener } from './commit.js'
 import type { NodeWidget } from './nodewidget.js'
 
 /** A keyboard shortcut bound to an editor action.
@@ -26,6 +27,26 @@ export interface ShortcutSpec {
 export interface PluginContext<Emit = unknown> {
   /** Emit a host message into the embedding component's update loop. */
   emit: (msg: Emit) => void
+  /**
+   * Subscribe to the host's SHARED per-commit selection facts instead of
+   * registering a private `editor.registerUpdateListener`. One listener, one
+   * editor-state read and one caret measurement serve every subscriber; see
+   * {@link CommitFacts} for what the callback may assume (notably: it runs
+   * inside a read context, so `$` walks are free and writes are forbidden —
+   * `emit` from here is buffered until the read closes). Returns a disposer.
+   *
+   * A commit is BATCHED: every subscriber refreshes first, then every buffered
+   * emission drains in subscription order. A subscriber therefore measures
+   * against the DOM as the commit left it, never as another plugin's overlay
+   * reconcile has since changed it. Do not rely on a sibling plugin's message
+   * having been reduced by the time yours runs.
+   */
+  onCommit: (listener: CommitListener) => () => void
+  /**
+   * Derive the same facts on demand, outside a commit — the scroll / resize
+   * path, where geometry moved but the document did not.
+   */
+  withFacts: (fn: CommitListener) => void
 }
 
 /** Imperative handle a decorator sub-view uses to talk to its Lexical node. */

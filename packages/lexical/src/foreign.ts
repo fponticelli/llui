@@ -35,7 +35,8 @@ import { registerRichText } from '@lexical/rich-text'
 import { registerHistory, createEmptyHistoryState } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
 import { foreign, type LiveSignal, type Mountable, type Signal } from '@llui/dom'
-import type { LexicalPlugin, PluginContext } from './plugin.js'
+import { createCommitHub } from './commit.js'
+import type { LexicalPlugin } from './plugin.js'
 import { registerShortcuts } from './register.js'
 import { createWidgetRuntime, type NodeWidget } from './nodewidget.js'
 
@@ -285,7 +286,10 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     // are live when the seed document is built (e.g. a callout in the seed needs
     // its bridge registered to decorate).
 
-    const ctx: PluginContext<Emit> = { emit: (msg) => opts.emit?.(msg) }
+    // One update listener + one editor-state read per commit, shared by every
+    // plugin that subscribes (issue #74). Lazy: with no subscriber the hub never
+    // registers anything, so an editor without such plugins pays nothing.
+    const ctx = createCommitHub<Emit>(editor, (msg) => opts.emit?.(msg))
     const pluginDisposers = (opts.plugins ?? []).map((plugin) => {
       const reg = plugin.register?.(editor, ctx) ?? (() => {})
       const shortcuts = plugin.shortcuts ? registerShortcuts(editor, plugin.shortcuts) : () => {}
@@ -362,6 +366,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
         debounceTimer = setTimeout(flush, debounceMs)
       }),
       ...pluginDisposers,
+      ctx.dispose,
     )
 
     // Seed now that rich-text, history, plugins, and decorator bridges are live.

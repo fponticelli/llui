@@ -15,6 +15,7 @@ import {
   KEY_ESCAPE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
+import type { CommitFacts } from '@llui/lexical'
 import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
@@ -56,25 +57,17 @@ type SlashEffect = { type: 'run'; id: string; query: string }
 
 const TRIGGER = /(?:^|\s)\/([\w-]*)$/
 
-/** Read the active slash query before the collapsed caret, or null. */
-function $readSlashQuery(): string | null {
-  const selection = $getSelection()
-  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
-  const node = selection.anchor.getNode()
-  if (!$isTextNode(node)) return null
-  const before = node.getTextContent().slice(0, selection.anchor.offset)
-  const match = before.match(TRIGGER)
+/** The active slash query before the collapsed caret, or null. Derived from the
+ * shared commit facts — no selection walk of its own. */
+function slashQuery(facts: CommitFacts): string | null {
+  if (facts.textBeforeCaret === null) return null
+  const match = facts.textBeforeCaret.match(TRIGGER)
   return match ? (match[1] ?? '') : null
 }
 
-function caretXY(): { x: number; y: number } {
-  if (typeof window === 'undefined') return { x: 0, y: 0 }
-  const sel = window.getSelection()
-  if (sel && sel.rangeCount > 0) {
-    const rect = sel.getRangeAt(0).getBoundingClientRect()
-    return { x: rect.left, y: rect.bottom + 4 }
-  }
-  return { x: 0, y: 0 }
+function caretXY(facts: CommitFacts): { x: number; y: number } {
+  const rect = facts.caretRect()
+  return rect ? { x: rect.left, y: rect.bottom + 4 } : { x: 0, y: 0 }
 }
 
 function matches(item: CommandItem, query: string): boolean {
@@ -100,16 +93,21 @@ export function slashPlugin(): MarkdownPlugin {
       )
     },
     register: (editor, ctx) => {
-      const isActive = (): boolean => editor.getEditorState().read(() => $readSlashQuery() !== null)
+      // The query as of the last commit. A keydown always arrives BEFORE the
+      // commit it causes, so this is the same value a fresh read would return —
+      // and the key handlers no longer open a read context each keystroke.
+      let liveQuery: string | null = null
+      const isActive = (): boolean => liveQuery !== null
 
-      const refresh = (): void => {
-        const query = editor.getEditorState().read(() => $readSlashQuery())
+      const refresh = (facts: CommitFacts): void => {
+        const query = slashQuery(facts)
+        liveQuery = query
         if (query === null) {
           ctx.emit({ type: 'plugin', name: 'slash', msg: { type: 'hide' } })
           return
         }
         const items = filtered(query)
-        const { x, y } = caretXY()
+        const { x, y } = caretXY(facts)
         ctx.emit({ type: 'plugin', name: 'slash', msg: { type: 'show', query, items, x, y } })
       }
 
@@ -121,7 +119,7 @@ export function slashPlugin(): MarkdownPlugin {
       }
 
       return mergeRegister(
-        editor.registerUpdateListener(() => refresh()),
+        ctx.onCommit(refresh),
         editor.registerCommand(KEY_ARROW_DOWN_COMMAND, (e) => nav(1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(KEY_ARROW_UP_COMMAND, (e) => nav(-1, e), COMMAND_PRIORITY_HIGH),
         editor.registerCommand(

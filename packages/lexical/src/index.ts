@@ -9,6 +9,8 @@ export {
   decoratorBridge,
 } from './plugin.js'
 
+export { type CommitFacts, type CommitListener, type CommitHub, createCommitHub } from './commit.js'
+
 export {
   type ParsedCombo,
   parseCombo,

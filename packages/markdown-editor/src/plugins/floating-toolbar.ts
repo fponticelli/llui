@@ -3,9 +3,10 @@
 // selection changes and positions/fills the bar; clicking a button runs the
 // command on the still-live selection.
 
-import { $getSelection, $isRangeSelection, BLUR_COMMAND, COMMAND_PRIORITY_LOW } from 'lexical'
-import { $findMatchingParent, mergeRegister } from '@lexical/utils'
+import { $isRangeSelection, BLUR_COMMAND, COMMAND_PRIORITY_LOW } from 'lexical'
+import { mergeRegister } from '@lexical/utils'
 import { $isLinkNode } from '@lexical/link'
+import type { CommitFacts } from '@llui/lexical'
 import { button, each, span, text, unsafeHtml, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
@@ -41,20 +42,22 @@ interface InlineFormat {
   link: boolean
 }
 
-function readFormat(editor: import('lexical').LexicalEditor): InlineFormat {
-  return editor.getEditorState().read(() => {
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection)) {
-      return { bold: false, italic: false, strikethrough: false, code: false, link: false }
-    }
-    return {
-      bold: selection.hasFormat('bold'),
-      italic: selection.hasFormat('italic'),
-      strikethrough: selection.hasFormat('strikethrough'),
-      code: selection.hasFormat('code'),
-      link: $findMatchingParent(selection.anchor.getNode(), (n) => $isLinkNode(n)) !== null,
-    }
-  })
+/** Read the inline format of the shared commit's selection. Runs inside the
+ * hub's read context, so it needs no read of its own. */
+function readFormat(facts: CommitFacts): InlineFormat {
+  const selection = facts.selection
+  if (!$isRangeSelection(selection)) {
+    return { bold: false, italic: false, strikethrough: false, code: false, link: false }
+  }
+  return {
+    bold: selection.hasFormat('bold'),
+    italic: selection.hasFormat('italic'),
+    strikethrough: selection.hasFormat('strikethrough'),
+    code: selection.hasFormat('code'),
+    // Same chain `$findMatchingParent` would climb, walked once for every
+    // plugin that needs it.
+    link: facts.ancestorsOf(facts.anchorNode).some($isLinkNode),
+  }
 }
 
 function activeFor(id: string, fmt: InlineFormat): boolean {
@@ -85,22 +88,19 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
       )
     },
     register: (editor, ctx) => {
-      const refresh = (): void => {
-        const collapsed = editor.getEditorState().read(() => {
-          const s = $getSelection()
-          return !$isRangeSelection(s) || s.isCollapsed()
-        })
-        const dom = typeof window !== 'undefined' ? window.getSelection() : null
-        if (collapsed || !dom || dom.rangeCount === 0) {
+      const refresh = (facts: CommitFacts): void => {
+        // Collapsed (or non-range) selection: no bubble, and — the point of the
+        // gate — no caret measurement.
+        if (!facts.isRange || facts.isCollapsed) {
           ctx.emit({ type: 'plugin', name: 'floatingToolbar', msg: { type: 'hide' } })
           return
         }
-        const rect = dom.getRangeAt(0).getBoundingClientRect()
-        if (rect.width === 0 && rect.height === 0) {
+        const rect = facts.caretRect()
+        if (rect === null || (rect.width === 0 && rect.height === 0)) {
           ctx.emit({ type: 'plugin', name: 'floatingToolbar', msg: { type: 'hide' } })
           return
         }
-        const fmt = readFormat(editor)
+        const fmt = readFormat(facts)
         const items: BarItem[] = floatingItems.map((i) => ({
           id: i.id,
           label: i.label,
@@ -114,9 +114,10 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
         })
       }
       return mergeRegister(
-        editor.registerUpdateListener(() => refresh()),
-        // Keep the bubble glued to the selection while the page scrolls.
-        onViewportChange(refresh),
+        ctx.onCommit(refresh),
+        // Keep the bubble glued to the selection while the page scrolls. No
+        // commit happens, so the facts have to be derived on demand.
+        onViewportChange(() => ctx.withFacts(refresh)),
         // Dismiss when the editor loses focus. Without this the bubble lingers
         // when something steals focus WITHOUT changing the editor state — most
         // visibly the link dialog, whose modal input focus leaves the bubble

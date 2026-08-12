@@ -18991,12 +18991,22 @@ pnpm add @llui/lexical @llui/dom lexical
 ## The three seams
 
 - **`lexicalForeign(opts)`** — wraps a Lexical editor as an LLui `foreign()` mountable. LLui owns the host node; Lexical owns everything inside it. Editor output (selection/format changes, content edits) flows back out as messages, so the surrounding LLui component reacts with the normal `update`/`view` cycle.
-- **Plugin contract** (`LexicalPlugin`, `PluginContext`, `decoratorBridge`, `registerShortcuts`) — a plugin receives a `PluginContext` (the editor, a shortcut registrar, a decorator-bridge factory) and registers commands, nodes, and key bindings. Plugins are plain values you compose into a list, mirroring how LLui structural primitives compose.
+- **Plugin contract** (`LexicalPlugin`, `PluginContext`, `decoratorBridge`, `registerShortcuts`) — `register(editor, ctx)` receives the live editor plus a `PluginContext`: `emit` (send a message to the host's update loop) and the commit hub's `onCommit` / `withFacts` (see below). A plugin registers commands, nodes, and key bindings, and declares its own nodes/shortcuts/UI as plain values on the plugin object. Plugins are plain values you compose into a list, mirroring how LLui structural primitives compose.
 - **Decorator bridge** (`LLuiDecoratorNode`, `registerDecoratorBridges`, `DecoratorBridge`) — a Lexical `DecoratorNode` whose rendered body is an LLui sub-view. Author an embed once as an LLui component; the bridge mounts/unmounts it as Lexical inserts and removes the node.
 
 ## Reading selection state
 
 `readBaseFormat` / `$readBaseFormat` collapse the active Lexical selection into a plain, serializable `BaseFormat` (block type, alignment, bold/italic/…) — the shape a toolbar binds to. The `$`-prefixed variant runs inside a Lexical read transaction; the unprefixed one wraps that for you.
+
+## The commit hub
+
+A plugin that reacts to the caret subscribes with `ctx.onCommit(facts => …)` rather than registering its own `editor.registerUpdateListener`. `lexicalForeign` builds one `CommitHub` per editor (`createCommitHub`) and hands it to every plugin as the `PluginContext`, so one update listener, one `editorState.read()`, one caret measurement and one shared ancestor walk serve every subscriber. The listener is registered on the FIRST subscription, so an editor whose plugins never subscribe pays nothing.
+
+The callback runs **inside** the shared read: bare `$` helpers are free, writes are forbidden, and `ctx.emit` is buffered until the read closes — which is what keeps the read-then-dispatch anti-pattern out of the plugin contract. `ctx.withFacts(fn)` derives the same [`CommitFacts`](#commitfacts) on demand for the scroll/resize path, where geometry moved but the document did not. `facts.selectionOnly` marks a commit that dirtied no node, so an element-anchored overlay can skip its `getBoundingClientRect` outright.
+
+A commit is **batched**: every subscriber refreshes first, then every buffered emission drains in subscription order. Do not write a plugin that depends on a sibling's message having been reduced by the time yours runs.
+
+**Breaking:** `PluginContext` therefore carries `onCommit` and `withFacts` as well as `emit` — code that hand-rolled a `{ emit }` context (tests, custom hosts) should call `createCommitHub(editor, emit)` instead.
 
 ## API
 
@@ -19024,6 +19034,15 @@ read/update context (it calls `$`-prefixed APIs).
 
 ```typescript
 function $readBaseFormat(): BaseFormat
+```
+
+### `createCommitHub()`
+
+Create the per-editor commit hub. `emit` is the host's raw emit; the returned
+`emit` is the buffered one every plugin should use.
+
+```typescript
+function createCommitHub<Emit>(editor: LexicalEditor, emit: (msg: Emit) => void): CommitHub<Emit>
 ```
 
 ### `createWidgetRuntime()`
@@ -19168,6 +19187,14 @@ export type BaseBlockType =
   | 'other'
 ```
 
+### `CommitListener`
+
+A per-commit subscriber. Runs inside the shared read context.
+
+```typescript
+export type CommitListener = (facts: CommitFacts) => void
+```
+
 ### `SerializedLLuiDecoratorNode`
 
 ```typescript
@@ -19210,6 +19237,86 @@ export interface BaseFormat {
   blockKey: string | null
   hasSelection: boolean
   isCollapsed: boolean
+}
+```
+
+### `CommitFacts`
+
+The selection facts shared by every per-commit plugin, derived once.
+A facts object is valid ONLY for the duration of the callback it is handed to:
+it is scoped to one read context, and its geometry memo is scoped to one
+commit. Do not retain it — copy out the plain values instead.
+
+```typescript
+export interface CommitFacts {
+  /** The editor this commit belongs to. */
+  editor: LexicalEditor
+  /**
+   * The commit dirtied no node — a pure selection move.
+   *
+   * The reconciler wrote nothing, so no element's box can have shifted: an
+   * element-anchored overlay whose anchor node is unchanged may skip its
+   * `getBoundingClientRect` outright. (Scroll and resize move boxes without any
+   * commit at all; those arrive through the host's viewport listener, not here.)
+   */
+  selectionOnly: boolean
+  /** The live selection, or null. Already resolved — no `$getSelection()` needed. */
+  selection: BaseSelection | null
+  /** The selection is a `RangeSelection` (caret or text range). */
+  isRange: boolean
+  /** The selection is a collapsed `RangeSelection` — i.e. a bare caret. */
+  isCollapsed: boolean
+  /** The range anchor's node, or null when the selection is not a range. */
+  anchorNode: LexicalNode | null
+  /**
+   * The anchor text node's content up to the caret — the substring every
+   * typeahead trigger (`/`, `@`, `[[`) scans. Null unless the selection is a
+   * collapsed range whose anchor is a `TextNode`, which is exactly the condition
+   * all three typeaheads already guard on.
+   *
+   * Derived on first read and memoized for the commit (it is an O(text-node)
+   * string copy), so an editor with no typeahead plugin never pays for it.
+   */
+  readonly textBeforeCaret: string | null
+  /**
+   * `node` and its ancestors up to (excluding) the root — i.e. exactly the chain
+   * `$findMatchingParent` walks, memoized per commit per node key.
+   *
+   * This is the one shared fact that is a WALK rather than a field, and it is
+   * where the real per-commit work was: three plugins each climbed the tree from
+   * the same anchor on every keystroke (code-language looking for a `CodeNode`,
+   * the floating toolbar for a `LinkNode`, table for a `TableCellNode` — and
+   * `$getTableCellNodeFromLexicalNode` is literally `$findMatchingParent`). They
+   * now scan one shared array instead. Pass `facts.anchorNode` for the usual
+   * case; a plugin working from some other node (a table selection's anchor,
+   * which the hub cannot resolve without depending on `@lexical/table`) passes
+   * that instead and simply misses the memo.
+   */
+  ancestorsOf: (node: LexicalNode | null) => readonly LexicalNode[]
+  /**
+   * Viewport rect of the DOM selection range, measured at most once per commit
+   * however many subscribers ask. Null off-DOM or with no live range.
+   */
+  caretRect: () => DOMRect | null
+  /**
+   * Viewport rect of a node's element, measured at most once per commit per key.
+   * Null when the key has no element (not yet reconciled, or detached).
+   */
+  elementRect: (key: string) => DOMRect | null
+}
+```
+
+### `CommitHub`
+
+The host-owned hub. It IS the {@link PluginContext} a plugin's `register`
+receives — `lexicalForeign` builds one per editor and hands it straight over,
+and a test driving a plugin standalone can do the same rather than hand-rolling
+a context object.
+
+```typescript
+export interface CommitHub<Emit> extends PluginContext<Emit> {
+  /** Tear down the update listener (if one was ever registered). */
+  dispose: () => void
 }
 ```
 
@@ -19376,6 +19483,26 @@ host message type; `@llui/lexical` leaves it `unknown`, hosts narrow it.
 export interface PluginContext<Emit = unknown> {
   /** Emit a host message into the embedding component's update loop. */
   emit: (msg: Emit) => void
+  /**
+   * Subscribe to the host's SHARED per-commit selection facts instead of
+   * registering a private `editor.registerUpdateListener`. One listener, one
+   * editor-state read and one caret measurement serve every subscriber; see
+   * {@link CommitFacts} for what the callback may assume (notably: it runs
+   * inside a read context, so `$` walks are free and writes are forbidden —
+   * `emit` from here is buffered until the read closes). Returns a disposer.
+   *
+   * A commit is BATCHED: every subscriber refreshes first, then every buffered
+   * emission drains in subscription order. A subscriber therefore measures
+   * against the DOM as the commit left it, never as another plugin's overlay
+   * reconcile has since changed it. Do not rely on a sibling plugin's message
+   * having been reduced by the time yours runs.
+   */
+  onCommit: (listener: CommitListener) => () => void
+  /**
+   * Derive the same facts on demand, outside a commit — the scroll / resize
+   * path, where geometry moved but the document did not.
+   */
+  withFacts: (fn: CommitListener) => void
 }
 ```
 

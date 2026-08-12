@@ -31,9 +31,10 @@
 // exactly like the table tools: a small portaled badge anchored to the code
 // block's top-right corner whenever the caret is inside one.
 
-import { $getNodeByKey, $getSelection, $isRangeSelection, SKIP_DOM_SELECTION_TAG } from 'lexical'
-import { $findMatchingParent, mergeRegister } from '@lexical/utils'
+import { $getNodeByKey, SKIP_DOM_SELECTION_TAG } from 'lexical'
+import { mergeRegister } from '@lexical/utils'
 import { $isCodeNode, CodeHighlightNode, CodeNode } from '@lexical/code-core'
+import type { CommitFacts } from '@llui/lexical'
 import { el, input, text, type Mountable } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
@@ -244,57 +245,59 @@ export function codeLanguagePlugin(opts: CodeLanguagePluginOptions = {}): Markdo
       let lastX = NaN
       let lastY = NaN
       let lastLanguage: string | null = null
-      const refresh = (): void => {
-        const found = editor.getEditorState().read(() => {
-          const selection = $getSelection()
-          if (!$isRangeSelection(selection)) return null
-          const code = $findMatchingParent(selection.anchor.getNode(), $isCodeNode)
-          if (!$isCodeNode(code)) return null
-          return { key: code.getKey(), language: normalizeCodeInfo(code.getLanguage()) }
-        })
-        const element = found ? editor.getElementByKey(found.key) : null
-        if (!found || !element) {
-          if (lastKey !== null) {
-            lastKey = null
-            lastX = NaN
-            lastY = NaN
-            lastLanguage = null
-            ctx.emit({
-              type: 'plugin',
-              name: CODE_LANGUAGE_PLUGIN,
-              msg: { type: 'hide' },
-            })
-          }
+      const hide = (): void => {
+        if (lastKey === null) return
+        lastKey = null
+        lastX = NaN
+        lastY = NaN
+        lastLanguage = null
+        ctx.emit({ type: 'plugin', name: CODE_LANGUAGE_PLUGIN, msg: { type: 'hide' } })
+      }
+      const refresh = (facts: CommitFacts): void => {
+        // `ancestorsOf` is the shared chain `$findMatchingParent` would have
+        // climbed — walked once per commit for all the plugins that need it,
+        // while `@lexical/code-core` stays this plugin's dependency rather than
+        // leaking into the hub.
+        const code = facts.ancestorsOf(facts.isRange ? facts.anchorNode : null).find($isCodeNode)
+        if (!$isCodeNode(code)) {
+          hide()
           return
         }
-        const rect = element.getBoundingClientRect()
+        const key = code.getKey()
+        const language = normalizeCodeInfo(code.getLanguage())
+        // The forced layout this plugin used to pay on EVERY commit. A commit
+        // that dirtied no node wrote no DOM, so the block's box cannot have
+        // moved; with the same block and the same language there is nothing to
+        // re-emit either. Moving the caret around inside a code block is exactly
+        // this case. (Scroll/resize come through `withFacts`, where
+        // `selectionOnly` is false, so those still measure.)
+        if (key === lastKey && language === lastLanguage && facts.selectionOnly) return
+        const rect = facts.elementRect(key)
+        if (rect === null) {
+          hide()
+          return
+        }
         if (
-          found.key === lastKey &&
+          key === lastKey &&
           rect.right === lastX &&
           rect.top === lastY &&
-          found.language === lastLanguage
+          language === lastLanguage
         ) {
           return
         }
-        lastKey = found.key
+        lastKey = key
         lastX = rect.right
         lastY = rect.top
-        lastLanguage = found.language
+        lastLanguage = language
         ctx.emit({
           type: 'plugin',
           name: CODE_LANGUAGE_PLUGIN,
-          msg: {
-            type: 'show',
-            key: found.key,
-            x: rect.right,
-            y: rect.top,
-            language: found.language,
-          },
+          msg: { type: 'show', key, x: rect.right, y: rect.top, language },
         })
       }
       return mergeRegister(
-        editor.registerUpdateListener(() => refresh()),
-        onViewportChange(refresh),
+        ctx.onCommit(refresh),
+        onViewportChange(() => ctx.withFacts(refresh)),
       )
     },
     ui: definePluginUI<CodeLanguageState, CodeLanguageMsg, CodeLanguageEffect>({
