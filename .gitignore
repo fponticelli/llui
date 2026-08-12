@@ -26,3 +26,6 @@ benchmarks/bundle-composition.json
 # router chain-state file, not shared across the team unless
 # explicitly copied elsewhere.
 **/.llui/notes/
+
+# macOS
+.DS_Store
