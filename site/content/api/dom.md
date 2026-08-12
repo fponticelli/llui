@@ -637,7 +637,9 @@ function pathHandle<T>(get: () => unknown, base: string, rowLocal = false): Sign
 
 Render `content` into `target` (default `document.body`) instead of inline —
 for overlays (dialog/popover/toast). The content's bindings join the current
-scope (so it stays reactive); a teardown removes the nodes on unmount/dispose.
+scope (so it stays reactive); the content occupies an anchor-bracketed region in
+the host, and a teardown clears that WHOLE region on unmount/dispose — including
+anything a nested structural child (each/show/branch) mounted into it.
 Returns an inline placeholder comment.
 
 ```typescript
@@ -830,6 +832,8 @@ an `llui-mount-end` sentinel; its handle owns that region's update loop and
 dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
 If the surrounding build is torn down before the loader settles, a cancelled
 flag skips the deferred mount; any already-mounted child handle is disposed.
+The flag is re-checked AFTER the deferred mount too, so a teardown raised from
+inside the child's own `onMount` still disposes it rather than orphaning it.
 
 ```typescript
 function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
@@ -1052,6 +1056,22 @@ reintroduce the silent double-placement footgun. Wrap raw DOM via `foreign`.
 export type ChildNode = Mountable | string | number
 ```
 
+### `CompilerMetaField`
+
+The descriptive field names of {@link COMPILER_META_KEYS}.
+
+```typescript
+export type CompilerMetaField = keyof typeof COMPILER_META_KEYS
+```
+
+### `CompilerMetaKey`
+
+The literal property keys the compiler emits into the bundle.
+
+```typescript
+export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
+```
+
 ### `ElProps`
 
 Props for an element helper. Well-known `on*` handlers (see {@link ElEventMap})
@@ -1148,6 +1168,16 @@ A reactive value in a slot: a signal of T, or a plain T.
 export type Reactive<T> = Signal<T> | T
 ```
 
+### `RegistryMethod`
+
+Registry-level pseudo-methods. They are NOT members of `LluiDebugAPI` — they
+operate on the registry rather than on one component — but they travel the
+same relay channel, so every relay has to recognize them.
+
+```typescript
+export type RegistryMethod = '__listComponents' | '__selectComponent'
+```
+
 ### `Renderable`
 
 The result of a render callback / view: lazy `Mountable`s, materialized at
@@ -1174,6 +1204,15 @@ export type RowFactory = (doc: SignalDoc, getCtx: () => RowCtx<unknown>) => Dire
 
 ```typescript
 export type Send<M> = (msg: M) => void
+```
+
+### `SerializableCollectOptions`
+
+The options that survive serialization into a page expression — `components`
+is a live object graph and cannot cross the CDP boundary.
+
+```typescript
+export type SerializableCollectOptions = Omit<DebugCollectOptions, 'components'>
 ```
 
 ### `ServerDoc`
@@ -1330,6 +1369,32 @@ export interface CollectHeadSink extends HeadSink {
 }
 ```
 
+### `CompilerMetadata`
+
+The compiler-injected introspection metadata carried by a compiled
+`component({...})` literal. Every field is optional: a production build
+without `agent: true` emits none of them, and `componentMeta` is dev-only.
+Spelled with computed keys so the declared shape and the runtime read path
+cannot drift from {@link COMPILER_META_KEYS} — there is exactly one place a
+key name is written.
+
+```typescript
+export interface CompilerMetadata {
+  /** discriminated-union schema of Msg ({ discriminant, variants }) */
+  readonly [COMPILER_META_KEYS.msgSchema]?: object
+  /** discriminated-union schema of Effect */
+  readonly [COMPILER_META_KEYS.effectSchema]?: object
+  /** state shape schema */
+  readonly [COMPILER_META_KEYS.stateSchema]?: object
+  /** per-message JSDoc annotations (intent, affordability, …) */
+  readonly [COMPILER_META_KEYS.msgAnnotations]?: Record<string, unknown>
+  /** stable hash of the schemas, for hot-reload schema-change detection */
+  readonly [COMPILER_META_KEYS.schemaHash]?: string
+  /** dev-only source location */
+  readonly [COMPILER_META_KEYS.componentMeta]?: { file: string; line: number }
+}
+```
+
 ### `ComponentBag`
 
 ```typescript
@@ -1356,6 +1421,36 @@ export interface ComponentInfo {
 }
 ```
 
+### `ComponentInfoSnapshot`
+
+```typescript
+export interface ComponentInfoSnapshot {
+  /** Names of all currently mounted host components (registry keys). */
+  componentPath: string[]
+  /** Metadata for the first mounted component — the most likely "owning"
+   *  component when a capture doesn't carry a precise scope. */
+  componentMeta: DebugComponentMeta | null
+}
+```
+
+### `ComponentRegistryAccess`
+
+How a caller reaches the component registry and the "selected component"
+pointer. In the page that pointer is `globalThis.__lluiDebug`
+(`globalRegistryAccess()`); in the MCP server's direct mode it is the relay's
+own attached API. Abstracting it is what lets both sides run ONE resolver.
+
+```typescript
+export interface ComponentRegistryAccess {
+  /** The live registry, or undefined when nothing has mounted. */
+  registry(): Record<string, LluiDebugAPI> | undefined
+  /** The currently selected API, or undefined when nothing is selected. */
+  active(): LluiDebugAPI | undefined
+  /** Point the selection at `api`. */
+  setActive(api: LluiDebugAPI): void
+}
+```
+
 ### `Context`
 
 ```typescript
@@ -1371,7 +1466,7 @@ Per-variant Msg coverage tracker — dev-only.
 Records each dispatched message's discriminant (or `<non-discriminant>`
 for objects missing a `type` field) along with the message index it
 fired at. Consumed by the `llui_coverage` MCP tool to surface untested
-Msg variants: any variant declared in the compiled `__msgSchema` that
+Msg variants: any variant declared in the compiled msg schema that
 never fired in the current session shows up in `neverFired`.
 Zero cost in production: `installSignalDebug` is the only caller, and it
 never runs in prod builds. Hot path is one optional-chain read per
@@ -1381,6 +1476,79 @@ dispatched message (`ci._coverage?.record(...)`).
 export interface CoverageSnapshot {
   fired: Record<string, { count: number; lastIndex: number }>
   neverFired: string[]
+}
+```
+
+### `DebugCollectOptions`
+
+```typescript
+export interface DebugCollectOptions {
+  /** Override the registry lookup. Tests inject a stub map; the page path and
+   *  the HUD both leave this unset and read `globalThis.__lluiComponents`. */
+  components?: Record<string, TelemetrySource>
+  /** Cap on `messageLog` entries; default 50. */
+  messageLimit?: number
+  /** Cap on `effects.recent` entries; default 50. */
+  effectLimit?: number
+}
+```
+
+### `DebugComponentMeta`
+
+```typescript
+export interface DebugComponentMeta {
+  file: string
+  line: number
+  name: string
+}
+```
+
+### `DebugMessageLogEntry`
+
+```typescript
+export interface DebugMessageLogEntry {
+  ts: string
+  component: string
+  msg: unknown
+}
+```
+
+### `DebugPendingEffectEntry`
+
+```typescript
+export interface DebugPendingEffectEntry {
+  id: string
+  component: string
+  effect: unknown
+  sinceMs: number
+}
+```
+
+### `DebugRecentEffectEntry`
+
+```typescript
+export interface DebugRecentEffectEntry {
+  ts: string
+  component: string
+  effect: { type: string | null; id: string }
+  outcome: 'ok' | 'error' | 'cancelled'
+}
+```
+
+### `DebugSnapshot`
+
+A point-in-time telemetry snapshot of every mounted component. Structurally a
+`NoteBody` subset (`@llui/notes-format`) — the notebook is its main consumer —
+but declared here so the runtime keeps its zero-dependency root position.
+
+```typescript
+export interface DebugSnapshot {
+  stateSnapshot?: Record<string, unknown>
+  messageLog?: DebugMessageLogEntry[]
+  effects?: {
+    pending: DebugPendingEffectEntry[]
+    recent: DebugRecentEffectEntry[]
+  }
 }
 ```
 
@@ -1738,6 +1906,15 @@ export interface LinkAttrs {
 }
 ```
 
+### `ListComponentsResult`
+
+```typescript
+export interface ListComponentsResult {
+  components: string[]
+  active: string | null
+}
+```
+
 ### `LiveSignal`
 
 A materialized signal handed to imperative code at the `foreign` boundary.
@@ -1989,6 +2166,14 @@ export interface ScriptAttrs {
 }
 ```
 
+### `SelectComponentResult`
+
+```typescript
+export interface SelectComponentResult {
+  active: string
+}
+```
+
 ### `ShowCond`
 
 Condition source for `signalShow` / discriminant source for `signalBranch`: an
@@ -2040,7 +2225,7 @@ export interface Signal<T> {
 ### `SignalComponentDef`
 
 ```typescript
-export interface SignalComponentDef<S, M, E = never> {
+export interface SignalComponentDef<S, M, E = never> extends CompilerMetadata {
   /** optional component name (for the debug registry / agent identity) */
   readonly name?: string
   /** initial state, optionally with initial effects */
@@ -2054,21 +2239,10 @@ export interface SignalComponentDef<S, M, E = never> {
   /** handle an effect; may return a cleanup function */
   onEffect?: (effect: E, api: EffectApi<S, M>) => void | (() => void)
 
-  // ── Compiler-injected introspection metadata (see @llui/compiler signals
-  // transform). Optional — present only in dev / agent builds. Read by the
-  // agent-client pairing path and the (signal) debug surface. ──
-  /** discriminated-union schema of Msg ({ discriminant, variants }) */
-  readonly __msgSchema?: object
-  /** discriminated-union schema of Effect */
-  readonly __effectSchema?: object
-  /** state shape schema */
-  readonly __stateSchema?: object
-  /** per-message JSDoc annotations (intent, affordability, …) */
-  readonly __msgAnnotations?: Record<string, unknown>
-  /** stable hash of the schemas, for hot-reload schema-change detection */
-  readonly __schemaHash?: string
-  /** dev-only source location */
-  readonly __componentMeta?: { file: string; line: number }
+  // Compiler-injected introspection metadata arrives via `CompilerMetadata` —
+  // present only in dev / agent builds, keyed by the compiler↔runtime ABI in
+  // `compiler-keys.ts`. Read by the agent-client pairing path and the debug
+  // surface, both of which can be in a different chunk than the def.
 }
 ```
 
@@ -2094,7 +2268,12 @@ export interface SignalComponentHandle<S, M> {
   dispose(): void
   /** Register a listener called synchronously after every update cycle that
    * changes state, with the new state. Returns an unsubscribe. No-op after
-   * dispose. Backs the agent protocol's state-update frames. */
+   * dispose. Backs the agent protocol's state-update frames.
+   *
+   * Each listener is ISOLATED: a throw is reported (console +
+   * {@link SignalComponentHandle.setOnBindingError}) and then contained — the
+   * listeners after it still run, the message's effects are still dispatched,
+   * and nothing reaches the caller of `send`. */
   subscribe(listener: (state: S) => void): () => void
   /** Run the reducer in isolation against the current state — `{state, effects}`
    * with no commit/flush/effect dispatch. Backs the agent's `would_dispatch`. */
@@ -2111,7 +2290,9 @@ export interface SignalComponentHandle<S, M> {
   ): void
   /** Install a hook called when a binding accessor throws during the update
    * cycle; the runtime leaves the binding's DOM at its prior value and continues
-   * with siblings. Backs the agent's dispatch-envelope `drain.errors`. */
+   * with siblings. Also called (with `kind: 'subscriber'`) for a
+   * {@link SignalComponentHandle.subscribe} listener that throws during the
+   * post-commit notify. Backs the agent's dispatch-envelope `drain.errors`. */
   setOnBindingError(hook: ((e: BindingError) => void) | null): void
 }
 ```
@@ -2273,6 +2454,73 @@ export interface StyleAttrs {
 }
 ```
 
+### `TelemetryComponentInfo`
+
+The component-identity subset telemetry reads (`ComponentInfo` is wider).
+
+```typescript
+export interface TelemetryComponentInfo {
+  name: string
+  file: string | null
+  line: number | null
+}
+```
+
+### `TelemetryEffectTimelineEntry`
+
+The timeline subset telemetry reads (`EffectTimelineEntry` is wider).
+
+```typescript
+export interface TelemetryEffectTimelineEntry {
+  effectId: string
+  type?: string
+  phase: string
+  timestamp: number
+}
+```
+
+### `TelemetryMessageRecord`
+
+The message-history subset telemetry reads (`MessageRecord` is wider).
+
+```typescript
+export interface TelemetryMessageRecord {
+  index: number
+  timestamp: number
+  msg: unknown
+}
+```
+
+### `TelemetryPendingEffect`
+
+The pending-effect subset telemetry reads (`PendingEffect` is wider).
+
+```typescript
+export interface TelemetryPendingEffect {
+  id: string
+  type?: string
+  dispatchedAt?: number
+  payload?: unknown
+}
+```
+
+### `TelemetrySource`
+
+What the collectors need from a registry entry. A structural subset of
+`LluiDebugAPI` in which everything but `getState` is optional: the collectors
+probe each method before calling it, so an older runtime — or a test stub —
+is valid input, and a full `LluiDebugAPI` satisfies it by construction.
+
+```typescript
+export interface TelemetrySource {
+  getState(): unknown
+  getMessageHistory?(opts?: { since?: number; limit?: number }): TelemetryMessageRecord[]
+  getPendingEffects?(): TelemetryPendingEffect[]
+  getEffectTimeline?(limit?: number): TelemetryEffectTimelineEntry[]
+  getComponentInfo?(): TelemetryComponentInfo
+}
+```
+
 ### `TransitionOptions`
 
 Enter/leave/cross transition hooks shared by the animation/transition
@@ -2410,6 +2658,16 @@ const circle
 
 ```typescript
 const code
+```
+
+### `COMPILER_META_KEYS`
+
+Emitted property key per metadata field: the record KEY is the descriptive
+name (the documentation vocabulary), the VALUE is the literal property key
+present in the bundle.
+
+```typescript
+const COMPILER_META_KEYS
 ```
 
 ### `dd`

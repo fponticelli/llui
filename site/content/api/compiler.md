@@ -53,7 +53,7 @@ The signal transform also enforces the agent annotation rules
 ### `annotationsToObjectLiteral()`
 
 Build a TS object-literal expression for the annotation map. Used by
-`msgAnnotationsModule` for `__msgAnnotations` emission. Variant
+the transform for msg-annotation emission. Variant
 names are emitted as string literals (not identifiers) so
 discriminants containing `/`, `-`, reserved words, etc. produce
 valid JS.
@@ -103,7 +103,7 @@ function buildFieldDescriptor(
 
 Build a TS expression for a single field descriptor in a MsgSchema's
 variant map. Used by `msgSchemaToLiteral` (this file) for the
-`__msgSchema` / `__effectSchema` emissions. Migrated from inline
+msg-schema / effect-schema emissions. Migrated from inline
 `buildFieldDescriptorExpr` in transform.ts (v2c/decomp-5).
 
 ```typescript
@@ -327,7 +327,7 @@ function findTypeSource(
 ### `hasNonDefaultAnnotation()`
 
 Whether the annotation map carries any non-default values. Used to
-gate `__msgAnnotations` emission — annotations whose every field is
+gate msg-annotation emission — annotations whose every field is
 default are emission-redundant (the runtime treats absence as the
 same defaults). Saves ~50 bytes per component for un-annotated Msg
 unions, which dominates the corpus.
@@ -414,7 +414,7 @@ function lookupHelperFromSymbol(sym: ts.Symbol, checker: ts.TypeChecker): Manife
 ### `msgSchemaToLiteral()`
 
 Build the full `{ discriminant, variants }` object literal for a
-MsgSchema. Symmetric for `__msgSchema` and `__effectSchema` emission
+MsgSchema. Symmetric for msg-schema and effect-schema emission
 (both use the discriminated-union shape).
 
 ```typescript
@@ -582,7 +582,7 @@ Build a JSON-ready annotation map that drops emission-redundant bytes:
   The runtime treats an absent variant / field as the default (see
   `list-actions.ts`, which reads every field as `ann?.field ?? default`), so
   this is a pure size optimization with no semantic change. Returns null when
-  every variant is fully default — the caller then skips `__msgAnnotations`.
+  every variant is fully default — the caller then skips the annotations prop.
 
 ```typescript
 function sparseMsgAnnotations(
@@ -597,7 +597,7 @@ runtime-readable literal. The emission shape mirrors the StateType
 tagged union — `string`/`number`/`boolean`/`unknown` become string
 literals; the structural kinds become object literals with a `kind`
 field plus the appropriate payload (`of`/`fields`/`values`).
-Used by `stateSchemaModule` for `__stateSchema` emission. The shape
+Used by the transform for state-schema emission. The shape
 is the runtime/agent contract; downstream tools (MCP introspection,
 agent's "what type is this field?") consume it.
 
@@ -719,10 +719,20 @@ function transformSignalComponentSourceWithMap(
 export type CompilerDomInternalImport = (typeof COMPILER_DOM_INTERNAL_IMPORTS)[number]
 ```
 
-### `CompilerRenameableKey`
+### `CompilerMetaField`
+
+The descriptive field names of {@link COMPILER_META_KEYS}.
 
 ```typescript
-export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
+export type CompilerMetaField = keyof typeof COMPILER_META_KEYS
+```
+
+### `CompilerMetaKey`
+
+The literal property keys emitted into the bundle.
+
+```typescript
+export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
 ```
 
 ### `DiagnosticCategory`
@@ -1421,6 +1431,45 @@ export interface SignalLintMessage {
 }
 ```
 
+### `SignalTransformOptions`
+
+Options controlling introspection metadata emission (mirrors the legacy
+transform's `devMode`/`emitAgentMetadata` gating).
+
+```typescript
+export interface SignalTransformOptions {
+  /** emit the msg/state/effect schemas + annotations for the agent surface
+   * (keyed by `COMPILER_META_KEYS` — see emit-names.ts for the ABI) */
+  emitAgentMetadata?: boolean
+  /** dev build — also emit the component meta `{ file, line }` */
+  devMode?: boolean
+  /** source file path, for the component meta's `file` */
+  fileName?: string
+  /** cross-file pre-extracted, composition-aware schemas (msg/effect/annotations)
+   * resolved by the adapter; takes precedence over file-local extraction. */
+  preExtracted?: {
+    msgSchema?: unknown
+    effectSchema?: unknown
+    msgAnnotations?: Record<string, MessageAnnotations> | null
+  }
+  /** cross-file resolved external type sources (for `State`, which isn't a union
+   * so composition doesn't apply — extract from its declaring file). */
+  typeSources?: {
+    state?: { source: string; typeName: string }
+  }
+  /** Lowering-bail telemetry: called for every lowering ATTEMPT that gave up and
+   * fell back to a slower path (see {@link LowerBail}). Coverage tooling and the
+   * future `perf` diagnostics channel consume this; it does not affect output. */
+  onLowerBail?: (bail: LowerBail) => void
+  /** Perf diagnostics: called with one `llui/each-verbatim` Diagnostic
+   * (category `perf`, severity `warning`) per `each` site that ends FULLY
+   * verbatim — its rows render via the runtime authoring path instead of the
+   * compiled factory. Advisory only; never affects output. Verbatim `show`/
+   * `branch` are intentionally not surfaced (they only pay at toggle time). */
+  onPerfDiagnostic?: (diagnostic: Diagnostic) => void
+}
+```
+
 ### `SignalTransformResult`
 
 Result of {@link transformSignalComponentSourceWithMap}: the rewritten code and
@@ -1507,40 +1556,16 @@ export interface SubstitutionResult {
 const COMPILER_DOM_INTERNAL_IMPORTS
 ```
 
-### `COMPILER_RENAMEABLE_KEYS`
+### `COMPILER_META_KEYS`
 
-Single source of truth for the compiler's emission name registry.
-Two disjoint sets:
-
-- `COMPILER_RENAMEABLE_KEYS` — property keys the compiler synthesizes
-  onto `component({...})` literals. The runtime reads these via
-  property access (`def.__view`, `def.__prefixes`, etc.) inside the
-  same bundle that the compiler emitted them into. Their producer and
-  consumer are colocated in the bundle, so the vite-plugin's post-
-  bundle property-rename pass can shorten them to `$a`/`$b`/… without
-  breaking the contract.
-- `COMPILER_DOM_INTERNAL_IMPORTS` — runtime helpers the compiler
-  references by NAME (not by property key) via an
-  `import { __cloneStaticTemplate } from '@llui/dom/internal'`
-  declaration. These cross a module boundary at consumer build time.
-  Anything the rename pass touches that ends up in an import specifier
-  would be rewritten to `$X`, which the source package never exports,
-  and rolldown fails the build with `MISSING_EXPORT`. **These names
-  must NEVER be renamed.**
-  The two sets are disjoint by construction — the type-level
-  `Extract<...>` assertion below fails compilation if any name appears
-  in both lists. New compiler-emitted names land in whichever list
-  matches their lifetime; if you accidentally add one to both, `tsc`
-  tells you before the bug ships.
-  Subpath choice matters: the helpers live at `@llui/dom/internal`, not
-  at the root `@llui/dom`, because the rename regex matches any
-  `__`-prefixed identifier in the bundle. By hosting the helpers on a
-  subpath whose import specifier never gets touched by the rename, we
-  keep both the regex and the runtime export surface internally
-  consistent without needing an AST-aware rename pass.
+Emitted property key per metadata field. The KEY of this record is the
+field's descriptive name (the authoring/documentation vocabulary); the
+VALUE is the literal identifier emitted into the bundle and read back by
+the runtime. Only the value is load-bearing at runtime — changing one is a
+breaking ABI change that must land in `@llui/dom` in the same release.
 
 ```typescript
-const COMPILER_RENAMEABLE_KEYS
+const COMPILER_META_KEYS
 ```
 
 ### `COMPILER_VERSION`
