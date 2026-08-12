@@ -6,11 +6,14 @@
 // the inline flow (overlays) while keeping its bindings in the current scope.
 
 import { requireCtx, getBuildCtx, materialize, mountable, type Mountable } from './build-context.js'
+import { removeBetween } from './dom-region.js'
 import type { Renderable } from './element.js'
 
 /** Render `content` into `target` (default `document.body`) instead of inline —
  * for overlays (dialog/popover/toast). The content's bindings join the current
- * scope (so it stays reactive); a teardown removes the nodes on unmount/dispose.
+ * scope (so it stays reactive); the content occupies an anchor-bracketed region in
+ * the host, and a teardown clears that WHOLE region on unmount/dispose — including
+ * anything a nested structural child (each/show/branch) mounted into it.
  * Returns an inline placeholder comment. */
 export function portal(content: () => Renderable, target?: Element): Mountable {
   return mountable(() => buildPortal(content, target))
@@ -28,10 +31,31 @@ function buildPortal(content: () => Renderable, target?: Element): Node {
     // overlay into the page flow would be wrong anyway (it lives at body level).
     return c.doc.createComment('portal-ssr-skip')
   }
-  const nodes = content().map(materialize) // specs collected into the current build → reactive
-  for (const n of nodes) host.appendChild(n)
+  // Bracket the portal's footprint in the host with anchor comments and tear it
+  // down with the shared `removeBetween`, exactly as show/branch/unsafeHtml do.
+  // Replaying a build-time node list is NOT sufficient: a nested structural
+  // primitive (each/show/branch/virtualEach) materializes as a DocumentFragment
+  // that EMPTIES into the host on insertion — so the snapshot holds a spent,
+  // childless fragment — and every node it later reconciles in is a plain sibling
+  // of that snapshot. None of it is captured, so an identity-based teardown left
+  // the whole nested subtree attached to the host (a leak that grew with every
+  // mount/unmount cycle). Anchors bound the region by POSITION instead, so
+  // whatever lands inside it is removed, and two portals sharing one host stay
+  // independent (each clears only its own pair).
+  const start = c.doc.createComment('portal-content')
+  const end = c.doc.createComment('/portal-content')
+  host.appendChild(start)
+  // specs collected into the current build → reactive (portal is NOT a scope
+  // boundary); appended between the anchors so nested content lands in the region.
+  for (const n of content()) host.appendChild(materialize(n))
+  host.appendChild(end)
   c.teardowns.push(() => {
-    for (const n of nodes) if (n.parentNode === host) host.removeChild(n)
+    removeBetween(start, end)
+    // Unlike an inline primitive's anchors — which belong to the enclosing region
+    // and are swept by ITS teardown — these were appended into a foreign host, so
+    // this teardown owns them: remove them too, leaving the host as we found it.
+    start.parentNode?.removeChild(start)
+    end.parentNode?.removeChild(end)
   })
   return c.doc.createComment('portal')
 }
