@@ -8,18 +8,19 @@
       "outputs": ["dist/**"]
     },
     "check": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md"]
     },
     "lint": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/eslint.config.ts"]
+      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md", "$TURBO_ROOT$/eslint.config.ts"]
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"]
+      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md", "$TURBO_ROOT$/vitest.shared.ts"]
     },
     "test:coverage": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"],
+      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md", "$TURBO_ROOT$/vitest.shared.ts"],
       "outputs": ["coverage/**"]
     }
   }

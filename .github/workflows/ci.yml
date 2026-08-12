@@ -92,28 +92,32 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        # Run tests with pnpm's recursive runner, NOT `turbo test`. Under turbo,
-        # this step reproducibly hung for 24 min after every task had finished
-        # (all log groups closed) — turbo never returned, only inside the GH
-        # container (it exits fine locally). Build already ran via turbo, so the
-        # dist deps tests need are present; pnpm just executes each package's
-        # `vitest run` directly and exits cleanly when they're done.
+        # Runs under turbo (with the daemon OFF) so unchanged packages replay
+        # from the shared `.turbo` cache restored above — this is the most
+        # expensive step in the job, and the only one that was still paying full
+        # price on every run.
         #
-        # --workspace-concurrency=2 caps to two package suites at once: each
-        # vitest already forks ~ncpu workers, so running many suites in parallel
-        # oversubscribes the 4-core runner ~10x and starves timer-sensitive
-        # tests. Two at a time keeps load gentle (~2x).
+        # HISTORY, because this step has bitten before: `turbo test` used to hang
+        # here for 24 min after every task had finished (all log groups closed,
+        # turbo never returned), only inside the GH container — it exits fine
+        # locally. The step was parked on `pnpm -r` with the standing hypothesis
+        # that the culprit was turbo's background DAEMON doing I/O after the
+        # tasks exit. `TURBO_DAEMON=false` tests exactly that, and the 30-minute
+        # job timeout is the backstop if the hypothesis is wrong.
         #
-        # HYPOTHESIS for a future turbo migration: the 24-min post-run stall is
-        # most likely turbo's background DAEMON doing I/O after the tasks exit
-        # (telemetry is already disabled via the top-level env). If so, running
-        # `TURBO_DAEMON=false pnpm turbo test --concurrency=2` (or `--no-daemon`)
-        # would exit cleanly AND pick up the shared turbo cache — turbo.json's
-        # `test` task now lists `$TURBO_ROOT$/vitest.shared.ts` as an input, so a
-        # cached replay is already cache-correct against a define flip. Left on
-        # `pnpm -r` until someone can confirm the daemon fix inside the GH
-        # container; the `-r` path always runs fresh (no stale-cache risk).
-        run: pnpm -r --workspace-concurrency=2 run test
+        # IF THIS STALLS AGAIN: revert to `pnpm -r --workspace-concurrency=2 run
+        # test`, which always runs fresh and has no stale-cache risk, and record
+        # here that the daemon was NOT the cause.
+        #
+        # --concurrency=2 is the turbo equivalent of the previous
+        # --workspace-concurrency=2: each vitest already forks ~ncpu workers, so
+        # running many package suites at once oversubscribes the 4-core runner
+        # ~10x and starves timer-sensitive tests. Two at a time keeps load gentle.
+        #
+        # Cache correctness: turbo.json's `test` task lists
+        # `$TURBO_ROOT$/vitest.shared.ts` as an input, so a replay cannot survive
+        # a change to the shared vitest config (e.g. a define flip).
+        run: TURBO_DAEMON=false pnpm turbo test --concurrency=2
 
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
