@@ -8,6 +8,12 @@
 // implemented here, so MCP tools degrade gracefully per-component.
 
 import { resolvePath } from './mask.js'
+import {
+  callRegistryMethod,
+  globalRegistryAccess,
+  isRegistryMethod,
+  type RegistryMethod,
+} from './debug-collect.js'
 import type { LifetimeNode } from '../types.js'
 import type { EachDiff } from '../tracking/each-diff.js'
 import type { DisposerEvent } from '../tracking/disposer-log.js'
@@ -426,7 +432,7 @@ let relayConnected = false
 
 interface RelayRequest {
   id: string
-  method: keyof LluiDebugAPI | '__listComponents' | '__selectComponent'
+  method: keyof LluiDebugAPI | RegistryMethod
   args: unknown[]
 }
 
@@ -437,30 +443,20 @@ function handleRelayMessage(ws: WebSocket, event: MessageEvent): void {
   } catch {
     return
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const g = globalThis as any
-  if (req.method === '__listComponents') {
-    const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
-    const active =
-      g.__lluiDebug && g.__lluiComponents
-        ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ?? null)
-        : null
-    ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
-    return
-  }
-  if (req.method === '__selectComponent') {
-    const key = (req.args?.[0] as string | undefined) ?? ''
-    const entry = g.__lluiComponents?.[key]
-    if (!entry) {
-      ws.send(JSON.stringify({ id: req.id, error: `unknown component: ${key}` }))
-      return
+  // The registry pseudo-methods act on the registry, not on one component. The
+  // MCP server's direct (in-process) mode resolves them against the very same
+  // globals, so both sides run the shared resolver rather than two lookalikes.
+  if (isRegistryMethod(req.method)) {
+    try {
+      const result = callRegistryMethod(globalRegistryAccess(), req.method, req.args ?? [])
+      ws.send(JSON.stringify({ id: req.id, result }))
+    } catch (e) {
+      ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))
     }
-    g.__lluiDebug = entry
-    ws.send(JSON.stringify({ id: req.id, result: { active: key } }))
     return
   }
 
-  const api = g.__lluiDebug as LluiDebugAPI | undefined
+  const api = globalThis.__lluiDebug
   if (!api) {
     ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
     return

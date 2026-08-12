@@ -12,6 +12,10 @@
       "types": "./dist/signals/devtools.d.ts",
       "import": "./dist/signals/devtools.js"
     },
+    "./debug-collect": {
+      "types": "./dist/signals/debug-collect.d.ts",
+      "import": "./dist/signals/debug-collect.js"
+    },
     "./ssr": {
       "types": "./dist/ssr-dom.d.ts",
       "import": "./dist/ssr-dom.js"

@@ -10,6 +10,7 @@
 // no relay or browser bridge required.
 
 import { z } from 'zod'
+import { componentInfoExpression, debugSnapshotExpression } from '@llui/dom/debug-collect'
 import {
   acquireClaimLock,
   appendStatus,
@@ -102,63 +103,17 @@ async function createNoteViaServerOrDirect(
   return createNote(notesRoot, request)
 }
 
-// Expression evaluated in the page context. Mirrors the HUD's
-// debug-collector logic — iterates window.__lluiComponents and pulls
-// state, message history, pending+recent effects. Returns a NoteBody
-// (or {} when no debug API). String form so it serializes across the
-// CDP boundary.
-const PAGE_TELEMETRY_EXPR = `(() => {
-  const components = (globalThis).__lluiComponents
-  if (!components) return {}
-  const entries = Object.entries(components)
-  if (entries.length === 0) return {}
-  const stateSnapshot = {}
-  const messageLog = []
-  const pending = []
-  const recent = []
-  const now = Date.now()
-  for (const [name, api] of entries) {
-    try { stateSnapshot[name] = api.getState() } catch { stateSnapshot[name] = { __error: 'getState() threw' } }
-    if (typeof api.getMessageHistory === 'function') {
-      let history = []
-      try { history = api.getMessageHistory({ limit: 50 }) || [] } catch {}
-      for (const r of history) {
-        messageLog.push({ ts: new Date(r.timestamp).toISOString(), component: name, msg: r.msg })
-      }
-    }
-    if (typeof api.getPendingEffects === 'function') {
-      let p = []
-      try { p = api.getPendingEffects() || [] } catch {}
-      for (const e of p) {
-        pending.push({
-          id: e.id, component: name,
-          effect: e.payload != null ? e.payload : (e.type != null ? e.type : null),
-          sinceMs: e.dispatchedAt ? Math.max(0, now - e.dispatchedAt) : 0,
-        })
-      }
-    }
-    if (typeof api.getEffectTimeline === 'function') {
-      let t = []
-      try { t = api.getEffectTimeline(50) || [] } catch {}
-      for (const e of t) {
-        let outcome = null
-        if (e.phase === 'resolved' || e.phase === 'resolved-mocked') outcome = 'ok'
-        else if (e.phase === 'cancelled') outcome = 'cancelled'
-        else if (e.phase === 'errored' || e.phase === 'error') outcome = 'error'
-        if (outcome) recent.push({
-          ts: new Date(e.timestamp).toISOString(), component: name,
-          effect: { type: e.type != null ? e.type : null, id: e.effectId },
-          outcome,
-        })
-      }
-    }
-  }
-  messageLog.sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)
-  const trimmed = messageLog.length > 50 ? messageLog.slice(-50) : messageLog
-  const body = { stateSnapshot, messageLog: trimmed }
-  if (pending.length > 0 || recent.length > 0) body.effects = { pending, recent }
-  return body
-})()`
+/**
+ * Telemetry expression evaluated in the page by the Playwright fallback.
+ *
+ * DERIVED, never hand-written: `debugSnapshotExpression()` serializes @llui/dom's
+ * shared collector — the same functions the in-page HUD calls — into standalone
+ * source. The predecessor of this constant was a hand-maintained mirror of that
+ * walk, invisible to the type-checker, and it had already drifted (it captured
+ * the HUD's own components as if they were the app's). Anything the collector
+ * needs to learn is learned in `@llui/dom`; nothing is retyped here.
+ */
+export const PAGE_TELEMETRY_EXPR = debugSnapshotExpression()
 
 interface PageMeta {
   url: string
@@ -167,25 +122,14 @@ interface PageMeta {
   componentMeta: { file: string; line: number; name: string } | null
 }
 
-const PAGE_META_EXPR = `(() => {
-  const comps = globalThis.__lluiComponents
-  let componentPath = null
-  let componentMeta = null
-  if (comps) {
-    const entries = Object.entries(comps)
-    if (entries.length > 0) {
-      componentPath = entries.map(([n]) => n)
-      const [firstName, firstApi] = entries[0]
-      if (typeof firstApi.getComponentInfo === 'function') {
-        try {
-          const info = firstApi.getComponentInfo()
-          if (info && info.file != null && info.line != null) {
-            componentMeta = { file: info.file, line: info.line, name: info.name || firstName }
-          }
-        } catch {}
-      }
-    }
-  }
+/**
+ * Page/frontmatter metadata. The component half is derived from the same shared
+ * collector; only the genuinely page-local reads (`location`, viewport, the
+ * `__llui` version stamp) are expressed here, because they have no in-process
+ * equivalent to share with.
+ */
+export const PAGE_META_EXPR = `(() => {
+  const info = ${componentInfoExpression()}
   return {
     url: location.href,
     viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio || 1 },
@@ -193,8 +137,8 @@ const PAGE_META_EXPR = `(() => {
       runtime: globalThis.__llui.runtime || 'unknown',
       compiler: globalThis.__llui.compiler || 'unknown',
     } : { runtime: 'unknown', compiler: 'unknown' },
-    componentPath,
-    componentMeta,
+    componentPath: info ? info.componentPath : null,
+    componentMeta: info ? info.componentMeta : null,
   }
 })()`
 

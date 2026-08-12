@@ -143,6 +143,29 @@ export type {
   ElementReport,
   HydrationDivergence,
 } from './devtools.js'
+// Shared debug-telemetry collection (the registry walk + the `__listComponents`
+// / `__selectComponent` resolver). Only the TYPES ride along here; the VALUES
+// live behind the `@llui/dom/debug-collect` subpath, for the same
+// keep-tooling-out-of-app-bundles reason as `@llui/dom/devtools` above.
+export type {
+  ComponentInfoSnapshot,
+  ComponentRegistryAccess,
+  DebugCollectOptions,
+  DebugComponentMeta,
+  DebugMessageLogEntry,
+  DebugPendingEffectEntry,
+  DebugRecentEffectEntry,
+  DebugSnapshot,
+  ListComponentsResult,
+  RegistryMethod,
+  SelectComponentResult,
+  SerializableCollectOptions,
+  TelemetryComponentInfo,
+  TelemetryEffectTimelineEntry,
+  TelemetryMessageRecord,
+  TelemetryPendingEffect,
+  TelemetrySource,
+} from './debug-collect.js'
 // Runtime-agnostic data shapes used by the debug API / MCP tools.
 export type { CoverageSnapshot } from '../tracking/coverage.js'
 export type { EachDiff } from '../tracking/each-diff.js'
