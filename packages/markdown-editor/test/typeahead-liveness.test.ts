@@ -103,30 +103,39 @@ function type(editor: LexicalEditor, text: string): void {
  * probe never lets a keystroke edit the document out from under the next probe.
  */
 function keyVerdicts(editor: LexicalEditor): Record<string, boolean> {
-  const keys: Array<[string, LexicalCommand<KeyboardEvent | null>]> = [
-    ['ArrowDown', KEY_ARROW_DOWN_COMMAND],
-    ['ArrowUp', KEY_ARROW_UP_COMMAND],
-    ['Enter', KEY_ENTER_COMMAND],
-    ['Escape', KEY_ESCAPE_COMMAND],
-  ]
-  const out: Record<string, boolean> = {}
-  for (const [name, command] of keys) {
-    let declined = false
-    const unregister = editor.registerCommand(
-      command,
-      () => {
-        declined = true
-        return true
-      },
-      COMMAND_PRIORITY_NORMAL,
-    )
-    // A real KeyboardEvent: the handlers call `preventDefault()` on capture, and
-    // passing null would hide a handler that forgot to guard the optional.
-    editor.dispatchCommand(command, new KeyboardEvent('keydown', { key: name }))
-    unregister()
-    out[name] = !declined
+  // Probed one command at a time rather than through a shared array, because the
+  // four do not agree on their payload type: ENTER carries `KeyboardEvent | null`
+  // while the arrows and ESCAPE carry `KeyboardEvent`. Lexical 0.49 made
+  // `LexicalCommand<T>` INVARIANT in T — 0.48's `{ type?: string }` was
+  // structurally identical for every payload, so no single element type ever had
+  // to hold them all. Inferring T per call site keeps each pairing exact and
+  // needs no cast.
+  return {
+    ArrowDown: probeKey(editor, KEY_ARROW_DOWN_COMMAND, key('ArrowDown')),
+    ArrowUp: probeKey(editor, KEY_ARROW_UP_COMMAND, key('ArrowUp')),
+    Enter: probeKey(editor, KEY_ENTER_COMMAND, key('Enter')),
+    Escape: probeKey(editor, KEY_ESCAPE_COMMAND, key('Escape')),
   }
-  return out
+}
+
+// A real KeyboardEvent: the handlers call `preventDefault()` on capture, and
+// passing null would hide a handler that forgot to guard the optional.
+const key = (name: string): KeyboardEvent => new KeyboardEvent('keydown', { key: name })
+
+/** Dispatch one key command and report whether the typeahead DECLINED it. */
+function probeKey<T>(editor: LexicalEditor, command: LexicalCommand<T>, payload: T): boolean {
+  let declined = false
+  const unregister = editor.registerCommand(
+    command,
+    () => {
+      declined = true
+      return true
+    },
+    COMMAND_PRIORITY_NORMAL,
+  )
+  editor.dispatchCommand(command, payload)
+  unregister()
+  return !declined
 }
 
 const INERT = { ArrowDown: false, ArrowUp: false, Enter: false, Escape: false }
