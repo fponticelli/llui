@@ -256,6 +256,13 @@ await replayTrace(Counter, trace) // asserts every recorded state matches a fres
 Combined with `snapshotState` / `restoreState`, this lets you isolate a
 regression in a long session and pin it as a deterministic test case.
 
+`replayTrace` validates the trace before it runs a single reducer step: an
+`lluiTrace` version it does not support, or a `component` that is not the one
+being replayed against, throws a version/identity error naming both sides —
+so a mispaired trace never surfaces as a state diff that looks like a bug in
+your `update()`. A trace with no `component` field at all (an older export)
+is replayed with a warning rather than rejected.
+
 ## When to use which
 
 | Situation                                    | Tool                              |

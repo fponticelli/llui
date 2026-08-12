@@ -39,10 +39,10 @@ Mount a component definition headlessly. Returns current state snapshot and mess
 ### testView
 
 ```ts
-testView(def, state?) => ViewHarness<M>
+testView(def, state?, options?) => ViewHarness<M>
 ```
 
-Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods.
+Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods. `options` is forwarded to `mountApp` unchanged, minus the two options that would shadow testView's own seed and container (`initialState` — the `state` argument is the seed — and `hydrate`), so a test can run in the mode the app really runs in: with `{ scheduler: 'raf' }` a burst of `harness.handle.send(...)` coalesces into ONE commit, which `harness.handle.flush()` forces synchronously. Omitted, the runtime default `scheduler: 'sync'` applies and every send commits on its own.
 
 | Method                   | Description                                     |
 | ------------------------ | ----------------------------------------------- |
@@ -60,10 +60,23 @@ Mount a component into jsdom with full DOM. Returns a harness with DOM query and
 ### assertEffects
 
 ```ts
-assertEffects(effects, expected) => void
+assertEffects(effects, expected, options?) => void
 ```
 
-Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
+Partial-match assertion on effect arrays. The lists must be the same length, and
+each effect must contain everything its expectation names — unspecified keys are
+ignored, nested arrays match by index with a length check. Provides clear diff
+output on mismatch.
+
+An expected `undefined` is an assertion, not a wildcard: `{ url: undefined }`
+demands the effect carry a `url` key holding `undefined`, and fails both for a
+url with a value and for an effect with no `url` key at all. To leave a field
+unconstrained, omit its key.
+
+Pass `{ exact: true }` to also reject keys the expectation does not name (at
+every level it reaches). Callback fields and keys holding `undefined` are exempt
+— they are outside the effect's JSON data. Exact mode is how you assert a key is
+absent.
 
 ### propertyTest
 
@@ -71,7 +84,7 @@ Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
 propertyTest(def, config) => void
 ```
 
-Property-based testing over a component definition. `config.messageGenerators` produce random messages, and each generated sequence is checked against `config.invariants` (`(state, effects) => boolean`). Tune `runs` and `maxSequenceLength`; pass a `seed` to make the pseudo-random stream deterministic (the seed is always printed on failure, so you can pin it to replay the exact run). On failure the offending message sequence is automatically **shrunk** (delta-debugging) to a minimal reproducer. An optional `mount` block additionally mounts the component into a real DOM container and dispatches the sequence through `send`/`flush`, asserting no dev-mode panic, no `console.error`, and an optional `assertDom(state, container)` after every commit.
+Property-based testing over a component definition. `config.messageGenerators` produce random messages, and each generated sequence is checked against `config.invariants` (`(state, effects) => boolean`). Tune `runs` and `maxSequenceLength`; pass a `seed` to make the pseudo-random stream deterministic (the seed is always printed on failure, so you can pin it to replay the exact run). On failure the offending message sequence is automatically **shrunk** (delta-debugging) to a minimal reproducer. An optional `mount` block additionally mounts the component into a real DOM container and dispatches the sequence through `send`/`flush`, asserting no dev-mode panic, no `console.error`, and an optional `assertDom(state, container)` after every commit. `mount.options` is forwarded to `mountApp` unchanged, so the run can exercise a non-default mount mode (e.g. `{ scheduler: 'raf' }`).
 
 ### replayTrace
 
@@ -99,10 +112,16 @@ Browser-faithful blur emulation for jsdom. When a focused element (or an ancesto
 Assert an effect list matches an expected list of partials. Length must be
 equal; each effect at index `i` must partial-match `expected[i]`. See
 {@link partialMatch} for the deep/array semantics (nested arrays match by
-index with a length check; `undefined` fields are wildcards).
+index with a length check; an expected `undefined` asserts the actual value
+IS `undefined` — leave a field unconstrained by omitting its key, not by
+writing `undefined`).
 
 ```typescript
-function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
+function assertEffects<E>(
+  actual: E[],
+  expected: Array<Partial<E>>,
+  options: AssertEffectsOptions = {},
+): void
 ```
 
 ### `defineTestComponent()`
@@ -208,8 +227,22 @@ function replayAgentSession(
 
 ### `replayTrace()`
 
+Replay a recorded message trace against a component definition, asserting the
+state and effects at every step.
+The trace's version and recording component are validated FIRST — before
+`init()` and the first `update()` — so a mismatched trace fails with a
+version/identity error instead of a state diff that blames the reducer.
+An absent `component` field is accepted with a warning rather than rejected:
+traces predate the field and hand-written ones legitimately omit it, so
+rejecting would break working traces to buy nothing. The warning is what
+makes the unverified identity visible; only a `component` that is present and
+DIFFERENT is an error.
+
 ```typescript
-function replayTrace<S, M, E>(def: SignalComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+function replayTrace<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  trace: ReplayableTrace<S, M, E>,
+): void
 ```
 
 ### `testComponent()`
@@ -225,9 +258,16 @@ function testComponent<S, M, E>(
 
 Mount a component against a fresh container and return an interactive harness.
 Simulates events + auto-flushes so tests can chain assertions naturally.
+`opts` reaches `mountApp` untouched (see {@link TestViewOptions}); omitting it
+keeps the runtime defaults — notably `scheduler: 'sync'`, where every `send`
+commits on its own.
 
 ```typescript
-function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M>
+function testView<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  state: S,
+  opts?: TestViewOptions<S>,
+): ViewHarness<S, M>
 ```
 
 ### `withBlurOnRemoval()`
@@ -237,6 +277,28 @@ even if `fn` throws. Returns whatever `fn` returns.
 
 ```typescript
 function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
+```
+
+## Types
+
+### `TestViewOptions`
+
+Mount options `testView` forwards verbatim to `mountApp` — the whole bag, so a
+consumer can exercise the mode their app really runs in (notably
+`scheduler: 'raf'`, where `handle.flush()` forces the coalesced commit).
+The one exclusion rule: an option that competes with what `testView` itself
+owns is dropped. `mountSignalComponent` resolves the seed as
+`hydrate.serverState` → `initialState` → `init()`, and `testView` seeds
+through `init()`, so either of the first two would silently outrank the
+positional `state` argument and leave it reading as dead code. That rules out
+`initialState` (the `state` argument IS the seed) and `hydrate` (which
+re-seeds AND expects server-rendered HTML to take over, in a container
+`testView` just created empty — `@llui/dom`'s own suite covers hydration,
+against real server markup). Everything else — `scheduler`, `contexts`,
+`devtools`, and any option added later — flows through untouched.
+
+```typescript
+export type TestViewOptions<S> = Omit<MountSignalOptions<S>, 'initialState' | 'hydrate'>
 ```
 
 ## Interfaces
@@ -284,6 +346,33 @@ export interface AgentSessionRecorder {
    * After `stop()`, further `send()` calls throw.
    */
   stop(): AgentSessionFixture
+}
+```
+
+### `AssertEffectsOptions`
+
+Options for {@link assertEffects}.
+
+```typescript
+export interface AssertEffectsOptions {
+  /**
+   * Opt in to EXACT matching: each effect may carry no data key beyond those
+   * its expectation names, at every level the expectation reaches. Keys whose
+   * value is a function or `undefined` are exempt — they are outside the JSON
+   * projection of the effect (an http effect's `onSuccess` callback is a fresh
+   * closure every `update()` and cannot be written in an expected literal).
+   *
+   * Defaults to `false`: ignoring unspecified keys is what partial matching
+   * MEANS, and every existing expectation relies on it. Exact mode is also how
+   * you assert a key is ABSENT — name the keys that must exist and nothing
+   * else — since `{ key: undefined }` asserts the opposite (present, holding
+   * `undefined`).
+   *
+   * The handling of `undefined` is asymmetric on purpose: an EXTRA
+   * `undefined`-valued key on the effect is tolerated (it is not data), while
+   * an `undefined` you WRITE in the expectation still demands the key be there.
+   */
+  readonly exact?: boolean
 }
 ```
 
