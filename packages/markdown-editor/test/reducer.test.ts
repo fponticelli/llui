@@ -33,11 +33,21 @@ describe('update: markdownChanged', () => {
     expect(fx).toEqual([{ type: 'emitChange', value: '# new' }])
   })
 
-  it('is a no-op when the value is unchanged (echo safety)', () => {
+  // Guard against re-growing a second echo authority here (issue #70): the seam
+  // decides whether the document moved, this reducer only mirrors what it is
+  // told. A reintroduced `if (msg.value === state.value) return [state, []]`
+  // fails this test.
+  //
+  // A SHAPE lock, deliberately, not a behaviour pin: the seam's outbound gate
+  // already makes a duplicate `markdownChanged` unreachable, so reintroducing
+  // that `if` moves no integration test — which is exactly why the rule needs a
+  // test of its own. #70 AC4 ("cover controlled mode with tests that fail if any
+  // single guard is reintroduced") is asking for this one.
+  it('mirrors an identical value without an equality check of its own', () => {
     const s0 = state({ value: 'same' })
     const [s, fx] = update(s0, { type: 'markdownChanged', value: 'same' })
-    expect(s).toBe(s0)
-    expect(fx).toEqual([])
+    expect(s.value).toBe('same')
+    expect(fx).toEqual([{ type: 'emitChange', value: 'same' }])
   })
 })
 
@@ -72,11 +82,48 @@ describe('update: setValue', () => {
     expect(fx).toEqual([{ type: 'applyValue', value: 'new' }])
   })
 
-  it('is a no-op when the value is unchanged', () => {
+  // `dirty` describes the DOCUMENT, and only the seam knows whether a push moves
+  // it, so the push itself must not set the flag — the seam reports back with
+  // `valueApplied` and `dirty` follows that.
+  it('mirrors the pushed value without claiming the document changed', () => {
+    const [s] = update(state({ value: 'old', dirty: false }), { type: 'setValue', value: 'new' })
+    expect(s.value).toBe('new')
+    expect(s.dirty).toBe(false)
+  })
+
+  // The reducer's `value` is the last SERIALIZED document, so it cannot judge an
+  // authored push: `_em_` and `*em*` are the same document but different strings,
+  // and a push that races a pending keystroke is a different document behind the
+  // same string. It forwards unconditionally and the seam decides (issue #70).
+  it('forwards a push whose text equals the mirrored value — no equality check here', () => {
     const s0 = state({ value: 'same' })
     const [s, fx] = update(s0, { type: 'setValue', value: 'same' })
+    expect(s.value).toBe('same')
+    expect(fx).toEqual([{ type: 'applyValue', value: 'same' }])
+  })
+})
+
+// The seam is the sole authority on whether a push reached the document, so it
+// reports its actual decision back and `dirty` follows it. That keeps ONE owner
+// of the question while `dirty` still means "the document moved" rather than
+// "a push was made" (issue #70).
+describe('update: valueApplied', () => {
+  it('marks the document dirty when the seam wrote', () => {
+    const [s, fx] = update(state({ dirty: false }), { type: 'valueApplied', applied: true })
+    expect(s.dirty).toBe(true)
+    expect(fx).toEqual([])
+  })
+
+  it('leaves the state untouched when the seam declined the push', () => {
+    const s0 = state({ dirty: false })
+    const [s, fx] = update(s0, { type: 'valueApplied', applied: false })
     expect(s).toBe(s0)
     expect(fx).toEqual([])
+  })
+
+  it('never clears a dirty flag an earlier edit set', () => {
+    const [s] = update(state({ dirty: true }), { type: 'valueApplied', applied: false })
+    expect(s.dirty).toBe(true)
   })
 })
 

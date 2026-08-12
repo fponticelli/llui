@@ -3,6 +3,7 @@
 // editor captured at mount; emit* forward to the consumer's callbacks.
 
 import type { LexicalEditor } from 'lexical'
+import type { ForeignController } from '@llui/lexical'
 import type { CommandItem } from './plugins/types.js'
 import type { EditorEffect, EditorMsg, FormatState } from './state.js'
 
@@ -11,32 +12,51 @@ export interface EffectApi {
   send: (msg: EditorMsg) => void
 }
 
-export interface EffectConfig {
-  onFormatChange?: (format: FormatState) => void
-  /** Push markdown into the live editor (deserialize), without echoing onChange. */
-  applyValue: (editor: LexicalEditor, value: string) => void
+/** One mount's live seam refs, captured by that mount's `onReady`: the editor
+ * commands run against, and the seam controller that owns the single inbound
+ * write path for the value. Both are null before `onReady` and after that mount
+ * is torn down.
+ *
+ * There is deliberately NO remembered value here — the seam is the sole
+ * authority on whether a value is an echo, in both directions (issue #70), so
+ * this layer has nothing to compare against. */
+export interface MountRefs {
+  editor: LexicalEditor | null
+  controller: ForeignController | null
 }
 
-/** Build the component's `onEffect`. `resolveEditor` maps the per-mount effect
- * `api` (whose `send` identifies the mount) to that mount's live editor — so two
- * mounts of one definition dispatch to their own editors; `items` is the merged
- * id → command map. */
+export interface EffectConfig {
+  onFormatChange?: (format: FormatState) => void
+}
+
+/** Build the component's `onEffect`. `resolveMount` maps the per-mount effect
+ * `api` (whose `send` identifies the mount) to that mount's live seam refs — so
+ * two mounts of one definition dispatch to their own editors; `items` is the
+ * merged id → command map. */
 export function makeOnEffect(
-  resolveEditor: (api: EffectApi) => LexicalEditor | null,
+  resolveMount: (api: EffectApi) => MountRefs,
   items: ReadonlyMap<string, CommandItem>,
   config: EffectConfig,
 ): (effect: EditorEffect, api: EffectApi) => void {
   return (effect, api) => {
     switch (effect.type) {
       case 'execCommand': {
-        const editor = resolveEditor(api)
+        const { editor } = resolveMount(api)
         const item = items.get(effect.id)
         if (editor && item) item.run(editor, { send: api.send })
         return
       }
       case 'applyValue': {
-        const editor = resolveEditor(api)
-        if (editor) config.applyValue(editor, effect.value)
+        // Hand the value to the seam and let it decide. This layer deliberately
+        // knows neither how to write markdown into the document nor whether the
+        // value is an echo — both belong to the seam (issue #70).
+        //
+        // Report the seam's ACTUAL decision back so `state.dirty` can follow the
+        // document instead of the push. No controller means no live editor for
+        // this mount (before `onReady`, or after teardown), which is a write that
+        // did not happen — the same answer, from the same authority's absence.
+        const applied = resolveMount(api).controller?.applyValue(effect.value) ?? false
+        api.send({ type: 'valueApplied', applied })
         return
       }
       case 'emitChange': {

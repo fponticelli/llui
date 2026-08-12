@@ -24,6 +24,20 @@ mountApp(
 )
 ```
 
+## Reading and writing the document
+
+`onChange(markdown)` fires when the **document** changes — a commit that leaves
+the serialized Markdown identical (a caret move, or re-typing the same text) is
+not reported, so a consumer needs no dedupe of its own.
+
+Push a new document with `send({ type: 'setValue', value })`. That is the only
+sanctioned write path: the `@llui/lexical` seam decides whether the value would
+actually change the document and skips the write when it would not, which is why
+a controlled loop that re-authors the Markdown in its own surface style (`_em_`
+where the editor emits `*em*`) does not reset the caret on every keystroke.
+`onReady(editor)` hands you the raw `LexicalEditor` for command dispatch; writing
+Markdown into it directly bypasses that decision and re-opens the echo loop.
+
 ## What it provides
 
 - **`markdownEditor()`** — the editor component, built on the [`@llui/lexical`](https://www.npmjs.com/package/@llui/lexical) seam.

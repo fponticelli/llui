@@ -28,6 +28,7 @@ export {
 export {
   PROGRAMMATIC_TAG,
   type SelectionContext,
+  type ForeignController,
   type LexicalForeignOptions,
   lexicalForeign,
 } from './foreign.js'

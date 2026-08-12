@@ -79,6 +79,10 @@ export interface EditorState {
   }
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
+  /** Whether the DOCUMENT has moved since the seed. Set only when the seam
+   * reports a real write — an edit (`markdownChanged`) or a push it accepted
+   * (`valueApplied`). A push the seam declines leaves it alone, so this stays
+   * "the document changed" and never degrades into "a push was made". */
   dirty: boolean
   readonly: boolean
   /** Collaborative-session status (always present; inert unless `collab` set). */
@@ -90,6 +94,11 @@ export type EditorMsg =
   | { type: 'formatChanged'; format: FormatState; wordCount: number; charCount: number }
   | { type: 'runCommand'; id: string }
   | { type: 'setValue'; value: string }
+  /** The seam's verdict on the preceding `applyValue` effect: `applied` is true
+   * only when the document was actually written. Reported by the seam because it
+   * is the sole authority on that question — nothing here may re-derive it by
+   * comparing values (issue #70). */
+  | { type: 'valueApplied'; applied: boolean }
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
@@ -143,8 +152,10 @@ export function init(opts: InitOptions): [EditorState, EditorEffect[]] {
 export function update(state: EditorState, msg: EditorMsg): [EditorState, EditorEffect[]] {
   switch (msg.type) {
     case 'markdownChanged': {
-      // Idempotent: re-emitting the current value is a no-op (echo safety).
-      if (msg.value === state.value) return [state, []]
+      // A pure mirror of what the seam emitted. It holds NO equality check of its
+      // own: the seam already established that the document moved, and a second
+      // notion of equality here would be a second, differently-wrong answer to a
+      // question that has one owner (issue #70).
       return [
         { ...state, value: msg.value, dirty: true },
         [{ type: 'emitChange', value: msg.value }],
@@ -160,13 +171,24 @@ export function update(state: EditorState, msg: EditorMsg): [EditorState, Editor
       return [state, [{ type: 'execCommand', id: msg.id }]]
     }
     case 'setValue': {
-      // External markdown push (via the component handle). Idempotent; does not
-      // re-emit onChange (the consumer already owns this value).
-      if (msg.value === state.value) return [state, []]
-      return [
-        { ...state, value: msg.value, dirty: true },
-        [{ type: 'applyValue', value: msg.value }],
-      ]
+      // External markdown push (via the component handle). Always forwarded to
+      // the seam, which is the only layer entitled to decide it is an echo — this
+      // reducer cannot tell (its `value` is the last SERIALIZED document, so a
+      // push in a different-but-equivalent surface form never compares equal, and
+      // one that races a pending keystroke compares equal when it shouldn't).
+      // Does not re-emit onChange: the consumer already owns this value.
+      //
+      // `value` mirrors the push (that is the `setValue` handle contract) but
+      // `dirty` does NOT move here: whether the document actually changed is the
+      // seam's call, and it comes back as `valueApplied`.
+      return [{ ...state, value: msg.value }, [{ type: 'applyValue', value: msg.value }]]
+    }
+    case 'valueApplied': {
+      // The seam's own verdict, routed back through the effect that asked it.
+      // `dirty` follows the DOCUMENT, so only a real write sets it — and a
+      // decline says nothing about earlier edits, so it never clears the flag.
+      if (!msg.applied || state.dirty) return [state, []]
+      return [{ ...state, dirty: true }, []]
     }
     case 'openOverlay': {
       return [

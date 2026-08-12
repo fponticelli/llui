@@ -18,12 +18,10 @@ import {
   registerMarkdownShortcuts,
 } from '@lexical/markdown'
 import { component, div, type Renderable, type Signal, type SignalComponentDef } from '@llui/dom'
-import {
-  lexicalForeign,
-  registerDecoratorBridges,
-  PROGRAMMATIC_TAG,
-  type DecoratorBridge,
-} from '@llui/lexical'
+// NB no `PROGRAMMATIC_TAG` here any more: this layer no longer writes markdown
+// into the document at all. Every inbound value goes through the seam's
+// `ForeignController`, which owns the tag along with the echo decision (#70).
+import { lexicalForeign, registerDecoratorBridges, type DecoratorBridge } from '@llui/lexical'
 import { corePlugin } from './plugins/core.js'
 import { linkPlugin } from './plugins/link.js'
 import { registerMarkdownPaste } from './paste.js'
@@ -34,7 +32,7 @@ import type { PluginUI } from './plugins/ui.js'
 import { buildTransformers } from './transformers/registry.js'
 import { mergeTheme } from './theme.js'
 import { computeFormatState } from './format.js'
-import { makeOnEffect } from './effects.js'
+import { makeOnEffect, type MountRefs } from './effects.js'
 import {
   countWords,
   init,
@@ -147,15 +145,6 @@ export function blockUnderlineFormat(editor: LexicalEditor): () => void {
  * one mount it belongs to. */
 type EditorSend = (msg: EditorMsg) => void
 
-/** Per-mount live state: the Lexical editor captured by that mount's `onReady`,
- * plus the last markdown delivered to the consumer's `onChange` (dedup key). */
-interface MountContext {
-  editor: LexicalEditor | null
-  /** Last value handed to `config.onChange` for this mount — guards against
-   * double / redundant consumer notifications. `undefined` = nothing emitted yet. */
-  lastChange: string | undefined
-}
-
 /**
  * Build the markdown editor component. Embed it with `mountApp(el, markdownEditor(...))`
  * or compose it inside a larger component.
@@ -182,32 +171,22 @@ export function markdownEditor(
   // own editor reference here, so effects and plugin handlers dispatch to their
   // own editor and unmount clears only that mount's reference (no cross-wiring,
   // no leaked disposed editor). Entries are collected with their `send` key.
-  const mountContexts = new WeakMap<EditorSend, MountContext>()
-  const contextFor = (send: EditorSend): MountContext => {
+  const mountContexts = new WeakMap<EditorSend, MountRefs>()
+  const contextFor = (send: EditorSend): MountRefs => {
     let ctx = mountContexts.get(send)
     if (!ctx) {
-      ctx = { editor: null, lastChange: undefined }
+      ctx = { editor: null, controller: null }
       mountContexts.set(send, ctx)
     }
     return ctx
   }
 
-  const baseOnEffect = makeOnEffect((api) => contextFor(api.send).editor, itemsById, {
+  const baseOnEffect = makeOnEffect((api) => contextFor(api.send), itemsById, {
     // NB: consumer `onChange` is delivered DIRECTLY from the foreign onChange
     // wrapper (see `view` below), NOT through this effect path — the dispose-time
     // debounce flush runs after the TEA loop is disposed, and a `send` from a
     // disposed loop is dropped, so effect-routed delivery loses the final edit.
     onFormatChange: config.onFormatChange,
-    applyValue: (editor, value) =>
-      editor.update(
-        () => {
-          $convertFromMarkdownString(value, transformers)
-          // Clear selection so the reconciler doesn't pull DOM focus into the
-          // editor on an external push (e.g. typing in a bound source textarea).
-          $setSelection(null)
-        },
-        { tag: PROGRAMMATIC_TAG },
-      ),
   })
 
   if (config.collab && config.value) {
@@ -296,8 +275,12 @@ export function markdownEditor(
       namespace: config.namespace ?? 'llui-markdown',
       theme: mergeTheme(config.theme),
       plugins,
-      serialize: (editor) =>
-        editor.getEditorState().read(() => $convertToMarkdownString(transformers)),
+      // No read of its own: the seam runs `serialize` inside a read context at
+      // every call site (that is its documented contract). A nested read would
+      // re-target it at whatever `getEditorState()` returns instead of the state
+      // the seam opened — the same string today, but it would quietly outvote the
+      // seam's choice of state, which is the seam's to make.
+      serialize: () => $convertToMarkdownString(transformers),
       deserialize: (_editor, value) => {
         $convertFromMarkdownString(value, transformers)
         $setSelection(null)
@@ -340,13 +323,15 @@ export function markdownEditor(
         if (collabBinding) disposers.push(collabBinding.register(editor))
         return () => {
           for (const dispose of disposers) dispose()
-          // Release this mount's editor reference so a disposed editor never
-          // leaks and stale effects can't reach a torn-down editor.
+          // Release this mount's seam references so a disposed editor never leaks
+          // and stale effects can't reach a torn-down editor.
           mount.editor = null
+          mount.controller = null
         }
       },
-      onReady: (editor) => {
+      onReady: (editor, controller) => {
         mount.editor = editor
+        mount.controller = controller
         if (config.placeholder) {
           editor.getRootElement()?.setAttribute('data-placeholder', config.placeholder)
         }
@@ -357,11 +342,9 @@ export function markdownEditor(
         // dispose-time debounce flush runs AFTER the component is disposed, and a
         // `send` from a disposed loop is dropped — so routing consumer delivery
         // through `send` would lose the last debounce window of typing on unmount.
-        // Deduped per mount so the same value isn't delivered twice.
-        if (value !== mount.lastChange) {
-          mount.lastChange = value
-          config.onChange?.(value)
-        }
+        // No dedupe here: the seam only calls this when the serialized document
+        // actually moved, so a second opinion could only ever be a wrong one.
+        config.onChange?.(value)
         // Mirror into TEA state (value/dirty) while the loop is alive; dropped
         // silently after dispose, which is fine — the consumer was already told.
         send({ type: 'markdownChanged', value })

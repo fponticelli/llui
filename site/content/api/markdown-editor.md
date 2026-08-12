@@ -644,6 +644,11 @@ export type EditorMsg =
   | { type: 'formatChanged'; format: FormatState; wordCount: number; charCount: number }
   | { type: 'runCommand'; id: string }
   | { type: 'setValue'; value: string }
+  /** The seam's verdict on the preceding `applyValue` effect: `applied` is true
+   * only when the document was actually written. Reported by the seam because it
+   * is the sole authority on that question — nothing here may re-derive it by
+   * comparing values (issue #70). */
+  | { type: 'valueApplied'; applied: boolean }
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
@@ -989,6 +994,10 @@ export interface EditorState {
   }
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
+  /** Whether the DOCUMENT has moved since the seed. Set only when the seam
+   * reports a real write — an edit (`markdownChanged`) or a push it accepted
+   * (`valueApplied`). A push the seam declines leaves it alone, so this stays
+   * "the document changed" and never degrades into "a push was made". */
   dirty: boolean
   readonly: boolean
   /** Collaborative-session status (always present; inert unless `collab` set). */

@@ -271,9 +271,19 @@ describe('resolveSrc — render-time only', () => {
     expect(resolveSrc).toHaveBeenCalledWith('attachments/a.png')
 
     // The node data — and therefore the markdown file of record — is untouched.
-    editor.update(() => $getRoot().selectEnd(), { discrete: true })
+    // Provoke the emission with a REAL edit: a bare caret move is not a document
+    // change and the seam does not report one (it is the sole authority on what
+    // counts as a change, in both directions — see `lexicalForeign`).
+    editor.update(
+      () => {
+        const sel = $getRoot().selectEnd()
+        sel.insertParagraph()
+        sel.insertText('tail')
+      },
+      { discrete: true },
+    )
     await waitFor(() => changes.length > 0)
-    expect(changes.at(-1)).toBe('![a](attachments/a.png)')
+    expect(changes.at(-1)).toBe('![a](attachments/a.png)\n\ntail')
   })
 
   it('re-resolves when the node data changes (no remount)', async () => {
