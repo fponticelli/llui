@@ -31,7 +31,7 @@
 // consumers. `grep -rn "setDOMUnmanaged\|EditorDOMRenderConfig" packages/`
 // should return exactly this file.
 //
-// VERIFIED AGAINST lexical 0.48.0. Every citation below was read in
+// VERIFIED AGAINST lexical 0.49.0. Every citation below was read in
 // `node_modules/.../lexical/src` at that version, and `test/nodewidget.test.ts`
 // pins each mechanism with an explicit assertion so an upgrade that moves one
 // fails loudly HERE rather than silently dropping widgets in an app.
@@ -63,7 +63,7 @@
 //     would only notice a macrotask later. This is the single strongest reason
 //     the seam is built on the render config.
 //
-// `$decorateDOM` has exactly TWO call sites in 0.48 — `:818` (create) and
+// `$decorateDOM` has exactly TWO call sites in 0.49 — `:818` (create) and
 // `:1900` (reconcile). `$fullReconcile` (e.g. after `setEditable`) routes
 // through `$createNode`, so it is covered by `:818`. Pinned by test.
 //

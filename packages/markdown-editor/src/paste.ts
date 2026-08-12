@@ -15,6 +15,7 @@ import {
   isDOMNode,
   isSelectionCapturedInDecoratorInput,
   type LexicalEditor,
+  type PasteCommandType,
 } from 'lexical'
 import { $convertFromMarkdownString, type Transformer } from '@lexical/markdown'
 import { $sanitizeLinkNodes } from './security.js'
@@ -56,6 +57,22 @@ export function $insertMarkdownAtSelection(
 }
 
 /**
+ * The clipboard payload of a `PASTE_COMMAND` event, or `null` when it carries none.
+ *
+ * The payload type is `ClipboardEvent | InputEvent | KeyboardEvent` — the latter
+ * two arrive from Lexical's paste-shortcut and `beforeinput` fallbacks and carry
+ * no clipboard, so there is nothing to convert and the paste must fall through to
+ * Lexical's default handling. This is a duck-type rather than
+ * `instanceof ClipboardEvent` / `objectKlassEquals` on purpose: `ClipboardEvent`
+ * is not a global in every environment this runs in (jsdom and the headless
+ * editor do not define it), so touching the constructor would throw a
+ * ReferenceError instead of narrowing.
+ */
+function clipboardDataOf(event: PasteCommandType): DataTransfer | null {
+  return 'clipboardData' in event ? event.clipboardData : null
+}
+
+/**
  * Register the markdown-on-paste handler on `editor`. Returns a disposer.
  *
  * Plain-text pastes are converted as Markdown. Pastes that also carry
@@ -67,11 +84,13 @@ export function registerMarkdownPaste(
 ): () => void {
   return editor.registerCommand(
     PASTE_COMMAND,
-    (event: ClipboardEvent) => {
+    (event: PasteCommandType) => {
       // Let native inputs inside a DecoratorNode paste themselves (mirrors
       // Lexical's own rich-text paste guard).
       if (isDOMNode(event.target) && isSelectionCapturedInDecoratorInput(event.target)) return false
-      const clipboard = event.clipboardData
+      // Only a clipboard-carrying paste can be converted; the InputEvent /
+      // KeyboardEvent variants fall through to Lexical's default handler.
+      const clipboard = clipboardDataOf(event)
       if (!clipboard) return false
       // Defer to Lexical's HTML import when the source provides rich content.
       if (clipboard.types.includes('text/html')) return false

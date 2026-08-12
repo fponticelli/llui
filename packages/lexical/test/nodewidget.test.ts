@@ -2,7 +2,7 @@
 //
 // These assert the EXACT Lexical reconciler behaviours the seam is built on, so
 // an upgrade that moves one fails loudly here rather than silently dropping
-// widgets in a running app. Verified against lexical 0.48.0 — bump this comment
+// widgets in a running app. Verified against lexical 0.49.0 — bump this comment
 // (and re-verify the citations in `src/nodewidget.ts`) when the peer range moves.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -28,7 +28,7 @@ import {
 } from '../src/nodewidget.js'
 import { lexicalForeign } from '../src/foreign.js'
 
-const LEXICAL_VERSION = '0.48.0'
+const LEXICAL_VERSION = '0.49.0'
 
 interface Harness {
   editor: LexicalEditor
