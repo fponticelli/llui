@@ -18115,6 +18115,11 @@ export type EditorMsg =
   | { type: 'formatChanged'; format: FormatState; wordCount: number; charCount: number }
   | { type: 'runCommand'; id: string }
   | { type: 'setValue'; value: string }
+  /** The seam's verdict on the preceding `applyValue` effect: `applied` is true
+   * only when the document was actually written. Reported by the seam because it
+   * is the sole authority on that question — nothing here may re-derive it by
+   * comparing values (issue #70). */
+  | { type: 'valueApplied'; applied: boolean }
   | { type: 'openOverlay'; overlay: OverlayKind; x?: number; y?: number }
   | { type: 'closeOverlay' }
   | { type: 'slashQuery'; query: string }
@@ -18460,6 +18465,10 @@ export interface EditorState {
   }
   /** Per-plugin UI state slices, keyed by plugin name (see {@link PluginUI}). */
   plugins: Record<string, unknown>
+  /** Whether the DOCUMENT has moved since the seed. Set only when the seam
+   * reports a real write — an edit (`markdownChanged`) or a push it accepted
+   * (`valueApplied`). A push the seam declines leaves it alone, so this stays
+   * "the document changed" and never degrades into "a push was made". */
   dirty: boolean
   readonly: boolean
   /** Collaborative-session status (always present; inert unless `collab` set). */
@@ -19351,6 +19360,24 @@ export interface DecoratorBridge {
 }
 ```
 
+### `ForeignController`
+
+The seam's inbound write path — the ONE place that decides whether a value
+coming from the host is an echo of the live document.
+Handed to the host at {@link LexicalForeignOptions.onReady} so an imperative
+push (a `setValue`-style message) goes through the same authority as the
+controlled `value` signal. A host that writes markdown into the editor any
+other way has re-opened the seam and owns the consequences.
+
+```typescript
+export interface ForeignController {
+  /** Apply `value` to the document unless the document already holds it —
+   * "already holds it" meaning `value` deserializes to the same document, not
+   * that it is the same string. Returns whether the document was written. */
+  applyValue: (value: string) => boolean
+}
+```
+
 ### `LexicalForeignOptions`
 
 ```typescript
@@ -19367,7 +19394,11 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * editor is created exactly as it was before this option existed — no
    * render-config override, no experimental API in play. */
   widgets?: ReadonlyArray<NodeWidget>
-  /** Serialize the live document → string (runs in a read context). */
+  /** Serialize the live document → string (runs in a read context the seam
+   * opens, so bare `$` helpers are fine and no read of its own is needed).
+   * Called with the editor whose document the seam is asking about — usually the
+   * live one, but on the inbound path also a scratch editor holding a candidate
+   * document, so read through the argument rather than a captured editor. */
   serialize: (editor: LexicalEditor) => string
   /** Deserialize a string into the document (runs in an update context). */
   deserialize: (editor: LexicalEditor, value: string) => void
@@ -19405,8 +19436,10 @@ export interface LexicalForeignOptions<Emit = unknown> {
   onSelectionChange?: (ctx: SelectionContext) => void
   /** Host emit, handed to each plugin's `register` context. */
   emit?: (msg: Emit) => void
-  /** Receives the live editor at mount (host dispatches commands through it). */
-  onReady?: (editor: LexicalEditor) => void
+  /** Receives the live editor at mount (host dispatches commands through it),
+   * plus the seam's {@link ForeignController} — the only sanctioned way for the
+   * host to push a value into the document. */
+  onReady?: (editor: LexicalEditor, controller: ForeignController) => void
   /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
   register?: (editor: LexicalEditor) => () => void
   onError?: (error: Error) => void
