@@ -4,6 +4,9 @@
   "exclude": ["**/*.prototype.ts"],
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "."
+    "rootDir": ".",
+    // test/packaging.test.ts asserts this package's dependency declarations against
+    // @llui/markdown-editor's peer set by importing both manifests directly.
+    "resolveJsonModule": true
   }
 }
