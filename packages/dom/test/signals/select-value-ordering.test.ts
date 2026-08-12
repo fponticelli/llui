@@ -195,8 +195,11 @@ describe('per-<option> selected binding inside each()', () => {
 // Invariant: form-control SELECTION props (value/checked/selected) commit AFTER
 // every other prop, regardless of author key order. This is the order browsers
 // require for `<input type=range>` (value is clamped to min/max set at assignment
-// time) — jsdom doesn't clamp, so we assert the commit ORDER directly, which is
-// the contract. Robust prop-order independence matters for LLM-emitted views.
+// time). Here we assert the commit ORDER directly, which is the contract itself
+// rather than one of its consequences; the clamped `.value` that follows from it
+// is pinned in `element-prop-application.test.ts` (jsdom 29 does clamp — an
+// earlier note here claimed otherwise and was wrong). Robust prop-order
+// independence matters for LLM-emitted views.
 describe('selection props commit after other props (prop-order independence)', () => {
   // Spy on min/max attribute writes and the .value setter to record commit order.
   let log: string[] = []

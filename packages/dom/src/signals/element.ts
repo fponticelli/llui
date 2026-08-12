@@ -217,10 +217,33 @@ function populate(
       node.appendChild(materialize(child))
     }
   }
-  const entries = Object.entries(props)
-  for (const [name, value] of entries)
-    if (!DOM_PROPERTIES.has(name)) applyProp(c, node, name, value)
-  for (const [name, value] of entries) if (DOM_PROPERTIES.has(name)) applyProp(c, node, name, value)
+  // Two passes over ONE key list, indexing into `props` directly. `Object.entries`
+  // allocated `1 + k` throwaway arrays per element (the pair list plus a
+  // `[name, value]` pair per prop) doing no work — on a 10k-row create that is
+  // tens of thousands of dead allocations on the hottest path in list rendering.
+  // `Object.keys` costs a single array and keeps `Object.entries`'s exact
+  // own-enumerable-string-key semantics; a bare `for…in` allocates nothing but
+  // walks the prototype chain, and adding the `hasOwn` guard that restores those
+  // semantics measured no faster than `Object.keys` — so this is both the safe
+  // and the fast form.
+  const keys = Object.keys(props)
+  // Most elements carry no selection prop at all, so record whether the first pass
+  // actually deferred one and skip the second scan entirely when it did not.
+  let deferredSelection = false
+  for (let i = 0; i < keys.length; i++) {
+    // Both `!`s only silence `noUncheckedIndexedAccess`: `i` is in range and
+    // `name` came from `props`'s own keys. `PropValue` already admits `null`, and
+    // an own key whose value is `undefined` still reaches `applyProp` (removing
+    // the attribute) exactly as it did through `Object.entries`.
+    const name = keys[i]!
+    if (DOM_PROPERTIES.has(name)) deferredSelection = true
+    else applyProp(c, node, name, props[name]!)
+  }
+  if (deferredSelection)
+    for (let i = 0; i < keys.length; i++) {
+      const name = keys[i]!
+      if (DOM_PROPERTIES.has(name)) applyProp(c, node, name, props[name]!)
+    }
 }
 
 /** An element node. `ns === null` → `createElement`; otherwise `createElementNS`.
