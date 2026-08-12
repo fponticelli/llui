@@ -7,8 +7,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 /**
  * Bundle host.ts for delivery to the browser.
  *
- * Design note: the vite-plugin transform (which would emit __msgAnnotations,
- * __bindingDescriptors, __schemaHash at compile time) is skipped here for
+ * Design note: the vite-plugin transform (which would emit the msg annotations,
+ * binding descriptors and schema hash at compile time) is skipped here for
  * e2e simplicity — esbuild doesn't speak the LLui 3-pass transform. Instead,
  * host.ts attaches that metadata at runtime directly on the App component
  * definition after `component(...)` returns. This is the "pragmatic fallback"
@@ -32,15 +32,13 @@ export async function bundleHost(): Promise<string> {
     define: {
       // esbuild replaces process.env.NODE_ENV for any deps that check it
       'process.env.NODE_ENV': '"development"',
-      // The host's App component is authored as a raw `ComponentDef`
-      // literal — the LLui compiler transform isn't part of esbuild's
-      // pipeline, so `__view` is never emitted. @llui/dom's
-      // `getInstanceViewBag` gates the `createView` fallback for
-      // hand-rolled components behind `import.meta.env?.DEV`; without
-      // the define below the fallback dead-codes and `mountApp` throws
-      // a "missing __view — recompile with @llui/vite-plugin" error at
-      // page load. Setting `import.meta.env.DEV = true` opts this
-      // bundle into the dev path so hand-rolled defs mount correctly.
+      // @llui/dom gates the debug registry (`__lluiDebug` — the message
+      // history and state poke the agent relay drives the app through)
+      // behind `import.meta.env?.DEV === true`. esbuild leaves that
+      // expression alone, so without the define below it is `undefined`
+      // at runtime, no registry is installed, and every agent tool in
+      // these e2e tests talks to a hook that isn't there. Setting it
+      // true opts this bundle into the dev path.
       'import.meta.env.DEV': 'true',
     },
   })

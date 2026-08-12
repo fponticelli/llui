@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import llui from '../src/index'
+import { COMPILER_META_KEYS } from '@llui/compiler'
 
 /**
  * Finding 4/5: the transform must `this.addWatchFile()` every sibling file
@@ -78,7 +79,7 @@ describe('cross-file type resolution — watch + merged pre-resolution', () => {
     expect(watched).toContain(msgPath)
 
     // The cross-file Msg union's variants were extracted into the metadata.
-    expect(out!.code).toContain('__msgSchema')
+    expect(out!.code).toContain(`${COMPILER_META_KEYS.msgSchema}:`)
     expect(out!.code).toContain('inc')
     expect(out!.code).toContain('reset')
   })

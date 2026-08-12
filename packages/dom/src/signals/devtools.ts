@@ -304,7 +304,7 @@ function exampleForVariant(
   return ex
 }
 
-/** Minimal message validation against the discriminated-union __msgSchema. */
+/** Minimal message validation against the discriminated-union msg schema. */
 function validateAgainstSchema(msg: unknown, schema: object | undefined): ValidationError[] | null {
   if (!schema) return null
   const s = schema as MsgSchemaShape

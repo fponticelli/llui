@@ -4,7 +4,7 @@ export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 
 /**
  * Whether the annotation map carries any non-default values. Used to
- * gate `__msgAnnotations` emission — annotations whose every field is
+ * gate msg-annotation emission — annotations whose every field is
  * default are emission-redundant (the runtime treats absence as the
  * same defaults). Saves ~50 bytes per component for un-annotated Msg
  * unions, which dominates the corpus.
@@ -45,7 +45,7 @@ export function isDefaultAnnotation(v: MessageAnnotations): boolean {
  * The runtime treats an absent variant / field as the default (see
  * `list-actions.ts`, which reads every field as `ann?.field ?? default`), so
  * this is a pure size optimization with no semantic change. Returns null when
- * every variant is fully default — the caller then skips `__msgAnnotations`.
+ * every variant is fully default — the caller then skips the annotations prop.
  */
 export function sparseMsgAnnotations(
   a: Record<string, MessageAnnotations>,
@@ -70,7 +70,7 @@ export function sparseMsgAnnotations(
 
 /**
  * Build a TS object-literal expression for the annotation map. Used by
- * `msgAnnotationsModule` for `__msgAnnotations` emission. Variant
+ * the transform for msg-annotation emission. Variant
  * names are emitted as string literals (not identifiers) so
  * discriminants containing `/`, `-`, reserved words, etc. produce
  * valid JS.

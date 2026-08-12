@@ -15,6 +15,7 @@ import type { Renderable } from './element.js'
 import { withBindingErrors, toBindingError, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
+import { COMPILER_META_KEYS, type CompilerMetadata } from './compiler-keys.js'
 import type { Signal } from './types.js'
 
 // Vite/Rollup substitute `import.meta.env.DEV` at build time; bundlers
@@ -63,7 +64,7 @@ export interface EffectApi<S, M> {
   signal: AbortSignal
 }
 
-export interface SignalComponentDef<S, M, E = never> {
+export interface SignalComponentDef<S, M, E = never> extends CompilerMetadata {
   /** optional component name (for the debug registry / agent identity) */
   readonly name?: string
   /** initial state, optionally with initial effects */
@@ -77,21 +78,10 @@ export interface SignalComponentDef<S, M, E = never> {
   /** handle an effect; may return a cleanup function */
   onEffect?: (effect: E, api: EffectApi<S, M>) => void | (() => void)
 
-  // ── Compiler-injected introspection metadata (see @llui/compiler signals
-  // transform). Optional — present only in dev / agent builds. Read by the
-  // agent-client pairing path and the (signal) debug surface. ──
-  /** discriminated-union schema of Msg ({ discriminant, variants }) */
-  readonly __msgSchema?: object
-  /** discriminated-union schema of Effect */
-  readonly __effectSchema?: object
-  /** state shape schema */
-  readonly __stateSchema?: object
-  /** per-message JSDoc annotations (intent, affordability, …) */
-  readonly __msgAnnotations?: Record<string, unknown>
-  /** stable hash of the schemas, for hot-reload schema-change detection */
-  readonly __schemaHash?: string
-  /** dev-only source location */
-  readonly __componentMeta?: { file: string; line: number }
+  // Compiler-injected introspection metadata arrives via `CompilerMetadata` —
+  // present only in dev / agent builds, keyed by the compiler↔runtime ABI in
+  // `compiler-keys.ts`. Read by the agent-client pairing path and the debug
+  // surface, both of which can be in a different chunk than the def.
 }
 
 export interface SignalComponentHandle<S, M> {
@@ -611,10 +601,12 @@ export function mountSignalComponent<S, M, E = never>(
       clearHistory: () => {
         history.length = 0
       },
-      msgSchema: def.__msgSchema,
-      stateSchema: def.__stateSchema,
-      effectSchema: def.__effectSchema,
-      componentMeta: def.__componentMeta,
+      // Read through the ABI table, never a string literal — the def was
+      // written by the compiler into a possibly different chunk.
+      msgSchema: def[COMPILER_META_KEYS.msgSchema],
+      stateSchema: def[COMPILER_META_KEYS.stateSchema],
+      effectSchema: def[COMPILER_META_KEYS.effectSchema],
+      componentMeta: def[COMPILER_META_KEYS.componentMeta],
     })
   }
 

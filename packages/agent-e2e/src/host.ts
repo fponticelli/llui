@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text } from '@llui/dom'
+import { component, mountApp, div, button, text, COMPILER_META_KEYS } from '@llui/dom'
 import type { AgentDocs, AgentContext } from '@llui/agent/protocol'
 import {
   createAgentClient,
@@ -166,7 +166,7 @@ type AgentMeta = {
   agentAffordances?: (state: unknown) => Array<{ type: string; [k: string]: unknown }>
   agentDocs?: AgentDocs
   agentContext?: (state: unknown) => AgentContext
-  __msgAnnotations?: Record<
+  [COMPILER_META_KEYS.msgAnnotations]?: Record<
     string,
     {
       intent: string | null
@@ -179,7 +179,7 @@ type AgentMeta = {
     }
   >
   __bindingDescriptors?: Array<{ variant: string }>
-  __schemaHash?: string
+  [COMPILER_META_KEYS.schemaHash]?: string
 }
 
 const AppWithMeta = App as typeof App & AgentMeta
@@ -203,7 +203,7 @@ AppWithMeta.agentContext = (s: unknown) => {
   }
 }
 
-AppWithMeta.__msgAnnotations = {
+AppWithMeta[COMPILER_META_KEYS.msgAnnotations] = {
   inc: {
     intent: 'Increment the counter',
     alwaysAffordable: false,
@@ -267,7 +267,7 @@ AppWithMeta.__bindingDescriptors = [
   { variant: 'delete' },
 ]
 
-AppWithMeta.__schemaHash = 'e2e-test-hash'
+AppWithMeta[COMPILER_META_KEYS.schemaHash] = 'e2e-test-hash'
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 

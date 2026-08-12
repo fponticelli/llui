@@ -37,15 +37,17 @@ import {
   type MessageAnnotations,
 } from '../msg-annotations.js'
 import { computeSchemaHash } from '../schema-hash.js'
+import { COMPILER_META_KEYS } from '../emit-names.js'
 
 /** Options controlling introspection metadata emission (mirrors the legacy
  * transform's `devMode`/`emitAgentMetadata` gating). */
 export interface SignalTransformOptions {
-  /** emit `__msgSchema`/`__stateSchema`/`__msgAnnotations`/`__effectSchema` for the agent surface */
+  /** emit the msg/state/effect schemas + annotations for the agent surface
+   * (keyed by `COMPILER_META_KEYS` — see emit-names.ts for the ABI) */
   emitAgentMetadata?: boolean
-  /** dev build — also emit `__componentMeta` { file, line } */
+  /** dev build — also emit the component meta `{ file, line }` */
   devMode?: boolean
-  /** source file path, for `__componentMeta.file` */
+  /** source file path, for the component meta's `file` */
   fileName?: string
   /** cross-file pre-extracted, composition-aware schemas (msg/effect/annotations)
    * resolved by the adapter; takes precedence over file-local extraction. */
@@ -272,21 +274,27 @@ export function transformSignalComponentSourceWithMap(
     const stateSchema = stateSrc
       ? extractStateSchema(stateSrc.source, stateSrc.typeName)
       : extractStateSchema(source, stateName)
+    // Keys come from COMPILER_META_KEYS, never from a literal: the emitted name
+    // IS the runtime ABI (`@llui/dom` / `@llui/agent` read it by that exact key
+    // from a different bundle chunk), so it must be final here — nothing
+    // downstream is allowed to rewrite it. See emit-names.ts, issue #45.
     const props: string[] = []
-    if (msgSchema) props.push(`__msgSchema: ${JSON.stringify(msgSchema)}`)
-    if (effectSchema) props.push(`__effectSchema: ${JSON.stringify(effectSchema)}`)
-    if (stateSchema) props.push(`__stateSchema: ${JSON.stringify(stateSchema)}`)
+    if (msgSchema) props.push(`${COMPILER_META_KEYS.msgSchema}: ${JSON.stringify(msgSchema)}`)
+    if (effectSchema) {
+      props.push(`${COMPILER_META_KEYS.effectSchema}: ${JSON.stringify(effectSchema)}`)
+    }
+    if (stateSchema) props.push(`${COMPILER_META_KEYS.stateSchema}: ${JSON.stringify(stateSchema)}`)
     // Emit a SPARSE annotation map: variants (and per-variant fields) still at
     // their default are omitted — the runtime reconstructs them from absence. A
-    // Msg with zero source annotations emits no `__msgAnnotations` at all. The
+    // Msg with zero source annotations emits no annotation property at all. The
     // schema hash below still hashes the FULL record so hash stability doesn't
     // depend on this size optimization.
     const sparseAnnotations = msgAnnotations ? sparseMsgAnnotations(msgAnnotations) : null
     if (sparseAnnotations) {
-      props.push(`__msgAnnotations: ${JSON.stringify(sparseAnnotations)}`)
+      props.push(`${COMPILER_META_KEYS.msgAnnotations}: ${JSON.stringify(sparseAnnotations)}`)
     }
     props.push(
-      `__schemaHash: ${JSON.stringify(
+      `${COMPILER_META_KEYS.schemaHash}: ${JSON.stringify(
         computeSchemaHash({ msgSchema, stateSchema, msgAnnotations: msgAnnotations ?? null }),
       )}`,
     )
@@ -310,8 +318,20 @@ export function transformSignalComponentSourceWithMap(
     callNode: ts.CallExpression,
   ): string[] => {
     if (!shouldEmit) return []
+    // Author-written keys, normalized past the quoting the ABI keys invite:
+    // `$sh: 'mine'` and `'$sh': 'mine'` are the same property, and emitting our
+    // own alongside either would produce a duplicate key whose LAST occurrence
+    // (ours) silently wins over the author's.
     const existing = new Set(
-      config.properties.flatMap((p) => (ts.isPropertyAssignment(p) ? [p.name.getText(sf)] : [])),
+      config.properties.flatMap((p) =>
+        ts.isPropertyAssignment(p)
+          ? [
+              ts.isStringLiteralLike(p.name) || ts.isNumericLiteral(p.name)
+                ? p.name.text
+                : p.name.getText(sf),
+            ]
+          : [],
+      ),
     )
     const props: string[] = []
     // infer `name` from the binding (`const Counter = component({...})`) for the
@@ -330,9 +350,11 @@ export function transformSignalComponentSourceWithMap(
         (p) => !existing.has(p.split(':')[0]!.trim()),
       ),
     )
-    if (opts.devMode && opts.fileName && !existing.has('__componentMeta')) {
+    if (opts.devMode && opts.fileName && !existing.has(COMPILER_META_KEYS.componentMeta)) {
       const line = sf.getLineAndCharacterOfPosition(callNode.getStart(sf)).line + 1
-      props.push(`__componentMeta: ${JSON.stringify({ file: opts.fileName, line })}`)
+      props.push(
+        `${COMPILER_META_KEYS.componentMeta}: ${JSON.stringify({ file: opts.fileName, line })}`,
+      )
     }
     return props
   }

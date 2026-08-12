@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Plugin } from 'vite'
+import { COMPILER_META_KEYS } from '@llui/compiler'
 import llui from '../src/index'
 
 /**
@@ -48,14 +49,20 @@ function transformCtx(): {
   }
 }
 
-async function runTransform(plugin: Plugin, code: string, id: string): Promise<void> {
+async function runTransform(plugin: Plugin, code: string, id: string): Promise<string> {
   const hook = plugin.transform as
     | ((this: unknown, code: string, id: string, opts?: unknown) => Promise<unknown>)
     | { handler: (this: unknown, code: string, id: string, opts?: unknown) => Promise<unknown> }
     | undefined
   if (!hook) throw new Error('plugin has no transform hook')
   const fn = typeof hook === 'function' ? hook : hook.handler
-  await fn.call(transformCtx(), code, id, undefined)
+  const out = await fn.call(transformCtx(), code, id, undefined)
+  if (typeof out === 'string') return out
+  if (out !== null && typeof out === 'object' && 'code' in out) {
+    const { code: emitted } = out as { code?: unknown }
+    if (typeof emitted === 'string') return emitted
+  }
+  return code
 }
 
 /** Run generateBundle, capturing (not throwing) the this.error message. */
@@ -76,8 +83,8 @@ function runGenerateBundle(plugin: Plugin, bundle: Record<string, BundleChunk>):
   return captured
 }
 
-async function bootPluginForBuild(): Promise<Plugin> {
-  const plugin = llui()
+async function bootPluginForBuild(opts: { agent?: boolean } = {}): Promise<Plugin> {
+  const plugin = llui(opts)
   const configResolved = plugin.configResolved as
     | ((this: unknown, c: unknown) => Promise<void>)
     | { handler: (this: unknown, c: unknown) => Promise<void> }
@@ -137,45 +144,50 @@ describe('build-time integrity check', () => {
   })
 })
 
-describe('post-bundle property rename (provenance-scoped)', () => {
-  it('renames LLui-emitted keys only in chunks that contain compiled modules', async () => {
-    const plugin = await bootPluginForBuild()
-    await runTransform(plugin, SIGNAL_SOURCE, '/proj/Counter.ts')
+describe('code-split-safe metadata keys (issue #45)', () => {
+  it('leaves an agent build’s compiled chunk byte-identical', async () => {
+    const plugin = await bootPluginForBuild({ agent: true })
+    const compiled = await runTransform(plugin, SIGNAL_SOURCE, '/proj/Counter.ts')
+    // Sanity: this really is an agent build carrying metadata to protect.
+    // (Only the keys SIGNAL_SOURCE earns: it declares no Effect type and no
+    // JSDoc annotations, and component meta is dev-only.)
+    for (const key of [
+      COMPILER_META_KEYS.msgSchema,
+      COMPILER_META_KEYS.stateSchema,
+      COMPILER_META_KEYS.schemaHash,
+    ]) {
+      expect(compiled).toContain(`${key}:`)
+    }
+    // The realistic `manualChunks: { vendor: ['@llui/dom'] }` split: the compiled
+    // component literal lands in `app.js`, the runtime that READS its metadata
+    // keys lands in `vendor.js`. A bundle-time rewrite of one and not the other
+    // yields `undefined` schemas in production with no error anywhere — so the
+    // bundle must leave BOTH sides exactly as emitted.
+    const vendorCode = `const read = (d) => d[${JSON.stringify(COMPILER_META_KEYS.msgSchema)}]`
     const bundle: Record<string, BundleChunk> = {
-      // Compiled chunk: carries an LLui-emitted key and the compiled module id.
-      'app.js': {
-        type: 'chunk',
-        code: 'const d = { __msgSchema: 1, __prefixes: 2 }',
-        moduleIds: ['/proj/Counter.ts'],
-      },
-      // Third-party chunk: same-looking key, but no compiled module → untouched.
+      'app.js': { type: 'chunk', code: compiled, moduleIds: ['/proj/Counter.ts'] },
       'vendor.js': {
         type: 'chunk',
-        code: 'const v = { __msgSchema: 9 }',
-        moduleIds: ['/proj/node_modules/foo/index.js'],
+        code: vendorCode,
+        moduleIds: ['/proj/node_modules/@llui/dom/dist/index.js'],
       },
     }
     expect(runGenerateBundle(plugin, bundle)).toBeNull()
-    expect(bundle['app.js']!.code).not.toContain('__msgSchema')
-    expect(bundle['app.js']!.code).not.toContain('__prefixes')
-    // The vendor chunk keeps its identifier — provenance kept us out.
-    expect(bundle['vendor.js']!.code).toContain('__msgSchema')
+    expect(bundle['app.js']!.code).toBe(compiled)
+    expect(bundle['vendor.js']!.code).toBe(vendorCode)
   })
 
-  it('never rewrites the generic __update / __dirty names', async () => {
+  it('never rewrites identifiers in a compiled chunk', async () => {
     const plugin = await bootPluginForBuild()
     await runTransform(plugin, SIGNAL_SOURCE, '/proj/Counter.ts')
+    // A chunk with LLui provenance carrying `__`-prefixed names of three
+    // different origins (an LLui-historical key, Vite's, a user's): the plugin
+    // is out of the bundle-rewriting business entirely, so all survive verbatim.
+    const code = 'const d = { __msgSchema: 1, __vite__mapDeps: 2, __LLUI_STATE__: 3 }'
     const bundle: Record<string, BundleChunk> = {
-      'app.js': {
-        type: 'chunk',
-        code: 'const d = { __update: 1, __dirty: 2, __msgSchema: 3 }',
-        moduleIds: ['/proj/Counter.ts'],
-      },
+      'app.js': { type: 'chunk', code, moduleIds: ['/proj/Counter.ts'] },
     }
-    runGenerateBundle(plugin, bundle)
-    expect(bundle['app.js']!.code).toContain('__update')
-    expect(bundle['app.js']!.code).toContain('__dirty')
-    // But the LLui-distinctive key is still shortened.
-    expect(bundle['app.js']!.code).not.toContain('__msgSchema')
+    expect(runGenerateBundle(plugin, bundle)).toBeNull()
+    expect(bundle['app.js']!.code).toBe(code)
   })
 })

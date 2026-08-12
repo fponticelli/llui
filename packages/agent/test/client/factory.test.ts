@@ -3,6 +3,7 @@ import { createAgentClient, type CreateAgentClientOpts } from '../../src/client/
 import type { AgentEffect } from '../../src/client/effects.js'
 import type { AgentConfirmState, ConfirmEntry } from '../../src/client/agentConfirm.js'
 import type { AgentToken } from '../../src/protocol.js'
+import { COMPILER_META_KEYS } from '@llui/dom'
 
 // --- Fake WebSocket -----------------------------------------------------------
 
@@ -106,7 +107,7 @@ function makeOpts(
     handle,
     def: {
       name: 'test-app',
-      __schemaHash: 'hash1',
+      [COMPILER_META_KEYS.schemaHash]: 'hash1',
     },
     appVersion: '1.0.0',
     rootElement: null,
@@ -408,7 +409,7 @@ describe('createAgentClient', () => {
     }
     const opts: CreateAgentClientOpts<DateState, unknown> = {
       handle: handle as never,
-      def: { name: 'date-app', __schemaHash: 'h' },
+      def: { name: 'date-app', [COMPILER_META_KEYS.schemaHash]: 'h' },
       appVersion: '1.0.0',
       rootElement: null,
       slices: {
@@ -481,8 +482,8 @@ describe('createAgentClient', () => {
       handle: handle as never,
       def: {
         name: 'pub-app',
-        __schemaHash: 'h',
-        __msgAnnotations: {
+        [COMPILER_META_KEYS.schemaHash]: 'h',
+        [COMPILER_META_KEYS.msgAnnotations]: {
           Publish: {
             intent: 'Publish now',
             dispatchMode: 'shared',

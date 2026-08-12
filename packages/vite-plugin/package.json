@@ -25,7 +25,11 @@
     "test": "vitest run"
   },
   "peerDependencies": {
+    "@llui/dom": "workspace:^",
     "vite": "^8.0.0"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*"
   },
   "dependencies": {
     "@llui/compiler": "workspace:^",

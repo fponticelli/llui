@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+import { COMPILER_META_KEYS } from '../../src/emit-names.js'
 
 /** Parse the lowered source and assert it has no syntax errors — catches edit
  * overlaps / duplication (e.g. pass-2 double-lowering a pass-1 each) that a
@@ -84,29 +85,29 @@ describe('transformSignalComponentSource', () => {
 
     it('emits no metadata without opts (prod-no-agent stays lean)', () => {
       const out = transformSignalComponentSource(SRC)
-      expect(out).not.toContain('__msgSchema')
-      expect(out).not.toContain('__schemaHash')
+      expect(out).not.toContain(`${COMPILER_META_KEYS.msgSchema}:`)
+      expect(out).not.toContain(`${COMPILER_META_KEYS.schemaHash}:`)
     })
 
     it('emits agent schemas + hash when emitAgentMetadata is set', () => {
       const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
-      expect(out).toContain('__msgSchema:')
+      expect(out).toContain(`${COMPILER_META_KEYS.msgSchema}:`)
       expect(out).toContain('"discriminant":"type"')
-      expect(out).toContain('__stateSchema:')
-      expect(out).toContain('__schemaHash:')
+      expect(out).toContain(`${COMPILER_META_KEYS.stateSchema}:`)
+      expect(out).toContain(`${COMPILER_META_KEYS.schemaHash}:`)
       // still a valid lowered view
       expect(out).toContain("signalText((s) => s.count, ['count'])")
     })
 
-    it('emits NO __msgAnnotations when the Msg has zero source annotations', () => {
+    it('emits NO msg annotations when the Msg has zero source annotations', () => {
       // SRC's Msg union carries no @intent/@requiresConfirm/etc. — a fully-default
       // annotation record is reconstructable from absence, so emitting it is dead bytes.
       const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
-      expect(out).toContain('__msgSchema:') // schema still emitted
-      expect(out).not.toContain('__msgAnnotations')
+      expect(out).toContain(`${COMPILER_META_KEYS.msgSchema}:`) // schema still emitted
+      expect(out).not.toContain(`${COMPILER_META_KEYS.msgAnnotations}:`)
     })
 
-    it('emits a SPARSE __msgAnnotations — only non-default fields of annotated variants', () => {
+    it('emits SPARSE msg annotations — only non-default fields of annotated variants', () => {
       const annotated = [
         "import { component } from '@llui/dom'",
         'type Msg =',
@@ -121,9 +122,10 @@ describe('transformSignalComponentSource', () => {
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(annotated, { emitAgentMetadata: true })
-      // isolate the emitted __msgAnnotations object literal (noop also appears in
-      // __msgSchema, so assert against the annotations value specifically).
-      const ann = out.match(/__msgAnnotations: (\{.*?\}\})/)?.[1] ?? ''
+      // isolate the emitted annotations object literal (noop also appears in the
+      // msg schema, so assert against the annotations value specifically).
+      const ann =
+        out.match(new RegExp(`\\${COMPILER_META_KEYS.msgAnnotations}: (\\{.*?\\}\\})`))?.[1] ?? ''
       expect(ann).not.toBe('')
       // the annotated variant carries only its authored fields...
       expect(ann).toContain('"inc"')
@@ -171,21 +173,22 @@ describe('transformSignalComponentSource', () => {
         typeSources: { state: { source: 'type S = { n: number }', typeName: 'S' } },
       })
       expect(out).toContain('"variants":{"tick":{}}') // from preExtracted (cross-file)
-      expect(out).toContain('__stateSchema:') // from external state source
+      expect(out).toContain(`${COMPILER_META_KEYS.stateSchema}:`) // from external state source
       expect(out).toContain('"n":"number"')
     })
 
-    it('emits __componentMeta { file, line } in devMode', () => {
+    it('emits component meta { file, line } in devMode', () => {
       const out = transformSignalComponentSource(SRC, { devMode: true, fileName: 'src/counter.ts' })
-      expect(out).toContain('__componentMeta:')
+      expect(out).toContain(`${COMPILER_META_KEYS.componentMeta}:`)
       expect(out).toContain('"file":"src/counter.ts"')
     })
 
     it('does not duplicate a metadata field the author already wrote', () => {
-      const withOwn = SRC.replace('view:', "__schemaHash: 'mine', view:")
+      const withOwn = SRC.replace('view:', `${COMPILER_META_KEYS.schemaHash}: 'mine', view:`)
       const out = transformSignalComponentSource(withOwn, { emitAgentMetadata: true })
-      expect((out.match(/__schemaHash:/g) ?? []).length).toBe(1)
-      expect(out).toContain("__schemaHash: 'mine'")
+      const written = out.split(`${COMPILER_META_KEYS.schemaHash}:`).length - 1
+      expect(written).toBe(1)
+      expect(out).toContain(`${COMPILER_META_KEYS.schemaHash}: 'mine'`)
     })
   })
 
@@ -237,7 +240,9 @@ describe('transformSignalComponentSource', () => {
     expect(out).toContain('{"fields":{"a":"number"}}')
     expect(out).toContain('{"fields":{"b":"boolean"}}')
     // The two schema hashes differ (the bug reused the first for both).
-    const hashes = [...out.matchAll(/__schemaHash: "([^"]+)"/g)].map((m) => m[1])
+    const hashes = [
+      ...out.matchAll(new RegExp(`\\${COMPILER_META_KEYS.schemaHash}: "([^"]+)"`, 'g')),
+    ].map((m) => m[1])
     expect(hashes).toHaveLength(2)
     expect(hashes[0]).not.toBe(hashes[1])
   })
@@ -317,8 +322,8 @@ describe('transformSignalComponentSource', () => {
       // before block-body support, `roots && arr` was false for a block body, so
       // NO metadata was spliced — agent/debug introspection was silently dropped.
       const out = transformSignalComponentSource(src, { emitAgentMetadata: true })
-      expect(out).toContain('__msgSchema:')
-      expect(out).toContain('__schemaHash:')
+      expect(out).toContain(`${COMPILER_META_KEYS.msgSchema}:`)
+      expect(out).toContain(`${COMPILER_META_KEYS.schemaHash}:`)
     })
   })
 

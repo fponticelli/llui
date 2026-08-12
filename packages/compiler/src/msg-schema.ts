@@ -91,7 +91,7 @@ export function isRichField(f: MsgField): f is MsgFieldRich {
 /**
  * Build a TS expression for a single field descriptor in a MsgSchema's
  * variant map. Used by `msgSchemaToLiteral` (this file) for the
- * `__msgSchema` / `__effectSchema` emissions. Migrated from inline
+ * msg-schema / effect-schema emissions. Migrated from inline
  * `buildFieldDescriptorExpr` in transform.ts (v2c/decomp-5).
  */
 export function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression {
@@ -173,7 +173,7 @@ function emitEnumValue(v: string | number | boolean, f: ts.NodeFactory): ts.Expr
 
 /**
  * Build the full `{ discriminant, variants }` object literal for a
- * MsgSchema. Symmetric for `__msgSchema` and `__effectSchema` emission
+ * MsgSchema. Symmetric for msg-schema and effect-schema emission
  * (both use the discriminated-union shape).
  */
 export function msgSchemaToLiteral(

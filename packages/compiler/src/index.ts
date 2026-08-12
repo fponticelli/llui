@@ -13,6 +13,7 @@ export * from './build-manifest.js'
 export {
   transformSignalComponentSource,
   transformSignalComponentSourceWithMap,
+  type SignalTransformOptions,
   type SignalTransformResult,
 } from './signals/transform-component.js'
 export { type LowerBail } from './signals/transform-view.js'
@@ -27,8 +28,9 @@ export {
 export * from './version.js'
 // Signal components compile via `transformSignalComponentSource` and lint
 // via `lintSignalSource` (both re-exported above). Agent/devtools metadata
-// (`__msgSchema`, `__msgAnnotations`, `__stateSchema`, `__schemaHash`,
-// `__componentMeta`) is emitted inline by that transform; the v2c module
+// (msg/effect/state schemas, msg annotations, schema hash, component meta —
+// keyed by `COMPILER_META_KEYS`, see emit-names.ts) is emitted inline by that
+// transform; the v2c module
 // registry / factory system and the `@llui/compiler-{introspection,devtools}`
 // packages that fed it were removed once the signal transform superseded
 // the `transformLlui` orchestrator.

@@ -1,66 +1,73 @@
 /**
  * Single source of truth for the compiler's emission name registry.
  *
- * Two disjoint sets:
+ * Two sets, both crossing a module/chunk boundary at consumer build time —
+ * which is precisely why neither may be rewritten after the fact:
  *
- *   - `COMPILER_RENAMEABLE_KEYS` — property keys the compiler synthesizes
- *     onto `component({...})` literals. The runtime reads these via
- *     property access (`def.__view`, `def.__prefixes`, etc.) inside the
- *     same bundle that the compiler emitted them into. Their producer and
- *     consumer are colocated in the bundle, so the vite-plugin's post-
- *     bundle property-rename pass can shorten them to `$a`/`$b`/… without
- *     breaking the contract.
+ *   - `COMPILER_META_KEYS` — the property keys the compiler synthesizes onto
+ *     `component({...})` literals for the agent / devtools surface. The WRITER
+ *     is this compiler (running over the app's own modules); the READERS are
+ *     `@llui/dom` (`signals/component.ts` → the debug registry) and
+ *     `@llui/agent` (`client/factory.ts`). Writer and readers land in
+ *     DIFFERENT chunks under any `manualChunks` vendor split — the common
+ *     `manualChunks: { vendor: ['@llui/dom'] }` is enough — so the emitted
+ *     name has to be final at emit time. A post-bundle rename that rewrites
+ *     the app chunk and not the runtime chunk yields `undefined` schemas in
+ *     production `agent: true` builds with no error anywhere (issue #45).
+ *     The names are therefore already short: `$`-prefixed because `$` is a
+ *     valid identifier-start char and uncommon as a property PREFIX in the
+ *     surrounding heap (jQuery's `$` is a global, RxJS uses `$` as a suffix),
+ *     which keeps the shape-cache collision risk low.
+ *
+ *     `@llui/dom` mirrors this table in `src/signals/compiler-keys.ts` — it
+ *     cannot import it, because the runtime must stay dependency-free and
+ *     this package pulls in `typescript`. The duplication is deliberate and
+ *     gated: `packages/dom/test/signals/compiler-metadata-abi.test.ts` fails
+ *     the build if the two tables ever diverge. Add a key in BOTH places.
  *
  *   - `COMPILER_DOM_INTERNAL_IMPORTS` — runtime helpers the compiler
  *     references by NAME (not by property key) via an
  *     `import { __cloneStaticTemplate } from '@llui/dom/internal'`
- *     declaration. These cross a module boundary at consumer build time.
- *     Anything the rename pass touches that ends up in an import specifier
- *     would be rewritten to `$X`, which the source package never exports,
- *     and rolldown fails the build with `MISSING_EXPORT`. **These names
- *     must NEVER be renamed.**
+ *     declaration. Hosting them on the `/internal` subpath rather than the
+ *     root barrel keeps them out of the root export surface; rewriting one
+ *     would produce a name the source package never exports and fail the
+ *     build with rolldown's `MISSING_EXPORT` (the Vike SSR case, where
+ *     `@llui/dom/internal` is externalized).
  *
- * The two sets are disjoint by construction — the type-level
- * `Extract<...>` assertion below fails compilation if any name appears
- * in both lists. New compiler-emitted names land in whichever list
- * matches their lifetime; if you accidentally add one to both, `tsc`
- * tells you before the bug ships.
- *
- * Subpath choice matters: the helpers live at `@llui/dom/internal`, not
- * at the root `@llui/dom`, because the rename regex matches any
- * `__`-prefixed identifier in the bundle. By hosting the helpers on a
- * subpath whose import specifier never gets touched by the rename, we
- * keep both the regex and the runtime export surface internally
- * consistent without needing an AST-aware rename pass.
+ * The two sets used to carry a type-level disjointness proof; it went with the
+ * rename pass that made it necessary. That pass matched names as TEXT, so a
+ * property key spelling an import binding got rewritten inside the import
+ * specifier too. Nothing rewrites names now, and a property key cannot shadow an
+ * import binding — do not re-add the proof.
  */
 
-export const COMPILER_RENAMEABLE_KEYS = [
-  '__view',
-  '__view$',
-  '__prefixes',
-  '__handlers',
-  '__compilerVersion',
-  '__directUpdate',
-  '__mask',
-  '__maskHi',
-  '__maskLegend',
-  '__perItem',
-  '__rowUpd',
-  '__rowUpdate',
-  '__schemaHash',
-  '__tpl',
-  '__msgSchema',
-  '__msgAnnotations',
-  '__bindingDescriptors',
-  '__stateSchema',
-  '__effectSchema',
-  '__componentMeta',
-  '__renderToString',
-  '__update',
-  '__dirty',
-] as const
+/**
+ * Emitted property key per metadata field. The KEY of this record is the
+ * field's descriptive name (the authoring/documentation vocabulary); the
+ * VALUE is the literal identifier emitted into the bundle and read back by
+ * the runtime. Only the value is load-bearing at runtime — changing one is a
+ * breaking ABI change that must land in `@llui/dom` in the same release.
+ */
+export const COMPILER_META_KEYS = {
+  /** discriminated-union schema of Msg ({ discriminant, variants }) */
+  msgSchema: '$ms',
+  /** discriminated-union schema of Effect */
+  effectSchema: '$es',
+  /** state shape schema */
+  stateSchema: '$ss',
+  /** per-message JSDoc annotations (intent, affordability, …), sparse */
+  msgAnnotations: '$ma',
+  /** stable hash of the schemas, for hot-reload schema-change detection */
+  schemaHash: '$sh',
+  /** dev-only source location `{ file, line }` */
+  componentMeta: '$cm',
+} as const
 
-export type CompilerRenameableKey = (typeof COMPILER_RENAMEABLE_KEYS)[number]
+/** The descriptive field names of {@link COMPILER_META_KEYS}. */
+export type CompilerMetaField = keyof typeof COMPILER_META_KEYS
+
+/** The literal property keys emitted into the bundle. */
+export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
 
 export const COMPILER_DOM_INTERNAL_IMPORTS = [
   '__bindUncertain',
@@ -72,14 +79,6 @@ export const COMPILER_DOM_INTERNAL_IMPORTS = [
 ] as const
 
 export type CompilerDomInternalImport = (typeof COMPILER_DOM_INTERNAL_IMPORTS)[number]
-
-// Compile-time proof that the two sets are disjoint. If any name appears
-// in both lists, `Extract<...>` resolves to that name's string literal
-// instead of `never`, and the assignment fails. Move the offending name
-// to one list or the other; never both.
-type _Disjoint = Extract<CompilerRenameableKey, CompilerDomInternalImport>
-const _disjointnessProof: _Disjoint extends never ? true : false = true
-void _disjointnessProof
 
 /** Module specifier the compiler emits for the internal-helper imports. */
 export const DOM_INTERNAL_MODULE_SPECIFIER = '@llui/dom/internal'

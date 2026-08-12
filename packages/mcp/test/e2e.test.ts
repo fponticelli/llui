@@ -83,12 +83,12 @@ describe('MCP e2e — signal debug API → real component', () => {
     expect(result.state.count).toBe(3)
   })
 
-  it('llui_validate_message passes through when no __msgSchema is injected', async () => {
+  it('llui_validate_message passes through when no msg schema is injected', async () => {
     const api = mountCounter()
     const server = new LluiMcpServer()
     server.connectDirect(api)
 
-    // This hand-built def has no compiler-injected __msgSchema, so validation
+    // This hand-built def has no compiler-injected msg schema, so validation
     // is a pass-through and the (incomplete) message is still sent.
     const result = (await server.handleToolCall('llui_send_message', {
       msg: { type: 'setLabel' },

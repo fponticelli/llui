@@ -25,6 +25,15 @@ export type { TransitionOptions } from '../types.js'
 // Agent-handler introspection (runtime-agnostic — tags a handler with the msg
 // variants it can send for the agent protocol).
 export { tagSend } from '../binding-descriptors.js'
+// The compiler↔runtime metadata ABI. Public because the readers of a compiled
+// def are not all in this package: `@llui/agent`'s client reads the same keys,
+// and it must read them through this table rather than duplicating literals.
+export {
+  COMPILER_META_KEYS,
+  type CompilerMetaField,
+  type CompilerMetaKey,
+  type CompilerMetadata,
+} from './compiler-keys.js'
 
 // ── Runtime (compiler-emitted) ──────────────────────────────────────
 export {

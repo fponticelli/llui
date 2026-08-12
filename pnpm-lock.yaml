@@ -921,6 +921,10 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+    devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
 
   site:
     dependencies:

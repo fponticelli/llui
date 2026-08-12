@@ -40,7 +40,7 @@ export function registerSsrTools(registry: ToolRegistry): void {
         return {
           ok: false,
           error: 'component_file_unknown',
-          hint: 'Component file path not available — ensure @llui/vite-plugin emits __componentMeta in dev mode.',
+          hint: 'Component file path not available — ensure @llui/vite-plugin emits component metadata in dev mode.',
         }
       }
 

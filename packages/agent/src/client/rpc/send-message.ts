@@ -90,7 +90,7 @@ export async function handleSendMessage(
     return { status: 'rejected', reason: gate.reason, detail: gate.detail }
   }
 
-  // Schema validation: when the compiler emitted a `__msgSchema`,
+  // Schema validation: when the compiler emitted a msg schema,
   // check the payload against this variant's field shape before
   // dispatch. Catches the everyday agent bug — missing required
   // field, wrong enum value, missing discriminant on a tagged union,

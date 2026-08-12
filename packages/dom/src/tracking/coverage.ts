@@ -4,7 +4,7 @@
  * Records each dispatched message's discriminant (or `<non-discriminant>`
  * for objects missing a `type` field) along with the message index it
  * fired at. Consumed by the `llui_coverage` MCP tool to surface untested
- * Msg variants: any variant declared in the compiled `__msgSchema` that
+ * Msg variants: any variant declared in the compiled msg schema that
  * never fired in the current session shows up in `neverFired`.
  *
  * Zero cost in production: `installSignalDebug` is the only caller, and it

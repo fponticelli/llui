@@ -7,7 +7,7 @@ import ts from 'typescript'
  * literals; the structural kinds become object literals with a `kind`
  * field plus the appropriate payload (`of`/`fields`/`values`).
  *
- * Used by `stateSchemaModule` for `__stateSchema` emission. The shape
+ * Used by the transform for state-schema emission. The shape
  * is the runtime/agent contract; downstream tools (MCP introspection,
  * agent's "what type is this field?") consume it.
  */

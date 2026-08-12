@@ -12,7 +12,7 @@
 // four hand-rolled copies this replaces.
 
 import ts from 'typescript'
-import { transformSignalComponentSource } from '@llui/compiler'
+import { transformSignalComponentSource, type SignalTransformOptions } from '@llui/compiler'
 import type { SignalComponentDef } from '../../src/signals/component'
 
 /** Runtime symbols made visible to the evaluated module body, by name. Keys must be
@@ -25,18 +25,23 @@ const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
  * Compile `authored`, evaluate it with `runtime` in scope, and return every export
  * named in `names`. Import statements are stripped (the injected scope stands in for
  * them) and `export const` is de-exported so the body is plain statements.
+ *
+ * `opts` goes straight to the transform, so a test can compile the way a particular
+ * build would — notably `{ emitAgentMetadata: true }` for the production `agent: true`
+ * shape. Omitted, it is the plain optimisation-only build.
  */
 export function compileAndLoadAll(
   authored: string,
   names: readonly string[],
   runtime: RuntimeScope,
+  opts?: SignalTransformOptions,
 ): Record<string, unknown> {
   const params = Object.keys(runtime)
   for (const p of params) {
     if (!IDENTIFIER.test(p))
       throw new Error(`compileAndLoad: ${JSON.stringify(p)} is not a valid identifier`)
   }
-  const lowered = transformSignalComponentSource(authored)
+  const lowered = transformSignalComponentSource(authored, opts)
   const body = lowered
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('import '))
@@ -64,8 +69,9 @@ export function compileAndLoad<S, M, E = never>(
   authored: string,
   name: string,
   runtime: RuntimeScope,
+  opts?: SignalTransformOptions,
 ): SignalComponentDef<S, M, E> {
-  return compileAndLoadAll(authored, [name], runtime)[name] as SignalComponentDef<S, M, E>
+  return compileAndLoadAll(authored, [name], runtime, opts)[name] as SignalComponentDef<S, M, E>
 }
 
 /** The `component()` call in authored source is an identity wrapper at runtime —

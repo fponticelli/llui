@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { installSignalDebug } from '../../src/signals/devtools'
 import { mountSignalComponent } from '../../src/signals/component'
+import { COMPILER_META_KEYS } from '../../src/signals/compiler-keys'
 import { signalText, el } from '../../src/signals/dom'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,7 +146,9 @@ describe('mountSignalComponent — debug registration (dev)', () => {
       init: () => ({ count: 0 }),
       update: (s) => ({ count: s.count + 1 }),
       view: () => [el('p', {}, [signalText((s) => String((s as S).count), ['count'])])],
-      __msgSchema: { discriminant: 'type', variants: { inc: {} } },
+      // Hand-built def: the metadata key is the compiler↔runtime ABI, so
+      // spell it through the shared table exactly as a compiled def would.
+      [COMPILER_META_KEYS.msgSchema]: { discriminant: 'type', variants: { inc: {} } },
     })
 
     const api = g.__lluiDebug

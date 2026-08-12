@@ -17,7 +17,6 @@ import {
   transformSignalComponentSourceWithMap,
   lintSignalSource,
   applyLintFixes,
-  COMPILER_RENAMEABLE_KEYS,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
@@ -724,11 +723,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   // actually compiled at least one component; a build that reaches
   // generateBundle with it unset failed closed.
   let sawSignalComponent = false
-  // Module ids the signal transform actually compiled. The post-bundle
-  // property-rename pass keys off this so it only rewrites chunks that carry
-  // LLui-emitted code — a third-party module that happens to use a `__`-name
-  // is never touched (provenance, not bare name matching).
-  const compiledModuleIds = new Set<string>()
 
   // Cross-file resolution caches (avoid re-reading sibling type files on
   // every component transform / watch rebuild). Keyed by path; validated by
@@ -1370,11 +1364,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         // is too weak a "fail closed" guarantee — it fires before the transform
         // runs, so a false-positive string match would vacuously satisfy the
         // check. We arm `sawSignalComponent` below, keyed on the transform
-        // actually producing a rewrite (`transformed.map !== null`).
-        // Record provenance for the post-bundle rename pass: this module ran
-        // through the signal transform, so its chunk may carry renameable
-        // LLui-emitted property names.
-        compiledModuleIds.add(id)
+        // actually producing a rewrite (`transformed.map !== null`) — the only
+        // per-module bookkeeping this hook still owes the bundle. (Chunk
+        // provenance used to be tracked here too, for a post-bundle rename
+        // pass; the compiler emits its final names now, so the bundle is left
+        // alone entirely — see the ANTI-RECIPE above `generateBundle`.)
         // Enforce signal lint rules. Lint the AUTHORED source. Two channels:
         //  - `convention` diagnostics carry a runtime-neutral rename fix (e.g.
         //    `tabIndex` → `tabindex`); auto-apply them to the emitted code and
@@ -1527,19 +1521,29 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     // pass may emit a stub module bundle that legitimately contains no
     // components.
     //
-    // ANTI-RECIPE — property-mangling the `__`-prefixed compiler-emit
-    // fields (`__view`, `__prefixes`, `__handlers`, …) saves 570–1,406
-    // bytes gz on the jfb bench bundle but empirically regresses
-    // keyed-each ops (Update 10th, Select, Swap) by 35–58 %. Verified
-    // 2026-05-20 across three measurements with both terser and
-    // esbuild-post-process implementations; perf cost holds even with
-    // `compress: false`. Property renames should be V8-transparent in
-    // theory; in practice V8's optimizer on the jfb shape produces
-    // measurably slower code on the mangled bundle. Do NOT mangle
-    // these names unless someone first identifies why and produces a
-    // mangle-safe implementation. See commit d2855d7 (landed) +
-    // b63a6ef (reverted) for the full attempt.
-    generateBundle(opts, bundle) {
+    // ANTI-RECIPE — this hook used to also run a post-bundle property-rename
+    // pass over the compiler-emitted metadata keys, scoped by provenance to
+    // chunks containing a compiled module. That is unfixable by construction:
+    // the WRITER of those keys is app code, the READERS are `@llui/dom` and
+    // `@llui/agent`, and any `manualChunks` vendor split (the stock
+    // `{ vendor: ['@llui/dom'] }` included) puts them in different chunks —
+    // so the pass renamed the writer and left the reader looking up the old
+    // name, yielding `undefined` schemas in every production `agent: true`
+    // build with no error anywhere (issue #45). The compiler now emits the
+    // final short names itself (`COMPILER_META_KEYS`, mirrored in
+    // `@llui/dom`'s `signals/compiler-keys.ts`), which gets the same bytes
+    // with no bundle-shape dependency. Do NOT reintroduce bundle-time
+    // renaming of compiler-emitted names.
+    //
+    // Related ANTI-RECIPE — property-MANGLING the compiler-emit fields with
+    // terser/esbuild saves 570–1,406 bytes gz on the jfb bench bundle but
+    // empirically regresses keyed-each ops (Update 10th, Select, Swap) by
+    // 35–58 %. Verified 2026-05-20 across three measurements with both
+    // implementations; the cost holds even with `compress: false`. Property
+    // renames should be V8-transparent in theory; in practice V8's optimizer
+    // on the jfb shape produces measurably slower code on the mangled bundle.
+    // See commit d2855d7 (landed) + b63a6ef (reverted) for the full attempt.
+    generateBundle(opts) {
       if (devMode) return
       if (opts.dir === undefined && opts.file === undefined) return
       // The `ssr` flag on the output options is the cleanest signal for
@@ -1555,154 +1559,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             "(check `enforce: 'pre'`). The signal transform sets an internal " +
             'flag whenever it lowers a `component()` file; that flag was never set.',
         )
-      }
-
-      // Compiler-emit property rename pass. The compiler injects
-      // descriptive names like `__view` / `__prefixes` / `__handlers`
-      // for the runtime's reactive bookkeeping; production bundles
-      // don't need the self-documenting names. Rename to `$a` /
-      // `$b` / `$c` etc. — `$` is a valid identifier-start char,
-      // uncommon as a property prefix in the surrounding heap
-      // (jQuery's `$` is a global, RxJS uses `$` as a suffix), so
-      // it preserves the heap-uniqueness that an esbuild/terser-
-      // style single-char mangle lacked (which regressed jfb's
-      // keyed-each ops; see ANTI-RECIPE comment above the
-      // integrity check). `$X` saves 1 char per occurrence vs the
-      // `__X` form this pass shipped at Tier 21.
-      //
-      // Allow-list approach: rename ONLY the specific `__`-prefixed
-      // identifiers the LLui compiler is known to emit. Other tools
-      // sharing the `__` convention — Vite's `__vite__mapDeps`, Vike's
-      // `__VIKE__NOT_SERIALIZABLE__` marker, user-defined `__LLUI_STATE__`
-      // hydration containers, the test-fixture `__test__` sentinel string
-      // value — must pass through unmolested. A deny-list approach
-      // (rename everything, exempt some) shipped at Tier 21 broke vike
-      // SSR builds because the deny-list missed Vite/Vike internals
-      // that didn't appear in the smaller bench bundle.
-      //
-      // The list is sourced from `@llui/compiler`'s
-      // `COMPILER_RENAMEABLE_KEYS` constant — the single declaration of
-      // "names that are safe to property-rename." Compiler-emitted
-      // runtime helpers (`__bindUncertain`, `__cloneStaticTemplate`,
-      // `__runPhase2`, `__handleMsg`, `__registerScopeVariants`,
-      // `__clientOnlyStub`) are intentionally NOT in this list: they
-      // travel through module imports, and rewriting the import
-      // specifier (`from '@llui/dom/internal'`) against the original
-      // export name produces a `MISSING_EXPORT` rolldown error on any
-      // build that externalizes `@llui/dom/internal` (Vike SSR being
-      // the common case). The compiler/dom contract puts them on the
-      // `/internal` subpath; the rename invariant keeps them off the
-      // rename list. A type-level disjointness assertion in
-      // emit-names.ts enforces "renameable" ∩ "internal-import" = ∅.
-      //
-      // TWO safety layers guard against rewriting foreign identifiers:
-      //  1. Provenance — only chunks that contain a module the signal
-      //     transform actually compiled are scanned/rewritten. A chunk of
-      //     pure third-party code is skipped even if it uses a `__`-name.
-      //  2. Generic-name exclusion — `__update` / `__dirty` are dropped
-      //     from the target set. They read as ordinary user/library field
-      //     names (unlike `__msgSchema` / `__prefixes`), and the signal
-      //     transform doesn't emit them anyway, so renaming them is all
-      //     risk and no benefit.
-      const GENERIC_EXCLUDE = new Set(['__update', '__dirty'])
-      const RENAME_TARGETS = new Set<string>(
-        COMPILER_RENAMEABLE_KEYS.filter((k) => !GENERIC_EXCLUDE.has(k)),
-      )
-      const RENAME_PATTERN = /\b__[A-Za-z_][A-Za-z0-9_]*\b/g
-      // Provenance filter: the chunks we're allowed to rewrite.
-      const isCompiledChunk = (moduleIds: readonly string[] | undefined): boolean =>
-        moduleIds !== undefined && moduleIds.some((mid) => compiledModuleIds.has(mid))
-      const counts = new Map<string, number>()
-      for (const chunk of Object.values(bundle)) {
-        if (chunk.type !== 'chunk') continue
-        if (!isCompiledChunk(chunk.moduleIds)) continue
-        for (const m of chunk.code.matchAll(RENAME_PATTERN)) {
-          const name = m[0]
-          if (!RENAME_TARGETS.has(name)) continue
-          counts.set(name, (counts.get(name) ?? 0) + 1)
-        }
-      }
-      // Skip the pass entirely if nothing to rename — avoids the regex
-      // compile + chunk rewrite for apps that don't emit any
-      // compiler-internal fields (none in practice; ComponentDef
-      // always carries at least `__prefixes` / `__view`).
-      if (counts.size > 0) {
-        // Order by total bytes saved per name (length × occurrence)
-        // descending, so the most-used names get the shortest
-        // replacements.
-        const ranked = [...counts.entries()].sort(
-          (a, b) => (b[0].length - 3) * b[1] - (a[0].length - 3) * a[1],
-        )
-        const ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        const shortNameAt = (i: number): string => {
-          let s = ''
-          do {
-            s = ALPHABET[i % 52] + s
-            i = Math.floor(i / 52) - 1
-          } while (i >= 0)
-          // `$` prefix instead of `__` — saves 1 char per occurrence and
-          // is uncommon enough as a property prefix in the surrounding
-          // JS heap (jQuery's `$` is a global identifier, RxJS uses `$`
-          // as a SUFFIX) to keep cache-collision risk low.
-          return '$' + s
-        }
-        const renames = new Map<string, string>()
-        for (let i = 0; i < ranked.length; i++) {
-          renames.set(ranked[i]![0], shortNameAt(i))
-        }
-        // Build one alternation regex so each chunk is rewritten in a
-        // single pass — eliminates the collision risk where a newly
-        // assigned short name (`__b`) could match an as-yet-unrenamed
-        // original (`__b` from a prior pass).
-        const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const alternation = [...renames.keys()].map(escapeRe).join('|')
-        const replacer = new RegExp(`\\b(${alternation})\\b`, 'g')
-        for (const chunk of Object.values(bundle)) {
-          if (chunk.type !== 'chunk') continue
-          if (!isCompiledChunk(chunk.moduleIds)) continue
-          // Rewrite through MagicString so the chunk's source map is
-          // regenerated in step with the edits instead of being silently
-          // desynced by a raw `String.replace`. When the build has source
-          // maps enabled (`chunk.map` present) we hand back a coherent map:
-          // renaming shifts columns, and the regenerated map reflects that.
-          // (A full remap back through the original TS would need a
-          // remapping dependency the plugin doesn't ship; the honest fix at
-          // that depth is to shorten these names at compiler-emit time.)
-          const ms = new MagicString(chunk.code)
-          let touched = false
-          for (const m of chunk.code.matchAll(replacer)) {
-            const idx = m.index
-            const name = m[0]
-            const short = renames.get(name)
-            if (idx === undefined || short === undefined) continue
-            ms.overwrite(idx, idx + name.length, short)
-            touched = true
-          }
-          if (!touched) continue
-          chunk.code = ms.toString()
-          if (chunk.map) {
-            // Regenerate the chunk map so it stays coherent with the edits
-            // (a raw String.replace would leave it silently desynced). The
-            // map's source is the pre-rename chunk text — one hop shallower
-            // than the original TS, which a full remap would need a
-            // remapping dependency the plugin doesn't ship.
-            const gen = ms.generateMap({
-              hires: true,
-              source: chunk.fileName,
-              includeContent: true,
-            })
-            chunk.map = {
-              version: gen.version,
-              file: chunk.map.file,
-              sources: gen.sources,
-              sourcesContent: gen.sourcesContent ?? [],
-              names: gen.names,
-              mappings: gen.mappings,
-              toString: () => gen.toString(),
-              toUrl: () => gen.toUrl(),
-            }
-          }
-        }
       }
     },
   }

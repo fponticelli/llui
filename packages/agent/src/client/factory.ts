@@ -1,3 +1,4 @@
+import { COMPILER_META_KEYS, type CompilerMetadata } from '@llui/dom'
 import type { SignalComponentHandle } from '@llui/dom'
 import type { AgentEffect } from './effects.js'
 import type { AgentConfirmState } from './agentConfirm.js'
@@ -17,7 +18,8 @@ import { resolvePath } from './rpc/query-state.js'
 import { computeStateDiff } from '../state-diff.js'
 
 /**
- * The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
+ * The shape the compiler emits as its msg-schema metadata (keyed by
+ * `COMPILER_META_KEYS.msgSchema`). Mirrors `MsgField`
  * from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
  *
  *   1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
@@ -68,11 +70,16 @@ export type MsgSchemaShape = {
   variants: Record<string, Record<string, MsgSchemaField>>
 }
 
-type ComponentMetadata = {
-  __msgSchema?: unknown
-  __stateSchema?: unknown
-  __msgAnnotations?: Record<string, MessageAnnotations>
-  __schemaHash?: string
+/**
+ * The compiled def as this client reads it. The metadata half is keyed by the
+ * compiler↔runtime ABI (`COMPILER_META_KEYS`, owned by `@llui/dom`): this client
+ * and the compiler that wrote the def routinely land in different bundle chunks,
+ * so the key is taken from the shared table and never spelled as a literal.
+ * `CompilerMetadata` types the annotations loosely (`Record<string, unknown>`);
+ * we narrow the one field this client interprets structurally.
+ */
+type ComponentMetadata = Omit<CompilerMetadata, typeof COMPILER_META_KEYS.msgAnnotations> & {
+  readonly [COMPILER_META_KEYS.msgAnnotations]?: Record<string, MessageAnnotations>
   name: string
   agentAffordances?: (state: unknown) => Array<{ type: string; [k: string]: unknown }>
   agentDocs?: AgentDocs
@@ -393,12 +400,13 @@ export function createAgentClient<State, Msg>(
     flush: () => opts.handle.flush(),
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
     getAndClearDrainErrors: () => drainErrors.splice(0, drainErrors.length),
-    getMsgAnnotations: () => opts.def.__msgAnnotations ?? null,
+    getMsgAnnotations: () => opts.def[COMPILER_META_KEYS.msgAnnotations] ?? null,
     // The compiler-injected message schema. Used by `list_actions` to
     // synthesize payload examples for `@agentOnly` variants that have
     // no live UI binding — the agent should still see them as
     // affordances even though no human can click them.
-    getMsgSchema: () => (opts.def.__msgSchema as MsgSchemaShape | undefined) ?? null,
+    getMsgSchema: () =>
+      (opts.def[COMPILER_META_KEYS.msgSchema] as MsgSchemaShape | undefined) ?? null,
     // Run the reducer in isolation for `would_dispatch`. Wraps the
     // AppHandle's same-named method so the host doesn't need a direct
     // reference to the live ComponentInstance.
@@ -435,13 +443,13 @@ export function createAgentClient<State, Msg>(
     t: 'hello' as const,
     appName: opts.def.name,
     appVersion: opts.appVersion ?? '0.0.0',
-    msgSchema: (opts.def.__msgSchema ?? {}) as Record<string, MessageSchemaEntry>,
-    stateSchema: (opts.def.__stateSchema ?? {}) as object,
+    msgSchema: (opts.def[COMPILER_META_KEYS.msgSchema] ?? {}) as Record<string, MessageSchemaEntry>,
+    stateSchema: opts.def[COMPILER_META_KEYS.stateSchema] ?? {},
     affordancesSample: opts.def.agentAffordances
       ? opts.def.agentAffordances(redactedState(opts.handle.getState()))
       : [],
     docs: opts.def.agentDocs ?? null,
-    schemaHash: opts.def.__schemaHash ?? '',
+    schemaHash: opts.def[COMPILER_META_KEYS.schemaHash] ?? '',
     lapVersion: LAP_VERSION,
   })
 
