@@ -34,6 +34,8 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
  *
  * If the surrounding build is torn down before the loader settles, a cancelled
  * flag skips the deferred mount; any already-mounted child handle is disposed.
+ * The flag is re-checked AFTER the deferred mount too, so a teardown raised from
+ * inside the child's own `onMount` still disposes it rather than orphaning it.
  */
 export function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
   opts: SignalLazyOptions<LS, LM, LE>,
@@ -98,11 +100,27 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   const onLoaded = (def: SignalComponentDef<LS, LM, LE>): void => {
     if (cancelled) return
     removeFallback()
-    mounted = mountSignalComponent<LS, LM, LE>(
+    // Assign to a LOCAL, then re-check `cancelled` before publishing it to the
+    // field the teardown disposes. The loaded component's `onMount` callbacks run
+    // SYNCHRONOUSLY inside this call, so one of them can tear the host down
+    // (directly, or via an effect whose continuation is synchronous) while
+    // `mounted` is still null — the teardown's `mounted?.dispose()` then no-ops,
+    // and a plain `mounted = mountSignalComponent(...)` would install a live child
+    // nothing can ever reach: its own update loop, timers, effects and DOM
+    // subscriptions would outlive the host for the life of the page.
+    const handle = mountSignalComponent<LS, LM, LE>(
       { anchor: anchor as Comment, mode: 'append' },
       def,
       opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,
     )
+    if (cancelled) {
+      // The host was disposed during the mount above — dispose the child here
+      // instead (its handle is idempotent, so a later teardown is still safe) and
+      // leave the field null, since nothing may reach a torn-down child.
+      handle.dispose()
+      return
+    }
+    mounted = handle
   }
   const onLoadError = (err: unknown): void => {
     if (cancelled) return
@@ -115,6 +133,13 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
     // message or a retry button reading `state`), not just the captured `err`.
     // Falls back to null outside a component mount.
     errorArm.switchTo('error', () => opts.error!(e), c.getState ? c.getState() : null)
+    // Same reentrancy hole as `onLoaded`: the arm's `onMount` callbacks run inside
+    // `switchTo`, which records the mounted arm only AFTER they return — so a host
+    // teardown raised from one of them calls `errorArm.dispose()` on a controller
+    // that still holds nothing, and the arm's scope + onMount cleanups survive it.
+    // Re-dispose on return; `ArmController.dispose` is idempotent (an already-torn-
+    // down controller has no mounted arm), so the normal path is unaffected.
+    if (cancelled) errorArm.dispose()
   }
   void opts.loader().then(onLoaded, onLoadError)
 
