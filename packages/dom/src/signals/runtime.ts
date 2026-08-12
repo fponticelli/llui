@@ -38,6 +38,12 @@ export interface BindingError {
   stack?: string
 }
 
+/** What the runtime was doing when the reported throw happened: evaluating a
+ * binding, or notifying a `subscribe()` listener after the commit. `kind` stays
+ * a plain `string` on the wire-shaped {@link BindingError} (the agent re-maps it
+ * into its own envelope), but the runtime only ever produces these two. */
+export type BindingErrorKind = 'binding' | 'subscriber'
+
 // Active binding-error handler stack. A component installs its handler around
 // its synchronous mount + every send (both of which run all binding produce/
 // commit work), so the stack top always attributes a throw to the right
@@ -61,15 +67,26 @@ export function withBindingErrors(
   }
 }
 
+/** Shape an arbitrary throw into the {@link BindingError} envelope a
+ * `setOnBindingError` hook receives. Exported because not every isolated throw
+ * happens INSIDE a `withBindingErrors` scope: the component's post-commit
+ * subscriber sweep runs after that scope has exited, so it has to reach its
+ * handler directly instead of through the stack (see `commitPending`). Routing
+ * it through this one shaper keeps the envelope — and therefore the agent's
+ * `drain.errors` entries — identical whichever path reports. */
+export function toBindingError(err: unknown, kind: BindingErrorKind): BindingError {
+  const e = err as { message?: unknown; stack?: unknown }
+  return {
+    kind,
+    message: typeof e?.message === 'string' ? e.message : String(err),
+    stack: typeof e?.stack === 'string' ? e.stack : undefined,
+  }
+}
+
 function reportBindingError(err: unknown): void {
   const handler = errorHandlers[errorHandlers.length - 1]
   if (!handler) return
-  const e = err as { message?: unknown; stack?: unknown }
-  handler({
-    kind: 'binding',
-    message: typeof e?.message === 'string' ? e.message : String(err),
-    stack: typeof e?.stack === 'string' ? e.stack : undefined,
-  })
+  handler(toBindingError(err, 'binding'))
 }
 
 /** The behavioral half of a binding: the accessor + the DOM write. The scope

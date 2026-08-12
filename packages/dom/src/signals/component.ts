@@ -12,7 +12,7 @@
 
 import { mountSignal, type SignalMount, type MountTarget } from './mount.js'
 import type { Renderable } from './element.js'
-import { withBindingErrors, type BindingError } from './runtime.js'
+import { withBindingErrors, toBindingError, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import type { Signal } from './types.js'
@@ -113,7 +113,12 @@ export interface SignalComponentHandle<S, M> {
   dispose(): void
   /** Register a listener called synchronously after every update cycle that
    * changes state, with the new state. Returns an unsubscribe. No-op after
-   * dispose. Backs the agent protocol's state-update frames. */
+   * dispose. Backs the agent protocol's state-update frames.
+   *
+   * Each listener is ISOLATED: a throw is reported (console +
+   * {@link SignalComponentHandle.setOnBindingError}) and then contained — the
+   * listeners after it still run, the message's effects are still dispatched,
+   * and nothing reaches the caller of `send`. */
   subscribe(listener: (state: S) => void): () => void
   /** Run the reducer in isolation against the current state — `{state, effects}`
    * with no commit/flush/effect dispatch. Backs the agent's `would_dispatch`. */
@@ -130,7 +135,9 @@ export interface SignalComponentHandle<S, M> {
   ): void
   /** Install a hook called when a binding accessor throws during the update
    * cycle; the runtime leaves the binding's DOM at its prior value and continues
-   * with siblings. Backs the agent's dispatch-envelope `drain.errors`. */
+   * with siblings. Also called (with `kind: 'subscriber'`) for a
+   * {@link SignalComponentHandle.subscribe} listener that throws during the
+   * post-commit notify. Backs the agent's dispatch-envelope `drain.errors`. */
   setOnBindingError(hook: ((e: BindingError) => void) | null): void
 }
 
@@ -362,7 +369,65 @@ export function mountSignalComponent<S, M, E = never>(
     } else {
       mount?.update(next)
     }
-    if (subscribers.size > 0) for (const listener of subscribers) listener(next)
+    // Subscribers are the observers an app does NOT control tightly — devtools,
+    // the agent bridge, a test harness — so one of them throwing must stay their
+    // problem. Isolate each listener INDIVIDUALLY — the granularity the binding
+    // loop in runtime.ts uses when an error hook is installed (with no hook it
+    // deliberately takes a try-free path and lets the throw propagate; do NOT
+    // "fix" one of these to match the other) — and never the sweep as a whole: a
+    // single try around the loop would let a bad listener suppress every
+    // listener after it. Letting the throw escape is worse still. It would
+    // unwind out of the commit, out of `drain`, out of `send` into whatever DOM
+    // handler dispatched the message — and because `drain` dispatches a
+    // message's collected effects AFTER the commit, it would also STRAND those
+    // effects: state advanced and the DOM updated, but `onEffect` never fired,
+    // silently (issue #57).
+    //
+    // The `size > 0` guard is load-bearing for the hot path, not cosmetic: with
+    // nobody subscribed (the common case) this allocates no Set iterator and
+    // enters no `try` at all, so a 1k-send burst pays nothing here.
+    if (subscribers.size > 0) {
+      for (const listener of subscribers) {
+        try {
+          listener(next)
+        } catch (err) {
+          reportSubscriberError(err)
+        }
+      }
+    }
+  }
+
+  // Surface an isolated subscriber throw instead of swallowing it: the console
+  // for a human, and the binding-error hook — the agent's `drain.errors` channel
+  // — for tooling. It cannot go through runtime.ts's handler STACK the way a
+  // binding throw does, because the sweep above runs AFTER `withBindingErrors`
+  // has popped; hand the hook the same envelope directly.
+  //
+  // The console write is UNCONDITIONAL, unlike this file's dev-only warnings.
+  // Those are advisory (a dropped effect, a post-dispose dispatch); this one
+  // reports code that actually threw, and containing it is only an improvement
+  // while it stays visible. In a prod build with no hook installed a dev-gated
+  // log would make the throw vanish completely — strictly worse than the escape
+  // it replaces, which at least reached window.onerror.
+  //
+  // The hook is tooling too, so a throw from IT lands on this same commit path
+  // and would escape `send` exactly as the subscriber's did. Contain it here or
+  // the fix reopens its own hole.
+  function reportSubscriberError(err: unknown): void {
+    console.error(
+      `[llui] ${def.name ?? 'component'}: a subscribe() listener threw. It was ` +
+        `isolated — the remaining listeners and this message's effects still ran.`,
+      err,
+    )
+    try {
+      onBindingError?.(toBindingError(err, 'subscriber'))
+    } catch (hookErr) {
+      console.error(
+        `[llui] ${def.name ?? 'component'}: the setOnBindingError hook threw while ` +
+          `reporting a subscribe() listener error. It was isolated too.`,
+        hookErr,
+      )
+    }
   }
 
   // Process the queue to quiescence: run all queued reducers (collecting their

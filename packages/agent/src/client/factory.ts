@@ -616,15 +616,18 @@ export function createAgentClient<State, Msg>(
         }
       }
       installErrorListeners()
-      // Catch per-binding throws into drain.errors so a single bad
+      // Catch throws the runtime isolates into drain.errors so a single bad
       // binding doesn't blank the page AND the agent learns about it.
       // Runtime contract: leaves the binding's `lastValue` unchanged
       // (DOM stays at last-rendered value), continues with siblings,
-      // calls this hook once per binding throw.
+      // calls this hook once per binding throw. It also reports a
+      // `subscribe()` listener that threw during the post-commit notify
+      // (`kind: 'subscriber'`), hence the label is `info.kind` rather than a
+      // hardcoded "binding" — that one is us, the agent's own state listener.
       opts.handle.setOnBindingError((info) => {
         drainErrors.push({
           kind: 'error',
-          message: `[binding ${info.kind}${info.key ? `:${info.key}` : ''}] ${info.message}`,
+          message: `[${info.kind}${info.key ? `:${info.key}` : ''}] ${info.message}`,
           stack: info.stack,
         })
       })
