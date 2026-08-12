@@ -1,5 +1,23 @@
-import type { SignalComponentDef, SignalComponentHandle } from '@llui/dom'
+import type { MountSignalOptions, SignalComponentDef, SignalComponentHandle } from '@llui/dom'
 import { mountApp } from '@llui/dom'
+
+/**
+ * Mount options `testView` forwards verbatim to `mountApp` — the whole bag, so a
+ * consumer can exercise the mode their app really runs in (notably
+ * `scheduler: 'raf'`, where `handle.flush()` forces the coalesced commit).
+ *
+ * The one exclusion rule: an option that competes with what `testView` itself
+ * owns is dropped. `mountSignalComponent` resolves the seed as
+ * `hydrate.serverState` → `initialState` → `init()`, and `testView` seeds
+ * through `init()`, so either of the first two would silently outrank the
+ * positional `state` argument and leave it reading as dead code. That rules out
+ * `initialState` (the `state` argument IS the seed) and `hydrate` (which
+ * re-seeds AND expects server-rendered HTML to take over, in a container
+ * `testView` just created empty — `@llui/dom`'s own suite covers hydration,
+ * against real server markup). Everything else — `scheduler`, `contexts`,
+ * `devtools`, and any option added later — flows through untouched.
+ */
+export type TestViewOptions<S> = Omit<MountSignalOptions<S>, 'initialState' | 'hydrate'>
 
 /**
  * Init bag for {@link ViewHarness.fire}. An intersection of the standard event
@@ -69,8 +87,15 @@ export interface ViewHarness<S, M> {
 /**
  * Mount a component against a fresh container and return an interactive harness.
  * Simulates events + auto-flushes so tests can chain assertions naturally.
+ * `opts` reaches `mountApp` untouched (see {@link TestViewOptions}); omitting it
+ * keeps the runtime defaults — notably `scheduler: 'sync'`, where every `send`
+ * commits on its own.
  */
-export function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M> {
+export function testView<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  state: S,
+  opts?: TestViewOptions<S>,
+): ViewHarness<S, M> {
   const container = document.createElement('div')
 
   // testView runs the component against the provided `state`, not its
@@ -80,7 +105,7 @@ export function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): V
     init: () => [state, []],
   }
 
-  const handle = mountApp(container, testDef)
+  const handle = mountApp(container, testDef, opts)
   let disposed = false
 
   function required(selector: string): Element {

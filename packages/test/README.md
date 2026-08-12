@@ -56,7 +56,7 @@ describe('Counter', () => {
     harness.flush()
     expect(harness.state.count).toBe(2)
 
-    // assertEffects deep-equals the recorded effect log; init() emits
+    // assertEffects partial-matches the recorded effect log; init() emits
     // a 'logged' on mount, then nothing for inc/inc.
     assertEffects(harness.effects, [{ type: 'logged', level: 'info', payload: 'mount' }])
   })
@@ -80,10 +80,10 @@ Mount a component definition headlessly. Returns current state snapshot and mess
 
 ```ts
 // @doc-skip — API signature illustration
-testView(def, state?) => ViewHarness<M>
+testView(def, state?, options?) => ViewHarness<M>
 ```
 
-Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods.
+Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods. `options` is forwarded to `mountApp` unchanged, minus the two options that would shadow testView's own seed and container (`initialState` — the `state` argument is the seed — and `hydrate`), so a test can run in the mode the app really runs in: with `{ scheduler: 'raf' }` a burst of `harness.handle.send(...)` coalesces into ONE commit, which `harness.handle.flush()` forces synchronously. Omitted, the runtime default `scheduler: 'sync'` applies and every send commits on its own.
 
 | Method                   | Description                                     |
 | ------------------------ | ----------------------------------------------- |
@@ -102,19 +102,32 @@ Mount a component into jsdom with full DOM. Returns a harness with DOM query and
 
 ```ts
 // @doc-skip — API signature illustration
-assertEffects(effects, expected) => void
+assertEffects(effects, expected, options?) => void
 ```
 
-Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
+Partial-match assertion on effect arrays. The lists must be the same length, and
+each effect must contain everything its expectation names — unspecified keys are
+ignored, nested arrays match by index with a length check. Provides clear diff
+output on mismatch.
+
+An expected `undefined` is an assertion, not a wildcard: `{ url: undefined }`
+demands the effect carry a `url` key holding `undefined`, and fails both for a
+url with a value and for an effect with no `url` key at all. To leave a field
+unconstrained, omit its key.
+
+Pass `{ exact: true }` to also reject keys the expectation does not name (at
+every level it reaches). Callback fields and keys holding `undefined` are exempt
+— they are outside the effect's JSON data. Exact mode is how you assert a key is
+absent.
 
 ### propertyTest
 
 ```ts
 // @doc-skip — API signature illustration
-propertyTest(gen, prop) => void
+propertyTest(def, config) => void
 ```
 
-Property-based testing. Generates random inputs via `gen` and checks `prop` holds for all.
+Property-based testing over a component definition: `config.messageGenerators` produce random message sequences and `config.invariants` are checked after every step, with automatic shrinking to a minimal failing sequence. An optional `config.mount` block also mounts the component into a real DOM container and drives the sequence through `send`/`flush`, asserting no `console.error` and an optional `assertDom(state, container)` after each commit. Every mounted run restores `console.error` and disposes the handle however it exits, and is swept for timers still armed at `dispose()` — `mount.leaks` picks `'warn'` (default), `'error'`, or `'off'`.
 
 ### replayTrace
 
@@ -124,6 +137,12 @@ replayTrace(def, trace) => void
 ```
 
 Replay a recorded message trace against a component definition. Asserts state at each step.
+
+The trace's `lluiTrace` version and its `component` are checked before the first
+reducer call, so a trace from another component — or from a future format —
+fails with a version/identity error instead of a misleading state diff. A trace
+with **no** `component` field is replayed anyway with a warning (older exports
+predate the field); only a `component` that is present and different is an error.
 
 ### emulateBlurOnRemoval / withBlurOnRemoval
 
