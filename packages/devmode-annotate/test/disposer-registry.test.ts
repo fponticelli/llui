@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDisposerRegistry } from '../src/hud-lifecycle.js'
 
 // The two-phase teardown contract the HUD's destroy() order rests on (#115):
@@ -50,5 +50,24 @@ describe('createDisposerRegistry', () => {
     reg.addCore(() => order.push('core'))
     expect(() => reg.dispose()).not.toThrow()
     expect(order).toEqual(['after', 'core'])
+  })
+
+  // …but it must not be silent either. `NotesStore.dispose()` being REQUIRED
+  // is a type-level guard only: a `as unknown as NotesStore` fake reaches
+  // destroy() and throws a TypeError right here, which used to read as a
+  // clean teardown.
+  it('reports a throwing disposer instead of swallowing it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const reg = createDisposerRegistry()
+    reg.add(() => {
+      throw new Error('boom')
+    })
+    reg.dispose()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain('teardown threw')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 })

@@ -13,8 +13,15 @@
 //               first and must be removed last).
 // The core phase exists so those two can be registered at CREATION time
 // instead of in a trailing block: a mount that throws partway can then unwind
-// what it already built instead of orphaning it (#115), without disturbing the
-// order `destroy()` has always run in.
+// what it already built instead of orphaning it (#115).
+//
+// Registering at creation time DOES move a few peripherals earlier in the FIFO
+// pass — the console patch now runs first instead of ninth, and the three
+// global listeners follow it — which is deliberate and benign: none of those
+// teardowns observes another. What the two phases preserve exactly is the pair
+// that is NOT reorderable, `handle.dispose()` before the HUD's DOM is removed.
+// A peripheral registered at creation must be independent of every other
+// peripheral; if one ever isn't, it belongs in the trailing block.
 
 /** A registry of teardown callbacks that `destroy()` folds over. */
 export interface DisposerRegistry {
@@ -37,8 +44,11 @@ export function createDisposerRegistry(): DisposerRegistry {
   const run = (d: () => void): void => {
     try {
       d()
-    } catch {
-      // A failing teardown must not strand the remaining disposers.
+    } catch (err) {
+      // A failing teardown must not strand the remaining disposers — but it
+      // must not be INVISIBLE either. Swallowing silently is how a store fake
+      // missing `dispose()` (a TypeError here) reads as a clean destroy.
+      console.warn('[llui:devmode-annotate] a teardown threw during destroy():', err)
     }
   }
   return {
