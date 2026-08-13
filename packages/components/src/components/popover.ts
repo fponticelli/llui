@@ -277,16 +277,15 @@ export function overlay(opts: OverlayOptions): Mountable {
       persistent: true,
     },
     focusTrap: trapFocus ? { restoreFocus } : undefined,
-    dismiss:
-      closeOnEscape || closeOnOutsideClick
-        ? {
-            disableEscape: !closeOnEscape,
-            disableOutside: !closeOnOutsideClick,
-            extra: (els) => {
-              if (restoreFocus) els.anchor?.focus()
-            },
-          }
-        : undefined,
+    // Always pushed — see the note on `dialog.overlay`: the layer is this
+    // popover's place on the stack, not just its dismissal wiring (#123).
+    dismiss: {
+      disableEscape: !closeOnEscape,
+      disableOutside: !closeOnOutsideClick,
+      extra: (els) => {
+        if (restoreFocus) els.anchor?.focus()
+      },
+    },
   })
 }
 

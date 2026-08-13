@@ -153,13 +153,19 @@ Shared helpers used internally and exported for advanced use:
 
 The three "outside-aware" utilities above (`dismissable`, `aria-hidden`, `focus-trap`) define _inside_ as a single content element. But an interactive overlay opened from within a dialog — a `select` listbox, a markdown-editor floating toolbar, any typeahead/menu — is often `portal()`-ed to a **body-level sibling**, so it is logically nested but physically _outside_ the dialog's content. Left unhandled, clicking it dismisses the dialog, `inert` makes it dead, and Tab can't reach it.
 
-`@llui/components`' own portaled overlays (`select`/`menu`/`popover`/…) already cooperate by pushing onto the dismissable **stack** (only the topmost layer claims an outside-click). A portaled surface that does _not_ register a dismissable layer (e.g. a selection-tracked floating toolbar) instead declares itself with `registerNestedLayer(el | () => Element[])` on mount:
+A portaled surface declares itself with `registerNestedLayer(el | () => Element[], opts?)` on mount:
 
 ```ts
 onMount(() => registerNestedLayer(() => overlayRootElement()))
 ```
 
-While registered, the element (and its descendants) is treated as inside by all three utilities. Prefer the resolver form — register once for the overlay's lifetime and return the live root only while open.
+While registered, the element (and its descendants) is treated as inside. Prefer the resolver form — register once for the overlay's lifetime and return the live root only while open.
+
+**Registration is per-aspect.** A lookup is global, so one answer cannot be right for all three consumers at once: a `select` open inside a dialog must stay Tab-reachable from the dialog's trap _and_ still dismiss when you click the dialog's own background. So a registration names the aspects it participates in — `outside` (`dismissable`), `focus` (`focus-trap`), `hide` (`aria-hidden`) — defaulting to all three.
+
+`@llui/components`' own non-modal portaled overlays (`popover`/`select`/`combobox`/`menu`/`context-menu`/`menubar`/`hover-card`/`tooltip`/`searchable-select`) register themselves automatically while open, for `focus` + `hide` only: their outside-click cooperation comes from the dismissable **stack**, which is ordered (only the topmost layer claims an outside-click) and therefore strictly better than the registry's global answer. The exception is an overlay that pushes no dismissable layer at all — a `tooltip` with `closeOnEscape: false` — which registers `outside` too, because nothing on the stack speaks for it.
+
+**Modal surfaces (`dialog`, `drawer`, a `popover` with `trapFocus`) never register.** They are the layer everything else nests _inside_; registering one would let a trap on the layer beneath Tab into it, and would make its own background read as "inside a nested layer" for an overlay open on top of it. Their place in the ordering comes from always occupying the dismissable stack — including when both `closeOnEscape` and `closeOnOutsideClick` are `false`, where the layer claims nothing but still stops the layer beneath from misreading a click inside the modal as an outside interaction.
 
 ### Live regions and the modal sweep
 

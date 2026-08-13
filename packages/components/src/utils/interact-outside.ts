@@ -37,8 +37,11 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
     if (isInAnyElement(target, ignore)) return
     // A logically-nested overlay portaled to a body-level sibling (e.g. a
     // markdown-editor floating toolbar opened inside this dialog) counts as
-    // inside — see registerNestedLayer.
-    if (isInNestedLayer(target)) return
+    // inside — see registerNestedLayer. Only registrations that opted into the
+    // `outside` aspect count: a layer with a dismissable of its own is ordered
+    // by the stack instead, and answering "inside" for it here would stop the
+    // dialog's own background from dismissing an inner select.
+    if (isInNestedLayer(target, 'outside')) return
     opts.onInteractOutside(event)
   }
 
@@ -49,7 +52,7 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
     if (isInAnyElement(target, inside)) return
     const ignore = opts.ignore ? resolveElements(opts.ignore) : []
     if (isInAnyElement(target, ignore)) return
-    if (isInNestedLayer(target)) return
+    if (isInNestedLayer(target, 'outside')) return
     opts.onInteractOutside(event)
   }
 

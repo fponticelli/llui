@@ -326,6 +326,14 @@ export function overlay(opts: OverlayOptions): Mountable {
       shift: opts.shift !== false,
       arrowSelector: opts.arrowSelector,
     },
+    // The one overlay that deliberately pushes NO layer in one of its configs.
+    // A tooltip is hover-transient and non-modal: parking it on the dismissable
+    // stack would gate every outside-click off the layer beneath for as long as
+    // the pointer rests on the trigger, so a click outside an open dialog would
+    // stop closing it. Coverage for the layerless config comes from the overlay
+    // engine's nested-layer registration instead — with `dismiss` undefined it
+    // registers the `outside` aspect too, so a click INSIDE the tooltip is not
+    // read as an outside interaction by the dialog beneath (#123).
     dismiss: closeOnEscape ? { disableOutside: true } : undefined,
   })
 }

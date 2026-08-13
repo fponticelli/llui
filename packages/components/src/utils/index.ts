@@ -15,7 +15,13 @@ export type { FocusTrapOptions } from './focus-trap.js'
 export { setAriaHiddenOutside } from './aria-hidden.js'
 export { lockBodyScroll } from './remove-scroll.js'
 
-export { registerNestedLayer, getNestedLayers, isInNestedLayer } from './nested-layer.js'
+export {
+  registerNestedLayer,
+  getNestedLayers,
+  isInNestedLayer,
+  ALL_NESTED_LAYER_ASPECTS,
+} from './nested-layer.js'
+export type { NestedLayerAspect, NestedLayerOptions } from './nested-layer.js'
 
 export { getFocusables, isFocusable } from './focusables.js'
 export type { ElementSource } from './dom.js'

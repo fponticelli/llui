@@ -42,7 +42,7 @@ const snapshots = new WeakMap<Element, Snapshot>()
 export function setAriaHiddenOutside(target: Element): () => void {
   if (typeof document === 'undefined') return () => {}
   const claimed: Element[] = []
-  const exempt = [...getNestedLayers(), ...document.querySelectorAll(LIVE_REGION_SELECTOR)]
+  const exempt = [...getNestedLayers('hide'), ...document.querySelectorAll(LIVE_REGION_SELECTOR)]
 
   const claim = (el: Element): void => {
     const count = ownership.get(el) ?? 0
