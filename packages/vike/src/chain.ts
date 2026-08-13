@@ -191,7 +191,16 @@ export interface HydrationManifest {
 
   /**
    * DEV BUILDS ONLY — a {@link stateFingerprint} of each init()-seeded layer's
-   * server state (`null` for a data-seeded layer, absent entirely in production).
+   * server state (absent entirely in production).
+   *
+   * `null` at index `i` means NO fingerprint was recorded for that layer, which
+   * happens two ways: the layer was seeded from DATA (nothing calls `init()`, so
+   * there is nothing to check), or `stateFingerprint` DECLINED a state JSON
+   * cannot express (a cycle, a `BigInt`). Both leave the check off for that
+   * layer, and the reader needs no way to tell them apart — either way there is
+   * nothing to compare against. The decline is the one that could hide a real
+   * divergence, so {@link buildManifest} warns when it happens; the skip is
+   * never silent even though the envelope cannot express the difference.
    *
    * Re-seeding a layer by calling its `init()` again on the client is only sound
    * if `init()` is DETERMINISTIC. Nothing enforces that, and a violation is
@@ -200,7 +209,13 @@ export interface HydrationManifest {
    * perfectly in agreement. The fingerprint spans the one boundary the
    * divergence actually lives on, so the client can compare and warn (see
    * {@link checkInitDeterminism}). It is a hash, never the state, and it is not
-   * emitted at all in production.
+   * emitted at all in production — but a 32-bit hash of a low-entropy `init()`
+   * state is a weak oracle, not a secret: a seed drawn from a handful of
+   * candidates (`{ role: 'admin' } | { role: 'user' }`) is recovered by hashing
+   * them all. That is no worse than the layer's own `init()` source, which ships
+   * to the browser regardless — but it is why only init()-seeded layers are
+   * fingerprinted and DATA-seeded ones never are: a data slice is the half that
+   * can carry something the client was not otherwise given.
    */
   initFingerprints?: (string | null)[]
 }
@@ -275,6 +290,20 @@ export function buildManifest(
     if (seedFor(chainData[i]) !== undefined) return null
     const rendered = stateFingerprint(seedStates[i])
     const second = stateFingerprint(seedStateFor(def, undefined))
+    if (rendered === null) {
+      // Declining is what keeps a dev-only probe from throwing, but it also
+      // turns the check OFF for this layer, and a layer whose state JSON cannot
+      // express is exactly where a divergence hides. Say so rather than
+      // recording an indistinguishable `null` and moving on.
+      console.warn(
+        `[llui/vike] <${layerKey(def, i)}> (chain layer ${i}): init() returned state ` +
+          `that is not JSON-serializable (a cycle, a BigInt, …), so no fingerprint ` +
+          `could be recorded and the init()-determinism check is SKIPPED for this ` +
+          `layer. Component state must be JSON-serializable — a Map/Set/Date/class ` +
+          `instance/function in state also breaks devtools time-travel, test replay ` +
+          `and agent snapshots. (dev-only check; not run in production builds)`,
+      )
+    }
     if (rendered !== null && second !== null && rendered !== second) {
       console.warn(
         `[llui/vike] <${layerKey(def, i)}> (chain layer ${i}) has a NON-DETERMINISTIC ` +
@@ -322,7 +351,20 @@ export function checkInitDeterminism(
   const expected = manifest.initFingerprints?.[index]
   if (expected === undefined || expected === null) return
   const actual = stateFingerprint(state)
-  if (actual === null || actual === expected) return
+  if (actual === expected) return
+  if (actual === null) {
+    // The server recorded a fingerprint but the client's re-seed is not
+    // JSON-serializable, so there is nothing to compare it against. Same skip
+    // as the server-side decline, and just as much worth saying out loud.
+    console.warn(
+      `[llui/vike] <${layerKey(def, index)}> (chain layer ${index}): the state its ` +
+        `init() produced on the client is not JSON-serializable (a cycle, a BigInt, ` +
+        `…), so it cannot be compared against the server's fingerprint and the ` +
+        `init()-determinism check is SKIPPED for this layer. Component state must be ` +
+        `JSON-serializable. (dev-only check; not run in production builds)`,
+    )
+    return
+  }
   console.warn(
     `[llui/vike] <${layerKey(def, index)}> (chain layer ${index}) has a NON-DETERMINISTIC ` +
       `init(): it produced different state on the client than on the server, so the ` +

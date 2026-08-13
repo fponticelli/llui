@@ -23,7 +23,7 @@ import { createOnRenderHtml } from '../src/on-render-html.js'
 import type { RenderHtmlResult } from '../src/on-render-html.js'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client.js'
 import { pageSlot } from '../src/page-slot.js'
-import { buildManifest, stateFingerprint } from '../src/chain.js'
+import { buildManifest, checkInitDeterminism, stateFingerprint } from '../src/chain.js'
 
 const env = browserEnv()
 const domEnv = () => env
@@ -257,6 +257,70 @@ describe('the check costs nothing in production', () => {
 
     const render = createOnRenderClient({})
     await expect(render({ Page: StablePage, isHydration: true })).resolves.not.toThrow()
+    expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('a state the fingerprint cannot express skips the check OUT LOUD', () => {
+  // `initFingerprints[i] === null` means two things — "data-seeded, nothing to
+  // check" and "state was not serializable, check skipped". The second silently
+  // disables the one mechanism that spans the hydration boundary, on exactly the
+  // kind of state (a Map, a class instance, a cycle) most likely to diverge, so
+  // it must not pass unremarked just because the envelope cannot express it.
+  const unserializable = () => {
+    const state: Record<string, unknown> = { n: 1 }
+    state.self = state
+    return state
+  }
+
+  it('warns on the server when init() state is not JSON-serializable', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const CyclicPage = {
+      name: 'CyclicPage',
+      init: unserializable,
+      update: (s: unknown) => s,
+      view: () => [],
+    }
+
+    const manifest = buildManifest([CyclicPage], [undefined], [unserializable()], true)
+
+    expect(manifest.initFingerprints).toEqual([null])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/CyclicPage/)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/not JSON-serializable/)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/SKIPPED/)
+  })
+
+  it('warns on the client when only the re-seeded state is unserializable', () => {
+    // The server recorded a real fingerprint; the client's re-seed cannot be
+    // hashed, so there is nothing to compare — a skip, not a match.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const Layer = {
+      name: 'DriftPage',
+      init: () => ({ n: 1 }),
+      update: (s: unknown) => s,
+      view: () => [],
+    }
+    const manifest = buildManifest([Layer], [undefined], [{ n: 1 }], true)
+    expect(warn).not.toHaveBeenCalled()
+
+    checkInitDeterminism(manifest, 0, Layer, undefined, unserializable(), true)
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/DriftPage/)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/not JSON-serializable/)
+  })
+
+  it('says nothing for a data-seeded layer, whose null means "nothing to check"', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const Layer = {
+      name: 'DataPage',
+      init: () => ({ n: 1 }),
+      update: (s: unknown) => s,
+      view: () => [],
+    }
+    const manifest = buildManifest([Layer], [{ n: 2 }], [{ n: 2 }], true)
+    expect(manifest.initFingerprints).toEqual([null])
     expect(warn).not.toHaveBeenCalled()
   })
 })
