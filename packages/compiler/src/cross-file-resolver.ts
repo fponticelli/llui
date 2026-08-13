@@ -11,6 +11,7 @@ import {
 import { extractStateSchema } from './state-schema.js'
 import { extractMsgAnnotations, parseAnnotations } from './msg-annotations.js'
 import type { ModuleCache, ParsedModule } from './parse.js'
+import { unwrapParenthesizedType } from './union-peel.js'
 
 /**
  * Resolved external type sources for the file under analysis: the declaring
@@ -370,12 +371,17 @@ async function collectMsgVariants(
 
   // Single-variant alias: `type Foo = { type: 'a', ... }`. Treat as a
   // one-element union so a Msg variant can be its own type alias.
-  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(alias.type)
-    ? [...alias.type.types]
-    : [alias.type]
+  // Parentheses are legal anywhere a type is and match neither shape test
+  // below (#96), so `type Msg = ( … )` is unwrapped whole. Each MEMBER keeps
+  // its original node here — `readLeadingJSDocForMember` works off these
+  // positions, and a member's comment sits BEFORE its own `(`.
+  const aliasBody = unwrapParenthesizedType(alias.type)
+  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(aliasBody)
+    ? [...aliasBody.types]
+    : [aliasBody]
 
   for (let i = 0; i < memberNodes.length; i++) {
-    const member = memberNodes[i]!
+    const member = unwrapParenthesizedType(memberNodes[i]!)
 
     if (ts.isTypeLiteralNode(member)) {
       const variant = readDiscriminantLiteral(member)
@@ -483,9 +489,11 @@ async function collectSchemaVariants(
   const alias = aliases.find((a) => a.name.text === located.localName)
   if (!alias) return false
 
-  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(alias.type)
-    ? [...alias.type.types]
-    : [alias.type]
+  // Same parenthesis unwrap as `collectMsgVariants` above (#96).
+  const aliasBody = unwrapParenthesizedType(alias.type)
+  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(aliasBody)
+    ? [...aliasBody.types]
+    : [aliasBody]
 
   // Build a typeIndex that combines this file's local types with any
   // *imported* type aliases referenced inside the variant payloads.
@@ -496,7 +504,8 @@ async function collectSchemaVariants(
   // permissible literal-union values.
   const typeIndex = await buildEnrichedTypeIndex(located.module, ctx)
 
-  for (const member of memberNodes) {
+  for (const raw of memberNodes) {
+    const member = unwrapParenthesizedType(raw)
     if (ts.isTypeLiteralNode(member)) {
       collectOneVariant(member, variants, sf.text, typeIndex)
       continue

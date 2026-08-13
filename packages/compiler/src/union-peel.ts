@@ -1,8 +1,9 @@
 import ts from 'typescript'
 
 /**
- * Shared union pre-processing for the two schema extractors
- * (`msg-schema.ts` and `state-schema.ts`).
+ * Shared type-node pre-processing for the two schema extractors
+ * (`msg-schema.ts` and `state-schema.ts`) — the parenthesis unwrap and the
+ * `undefined`/`null` union peels.
  *
  * Both walk TypeScript type nodes and both must strip `undefined` off a
  * union BEFORE classifying what is left, or the classification trips over
@@ -22,13 +23,36 @@ import ts from 'typescript'
  * {@link peelNullUnion}.
  */
 
+/**
+ * Strip every layer of `( … )` off a type node.
+ *
+ * A `ParenthesizedTypeNode` is legal ANYWHERE a type is, and it is not a union,
+ * not an array, not a literal — so every `ts.isXTypeNode` test in both
+ * resolvers is false for it and the field collapses to `unknown`. That mattered
+ * most for array elements: parentheses are the ONLY way to write a union as an
+ * element type (`'a' | 'b'[]` parses as `'a' | ('b'[])`, a different type), so
+ * before this unwrap EVERY array-of-union field in every consumer's State came
+ * out as `{kind: 'array', of: 'unknown'}` and #88's enum/null/optional handling
+ * could not reach any of them (issue #96).
+ *
+ * Because parentheses are legal everywhere, the unwrap belongs at the TOP of
+ * each resolver and inside the peels below — an isolated fix at the array arm
+ * leaves every sibling position broken, which is how #96 read on `main`.
+ */
+export function unwrapParenthesizedType(type: ts.TypeNode): ts.TypeNode {
+  let t = type
+  // `(('a' | 'b'))[]` nests, so loop rather than unwrap once.
+  while (ts.isParenthesizedTypeNode(t)) t = t.type
+  return t
+}
+
 /** Result of peeling a set of branches off a union type node. */
 export interface PeeledUnion {
   /**
    * The union with the peeled branches removed: the sole survivor when one
-   * branch is left, a rebuilt union node when several are, or the ORIGINAL
-   * node untouched when nothing was peeled (or when peeling would leave
-   * nothing behind).
+   * branch is left, a rebuilt union node when several are, or the input
+   * node — unwrapped of any enclosing parentheses — when nothing was peeled
+   * (or when peeling would leave nothing behind).
    */
   type: ts.TypeNode
   /** True when at least one branch was actually peeled off. */
@@ -46,10 +70,16 @@ export interface PeeledUnion {
  * `unknown`).
  */
 function peelUnionBranches(type: ts.TypeNode, matches: (t: ts.TypeNode) => boolean): PeeledUnion {
-  if (!ts.isUnionTypeNode(type)) return { type, peeled: false }
-  const remainder = type.types.filter((t) => !matches(t))
-  if (remainder.length === type.types.length) return { type, peeled: false }
-  if (remainder.length === 0) return { type, peeled: false }
+  // The peels run on the field's DECLARED node, BEFORE the resolvers get their
+  // own unwrap, so `mode: ('a' | 'b' | undefined)` would otherwise not look
+  // like a union at all and the optionality would be lost outright — not
+  // merely mis-shaped (#96). Unwrapping each branch too covers the rarer
+  // `T | (undefined)` / `T | (null)` spellings.
+  const inner = unwrapParenthesizedType(type)
+  if (!ts.isUnionTypeNode(inner)) return { type: inner, peeled: false }
+  const remainder = inner.types.filter((t) => !matches(unwrapParenthesizedType(t)))
+  if (remainder.length === inner.types.length) return { type: inner, peeled: false }
+  if (remainder.length === 0) return { type: inner, peeled: false }
   const sole = remainder[0]
   if (remainder.length === 1 && sole) return { type: sole, peeled: true }
   // Rebuild `'a' | 'b' | undefined` as `'a' | 'b'` so the remainder runs

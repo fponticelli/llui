@@ -412,6 +412,38 @@ type Msg =
     expect(r?.go?.routeGate).toBe('state.ready')
     expect(r?.go?.routeGateReason).toBeNull()
   })
+
+  // Issue #96. A `ParenthesizedTypeNode` is legal anywhere a type is and
+  // matches none of the shape tests, so a parenthesized variant (or a
+  // parenthesized union) dropped its annotations silently. The JSDoc scan runs
+  // off the ORIGINAL member positions — a comment sits before the `(`, so
+  // unwrapping the node handed to the scan would move the window past it.
+  it('reads annotations through parentheses (#96)', () => {
+    const src = `
+type Msg =
+  /** @intent("Increment") */
+  | ({ type: 'inc' })
+  /** @intent("Decrement") */
+  | { type: 'dec' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.inc?.intent).toBe('Increment')
+    expect(r?.dec?.intent).toBe('Decrement')
+  })
+
+  it('reads annotations from a wholly parenthesized union (#96)', () => {
+    const src = `
+type Msg = (
+  /** @intent("Increment") */
+  | { type: 'inc' }
+  /** @intent("Decrement") */
+  | { type: 'dec' }
+)
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.inc?.intent).toBe('Increment')
+    expect(r?.dec?.intent).toBe('Decrement')
+  })
 })
 
 describe('isDefaultAnnotation / hasNonDefaultAnnotation', () => {

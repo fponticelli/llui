@@ -221,3 +221,77 @@ describe('extractStateSchema — `null` is a value, not optionality (#88)', () =
     })
   })
 })
+
+// Issue #96. Parentheses are the ONLY way to write a union as an array element
+// type — `'a' | 'b'[]` means something else entirely — so before the unwrap
+// every array-of-union field in every consumer's State came out as
+// `{kind:'array', of:'unknown'}`, and #88's enum/null/optional handling could
+// not reach any of them. A `ParenthesizedTypeNode` is legal ANYWHERE a type is,
+// which is why the unwrap sits at the top of `resolve` (and in the optional/null
+// peel) rather than at the array arm alone.
+describe('extractStateSchema — parenthesized types (#96)', () => {
+  const field = (src: string) => extractStateSchema(`interface State { mode: ${src} }`)?.fields.mode
+
+  it('resolves an array of a string-literal union', () => {
+    expect(field(`('a' | 'b')[]`)).toEqual({
+      kind: 'array',
+      of: { kind: 'enum', values: ['a', 'b'] },
+    })
+  })
+
+  it('composes with the null peel inside an array', () => {
+    expect(field(`('a' | null)[]`)).toEqual({
+      kind: 'array',
+      of: { kind: 'union', of: [{ kind: 'enum', values: ['a'] }, 'null'] },
+    })
+  })
+
+  // `('a' | undefined)[]` is an array whose ELEMENTS may be absent — the
+  // optional wrapper belongs on the element, never on the array.
+  it('composes with the optional peel inside an array', () => {
+    expect(field(`('a' | undefined)[]`)).toEqual({
+      kind: 'array',
+      of: { kind: 'optional', of: { kind: 'enum', values: ['a'] } },
+    })
+  })
+
+  it('unwraps nested parentheses', () => {
+    expect(field(`(('a' | 'b'))[]`)).toEqual({
+      kind: 'array',
+      of: { kind: 'enum', values: ['a', 'b'] },
+    })
+  })
+
+  // A parenthesized type in a NON-array position must resolve identically to
+  // the same type written without the parentheses.
+  it('unwraps outside an array position', () => {
+    expect(field(`('a' | 'b')`)).toEqual({ kind: 'enum', values: ['a', 'b'] })
+    expect(field('(string)')).toBe('string')
+    expect(field('({ a: number })')).toEqual({ kind: 'object', fields: { a: 'number' } })
+    expect(field('(Array<(string | null)>)')).toEqual({
+      kind: 'array',
+      of: { kind: 'union', of: ['string', 'null'] },
+    })
+  })
+
+  // The peels run on the field's DECLARED node, so a union wrapped whole in
+  // parentheses has to be unwrapped before them or the optionality is lost
+  // outright (not merely mis-shaped).
+  it('peels optionality out of a wholly parenthesized union', () => {
+    expect(field(`('a' | 'b' | undefined)`)).toEqual({
+      kind: 'optional',
+      of: { kind: 'enum', values: ['a', 'b'] },
+    })
+    expect(field(`('a' | 'b' | null)`)).toEqual({
+      kind: 'union',
+      of: [{ kind: 'enum', values: ['a', 'b'] }, 'null'],
+    })
+  })
+
+  it('unwraps a parenthesized alias body and a parenthesized State alias', () => {
+    const src = ["type Mode = ('a' | 'b')", 'type State = ({ mode: Mode })'].join('\n')
+    expect(extractStateSchema(src)).toEqual({
+      fields: { mode: { kind: 'enum', values: ['a', 'b'] } },
+    })
+  })
+})

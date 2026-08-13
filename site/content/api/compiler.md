@@ -583,7 +583,7 @@ function relativizeFile(absoluteFile: string, root: string): string
 
 ```typescript
 function resolveFieldType(
-  type: ts.TypeNode,
+  rawType: ts.TypeNode,
   typeIndex: TypeIndex = new Map(),
   depth = MAX_FIELD_DEPTH,
 ): MsgFieldType

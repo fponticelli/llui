@@ -1,5 +1,10 @@
 import ts from 'typescript'
-import { isNullLiteral, peelNullUnion, peelOptionalUnion } from './union-peel.js'
+import {
+  isNullLiteral,
+  peelNullUnion,
+  peelOptionalUnion,
+  unwrapParenthesizedType,
+} from './union-peel.js'
 import type { ParsedModule } from './parse.js'
 
 /**
@@ -133,7 +138,11 @@ export function extractStateSchema(mod: ParsedModule, typeName = 'State'): State
   }
 
   // State may be a `type State = { … }` alias OR an `interface State { … }`.
-  const aliasType = scope.aliases.get(typeName)
+  // `type State = ({ … })` is the same alias with parentheses around the body
+  // (#96) — without the unwrap it is not a type literal and the whole schema
+  // comes out `null`.
+  const rawAliasType = scope.aliases.get(typeName)
+  const aliasType = rawAliasType ? unwrapParenthesizedType(rawAliasType) : undefined
   const members =
     aliasType && ts.isTypeLiteralNode(aliasType)
       ? aliasType.members
@@ -171,7 +180,13 @@ function isOptional(t: StateType): boolean {
   return typeof t === 'object' && t.kind === 'optional'
 }
 
-function resolve(type: ts.TypeNode, scope: TypeScope, depth: number): StateType {
+function resolve(rawType: ts.TypeNode, scope: TypeScope, depth: number): StateType {
+  // A parenthesized type is legal anywhere a type is, and matches NONE of the
+  // `ts.isXTypeNode` tests below — so it fell straight through to `'unknown'`.
+  // Unwrapping here rather than at the array arm alone is the point: the array
+  // case is only the one that could not be written any other way (#96).
+  const type = unwrapParenthesizedType(rawType)
+
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'
   if (type.kind === ts.SyntaxKind.BooleanKeyword) return 'boolean'

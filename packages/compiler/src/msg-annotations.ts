@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { allAnnotationArgs, firstAnnotationArgs } from './annotation-args.js'
+import { unwrapParenthesizedType } from './union-peel.js'
 import type { ParsedModule } from './parse.js'
 
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
@@ -267,15 +268,30 @@ export function extractMsgAnnotations(
   // file has no `type Msg = …`; pick any union type alias. With an
   // explicit `typeName` from the resolver, we don't fall back — that
   // would silently match the wrong alias.
-  const alias =
-    named ?? (typeName === 'Msg' ? aliases.find((a) => ts.isUnionTypeNode(a.type)) : undefined)
-  if (!alias || !ts.isUnionTypeNode(alias.type)) return null
+  // `type Msg = ( … )` and `| ({type:'a'})` are legal spellings that match
+  // neither shape test, so every annotation on them was dropped silently
+  // (#96). The union node is unwrapped whole — including for the `.pos` the
+  // JSDoc scan starts from, since the first member's comment lives after the
+  // `(` — but each MEMBER keeps its original node in `types`, because a
+  // member's comment sits BEFORE its own `(` and unwrapping would move the
+  // scan window past it.
+  const aliasUnion = named ? unwrapParenthesizedType(named.type) : undefined
+  const fallback =
+    typeName === 'Msg'
+      ? aliases
+          .map((a) => unwrapParenthesizedType(a.type))
+          .find((t): t is ts.UnionTypeNode => ts.isUnionTypeNode(t))
+      : undefined
+  const union = aliasUnion ?? fallback
+  if (!union || !ts.isUnionTypeNode(union)) return null
 
   const result: Record<string, MessageAnnotations> = {}
-  const types = alias.type.types
+  const types = union.types
   for (let i = 0; i < types.length; i++) {
-    const member = types[i]
-    if (member === undefined || !ts.isTypeLiteralNode(member)) continue
+    const raw = types[i]
+    if (raw === undefined) continue
+    const member = unwrapParenthesizedType(raw)
+    if (!ts.isTypeLiteralNode(member)) continue
     const variant = readDiscriminantLiteral(member)
     if (!variant) continue
     // Leading JSDoc for union member i is scanned from the end of the
@@ -283,7 +299,7 @@ export function extractMsgAnnotations(
     // TypeScript's parser places comment ranges relative to the token
     // that follows them — and the | bar is not part of the TypeLiteralNode.
     const prev = types[i - 1]
-    const scanPos = i === 0 || prev === undefined ? alias.type.pos : prev.end
+    const scanPos = i === 0 || prev === undefined ? union.pos : prev.end
     const comment = readLeadingJSDoc(sf.text, scanPos)
     result[variant] = parseAnnotations(comment)
   }
