@@ -146,9 +146,6 @@ function findWorkspaceRoot(start: string = process.cwd()): string
 Path where the MCP server writes its active port marker. Vite plugins
 watch this file to auto-trigger browser-side `__lluiConnect()` whenever
 the MCP server starts, regardless of whether Vite or MCP started first.
-Resolved relative to the workspace root (not the immediate cwd) so the
-MCP server and the Vite plugin always agree on a single location even
-when one runs from the repo root and the other from a subpackage.
 
 ```typescript
 function mcpActiveFilePath(cwd: string = process.cwd()): string
@@ -167,6 +164,26 @@ top-level `main()` side effect.
 function mcpHttpTokenPath(cwd: string = process.cwd()): string
 ```
 
+### `mcpStateDir()`
+
+Directory holding the MCP handshake state: the active-port marker and
+the per-launch HTTP bearer token.
+Defaults to the workspace root's cache (not the immediate cwd) so the
+MCP server and the Vite plugin always agree on a single location even
+when one runs from the repo root and the other from a subpackage.
+`LLUI_MCP_STATE_DIR` overrides it. Both this package and
+`@llui/vite-plugin` read that variable, so the two ends of the
+handshake move together — which is the point: the default is a single
+machine-global path per checkout, so two concurrent instances (two test
+runs, two agents driving the same repo) otherwise overwrite each
+other's marker and each connects the other's browser (issue #85).
+Read per call, not memoized, so a process that sets the variable during
+startup is still honored.
+
+```typescript
+function mcpStateDir(cwd: string = process.cwd()): string
+```
+
 ## Interfaces
 
 ### `LluiMcpServerOptions`
@@ -178,6 +195,9 @@ export interface LluiMcpServerOptions {
    * is stdio (the CLI default), the relay stands up its own server on
    * this port. When the MCP transport is HTTP, the relay attaches to
    * that HTTP server and the MCP protocol + bridge share a single port.
+   *
+   * `0` asks the OS for a free port; read the assigned one back with
+   * `boundPort()` once `startBridge()` has resolved.
    */
   bridgePort?: number
   /**
@@ -229,7 +249,7 @@ export interface LluiMcpServerOptions {
 class LluiMcpServer {
   registry: ToolRegistry
   relay: WebSocketRelayTransport
-  bridgePort: number
+  requestedPort: number
   mcp: McpServer
   cdp: CdpSessionManager
   notesRoot: string
@@ -240,7 +260,8 @@ class LluiMcpServer {
   connect(transport: Transport): Promise<void>
   connectDirect(api: LluiDebugAPI): void
   setDevUrl(url: string): void
-  startBridge(): void
+  startBridge(): Promise<void>
+  boundPort(): number | null
   stopBridge(): void
   writeActiveFile(): void
   removeActiveFile(): void
