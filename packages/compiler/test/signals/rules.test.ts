@@ -1299,20 +1299,67 @@ describe('tag-send-drift (issue #118)', () => {
     ).not.toContain('tag-send-drift')
   })
 
-  it('does NOT flag a handler calling a method on its own parameter', () => {
-    // `e.preventDefault()` must not count as an unreadable dispatch — it is
-    // the single most common statement in these handlers, and treating it as
-    // opaque would switch the over-declaration check off everywhere.
+  // ── negative: calls the completeness predicate must NOT forgive ───────────
+  // Every one of these is valid code that an earlier predicate rejected: it
+  // forgave ANY call rooted at a handler parameter — a bare call, an
+  // element-access call, a call to a caller-supplied callback — all of which
+  // can reach the dispatcher. Completeness is only ever an excuse to report
+  // direction 2, so when in doubt it must be forfeited: an unreported drift is
+  // a missed lint, a false positive is a broken build.
+  it('does NOT flag a bare call on one of its own parameters', () => {
+    expect(rules(src("const p = tagSend(send, ['done'], (cb) => cb())"))).not.toContain(
+      'tag-send-drift',
+    )
+    expect(
+      rules(src("const p = tagSend(send, ['pick'], (emit) => emit({ type: 'pick' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(src("const p = tagSend(send, ['x'], ({ send: s }) => s({ type: 'x' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(rules(src("const p = tagSend(send, ['a'], (...args) => args[0]())"))).not.toContain(
+      'tag-send-drift',
+    )
+  })
+
+  it('does NOT flag a non-inert method call on one of its own parameters', () => {
+    expect(rules(src("const p = tagSend(send, ['commit'], (ctx) => ctx.commit())"))).not.toContain(
+      'tag-send-drift',
+    )
+    expect(
+      rules(src("const p = tagSend(send, ['select'], (opt) => opt.onSelect?.())")),
+    ).not.toContain('tag-send-drift')
+    expect(rules(src("const p = tagSend(send, ['go'], (e) => e['go']())"))).not.toContain(
+      'tag-send-drift',
+    )
     expect(
       rules(
         src(
-          [
-            "const p = tagSend(send, ['submit'], (e) => {",
-            '  e.preventDefault()',
-            "  send({ type: 'submit' })",
-            '})',
-          ].join('\n'),
+          "const p = tagSend(send, ['a', 'b'], async (api) => { await api.save(); send({ type: 'a' }) })",
         ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a handler whose body tags a template or constructs', () => {
+    // A TaggedTemplateExpression is not a CallExpression, so the walk used to
+    // step straight past it while keeping completeness. So did `new Foo()`.
+    expect(rules(src("const p = tagSend(send, ['a'], () => { html`x` })"))).not.toContain(
+      'tag-send-drift',
+    )
+    expect(
+      rules(src("const p = tagSend(send, ['a'], () => { new Reporter(send) })")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a handler that RETURNS a handler', () => {
+    // The inner function does not run when this handler runs, so neither its
+    // dispatches nor its silence describe this tag.
+    expect(
+      rules(src("const p = tagSend(send, ['open'], () => () => send({ type: 'close' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src("const p = tagSend(send, ['open'], () => { return () => send({ type: 'close' }) })"),
       ),
     ).not.toContain('tag-send-drift')
   })

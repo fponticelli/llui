@@ -1345,19 +1345,31 @@ function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
  * TWO DIRECTIONS, with different soundness, and the asymmetry is the whole
  * design — a false positive here blocks a valid library build:
  *
- *   1. DISPATCHED-BUT-UNDECLARED is checked unconditionally. A literal
- *      `send({type:'x'})` inside the handler is a dispatch that provably
- *      happens, so a list omitting `'x'` understates the handler no matter
- *      what else the body does. Nothing can make this direction wrong.
+ *   1. DISPATCHED-BUT-UNDECLARED is checked whenever the dispatch is
+ *      ATTRIBUTABLE to this call: a literal `send({type:'x'})` where `send`
+ *      still resolves to the dispatcher that was tagged, in code that runs when
+ *      the handler runs. Under those two conditions the dispatch provably
+ *      happens and a list omitting `'x'` understates the handler no matter what
+ *      else the body does. Both conditions are real constraints, not
+ *      paperwork — a `send` rebound by an inner scope is a DIFFERENT function
+ *      (see {@link scanHandlerDispatches}), and a function that is merely
+ *      RETURNED does not run — and getting either wrong reports a variant the
+ *      control cannot emit.
  *   2. DECLARED-BUT-NEVER-DISPATCHED is checked ONLY when the handler's
  *      dispatch set is provably COMPLETE, because "I did not see it" is not
  *      "it does not happen": `tagSend(send, ['commit'], (e) =>
  *      commitFromEvent(e))` dispatches one call away, and flagging it would
  *      fail a valid build. Completeness requires every call in the body to be
- *      either a readable dispatch or a method call on one of the handler's own
- *      parameters (`e.preventDefault()`); one bare-identifier call, one
+ *      either a readable dispatch or an inert event method on one of the
+ *      handler's own parameters ({@link isInertParameterMethodCall} — an
+ *      allowlist, `e.preventDefault()` and two siblings, and nothing else).
+ *      ANY other call, a tagged template, a `new`, a returned function, a
  *      dispatch with an unreadable payload, or one mention of the dispatcher
  *      outside callee position forfeits it.
+ *
+ * When the two directions disagree about a shape, BAIL: an unreported drift is
+ * a missed lint, a false positive is a build this rule breaks for a consumer
+ * who did nothing wrong.
  *
  * The whole rule bails — reporting nothing — unless all three arguments are
  * readable: an identifier dispatcher, an array literal of string literals, and
@@ -1496,12 +1508,18 @@ function scanHandlerDispatches(
       // means dispatches can happen out of sight.
       complete = false
     }
+    // Neither is a CallExpression, so the walk used to step straight past both
+    // while keeping completeness — and both run arbitrary code that can reach
+    // the dispatcher. A tag function receives the interpolations; a constructor
+    // body is ordinary code.
+    if (ts.isTaggedTemplateExpression(n) || ts.isNewExpression(n)) complete = false
+
     if (ts.isCallExpression(n)) {
       if (inScope && ts.isIdentifier(n.expression) && n.expression.text === dispatcherName) {
         const variant = literalMsgType(n.arguments[0])
         if (variant === null) complete = false
         else dispatches.push({ variant, node: n.arguments[0] ?? n })
-      } else if (!isCallOnOwnParameter(n, params)) {
+      } else if (!isInertParameterMethodCall(n, params)) {
         complete = false
       }
       if (bindings.resolveCall(n) === 'tagSend' && n.arguments.length === 3) {
@@ -1513,10 +1531,36 @@ function scanHandlerDispatches(
       }
     }
 
+    // A function that is RETURNED rather than invoked does not run when this
+    // handler runs, so neither its dispatches nor its silence say anything
+    // about this tag. Bail on both counts: skip the subtree (no attribution)
+    // and forfeit completeness (it may dispatch anything, later).
+    if (isReturnedFunction(n)) {
+      complete = false
+      return
+    }
+
     n.forEachChild((c) => walk(c, inScope))
   }
   walk(handler.body, true)
   return { dispatches, complete }
+}
+
+/** True when `n` is a function expression sitting in RETURN position — the body
+ * of a `return`, or the concise body of an enclosing arrow. Parentheses around
+ * it are transparent. A function passed as an ARGUMENT is NOT this: a
+ * `setTimeout(() => send({type:'tick'}))` really does dispatch. */
+function isReturnedFunction(n: ts.Node): boolean {
+  if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) return false
+  let cur: ts.Node = n
+  let parent: ts.Node | undefined = cur.parent
+  while (parent !== undefined && ts.isParenthesizedExpression(parent)) {
+    cur = parent
+    parent = cur.parent
+  }
+  if (parent === undefined) return false
+  if (ts.isReturnStatement(parent)) return true
+  return ts.isArrowFunction(parent) && parent.body === cur
 }
 
 /** True when `id` occupies the callee position of its parent call. */
@@ -1525,13 +1569,50 @@ function isCalleeOf(id: ts.Identifier): boolean {
   return parent !== undefined && ts.isCallExpression(parent) && parent.expression === id
 }
 
-/** True for `p.foo()` / `p.a.b()` where `p` is one of the handler's parameters. */
-function isCallOnOwnParameter(call: ts.CallExpression, params: ReadonlySet<string>): boolean {
-  let cur: ts.Expression = call.expression
-  while (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) {
-    cur = cur.expression
-  }
-  return ts.isIdentifier(cur) && params.has(cur.text)
+/**
+ * The event methods a handler may call without forfeiting completeness.
+ *
+ * This is an ALLOWLIST, not a heuristic, and that is the point. Completeness is
+ * only ever an excuse to run direction 2, so the bar is "this call provably
+ * cannot reach the dispatcher" — which nothing but a known-inert DOM method
+ * clears. `ctx.commit()`, `opt.onSelect?.()`, `api.save()`, `cb()` and
+ * `emit({type:'pick'})` are all calls into code this analysis cannot see, and
+ * any of them may dispatch; an earlier predicate forgave every call ROOTED at a
+ * parameter and so rejected all five as over-declarations.
+ *
+ * The list stays this short deliberately, and it costs nothing to keep it that
+ * way: across every `tagSend` handler in this workspace, ALL 156 method calls
+ * made on a handler parameter are `preventDefault` (152) or `stopPropagation`
+ * (4). Forgiving exactly these keeps direction 2 alive on real call sites
+ * without forgiving one call that could dispatch. Adding a name here is a
+ * soundness decision, not a convenience one — it must be a method that provably
+ * cannot reach the dispatcher.
+ */
+const INERT_EVENT_METHODS: ReadonlySet<string> = new Set([
+  'preventDefault',
+  'stopPropagation',
+  'stopImmediatePropagation',
+])
+
+/**
+ * True for exactly `p.preventDefault()` — a zero-argument call of an
+ * {@link INERT_EVENT_METHODS} member directly on one of the handler's own
+ * parameters.
+ *
+ * Every clause is load-bearing, and each excludes a real false positive:
+ * the callee must be a PROPERTY access (`cb()` and `args[0]()` are not),
+ * spelled statically (`e['go']()` is not), naming an inert method
+ * (`ctx.commit()` does not), on a bare parameter identifier (`this.x.save()`
+ * does not), with no arguments (`bus.on(send)` has one).
+ */
+function isInertParameterMethodCall(call: ts.CallExpression, params: ReadonlySet<string>): boolean {
+  const callee = call.expression
+  if (!ts.isPropertyAccessExpression(callee)) return false
+  if (!ts.isIdentifier(callee.name)) return false
+  if (!INERT_EVENT_METHODS.has(callee.name.text)) return false
+  if (!ts.isIdentifier(callee.expression)) return false
+  if (!params.has(callee.expression.text)) return false
+  return call.arguments.length === 0
 }
 
 /** The `type` of a dispatched message when it is a readable object literal with
