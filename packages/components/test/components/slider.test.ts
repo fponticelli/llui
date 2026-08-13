@@ -62,12 +62,19 @@ describe('slider reducer', () => {
     expect(b.value[0]).toBe(100)
   })
 
-  it('disabled blocks all mutations except setDisabled', () => {
+  it('disabled blocks interactive mutations, not config writes', () => {
     const s0 = init({ disabled: true, value: [50] })
     const [s1] = update(s0, { type: 'increment', index: 0 })
     expect(s1.value[0]).toBe(50)
     const [s2] = update(s0, { type: 'setDisabled', disabled: false })
     expect(s2.disabled).toBe(false)
+  })
+
+  // `disabled` gates HUMAN interaction (drag, arrow keys). A programmatic write
+  // is not an interaction, and dropping it left the machine unwritable (#120).
+  it('disabled still accepts a programmatic setValue', () => {
+    const [s] = update(init({ disabled: true, value: [50] }), { type: 'setValue', value: [10] })
+    expect(s.value).toEqual([10])
   })
 
   it('range slider enforces gap between thumbs', () => {

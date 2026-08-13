@@ -81,9 +81,15 @@ function decimalPlaces(n: number): number {
   return dot === -1 ? 0 : str.length - dot - 1
 }
 
+/**
+ * Messages a disabled/readonly instance still accepts. `disabled` gates HUMAN
+ * interaction — typing, stepping, committing text — not the host's or an
+ * agent's programmatic writes, which used to be dropped too (#120).
+ */
+const PROGRAMMATIC: ReadonlySet<NumberInputMsg['type']> = new Set(['setValue', 'setDisabled'])
+
 export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInputState, never[]] {
-  if (msg.type !== 'setDisabled' && (state.disabled || state.readonly)) {
-    // Allow setRawText for controlled typing? No — disabled means no interaction.
+  if ((state.disabled || state.readonly) && !PROGRAMMATIC.has(msg.type)) {
     return [state, []]
   }
   switch (msg.type) {

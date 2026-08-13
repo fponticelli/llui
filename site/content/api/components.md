@@ -1102,7 +1102,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabled`     | `boolean`  |
 | `focusedIndex` | `number`   |
 
-**Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`
+**Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`, `setDisabled`
 
 **Init options:** `length?: number, type?: PinType, mask?: boolean, disabled?: boolean, values?: string[]`
 
@@ -1562,7 +1562,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `showSeconds` | `boolean`    |
 | `disabled`    | `boolean`    |
 
-**Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`
+**Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`, `setDisabled`
 
 **Init options:** `value?: TimeValue, format?: TimeFormat, minuteStep?: number, secondStep?: number, showSeconds?: boolean, disabled?: boolean`
 

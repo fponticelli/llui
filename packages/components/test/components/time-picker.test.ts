@@ -38,6 +38,40 @@ describe('time-picker reducer', () => {
   })
 })
 
+// The gate used to swallow EVERY message and there was no `setDisabled`, so a
+// disabled instance could never be written to or re-enabled by anything (#120).
+describe('time-picker disabled gate', () => {
+  const disabled = () => init({ value: { hours: 1, minutes: 2, seconds: 3 }, disabled: true })
+
+  it('blocks interactive stepping', () => {
+    const [s] = update(disabled(), { type: 'incrementHours' })
+    expect(s.value.hours).toBe(1)
+    const [s2] = update(disabled(), { type: 'toggleAmPm' })
+    expect(s2.value.hours).toBe(1)
+  })
+
+  it('accepts programmatic field writes', () => {
+    const [s] = update(disabled(), {
+      type: 'setValue',
+      value: { hours: 9, minutes: 30, seconds: 0 },
+    })
+    expect(s.value).toEqual({ hours: 9, minutes: 30, seconds: 0 })
+    const [s2] = update(disabled(), { type: 'setHours', hours: 7 })
+    expect(s2.value.hours).toBe(7)
+    const [s3] = update(disabled(), { type: 'setMinutes', minutes: 45 })
+    expect(s3.value.minutes).toBe(45)
+    const [s4] = update(disabled(), { type: 'setSeconds', seconds: 15 })
+    expect(s4.value.seconds).toBe(15)
+  })
+
+  it('can be re-enabled through setDisabled', () => {
+    const [s] = update(disabled(), { type: 'setDisabled', disabled: false })
+    expect(s.disabled).toBe(false)
+    const [s2] = update(s, { type: 'incrementHours' })
+    expect(s2.value.hours).toBe(2)
+  })
+})
+
 describe('helpers', () => {
   it('displayHours in 12-hr format', () => {
     expect(displayHours(init({ value: { hours: 0, minutes: 0, seconds: 0 }, format: '12' }))).toBe(

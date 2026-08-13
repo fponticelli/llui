@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/tags-input'
+import type { TagsInputState, TagsInputMsg } from '../../src/components/tags-input'
+import { pathHandle } from '@llui/dom'
 import { rootSignal } from '../_signal'
 
 describe('tags-input reducer', () => {
@@ -112,26 +114,81 @@ describe('tags-input.connect', () => {
   })
 
   it('validate blocks addTag when returning errors', () => {
-    const send = vi.fn()
-    const pc = connect(rootSignal(), send, {
-      validate: (v) => (v.length < 2 ? ['too short'] : null),
-    })
+    const h = harness(init(), { validate: (v) => (v.length < 2 ? ['too short'] : null) })
     // Simulate typing a short tag
     const input = document.createElement('input')
     input.value = 'x'
     const inputEvent = new Event('input')
     Object.defineProperty(inputEvent, 'target', { value: input })
-    pc.input.onInput(inputEvent)
+    h.parts.input.onInput(inputEvent)
     // Try to add via Enter
-    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
-    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'addTag' }))
+    h.parts.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(h.sent).not.toContainEqual(expect.objectContaining({ type: 'addTag' }))
     // Now type a valid tag
-    send.mockClear()
     input.value = 'ab'
     const inputEvent2 = new Event('input')
     Object.defineProperty(inputEvent2, 'target', { value: input })
-    pc.input.onInput(inputEvent2)
-    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
-    expect(send).toHaveBeenCalledWith({ type: 'addTag' })
+    h.parts.input.onInput(inputEvent2)
+    h.parts.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(h.sent).toContainEqual({ type: 'addTag' })
+    expect(h.state.value).toEqual(['ab'])
+  })
+})
+
+/**
+ * A live signal over a real reducer: `connect` must read the in-progress input
+ * from STATE. It used to mirror it in a closure fed only by `onInput`, so a
+ * value that arrived by any other path (agent `send`, host write) left the
+ * mirror empty — and `validate && candidate !== ''` then short-circuited, so
+ * `validate` NEVER RAN and the tag was added anyway (#120).
+ */
+function harness(initial: TagsInputState, opts?: Parameters<typeof connect>[2]) {
+  let state = initial
+  const sent: TagsInputMsg[] = []
+  const send = (m: TagsInputMsg): void => {
+    sent.push(m)
+    ;[state] = update(state, m)
+  }
+  const parts = connect(
+    pathHandle<TagsInputState>(() => state, ''),
+    send,
+    opts,
+  )
+  return {
+    parts,
+    sent,
+    send,
+    get state() {
+      return state
+    },
+  }
+}
+
+describe('tags-input reads the in-progress input from state', () => {
+  it('runs validate on a value that reached state without onInput', () => {
+    const validate = vi.fn((v: string) => (v === 'nope' ? ['banned'] : null))
+    const h = harness(init(), { validate })
+    // The value arrives by `send` — an agent write, or a host setInput.
+    h.send({ type: 'setInput', value: 'nope' })
+    h.parts.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(validate).toHaveBeenCalledWith('nope')
+    expect(h.sent).not.toContainEqual(expect.objectContaining({ type: 'addTag' }))
+    expect(h.state.value).toEqual([])
+  })
+
+  it('commits a state-set value that passes validate', () => {
+    const h = harness(init(), { validate: () => null })
+    h.send({ type: 'setInput', value: 'ok' })
+    h.parts.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(h.state.value).toEqual(['ok'])
+  })
+
+  it('blur commit validates the state value too', () => {
+    const validate = vi.fn(() => ['nope'])
+    const h = harness(init(), { validate })
+    h.send({ type: 'setInput', value: 'x' })
+    h.parts.input.onBlur(new FocusEvent('blur'))
+    expect(validate).toHaveBeenCalledWith('x')
+    expect(h.state.value).toEqual([])
   })
 })

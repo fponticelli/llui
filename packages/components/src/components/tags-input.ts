@@ -178,10 +178,15 @@ export function connect(
   const delimiters = opts.delimiters ?? [',']
   const commitOnBlur = opts.commitOnBlur !== false
   const validate = opts.validate
-  let currentInput = ''
 
+  /**
+   * The candidate comes from STATE, never from a closure mirror of `onInput`:
+   * a value set by any other path (an agent `send`, a host write) left the
+   * mirror empty, and `validate && candidate !== ''` then short-circuited, so
+   * `validate` never ran and the tag was added anyway (#120).
+   */
   const tryAddTag = () => {
-    const candidate = currentInput.trim()
+    const candidate = (state.peek()?.inputValue ?? '').trim()
     if (validate && candidate !== '') {
       const errors = validate(candidate)
       if (errors && errors.length > 0) return
@@ -227,8 +232,7 @@ export function connect(
       'data-scope': 'tags-input',
       'data-part': 'input',
       onInput: tagSend(send, ['setInput'], (e) => {
-        currentInput = (e.target as HTMLInputElement).value
-        send({ type: 'setInput', value: currentInput })
+        send({ type: 'setInput', value: (e.target as HTMLInputElement).value })
       }),
       onKeyDown: tagSend(send, ['removeLast', 'focusTagPrev'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)

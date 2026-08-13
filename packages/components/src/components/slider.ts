@@ -99,8 +99,15 @@ function setThumbValue(state: SliderState, index: number, rawValue: number): num
   return value
 }
 
+/**
+ * Messages a disabled slider still accepts. `disabled` gates HUMAN interaction
+ * — dragging a thumb, arrow keys — not the host's or an agent's programmatic
+ * writes, which used to be dropped too (#120).
+ */
+const PROGRAMMATIC: ReadonlySet<SliderMsg['type']> = new Set(['setValue', 'setDisabled', 'setDir'])
+
 export function update(state: SliderState, msg: SliderMsg): [SliderState, never[]] {
-  if (state.disabled && msg.type !== 'setDisabled' && msg.type !== 'setDir') return [state, []]
+  if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value }, []]

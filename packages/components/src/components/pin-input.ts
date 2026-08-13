@@ -32,6 +32,8 @@ export type PinInputMsg =
   | { type: 'clear' }
   /** @humanOnly */
   | { type: 'backspace'; index: number }
+  /** @humanOnly */
+  | { type: 'setDisabled'; disabled: boolean }
 
 export interface PinInputInit {
   length?: number
@@ -62,8 +64,22 @@ function sanitize(char: string, type: PinType): string {
   return char
 }
 
+/**
+ * Messages a disabled pin-input still accepts. `disabled` gates HUMAN
+ * interaction — moving focus, backspacing — not the host's or an agent's
+ * programmatic writes. The gate used to swallow EVERYTHING, and with no
+ * `setDisabled` at all a disabled instance could never be re-enabled or
+ * cleared (#120).
+ */
+const PROGRAMMATIC: ReadonlySet<PinInputMsg['type']> = new Set([
+  'setValue',
+  'setAll',
+  'clear',
+  'setDisabled',
+])
+
 export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, never[]] {
-  if (state.disabled) return [state, []]
+  if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue': {
       const char = sanitize(msg.value.slice(-1), state.type)
@@ -98,6 +114,8 @@ export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, 
       values[prev] = ''
       return [{ ...state, values, focusedIndex: prev }, []]
     }
+    case 'setDisabled':
+      return [{ ...state, disabled: msg.disabled }, []]
   }
 }
 

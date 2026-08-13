@@ -43,6 +43,8 @@ export type TimePickerMsg =
   | { type: 'decrementMinutes' }
   /** @intent("Flip between AM and PM (12-hour format only)") */
   | { type: 'toggleAmPm' }
+  /** @humanOnly */
+  | { type: 'setDisabled'; disabled: boolean }
 
 export interface TimePickerInit {
   value?: TimeValue
@@ -68,8 +70,22 @@ function mod(n: number, m: number): number {
   return ((n % m) + m) % m
 }
 
+/**
+ * Messages a disabled time-picker still accepts. `disabled` gates HUMAN
+ * interaction — the stepper buttons and the AM/PM toggle — not the host's or an
+ * agent's programmatic writes. The gate used to swallow EVERYTHING, and with no
+ * `setDisabled` at all a disabled instance could never be re-enabled (#120).
+ */
+const PROGRAMMATIC: ReadonlySet<TimePickerMsg['type']> = new Set([
+  'setValue',
+  'setHours',
+  'setMinutes',
+  'setSeconds',
+  'setDisabled',
+])
+
 export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerState, never[]] {
-  if (state.disabled) return [state, []]
+  if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
@@ -103,6 +119,8 @@ export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerS
       const h = state.value.hours >= 12 ? state.value.hours - 12 : state.value.hours + 12
       return [{ ...state, value: { ...state.value, hours: h } }, []]
     }
+    case 'setDisabled':
+      return [{ ...state, disabled: msg.disabled }, []]
   }
 }
 
