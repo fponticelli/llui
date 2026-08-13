@@ -7,22 +7,30 @@
 import { normalizeUpdateResult } from '@llui/dom'
 import type { Renderable } from '@llui/dom'
 
-declare global {
-  // Vite/Rollup substitute `import.meta.env.DEV`; raw tsc sees undefined, so the
-  // dev checks stay off. Merges with @llui/dom's identical augmentation.
-  interface ImportMeta {
-    env?: { DEV?: boolean; MODE?: string }
-  }
-}
-
 /**
- * True in a development build. The determinism checks below take this as an
- * explicit `dev` PARAMETER rather than reading the flag themselves — that keeps
- * the "off in production" half of the contract directly testable, and leaves the
- * single substituted expression here for the bundler to fold.
+ * True in a development build — the ONE place the substituted expression is
+ * written, so a production bundler folds it to `false` here and every guard
+ * below reads a constant.
+ *
+ * Read this constant DIRECTLY as the first gate of any dev-only body (see
+ * {@link checkInitDeterminism} / {@link buildChainData}), and keep the explicit
+ * `dev` parameter only as the second gate / test override. A parameter alone
+ * cannot fold: the bundler must assume a caller may pass `true`, so the whole
+ * body — including its multi-hundred-byte warning strings — is retained in the
+ * production client chunk even though it can never run there. The constant gate
+ * makes the rest of the body statically unreachable and it is dropped.
+ *
+ * `import.meta.env` is typed by `@llui/dom`'s global `ImportMeta` augmentation
+ * (a required peer, imported for a value just above) — this file used to carry
+ * a byte-identical copy of that `declare global` block. The `?.` is not
+ * decoration: raw tsc/Node sees no `env` at all, and the dev checks then stay
+ * off, which is the correct answer outside a bundler.
  */
+const DEV_BUILD = import.meta.env?.DEV === true
+
+/** @see {@link DEV_BUILD} */
 export function isDevBuild(): boolean {
-  return import.meta.env?.DEV === true
+  return DEV_BUILD
 }
 
 /**
@@ -258,6 +266,8 @@ export function buildManifest(
     layers: chain.map((def, i) => layerKey(def, i)),
     seeded: chain.map((_def, i) => seedFor(chainData[i]) !== undefined),
   }
+  // Constant gate first (see {@link DEV_BUILD}), explicit parameter second.
+  if (!DEV_BUILD) return manifest
   if (!dev) return manifest
 
   manifest.initFingerprints = chain.map((def, i) => {
@@ -293,6 +303,10 @@ export function buildManifest(
  * `init()` — turning a working-but-wrong page into a blank one helps nobody.
  * The seed-ORIGIN mismatch in {@link verifyManifest} throws instead, because
  * there the adapter can still refuse before binding anything.
+ *
+ * The `DEV_BUILD` gate comes FIRST and reads the substituted constant directly,
+ * so a production client bundle drops this entire body (see {@link DEV_BUILD});
+ * `dev` stays as the explicit second gate and test override.
  */
 export function checkInitDeterminism(
   manifest: HydrationManifest,
@@ -302,6 +316,7 @@ export function checkInitDeterminism(
   state: unknown,
   dev: boolean,
 ): void {
+  if (!DEV_BUILD) return
   if (!dev) return
   if (seedFor(data) !== undefined) return
   const expected = manifest.initFingerprints?.[index]
