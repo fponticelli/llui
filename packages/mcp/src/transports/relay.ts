@@ -230,14 +230,29 @@ export class WebSocketRelayTransport implements RelayTransport {
     },
   }
 
-  start(): void {
+  /**
+   * Bind the bridge. Resolves once it is REACHABLE.
+   *
+   * For a standalone server that means the underlying socket's
+   * `listening` event: an ephemeral bind (`port: 0`, the only way two
+   * concurrent runs on one machine cannot collide) has no port at all
+   * before then, so resolving earlier would hand callers a marker file
+   * and a diagnostic pointing at port 0. A failed bind (EADDRINUSE)
+   * rejects here instead of surfacing later as an unhandled 'error'.
+   *
+   * In `attachTo` mode the host `http.Server` owns the bind, so this
+   * only installs the `/bridge` upgrade route and resolves.
+   */
+  async start(): Promise<void> {
     if (this.wsServer) return
     // Two modes:
     //   - standalone (stdio MCP transport): own server on `port`.
     //   - attached (HTTP MCP transport): share port with MCP's http.Server
     //     via upgrade routing on `/bridge`.
+    let server: WebSocketServer
     if (this.attachTo) {
-      this.wsServer = new WebSocketServer({ noServer: true })
+      server = new WebSocketServer({ noServer: true })
+      this.wsServer = server
       this.attachTo.on('upgrade', (req, socket, head) => {
         // Only `/bridge` upgrades are ours. Anything else on this server is
         // unexpected (the MCP Streamable-HTTP transport never upgrades) —
@@ -264,7 +279,7 @@ export class WebSocketRelayTransport implements RelayTransport {
         })
       })
     } else if (this.port !== undefined) {
-      this.wsServer = new WebSocketServer({
+      server = new WebSocketServer({
         port: this.port,
         host: '127.0.0.1',
         // Reject cross-origin / superseding upgrades before the WS handshake
@@ -276,10 +291,11 @@ export class WebSocketRelayTransport implements RelayTransport {
           else cb(false, check.code, check.reason)
         },
       })
+      this.wsServer = server
     } else {
       throw new Error('WebSocketRelayTransport: provide either `port` or `attachTo`.')
     }
-    this.wsServer.on('connection', (ws) => {
+    server.on('connection', (ws) => {
       // Single-client bridge, first-come-first-served: `validateUpgrade`
       // already rejected a second client, but a rare simultaneous race could
       // let two upgrades pass the pre-handshake check. Close the loser here so
@@ -314,6 +330,37 @@ export class WebSocketRelayTransport implements RelayTransport {
         }
       })
     })
+
+    if (this.attachTo) return
+    await new Promise<void>((resolveBind, rejectBind) => {
+      const onListening = (): void => {
+        server.off('error', onError)
+        resolveBind()
+      }
+      const onError = (err: Error): void => {
+        server.off('listening', onListening)
+        // Drop the half-open server: left in place it would keep the
+        // process alive and make a retry look like a no-op start().
+        this.wsServer = null
+        rejectBind(err)
+      }
+      server.once('listening', onListening)
+      server.once('error', onError)
+    })
+  }
+
+  /**
+   * The port a client must actually connect to, or null before the bind
+   * lands. NOT necessarily the requested one: `port: 0` asks the OS for a
+   * free port, and everything downstream — the marker file the Vite plugin
+   * serves from `/__llui_mcp_status`, the bridge diagnostic — has to carry
+   * the answer, not the request.
+   */
+  boundPort(): number | null {
+    // `WebSocketServer.address()` throws in noServer mode, so in attached
+    // mode ask the host server that owns the bind.
+    const address = this.attachTo ? this.attachTo.address() : (this.wsServer?.address() ?? null)
+    return address !== null && typeof address === 'object' ? address.port : null
   }
 
   stop(): void {
@@ -373,7 +420,7 @@ export class WebSocketRelayTransport implements RelayTransport {
     })
     return {
       connected,
-      bridge: { running: this.wsServer !== null, port: this.port ?? null },
+      bridge: { running: this.wsServer !== null, port: this.boundPort() ?? this.port ?? null },
       browser: { tabsConnected },
       mcpMarker: { present: markerPresent, path: markerPath, devUrl },
       suggestedFix,

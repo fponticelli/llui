@@ -54,7 +54,7 @@ async function main() {
 
     console.log(`\n🌉 Starting MCP bridge on :${BRIDGE_PORT}...`)
     const server = new LluiMcpServer({ bridgePort: BRIDGE_PORT })
-    server.startBridge()
+    await server.startBridge()
 
     console.log('\n🌐 Launching headless browser...')
     const browser = await chromium.launch({ headless: true })

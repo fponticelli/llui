@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -51,6 +51,28 @@ function parseEnableEvalFlag(argv: string[]): boolean {
   return argv.includes('--enable-eval') || process.env['LLUI_MCP_ENABLE_EVAL'] === '1'
 }
 
+/**
+ * Promisified `server.listen`, resolving with the port that was actually
+ * bound. With `port: 0` that is an OS-assigned ephemeral port, which is
+ * the only value any client can use.
+ */
+function listen(server: HttpServer, port: number, host: string): Promise<number> {
+  return new Promise((resolvePort, rejectPort) => {
+    const onError = (err: Error): void => {
+      server.off('listening', onListening)
+      rejectPort(err)
+    }
+    const onListening = (): void => {
+      server.off('error', onError)
+      const address = server.address()
+      resolvePort(address !== null && typeof address === 'object' ? address.port : port)
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, host)
+  })
+}
+
 /** Collapse a possibly-multi-valued request header to a single string. */
 function singleHeader(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
@@ -87,10 +109,12 @@ async function main(): Promise<void> {
       headed: parseHeadedFlag(args),
       enableEval: parseEnableEvalFlag(args),
     })
-    server.startBridge()
+    await server.startBridge()
     const transport = new StdioServerTransport()
     await server.connect(transport)
-    process.stderr.write(`[llui-mcp] listening on stdio; bridge ws://127.0.0.1:${bridgePort}\n`)
+    process.stderr.write(
+      `[llui-mcp] listening on stdio; bridge ws://127.0.0.1:${server.boundPort() ?? bridgePort}\n`,
+    )
 
     const shutdown = (): void => {
       server.stopBridge()
@@ -127,24 +151,30 @@ async function main(): Promise<void> {
     })
   })
 
+  // Bind BEFORE building the bridge host: `--http 0` asks the OS for a
+  // free port (the only way concurrent instances on one machine cannot
+  // collide), and the port every consumer reads — the marker file, the
+  // bridge diagnostic, the line logged below — is knowable only once the
+  // socket is listening. Nothing can reach the server before this
+  // resolves, so there is no window to miss a request.
+  const boundPort = await listen(httpServer, httpPort, '127.0.0.1')
+
   // Single bridge host: owns the WS relay, tool registry, and marker
   // file. All MCP sessions route tool calls through its relay via
   // `createSessionMcp()` — ensures the browser-connected state is
   // shared instead of each session creating its own dead relay.
   const bridgeHost = new LluiMcpServer({
-    bridgePort: httpPort,
+    bridgePort: boundPort,
     attachTo: httpServer,
     devUrl: parseUrlFlag(args) ?? undefined,
     headed: parseHeadedFlag(args),
     enableEval: parseEnableEvalFlag(args),
   })
-  bridgeHost.startBridge()
+  await bridgeHost.startBridge()
 
-  httpServer.listen(httpPort, '127.0.0.1', () => {
-    process.stderr.write(
-      `[llui-mcp] HTTP transport on http://127.0.0.1:${httpPort}/mcp; bridge ws://127.0.0.1:${httpPort}/bridge\n`,
-    )
-  })
+  process.stderr.write(
+    `[llui-mcp] HTTP transport on http://127.0.0.1:${boundPort}/mcp; bridge ws://127.0.0.1:${boundPort}/bridge\n`,
+  )
 
   const shutdown = async (): Promise<void> => {
     bridgeHost.stopBridge()

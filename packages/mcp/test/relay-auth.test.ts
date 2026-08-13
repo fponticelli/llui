@@ -45,40 +45,42 @@ function tryConnect(
 
 // ── standalone (own port) mode ──────────────────────────────────
 
+/**
+ * Bind a standalone relay on an OS-assigned port and return it. A fixed
+ * port is machine-global, so two concurrent runs of this suite raced for
+ * the bind and one lost with an unrelated-looking failure (issue #85).
+ */
+async function standalone(): Promise<number> {
+  const relay = new WebSocketRelayTransport({ port: 0 })
+  cleanups.push(() => relay.stop())
+  await relay.start()
+  const bound = relay.boundPort()
+  if (bound === null) throw new Error('relay did not report a bound port')
+  return bound
+}
+
 describe('bridge upgrade validation — standalone mode', () => {
   it('accepts a loopback / no-Origin client', async () => {
-    const port = 5411
-    const r = new WebSocketRelayTransport({ port })
-    cleanups.push(() => r.stop())
-    r.start()
+    const port = await standalone()
     expect(await tryConnect(`ws://127.0.0.1:${port}`)).toBe('open')
   })
 
   it('rejects a cross-origin (CSWSH) upgrade', async () => {
-    const port = 5412
-    const r = new WebSocketRelayTransport({ port })
-    cleanups.push(() => r.stop())
-    r.start()
+    const port = await standalone()
     expect(await tryConnect(`ws://127.0.0.1:${port}`, { origin: 'http://evil.example.com' })).toBe(
       'rejected',
     )
   })
 
   it('accepts an explicit loopback Origin', async () => {
-    const port = 5413
-    const r = new WebSocketRelayTransport({ port })
-    cleanups.push(() => r.stop())
-    r.start()
+    const port = await standalone()
     expect(await tryConnect(`ws://127.0.0.1:${port}`, { origin: 'http://localhost:5173' })).toBe(
       'open',
     )
   })
 
   it('rejects a second concurrent client instead of superseding the first', async () => {
-    const port = 5414
-    const r = new WebSocketRelayTransport({ port })
-    cleanups.push(() => r.stop())
-    r.start()
+    const port = await standalone()
     expect(await tryConnect(`ws://127.0.0.1:${port}`)).toBe('open')
     // First is still live → second must be refused.
     expect(await tryConnect(`ws://127.0.0.1:${port}`)).toBe('rejected')
@@ -88,7 +90,7 @@ describe('bridge upgrade validation — standalone mode', () => {
 // ── attached (shared HTTP port) mode — token enforced ───────────
 
 describe('bridge upgrade validation — attachTo mode enforces the token', () => {
-  function setup(token: string | null): Promise<{ port: number }> {
+  async function setup(token: string | null): Promise<{ port: number }> {
     const dir = mkdtempSync(join(tmpdir(), 'llui-relay-auth-'))
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
     const tokenPath = join(dir, 'http-token')
@@ -100,8 +102,8 @@ describe('bridge upgrade validation — attachTo mode enforces the token', () =>
     cleanups.push(() => server.close())
     const relay = new WebSocketRelayTransport({ attachTo: server, authTokenPath: tokenPath })
     cleanups.push(() => relay.stop())
-    relay.start()
-    return listen(server).then((port) => ({ port }))
+    await relay.start()
+    return { port: await listen(server) }
   }
 
   it('accepts /bridge with the correct token via query param', async () => {

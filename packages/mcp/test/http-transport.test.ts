@@ -33,7 +33,12 @@ function rawPost(
 // break the HTTP transport path plugin-spawn mode depends on.
 
 const CLI_PATH = resolve(__dirname, '../dist/cli.js')
-const TEST_PORT = 15210
+
+// The port the spawned CLI actually bound. `--http 0` asks the OS for a
+// free one and the CLI announces it on stderr; a fixed number here is a
+// machine-global resource that any second run of this file collides with
+// (issue #85).
+let TEST_PORT = 0
 
 // Module-scoped so the `callMcp` helper (defined below the describe) can
 // attach the bearer token to every authenticated request by default.
@@ -43,17 +48,23 @@ describe('llui-mcp --http integration', () => {
   let proc: ChildProcess | null = null
 
   beforeAll(async () => {
-    proc = spawn(process.execPath, [CLI_PATH, '--http', String(TEST_PORT)], {
+    proc = spawn(process.execPath, [CLI_PATH, '--http', '0'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     // Wait for the server to log its listening line; the logged string
-    // confirms the bind succeeded before we send. The timeout is generous
-    // (not "1s is plenty") because a cold `node` spawn + loading the MCP
-    // SDK under a CPU-starved parallel CI run can take many seconds — a
-    // 2s cap flaked the container CI. We resolve as soon as the line
-    // appears, so the happy path stays fast.
-    const ready = await waitForStderr(proc, /HTTP transport on/, 30000)
-    if (!ready) throw new Error('[llui-mcp] did not start within 30s')
+    // carries the bound port and confirms the bind succeeded before we
+    // send. The timeout is generous (not "1s is plenty") because a cold
+    // `node` spawn + loading the MCP SDK under a CPU-starved parallel CI
+    // run can take many seconds — a 2s cap flaked the container CI. We
+    // resolve as soon as the line appears, so the happy path stays fast.
+    const announced = await waitForStderr(
+      proc,
+      /HTTP transport on http:\/\/127\.0\.0\.1:(\d+)/,
+      30000,
+    )
+    if (announced === null) throw new Error('[llui-mcp] did not start within 30s')
+    TEST_PORT = Number(announced[1])
+    expect(TEST_PORT).toBeGreaterThan(0)
     // The per-launch bearer token is written to a 0600 file a same-user
     // local client can read. Mirrors how the Vite plugin / native client
     // would authenticate.
@@ -294,19 +305,25 @@ function parseFirstMessage(body: string): {
   return JSON.parse(dataLine.slice('data:'.length).trim()) as ReturnType<typeof parseFirstMessage>
 }
 
+/**
+ * Resolve with the pattern's match against the child's accumulated
+ * stderr, or null on timeout. Returning the match (not a boolean) is
+ * what lets the caller read the ephemeral port back out of the line.
+ */
 async function waitForStderr(
   proc: ChildProcess,
   pattern: RegExp,
   timeoutMs: number,
-): Promise<boolean> {
+): Promise<RegExpExecArray | null> {
   let seen = ''
   return new Promise((resolvePromise) => {
-    const timer = setTimeout(() => resolvePromise(false), timeoutMs)
+    const timer = setTimeout(() => resolvePromise(null), timeoutMs)
     proc.stderr?.on('data', (buf: Buffer) => {
       seen += buf.toString()
-      if (pattern.test(seen)) {
+      const match = pattern.exec(seen)
+      if (match) {
         clearTimeout(timer)
-        resolvePromise(true)
+        resolvePromise(match)
       }
     })
     // Some environments buffer stderr briefly; small poll tick helps

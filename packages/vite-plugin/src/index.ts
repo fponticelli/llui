@@ -171,6 +171,21 @@ function findWorkspaceRoot(start: string = process.cwd()): string {
   }
 }
 
+/**
+ * Directory holding the MCP handshake state (the `active.json` marker).
+ * Mirrors `mcpStateDir` from @llui/mcp — same duplication, same contract,
+ * including the `LLUI_MCP_STATE_DIR` override. BOTH ends must read that
+ * variable or the plugin watches a marker the server never writes; it
+ * exists so two instances driving one checkout (concurrent test runs,
+ * two agents) do not overwrite each other's marker and hand each other's
+ * browser the wrong port (issue #85).
+ */
+function mcpStateDir(start: string = process.cwd()): string {
+  const override = process.env['LLUI_MCP_STATE_DIR']
+  if (override) return resolve(override)
+  return resolve(findWorkspaceRoot(start), 'node_modules/.cache/llui-mcp')
+}
+
 /** Serializable v3 source map handed back to Vite's transform hook. */
 interface EncodedSourceMap {
   version: 3
@@ -820,7 +835,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   // file when its bridge starts; we watch it and send a Vite HMR custom
   // event so the browser can call __lluiConnect() automatically — without
   // retry spam, regardless of whether MCP or Vite started first.
-  const activeFilePath = resolve(findWorkspaceRoot(), 'node_modules/.cache/llui-mcp/active.json')
+  const activeFilePath = resolve(mcpStateDir(), 'active.json')
   let dirWatcher: FSWatcher | null = null
   // Cached once Vite's HTTP server emits `listening`. `stampDevUrl()`
   // uses this to write the URL into the marker file — either immediately
