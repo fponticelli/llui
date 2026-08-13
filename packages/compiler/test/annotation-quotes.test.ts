@@ -191,6 +191,20 @@ type Msg =
     )
   })
 
+  it('keeps an EMPTY argument — well-formed is not the same as absent', () => {
+    // `@example("")` is well-formed and its value is `''`. Dropping it on
+    // truthiness would be the silent drop this whole change exists to stop.
+    const src = `
+type Msg =
+  /** @example("") @intent("") @warning("") */
+  | { type: 'x' }
+`
+    const ann = extractMsgAnnotations(src)
+    expect(ann?.x?.examples).toEqual([''])
+    expect(ann?.x?.intent).toBe('')
+    expect(ann?.x?.warning).toBe('')
+  })
+
   it('an unterminated string yields no value', () => {
     const src = `
 type Msg =

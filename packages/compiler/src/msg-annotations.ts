@@ -381,7 +381,12 @@ function readIntent(comment: string): string | null {
  * collects all of them rather than picking the first.
  */
 function readExamples(comment: string): string[] {
-  return allAnnotationArgs(comment, 'example').flatMap((args) => (args[0] ? [args[0]] : []))
+  // `!== undefined`, never truthiness: `@example("")` is well-formed and its
+  // value is the empty string. Dropping it would be exactly the silent-drop
+  // this module exists to stop (and the old regex kept it).
+  return allAnnotationArgs(comment, 'example').flatMap((args) =>
+    args[0] !== undefined ? [args[0]] : [],
+  )
 }
 
 function readWarning(comment: string): string | null {

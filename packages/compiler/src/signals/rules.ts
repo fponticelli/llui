@@ -1163,6 +1163,29 @@ const ANNOTATION_CALL_PRECHECK = new RegExp(
 )
 
 /**
+ * The two tags whose first argument is compiled and RUN at the agent boundary,
+ * with the name it is bound to there (`list-actions.ts` / `validate-payload.ts`).
+ */
+const PREDICATE_TAGS: Readonly<Record<string, string>> = {
+  routeGated: 'state',
+  validates: 'v',
+}
+
+/**
+ * Borrow the JS parser to check a predicate string, exactly as the runtime
+ * will wrap it. Returns the parse error's message, or null when it parses.
+ * The constructed function is DISCARDED — nothing is evaluated here.
+ */
+function predicateSyntaxError(src: string, boundName: string): string | null {
+  try {
+    new Function(boundName, `return (${src})`)
+    return null
+  } catch (e) {
+    return e instanceof Error ? e.message : 'syntax error'
+  }
+}
+
+/**
  * ---- agent-annotation-syntax: a malformed agent annotation ----
  *
  * The rule the #36 audit called for as `agent-validates-syntax`, generalized:
@@ -1177,6 +1200,18 @@ const ANNOTATION_CALL_PRECHECK = new RegExp(
  * `new Function` failures and degrades to "allow"), so the build is the only
  * place the author can still be told (issue #89).
  *
+ * TWO CHECKS, because a well-formed annotation is not automatically a working
+ * one:
+ *   1. the ARGUMENT GRAMMAR (`annotation-args.ts`), and
+ *   2. for the two PREDICATE tags, that the captured string is parseable
+ *      JavaScript. `@routeGated("")`, `@validates("")` and an unbalanced paren
+ *      (`@validates("f(v)) === 1")`) sail through the grammar and then fail the
+ *      boundary's `new Function`, which degrades to gate-open / accept-all —
+ *      the very outcome this issue exists to prevent, reached by an ordinary
+ *      typo. The check CONSTRUCTS a function to borrow the JS parser and
+ *      throws the result away; it never calls it, so nothing is evaluated at
+ *      build time.
+ *
  * SCOPE — deliberately narrow, and this is the false-positive story: only
  * `/** … *\/` blocks in the positions the extractors actually READ are checked
  * — a type alias, each member of its union, and any property signature. JSDoc
@@ -1187,6 +1222,15 @@ const ANNOTATION_CALL_PRECHECK = new RegExp(
  * a string literal are never comments the extractors read, so they are never
  * flagged either. A tag NOT in the call form (standard block-form `@example`
  * followed by a code block) is not an annotation at all and is left alone.
+ *
+ * THE ONE ACCEPTED FALSE POSITIVE: prose in a SCANNED position that opens a
+ * paren right after a tag — `@example (see the docs)` on a Msg variant — reads
+ * as a malformed call and errors. That is the deliberate price of catching
+ * `@validates(v > 0)`, which is an author reaching for the annotation and
+ * getting silence; the two shapes are indistinguishable without guessing
+ * intent. A scan of 61,308 real files (this repo plus 60k `node_modules`
+ * sources) found ZERO occurrences, so the trade is heavily one-sided — but it
+ * IS a trade, and it is written down here rather than discovered later.
  */
 function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
   if (!ANNOTATION_CALL_PRECHECK.test(sf.text)) return []
@@ -1199,12 +1243,32 @@ function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
       seen.add(range.pos)
       const text = sf.text.slice(range.pos, range.end)
       if (!text.startsWith('/**')) continue
-      for (const err of scanAnnotationCalls(text).errors) {
+      const scan = scanAnnotationCalls(text)
+      for (const err of scan.errors) {
         out.push({
           rule: 'agent-annotation-syntax',
           message: err.message,
           start: range.pos + err.start,
           length: err.length,
+        })
+      }
+      for (const call of scan.calls) {
+        const bound = PREDICATE_TAGS[call.tag]
+        if (bound === undefined) continue
+        const src = call.args[0]
+        if (src === undefined) continue
+        const failure = predicateSyntaxError(src, bound)
+        if (failure === null) continue
+        out.push({
+          rule: 'agent-annotation-syntax',
+          message:
+            `\`@${call.tag}("${src}")\` is not a valid JavaScript expression (${failure}). ` +
+            `The runtime compiles it as \`new Function('${bound}', 'return (' + src + ')')\`; ` +
+            'a predicate that does not parse degrades to ' +
+            (call.tag === 'routeGated' ? 'an ALWAYS-OPEN gate' : 'ACCEPT-EVERYTHING validation') +
+            ` at the agent boundary. Write an expression in \`${bound}\` that returns a boolean.`,
+          start: range.pos + call.start,
+          length: call.length,
         })
       }
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractMsgAnnotations, extractMsgSchema } from '@llui/compiler'
+import { extractMsgAnnotations, extractMsgSchema, lintAnnotationSyntaxSource } from '@llui/compiler'
 import { handleListActions, type ListActionsHost } from '../../../src/client/rpc/list-actions.js'
 import { validatePayload } from '../../../src/client/rpc/validate-payload.js'
 import type { MessageAnnotations } from '../../../src/protocol.js'
@@ -131,6 +131,75 @@ describe('annotation predicates at the agent boundary (issue #89)', () => {
     expect(bad.ok).toBe(false)
     if (bad.ok) throw new Error('unreachable — asserted above')
     expect(bad.errors.at(0)?.code).toBe('validates-failed')
+  })
+
+  // ── well-formed grammar, uncompilable predicate (issue #89, review B2) ──
+  // These four sail through the ARGUMENT grammar. At the boundary each one
+  // fails `new Function` and degrades to permissive. The compiler now refuses
+  // them, so the boundary never sees them.
+  const UNCOMPILABLE = [
+    { tag: 'routeGated', predicate: '', bound: 'state' },
+    { tag: 'routeGated', predicate: 'f(a)) === 1', bound: 'state' },
+    { tag: 'validates', predicate: '', bound: 'v' },
+    { tag: 'validates', predicate: "v.slice(0)) === 'a'", bound: 'v' },
+  ] as const
+
+  it('an uncompilable predicate IS permissive at the boundary — which is why the build now rejects it', () => {
+    for (const row of UNCOMPILABLE) {
+      // 1. it really does not compile…
+      expect(compiles(row.predicate, row.bound)).toBe(false)
+
+      // 2. …and the boundary's fallback is permissive.
+      if (row.tag === 'routeGated') {
+        const result = handleListActions(
+          makeHost({
+            state: { mode: 'viewer' },
+            descriptors: [{ variant: 'purge' }],
+            annotations: {
+              purge: {
+                intent: null,
+                alwaysAffordable: false,
+                requiresConfirm: false,
+                dispatchMode: 'shared',
+                examples: [],
+                warning: null,
+                emits: [],
+                routeGate: row.predicate,
+                routeGateReason: null,
+              },
+            },
+          }),
+        )
+        expect(result.actions.at(0)?.available).toBeUndefined() // gate OPEN
+      } else {
+        const schema: MsgSchemaShape = {
+          discriminant: 'type',
+          variants: { SetRole: { role: { type: 'string', validates: row.predicate } } },
+        }
+        expect(validatePayload({ type: 'SetRole', role: 'anything' }, schema).ok).toBe(true)
+      }
+
+      // 3. …so the compiler fails the build before it can be emitted.
+      const src =
+        row.tag === 'routeGated'
+          ? [
+              'export type Msg =',
+              `  /** @routeGated("${row.predicate}") */`,
+              "  | { type: 'purge' }",
+              '',
+            ].join('\n')
+          : [
+              'export type Msg = {',
+              "  type: 'SetRole'",
+              `  /** @validates("${row.predicate}") */`,
+              '  role: string',
+              '}',
+              '',
+            ].join('\n')
+      expect(lintAnnotationSyntaxSource(src, 'msg.ts').map((d) => d.rule)).toContain(
+        'agent-annotation-syntax',
+      )
+    }
   })
 
   it('the OLD truncated @validates accepted everything', () => {

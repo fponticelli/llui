@@ -1037,6 +1037,48 @@ describe('agent-annotation-syntax (issue #89 — the audit’s `agent-validates-
     expect(rules(doc('@examples("a" "b")'))).not.toContain('agent-annotation-syntax')
   })
 
+  // ── the predicate itself must be JavaScript, not just well-quoted ──────
+  // A well-formed annotation carrying an uncompilable predicate sails through
+  // the grammar and then fails the boundary's `new Function`, which degrades
+  // to gate-open / accept-all. An unbalanced paren is an ordinary typo.
+  it('flags a predicate that is not a valid JS expression', () => {
+    expect(rules(doc('@routeGated("")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@routeGated("f(a)) === 1")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("v.slice(0)) === \'a\'")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@routeGated("state.mode ===")'))).toContain('agent-annotation-syntax')
+    // …and the gate's optional 2nd argument is PROSE, never compiled.
+    expect(rules(doc('@routeGated("state.ok", "not while (unbalanced")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+  })
+
+  it('does NOT flag a valid predicate, however exotic', () => {
+    expect(rules(doc('@validates("/^\\d{5}$/.test(v)")'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("v.length > 0 && !v.startsWith(\'_\')")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules(doc('@routeGated("state.a?.b ?? false")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules(doc('@routeGated("state.mode === \\"admin\\"")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    // Only the two PREDICATE tags are compiled — prose tags are free text.
+    expect(rules(doc('@intent("Delete (permanently")'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@should("use ) sparingly")'))).not.toContain('agent-annotation-syntax')
+  })
+
+  it('the predicate message names the degradation and the bound name', () => {
+    const gate = messageFor(doc('@routeGated("f(a)) === 1")'), 'agent-annotation-syntax')
+    expect(gate).toContain('f(a)) === 1')
+    expect(gate).toContain('ALWAYS-OPEN')
+    expect(gate).toContain("'state'")
+    const val = messageFor(doc('@validates("")'), 'agent-annotation-syntax')
+    expect(val).toContain('ACCEPT-EVERYTHING')
+    expect(val).toContain("'v'")
+  })
+
   it('quotes the offending tag and names the fix', () => {
     const msg = messageFor(doc('@validates("v === "a"")'), 'agent-annotation-syntax')
     expect(msg).toContain('@validates')

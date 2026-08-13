@@ -19,6 +19,7 @@ import {
   lintAnnotationSyntaxSource,
   applyLintFixes,
   type ExternalTypeSources,
+  type SignalLintMessage,
   type PreExtractedSchemas,
 } from '@llui/compiler'
 import MagicString from 'magic-string'
@@ -1429,6 +1430,22 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           const rr = this.resolve.bind(this)
           const addWatch =
             typeof this.addWatchFile === 'function' ? this.addWatchFile.bind(this) : undefined
+          // `agent-annotation-syntax` for the SIBLINGS this component's
+          // metadata is built from. The transform hook below only sees modules
+          // Vite actually transforms, and the canonical layout —
+          // `import type { Msg } from './msg'` — is ERASED by esbuild: `msg.ts`
+          // never enters the module graph, so it is never transformed, yet the
+          // resolver reads it right here and its annotations ship as `$ma`.
+          // Without this the gate this issue exists to close is still open in
+          // the most common layout (#89).
+          //
+          // Collected, not thrown: `findTypeSource` wraps `readSource` in
+          // best-effort try/catch blocks that would swallow a `this.error`.
+          // Reported AFTER resolution, against the SIBLING's path — the
+          // author needs the file that carries the annotation, not the
+          // importer.
+          const siblingLint: Array<{ file: string; msgs: SignalLintMessage[] }> = []
+          const siblingSeen = new Set<string>()
           const ctx: ResolveContext = {
             resolveModule: async (spec, importer) => {
               const result = await rr(spec, importer)
@@ -1458,12 +1475,35 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
                 }
                 set.add(id)
               }
+              if (!siblingSeen.has(p)) {
+                siblingSeen.add(p)
+                const msgs = lintAnnotationSyntaxSource(content, p)
+                if (msgs.length > 0) siblingLint.push({ file: p, msgs })
+              }
               return content
             },
           }
           const resolved = await preResolveAll(code, id, ctx)
           signalTypeSources = resolved.typeSources
           signalPreExtracted = resolved.preExtracted
+          if (siblingLint.length > 0) {
+            const first = siblingLint[0]!
+            const firstMsg = first.msgs[0]!
+            const body = siblingLint
+              .flatMap(({ file, msgs }) => {
+                const rel = relative(crossFileRoot ?? process.cwd(), file)
+                const display = rel.length > 0 && !rel.startsWith('..') ? rel : file
+                return msgs.map(
+                  (m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`,
+                )
+              })
+              .join('\n')
+            const count = siblingLint.reduce((n, s) => n + s.msgs.length, 0)
+            this.error({
+              message: `[llui] signal lint failed (${count} error${count > 1 ? 's' : ''}):\n${body}`,
+              loc: { file: first.file, line: firstMsg.line, column: firstMsg.column },
+            })
+          }
         }
         // Perf diagnostics (llui/each-verbatim): advisory warnings for each
         // sites that render via the authoring path. Default on in dev only.

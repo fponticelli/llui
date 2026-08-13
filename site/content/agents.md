@@ -286,8 +286,14 @@ Every tag that takes arguments — `@intent`, `@example`, `@warning`, `@emits`,
 - **A string may wrap across JSDoc lines.** The continuation's `* ` decoration
   collapses to a single space.
 
-Anything outside this grammar is a **build error** (`agent-annotation-syntax`),
-not a best-effort read. That matters most for the two predicate tags: a
+The two predicate tags get a second check: `@routeGated`'s first argument and
+`@validates`'s argument must **parse as JavaScript**, exactly as the runtime
+wraps them (`new Function('state' | 'v', 'return (' + src + ')')`). `@validates("")`
+and an unbalanced paren are well-quoted but not predicates. (`@routeGated`'s
+optional second argument is prose and is never compiled.)
+
+Anything outside this grammar — or a predicate that does not parse — is a
+**build error** (`agent-annotation-syntax`), not a best-effort read. That matters most for the two predicate tags: a
 half-read `@routeGated` compiles to nothing at the agent boundary and degrades
 to an _always-open_ gate, and a half-read `@validates` degrades to _accept
 everything_ — silently, because the boundary contains its own compile failures.
