@@ -356,6 +356,21 @@ describe('reactive markdown — streamed DOM equals a cold render (footnotes, #8
     expect(el.querySelector('p a')?.getAttribute('href')).toBe('/link')
     expect(el.querySelector('.footnote-ref a')?.getAttribute('href')).toBe('#fn-x')
   })
+
+  it('re-renders when a definition edit only MOVES a `|` between url and title (#94)', () => {
+    // The two states below are DIFFERENT definitions (`/a|b` with no title vs `/a`
+    // with title `b|`) that the old `${id}=${url}|${title}` fingerprint layout
+    // spelled identically. The paragraph is in the sealed prefix, so its node
+    // object is reused, its source is unchanged, and an identical fingerprint means
+    // an identical content-id: the reconciler keeps the row and the href stays
+    // wrong. The separator between fields must be one no url or title can contain.
+    const head = 'see [x][r] here\n\n'
+    streamAndCompare([head + '[r]: /a|b\n', head + '[r]: /a "b|"\n'])
+    const el = body(mounted!.container)
+    const link = el.querySelector('p a')
+    expect(link?.getAttribute('href')).toBe('/a')
+    expect(link?.getAttribute('title')).toBe('b|')
+  })
 })
 
 describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', () => {
