@@ -11,6 +11,7 @@ import {
   restoreInline,
   removeClassesOnly,
   animatedProperties,
+  computedValues,
 } from './style-utils.js'
 import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
 
@@ -48,6 +49,12 @@ import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
  * be detached) but stays registered, so if the element is instead reused — the
  * route seam calls `enter` on the very element it just left — the enter clears
  * that residue before snapshotting its own baseline.
+ *
+ * Interrupting a phase mid-flight resumes from the element's CURRENT rendered
+ * values in BOTH directions: a leave skips `leaveFrom` rather than snapping to
+ * fully-shown, and an enter freezes the animated properties at what the element
+ * is showing rather than applying `enterFrom` and re-animating from the far end.
+ * A phase that has already settled counts as resting, not as an interrupt.
  *
  * Completion: a phase resolves only once EVERY property it animates (the style
  * keys of its `from`/`to` values) has reported a `transitionend` on the element
@@ -89,6 +96,21 @@ export function transition(spec: TransitionSpec): TransitionOptions {
       return Promise.resolve()
     }
 
+    // An element with a run already in flight is a mid-animation leave being
+    // REVERSED (an `each` row resurrected, the route seam re-entering the very
+    // element it just left). Applying `enterFrom` there drives it to the far end
+    // and re-animates from scratch, so for those elements we freeze the values
+    // the element is actually showing and let the enter run from there.
+    //
+    // Both reads happen BEFORE `supersede`: `isActive` because superseding
+    // clears the run, and the computed values because the rollback restores the
+    // pre-leave inline styles — for a property the author never set inline, that
+    // IS the far end.
+    const interrupting = els.map((el) => runs.isActive(el))
+    const resume = els.map((el, i) =>
+      interrupting[i] ? computedValues(el, enterProperties) : undefined,
+    )
+
     // Roll back any in-flight run, then claim a new one per element. Cleanup
     // RESTORES each touched inline style to its pre-transition value (rather than
     // blanking it), so an element with an author-set inline `opacity`/`transform`
@@ -110,20 +132,23 @@ export function transition(spec: TransitionSpec): TransitionOptions {
     })
     const tokens = els.map((el, i) => runs.register(el, cleanups[i]!))
 
-    // Apply from + active
-    for (const el of els) {
-      applyValue(el, spec.enterFrom)
+    // Apply from + active — or, when interrupting, the frozen current values in
+    // place of `enterFrom`.
+    els.forEach((el, i) => {
+      applyValue(el, resume[i] ?? spec.enterFrom)
       applyValue(el, spec.enterActive)
-    }
+    })
 
     // Force reflow so the next value change triggers a transition.
     forceReflow(els[0]!)
 
-    // Move to target state
-    for (const el of els) {
-      removeValue(el, spec.enterFrom)
+    // Move to target state. An interrupting element never had `enterFrom`
+    // applied, so there is nothing to remove — and removing it would strip the
+    // frozen value the transition is meant to start from.
+    els.forEach((el, i) => {
+      if (!interrupting[i]) removeValue(el, spec.enterFrom)
       applyValue(el, spec.enterTo)
-    }
+    })
 
     const duration = spec.duration ?? detectDuration(els[0]!)
 

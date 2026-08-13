@@ -10645,6 +10645,8 @@ Interruption: enter and leave on the SAME element supersede each other. A new
 phase cancels the previous element's loop WITHOUT letting it snap to its own
 (now-stale) target, so an enter interrupted by a leave rests at the leave
 target rather than being clobbered back to the enter target by the dying loop.
+Either direction resumes from the element's CURRENT value — the endpoints
+`from`/`to` are resting starts, used only when nothing is in flight.
 Passed as the trailing transition argument to the signal `show`/`branch`/`each`
 primitives to spring an arm/row in and defer its leave, e.g.
 `show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
@@ -10689,6 +10691,11 @@ that already COMPLETED too: it keeps its resting values (the arm is about to
 be detached) but stays registered, so if the element is instead reused — the
 route seam calls `enter` on the very element it just left — the enter clears
 that residue before snapshotting its own baseline.
+Interrupting a phase mid-flight resumes from the element's CURRENT rendered
+values in BOTH directions: a leave skips `leaveFrom` rather than snapping to
+fully-shown, and an enter freezes the animated properties at what the element
+is showing rather than applying `enterFrom` and re-animating from the far end.
+A phase that has already settled counts as resting, not as an interrupt.
 Completion: a phase resolves only once EVERY property it animates (the style
 keys of its `from`/`to` values) has reported a `transitionend` on the element
 itself — an unrelated `transitionend` (a hover `background-color`, or the fast

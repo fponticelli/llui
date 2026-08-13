@@ -201,6 +201,15 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
       return Promise.resolve()
     }
 
+    // A run already in flight means this enter is REVERSING a leave mid-collapse.
+    // Measure the element's current rendered size before `snapshotRestore`
+    // supersedes that run — its rollback restores the pre-leave (natural) size,
+    // so reading afterwards would report the far end. A fresh enter opens from
+    // 0px as before.
+    const interrupting = runs.isActive(el)
+    const rect = interrupting ? el.getBoundingClientRect() : undefined
+    const startSize = rect ? (axis === 'y' ? rect.height : rect.width) : 0
+
     const restore = snapshotRestore(el)
     const token = runs.register(el, restore)
 
@@ -209,7 +218,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const style = el.style
 
     style.overflow = 'hidden'
-    style[sizeProp] = '0px'
+    style[sizeProp] = `${startSize}px`
     style.transition = `${sizeProp} ${duration}ms ${easing}`
     forceReflow(el)
     style[sizeProp] = `${naturalSize}px`

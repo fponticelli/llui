@@ -138,6 +138,28 @@ export function animatedProperties(
 }
 
 /**
+ * The element's CURRENT rendered value for each of `properties` (kebab-case),
+ * as a `Styles` object ready for {@link applyValue}. Properties the environment
+ * cannot resolve are omitted rather than written as `''`, which would blank a
+ * value instead of freezing it.
+ *
+ * This is what lets an enter INTERRUPTING a mid-flight leave resume from where
+ * the element visually is (issue #106). It must be read BEFORE the previous
+ * run is superseded: the rollback restores the pre-leave inline values, and for
+ * a property the author never set inline that means the far end.
+ */
+export function computedValues(el: HTMLElement, properties: readonly string[]): Styles {
+  const out: Styles = {}
+  if (typeof getComputedStyle !== 'function') return out
+  const cs = getComputedStyle(el)
+  for (const property of properties) {
+    const value = cs.getPropertyValue(property)
+    if (value !== '') out[property] = value
+  }
+  return out
+}
+
+/**
  * Snapshot the element's current inline value for each of `keys`. An unset
  * property snapshots as `''`, so restoring it later blanks it (its natural
  * "not inline-set" state) rather than inventing a value.

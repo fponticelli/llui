@@ -62,6 +62,8 @@ function isDocumentHidden(): boolean {
  * phase cancels the previous element's loop WITHOUT letting it snap to its own
  * (now-stale) target, so an enter interrupted by a leave rests at the leave
  * target rather than being clobbered back to the enter target by the dying loop.
+ * Either direction resumes from the element's CURRENT value — the endpoints
+ * `from`/`to` are resting starts, used only when nothing is in flight.
  *
  * Passed as the trailing transition argument to the signal `show`/`branch`/`each`
  * primitives to spring an arm/row in and defer its leave, e.g.
@@ -169,18 +171,9 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
     })
   }
 
-  const animateAll = (els: HTMLElement[], start: number, target: number): Promise<void> => {
-    if (els.length === 0) return Promise.resolve()
-    return Promise.all(els.map((el) => animateOne(el, start, target))).then(() => undefined)
-  }
-
-  const enter = (nodes: Node[]): void => {
-    void animateAll(asElements(nodes), from, to)
-  }
-
-  // The element's live value for `property`, used as the leave start so an
-  // interrupted enter leaves from wherever it currently sits rather than
-  // snapping to the fully-shown `to`. Prefers computed, then inline, then `to`.
+  // The element's live value for `property`, used as an interrupting phase's
+  // start so it continues from wherever the element currently sits rather than
+  // snapping to a resting endpoint. Prefers computed, then inline, then `to`.
   const currentValue = (el: HTMLElement): number => {
     if (typeof getComputedStyle === 'function') {
       const computed = parseFloat(getComputedStyle(el).getPropertyValue(property))
@@ -188,6 +181,24 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
     }
     const inline = parseFloat(el.style.getPropertyValue(property))
     return Number.isNaN(inline) ? to : inline
+  }
+
+  /**
+   * True while a loop is still running on `el`. `animateOne` deletes the entry
+   * when its loop finishes, so this is exactly "a phase is mid-flight and about
+   * to be superseded" — the signal that the next phase is an INTERRUPT.
+   */
+  const isAnimating = (el: HTMLElement): boolean => runs.has(el)
+
+  const enter = (nodes: Node[]): void => {
+    const els = asElements(nodes)
+    if (els.length === 0) return
+    // Per-element start: an enter reversing a mid-flight leave resumes from the
+    // element's own current value. `from` is the RESTING start and would drive a
+    // half-faded element back to the far end before re-animating (#106).
+    void Promise.all(
+      els.map((el) => animateOne(el, isAnimating(el) ? currentValue(el) : from, to)),
+    ).then(() => undefined)
   }
 
   const leave = (nodes: Node[]): Promise<void> => {

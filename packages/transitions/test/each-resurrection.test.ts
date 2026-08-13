@@ -95,6 +95,31 @@ describe('each() row resurrection with a real transition bundle', () => {
     expect(rowFor(2)).toBeUndefined()
   })
 
+  // ── #106: the resurrected row's enter is an INTERRUPT, not a fresh appear ──
+  it('a resurrected row’s enter resumes from its current opacity, never from 0', async () => {
+    const { h, rowFor } = setup(fade({ duration: 200 }))
+    const row2 = rowFor(2)!
+    await vi.advanceTimersByTimeAsync(400) // let the mount enter finish
+
+    h.send({ type: 'set', ids: [1, 3] }) // row 2 starts leaving
+    row2.style.opacity = '0.4' // jsdom does not interpolate — stand in for mid-fade
+
+    const writes: string[] = []
+    const style = row2.style
+    const setProperty = style.setProperty.bind(style)
+    style.setProperty = (prop: string, value: string | null, priority?: string): void => {
+      if (prop === 'opacity') writes.push(value ?? '')
+      setProperty(prop, value, priority)
+    }
+
+    h.send({ type: 'set', ids: [1, 2, 3] }) // re-added mid-leave → resurrect
+
+    // The leave's rollback blanks the inline value, then the enter freezes what
+    // the row is showing and animates from there. `enterFrom`'s 0 — the far end
+    // the row would visibly snap to — never appears.
+    expect(writes).toEqual(['', '0.4', '1'])
+  })
+
   it('collapse() resurrection restores the row’s natural size', async () => {
     const { h, rowFor } = setup(collapse({ duration: 20 }) as ReturnType<typeof fade>)
     const row2 = rowFor(2)!
