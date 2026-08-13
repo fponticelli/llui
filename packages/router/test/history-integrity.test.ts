@@ -27,8 +27,28 @@ const defs = () => [
 const hashRouter = () => createRouter<Route>(defs())
 const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
 
-/** Let jsdom deliver the queued popstate/hashchange for a traversal. */
+/** Let jsdom deliver the events queued by a synchronous URL write. */
 const settle = () => new Promise((r) => setTimeout(r, 10))
+
+/**
+ * Wait for a TRAVERSAL to land. A traversal (back/forward/go) is delivered on a
+ * later task than a fixed sleep can guarantee on a loaded machine, so poll for
+ * the URL instead. jsdom updates the URL and fires the event in the same task,
+ * so once this returns the listener has already seen it. Every call targets a
+ * URL different from the current one, which is what makes the wait meaningful
+ * — a blocked back is TWO traversals (the pop, then the restore) and both are
+ * asserted.
+ */
+async function waitForUrl(read: () => string, expected: string): Promise<string> {
+  const deadline = Date.now() + 2000
+  while (read() !== expected && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2))
+  }
+  return read()
+}
+
+const path = () => location.pathname
+const hash = () => location.hash
 
 function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   const send = vi.fn()
@@ -77,18 +97,15 @@ describe('#103 blocked back — history mode', () => {
     expect(location.pathname).toBe('/admin')
 
     history.back()
-    await settle()
-    expect(location.pathname).toBe('/') // allowed — leaving admin is fine
+    expect(await waitForUrl(path, '/')).toBe('/') // allowed — leaving admin is fine
 
     navigate(routing, { page: 'article', slug: 'x' })
     expect(location.pathname).toBe('/article/x')
 
     history.back()
-    await settle()
-    await settle() // the restoring history.go is itself an async traversal
-
-    // Blocked: the restore must land us back on the route we never left.
-    expect(location.pathname).toBe('/article/x')
+    expect(await waitForUrl(path, '/')).toBe('/') // the pop lands on the blocked entry
+    // ...and the block must send us straight back to the route we never left.
+    expect(await waitForUrl(path, '/article/x')).toBe('/article/x')
 
     dispose()
   })
@@ -138,19 +155,16 @@ describe('#103 blocked back — history mode', () => {
     const trail: string[] = []
 
     history.back() // → /other (allowed)
-    await settle()
-    trail.push(location.pathname)
+    trail.push(await waitForUrl(path, '/other'))
 
     history.back() // → /admin (BLOCKED) → restored to /other
-    await settle()
-    await settle()
-    trail.push(location.pathname)
+    trail.push(await waitForUrl(path, '/admin'))
+    trail.push(await waitForUrl(path, '/other'))
 
     history.forward() // the forward entry must have survived the block
-    await settle()
-    trail.push(location.pathname)
+    trail.push(await waitForUrl(path, '/article/x'))
 
-    expect(trail).toEqual(['/other', '/other', '/article/x'])
+    expect(trail).toEqual(['/other', '/admin', '/other', '/article/x'])
     expect(history.length).toBe(lengthBefore)
 
     dispose()
@@ -184,19 +198,16 @@ describe('#103 blocked back — hash mode', () => {
     const trail: string[] = []
 
     history.back() // → #/other (allowed)
-    await settle()
-    trail.push(location.hash)
+    trail.push(await waitForUrl(hash, '#/other'))
 
     history.back() // → #/admin (BLOCKED) → restored to #/other
-    await settle()
-    await settle()
-    trail.push(location.hash)
+    trail.push(await waitForUrl(hash, '#/admin'))
+    trail.push(await waitForUrl(hash, '#/other'))
 
     history.forward() // #/article/x must still be reachable
-    await settle()
-    trail.push(location.hash)
+    trail.push(await waitForUrl(hash, '#/article/x'))
 
-    expect(trail).toEqual(['#/other', '#/other', '#/article/x'])
+    expect(trail).toEqual(['#/other', '#/admin', '#/other', '#/article/x'])
     expect(history.length).toBe(lengthBefore)
 
     dispose()
@@ -216,10 +227,10 @@ describe('#103 blocked back — hash mode', () => {
 
     blockAdmin = true
     history.back() // → #/admin, blocked, restored to #/other
-    await settle()
-    await settle()
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle() // let any dispatch the restore's echo could produce land
 
-    expect(location.hash).toBe('#/other')
     expect(send).not.toHaveBeenCalled()
 
     dispose()
