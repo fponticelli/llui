@@ -231,7 +231,6 @@ export function connect(
   opts: ConnectOptions,
 ): MenubarParts {
   const base = opts.id
-  const triggerId = (id: string): string => `${base}:trigger:${id}`
 
   // A per-menu Send that wraps each MenuMsg in a `menuMsg` envelope so the
   // delegated menu.connect drives the embedded machine.
@@ -244,6 +243,29 @@ export function connect(
   const menuSignal = (id: string): Signal<MenuState> =>
     state.map((s) => s.menuStates[id] ?? menuInit())
 
+  // ONE delegated bag per menu id, memoized. Two reasons it must be memoized
+  // rather than rebuilt per call:
+  //   1. `menuTrigger(id)` below takes the bar trigger's `id` and `aria-controls`
+  //      FROM this bag, so the id the bar RENDERS and the id `overlay()` anchors
+  //      on (`parts.trigger.id`) are the same string by construction. They used
+  //      to be computed independently and disagreed — the overlay anchored on an
+  //      element nothing rendered, which killed positioning, click-to-close and
+  //      focus restore (#121).
+  //   2. Each bag owns its own hover-intent submenu timers; a fresh bag per call
+  //      would scatter them across instances that no longer back any element.
+  const menuBags = new Map<string, MenuParts>()
+  const menuBag = (id: string): MenuParts => {
+    let bag = menuBags.get(id)
+    if (bag === undefined) {
+      bag = menuConnect(menuSignal(id), menuSend(id), {
+        id: `${base}:${id}`,
+        onSelect: opts.onSelect ? (value) => opts.onSelect!(id, value) : undefined,
+      })
+      menuBags.set(id, bag)
+    }
+    return bag
+  }
+
   return {
     root: {
       role: 'menubar',
@@ -253,10 +275,11 @@ export function connect(
     },
     menuTrigger: (id: string): MenubarTriggerParts => ({
       role: 'menuitem',
-      id: triggerId(id),
+      // Both ids come from the delegated bag — see `menuBag` (#121).
+      id: menuBag(id).trigger.id,
       'aria-haspopup': 'menu',
       'aria-expanded': state.map((s) => s.open === id),
-      'aria-controls': `${base}:${id}:content`,
+      'aria-controls': menuBag(id).content.id,
       'aria-disabled': state.map((s) => (s.disabledMenus.includes(id) ? 'true' : undefined)),
       'data-scope': 'menubar',
       'data-part': 'trigger',
@@ -305,11 +328,7 @@ export function connect(
         }
       }),
     }),
-    menu: (id: string): MenuParts =>
-      menuConnect(menuSignal(id), menuSend(id), {
-        id: `${base}:${id}`,
-        onSelect: opts.onSelect ? (value) => opts.onSelect!(id, value) : undefined,
-      }),
+    menu: menuBag,
   }
 }
 
@@ -320,6 +339,9 @@ export interface MenubarOverlayOptions {
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
   menuId: string
+  /** The delegated per-menu bag — `connect(...).menu(menuId)`. Its
+   * `trigger.id` is the id the bar's `menuTrigger(menuId)` renders, so it
+   * doubles as the overlay's anchor. */
   parts: MenuParts
   content: () => Renderable
   /**
@@ -346,8 +368,11 @@ export interface MenubarOverlayOptions {
  */
 export function overlay(opts: MenubarOverlayOptions): Mountable {
   // Gated on `state.open === menuId`; dismisses by closing the menubar (which
-  // returns focus to the top-level trigger). The anchor (trigger) is optional —
-  // floating falls back to the content element when it can't be resolved.
+  // returns focus to the top-level trigger). `parts.trigger.id` is the id the
+  // bar renders for this menu (both come from the one memoized delegated bag —
+  // see `menuBag` in connect), so it anchors the floating position, keeps the
+  // trigger out of the outside-click boundary (click-to-close instead of
+  // close-then-reopen) and gives focus restore a target.
   return createOverlay({
     state: opts.state,
     transition: opts.transition,

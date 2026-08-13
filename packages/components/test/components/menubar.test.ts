@@ -261,6 +261,17 @@ describe('menubar.connect — APG keyboard', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  it('the delegated bag names the SAME trigger id the bar renders', () => {
+    // `menubar.overlay` anchors on `parts.trigger.id` of the DELEGATED menu bag,
+    // while the consumer renders `menuTrigger(id)`. If the two strings drift the
+    // overlay anchors on an element nothing renders: no positioning, no
+    // dismiss-ignore, no focus restore (#121).
+    const p = connect(rootSignal(), vi.fn(), { id: 'mb' })
+    expect(p.menu('file').trigger.id).toBe(p.menuTrigger('file').id)
+    // …and the trigger's aria-controls names the delegated content it opens.
+    expect(p.menuTrigger('file')['aria-controls']).toBe(p.menu('file').content.id)
+  })
+
   it('per-menu content/item parts are delegated to the menu machine', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'mb' })
     const menuParts = p.menu('file')
