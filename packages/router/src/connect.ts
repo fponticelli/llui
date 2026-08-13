@@ -524,6 +524,12 @@ export function connectRouter<R>(
             const anchor = e.currentTarget as HTMLAnchorElement | null
             const target = anchor?.target
             if (target && target !== '' && target !== '_self') return
+            // `download` means the href is a FILE the browser must save, not a
+            // route to navigate to. Intercepting it cancels the download and
+            // navigates instead, so the file never arrives (#109). The bare
+            // attribute is valid and carries no value, so test for its
+            // PRESENCE, never for a truthy value.
+            if (anchor?.hasAttribute('download')) return
             e.preventDefault()
             if (router.mode === 'hash') {
               // Set the hash and let the listener run guards + dispatch — the
