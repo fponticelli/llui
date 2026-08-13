@@ -63,7 +63,13 @@ describe('AgentPairingDurableObject MCP session bound (#102)', () => {
   it('bounds retained MCP sessions across repeated unauthenticated initializes', async () => {
     // A DO's 128 MB ceiling is reached at ~1,100 unbounded sessions, so
     // the bound has to hold on THIS path, not only in the Node factory.
+    //
+    // The limiter is deliberately disabled here. With the default
+    // 30/minute the 31st request onward is a 429 that allocates nothing,
+    // so the loop would exercise the RATE LIMIT and leave the session
+    // bound — the thing under test — reached only incidentally.
     const doInstance = new AgentPairingDurableObject({
+      rateLimiter: { check: async () => ({ allowed: true }) },
       mcp: { maxSessions: 8, maxUnauthenticatedSessions: 4 },
     })
     for (let i = 0; i < 200; i++) {
@@ -87,6 +93,41 @@ describe('AgentPairingDurableObject MCP session bound (#102)', () => {
         }),
       )
     }
+    // Every one of the 200 was anonymous, so the reachable ceiling is
+    // the ANONYMOUS quota, not `maxSessions`.
+    expect(doInstance.mcpRouter?.liveSessionCount()).toBeLessThanOrEqual(4)
+  })
+
+  it('holds the bound when the DO serves overlapping initializes', async () => {
+    // A Worker forwards each request to the DO independently, so
+    // concurrent `initialize`s are the normal case here too.
+    const doInstance = new AgentPairingDurableObject({
+      rateLimiter: { check: async () => ({ allowed: true }) },
+      mcp: { maxSessions: 8, maxUnauthenticatedSessions: 8 },
+    })
+    await Promise.all(
+      Array.from({ length: 200 }, () =>
+        doInstance.fetch(
+          new Request('http://do/agent/mcp', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              accept: 'application/json, text/event-stream',
+            },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'initialize',
+              params: {
+                protocolVersion: '2025-06-18',
+                capabilities: {},
+                clientInfo: { name: 'test', version: '1' },
+              },
+            }),
+          }),
+        ),
+      ),
+    )
     expect(doInstance.mcpRouter?.liveSessionCount()).toBeLessThanOrEqual(8)
   })
 })

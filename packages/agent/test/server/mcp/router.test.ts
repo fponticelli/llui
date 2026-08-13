@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { createMcpRouter, type McpRouter } from '../../../src/server/mcp/router.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { defaultRateLimiter, type RateLimiter } from '../../../src/server/rate-limit.js'
+import { createClientIpResolver } from '../../../src/server/client-ip.js'
+import type { AuditSink } from '../../../src/server/audit.js'
+import type { AuditEntry } from '../../../src/protocol.js'
 import { seedToken } from '../_token-helper.js'
 
 /**
@@ -125,8 +128,50 @@ function mkRouter(over: Partial<Parameters<typeof createMcpRouter>[1]> = {}, dep
 describe('MCP router session bounding (#102)', () => {
   it('leaves a bounded number of live sessions across many unauthenticated initializes', async () => {
     const router = mkRouter({ maxSessions: 8, maxUnauthenticatedSessions: 4 })
-    for (let i = 0; i < 1000; i++) await initialize(router)
+    // 200 sequential initializes: 50× the anonymous quota, which is what
+    // the LRU churn has to hold at. The old 1000 built 1000 full
+    // `McpServer`s (16 Zod-schema tools each) and blew the 5 s default
+    // timeout under workspace parallelism without proving anything the
+    // shorter run doesn't.
+    for (let i = 0; i < 200; i++) await initialize(router)
+    // Every one of these is anonymous, so the reachable ceiling is the
+    // ANONYMOUS quota, not `maxSessions`.
+    expect(router.liveSessionCount()).toBeLessThanOrEqual(4)
+  })
+
+  /**
+   * The bound has to hold when initializes OVERLAP, which is the normal
+   * case: both callers (`factory.ts`, `durable-object.ts`) `await` the
+   * router inside a per-request handler, so N in-flight requests are N
+   * suspended `route` calls. A check that reads `sessions.size` and
+   * registers after two `await`s reserves nothing — every concurrent
+   * caller sees an empty map and passes.
+   */
+  it('holds maxSessions when 500 initializes are in flight at once', async () => {
+    const router = mkRouter({ maxSessions: 8, maxUnauthenticatedSessions: 8 })
+    const results = await Promise.all(Array.from({ length: 500 }, () => initialize(router)))
     expect(router.liveSessionCount()).toBeLessThanOrEqual(8)
+    expect(results.filter((r) => r.status === 200).length).toBeLessThanOrEqual(8)
+    // The overflow has to be REFUSED, not silently served.
+    expect(results.filter((r) => r.status === 503).length).toBeGreaterThan(0)
+  })
+
+  it('holds the anonymous quota when initializes are in flight at once', async () => {
+    const router = mkRouter({ maxSessions: 64, maxUnauthenticatedSessions: 4 })
+    await Promise.all(Array.from({ length: 200 }, () => initialize(router)))
+    expect(router.liveSessionCount()).toBeLessThanOrEqual(4)
+  })
+
+  it('counts a session still being built against the bound', async () => {
+    const router = mkRouter({ maxSessions: 4, maxUnauthenticatedSessions: 4 })
+    // Eight overlapping initializes against four slots. A session under
+    // construction is not in the session map yet, so this passes only if
+    // the reservation itself is counted — and the overflow must be
+    // refused, not served a session that pushes the total to eight.
+    const results = await Promise.all(Array.from({ length: 8 }, () => initialize(router)))
+    expect(results.filter((r) => r.status === 200)).toHaveLength(4)
+    expect(results.filter((r) => r.status === 503)).toHaveLength(4)
+    expect(router.liveSessionCount()).toBe(4)
   })
 
   it('reclaims a stranded session without a client DELETE', async () => {
@@ -285,16 +330,229 @@ describe('MCP router rate limiting (#102)', () => {
     expect(router.liveSessionCount()).toBe(3)
   })
 
-  it('buckets the allocation limit per client IP', async () => {
+  /**
+   * Replaces the old `buckets the allocation limit per client IP`, which
+   * varied `x-forwarded-for` and asserted each value got its own
+   * allowance — i.e. it codified the bypass as intended behaviour. On a
+   * direct-to-origin deployment (the primary one for this package) every
+   * forwarding header is attacker-supplied, so a limiter keyed on one is
+   * no limiter at all.
+   */
+  it('does not let a caller mint fresh buckets with forwarding headers', async () => {
+    const c = clock()
+    const router = mkRouter(
+      {},
+      { rateLimiter: defaultRateLimiter({ perBucket: '3/minute' }, c.now), now: c.now },
+    )
+
+    const statuses: number[] = []
+    for (let i = 0; i < 20; i++) {
+      const res = await router(
+        initializeRequest({
+          'x-forwarded-for': `10.0.0.${i}`,
+          'x-real-ip': `192.0.2.${i}`,
+        }),
+      )
+      statuses.push(res?.status ?? 0)
+    }
+
+    expect(statuses.filter((s) => s === 200)).toHaveLength(3)
+    expect(statuses.filter((s) => s === 429)).toHaveLength(17)
+    expect(router.liveSessionCount()).toBe(3)
+  })
+
+  it('buckets per forwarded client only when the host declares a trusted proxy', async () => {
+    const c = clock()
+    const router = mkRouter(
+      {},
+      {
+        rateLimiter: defaultRateLimiter({ perBucket: '1/minute' }, c.now),
+        now: c.now,
+        clientIp: createClientIpResolver({ trustProxy: 1 }),
+      },
+    )
+
+    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.1' })))?.status).toBe(200)
+    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.1' })))?.status).toBe(429)
+    // A different client behind the same trusted proxy gets its own
+    // allowance — the reason the option exists at all.
+    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.2' })))?.status).toBe(200)
+  })
+
+  it('carries retry-after on a 429 so a client backs off instead of hammering', async () => {
     const c = clock()
     const router = mkRouter(
       {},
       { rateLimiter: defaultRateLimiter({ perBucket: '1/minute' }, c.now), now: c.now },
     )
+    await router(initializeRequest())
+    const throttled = await router(initializeRequest())
+    expect(throttled?.status).toBe(429)
+    expect(Number(throttled?.headers.get('retry-after'))).toBeGreaterThanOrEqual(1)
+  })
+})
 
-    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.1' })))?.status).toBe(200)
-    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.1' })))?.status).toBe(429)
-    // A different client still gets its own allowance.
-    expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.2' })))?.status).toBe(200)
+describe('MCP router audit trail (#102)', () => {
+  it('records the refusals — 401, 429 and the capacity 503', async () => {
+    const entries: AuditEntry[] = []
+    const auditSink: AuditSink = {
+      write: async (e) => void entries.push(e),
+    }
+    const c = clock()
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1', now: c.now() })
+    const router = mkRouter(
+      { maxSessions: 1, maxUnauthenticatedSessions: 1 },
+      {
+        tokenStore: store,
+        auditSink,
+        now: c.now,
+        rateLimiter: defaultRateLimiter({ perBucket: '3/minute' }, c.now),
+      },
+    )
+
+    // 401 — a bearer that is not one of ours.
+    await router(initializeRequest({ authorization: 'Bearer agt_nope' }))
+    // 503 — the one slot goes to an authenticated session, which is
+    // never evicted for an anonymous caller.
+    const admitted = await initialize(router, { authorization: `Bearer ${token}` })
+    await callTool(router, admitted.sessionId as string, 'connect_session', { token })
+    await router(initializeRequest())
+    // 429 — the 3/minute bucket is spent by now.
+    await router(initializeRequest())
+
+    expect(entries.map((e) => e.event)).toEqual(['auth-failed', 'rate-limited', 'rate-limited'])
+    expect(entries[1]?.detail).toMatchObject({ reason: 'session-capacity' })
+  })
+})
+
+describe('MCP router per-identity cap (#102)', () => {
+  /**
+   * Attack C: an authenticated session is (correctly) never evicted on
+   * behalf of an anonymous caller, so without a per-identity cap ONE
+   * valid bearer presented `maxSessions` times fills the endpoint with
+   * sessions nothing can reclaim and every later caller gets a 503. The
+   * accidental version is worse because it needs no attacker: a client
+   * that crash-reconnects often enough inside the idle TTL does it.
+   */
+  it('caps how many sessions a single bearer can hold, without 503ing the endpoint', async () => {
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1' })
+    const router = mkRouter(
+      { maxSessions: 8, maxUnauthenticatedSessions: 2, maxSessionsPerIdentity: 3 },
+      { tokenStore: store },
+    )
+
+    for (let i = 0; i < 12; i++) {
+      const res = await initialize(router, { authorization: `Bearer ${token}` })
+      expect(res.status).toBe(200)
+    }
+    expect(router.liveSessionCount()).toBeLessThanOrEqual(3)
+
+    // The endpoint is still usable by everyone else — the point of the cap.
+    const other = await initialize(router)
+    expect(other.status).toBe(200)
+  })
+
+  it('keeps the most recent sessions of a capped identity', async () => {
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1' })
+    const router = mkRouter({ maxSessionsPerIdentity: 2 }, { tokenStore: store })
+
+    const first = await initialize(router, { authorization: `Bearer ${token}` })
+    await initialize(router, { authorization: `Bearer ${token}` })
+    const third = await initialize(router, { authorization: `Bearer ${token}` })
+
+    const stale = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: { 'mcp-session-id': first.sessionId as string },
+      }),
+    )
+    expect(stale?.status).toBe(404)
+    const live = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: { 'mcp-session-id': third.sessionId as string },
+      }),
+    )
+    expect(live?.status).not.toBe(404)
+  })
+
+  it('applies the cap to sessions that authenticate through connect_session', async () => {
+    // The other door to attack C: initialize anonymously (inside the
+    // anonymous quota), then bind the SAME token. Each session leaves
+    // the quota the moment it authenticates, so the anonymous ceiling
+    // never sees the accumulation.
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1' })
+    const router = mkRouter({ maxSessionsPerIdentity: 2 }, { tokenStore: store })
+
+    for (let i = 0; i < 5; i++) {
+      const { sessionId } = await initialize(router)
+      const connected = await callTool(router, sessionId as string, 'connect_session', { token })
+      expect(connected.status).toBe(200)
+    }
+
+    expect(router.liveSessionCount()).toBeLessThanOrEqual(2)
+  })
+})
+
+describe('MCP router provisional-session lifetime (#102)', () => {
+  /**
+   * Attack B: an idle TTL alone is refreshable. Pinging an established
+   * provisional session just under the TTL held the anonymous quota
+   * indefinitely at near-zero cost, so the quota bounded memory but not
+   * availability. A provisional session therefore also has an ABSOLUTE
+   * lifetime: traffic keeps it out of the idle sweep, nothing keeps it
+   * past the handshake window.
+   */
+  it('reclaims a provisional session held open by keepalive traffic', async () => {
+    const c = clock()
+    const router = mkRouter(
+      { unauthenticatedTtlMs: 60_000, unauthenticatedMaxLifetimeMs: 300_000 },
+      { now: c.now },
+    )
+    const { sessionId } = await initialize(router)
+    expect(sessionId).toBeTruthy()
+
+    const ping = async (): Promise<number> => {
+      const res = await router(
+        new Request('http://local/agent/mcp', {
+          method: 'POST',
+          headers: { 'mcp-session-id': sessionId as string },
+        }),
+      )
+      return res?.status ?? 0
+    }
+
+    const statuses: number[] = []
+    // Ten pings at 50 s — always inside the 60 s idle TTL, so the idle
+    // sweep alone never fires.
+    for (let i = 0; i < 10; i++) {
+      c.advance(50_000)
+      statuses.push(await ping())
+    }
+
+    expect(statuses).toContain(404)
+    expect(router.liveSessionCount()).toBe(0)
+  })
+
+  it('does not cap the lifetime of a session that completed connect_session', async () => {
+    const c = clock()
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1', now: c.now() })
+    const router = mkRouter(
+      { unauthenticatedMaxLifetimeMs: 60_000, idleTtlMs: 30 * 60_000 },
+      { tokenStore: store, now: c.now },
+    )
+    const { sessionId } = await initialize(router)
+    await callTool(router, sessionId as string, 'connect_session', { token })
+    expect(router.hasBoundToken(sessionId as string)).toBe(true)
+
+    // Well past the PROVISIONAL cap, inside the authenticated idle TTL.
+    c.advance(10 * 60_000)
+    await initialize(router)
+    expect(router.hasBoundToken(sessionId as string)).toBe(true)
   })
 })
