@@ -92,8 +92,8 @@ const App = component<State, Msg, never>({
   },
   view: ({ state, send }) => [
     section({ class: 'todoapp' }, [
-      header({}, [
-        h1({}, [text('todos')]),
+      header([
+        h1([text('todos')]),
         input({
           class: 'new-todo',
           placeholder: 'What needs to be done?',
@@ -143,7 +143,7 @@ const App = component<State, Msg, never>({
                           checked: item.at('completed'),
                           onChange: () => send({ type: 'toggle', id: item.at('id').peek() }),
                         }),
-                        label({}, [text(item.at('text'))]),
+                        label([text(item.at('text'))]),
                         button(
                           {
                             class: 'destroy',
@@ -169,7 +169,7 @@ const App = component<State, Msg, never>({
               ),
             ]),
             ul({ class: 'filters' }, [
-              li({}, [
+              li([
                 a(
                   {
                     class: state.at('filter').map((f) => (f === 'all' ? 'selected' : '')),
@@ -182,7 +182,7 @@ const App = component<State, Msg, never>({
                   [text('All')],
                 ),
               ]),
-              li({}, [
+              li([
                 a(
                   {
                     class: state.at('filter').map((f) => (f === 'active' ? 'selected' : '')),
@@ -195,7 +195,7 @@ const App = component<State, Msg, never>({
                   [text('Active')],
                 ),
               ]),
-              li({}, [
+              li([
                 a(
                   {
                     class: state.at('filter').map((f) => (f === 'completed' ? 'selected' : '')),

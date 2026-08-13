@@ -10,7 +10,7 @@ const ListComponent = component<State, never, never>({
   update: (s) => [s, []],
   view: ({ state }) => [
     div({ class: 'container' }, [
-      h1({}, [text(state.map((s) => s.title))]),
+      h1([text(state.map((s) => s.title))]),
       ul({ class: 'list' }, [
         each(
           state.map((s) => s.items),

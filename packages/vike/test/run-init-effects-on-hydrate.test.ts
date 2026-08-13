@@ -37,7 +37,7 @@ function makeLayoutWithInitEffect(
     name: 'LayoutWithInit',
     init: () => [{ n: 0 }, [{ type: 'layoutInit' }]],
     update: (s) => s,
-    view: () => [div({}, [text('layout-shell'), pageSlot()])],
+    view: () => [div([text('layout-shell'), pageSlot()])],
     onEffect: (effect) => {
       seen.push(effect)
     },
@@ -51,7 +51,7 @@ function makePageWithInitEffect(
     name: 'PageWithInit',
     init: () => [{ m: 0 }, [{ type: 'pageInit' }]],
     update: (s) => s,
-    view: () => [div({}, [text('page-body')])],
+    view: () => [div([text('page-body')])],
     onEffect: (effect) => {
       seen.push(effect)
     },
@@ -165,7 +165,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       name: 'Page2',
       init: () => [{ m: 0 }, [{ type: 'pageInit' }]],
       update: (s) => s,
-      view: () => [div({}, [text('page2')])],
+      view: () => [div([text('page2')])],
       onEffect: (effect) => {
         seenPage.push(effect)
       },

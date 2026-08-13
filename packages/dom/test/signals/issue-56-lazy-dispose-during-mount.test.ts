@@ -51,10 +51,10 @@ describe('signalLazy — dispose during the child mount', () => {
       init: () => ({ n: 0 }),
       update: (s) => s,
       view: () => [
-        div({}, [
+        div([
           signalLazy({
             loader: () => Promise.resolve(loadedDef),
-            fallback: () => [span({}, [text('loading')])],
+            fallback: () => [span([text('loading')])],
           }),
         ]),
       ],
@@ -86,10 +86,10 @@ describe('signalLazy — dispose during the child mount', () => {
       init: () => ({ n: 0 }),
       update: (s) => s,
       view: () => [
-        div({}, [
+        div([
           signalLazy({
             loader: () => Promise.resolve(loadedDef),
-            fallback: () => [span({}, [text('loading')])],
+            fallback: () => [span([text('loading')])],
           }),
         ]),
       ],
@@ -127,13 +127,13 @@ describe('signalLazy — dispose during the child mount', () => {
       init: () => ({ n: 0 }),
       update: (s) => s,
       view: () => [
-        div({}, [
+        div([
           signalLazy({
             loader: () =>
               new Promise<SignalComponentDef<LoadedS, LoadedM>>((res) => {
                 resolveLoader = res
               }),
-            fallback: () => [span({}, [text('loading')])],
+            fallback: () => [span([text('loading')])],
           }),
         ]),
       ],
@@ -157,10 +157,10 @@ describe('signalLazy — dispose during the child mount', () => {
       init: () => ({ n: 0 }),
       update: (s) => s,
       view: () => [
-        div({}, [
+        div([
           signalLazy<LoadedS, LoadedM>({
             loader: () => Promise.reject(new Error('boom')),
-            fallback: () => [span({}, [text('loading')])],
+            fallback: () => [span([text('loading')])],
             error: (err) => [
               span({ class: 'err' }, [text(err.message)]),
               // Runs synchronously inside the arm's mount, mid-error-callback.

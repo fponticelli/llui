@@ -25,7 +25,7 @@ export const Counter = component<State, Msg>({
   name: 'Counter',
   init: () => ({ count: 0 }),
   update: (s) => [s, []],
-  view: ({ state }) => [div({}, text(state.map((s) => String(s.count))))],
+  view: ({ state }) => [div([text(state.map((s) => String(s.count)))])],
 })
 `
 

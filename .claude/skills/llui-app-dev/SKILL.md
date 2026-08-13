@@ -83,6 +83,10 @@ view: ({ state, send }) => [
 ]
 ```
 
+An element with no props takes the **children-only call** — `div([…])`, never `div({}, […])`.
+The empty literal is a throwaway allocation on the element mount path, and the compiler
+rejects it (`empty-props`, with the rewrite attached as a fix).
+
 The compiler lowers this to internal `signalText`/`signalEach`/`signalShow` helpers.
 **App authors never write those `signal*` names** — they're compiler targets. If you
 see hand-written `signalText`/`signalEach`/`signalShow` in app code, that's a smell
@@ -197,7 +201,7 @@ A keyed row must be **one or more stable elements**. A bare `show`/`branch`/`eac
 a fragment) as the row's top node has no stable handle to move/remove, corrupting
 reorder.
 
-- **Fix:** wrap the row body in a stable element (`li({}, [ show(...) ])`).
+- **Fix:** wrap the row body in a stable element (`li([ show(...) ])`).
 
 ### 11. Placing the same `Mountable` variable twice → two independent live instances
 

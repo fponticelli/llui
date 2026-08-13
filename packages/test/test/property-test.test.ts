@@ -107,7 +107,7 @@ describe('propertyTest', () => {
         }
       },
       view: ({ state }) => [
-        ol({}, [
+        ol([
           each(
             state.map((s) => s.rows),
             {

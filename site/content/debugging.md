@@ -167,7 +167,7 @@ What it catches: the signal lint rules — `peek-in-slot`,
 `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`,
 `controlled-input`, `at-after-map` / `prefer-at-over-map`,
 `exhaustive-update`, `async-update`, `event-handler-casing`, `attr-name`,
-and the shared `convention` checks.
+`empty-props`, and the shared `convention` checks.
 
 ## Troubleshooting: `llui-mcp doctor`
 

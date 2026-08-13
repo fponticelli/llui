@@ -17,6 +17,15 @@ export {
   type SignalTransformResult,
 } from './signals/transform-component.js'
 export { type LowerBail } from './signals/transform-view.js'
+// Exported for the runtime-side drift gate: `@llui/dom`'s test suite asserts
+// these mirrors still match its own `authoring.ts` exports. The gate MUST live
+// there — `authoring.ts` is an input of `@llui/dom#test` but of no task in this
+// package, so a compiler-side gate never reruns when the runtime adds a helper.
+export {
+  ELEMENT_HELPERS,
+  SVG_ELEMENT_HELPERS,
+  ALL_ELEMENT_HELPERS,
+} from './signals/element-helpers.js'
 export {
   lintSignalSource,
   applyLintFixes,

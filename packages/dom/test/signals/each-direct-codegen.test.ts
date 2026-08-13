@@ -66,7 +66,7 @@ const ROWS = `
     init: () => [{ rows: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }] }, []],
     update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
     view: ({ state }) => [
-      ul({}, [
+      ul([
         each(state.at('rows'), {
           key: (r) => r.id,
           render: (item) => [
@@ -136,7 +136,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         init: () => [{ rows: [{ id: 1, label: 'a', cls: 'x' }] }, []],
         update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
         view: ({ state }) => [
-          ul({}, [
+          ul([
             each(state.at('rows'), {
               key: (r) => r.id,
               render: (item) => [li({ class: item.at('cls') }, [text(item.at('label'))])],
@@ -170,7 +170,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         init: () => [{ rows: [{ id: 1, v: 'hi' }] }, []],
         update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
         view: ({ state }) => [
-          ul({}, [each(state.at('rows'), { key: (r) => r.id, render: (item) => [li([input({ value: item.at('v') })])] })]),
+          ul([each(state.at('rows'), { key: (r) => r.id, render: (item) => [li([input({ value: item.at('v') })])] })]),
         ],
       })
     `
@@ -198,17 +198,17 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
           return [s, []]
         },
         view: ({ state, send }) => [
-          ul({}, [
+          ul([
             each(state.at('todos'), {
               key: (t) => t.id,
               render: (item) => [
-                li({}, [
+                li([
                   input({
                     type: 'checkbox',
                     checked: item.at('done'),
                     onClick: () => send({ type: 'toggle', id: item.at('id').peek() }),
                   }),
-                  label({}, [text(item.at('text'))]),
+                  label([text(item.at('text'))]),
                   button({ class: 'destroy', onClick: () => send({ type: 'remove', id: item.at('id').peek() }) }, [
                     text('x'),
                   ]),
@@ -261,11 +261,11 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
           return [s, []]
         },
         view: ({ state, send }) => [
-          ul({}, [
+          ul([
             each(state.at('rows'), {
               key: (r) => r.id,
               render: (item) => [
-                li({}, [button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
+                li([button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
               ],
             }),
           ]),
@@ -301,11 +301,11 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         init: () => [{ rows: [{ id: 1, label: 'a', open: true }] }, []],
         update: (s) => [s, []],
         view: ({ state }) => [
-          ul({}, [
+          ul([
             each(state.at('rows'), {
               key: (r) => r.id,
               render: (item) => [
-                li({}, [show(item.at('open'), () => [span({}, [text(item.at('label'))])])]),
+                li([show(item.at('open'), () => [span([text(item.at('label'))])])]),
               ],
             }),
           ]),
@@ -327,7 +327,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         init: () => [{ n: 0 }, []],
         update: (s, m) => (m.type === 'inc' ? [{ n: s.n + 1 }, []] : [s, []]),
         view: ({ state, send }) => [
-          div({}, [
+          div([
             button({ onClick: () => { send({ type: 'inc' }); send({ type: 'inc' }); send({ type: 'inc' }) } }, [text('go')]),
             div({ class: 'out' }, [text(state.at('n').map((v) => String(v)))]),
           ]),
@@ -360,13 +360,13 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         init: () => [{ files: [{ id: 1, type: 'dir', name: 'src', path: '/src' }, { id: 2, type: 'file', name: 'README', path: '/README' }] }, []],
         update: (s, m) => (m.type === 'open' ? [{ files: s.files, opened: m.path, openedDir: m.isDir }, []] : [s, []]),
         view: ({ state, send }) => [
-          ul({}, [
+          ul([
             each(state.at('files'), {
               key: (f) => f.id,
               render: (item) => {
                 const isDir = item.peek().type === 'dir'
                 return [
-                  li({}, [
+                  li([
                     span({ class: isDir ? 'icon-dir' : 'icon-file' }, [text(isDir ? '📁' : '📄')]),
                     a({ href: '#', onClick: (e) => { e.preventDefault(); send({ type: 'open', path: item.peek().path, isDir }) } }, [text(item.at('name'))]),
                   ]),
@@ -414,11 +414,11 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
       import { component, ul, li, button, text, each } from '@llui/dom'
       function rowsView(items, send) {
         return [
-          ul({}, [
+          ul([
             each(items, {
               key: (r) => r.id,
               render: (item) => [
-                li({}, [button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
+                li([button({ onClick: () => send({ type: 'pick', id: item.at('id').peek() }) }, [text(item.at('label'))])]),
               ],
             }),
           ]),
@@ -458,7 +458,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
       import { component, ul, li, span, button, text, each, show } from '@llui/dom'
       function rowsView(items, flag, send) {
         return [
-          ul({}, [
+          ul([
             each(items, {
               key: (r) => r.id,
               render: (item) => [
@@ -520,7 +520,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
         return parts[0]
       }
       function rowsView(items) {
-        return [ul({}, [each(items, {
+        return [ul([each(items, {
           key: (r) => r.id,
           render: (item) => [li({ class: 'lrow' }, [badge(item)])],
         })])]
@@ -586,7 +586,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
           if (m.type === 'mode') return [{ ...s, mode: m.v }, []]
           return [s, []]
         },
-        view: ({ state }) => [div({}, [each(state.at('items'), { key: (it) => it.id, render: (item) => [rowView(item, state.at('mode'))] })])],
+        view: ({ state }) => [div([each(state.at('items'), { key: (it) => it.id, render: (item) => [rowView(item, state.at('mode'))] })])],
       })
     `
     const out = transformSignalComponentSource(INLINE)
@@ -637,7 +637,7 @@ describe('compiled: direct-construction each (signalEachDirect)', () => {
           if (m.type === 'flag') return [{ ...s, flag: m.v }, []]
           return [s, []]
         },
-        view: ({ state, send }) => [div({}, [each(state.at('grants'), { key: (g) => g.id, render: (grant) => grantRow(state, grant, send) })])],
+        view: ({ state, send }) => [div([each(state.at('grants'), { key: (g) => g.id, render: (grant) => grantRow(state, grant, send) })])],
       })
     `
     const out = transformSignalComponentSource(BARE)

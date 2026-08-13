@@ -106,9 +106,9 @@ describe('llui_static_collect_paths', () => {
           init: () => [{ user: { name: '', email: '' }, theme: 'light' }, []],
           update: (s) => [s, []],
           view: ({ text }) => [
-            div({}, [text((s) => s.user.name)]),
-            div({}, [text((s) => s.user.email)]),
-            div({}, [text((s) => s.theme)]),
+            div([text((s) => s.user.name)]),
+            div([text((s) => s.user.email)]),
+            div([text((s) => s.theme)]),
           ],
         })
       `,
@@ -142,7 +142,7 @@ describe('llui_static_collect_paths', () => {
           name: 'C',
           init: () => [{} as S, []],
           update: (s) => [s, []],
-          view: ({ text }) => [div({}, [${reads}])],
+          view: ({ text }) => [div([${reads}])],
         })
       `,
     )

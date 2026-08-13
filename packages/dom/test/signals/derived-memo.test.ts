@@ -138,7 +138,7 @@ describe('component-level: N bindings reading one .map compute fn once per updat
         })
         // three independent bindings, all reading the same mapped handle
         return [
-          div({}, [text(doubled)]),
+          div([text(doubled)]),
           span({ class: 'a' }, [text(doubled)]),
           span({ class: 'b' }, [text(doubled)]),
         ]

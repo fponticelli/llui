@@ -41,7 +41,7 @@ describe('transformSignalComponentSource', () => {
       'const C = component({',
       '  init: () => ({}),',
       '  update: (s) => s,',
-      "  view: ({ state }) => [ul({}, [signalEach(state.at('items'), {})])],",
+      "  view: ({ state }) => [ul([signalEach(state.at('items'), {})])],",
       '})',
     ].join('\n')
     // signalEach isn't produced by the transform yet (each/show/branch lowering of
@@ -203,7 +203,7 @@ describe('transformSignalComponentSource', () => {
       '  init: () => ({ n: 0 }),',
       '  update: (s) => s,',
       '  view: ({ state, send }) => [',
-      '    div({}, [',
+      '    div([',
       "      text(state.at('n').map((n) => clone(String(n)))),",
       "      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),",
       '    ]),',
@@ -458,7 +458,7 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
         'function rowsView(items: Signal<readonly { id: number; label: string }[]>): Renderable {',
-        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
+        '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
         '}',
         'const C = component({',
         '  init: () => ({ items: [] }),',
@@ -485,7 +485,7 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { component, ul, li, text, each, type Signal, type Renderable } from '@llui/dom'",
         'function rowsView(items: Signal<readonly { id: number }[]>, mode: Signal<string>): Renderable {',
-        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({ class: mode.at("x") }, [text(item.at("y"))])] })])]',
+        '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li({ class: mode.at("x") }, [text(item.at("y"))])] })])]',
         '}',
         'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [rowsView(state.at("items"), state.at("mode"))] })',
       ].join('\n')
@@ -502,7 +502,7 @@ describe('transformSignalComponentSource', () => {
         'const C = component({',
         '  init: () => ({ rows: [] }),',
         '  update: (s) => s,',
-        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '  view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -517,12 +517,12 @@ describe('transformSignalComponentSource', () => {
         "import { component, div, span, text, each } from '@llui/dom'",
         'function row(item, locale) {',
         '  const entry = item.peek()',
-        "  return div({ class: 'activity-item' }, [span({}, [text(entry.user)]), span({}, [text(locale.map((l) => entry.ago + l))])])",
+        "  return div({ class: 'activity-item' }, [span([text(entry.user)]), span([text(locale.map((l) => entry.ago + l))])])",
         '}',
         'const C = component({',
         '  init: () => ({ items: [], locale: "en" }),',
         '  update: (s) => s,',
-        '  view: ({ state }) => [div({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("locale"))] })])],',
+        '  view: ({ state }) => [div([each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("locale"))] })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -545,7 +545,7 @@ describe('transformSignalComponentSource', () => {
         'function row(item, parts) {',
         "  return li({ ...parts.item(item.peek().id), class: 'r' }, [text(item.at('title'))])",
         '}',
-        'const C = component({ init: () => ({ items: [], parts: {} }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("parts"))] })])] })',
+        'const C = component({ init: () => ({ items: [], parts: {} }), update: (s) => s, view: ({ state }) => [ul([each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item, state.at("parts"))] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -564,7 +564,7 @@ describe('transformSignalComponentSource', () => {
         'const C = component({',
         '  init: () => ({ rows: [] }),',
         '  update: (s) => s,',
-        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '  view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -577,7 +577,7 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { component, ul, text, each } from '@llui/dom'",
         "import { row } from './row'",
-        'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item)] })])] })',
+        'const C = component({ init: () => ({ items: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("items"), { key: (it) => it.id, render: (item) => [row(item)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       expect(out).not.toContain('signalEachDirect(') // can't resolve the helper body → authoring
@@ -591,12 +591,12 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { component, ul, li, text, each, type Signal } from '@llui/dom'",
         'function side(items: Signal<readonly { id: number }[]>) {',
-        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("y"))])] })])]',
+        '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("y"))])] })])]',
         '}',
         'const C = component({',
         '  init: () => ({ rows: [] }),',
         '  update: (s) => s,',
-        '  view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
+        '  view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [li([text(item.at("x"))])] })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -608,8 +608,8 @@ describe('transformSignalComponentSource', () => {
     it('inlines a helper returning an ARRAY (the documented Renderable shape)', () => {
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
-        'function row(item) { return [div({}, [text(item.at("x"))])] }',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+        'function row(item) { return [div([text(item.at("x"))])] }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -619,8 +619,8 @@ describe('transformSignalComponentSource', () => {
     it('inlines a MULTI-element array helper (row with two root nodes)', () => {
       const src = [
         "import { component, ul, li, text, each } from '@llui/dom'",
-        'function row(item) { return [li({}, [text(item.at("x"))]), li({}, [text("detail")])] }',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+        'function row(item) { return [li([text(item.at("x"))]), li([text("detail")])] }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -635,15 +635,15 @@ describe('transformSignalComponentSource', () => {
         'function grantRow(state, grant, flagKey, send) {',
         '  const userId = grant.peek().userId',
         '  return [tr({ class: "r" }, [',
-        '    td({}, [text(grant.at("email"))]),',
-        '    td({}, [text(state.at("flags").map((f) => f[flagKey] ?? "—"))]),',
+        '    td([text(grant.at("email"))]),',
+        '    td([text(state.at("flags").map((f) => f[flagKey] ?? "—"))]),',
         '    td({ onClick: () => send({ type: "revoke", userId }) }, [text("revoke")]),',
         '  ])]',
         '}',
         'const C = component({',
         '  init: () => ({ grants: [], flags: {} }),',
         '  update: (s) => s,',
-        '  view: ({ state, send }) => [table({}, [each(state.at("grants"), { key: (g) => g.userId, render: (grant) => grantRow(state, grant, "beta", send) })])],',
+        '  view: ({ state, send }) => [table([each(state.at("grants"), { key: (g) => g.userId, render: (grant) => grantRow(state, grant, "beta", send) })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -659,7 +659,7 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { ul, li, text, each, show, type Signal } from '@llui/dom'",
         'export function rows(items: Signal<readonly { id: number; label: string }[]>, flag: Signal<boolean>) {',
-        '  return [ul({}, [each(items, {',
+        '  return [ul([each(items, {',
         '    key: (r) => r.id,',
         '    render: (item) => [li({ class: "r" }, [text(item.at("label")), show(flag, () => [text("on")])])],',
         '  })])]',
@@ -682,7 +682,7 @@ describe('transformSignalComponentSource', () => {
         "import { ul, li, text, each, type Signal } from '@llui/dom'",
         "import { pill } from './pill'",
         'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
-        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label")), pill(item)])] })])]',
+        '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label")), pill(item)])] })])]',
         '}',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -704,7 +704,7 @@ describe('transformSignalComponentSource', () => {
         'const C = component({',
         '  init: () => ({ items: [], locale: "en" }),',
         '  update: (s) => s,',
-        '  view: ({ state }) => [div({}, [each(state.at("items"), { key: (it) => it.id, render: (item) => [activityItem(item, state.at("locale"))] })])],',
+        '  view: ({ state }) => [div([each(state.at("items"), { key: (it) => it.id, render: (item) => [activityItem(item, state.at("locale"))] })])],',
         '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -719,9 +719,9 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { ul, li, text, each, type Signal } from '@llui/dom'",
         'export function rows(items: Signal<readonly { id: number; label: string }[]>, state: Signal<{ mode: string }>) {',
-        '  return [ul({}, [each(items, {',
+        '  return [ul([each(items, {',
         '    key: (r) => r.id,',
-        '    render: (item) => [li({}, [text(item.at("label")), text(state.at("mode"))])],',
+        '    render: (item) => [li([text(item.at("label")), text(state.at("mode"))])],',
         '  })])]',
         '}',
       ].join('\n')
@@ -734,7 +734,7 @@ describe('transformSignalComponentSource', () => {
       const src = [
         "import { ul, li, text, each, type Signal } from '@llui/dom'",
         'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
-        '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label"))])] })])]',
+        '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
         '}',
       ].join('\n')
       const out = transformSignalComponentSource(src)
@@ -745,8 +745,8 @@ describe('transformSignalComponentSource', () => {
     it('bails inlining a RECURSIVE helper (its nested each is a structural child)', () => {
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
-        'function row(item) { return div({}, [each(item.at("kids"), { key: (k) => k.id, render: (k) => [row(k)] })]) }',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+        'function row(item) { return div([each(item.at("kids"), { key: (k) => k.id, render: (k) => [row(k)] })]) }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -756,8 +756,8 @@ describe('transformSignalComponentSource', () => {
     it('bails inlining when a param is used as an object SHORTHAND (hygiene)', () => {
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
-        'function row(item, mode) { const o = { mode }; return div({}, [text(item.at("x"))]) }',
-        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
+        'function row(item, mode) { const o = { mode }; return div([text(item.at("x"))]) }',
+        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -767,8 +767,8 @@ describe('transformSignalComponentSource', () => {
     it('bails inlining on arg/param count mismatch', () => {
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
-        'function row(item, extra) { return div({}, [text(item.at("x"))]) }',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
+        'function row(item, extra) { return div([text(item.at("x"))]) }',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -781,8 +781,8 @@ describe('transformSignalComponentSource', () => {
       // state → the binding reads ctx.state.mode, not a leaked param.
       const src = [
         "import { component, ul, div, text, each } from '@llui/dom'",
-        'function row(item, state) { return div({}, [text(state.map((m) => m))]) }',
-        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
+        'function row(item, state) { return div([text(state.map((m) => m))]) }',
+        'const C = component({ init: () => ({ rows: [], mode: "x" }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, state.at("mode"))] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -796,8 +796,8 @@ describe('transformSignalComponentSource', () => {
     it('parenthesizes a non-trivial substituted arg (precedence)', () => {
       const src = [
         "import { component, ul, td, text, each } from '@llui/dom'",
-        'const cell = (n) => td({}, [text(String(n * 2))])',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
+        'const cell = (n) => td([text(String(n * 2))])',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -812,8 +812,8 @@ describe('transformSignalComponentSource', () => {
     it('binds a multiply-referenced non-trivial arg to a const', () => {
       const src = [
         "import { component, ul, td, text, each } from '@llui/dom'",
-        'const cell = (n) => td({}, [text(String(n * 2 + n))])',
-        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul({}, [each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
+        'const cell = (n) => td([text(String(n * 2 + n))])',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item, idx) => [cell(idx.peek() + 1)] })])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
@@ -834,7 +834,7 @@ describe('transformSignalComponentSource', () => {
         '  init: () => ({ n: 0 }),',
         '  update: (s) => s,',
         '  view: ({ state }) => [',
-        '    div({}, [text(state.at("n"))]),',
+        '    div([text(state.at("n"))]),',
         '    component({ init: () => ({ m: 0 }), update: (s) => s, view: ({ state }) => [text(state.at("m"))] }),',
         '  ],',
         '})',
@@ -851,7 +851,7 @@ describe('transformSignalComponentSource', () => {
     it('does not re-import a runtime helper the file already imports from @llui/dom', () => {
       const src = [
         "import { component, el, div, text } from '@llui/dom'",
-        'const C = component({ init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div({}, [text(state.at("n"))])] })',
+        'const C = component({ init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div([text(state.at("n"))])] })',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)

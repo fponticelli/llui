@@ -45,6 +45,13 @@
 //                       (Handlers are the ONE camelCase exception — runtime-required.)
 //   attr-name         — a React-ism that silently doesn't apply (`className` →
 //                       `class`, `htmlFor` → `for`). Correctness; has a fix.
+//   empty-props       — `div({}, [...])`: a throwaway empty object literal in the
+//                       props position. The element helpers already take a
+//                       children-only call (`div([...])`), so the `{}` buys
+//                       nothing and costs one allocation per call plus a
+//                       `lowerProps({})` key walk on the element MOUNT path — the
+//                       hot path for list rendering (issue #82, same class as #58).
+//                       Performance + noise; has a fix (blocking, like attr-name).
 //
 // Each diagnostic has a message, a source position (start offset + length), and —
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
@@ -52,7 +59,7 @@
 import ts from 'typescript'
 import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
-import { ELEMENT_HELPERS as ELEMENT_TAGS } from './element-helpers.js'
+import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, bindingNames } from './helper-bindings.js'
 import { scriptKindForFilename } from './script-kind.js'
 
@@ -710,6 +717,78 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     edits: [{ start: nameNode.getStart(sf), end: nameNode.getEnd(), newText: to }],
   })
 
+  // ---- empty-props: a throwaway `{}` in an element helper's props position ----
+  //
+  // The element helpers dispatch on their first argument (`Array.isArray(a0)` in
+  // `elementHelper`), so the children-only call `div([…])` is already supported.
+  // A `{}` in the props position therefore buys nothing and costs one object
+  // literal per call plus a `lowerProps({})` key walk on the element MOUNT path —
+  // the hot path for list rendering (issue #82).
+  //
+  // "Genuinely empty" is decided SYNTACTICALLY and as narrowly as possible: the
+  // argument node must ITSELF be an `ObjectLiteralExpression` with zero
+  // `properties`. Consequences, all of them deliberate:
+  //   • `{ ...attrs }` — a spread is a property element, so `properties.length`
+  //     is 1 and the literal never matches (the spread source may be non-empty).
+  //   • `cond ? {} : props`, `props`, `makeProps()`, `{} as ElProps` — none is an
+  //     object-literal NODE, so none is reached. The rule never reasons about
+  //     what an expression might EVALUATE to; a false positive here fails a valid
+  //     build, which is strictly worse than missing a case.
+  //   • `el('div', {}, …)` is NOT covered: `el`'s props parameter is positional
+  //     with a `= {}` default, so omitting it allocates exactly the same object.
+  //     There is nothing to save and no children-only form to rewrite to.
+  //
+  // The CHILDREN argument is checked too, and this is load-bearing: the rewrite
+  // `tag({}, c)` → `tag(c)` re-dispatches `c` through the helper's overloads, and
+  // that only typechecks when `c` is provably `readonly ChildNode[]`. It is not,
+  // for the common
+  //     function card(children?: Renderable) { return div({}, children) }
+  // — which COMPILES today, because the two-argument overload's `children` is
+  // optional, but whose rewrite `div(children)` matches NEITHER overload
+  // (`Renderable | undefined` isn't `readonly ChildNode[]`; `Renderable` isn't
+  // `ElProps`). The correct rewrite there is `div(children ?? [])`, which the rule
+  // cannot know. A string-edit lint has no checker, so the only sound syntactic
+  // proxy is an ARRAY LITERAL in the children position — `tag({}, [ … ])`, whose
+  // rewrite is `tag([ … ])` by construction. `tag({}, anythingElse)` is left
+  // alone: emitting a fix we cannot prove typechecks is worse than missing a
+  // site, because `@llui/mcp` serializes `fix.edits` straight to LLM clients
+  // (tools/source.ts, tools/debug-api.ts) which apply them unreviewed.
+  // NAMESPACED (SVG) helpers are covered identically — `ALL_ELEMENT_HELPERS`, not
+  // the lowering-only `ELEMENT_TAGS` — because they share the same call forms.
+  const lintEmptyProps = (node: ts.CallExpression): void => {
+    const callee = node.expression
+    if (!ts.isIdentifier(callee)) return
+    const canon = bindings.resolve(callee)
+    if (canon === null || !ALL_ELEMENT_HELPERS.has(canon)) return
+    // Only the two provably-rewritable shapes: `tag({})` and `tag({}, [ … ])`.
+    const args = node.arguments
+    if (args.length < 1 || args.length > 2) return
+    const props = args[0]!
+    if (!ts.isObjectLiteralExpression(props) || props.properties.length > 0) return
+    if (args.length === 2 && !ts.isArrayLiteralExpression(args[1]!)) return
+
+    const name = callee.text
+    const children = args[1]
+    // Delete the props argument AND its separator. With children, that is
+    // everything up to where the children argument starts; without, everything up
+    // to the closing paren (which also sweeps up a trailing comma — `div({},)`
+    // would otherwise be fixed into the syntax error `div(,)`).
+    const end = children ? children.getStart(sf) : node.getEnd() - 1
+    const fix: LintFix = {
+      title: 'Remove the empty props object',
+      edits: [{ start: props.getStart(sf), end, newText: '' }],
+    }
+    const lead = children
+      ? `\`${name}({}, …)\` passes an empty props object — the element helpers accept a children-only call, so write \`${name}(…)\` with just the children.`
+      : `\`${name}({})\` passes an empty props object — the props argument is optional, so write \`${name}()\`.`
+    push(
+      'empty-props',
+      `${lead} An empty \`{}\` allocates a throwaway object on every call and routes through \`lowerProps({})\` instead of \`lowerProps(undefined)\` on the element mount path — the hot path for list rendering.`,
+      props,
+      fix,
+    )
+  }
+
   const lintElementCall = (node: ts.CallExpression, roots: Roots): void => {
     const ec = elementCall(node)
     if (!ec || !ec.props) return
@@ -936,7 +1015,10 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     }
 
     // element-level lint (controlled-input, a11y) on element-helper calls
-    if (ts.isCallExpression(node)) lintElementCall(node, roots)
+    if (ts.isCallExpression(node)) {
+      lintElementCall(node, roots)
+      lintEmptyProps(node)
+    }
 
     // peek-in-slot: a non-reactive snapshot used in a reactive slot (renders
     // once, never updates). Legitimate inside event handlers / derive bodies.

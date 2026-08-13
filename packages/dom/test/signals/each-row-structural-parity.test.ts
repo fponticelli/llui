@@ -61,7 +61,7 @@ describe('structural primitive inside an each row — arm swaps at every parity'
   }
 
   const branchView = (state: Signal<S>) => [
-    div({}, [
+    div([
       each(state.at('rows'), {
         key: (r) => r.id,
         render: (row: Signal<Row>) => [
@@ -82,7 +82,7 @@ describe('structural primitive inside an each row — arm swaps at every parity'
   // `show` with a PRECISE dep (`item.mode`) — the spelling the issue reports as
   // broken; a coarse `row.map(r => …)` (dep `item`) merely hid it in some cases.
   const showView = (state: Signal<S>) => [
-    div({}, [
+    div([
       each(state.at('rows'), {
         key: (r) => r.id,
         render: (row: Signal<Row>) => [
@@ -231,7 +231,7 @@ describe('nested each inside an each row — reconciles at every parity', () => 
       init: () => ({ rows: [{ id: 'r1', tags: TAGS, label: 'one' }] }),
       update: (_s, m) => ({ rows: m.rows }),
       view: ({ state }) => [
-        ul({}, [
+        ul([
           each(state.at('rows'), {
             key: (r) => r.id,
             render: (row: Signal<Row>) => [
@@ -287,7 +287,7 @@ describe('compiled: branch inside an each row swaps at every parity', () => {
       init: () => [{ rows: [{ id: 'r1', mode: 'a', label: 'one' }] }, []],
       update: (s, m) => (m.type === 'set' ? [{ rows: m.rows }, []] : [s, []]),
       view: ({ state }) => [
-        div({}, [
+        div([
           each(state.at('rows'), {
             key: (r) => r.id,
             render: (row) => [

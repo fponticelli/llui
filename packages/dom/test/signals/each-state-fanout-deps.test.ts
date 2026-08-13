@@ -53,11 +53,11 @@ function makeApp(view: Parameters<typeof component<S, Msg, never>>[0]['view']) {
 describe('authoring each — rows receive state-only updates', () => {
   it('a row-nested show on an unrelated state path updates when items ref is unchanged', () => {
     const App = makeApp(({ state }) => [
-      ul({}, [
+      ul([
         each(state.at('items'), {
           key: (r) => r.id,
           render: (item) => [
-            li({}, [
+            li([
               text(item.at('label')),
               show(state.at('flag'), () => [div({ class: 'on' }, [text('ON')])]),
             ]),
@@ -80,7 +80,7 @@ describe('eachArm — compiled render arm over a verbatim items handle (mid-tier
     const App = makeApp(({ state, send }) => {
       void send
       return [
-        ul({}, [
+        ul([
           // the compiled-arm shape the transform emits: el/signalText producers
           // read the combined row ctx; the nested VERBATIM show (the un-lowerable
           // structural child that motivates this tier) consumes a state handle.
@@ -139,9 +139,7 @@ describe('eachDirect — state deps for factory rows', () => {
   }
 
   it('legacy 3-arg eachDirect (no stateDeps) still sees state-only changes (conservative)', () => {
-    const App = makeApp(({ state }) => [
-      ul({}, [eachDirect(state.at('items'), (r) => r.id, factory)]),
-    ])
+    const App = makeApp(({ state }) => [ul([eachDirect(state.at('items'), (r) => r.id, factory)])])
     const container = document.createElement('div')
     const h = mountSignalComponent(container, App)
     expect(container.querySelector('.frow')!.textContent).toBe('a:x')
@@ -151,7 +149,7 @@ describe('eachDirect — state deps for factory rows', () => {
 
   it('4-arg eachDirect with precise stateDeps updates on those paths', () => {
     const App = makeApp(({ state }) => [
-      ul({}, [eachDirect(state.at('items'), (r) => r.id, factory, ['mode'])]),
+      ul([eachDirect(state.at('items'), (r) => r.id, factory, ['mode'])]),
     ])
     const container = document.createElement('div')
     const h = mountSignalComponent(container, App)

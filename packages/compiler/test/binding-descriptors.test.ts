@@ -460,7 +460,7 @@ describe('tagDispatchHandlers — const-bound translator coverage', () => {
       const App = component({
         view: () => {
           const sendPopover = (m) => dispatch({ type: 'X' })
-          return [div({}, [])]
+          return [div([])]
         }
       })
     `)

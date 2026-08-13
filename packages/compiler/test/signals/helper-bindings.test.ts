@@ -71,8 +71,8 @@ describe('HelperBindings.resolve', () => {
   it('treats an inner lexical shadow as NOT the helper (per call site)', () => {
     const src = [
       "import { div } from '@llui/dom'",
-      'const outer = () => div({})', // module `div` -> helper
-      'const inner = (div) => div({})', // param `div` shadows -> not a helper
+      'const outer = () => div()', // module `div` -> helper
+      'const inner = (div) => div()', // param `div` shadows -> not a helper
     ].join('\n')
     // source order: outer call first, inner (shadowed) call second
     expect(resolveOnly(src, 'div')).toEqual(['div', null])

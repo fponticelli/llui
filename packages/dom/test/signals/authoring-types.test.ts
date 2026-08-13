@@ -73,10 +73,10 @@ describe('authoring surface types', () => {
             () => [text('no email')],
           ),
           // each keyed rows reading the item signal
-          ul({}, [
+          ul([
             each(state.at('todos'), {
               key: (t) => t.id,
-              render: (item) => [li({}, [text(item.at('title'))])],
+              render: (item) => [li([text(item.at('title'))])],
             }),
           ]),
           // branch over a discriminated union: each arm gets the NARROWED variant

@@ -24,7 +24,7 @@ function makeDef(effects: E[]) {
     init: (): [S, E[]] => [{ n: 0 }, []],
     update: (s: S, m: M): [S, E[]] =>
       m.type === 'inc' ? [{ n: s.n + 1 }, [{ type: 'ping' } as E]] : [s, []],
-    view: ({ state }: { state: Signal<S> }) => [div({}, [text(state.at('n').map(String))])],
+    view: ({ state }: { state: Signal<S> }) => [div([text(state.at('n').map(String))])],
     onEffect: (e: E): void => {
       effects.push(e)
     },

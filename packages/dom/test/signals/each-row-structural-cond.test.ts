@@ -75,7 +75,7 @@ describe('compiled: structural conditions reading the row item / mixed state+ite
         return [s, []]
       },
       view: ({ state }) => [
-        ul({}, [
+        ul([
           each(state.map((s) => s.items), {
             key: (i) => i.id,
             render: (item) => [
@@ -177,7 +177,7 @@ describe('authoring: structural condition reading the row item inside an each ro
         {
           key: (i) => i.id,
           render: (item) => [
-            li({}, [
+            li([
               show(
                 item.map((i) => i.kind === 'folder'),
                 () => [span({ class: 'folder' }, [text(item.map((i) => i.name))])],
@@ -222,7 +222,7 @@ describe('authoring: mixed state+item derived reacts inside an each row', () => 
       }),
       update: (s, m) => (m.type === 'activate' ? { ...s, activeId: m.id } : s),
       view: ({ state }) => [
-        ul({}, [
+        ul([
           each(
             state.map((s) => s.rows),
             {
@@ -291,8 +291,8 @@ describe('a bare structural primitive as a row root is a clear authoring error',
               render: (item) => [
                 show(
                   state.map((s) => s.on),
-                  () => [span({}, [text('on')])],
-                  () => [span({}, [text(item.map((i) => i.name))])],
+                  () => [span([text('on')])],
+                  () => [span([text(item.map((i) => i.name))])],
                 ),
               ],
             },
@@ -328,10 +328,10 @@ describe('a bare structural primitive as a row root is a clear authoring error',
                   ? [
                       show(
                         state.map(() => true),
-                        () => [span({}, [text('x')])],
+                        () => [span([text('x')])],
                       ),
                     ]
-                  : [li({}, [text(item.map((i) => i.name))])],
+                  : [li([text(item.map((i) => i.name))])],
             },
           ),
         ],
@@ -353,8 +353,8 @@ describe('a bare structural primitive as a row root is a clear authoring error',
               div([
                 show(
                   state.map((s) => s.on),
-                  () => [span({}, [text('on')])],
-                  () => [span({}, [text(item.map((i) => i.name))])],
+                  () => [span([text('on')])],
+                  () => [span([text(item.map((i) => i.name))])],
                 ),
               ]),
             ],

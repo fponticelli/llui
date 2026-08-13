@@ -18,7 +18,7 @@ import { fade, slide, mergeTransitions } from '@llui/transitions'
 // Fade + slide on a show block (transition is the 4th positional arg)
 show(
   state.at('visible'),
-  () => div({}, text(state.map((s) => s.message))),
+  () => div([text(state.map((s) => s.message))]),
   undefined, // no orElse arm
   mergeTransitions(fade(), slide({ direction: 'down' })),
 )
@@ -149,7 +149,7 @@ show(state.at('open'), () => content(), undefined, fade())
 // each with FLIP reorder — transition is an option in the second arg
 each(state.at('list'), {
   key: (item) => item.id,
-  render: (item) => li({}, text(item.map((i) => i.name))),
+  render: (item) => li([text(item.map((i) => i.name))]),
   transition: flip({ duration: 200 }),
 })
 ```

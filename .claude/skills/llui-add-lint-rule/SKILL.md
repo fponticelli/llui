@@ -94,7 +94,7 @@ stays clean. A rule with only positives is how you ship a false positive that bl
 
 `operator-on-signal`, `no-node-construction-in-body`, `pure-derive-body`, `prefer-at-over-map`,
 `at-after-map`, `peek-in-slot`, `async-update`, `controlled-input`, `exhaustive-update`, `a11y`,
-`convention` (auto-fixed), `event-handler-casing`, `attr-name`.
+`convention` (auto-fixed), `event-handler-casing`, `attr-name`, `empty-props`.
 
 Finish with `pnpm --filter @llui/compiler build test`, then a smoke build of an example
 (`pnpm smoke:examples` or a `pnpm turbo build`) to confirm the rule doesn't false-positive on

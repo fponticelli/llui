@@ -33,7 +33,7 @@ describe('onLowerBail — row-factory bail reasons', () => {
         key: (t) => t.id,
         render: (item) => {
           const done = item.at('done')
-          return [li({}, [text(done)])]
+          return [li([text(done)])]
         },
       })`),
     )
@@ -68,7 +68,7 @@ describe('onLowerBail — row-factory bail reasons', () => {
     const { bails } = bailsOf(
       app(`each(state.at('todos'), {
         key: (t) => t.id,
-        render: (item) => [li({}, [pill(item)])],
+        render: (item) => [li([pill(item)])],
       })`),
     )
     expect(reasons(bails, 'each-direct')).toContain('row-child-unsupported')
@@ -94,7 +94,7 @@ describe('onLowerBail — helper-row inlining', () => {
         key: (t) => t.id,
         render: (item) => [rowHelper(item)],
       })`,
-        `function rowHelper(item) { return [li({}, [text(item.at('label'))]), li({}, [text('x')])] }`,
+        `function rowHelper(item) { return [li([text(item.at('label'))]), li([text('x')])] }`,
       ),
     )
     expect(out).toContain('signalEachDirect(')
@@ -111,7 +111,7 @@ describe('onLowerBail — helper-row inlining', () => {
           return [rowHelper(label)]
         },
       })`,
-        `function rowHelper(label) { return li({}, [text(label)]) }`,
+        `function rowHelper(label) { return li([text(label)]) }`,
       ),
     )
     expect(out).toContain('signalEachDirect(')
@@ -131,7 +131,7 @@ describe('onLowerBail — helper-row inlining', () => {
         // `label` inside the helper refers to ITS module scope (the const below) —
         // inlining the render's `label` decl above it would capture it. Must bail.
         `const label = 'module-scope'
-function rowHelper(txt) { return li({}, [text(txt + label)]) }`,
+function rowHelper(txt) { return li([text(txt + label)]) }`,
       ),
     )
     expect(reasons(bails, 'inline-helper')).toContain('decl-capture-risk')
@@ -145,7 +145,7 @@ function rowHelper(txt) { return li({}, [text(txt + label)]) }`,
         key: (t) => t.id,
         render: (item) => rowHelper(item),
       })`,
-        `function rowHelper(item) { return [li({}, [text(item.at('label'))])] }`,
+        `function rowHelper(item) { return [li([text(item.at('label'))])] }`,
       ),
     )
     expect(out).toContain('signalEachDirect(')
@@ -160,7 +160,7 @@ describe('onLowerBail — show/branch arms', () => {
   })
 
   it('show with non-rooted condition reports cond-not-rooted-signal', () => {
-    const { bails } = bailsOf(app(`show(someCond, () => [div({}, [])])`))
+    const { bails } = bailsOf(app(`show(someCond, () => [div([])])`))
     expect(reasons(bails, 'show')).toContain('cond-not-rooted-signal')
   })
 })

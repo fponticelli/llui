@@ -24,13 +24,13 @@ function setup(initial: Row[]) {
     // Uncompiled authoring each — exercises the runtime row-build + scope-shape memo.
     // Rows of kind 'a' read item.av; kind 'b' read item.bv → different per-row deps.
     view: ({ state }) => [
-      div({}, [
+      div([
         each<Row>(state.at('rows'), {
           key: (r) => r.id,
           render: (item) =>
             item.peek().kind === 'a'
-              ? [div({ class: 'a' }, [span({}, [text(item.at('av'))])])]
-              : [div({ class: 'b' }, [span({}, [text(item.at('bv'))])])],
+              ? [div({ class: 'a' }, [span([text(item.at('av'))])])]
+              : [div({ class: 'b' }, [span([text(item.at('bv'))])])],
         }),
       ]),
     ],

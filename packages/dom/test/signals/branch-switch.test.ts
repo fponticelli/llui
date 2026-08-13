@@ -18,7 +18,7 @@ describe('authoring branch — discriminant switches the rendered arm', () => {
       init: () => ({ country: null }),
       update: (_s, m) => ({ country: m.c }),
       view: ({ state }) => [
-        div({}, [
+        div([
           // 2-arg form: a string-keyed discriminant (the country) selects the arm.
           branch(
             state.map((s): 'US' | 'IT' | 'none' => s.country ?? 'none'),
