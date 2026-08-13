@@ -132,6 +132,36 @@ export interface ConnectedRouter<R> {
 /** history.state key holding our monotonic navigation index. */
 const STATE_KEY = '__llui_idx'
 
+/** Our index stamped on a history entry, or `null` when nobody stamped it. */
+function readIndex(state: unknown): number | null {
+  if (state !== null && typeof state === 'object') {
+    const v = (state as Record<string, unknown>)[STATE_KEY]
+    if (typeof v === 'number') return v
+  }
+  return null
+}
+
+/** Normalize a hash for comparison: `''` and `'/x'` both mean `'#/'`-rooted. */
+function normHash(h: string): string {
+  return h === '' ? '#/' : h.startsWith('#') ? h : '#' + h
+}
+
+function sameHash(a: string, b: string): boolean {
+  return normHash(a) === normHash(b)
+}
+
+/**
+ * The `history.state` to write when re-stamping the CURRENT entry, preserving
+ * every other key already on it — the seed rewrites an entry the host app (or
+ * another library) may already own state on.
+ */
+function stampCurrent(index: number): Record<string, unknown> {
+  const existing = history.state
+  const base =
+    existing !== null && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}
+  return { ...base, [STATE_KEY]: index }
+}
+
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
@@ -157,41 +187,62 @@ export function connectRouter<R>(
     }
   })()
 
-  // Monotonic index tracked across our own pushState entries. A blocked
-  // popstate is undone with history.go(delta) (never a fresh pushState, which
-  // would grow a forward entry on every block).
-  let currentIndex = 0
-  if (
-    typeof history !== 'undefined' &&
-    history.state &&
-    typeof (history.state as Record<string, unknown>)[STATE_KEY] === 'number'
-  ) {
-    currentIndex = (history.state as Record<string, number>)[STATE_KEY]!
+  // Our position in the session history stack. The browser exposes no such
+  // counter, so it is carried in `history.state` on every entry we create and
+  // is what a blocked navigation's `history.go(delta)` restore is computed
+  // from. `null` means UNKNOWN — we are sitting on an entry nobody stamped, so
+  // no delta can be derived and none may be guessed.
+  let currentIndex: number | null = null
+  if (typeof history !== 'undefined') {
+    const seeded = readIndex(history.state)
+    if (seeded !== null) {
+      currentIndex = seeded
+    } else {
+      // Seed the entry the app LOADED on. Without this stamp a pop back onto
+      // it carries no index, `currentIndex` never resyncs across it, and every
+      // later delta is inflated — a blocked back then calls `history.go` with
+      // an unreachable delta, leaves the URL sitting on the route it just
+      // blocked, and (worse) leaves the suppression armed for a restore that
+      // never happened, swallowing the user's next genuine pop (#103).
+      currentIndex = 0
+      history.replaceState(stampCurrent(0), '')
+    }
   }
+
   // Suppress the echo event our own URL mutation triggers, so a single
   // navigation dispatches exactly once (see findings 2a/2b/2c).
   let suppressNextHashchange = false
-  let suppressNextPopstate = false
+  // The index a blocked navigation's `history.go` is restoring to, or `null`.
+  // Keyed on the destination rather than a bare flag: `history.go` is
+  // asynchronous and a delta it cannot reach fires nothing at all, so a flag
+  // stays armed and swallows the next genuine popstate (#103).
+  let pendingRestoreIndex: number | null = null
 
   function pushUrl(path: string): void {
-    currentIndex += 1
+    currentIndex = (currentIndex ?? 0) + 1
     history.pushState({ [STATE_KEY]: currentIndex }, '', path)
   }
 
   function replaceUrl(path: string): void {
-    history.replaceState({ [STATE_KEY]: currentIndex }, '', path)
+    history.replaceState(stampCurrent(currentIndex ?? 0), '', path)
   }
 
-  function sameHash(a: string, b: string): boolean {
-    const norm = (h: string) => (h === '' ? '#/' : h.startsWith('#') ? h : '#' + h)
-    return norm(a) === norm(b)
-  }
-
-  /** Set location.hash, optionally suppressing the echo hashchange dispatch. */
-  function setHash(newHash: string, suppress: boolean): void {
-    if (sameHash(location.hash, newHash)) return
+  /**
+   * Set location.hash, optionally suppressing the echo hashchange dispatch.
+   * Returns whether the URL actually changed — a same-hash write is a no-op the
+   * browser reports nothing for, so nothing may be armed or counted for it.
+   */
+  function setHash(newHash: string, suppress: boolean): boolean {
+    if (sameHash(location.hash, newHash)) return false
     if (suppress) suppressNextHashchange = true
     location.hash = newHash
+    // The fragment navigation created its entry SYNCHRONOUSLY (only the
+    // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
+    // cannot carry state itself, and the blocked-back restore needs an index on
+    // every entry to compute a `history.go` delta from.
+    currentIndex = (currentIndex ?? 0) + 1
+    history.replaceState({ [STATE_KEY]: currentIndex }, '')
+    return true
   }
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route
@@ -214,6 +265,70 @@ export function connectRouter<R>(
       }
     }
     return newRoute
+  }
+
+  /**
+   * Consume the popstate our own restoring `history.go` produced. Cleared
+   * unconditionally: the traversal may land somewhere else entirely (or never
+   * fire), and an armed flag that outlives its restore swallows the next
+   * genuine popstate (#103).
+   */
+  function consumePopstateRestore(): boolean {
+    if (pendingRestoreIndex === null) return false
+    const expected = pendingRestoreIndex
+    pendingRestoreIndex = null
+    if (readIndex(history.state) !== expected) return false
+    currentIndex = expected
+    return true
+  }
+
+  /** Resync `currentIndex` to the entry a browser-driven navigation landed on. */
+  function adoptLandedEntry(): void {
+    const landed = readIndex(history.state)
+    if (landed !== null) {
+      currentIndex = landed
+      return
+    }
+    if (router.mode === 'hash') {
+      // `hashchange` fires for a NEW fragment navigation (the user editing the
+      // address bar) as well as for a traversal, and only a new one can land on
+      // an entry we never stamped — so this is a push on top of where we were.
+      // Stamp it, or a later blocked back has no delta to work from.
+      currentIndex = (currentIndex ?? 0) + 1
+      history.replaceState({ [STATE_KEY]: currentIndex }, '')
+      return
+    }
+    // History mode: popstate is always a TRAVERSAL, so an unstamped entry is
+    // one we have genuinely never seen and whose position the browser will not
+    // tell us. Record that instead of guessing — a guessed index is exactly
+    // what turns a blocked back into an unreachable `history.go` (#103).
+    currentIndex = null
+  }
+
+  /**
+   * Undo a browser-driven navigation a guard blocked, leaving the stack exactly
+   * as it was: a TRAVERSAL back to the entry we were on, never a fresh push.
+   */
+  function restoreBlocked(): void {
+    if (currentRoute === null) return
+    const landed = readIndex(history.state)
+    // Both positions must be known for a delta to mean anything. When either is
+    // not, do NOTHING: no `history.go` with a guessed delta, and above all
+    // nothing armed for a restore that will not happen (#103).
+    if (currentIndex === null || landed === null) return
+    const delta = currentIndex - landed
+    if (delta === 0) return
+    if (router.mode === 'hash') {
+      // `location.hash = restore` cannot be the mechanism — assigning the hash
+      // PUSHES, which grows history.length on every block and truncates every
+      // forward entry above the blocked one (#103). The traversal echoes a
+      // hashchange, which is suppressed like any of our own writes.
+      suppressNextHashchange = true
+      history.go(delta)
+      return
+    }
+    pendingRestoreIndex = currentIndex
+    history.go(delta)
   }
 
   // The route to run guards/dispatch against: the caller's ORIGINAL object (all
@@ -249,8 +364,13 @@ export function connectRouter<R>(
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          if (!sameHash(location.hash, finalPath)) suppressNextHashchange = true
-          location.replace(finalPath)
+          if (!sameHash(location.hash, finalPath)) {
+            suppressNextHashchange = true
+            location.replace(finalPath)
+            // `location.replace` swaps the current entry and DROPS its state,
+            // so restamp it. The index is unchanged — nothing was pushed.
+            history.replaceState({ [STATE_KEY]: currentIndex ?? 0 }, '')
+          }
         } else {
           replaceUrl(finalPath)
         }
@@ -338,11 +458,7 @@ export function connectRouter<R>(
                 suppressNextHashchange = false
                 return
               }
-            } else if (suppressNextPopstate) {
-              suppressNextPopstate = false
-              // Resync the index to the entry history.go landed us on.
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
+            } else if (consumePopstateRestore()) {
               return
             }
 
@@ -351,36 +467,10 @@ export function connectRouter<R>(
             const route = router.match(input)
             const finalRoute = runGuards(route)
             if (finalRoute === null) {
-              // Guard blocked the browser-driven navigation — restore the URL.
-              if (currentRoute !== null) {
-                if (router.mode === 'history') {
-                  // Reverse the pop with history.go(delta), tracked by a
-                  // monotonic index — NEVER pushState, which would leave a
-                  // stray forward entry on every block (finding 2c).
-                  const st = history.state as Record<string, unknown> | null
-                  const poppedIdx =
-                    st && typeof st[STATE_KEY] === 'number' ? (st[STATE_KEY] as number) : 0
-                  const delta = currentIndex - poppedIdx
-                  if (delta !== 0) {
-                    suppressNextPopstate = true
-                    history.go(delta)
-                  }
-                } else {
-                  // Hash mode: restore the previous hash without dispatching.
-                  const restore = router.href(currentRoute)
-                  if (!sameHash(location.hash, restore)) {
-                    suppressNextHashchange = true
-                    location.hash = restore
-                  }
-                }
-              }
+              restoreBlocked()
               return
             }
-            // Allowed — resync index to the entry we're now on.
-            if (router.mode === 'history') {
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
-            }
+            adoptLandedEntry()
             currentRoute = finalRoute
             send(factory(finalRoute))
           }
