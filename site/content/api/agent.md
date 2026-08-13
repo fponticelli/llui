@@ -2726,10 +2726,12 @@ the codec registry symmetrically:
   encoded.
   **Authoring.** When a Msg variant carries a non-JSON-safe field,
   tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
-  For example, a date-input message:
+  For example, a message carrying a `Date`:
   @intent("Set the parsed date")
   @codec("iso-date")
   | { type: 'setValue'; value: Date | null }
+  (`@llui/components`' date-input does NOT need this — it keeps ISO
+  strings in both State and Msg, per the JSON-serializable-State rule.)
   The `@codec` tag is documentation for human readers and the
   eventual schema generator that publishes the message catalogue to
   the agent client. The runtime encode/decode is registry-driven and

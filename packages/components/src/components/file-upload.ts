@@ -14,6 +14,12 @@ import { LocaleContext } from '../locale.js'
  * Files that fail validation (too large, too small, wrong type, over the
  * count limit) flow into `rejectedFiles` with a list of `FileError` codes
  * attached. The view can render them alongside accepted files.
+ *
+ * State holds `FileMeta` records — plain JSON — never the live `File`
+ * objects: State must be JSON-serializable (CLAUDE.md), and a `File` came
+ * back from a round-trip as `{}`, wiping every name and turning `totalSize`
+ * into NaN (#119). The handles live in a module-scoped registry keyed by
+ * `FileMeta.id`; see `trackFile`/`getFile`/`releaseDropped`.
  */
 
 export type AcceptValue = string | Record<string, string[]>
@@ -25,13 +31,31 @@ export type FileError =
   | { code: 'TOO_MANY'; max: number }
   | { code: 'CUSTOM'; message: string }
 
+/**
+ * The serializable half of a selected file. `id` is the registry key for the
+ * live handle; the rest mirrors the `File` fields a view needs.
+ */
+export interface FileMeta {
+  id: string
+  name: string
+  size: number
+  type: string
+  lastModified: number
+}
+
+/** Everything `fileMatchesAccept` needs — satisfied by both `File` and `FileMeta`. */
+export interface FileLike {
+  name: string
+  type: string
+}
+
 export interface RejectedFile {
-  file: File
+  file: FileMeta
   errors: FileError[]
 }
 
 export interface FileUploadState {
-  files: File[]
+  files: FileMeta[]
   rejectedFiles: RejectedFile[]
   disabled: boolean
   multiple: boolean
@@ -42,14 +66,21 @@ export interface FileUploadState {
   required: boolean
   readonly: boolean
   invalid: boolean
+  /** `dragDepth > 0`, materialized so views bind one boolean. */
   dragging: boolean
+  /**
+   * Nesting depth of the in-flight drag. `dragenter`/`dragleave` both bubble
+   * and fire in the order enter@child → leave@parent, so a plain boolean flips
+   * off while the pointer is still inside the dropzone (#119).
+   */
+  dragDepth: number
 }
 
 export type FileUploadMsg =
   /** @humanOnly */
-  | { type: 'setFiles'; files: File[]; customRejected?: RejectedFile[] }
+  | { type: 'setFiles'; files: FileMeta[]; customRejected?: RejectedFile[] }
   /** @humanOnly */
-  | { type: 'addFiles'; files: File[]; customRejected?: RejectedFile[] }
+  | { type: 'addFiles'; files: FileMeta[]; customRejected?: RejectedFile[] }
   /** @intent("Remove the accepted file at the given index") */
   | { type: 'removeFile'; index: number }
   /** @intent("Remove the rejected file at the given index") */
@@ -68,7 +99,7 @@ export type FileUploadMsg =
   | { type: 'setInvalid'; invalid: boolean }
 
 export interface FileUploadInit {
-  files?: File[]
+  files?: FileMeta[]
   disabled?: boolean
   multiple?: boolean
   accept?: AcceptValue
@@ -94,6 +125,72 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
     readonly: opts.readonly ?? false,
     invalid: opts.invalid ?? false,
     dragging: false,
+    dragDepth: 0,
+  }
+}
+
+/**
+ * Live `File` handles, keyed by `FileMeta.id`. Module-scoped because State
+ * cannot hold them (see the file header) and because a host's upload effect
+ * needs to reach a handle far from the view that produced it.
+ *
+ * Entries are dropped by `releaseFile`/`releaseDropped`. `connect` calls
+ * `releaseDropped` after every message it sends, so the handles a transition
+ * made unreachable are freed without the host doing anything; a host that
+ * drives the reducer itself should call it too.
+ */
+const fileRegistry = new Map<string, File>()
+let fileSeq = 0
+
+const idOf = (ref: FileMeta | string): string => (typeof ref === 'string' ? ref : ref.id)
+
+/** Register a live `File` and return the serializable record that goes in State. */
+export function trackFile(file: File): FileMeta {
+  const id = `file:${++fileSeq}`
+  fileRegistry.set(id, file)
+  return {
+    id,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    lastModified: file.lastModified,
+  }
+}
+
+export function trackFiles(files: readonly File[]): FileMeta[] {
+  return files.map(trackFile)
+}
+
+/** The live handle for a tracked file, or undefined once released. */
+export function getFile(ref: FileMeta | string): File | undefined {
+  return fileRegistry.get(idOf(ref))
+}
+
+export function releaseFile(ref: FileMeta | string): void {
+  fileRegistry.delete(idOf(ref))
+}
+
+export function releaseFiles(refs: readonly (FileMeta | string)[]): void {
+  for (const ref of refs) releaseFile(ref)
+}
+
+function referencedIds(state: FileUploadState, into: Set<string>): Set<string> {
+  for (const f of state.files) into.add(f.id)
+  for (const r of state.rejectedFiles) into.add(r.file.id)
+  return into
+}
+
+/**
+ * Release the handles that `next` no longer references. Pure bookkeeping over
+ * two states, so it is correct for every transition — including the ones that
+ * drop a file without naming it (single-select replacement, a rejected list
+ * overwritten by the next selection).
+ */
+export function releaseDropped(prev: FileUploadState, next: FileUploadState): void {
+  if (prev.files === next.files && prev.rejectedFiles === next.rejectedFiles) return
+  const kept = referencedIds(next, new Set<string>())
+  for (const id of referencedIds(prev, new Set<string>())) {
+    if (!kept.has(id)) fileRegistry.delete(id)
   }
 }
 
@@ -117,7 +214,7 @@ export function acceptToString(accept: AcceptValue): string {
  * MIME-object accept is validated by checking MIME type (with wildcards)
  * and extension membership.
  */
-export function fileMatchesAccept(file: File, accept: AcceptValue): boolean {
+export function fileMatchesAccept(file: FileLike, accept: AcceptValue): boolean {
   if (typeof accept === 'string' || Object.keys(accept).length === 0) return true
   const name = file.name.toLowerCase()
   for (const [mime, exts] of Object.entries(accept)) {
@@ -141,18 +238,28 @@ function matchMime(fileType: string, pattern: string): boolean {
 }
 
 /**
+ * The count limit actually in force: a single-select uploader accepts exactly
+ * one file whatever `maxFiles` says. Without this, dropping three files on a
+ * `multiple: false` zone accepted all three with zero rejections (#119).
+ */
+export function effectiveMaxFiles(state: FileUploadState): number {
+  return state.multiple ? state.maxFiles : 1
+}
+
+/**
  * Partition incoming files into accepted and rejected based on state's
  * accept/size/count constraints. The current accepted-file count is used
- * to enforce `maxFiles` — the caller is responsible for passing the
+ * to enforce the count limit — the caller is responsible for passing the
  * post-combine accepted total when appending.
  */
 export function validateFiles(
-  incoming: File[],
+  incoming: FileMeta[],
   state: FileUploadState,
   existingAcceptedCount: number,
-): { accepted: File[]; rejected: RejectedFile[] } {
-  const accepted: File[] = []
+): { accepted: FileMeta[]; rejected: RejectedFile[] } {
+  const accepted: FileMeta[] = []
   const rejected: RejectedFile[] = []
+  const maxFiles = effectiveMaxFiles(state)
   let count = existingAcceptedCount
   for (const f of incoming) {
     const errors: FileError[] = []
@@ -165,8 +272,8 @@ export function validateFiles(
     if (!fileMatchesAccept(f, state.accept)) {
       errors.push({ code: 'INVALID_TYPE' })
     }
-    if (state.maxFiles > 0 && count >= state.maxFiles) {
-      errors.push({ code: 'TOO_MANY', max: state.maxFiles })
+    if (maxFiles > 0 && count >= maxFiles) {
+      errors.push({ code: 'TOO_MANY', max: maxFiles })
     }
     if (errors.length > 0) {
       rejected.push({ file: f, errors })
@@ -211,11 +318,17 @@ export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadS
       return [{ ...state, rejectedFiles: [] }, []]
     case 'setInvalid':
       return [{ ...state, invalid: msg.invalid }, []]
-    case 'dragEnter':
-      return [{ ...state, dragging: true }, []]
-    case 'dragLeave':
+    case 'dragEnter': {
+      const dragDepth = state.dragDepth + 1
+      return [{ ...state, dragDepth, dragging: true }, []]
+    }
+    case 'dragLeave': {
+      const dragDepth = Math.max(0, state.dragDepth - 1)
+      return [{ ...state, dragDepth, dragging: dragDepth > 0 }, []]
+    }
     case 'drop':
-      return [{ ...state, dragging: false }, []]
+      // A drop ends the whole drag, however many nested enters preceded it.
+      return [{ ...state, dragDepth: 0, dragging: false }, []]
   }
 }
 
@@ -383,9 +496,23 @@ export function connect(
   const removeLabel = opts.removeLabel ?? locale.fileUpload.remove
   const clearLabel = opts.clearLabel ?? locale.fileUpload.clear
 
+  /**
+   * Send, then free the handles the transition dropped. `send` is synchronous
+   * (CLAUDE.md), so the post-send peek is the state the message produced — no
+   * handler has to know which messages remove a file, or whether a gate
+   * swallowed one. `peek()` is undefined only outside a live mount (unit tests
+   * over `rootSignal()`), where there is nothing to release either.
+   */
+  const sendTracked = (msg: FileUploadMsg): void => {
+    const before = state.peek()
+    send(msg)
+    const after = state.peek()
+    if (before && after) releaseDropped(before, after)
+  }
+
   const runPipeline = async (
     raw: File[],
-  ): Promise<{ files: File[]; customRejected: RejectedFile[] }> => {
+  ): Promise<{ files: FileMeta[]; customRejected: RejectedFile[] }> => {
     let files = raw
     if (opts.transformFiles) files = await opts.transformFiles(files)
     const customRejected: RejectedFile[] = []
@@ -393,22 +520,23 @@ export function connect(
       const passed: File[] = []
       for (const f of files) {
         const errors = opts.validate(f)
-        if (errors && errors.length > 0) customRejected.push({ file: f, errors })
+        // Tracked as well: a rejected file is still shown, and a host may retry it.
+        if (errors && errors.length > 0) customRejected.push({ file: trackFile(f), errors })
         else passed.push(f)
       }
       files = passed
     }
-    return { files, customRejected }
+    return { files: trackFiles(files), customRejected }
   }
 
   const dispatchAdd = (raw: File[]): void => {
     if (!opts.transformFiles && !opts.validate) {
-      send({ type: 'addFiles', files: raw })
+      sendTracked({ type: 'addFiles', files: trackFiles(raw) })
       return
     }
     // Fire-and-forget — transforms may be async.
     void runPipeline(raw).then(({ files, customRejected }) => {
-      send({ type: 'addFiles', files, customRejected })
+      sendTracked({ type: 'addFiles', files, customRejected })
     })
   }
 
@@ -493,7 +621,7 @@ export function connect(
       'aria-label': clearLabel,
       'data-scope': 'file-upload',
       'data-part': 'clear-trigger',
-      onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
+      onClick: tagSend(send, ['clear'], () => sendTracked({ type: 'clear' })),
     },
     itemGroup: {
       'data-scope': 'file-upload',
@@ -522,14 +650,14 @@ export function connect(
         'aria-label': removeLabel,
         'data-scope': 'file-upload',
         'data-part': 'item-remove',
-        onClick: tagSend(send, ['removeFile'], () => send({ type: 'removeFile', index })),
+        onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
       },
       itemDeleteTrigger: {
         type: 'button',
         'aria-label': removeLabel,
         'data-scope': 'file-upload',
         'data-part': 'item-delete-trigger',
-        onClick: tagSend(send, ['removeFile'], () => send({ type: 'removeFile', index })),
+        onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
       },
     }),
   }

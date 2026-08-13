@@ -327,7 +327,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ]),
           div({ class: 'text-xs text-text-muted' }, [
             each(state.at('fileUpload.files'), {
-              key: (f) => f.name,
+              key: (f) => f.id,
               render: (item) => [
                 div({ class: 'py-1' }, [
                   text(item.at('name')),

@@ -22,9 +22,9 @@ export const init = (): [State, never[]] => [
     timer: timer.init({ direction: 'up' }),
     angle: angleSlider.init({ value: 45, step: 5 }),
     date: dateInput.init({
-      value: new Date(2026, 0, 15),
-      min: new Date(2026, 0, 1),
-      max: new Date(2026, 11, 31),
+      value: '2026-01-15',
+      min: '2026-01-01',
+      max: '2026-12-31',
     }),
     marquee: marquee.init({ direction: 'left', durationSec: 15, pauseOnHover: true }),
   },

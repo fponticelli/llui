@@ -8922,9 +8922,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | Field | Type |
 |---|---|
 | `input` | `string` |
-| `value` | `Date \| null` |
-| `min` | `Date \| null` |
-| `max` | `Date \| null` |
+| `value` | `IsoDate \| null` |
+| `min` | `IsoDate \| null` |
+| `max` | `IsoDate \| null` |
 | `error` | `DateError` |
 | `disabled` | `boolean` |
 | `readonly` | `boolean` |
@@ -8932,7 +8932,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
-**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readonly?: boolean, required?: boolean`
+**Init options:** `input?: string, value?: IsoDate | null, min?: IsoDate | null, max?: IsoDate | null, disabled?: boolean, readonly?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -9084,7 +9084,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 | Field | Type |
 |---|---|
-| `files` | `File[]` |
+| `files` | `FileMeta[]` |
 | `rejectedFiles` | `RejectedFile[]` |
 | `disabled` | `boolean` |
 | `multiple` | `boolean` |
@@ -9096,10 +9096,11 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `readonly` | `boolean` |
 | `invalid` | `boolean` |
 | `dragging` | `boolean` |
+| `dragDepth` | `number` |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
-**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
+**Init options:** `files?: FileMeta[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -15079,10 +15080,12 @@ by the time the agent reads `stateAfter`, every `Date` has been
 encoded.
 **Authoring.** When a Msg variant carries a non-JSON-safe field,
 tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
-For example, a date-input message:
+For example, a message carrying a `Date`:
     @intent("Set the parsed date")
     @codec("iso-date")
     | { type: 'setValue'; value: Date | null }
+(`@llui/components`' date-input does NOT need this — it keeps ISO
+strings in both State and Msg, per the JSON-serializable-State rule.)
 The `@codec` tag is documentation for human readers and the
 eventual schema generator that publishes the message catalogue to
 the agent client. The runtime encode/decode is registry-driven and

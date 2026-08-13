@@ -7,22 +7,27 @@ import { LocaleContext } from '../locale.js'
  * date-picker, this is a plain <input> that parses ISO-ish date strings
  * as the user types. Separate from date-picker to keep each focused.
  *
- * The machine holds the raw input string + the parsed Date (null until
- * a complete/valid value is entered). Min/max bounds are validated on
- * every change, populating `error` when out of range.
+ * The machine holds the raw input string + the parsed date as an ISO
+ * `YYYY-MM-DD` string (null until a complete/valid value is entered) —
+ * never a `Date`, so the state stays JSON-serializable like date-picker's
+ * (#119). Min/max bounds are validated on every change, populating `error`
+ * when out of range.
  */
 
 export type DateError = 'invalid' | 'before-min' | 'after-max' | null
 
+/** A calendar date as `YYYY-MM-DD`. Zero-padded, so plain `<`/`>` order it. */
+export type IsoDate = string
+
 export interface DateInputState {
   /** Raw string as typed by the user. */
   input: string
-  /** Parsed date, or null if the input is empty/invalid/out-of-range. */
-  value: Date | null
-  /** Optional lower bound (inclusive). */
-  min: Date | null
-  /** Optional upper bound (inclusive). */
-  max: Date | null
+  /** Parsed date as `YYYY-MM-DD`, or null if empty/invalid. */
+  value: IsoDate | null
+  /** Optional lower bound (inclusive), `YYYY-MM-DD`. */
+  min: IsoDate | null
+  /** Optional upper bound (inclusive), `YYYY-MM-DD`. */
+  max: IsoDate | null
   error: DateError
   disabled: boolean
   readonly: boolean
@@ -30,27 +35,24 @@ export interface DateInputState {
 }
 
 export type DateInputMsg =
-  /** @intent("Update the raw text the user has typed (re-parses to a Date)") */
+  /** @intent("Update the raw text the user has typed (re-parses to a date)") */
   | { type: 'setInput'; value: string }
-  /**
-   * @intent("Set the parsed date directly (also updates the displayed text)")
-   * @codec("iso-date")
-   */
-  | { type: 'setValue'; value: Date | null }
+  /** @intent("Set the parsed date directly as YYYY-MM-DD (also updates the displayed text)") */
+  | { type: 'setValue'; value: IsoDate | null }
   /** @intent("Clear the input and the parsed date") */
   | { type: 'clear' }
   /** @humanOnly */
-  | { type: 'setMin'; min: Date | null }
+  | { type: 'setMin'; min: IsoDate | null }
   /** @humanOnly */
-  | { type: 'setMax'; max: Date | null }
+  | { type: 'setMax'; max: IsoDate | null }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface DateInputInit {
   input?: string
-  value?: Date | null
-  min?: Date | null
-  max?: Date | null
+  value?: IsoDate | null
+  min?: IsoDate | null
+  max?: IsoDate | null
   disabled?: boolean
   readonly?: boolean
   required?: boolean
@@ -96,18 +98,29 @@ export function formatDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-function validate(value: Date | null, min: Date | null, max: Date | null): DateError {
+/**
+ * Parse into the canonical `YYYY-MM-DD` form, or null when unparseable.
+ * Everything that reaches state goes through here, so the comparisons in
+ * `validate` can rely on zero-padded lexicographic order.
+ */
+export function toIsoDate(input: string, format: 'iso' | 'us' | 'eu' = 'iso'): IsoDate | null {
+  const d = parseDate(input, format)
+  return d === null ? null : formatDate(d)
+}
+
+function validate(value: IsoDate | null, min: IsoDate | null, max: IsoDate | null): DateError {
   if (value === null) return null
+  // Zero-padded YYYY-MM-DD sorts chronologically as a plain string.
   if (min !== null && value < min) return 'before-min'
   if (max !== null && value > max) return 'after-max'
   return null
 }
 
 export function init(opts: DateInputInit = {}): DateInputState {
-  const value = opts.value ?? null
-  const input = opts.input ?? (value ? formatDate(value) : '')
-  const min = opts.min ?? null
-  const max = opts.max ?? null
+  const value = opts.value != null ? toIsoDate(opts.value) : null
+  const input = opts.input ?? value ?? ''
+  const min = opts.min != null ? toIsoDate(opts.min) : null
+  const max = opts.max != null ? toIsoDate(opts.max) : null
   return {
     input,
     value,
@@ -128,7 +141,7 @@ export function update(
   if ((state.disabled || state.readonly) && msg.type === 'setInput') return [state, []]
   switch (msg.type) {
     case 'setInput': {
-      const parsed = parseDate(msg.value, format)
+      const parsed = toIsoDate(msg.value, format)
       const error: DateError = msg.value.trim()
         ? parsed === null
           ? 'invalid'
@@ -137,18 +150,31 @@ export function update(
       return [{ ...state, input: msg.value, value: parsed, error }, []]
     }
     case 'setValue': {
-      const input = msg.value ? formatDate(msg.value) : ''
+      // The wire form is always ISO, whatever `format` the user types in.
+      const parsed = msg.value === null ? null : toIsoDate(msg.value)
+      if (msg.value !== null && parsed === null) {
+        return [{ ...state, input: msg.value, value: null, error: 'invalid' }, []]
+      }
       return [
-        { ...state, input, value: msg.value, error: validate(msg.value, state.min, state.max) },
+        {
+          ...state,
+          input: parsed ?? '',
+          value: parsed,
+          error: validate(parsed, state.min, state.max),
+        },
         [],
       ]
     }
     case 'clear':
       return [{ ...state, input: '', value: null, error: null }, []]
-    case 'setMin':
-      return [{ ...state, min: msg.min, error: validate(state.value, msg.min, state.max) }, []]
-    case 'setMax':
-      return [{ ...state, max: msg.max, error: validate(state.value, state.min, msg.max) }, []]
+    case 'setMin': {
+      const min = msg.min === null ? null : toIsoDate(msg.min)
+      return [{ ...state, min, error: validate(state.value, min, state.max) }, []]
+    }
+    case 'setMax': {
+      const max = msg.max === null ? null : toIsoDate(msg.max)
+      return [{ ...state, max, error: validate(state.value, state.min, max) }, []]
+    }
     case 'setDisabled':
       return [{ ...state, disabled: msg.disabled }, []]
   }
@@ -251,4 +277,4 @@ export function connect(
   }
 }
 
-export const dateInput = { init, update, connect, parseDate, formatDate }
+export const dateInput = { init, update, connect, parseDate, formatDate, toIsoDate }

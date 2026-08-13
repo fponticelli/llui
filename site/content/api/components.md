@@ -550,20 +550,20 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DateInputState`):
 
-| Field      | Type           |
-| ---------- | -------------- |
-| `input`    | `string`       |
-| `value`    | `Date \| null` |
-| `min`      | `Date \| null` |
-| `max`      | `Date \| null` |
-| `error`    | `DateError`    |
-| `disabled` | `boolean`      |
-| `readonly` | `boolean`      |
-| `required` | `boolean`      |
+| Field      | Type              |
+| ---------- | ----------------- |
+| `input`    | `string`          |
+| `value`    | `IsoDate \| null` |
+| `min`      | `IsoDate \| null` |
+| `max`      | `IsoDate \| null` |
+| `error`    | `DateError`       |
+| `disabled` | `boolean`         |
+| `readonly` | `boolean`         |
+| `required` | `boolean`         |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
-**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readonly?: boolean, required?: boolean`
+**Init options:** `input?: string, value?: IsoDate | null, min?: IsoDate | null, max?: IsoDate | null, disabled?: boolean, readonly?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -715,7 +715,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 | Field           | Type             |
 | --------------- | ---------------- |
-| `files`         | `File[]`         |
+| `files`         | `FileMeta[]`     |
 | `rejectedFiles` | `RejectedFile[]` |
 | `disabled`      | `boolean`        |
 | `multiple`      | `boolean`        |
@@ -727,10 +727,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `readonly`      | `boolean`        |
 | `invalid`       | `boolean`        |
 | `dragging`      | `boolean`        |
+| `dragDepth`     | `number`         |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
-**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
+**Init options:** `files?: FileMeta[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
 **Connect options:** `ConnectOptions`
 

@@ -20,10 +20,7 @@ describe('date-input integration', () => {
     let sendRef!: (m: DateInputMsg) => void
     const def = component<S, DateInputMsg, never>({
       name: 'T',
-      init: () => [
-        { d: dateInput.init({ min: new Date(2024, 0, 1), max: new Date(2024, 11, 31) }) },
-        [],
-      ],
+      init: () => [{ d: dateInput.init({ min: '2024-01-01', max: '2024-12-31' }) }, []],
       update: (s, m) => {
         const [d] = dateInput.update(s.d, m)
         return [{ d }, []]

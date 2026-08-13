@@ -47,14 +47,14 @@ describe('date-input reducer', () => {
   })
 
   it('init with value sets formatted input', () => {
-    const s = init({ value: new Date(2024, 2, 15) })
+    const s = init({ value: '2024-03-15' })
     expect(s.input).toBe('2024-03-15')
-    expect(s.value?.getMonth()).toBe(2)
+    expect(s.value).toBe('2024-03-15')
   })
 
   it('setInput parses a valid date', () => {
     const [s] = update(init(), { type: 'setInput', value: '2024-03-15' })
-    expect(s.value?.getMonth()).toBe(2)
+    expect(s.value).toBe('2024-03-15')
     expect(s.error).toBeNull()
   })
 
@@ -70,19 +70,19 @@ describe('date-input reducer', () => {
   })
 
   it('before-min error', () => {
-    const s0 = init({ min: new Date(2024, 0, 1) })
+    const s0 = init({ min: '2024-01-01' })
     const [s] = update(s0, { type: 'setInput', value: '2023-12-31' })
     expect(s.error).toBe('before-min')
   })
 
   it('after-max error', () => {
-    const s0 = init({ max: new Date(2024, 0, 31) })
+    const s0 = init({ max: '2024-01-31' })
     const [s] = update(s0, { type: 'setInput', value: '2024-02-15' })
     expect(s.error).toBe('after-max')
   })
 
   it('clear wipes input + value + error', () => {
-    let s: DateInputState = init({ value: new Date(2024, 0, 1) })
+    let s: DateInputState = init({ value: '2024-01-01' })
     ;[s] = update(s, { type: 'clear' })
     expect(s).toMatchObject({ input: '', value: null, error: null })
   })
@@ -94,16 +94,49 @@ describe('date-input reducer', () => {
   })
 
   it('setValue formats into input + validates', () => {
-    const s0 = init({ max: new Date(2024, 0, 1) })
-    const [s] = update(s0, { type: 'setValue', value: new Date(2025, 0, 1) })
+    const s0 = init({ max: '2024-01-01' })
+    const [s] = update(s0, { type: 'setValue', value: '2025-01-01' })
     expect(s.input).toBe('2025-01-01')
     expect(s.error).toBe('after-max')
   })
 
   it('setMin re-validates existing value', () => {
-    const s0 = init({ value: new Date(2023, 0, 1) })
-    const [s] = update(s0, { type: 'setMin', min: new Date(2024, 0, 1) })
+    const s0 = init({ value: '2023-01-01' })
+    const [s] = update(s0, { type: 'setMin', min: '2024-01-01' })
     expect(s.error).toBe('before-min')
+  })
+
+  it('setValue normalizes a loosely-formatted ISO string', () => {
+    const [s] = update(init(), { type: 'setValue', value: '2024-3-5' })
+    expect(s.value).toBe('2024-03-05')
+    expect(s.input).toBe('2024-03-05')
+  })
+
+  it('setValue with an unparseable string reports invalid', () => {
+    const [s] = update(init(), { type: 'setValue', value: 'nope' })
+    expect(s.value).toBeNull()
+    expect(s.error).toBe('invalid')
+  })
+})
+
+// State must be JSON-serializable (CLAUDE.md): devtools time-travel, replayTrace,
+// agent snapshots and Vike SSR all restore state through JSON. A `Date` in State
+// came back as a string and the next update() threw on `d.getFullYear` (#119).
+describe('date-input state is JSON-serializable', () => {
+  it('round-trips without change', () => {
+    const s0 = init({ value: '2024-03-15', min: '2024-01-01', max: '2024-12-31' })
+    const restored = JSON.parse(JSON.stringify(s0)) as DateInputState
+    expect(restored).toEqual(s0)
+  })
+
+  it('update() on a restored state does not throw and still validates', () => {
+    const s0 = init({ value: '2024-03-15', min: '2024-01-01', max: '2024-12-31' })
+    const restored = JSON.parse(JSON.stringify(s0)) as DateInputState
+    const [s1] = update(restored, { type: 'setValue', value: '2025-06-01' })
+    expect(s1.error).toBe('after-max')
+    const [s2] = update(restored, { type: 'setInput', value: '2024-06-01' })
+    expect(s2.value).toBe('2024-06-01')
+    expect(s2.error).toBeNull()
   })
 })
 
