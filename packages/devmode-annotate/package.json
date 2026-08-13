@@ -23,6 +23,10 @@
     "./install": {
       "types": "./dist/install.d.ts",
       "import": "./dist/install.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "import": "./dist/stores/index.js"
     }
   },
   "files": [
