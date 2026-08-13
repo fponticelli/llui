@@ -31,7 +31,7 @@ export type PluginFn = (ctx: {
 export interface Registry {
   cancelControllers: Map<string, AbortController>
   debounces: Map<string, DebounceEntry>
-  websockets: Map<string, WebSocket>
+  websockets: Map<string, WebSocketEntry>
 }
 
 /**
@@ -46,6 +46,27 @@ export interface Registry {
  */
 export interface DebounceEntry {
   cancel(): void
+}
+
+/**
+ * A live websocket, held as the socket PLUS its teardown (issue #83). Retiring a
+ * socket is four moves that must never come apart: silence its handlers, close
+ * it, detach the `'abort'` listener that exists to close it, and drop this entry
+ * from the registry. `{ once: true }` unregisters that listener only when it
+ * FIRES, so every retirement that is not an abort — a reconnect superseding the
+ * key, a natural `onclose`, `cancel(key)` — used to leave one dead listener per
+ * socket hanging off the mount's signal, each retaining a closed `WebSocket`.
+ * `close()` does all four and is idempotent, so the mount-wide teardown,
+ * `cancel(key)`, the abort listener and `onclose` can all call it in any order.
+ *
+ * Unlike {@link DebounceEntry} this entry also EXPOSES its resource: `ws-send`
+ * resolves the live socket by key and writes through it, so the socket has to
+ * stay reachable rather than being sealed inside the teardown closure.
+ */
+export interface WebSocketEntry {
+  /** The live socket. `ws-send` checks `readyState` and writes through it. */
+  readonly socket: WebSocket
+  close(): void
 }
 
 /**

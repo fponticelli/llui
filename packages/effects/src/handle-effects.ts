@@ -74,10 +74,9 @@ export function handleEffectsWith<E extends { type: string }, M = never>(
           // braces against an entry that has already been superseded.
           for (const debounce of [...registry.debounces.values()]) debounce.cancel()
           registry.debounces.clear()
-          for (const ws of registry.websockets.values()) {
-            ws.onclose = null // don't dispatch app onClose after unmount
-            ws.close()
-          }
+          // Likewise: each entry silences its socket (no app `onClose` after
+          // unmount), closes it and hands back its own abort listener.
+          for (const ws of [...registry.websockets.values()]) ws.close()
           registry.websockets.clear()
           registries.delete(signal)
         },
