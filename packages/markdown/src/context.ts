@@ -1,7 +1,8 @@
-// RenderContext construction + reference-definition collection.
+// RenderContext construction. (Reference-definition collection lives in
+// definitions.ts, where it is incremental across streamed updates.)
 
 import type { Node } from 'unist'
-import type { Root, Definition, Html, Text } from 'mdast'
+import type { Definition, Html, Text } from 'mdast'
 import type { Renderable } from '@llui/dom'
 import type { RenderContext, ResolvedOptions } from './types.js'
 import { defaultRenderers, renderHtmlRun } from './renderers/index.js'
@@ -51,23 +52,6 @@ function renderChildrenGrouped(ctx: RenderContext, children: readonly Node[]): R
     }
   }
   return out.flat()
-}
-
-/** Walk the tree and collect every link/image reference definition, keyed by
- * lowercased identifier (so `linkReference`/`imageReference` nodes can resolve). */
-export function collectDefinitions(root: Root): Map<string, Definition> {
-  const defs = new Map<string, Definition>()
-  const visit = (node: Node): void => {
-    if (node.type === 'definition') {
-      const def = node as Definition
-      const id = def.identifier.toLowerCase()
-      if (!defs.has(id)) defs.set(id, def)
-    }
-    const parent = node as { children?: readonly Node[] }
-    if (parent.children) for (const child of parent.children) visit(child)
-  }
-  visit(root)
-  return defs
 }
 
 /** Build the context renderers receive: `render` dispatches one node through the

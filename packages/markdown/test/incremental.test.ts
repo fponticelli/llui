@@ -15,7 +15,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfm } from 'micromark-extension-gfm'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import type { Root } from 'mdast'
-import { incrementalParse, type ParseCache } from '../src/index.js'
+import { incrementalParse, collectDefinitions, type ParseCache } from '../src/index.js'
 import { mountReactive, body } from './util.js'
 import type { ReactiveMounted } from './util.js'
 
@@ -24,8 +24,15 @@ const parse = (src: string): Root =>
 
 const sig = (root: Root): string => JSON.stringify(root.children)
 
+/** The document-global definition table as a comparable string — ids, urls, titles
+ * AND iteration order. Definition collection is incremental too (definitions.ts),
+ * so the streamed table must stay byte-identical to a cold collection. */
+const defsSig = (root: Root): string =>
+  JSON.stringify([...collectDefinitions(root)].map(([id, d]) => [id, d.url, d.title ?? null]))
+
 /** Feed a sequence of sources through incrementalParse (threading the cache) and
- * assert every step's tree equals a full parse. Returns the reuse counts. */
+ * assert every step's tree AND collected definitions equal a full parse's.
+ * Returns the reuse counts. */
 function feed(steps: string[]): number[] {
   let cache: ParseCache | undefined
   const reused: number[] = []
@@ -33,7 +40,9 @@ function feed(steps: string[]): number[] {
     const res = incrementalParse(cache, src, parse)
     cache = res.cache
     reused.push(res.reused)
-    expect(sig(res.root), `mismatch at ${JSON.stringify(src)}`).toBe(sig(parse(src)))
+    const cold = parse(src)
+    expect(sig(res.root), `mismatch at ${JSON.stringify(src)}`).toBe(sig(cold))
+    expect(defsSig(res.root), `definitions differ at ${JSON.stringify(src)}`).toBe(defsSig(cold))
   }
   return reused
 }

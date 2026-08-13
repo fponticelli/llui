@@ -16,7 +16,14 @@ export { renderMarkdown, createMarkdown, type ParseFn } from './render.js'
 export { parseMarkdown } from './parse.js'
 export { defaultRenderers, mergeRenderers } from './renderers/index.js'
 export { sanitizeUrl, resolveUrl, defaultAllowedProtocols } from './security.js'
-export { makeContext, collectDefinitions } from './context.js'
+export { makeContext } from './context.js'
+export {
+  collectDefinitions,
+  collectDocumentLabels,
+  definitionNodesVisited,
+  definitionBlocksScanned,
+  type DocumentLabels,
+} from './definitions.js'
 export { toKeyedBlocks, blockSource, keyingHashComputations, type KeyedBlock } from './keying.js'
 export { resolveOptions } from './options.js'
 export { incrementalParse, type ParseCache, type IncrementalResult } from './incremental.js'

@@ -43,8 +43,9 @@
 // In dev the result is asserted equal to a full parse of the same source (see
 // `render.ts`); the assertion is the safety net that this file's invariants hold.
 
-import type { Root, RootContent, Definition, FootnoteDefinition } from 'mdast'
+import type { Root, RootContent } from 'mdast'
 import type { Node } from 'unist'
+import { collectDocumentLabels, deriveDocumentLabels, prefixLabelIds } from './definitions.js'
 
 /** Old source + its parsed tree, threaded across reactive updates. */
 export interface ParseCache {
@@ -134,24 +135,6 @@ function shiftPositions(node: Node, offsetDelta: number, lineDelta: number): voi
   if (kids) for (const child of kids) shiftPositions(child, offsetDelta, lineDelta)
 }
 
-/** Collect document-global label identifiers — link/image reference definitions
- * (`l:` namespace) and GFM footnote definitions (`f:` namespace) — from a node
- * list. Namespacing keeps a link def `x` distinct from a footnote def `x`. */
-function collectLabelIds(nodes: readonly Node[]): Set<string> {
-  const out = new Set<string>()
-  const visit = (node: Node): void => {
-    if (node.type === 'definition') {
-      out.add('l:' + (node as Definition).identifier.toLowerCase())
-    } else if (node.type === 'footnoteDefinition') {
-      out.add('f:' + (node as FootnoteDefinition).identifier.toLowerCase())
-    }
-    const kids = (node as { children?: readonly Node[] }).children
-    if (kids) for (const child of kids) visit(child)
-  }
-  for (const n of nodes) visit(n)
-  return out
-}
-
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false
   for (const x of a) if (!b.has(x)) return false
@@ -212,8 +195,10 @@ export function incrementalParse(
   // Inject the prefix's definition identifiers so a reference in the tail that
   // points at a prefix definition still forms a reference node. Destinations are
   // dummies — url/title come from the real (reused) definition nodes at render.
+  // The prefix's ids come from the old tree's memoized per-block contributions
+  // (definitions.ts), so the reused blocks are NOT re-walked here.
   let injected = ''
-  for (const label of collectLabelIds(reused)) {
+  for (const label of prefixLabelIds(oldRoot, reuseCount)) {
     const id = label.slice(2)
     injected += label[0] === 'l' ? `[${id}]: /llui-x\n\n` : `[^${id}]: llui-x\n\n`
   }
@@ -236,7 +221,14 @@ export function incrementalParse(
   // A label added or removed anywhere can reclassify earlier text (`[a][r]` /
   // `word[^1]` are literal until defined). If the label id-set changed, the reused
   // prefix may be stale — fall back to a full parse.
-  if (!sameSet(collectLabelIds(oldRoot.children), collectLabelIds(root.children))) {
+  //
+  // Both id-sets are the INCREMENTAL ones: the old tree's was memoized on the
+  // previous update, and the new tree's carries the reused prefix's contributions
+  // over and walks only the freshly-parsed tail. Deriving it here also registers
+  // the new tree's definition table, so the render path's `collectDefinitions`
+  // is an O(1) lookup rather than a second whole-tree walk.
+  const labels = deriveDocumentLabels(root, oldRoot, reuseCount)
+  if (!sameSet(collectDocumentLabels(oldRoot).ids, labels.ids)) {
     return full()
   }
 
