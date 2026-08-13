@@ -215,7 +215,13 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         // layout box alone is what made an interrupted reorder jump.
         const dx = prev.left + glide.left - layout.left
         const dy = prev.top + glide.top - layout.top
-        if (dx === 0 && dy === 0) continue
+        // Nothing to play — but a glide still in flight owns the row's
+        // `transform` and would keep translating it toward a target this pass
+        // has just invalidated, so it is stopped rather than left running.
+        if (dx === 0 && dy === 0) {
+          glides.supersede(child)
+          continue
+        }
         if (typeof child.animate !== 'function') continue
 
         // Supersede cancels the glide still in flight, if any.

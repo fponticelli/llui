@@ -262,6 +262,30 @@ describe('flip() read/write batching', () => {
     expect(log.filter((op) => op === 'read')).toHaveLength(1)
   })
 
+  it('cancels a still-running glide when the row turns out not to have moved', async () => {
+    // dx/dy of 0 means no new animation is needed — but the glide already in
+    // flight still owns the row's `transform` and would keep translating it, so
+    // the pass must supersede it before bailing out.
+    const { parent, children, layout, transform, animations } = makeList(1)
+    const child = children[0]!
+    const f = flip()
+    f.enter!([child])
+
+    layout.set(child, { left: 100, top: 0 })
+    f.onTransition!({ entering: [], leaving: [], parent })
+    expect(animations).toHaveLength(1)
+
+    // Mid-glide at −40, and the row's new layout box is exactly where it
+    // currently appears: prev(100) + glide(−40) − layout(60) === 0.
+    transform.set(child, 'translate(-40px, 0px)')
+    layout.set(child, { left: 60, top: 0 })
+    f.onTransition!({ entering: [], leaving: [], parent })
+
+    expect(animations).toHaveLength(1) // nothing new to play…
+    expect(animations[0]!.cancelled).toBe(1) // …and the old one is stopped.
+    await Promise.resolve()
+  })
+
   it('stores the untransformed layout box, so the next pass measures from it', () => {
     const { parent, children, layout, transform, animations } = makeList(1)
     const child = children[0]!
