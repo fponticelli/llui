@@ -216,21 +216,29 @@ directly at `/agent/mcp`, so Claude Desktop can connect without the
 The endpoint stays reachable **without** a bearer — `connect_session` is
 where this protocol authenticates, and a client has to get far enough to
 call it. Each `initialize` allocates a transport plus a fully-registered
-MCP server, so that open path is bounded on four axes:
+MCP server, so that open path is bounded on several axes:
 
-| Option                       | Default   | What it bounds                                                                                                                                                                                      |
-| ---------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxSessions`                | `64`      | Total retained sessions. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                                             |
-| `maxUnauthenticatedSessions` | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session. |
-| `unauthenticatedTtlMs`       | `60000`   | Idle window before a session that never connected is closed and swept.                                                                                                                              |
-| `idleTtlMs`                  | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                              |
+| Option                         | Default   | What it bounds                                                                                                                                                                                      |
+| ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                       |
+| `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session. |
+| `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.  |
+| `unauthenticatedTtlMs`         | `60000`   | Idle window before a session that never connected is closed and swept.                                                                                                                              |
+| `unauthenticatedMaxLifetimeMs` | `300000`  | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. Traffic refreshes the idle window; nothing refreshes this one.                                                     |
+| `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                              |
+
+The quota counts sessions that are still being built, not just
+registered ones — a burst of concurrent `initialize`s is exactly the case
+where those two numbers differ, and the ceiling has to hold for the
+burst.
 
 Two further rules apply to every `initialize`:
 
 - It is **rate-limited** through the server's own `rateLimiter` (default
-  30/minute), keyed by client IP — `X-Forwarded-For`, then `X-Real-IP`,
-  then one shared bucket. Set `rateLimiter` on the server options to
-  change it.
+  30/minute), keyed by the caller's address. By default that address is
+  **not** taken from any request header (see below), so all callers whose
+  address the server can't establish share one bucket. Set `rateLimiter`
+  on the server options to change the rate.
 - An `Authorization: Bearer` header, **if present**, must be a valid LLui
   agent token or the request is rejected `401` having allocated nothing.
   Omitting the header is still fine; presenting a bogus one is not. A
@@ -239,7 +247,47 @@ Two further rules apply to every `initialize`:
 
 Requests on an already-established session are not throttled here; their
 tool handlers reach LAP through the core router, which gates them on the
-per-token bucket.
+per-token bucket. That is why a session that has not authenticated also
+carries `unauthenticatedMaxLifetimeMs`: an idle window alone is
+refreshable by anyone who can send an empty POST.
+
+### Client IP, proxies, and the rate-limit bucket
+
+`/agent/mint` and the MCP `initialize` path are the two endpoints that
+allocate server state for a caller with no resolved identity, so both
+throttle on a bucket keyed by the caller's address. Two server options
+decide what that address is:
+
+| Option          | Default | Effect                                                                                                                                                |
+| --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trustProxy`    | `0`     | Number of trusted reverse proxies in front. `0` reads **no** forwarding header at all. `n > 0` reads the hop `n` from the END of `X-Forwarded-For`.   |
+| `clientAddress` | —       | `(req) => string \| null` returning the peer address the host runtime knows. Node: `socket.remoteAddress`. Cloudflare: the `cf-connecting-ip` header. |
+
+The default trusts nothing on purpose. `X-Forwarded-For` and `X-Real-IP`
+are ordinary request headers: on a direct-to-origin deployment the caller
+writes them, so keying a limiter on one hands the caller a fresh bucket
+per request and the limit stops existing. Behind a proxy the header is
+evidence, but only the hops your proxies appended — which is why
+`trustProxy` is a COUNT and the value read is taken from the right-hand
+end of the chain, never the first entry.
+
+```ts
+// Behind one reverse proxy (nginx, Caddy, an ALB):
+createLluiAgentServer({ mcp: true, trustProxy: 1 })
+
+// Direct-to-origin Node, with the real socket address:
+const server = http.createServer(/* … */)
+createLluiAgentServer({
+  mcp: true,
+  clientAddress: (req) => peerAddresses.get(req) ?? null,
+})
+
+// Cloudflare Workers / Durable Objects:
+new AgentPairingDurableObject({
+  mcp: true,
+  clientAddress: (req) => req.headers.get('cf-connecting-ip'),
+})
+```
 
 ### Client
 

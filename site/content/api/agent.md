@@ -889,6 +889,14 @@ export type AgentCoreHandle = {
    */
   rateLimiter: RateLimiter
   /**
+   * The bucket key this deployment uses for a caller with no resolved
+   * identity. Exposed for the same reason as `rateLimiter`: the MCP
+   * router runs BEFORE `router` and has to key its own limiter, and
+   * two surfaces disagreeing about which hop is trustworthy is how one
+   * of them ends up trusting an attacker-supplied header.
+   */
+  clientIp: (req: Request) => string
+  /**
    * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
    * the `corsOrigins` core option. `undefined`/empty means same-origin
    * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
@@ -1148,6 +1156,26 @@ export type CoreOptions = {
    */
   allowAnonymous?: boolean
   /**
+   * Number of TRUSTED reverse proxies in front of this server, for
+   * deriving the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint`, the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no `X-Forwarded-For` / `X-Real-IP` is
+   * read, because on a direct-to-origin deployment those are written by
+   * the caller and one bucket per caller-chosen value is not a limit.
+   * Set it only when a proxy you control is guaranteed to be in the
+   * path. See `client-ip.ts`.
+   */
+  trustProxy?: boolean | number
+  /**
+   * Peer (socket) address of the request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header: Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip`. Without
+   * it (and without `trustProxy`) they share one bucket.
+   */
+  clientAddress?: ClientAddressResolver
+  /**
    * Sliding (inactivity) TTL in ms. When set, a token unused for longer
    * than this is rejected on every verify (LAP/MCP and WS upgrade) even
    * before its hard expiry. Undefined / `0` disables the check.
@@ -1186,9 +1214,14 @@ export type CoreOptions = {
    * Doubles as the retention window for a closed session's registry
    * buffers (`describe_recent_actions` ring + buffered confirm
    * outcomes): they survive a drop for exactly this long, then are
-   * swept. Past the window the bearer must rotate through
-   * `/resume/claim`, so retained history has nothing left to serve —
-   * and holding it anyway leaked one buffer per browser-tab lifecycle.
+   * swept — a memory bound, since holding them leaked one buffer per
+   * browser-tab lifecycle (#101).
+   *
+   * Note what that costs: `/resume/claim` rotates the bearer but keeps
+   * the SAME tid, and the registry is keyed by tid, so a resume later
+   * than this window reattaches to a session whose recent-action history
+   * has been dropped. `describe_recent_actions` starts empty there. With
+   * `0`, it starts empty after any close at all.
    */
   pendingResumeGraceMs?: number
 }
@@ -2152,6 +2185,30 @@ export type ServerOptions = {
   /** Rate limiter. Defaults to `defaultRateLimiter` with 30/minute. */
   rateLimiter?: RateLimiter
 
+  /**
+   * Number of TRUSTED reverse proxies in front of this server, used to
+   * derive the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint` and the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no `X-Forwarded-For` / `X-Real-IP` is
+   * read at all. Those are ordinary request headers, so on a
+   * direct-to-origin deployment the caller picks their value, and a
+   * limiter keyed on a caller-chosen string is not a limiter. Set this
+   * only when a proxy you control is guaranteed to be in the path; the
+   * hop `n` from the END of the chain is then the one it wrote.
+   */
+  trustProxy?: boolean | number
+
+  /**
+   * Peer (socket) address of a request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header — Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip` (the edge
+   * overwrites that one, unlike `X-Forwarded-For`). Without it, and
+   * without `trustProxy`, all such callers share ONE bucket.
+   */
+  clientAddress?: ClientAddressResolver
+
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
@@ -2164,9 +2221,11 @@ export type ServerOptions = {
    *
    * Also the retention window for a closed session's registry buffers —
    * its `describe_recent_actions` ring and buffered confirm outcomes
-   * survive a drop for exactly this long, then are reclaimed. Past it
-   * the bearer has to rotate anyway, so there is nothing left for the
-   * history to serve.
+   * survive a drop for exactly this long, then are reclaimed. That is a
+   * memory bound, not a lifetime: `/resume/claim` rotates the bearer but
+   * keeps the same `tid`, and the registry is keyed by `tid`, so a
+   * resume LATER than this window reattaches to the same session with an
+   * empty recent-action history. `0` drops the buffers on close.
    */
   pairingGraceMs?: number
 
@@ -2629,9 +2688,9 @@ class InMemoryPairingRegistry implements PairingRegistry {
       /**
        * How long a closed session's buffers stay readable, in ms.
        * Default {@link CLOSED_RETENTION_MS}. `0` drops them the moment
-       * the socket closes — the right value when the host also opted out
-       * of the pending-resume grace, since no reconnect can then re-pair
-       * on the same bearer.
+       * the socket closes: a reconnect then has to rotate its bearer
+       * through `/resume/claim`, and while that reattaches to the SAME
+       * tid, this registry has already let its history go.
        */
       closedRetentionMs?: number
       /** Ceiling on concurrently-retained closed sessions. Default 128. */
