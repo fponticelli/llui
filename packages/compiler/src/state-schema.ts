@@ -1,9 +1,10 @@
 import ts from 'typescript'
+import { isNullLiteral, peelNullUnion, peelOptionalUnion } from './union-peel.js'
 
 /**
  * Build a TypeScript expression representing the given StateType as a
  * runtime-readable literal. The emission shape mirrors the StateType
- * tagged union — `string`/`number`/`boolean`/`unknown` become string
+ * tagged union — `string`/`number`/`boolean`/`null`/`unknown` become string
  * literals; the structural kinds become object literals with a `kind`
  * field plus the appropriate payload (`of`/`fields`/`values`).
  *
@@ -54,10 +55,26 @@ export function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expressi
   ])
 }
 
+/**
+ * Descriptor for one state field's type, as consumed by agents/devtools.
+ *
+ * `'null'` describes a field whose declared type includes `null`. It is a
+ * VALUE, not an absence: `null` survives JSON (state must be
+ * JSON-serializable) and TypeScript keeps `field: T | null` required, so a
+ * nullable field is emitted as `{kind: 'union', of: [T, 'null']}` and NEVER
+ * as `{kind: 'optional'}`. When `T` is itself a union its members are spliced
+ * into that list rather than nested, so the member list stays flat:
+ * `string | number | null` is `{kind: 'union', of: ['string', 'number',
+ * 'null']}`. `T | undefined` is the opposite case — it means
+ * the field may be absent, and is emitted as `{kind: 'optional', of: T}`
+ * exactly like `field?: T`. A field declared `T | null | undefined` is both:
+ * `{kind: 'optional', of: {kind: 'union', of: [T, 'null']}}`.
+ */
 export type StateType =
   | 'string'
   | 'number'
   | 'boolean'
+  | 'null'
   | 'unknown'
   | { kind: 'enum'; values: string[] }
   | { kind: 'array'; of: StateType }
@@ -69,13 +86,6 @@ export interface StateSchema {
   fields: Record<string, StateType>
 }
 
-/**
- * Walk `type State = { … }` (or a type matching a user-provided name) and emit
- * a JSON-serializable shape descriptor. Supports primitives, string-literal
- * unions, arrays, nested objects, and `T | undefined` optional fields.
- *
- * Returns null if the named type isn't found or isn't a type literal.
- */
 /** Local type declarations available for reference resolution: `type X = …`
  * aliases and `interface X { … }` member lists. */
 interface TypeScope {
@@ -90,6 +100,15 @@ interface TypeScope {
  * (arrays, unions, inline object literals) do NOT consume the budget. */
 const MAX_TYPE_DEPTH = 6
 
+/**
+ * Walk `type State = { … }` (or a type matching a user-provided name) and emit
+ * a JSON-serializable shape descriptor. Supports primitives, string-literal
+ * unions, arrays, nested objects, `T | undefined` optional fields and
+ * `T | null` nullable ones (optionality and nullability are distinct — see
+ * {@link StateType}).
+ *
+ * Returns null if the named type isn't found or isn't a type literal.
+ */
 export function extractStateSchema(source: string, typeName = 'State'): StateSchema | null {
   const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -129,16 +148,33 @@ function buildFields(
       continue
     }
     let t = resolve(member.type, scope, depth)
-    if (member.questionToken) t = { kind: 'optional', of: t }
+    // `mode?: T | undefined` says "optional" twice; one wrapper is enough.
+    if (member.questionToken && !isOptional(t)) t = { kind: 'optional', of: t }
     fields[member.name.text] = t
   }
   return fields
+}
+
+/** True when `t` is already wrapped in an `optional` descriptor. */
+function isOptional(t: StateType): boolean {
+  return typeof t === 'object' && t.kind === 'optional'
 }
 
 function resolve(type: ts.TypeNode, scope: TypeScope, depth: number): StateType {
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'
   if (type.kind === ts.SyntaxKind.BooleanKeyword) return 'boolean'
+
+  // `null` — a real, JSON-serializable value (see StateType's doc comment).
+  if (isNullLiteral(type)) return 'null'
+
+  // A lone string literal is a one-value enum. Reached both directly
+  // (`mode: 'a'`) and as the remainder of `'a' | undefined` once the
+  // optional branch is peeled, which is why a single-member optional
+  // carries its value like any wider literal union does.
+  if (ts.isLiteralTypeNode(type) && ts.isStringLiteral(type.literal)) {
+    return { kind: 'enum', values: [type.literal.text] }
+  }
 
   // T[] — inline structural move, budget unchanged.
   if (ts.isArrayTypeNode(type)) {
@@ -159,18 +195,38 @@ function resolve(type: ts.TypeNode, scope: TypeScope, depth: number): StateType 
     return { kind: 'object', fields: buildFields(type.members, scope, depth) }
   }
 
-  // Union: enum-of-strings, or general union, or T | undefined
+  // Union: enum-of-strings, or general union, or T | undefined / T | null
   if (ts.isUnionTypeNode(type)) {
-    // T | undefined → optional
-    const nonUndefined = type.types.filter(
-      (t) =>
-        !(
-          t.kind === ts.SyntaxKind.UndefinedKeyword ||
-          (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.UndefinedKeyword)
-        ),
-    )
-    if (nonUndefined.length === type.types.length - 1 && nonUndefined.length === 1) {
-      return { kind: 'optional', of: resolve(nonUndefined[0]!, scope, depth) }
+    // `T | undefined` → optional. The peel runs BEFORE the classification
+    // below and BEFORE the null peel, and both orderings are load-bearing:
+    //  - before classification, because the literal-union scan rejects a
+    //    union the moment it meets a non-literal member, so `'a' | 'b' |
+    //    undefined` would fall through to the general-union arm and come out
+    //    as a union of `unknown` — losing the enum values AND the
+    //    optionality that `| undefined` exists to express (#88);
+    //  - before the null peel, so optionality stays the OUTERMOST wrapper:
+    //    `'a' | 'b' | null | undefined` is an optional field whose value may
+    //    be null, not a union one of whose members is optional.
+    // The remainder is classified by recursing, so the enum and the null
+    // branch below are both still reached.
+    const optional = peelOptionalUnion(type)
+    if (optional.isImplicitOptional) {
+      return { kind: 'optional', of: resolve(optional.type, scope, depth) }
+    }
+
+    // `T | null` → a union with a `'null'` member, NOT an optional: null is a
+    // value the field can hold, not an absence (see StateType's doc comment).
+    // Peeled for the same reason as `undefined` — so the remainder can still
+    // be recognised as an enum — then re-attached. A remainder that is ITSELF
+    // a union is spliced rather than nested: `string | number | null` is
+    // `['string','number','null']`, not `[['string','number'],'null']`. The
+    // nested form is well-formed but `$ss`'s only audience is an LLM reading
+    // it, and one flat member list is easier to reason about than two.
+    const nullable = peelNullUnion(type)
+    if (nullable.isNullable) {
+      const rest = resolve(nullable.type, scope, depth)
+      const members = typeof rest === 'object' && rest.kind === 'union' ? rest.of : [rest]
+      return { kind: 'union', of: [...members, 'null'] }
     }
 
     // String-literal union

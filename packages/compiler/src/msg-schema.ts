@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { peelOptionalUnion } from './union-peel.js'
 
 /**
  * The "bare type" of a field. Covers five cases:
@@ -344,48 +345,6 @@ export function buildFieldDescriptor(
     rich.validates = validates
   }
   return rich
-}
-
-/**
- * Detect `T | undefined` (or `undefined | T`, or `T1 | T2 | undefined`)
- * and return the union without the `undefined` branch plus a flag
- * marking the field as implicitly optional. Mirrors the runtime
- * semantics: `field: T | undefined` is exactly equivalent to
- * `field?: T` — the agent should be able to omit the field entirely.
- *
- * Pre-strict-null codebases (decisive among them) declare optional
- * fields as `field: T | undefined` rather than `field?: T`. Without
- * this peel, the union doesn't match `tryExtractLiteralUnion` (one
- * branch isn't a literal) or `tryExtractDiscriminatedUnion` (the
- * `undefined` branch isn't an object literal), so the whole thing
- * collapses to `'unknown'` and the agent has to spell out
- * `field: undefined` literally on every payload.
- *
- * Returns the original node and `isImplicitOptional: false` when the
- * union has no `undefined` branch — caller then resolves it via the
- * normal pipeline. Returns the original node and `false` when ALL
- * branches are `undefined` (pathological — let it fall through to
- * unknown rather than fabricating a shape).
- */
-function peelOptionalUnion(type: ts.TypeNode): {
-  type: ts.TypeNode
-  isImplicitOptional: boolean
-} {
-  if (!ts.isUnionTypeNode(type)) return { type, isImplicitOptional: false }
-  const isUndefined = (t: ts.TypeNode): boolean => t.kind === ts.SyntaxKind.UndefinedKeyword
-  const nonUndefined = type.types.filter((t) => !isUndefined(t))
-  if (nonUndefined.length === type.types.length) return { type, isImplicitOptional: false }
-  if (nonUndefined.length === 0) return { type, isImplicitOptional: false }
-  if (nonUndefined.length === 1 && nonUndefined[0]) {
-    return { type: nonUndefined[0], isImplicitOptional: true }
-  }
-  // 'a' | 'b' | undefined → rebuild as 'a' | 'b' so it can run through
-  // tryExtractLiteralUnion / tryExtractDiscriminatedUnion as if the
-  // undefined branch had never been there.
-  return {
-    type: ts.factory.createUnionTypeNode(nonUndefined),
-    isImplicitOptional: true,
-  }
 }
 
 /**
