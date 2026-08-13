@@ -18,12 +18,10 @@ function runCancel(
   // registry entry — the three moves are one operation by construction (#77).
   debounces.get(effect.token)?.cancel()
 
-  const ws = websockets.get(effect.token)
-  if (ws) {
-    ws.onclose = null // programmatic cancel — don't dispatch app onClose
-    ws.close()
-    websockets.delete(effect.token)
-  }
+  // `close()` silences the socket (a programmatic cancel dispatches no app
+  // `onClose`), closes it, detaches its abort listener and drops the registry
+  // entry — the four moves are one operation by construction (#83).
+  websockets.get(effect.token)?.close()
 
   if ('inner' in effect && effect.inner) {
     const ctrl = new AbortController()

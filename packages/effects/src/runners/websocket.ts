@@ -1,4 +1,4 @@
-import type { Deps, InternalSend, Runner } from '../core.js'
+import type { Deps, InternalSend, Runner, WebSocketEntry } from '../core.js'
 import type { WebSocketEffect, WebSocketSendEffect } from '../types.js'
 
 function runWebSocket(
@@ -8,22 +8,40 @@ function runWebSocket(
   deps: Deps,
 ): void {
   const { websockets } = deps.registry
-  // Replace any existing websocket on the same key. Detach its handlers FIRST so
-  // its async `onclose` can neither dispatch a spurious app `onClose` nor delete
+
+  // A dead scope opens nothing. `addEventListener('abort', …)` on an ALREADY
+  // aborted signal never fires, so a socket opened here would have nothing left
+  // to close it — and it could never dispatch anyway.
+  if (signal.aborted) return
+
+  // Supersede any existing socket on this key — its handlers, the socket itself
+  // AND its abort listener. Detaching the handlers is what stops the old
+  // socket's async `onclose` dispatching a spurious app `onClose` or evicting
   // the replacement from the registry (the replacement-race bug).
-  const existing = websockets.get(effect.key)
-  if (existing) {
-    existing.onopen = null
-    existing.onmessage = null
-    existing.onclose = null
-    existing.onerror = null
-    existing.close()
-  }
+  websockets.get(effect.key)?.close()
 
   const ws = effect.protocols
     ? new WebSocket(effect.url, effect.protocols)
     : new WebSocket(effect.url)
-  websockets.set(effect.key, ws)
+
+  /**
+   * Give the mount back everything this socket is holding, and stop it talking.
+   * Idempotent: `close()` on a closed socket is a no-op, `removeEventListener`
+   * with an unregistered listener is a no-op, and the slot is only dropped while
+   * it is still ours — a replacement may already own the key (issue #83).
+   */
+  const close = (): void => {
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onclose = null
+    ws.onerror = null
+    ws.close()
+    signal.removeEventListener('abort', close)
+    if (websockets.get(effect.key) === entry) websockets.delete(effect.key)
+  }
+
+  const entry: WebSocketEntry = { socket: ws, close }
+  websockets.set(effect.key, entry)
 
   ws.onopen = () => {
     if (effect.onOpen) send(effect.onOpen())
@@ -40,9 +58,10 @@ function runWebSocket(
   }
 
   ws.onclose = (e: CloseEvent) => {
-    // Only clear the registry slot if it still points at THIS socket — a
-    // replacement may already own the key.
-    if (websockets.get(effect.key) === ws) websockets.delete(effect.key)
+    // The socket died on its own. The retirement is the same one — including
+    // the abort listener, which would otherwise wait for an abort that only
+    // comes at unmount. The app still hears about it afterwards.
+    close()
     if (effect.onClose) send(effect.onClose(e.code, e.reason))
   }
 
@@ -50,21 +69,16 @@ function runWebSocket(
     if (effect.onError) send(effect.onError())
   }
 
-  signal.addEventListener(
-    'abort',
-    () => {
-      ws.onclose = null // unmount — don't dispatch app onClose
-      ws.close()
-      if (websockets.get(effect.key) === ws) websockets.delete(effect.key)
-    },
-    { once: true },
-  )
+  // Unmount closes the socket WITHOUT dispatching the app's `onClose` — `close()`
+  // detaches the handler first. Self-removing, so `{ once: true }` is belt and
+  // braces rather than the only thing retiring it.
+  signal.addEventListener('abort', close, { once: true })
 }
 
 function runWsSend(effect: WebSocketSendEffect, deps: Deps): void {
-  const ws = deps.registry.websockets.get(effect.key)
-  if (!ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(typeof effect.data === 'string' ? effect.data : JSON.stringify(effect.data))
+  const entry = deps.registry.websockets.get(effect.key)
+  if (!entry || entry.socket.readyState !== WebSocket.OPEN) return
+  entry.socket.send(typeof effect.data === 'string' ? effect.data : JSON.stringify(effect.data))
 }
 
 export const websocketRunner: Runner = {
