@@ -29,6 +29,16 @@ export interface NavMenuState {
    *  ancestor automatically closes its descendants. */
   open: string[]
   focused: string | null
+  /**
+   * Ids of the top-level items in document order, when the consumer renders a
+   * DYNAMIC list. Purely the roving-tabindex fallback: while nothing is focused
+   * the first entry owns the nav's single tab stop. Leave it empty for a static
+   * menu — `connect` then falls back to the first id handed to `item()`, which
+   * is document order for any depth-first view. Same escape hatch as
+   * `radio-group`/`tabs`, which keep their `items` list in state for exactly
+   * this reason.
+   */
+  items: string[]
   disabled: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
@@ -47,10 +57,14 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @intent("Replace the top-level item order used for the roving tab stop") */
+  | { type: 'setItems'; items: string[] }
 
 export interface NavMenuInit {
   open?: string[]
   focused?: string | null
+  /** Top-level item ids in document order — see `NavMenuState.items`. */
+  items?: string[]
   disabled?: boolean
   dir?: 'ltr' | 'rtl'
 }
@@ -59,6 +73,7 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
   return {
     open: opts.open ?? [],
     focused: opts.focused ?? null,
+    items: opts.items ?? [],
     disabled: opts.disabled ?? false,
     dir: opts.dir ?? 'ltr',
   }
@@ -66,6 +81,8 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
 
 export function update(state: NavMenuState, msg: NavMenuMsg): [NavMenuState, never[]] {
   if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
+  // Accepted while disabled: it is presentation order, not an interaction.
+  if (msg.type === 'setItems') return [{ ...state, items: msg.items }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'openBranch': {
@@ -205,13 +222,22 @@ export function connect(
   // WCAG 2.1.1 (#122). The siblings that solve this (radio-group, tabs,
   // menubar) fall back to the first enabled item in their `items` list, but
   // this machine deliberately does not index the tree: the consumer owns it.
-  // So `connect` remembers the FIRST id handed to `item()`, which for any
-  // depth-first view is the first trigger in document order, and gives it the
-  // tab stop while nothing is focused.
+  // So the fallback comes from `state.items` when the consumer maintains it —
+  // the current top-level order, so a list rendered through `each` re-seats the
+  // tab stop as rows come and go.
+  //
+  // `firstItemId` is the STATIC-MENU fallback only: the first id handed to
+  // `item()`, which for any depth-first view is the first trigger in document
+  // order. It is a LATCH, and a latch is wrong for a dynamic list — `item()`
+  // runs once per row build, so removing the row that happened to build first
+  // leaves the latch pointing at an id that no longer exists and the nav loses
+  // its tab stop entirely. `state.items` therefore WINS wherever it is
+  // populated; the latch only answers when it is empty.
   let firstItemId: string | null = null
   const tabStop = (id: string) => (st: NavMenuState) => {
     if (st.focused !== null) return st.focused === id ? 0 : -1
-    return firstItemId === id ? 0 : -1
+    const first = st.items.length > 0 ? st.items[0] : firstItemId
+    return first === id ? 0 : -1
   }
 
   return {

@@ -121,6 +121,32 @@ describe('setAriaHiddenOutside() — live regions stay announceable', () => {
     cleanup()
   })
 
+  it('recognizes <output> (implicit role=status)', () => {
+    // `<output>` carries an implicit `role="status"` / `aria-live="polite"` and
+    // needs neither attribute written out, so a selector matching only explicit
+    // ones misses the one live region the platform gives you for free.
+    const out = document.createElement('output')
+    const plain = document.createElement('div')
+    document.body.append(out, plain)
+    const cleanup = setAriaHiddenOutside(content)
+    expect(out.hasAttribute('inert')).toBe(false)
+    expect(out.getAttribute('aria-hidden')).toBeNull()
+    // Non-vacuous: the sweep really ran.
+    expect(plain.hasAttribute('inert')).toBe(true)
+    cleanup()
+  })
+
+  it('an explicit role on <output> still wins', () => {
+    // `role` overrides the implicit one, so an `<output role="presentation">` is
+    // not an announcement channel and must be swept like anything else.
+    const out = document.createElement('output')
+    out.setAttribute('role', 'presentation')
+    document.body.append(out)
+    const cleanup = setAriaHiddenOutside(content)
+    expect(out.hasAttribute('inert')).toBe(true)
+    cleanup()
+  })
+
   it('aria-live="off" is not an announcement channel', () => {
     const off = document.createElement('div')
     off.setAttribute('aria-live', 'off')

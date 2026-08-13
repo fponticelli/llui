@@ -533,6 +533,15 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
   // `ids.subTriggerId` is instance-scoped, so this resolves THIS menu even with
   // several on the page. (No element at all — a unit test that renders nothing —
   // means no guard, exactly as in tooltip/hover-card.)
+  //
+  // A guard rather than a CANCELLATION on unmount, deliberately. `@llui/dom`
+  // does export `onTeardown`, and `connect()` in the real app path runs under a
+  // live build context, so registering one would work — but every `connect()` in
+  // this package is lifecycle-free by convention: it is a pure part-bag builder
+  // callable from a unit test with no build context, and the same convention is
+  // what lets tooltip / hover-card / navigation-menu guard the identical way.
+  // The residual cost of not cancelling is one dangling `setTimeout` of at most
+  // a few hundred ms that does nothing when it fires.
   const detached = (el: Element | null): boolean => el !== null && !el.isConnected
   const subTriggerEl = (value: string): Element | null =>
     typeof document === 'undefined' ? null : document.getElementById(ids.subTriggerId(value))

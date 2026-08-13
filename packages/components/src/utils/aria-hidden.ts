@@ -22,6 +22,18 @@
  *
  * Nested calls are supported — each layer only touches elements that haven't
  * been claimed by a higher layer (tracked via a WeakMap reference count).
+ *
+ * TWO KNOWN LIMITS of the live-region exemption, both deliberate:
+ *
+ *  1. `inert` cannot be split from `aria-hidden` — sparing a region spares its
+ *     WHOLE SUBTREE from both, so an interactive live region (a `role="log"`
+ *     transcript containing links) stays Tab-reachable behind a modal. Keep
+ *     live regions to announcement text; put controls outside them, or register
+ *     the modal's own layer for the interactive part.
+ *  2. `document.querySelectorAll` does not pierce shadow roots, so a live region
+ *     inside one is not exempt. The sweep itself only ever walks light-DOM
+ *     ancestors of `target`, so this only bites when the region and the modal
+ *     live in different trees.
  */
 
 import { getNestedLayers } from './nested-layer.js'
@@ -31,10 +43,18 @@ interface Snapshot {
   inert: string | null
 }
 
-/** Elements whose whole purpose is to be announced while something else has
- * focus. `aria-live="off"` is explicitly not one. */
+/**
+ * Elements whose whole purpose is to be announced while something else has
+ * focus. `aria-live="off"` is explicitly not one.
+ *
+ * `<output>` is included because it carries an IMPLICIT `role="status"` /
+ * `aria-live="polite"` — the one live region the platform gives you without
+ * writing a single ARIA attribute, so a selector over explicit attributes alone
+ * misses it. `:not([role])` respects the override: an explicit `role` replaces
+ * the implicit one, and an `<output role="presentation">` is not a channel.
+ */
 const LIVE_REGION_SELECTOR =
-  '[aria-live="polite"],[aria-live="assertive"],[role="alert"],[role="status"],[role="log"]'
+  '[aria-live="polite"],[aria-live="assertive"],[role="alert"],[role="status"],[role="log"],output:not([role])'
 
 const ownership = new WeakMap<Element, number>()
 const snapshots = new WeakMap<Element, Snapshot>()

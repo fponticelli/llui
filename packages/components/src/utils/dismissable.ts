@@ -69,8 +69,15 @@ function maybeRemoveKeyListener(): void {
 }
 
 /**
- * Register a dismissable layer. Handles Escape (topmost only) and
- * outside-click. Returns a cleanup that removes the layer from the stack.
+ * Register a dismissable layer. Escape is offered to the layers top-down until
+ * one CLAIMS it (a layer declines via `disableEscape` or an `onEscape` router
+ * returning `false`, and the key then falls through to the layer beneath);
+ * outside-click is topmost-only. Returns a cleanup that removes the layer from
+ * the stack.
+ *
+ * Push a layer even when both dismissal routes are disabled: the layer is the
+ * caller's PLACE ON THE STACK, which is what stops the layer beneath from
+ * treating an interaction inside this one as an outside interaction.
  */
 export function pushDismissable(opts: DismissableOptions): () => void {
   ensureKeyListener()

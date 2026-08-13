@@ -306,6 +306,37 @@ describe('navigation-menu.connect — tab sequence (WCAG 2.1.1)', () => {
     expect(read(triggers[0]!.tabindex, s)).toBe(0)
   })
 
+  it('a dynamic list keeps its tab stop when the first item is removed', () => {
+    // With items rendered through `each`, `item()` is called per ROW, so the
+    // connect-time latch pins whichever id happened to build first — forever.
+    // Remove that row and the latched id no longer exists: every remaining
+    // trigger reads -1 and the nav loses its tab stop entirely, re-opening the
+    // WCAG 2.1.1 defect this component just closed. `items` in state is the
+    // current order (the same escape hatch radio-group/tabs use) and wins over
+    // the latch.
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const home = p.item('home', { isBranch: false }).trigger
+    const products = p.item('products', { isBranch: true }).trigger
+    const about = p.item('about', { isBranch: false }).trigger
+
+    const all = init({ items: ['home', 'products', 'about'] })
+    expect(read(home.tabindex, all)).toBe(0)
+
+    // 'home' has been removed from the rendered list.
+    const without = init({ items: ['products', 'about'] })
+    const triggers = [home, products, about]
+    expect(triggers.filter((t) => read(t.tabindex, without) === 0)).toHaveLength(1)
+    expect(read(products.tabindex, without)).toBe(0)
+  })
+
+  it('setItems re-seats the tab stop while nothing is focused', () => {
+    const [s] = update(init({ items: ['a', 'b'] }), { type: 'setItems', items: ['b', 'c'] })
+    expect(s.items).toEqual(['b', 'c'])
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const b = p.item('b', { isBranch: false }).trigger
+    expect(read(b.tabindex, s)).toBe(0)
+  })
+
   it('once an item is focused it owns the tab stop', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
     const first = p.item('home', { isBranch: false }).trigger

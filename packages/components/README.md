@@ -170,7 +170,9 @@ While registered, the element (and its descendants) is treated as inside. Prefer
 
 ### Live regions and the modal sweep
 
-`aria-hidden` never hides a **live region** — `aria-live="polite"`/`"assertive"`, `role="alert"`, `role="status"`, `role="log"` — because a hidden live region is simply never read out, so a toast raised while a dialog is open would be silent for screen-reader users. This needs no registration and covers your own regions as well as `toast`/`async-list`/`clipboard`/`date-input`/`field`. Exemption is precise: the sweep descends through an ancestor that merely _contains_ a live region and still hides everything hanging off the path down to it.
+`aria-hidden` never hides a **live region** — `aria-live="polite"`/`"assertive"`, `role="alert"`, `role="status"`, `role="log"`, and `<output>` (implicit `role="status"`, unless it carries an explicit `role`) — because a hidden live region is simply never read out, so a toast raised while a dialog is open would be silent for screen-reader users. This needs no registration and covers your own regions as well as `toast`/`async-list`/`clipboard`/`date-input`/`field`. Exemption is precise: the sweep descends through an ancestor that merely _contains_ a live region and still hides everything hanging off the path down to it.
+
+Two caveats. **`inert` cannot be split from `aria-hidden`**, so an exempt region keeps its whole subtree reachable: a `role="log"` transcript containing links is Tab-reachable from behind a modal. Keep live regions to announcement text and put controls outside them. And **the match does not pierce shadow roots** — a live region inside one is not exempt (the sweep only walks light-DOM ancestors of the modal, so this bites only when the two live in different trees).
 
 ### Escape and the dismissable stack
 
