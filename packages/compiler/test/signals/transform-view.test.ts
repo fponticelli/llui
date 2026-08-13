@@ -74,7 +74,7 @@ describe('transformNodeExpr — elements', () => {
     )
   })
   it('nested elements + mixed slots', () => {
-    const out = tx("div({}, [span({}, [text(state.at('a'))]), text('lit'), text(state.at('b'))])")
+    const out = tx("div([span([text(state.at('a'))]), text('lit'), text(state.at('b'))])")
     expect(out).toBe(
       "el(\"div\", {}, [el(\"span\", {}, [signalText((s) => s.a, ['a'])]), staticText('lit'), signalText((s) => s.b, ['b'])])",
     )
@@ -140,7 +140,7 @@ describe('transformNodeExpr — structural primitives', () => {
 
   it('dedupes identical hoisted deps arrays across bindings', () => {
     const out = tx(
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [li({}, [text(item.at('label')), text(item.at('label').map((l) => l + '!'))])] })",
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => [li([text(item.at('label')), text(item.at('label').map((l) => l + '!'))])] })",
     )
     expect(out).toContain('signalEachDirect(')
     // both bindings read ['item.label'] — one shared const
@@ -149,7 +149,7 @@ describe('transformNodeExpr — structural primitives', () => {
 
   it('keeps a produce INLINE when it reads a per-row block-body local', () => {
     const out = tx(
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const base = item.peek().base; return [li({}, [text(item.at('count').map((c) => c + base))])] } })",
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const base = item.peek().base; return [li([text(item.at('count').map((c) => c + base))])] } })",
     )
     expect(out).toContain('signalEachDirect(')
     // deps still hoist; the produce closes over the row local `base` -> per-row
@@ -238,7 +238,7 @@ describe('transformNodeExpr — structural primitives', () => {
     // decls + return [...] — the factory bails (helper child), the arm keeps the
     // decls verbatim; the decl's item read makes `item` leak → rowHandle prelude.
     const out = tx(
-      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const nm = item.peek().name; return [li({}, [badge(nm), text(item.at('name'))])] } })",
+      "each(state.at('rows'), { key: (r) => r.id, render: (item) => { const nm = item.peek().name; return [li([badge(nm), text(item.at('name'))])] } })",
     )
     expect(out).toContain('signalEach(')
     expect(out).toContain("const item = rowHandle(getCtx, 'item')")

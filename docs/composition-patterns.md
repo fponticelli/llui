@@ -88,7 +88,7 @@ function table(rows: Signal<Row[]>): Renderable {
     each(rows, {
       key: (r) => r.id, // ← plain id; do NOT include mutable fields
       render: (item) => [
-        tr({}, [
+        tr([
           // Reactive cell — re-reads when this row's `title` changes:
           td([text(item.at('title'))]),
           td([show(item.at('banned'), () => [span({ class: 'badge' }, [text('banned')])])]),
@@ -170,7 +170,7 @@ import { header, nav } from '@llui/dom'
 import type { ChildNode, Mountable } from '@llui/dom'
 
 function headerView(opts: { navItems: readonly ChildNode[]; userBadge: ChildNode }): Mountable {
-  return header({}, [nav({}, opts.navItems), opts.userBadge])
+  return header([nav(opts.navItems), opts.userBadge])
 }
 
 // CALLER fills slots with bindings tied to its concrete state shape:

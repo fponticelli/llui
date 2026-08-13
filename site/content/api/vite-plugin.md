@@ -40,7 +40,7 @@ file using the TypeScript Compiler API:
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | View lowering          | Lowers signal expressions in a component's DIRECT view to runtime helpers (`signalText` / `el` / `react` / `signalEach` / `signalShow` / `signalBranch` / …). An optimization — anything it can't lower runs via the runtime authoring helpers, so both forms coexist. |
 | Introspection metadata | Emits component / msg / state metadata (and, via opt-in compiler modules, agent schemas and devtools `__componentMeta`).                                                                                                                                               |
-| Lint rules             | Runs the signal lint set as **non-bypassable build errors** (surfaced via `this.error()`): `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, plus shared cross-file / agent / convention checks.                               |
+| Lint rules             | Runs the signal lint set as **non-bypassable build errors** (surfaced via `this.error()`): `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `empty-props`, plus shared cross-file / agent / convention checks.                |
 
 ## Diagnostics
 

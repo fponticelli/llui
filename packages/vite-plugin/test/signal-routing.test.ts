@@ -143,7 +143,7 @@ describe('vite-plugin — signal component routing', () => {
     const helperOnly = [
       "import { ul, li, text, each, type Signal } from '@llui/dom'",
       'export function rows(items: Signal<readonly { id: number; label: string }[]>) {',
-      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [text(item.at("label"))])] })])]',
+      '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([text(item.at("label"))])] })])]',
       '}',
     ].join('\n')
     const out = await runTransform(llui(), helperOnly, '/tmp/rows-helper.ts')
@@ -158,7 +158,7 @@ describe('vite-plugin — signal component routing', () => {
     expect(await runTransform(llui(), noImport, '/tmp/no-import.ts')).toBeUndefined()
     const domNoPrimitives = [
       "import { div, text } from '@llui/dom'",
-      "export const banner = () => div({}, [text('hi')])",
+      "export const banner = () => div([text('hi')])",
     ].join('\n')
     expect(await runTransform(llui(), domNoPrimitives, '/tmp/banner.ts')).toBeUndefined()
   })
@@ -173,7 +173,7 @@ describe('vite-plugin — signal component routing', () => {
     const verbatimEach = [
       "import { ul, li, text, each, type Signal } from '@llui/dom'",
       'export function rows(items: Signal<readonly { id: number }[]>) {',
-      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => { const el = buildRow(item); attach(el); return [el] } })])]',
+      '  return [ul([each(items, { key: (r) => r.id, render: (item) => { const el = buildRow(item); attach(el); return [el] } })])]',
       '}',
     ].join('\n')
     const warn = vi.fn()
@@ -200,7 +200,7 @@ describe('vite-plugin — signal component routing', () => {
     const verbatimEach = [
       "import { ul, li, text, each } from '@llui/dom'",
       'export function rows(items) {',
-      '  return [ul({}, [each(items, { key: (r) => r.id, render: (item) => [li({}, [importedRow(item)])] })])]',
+      '  return [ul([each(items, { key: (r) => r.id, render: (item) => [li([importedRow(item)])] })])]',
       '}',
     ].join('\n')
     const warn = vi.fn()

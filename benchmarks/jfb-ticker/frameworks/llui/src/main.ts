@@ -109,7 +109,7 @@ const App = component<State, Msg, never>({
   },
   view: ({ state, send, batch }) => [
     div({ id: 'ticker' }, [
-      h1({}, [text('LLui ticker')]),
+      h1([text('LLui ticker')]),
 
       // ── Dashboard: 32 cells, each pinned to one state path (chunked masks) ──
       div({ class: 'ticker-grid' }, [
@@ -283,17 +283,17 @@ const App = component<State, Msg, never>({
       // ── Symbol list: multi-root each — rows read item fields AND the shared
       // displayMode (the wide-toggle fan-out the SPEC measures) ──
       table({ id: 'symbols', class: 'ticker' }, [
-        tbody({}, [
+        tbody([
           each<SymbolRow>(state.at('symbols'), {
             key: (sy) => sy.id,
             render: (item) => [
               tr({ class: state.at('dashboard.displayMode').map((m) => `mode-${m}`) }, [
-                td({}, [text(item.at('ticker'))]),
+                td([text(item.at('ticker'))]),
                 td({ class: 'col-price' }, [text(item.at('price').map((p) => p.toFixed(2)))]),
                 td({ class: 'col-change' }, [text(item.at('change').map((c) => c.toFixed(2)))]),
                 td({ class: 'col-change' }, [text(item.at('changePct').map((c) => c.toFixed(2)))]),
                 td({ class: 'col-volume' }, [text(item.at('volume').map(String))]),
-                td({}, [text(item.at('lastTickAt').map(String))]),
+                td([text(item.at('lastTickAt').map(String))]),
               ]),
             ],
           }),

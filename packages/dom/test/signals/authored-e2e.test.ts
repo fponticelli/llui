@@ -92,10 +92,10 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
           branch(state.at('view'), {
             empty: () => [div({ id: 'empty' }, [text('no todos')])],
           }),
-          ul({}, [
+          ul([
             each(state.at('todos'), {
               key: (t) => t.id,
-              render: (item) => [li({}, [text(item.at('title'))])],
+              render: (item) => [li([text(item.at('title'))])],
             }),
           ]),
         ],

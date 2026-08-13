@@ -452,7 +452,7 @@ view: ({ state }) => [
 ]
 
 const tableRow = (item: Signal<Row>) =>
-  tr({}, [
+  tr([
     // Reactive cell — re-reads when this row's `title` changes:
     td([text(item.at('title'))]),
     // Reactive condition — the truthy arm gets the narrowed signal:

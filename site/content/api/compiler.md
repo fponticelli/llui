@@ -29,6 +29,7 @@ The `@llui/eslint-plugin` package was removed when the rules migrated into this 
 | `pure-derive-body`             | A `.map`/derive body that isn't pure over plain values (side effects, `.at`/`.map`/`.peek`, node helpers) |
 | `no-node-construction-in-body` | Building element/text nodes inside a derive body — use a structural primitive (`show`/`branch`/`each`)    |
 | `prefer-at-over-map`           | `state.map((s) => s.x)` where `state.at('x')` is the more precise, narrower read                          |
+| `empty-props`                  | `div({}, [...])` — an empty props object; the helpers take a children-only call, so write `div([...])`    |
 
 **Cross-file / composition diagnostics** — view-helper resolution, dependency flow, and module emission:
 
@@ -45,6 +46,19 @@ The `@llui/eslint-plugin` package was removed when the rules migrated into this 
 
 The signal transform also enforces the agent annotation rules
 (`@intent` / `@emits` / `@should` / `tagSend` translators) when agent metadata is emitted.
+
+**Mechanically fixable rules.** `empty-props`, `attr-name`, `event-handler-casing` and
+`convention` attach a `LintFix` (a title plus exact text edits) to their diagnostic, which
+editors and `applyLintFixes` can apply verbatim. Only `convention` is
+auto-applied by the Vite plugin — it is runtime-neutral, so the dev loop never blocks on a
+casing nit. Every other rule, fix or no fix, still fails the build.
+
+`empty-props` covers the HTML element helpers **and** the namespaced SVG helpers
+(`svg`/`path`/`g`/…), which share the same call forms. It fires only on a literally empty
+object literal in the props position: `div({ ...attrs }, …)`, `div(cond ? {} : props, …)`
+and a variable that happens to hold `{}` are all left alone, because the rule never reasons
+about what an expression might evaluate to. `el('div', {}, …)` is out of scope too — `el`'s
+props parameter is positional with a `= {}` default, so omitting it allocates the same object.
 
 <!-- auto-api:start -->
 
@@ -1550,6 +1564,16 @@ export interface SubstitutionResult {
 
 ## Constants
 
+### `ALL_ELEMENT_HELPERS`
+
+Every element-helper callee name — namespaced and not. Use this ONLY for
+rules that inspect a call's arguments; never for lowering (see the note on
+`SVG_ELEMENT_HELPERS` above: lowering a namespaced helper breaks it).
+
+```typescript
+const ALL_ELEMENT_HELPERS: ReadonlySet<string>
+```
+
 ### `COMPILER_DOM_INTERNAL_IMPORTS`
 
 ```typescript
@@ -1588,6 +1612,14 @@ Module specifier the compiler emits for the internal-helper imports.
 const DOM_INTERNAL_MODULE_SPECIFIER
 ```
 
+### `ELEMENT_HELPERS`
+
+DOM element-helper callee names — tags that produce an element with props.
+
+```typescript
+const ELEMENT_HELPERS: ReadonlySet<string>
+```
+
 ### `HELPER_KEY_SEP`
 
 Canonical module-id separator in helper keys: `<moduleId>#<exportName>`.
@@ -1613,6 +1645,19 @@ shapes could not express. Consumers reject other majors via `compilerVersion`.
 
 ```typescript
 const MANIFEST_SCHEMA_VERSION
+```
+
+### `SVG_ELEMENT_HELPERS`
+
+SVG element-helper callee names (the `svgHelper(...)` exports of `@llui/dom`).
+These are EXPORT names, not tags — the SVG `<text>` helper is exported as
+`svgText` so it doesn't collide with the `text()` node helper. Kept out of
+{@link ELEMENT_HELPERS} because the view transform must NOT lower them
+(createElementNS), but they accept the identical `(children)` /
+`(props?, children?)` call forms, so argument-shape rules apply unchanged.
+
+```typescript
+const SVG_ELEMENT_HELPERS: ReadonlySet<string>
 ```
 
 <!-- auto-api:end -->

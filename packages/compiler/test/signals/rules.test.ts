@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { lintSignals, lintSignalSource, type SignalDiagnostic } from '../../src/signals/rules.js'
+import {
+  lintSignals,
+  lintSignalSource,
+  applyLintFixes,
+  type SignalDiagnostic,
+} from '../../src/signals/rules.js'
 
 function lint(src: string): SignalDiagnostic[] {
   const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)
@@ -599,6 +604,154 @@ describe('attr-name (React-isms that silently break)', () => {
   it('does NOT flag the native class / for', () => {
     expect(rules("div({ class: 'x' }, [])")).not.toContain('attr-name')
     expect(rules("label({ for: 'x' }, [])")).not.toContain('attr-name')
+  })
+})
+
+describe('empty-props (a throwaway `{}` on an element helper)', () => {
+  const fixed = (src: string): string => {
+    const msgs = lintSignalSource(src, 't.ts').filter((m) => m.rule === 'empty-props')
+    const { code, skipped } = applyLintFixes(src, msgs)
+    expect(skipped).toBe(0)
+    return code
+  }
+  // A fixed source must still PARSE — a fix that produces `div(,)` or an
+  // unbalanced call would otherwise sail past a string comparison.
+  const parses = (src: string): boolean => {
+    const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)
+    // `parseDiagnostics` is internal-but-stable; TS exposes it on the node.
+    return (sf as ts.SourceFile & { parseDiagnostics?: unknown[] }).parseDiagnostics?.length === 0
+  }
+
+  it('flags the props+children form', () => {
+    expect(rules("div({}, [text('hi')])")).toContain('empty-props')
+  })
+  it('flags the props-only form', () => {
+    expect(rules('div({})')).toContain('empty-props')
+  })
+  it('flags an empty literal with only whitespace/newlines inside', () => {
+    expect(rules('div({\n}, [])')).toContain('empty-props')
+  })
+  it('flags SVG helpers identically', () => {
+    expect(rules("svg({}, [path({ d: 'M0 0' })])")).toContain('empty-props')
+    expect(rules('g({}, [])')).toContain('empty-props')
+    expect(rules("svgText({}, ['x'])")).toContain('empty-props')
+  })
+  it('flags a nested occurrence inside children', () => {
+    expect(
+      lint("div({ class: 'a' }, [span({}, [])])").filter((d) => d.rule === 'empty-props'),
+    ).toHaveLength(1)
+  })
+
+  // ---- negatives: every legitimate lookalike must stay clean ----
+  it('does NOT flag non-empty props', () => {
+    expect(rules("div({ class: 'x' }, [text('hi')])")).not.toContain('empty-props')
+  })
+  it('does NOT flag the children-only form', () => {
+    expect(rules("div([text('hi')])")).not.toContain('empty-props')
+    expect(rules('div([])')).not.toContain('empty-props')
+  })
+  it('does NOT flag a spread (the spread source may be non-empty)', () => {
+    expect(rules('div({ ...parts.root }, [])')).not.toContain('empty-props')
+    expect(rules('div({ ...a, ...b }, [])')).not.toContain('empty-props')
+  })
+  it('does NOT flag a conditional props expression', () => {
+    expect(rules('div(cond ? {} : props, [])')).not.toContain('empty-props')
+  })
+  it('does NOT flag a variable that happens to hold {}', () => {
+    expect(rules('const props = {}\ndiv(props, [])')).not.toContain('empty-props')
+  })
+  it('does NOT flag a call with no arguments at all', () => {
+    expect(rules('div()')).not.toContain('empty-props')
+  })
+  it('does NOT flag a user function that merely shares an element name', () => {
+    const src = ["import { div } from './my-ui'", 'div({}, [])'].join('\n')
+    expect(rules(src)).not.toContain('empty-props')
+    const shadowed = 'const row = (div: (p: object, c: unknown[]) => void) => div({}, [])'
+    expect(rules(shadowed)).not.toContain('empty-props')
+  })
+  // The rewrite `tag({}, c)` → `tag(c)` re-dispatches `c` through the helper's
+  // overloads, which only typechecks when `c` is provably `readonly ChildNode[]`.
+  // Without a checker the sole sound proxy is an array LITERAL, so every other
+  // children expression must stay untouched — the fix would otherwise be emitted
+  // to (and applied by) MCP clients as an unreviewed edit.
+  it('does NOT flag a non-literal children argument (the rewrite may not typecheck)', () => {
+    // The motivating false positive: compiles today, but `div(children)` matches
+    // NEITHER overload — the correct rewrite is `div(children ?? [])`.
+    const optional = [
+      "import { div, type Renderable } from '@llui/dom'",
+      'export function card(children?: Renderable) {',
+      '  return div({}, children)',
+      '}',
+    ].join('\n')
+    expect(rules(optional)).not.toContain('empty-props')
+    // Same blind spot, other shapes: a call, a spread-built array, a conditional,
+    // and a bare Mountable in the children slot (already a type error, but the
+    // fix would silently "correct" it into a different one).
+    expect(rules('div({}, makeChildren())')).not.toContain('empty-props')
+    expect(rules('div({}, rows)')).not.toContain('empty-props')
+    expect(rules('div({}, cond ? a : b)')).not.toContain('empty-props')
+    expect(rules("div({}, text('hi'))")).not.toContain('empty-props')
+    expect(rules('div({}, [...rows])')).toContain('empty-props') // an array literal IS provable
+  })
+  it('does NOT flag a non-element helper called with an empty object', () => {
+    // `{}` is meaningful (or unavoidable) elsewhere: options bags, initial state,
+    // an `el()` whose props argument is positional and defaults to `{}` anyway.
+    expect(rules('each(items, {})')).not.toContain('empty-props')
+    expect(rules('mountApp(root, App, {}) ')).not.toContain('empty-props')
+    expect(rules("el('div', {}, [])")).not.toContain('empty-props')
+  })
+  it('does NOT flag an empty object literal in the CHILDREN position', () => {
+    // `[{}]` is a child expression, not props — the rule must key off arg 0 only.
+    expect(rules('div(props, [{}])')).not.toContain('empty-props')
+    expect(rules("div({ class: 'x' }, [{}])")).not.toContain('empty-props')
+  })
+
+  // ---- message + autofix ----
+  it('names the helper and the fix in the message', () => {
+    const msg = messageFor("div({}, [text('hi')])", 'empty-props')
+    expect(msg).toContain('div({}, …)')
+    expect(msg).toContain('div(…)')
+    expect(msg).toContain('children-only')
+  })
+  it('carries a fix that rewrites `div({}, [children])` to `div([children])`', () => {
+    const out = fixed("div({}, [text('hi')])")
+    expect(out).toBe("div([text('hi')])")
+    expect(parses(out)).toBe(true)
+    expect(rules(out)).not.toContain('empty-props')
+  })
+  it('carries a fix that rewrites `div({})` to `div()`', () => {
+    const out = fixed('div({})')
+    expect(out).toBe('div()')
+    expect(parses(out)).toBe(true)
+  })
+  it('fixes a trailing-comma call without producing `div(,)`', () => {
+    const out = fixed('div({},)')
+    expect(parses(out)).toBe(true)
+    expect(out).toBe('div()')
+  })
+  it('fixes every occurrence in one pass, and the result still compiles', () => {
+    const src = [
+      "import { component, div, span, text } from '@llui/dom'",
+      'export const C = component({',
+      "  name: 'C',",
+      '  init: () => [{ n: 0 }, []],',
+      '  update: (s) => [s, []],',
+      '  view: ({ state }) => [',
+      '    div({}, [',
+      "      span({}, [text(state.at('n'))]),",
+      '    ]),',
+      '  ],',
+      '})',
+    ].join('\n')
+    const out = fixed(src)
+    expect(out).toContain('div([')
+    expect(out).toContain('span([')
+    expect(out).not.toContain('({}')
+    expect(parses(out)).toBe(true)
+    expect(lintSignalSource(out, 't.ts').map((m) => m.rule)).not.toContain('empty-props')
+  })
+  it('preserves a leading comment before the props argument', () => {
+    expect(fixed('div(/* attrs */ {}, [])')).toBe('div(/* attrs */ [])')
   })
 })
 

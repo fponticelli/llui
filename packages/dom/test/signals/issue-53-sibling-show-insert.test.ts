@@ -47,7 +47,7 @@ function rows(s: S): Row[] {
 }
 
 function view(state: Signal<S>): Mountable {
-  return ul({}, [
+  return ul([
     each(
       state.map((s) => rows(s)),
       {

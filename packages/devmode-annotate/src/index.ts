@@ -872,7 +872,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           else open()
         },
       },
-      BUTTON_LABEL_LINES.map((line) => div({}, [text(line)])),
+      BUTTON_LABEL_LINES.map((line) => div([text(line)])),
     ),
   ]
 
@@ -1068,7 +1068,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
               onClick: () => void startRectFlow(),
             },
             [
-              span({}, [text(rect.map((r) => `⌖ ${r.w}×${r.h}`))]),
+              span([text(rect.map((r) => `⌖ ${r.w}×${r.h}`))]),
               button(
                 {
                   type: 'button',
@@ -1119,7 +1119,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
                     onClick: () => void startElementPickFlow(),
                   },
                   [
-                    span({}, [
+                    span([
                       text(pe.map((p) => `⌖ ${p.selector.split('>').pop()?.trim() ?? p.selector}`)),
                     ]),
                     button(
@@ -1256,7 +1256,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
               onChange: (e: Event) =>
                 send({ type: 'verbose/set', value: (e.currentTarget as HTMLInputElement).checked }),
             }),
-            span({}, [text('Include verbose telemetry (state, message log, DOM snapshot)')]),
+            span([text('Include verbose telemetry (state, message log, DOM snapshot)')]),
           ]),
           ...(reproEnabled
             ? [
@@ -1378,7 +1378,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
               },
               [text('↻')],
             ),
-            span({}, [text('Solve')]),
+            span([text('Solve')]),
           ],
         ),
         button(

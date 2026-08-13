@@ -55,7 +55,7 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
     const { out, diags } = diagsOf(
       app(`each(state.at('todos'), {
       key: (t) => t.id,
-      render: (item) => [li({}, [unknownHelper(item)])],
+      render: (item) => [li([unknownHelper(item)])],
     })`),
     )
     expect(out).toContain("rowHandle(getCtx, 'item')")
@@ -89,7 +89,7 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
     const src = [
       "import { ul, li, text, each } from '@llui/dom'",
       'export function rows(items, send) {',
-      '  return [ul({}, [each(items, {',
+      '  return [ul([each(items, {',
       '    key: (r) => r.id,',
       '    render: (item) => { const el = buildRow(item); attach(el); return [el] },',
       '  })])]',
@@ -107,7 +107,7 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
       render: (item) => {
         const x = somethingImperative()
         doSideEffect(x)
-        return [li({}, [text('x')])]
+        return [li([text('x')])]
       },
     })`)
     const { diags } = diagsOf(src)
@@ -132,7 +132,7 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
   })
 
   it('ignores show/branch bails (verbatim show is cheap; only each pays per-row)', () => {
-    const { diags } = diagsOf(app(`show(someCond, () => [div({}, [])])`))
+    const { diags } = diagsOf(app(`show(someCond, () => [div([])])`))
     expect(diags).toEqual([])
   })
 })

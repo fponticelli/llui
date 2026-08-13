@@ -17,7 +17,7 @@ describe('unsafeHtml()', () => {
     const h = mountSignalComponent<S, { type: 'set'; v: string }>(container, {
       init: () => ({ html: '<b>hi</b>' }),
       update: (s, m) => (m.type === 'set' ? { html: m.v } : s),
-      view: ({ state }) => [div({}, [unsafeHtml(state.at('html'))])],
+      view: ({ state }) => [div([unsafeHtml(state.at('html'))])],
     })
 
     const host = container.querySelector('div')!
@@ -36,7 +36,7 @@ describe('unsafeHtml()', () => {
     const h = mountSignalComponent<S, { type: 'noop' }>(container, {
       init: () => ({ html: '' }),
       update: (s) => s,
-      view: () => [div({}, [unsafeHtml('<em>static</em>')])],
+      view: () => [div([unsafeHtml('<em>static</em>')])],
     })
     expect(container.querySelector('em')?.textContent).toBe('static')
     h.dispose()
@@ -47,7 +47,7 @@ describe('unsafeHtml()', () => {
     const h = mountSignalComponent<S, { type: 'set'; v: string }>(container, {
       init: () => ({ html: '<p>content</p>' }),
       update: (s, m) => (m.type === 'set' ? { html: m.v } : s),
-      view: ({ state }) => [div({}, [unsafeHtml(state.at('html'))])],
+      view: ({ state }) => [div([unsafeHtml(state.at('html'))])],
     })
     const host = container.querySelector('div')!
     expect(host.querySelector('p')?.textContent).toBe('content')

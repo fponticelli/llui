@@ -41,7 +41,7 @@ describe('dungeonlogs spike #1 — route-keyed subtree remount (replaces h.scope
       init: () => ({ entityId: 'a' }),
       update: (_s, m) => ({ entityId: m.id }),
       view: ({ state }) => [
-        div({}, [
+        div([
           each(
             state.at('entityId').map((id) => [id]),
             {
@@ -50,7 +50,7 @@ describe('dungeonlogs spike #1 — route-keyed subtree remount (replaces h.scope
                 div({ class: 'detail' }, [
                   span({ class: 'eid' }, [text(item)]),
                   // onMount fires once per mounted row — the remount probe.
-                  div({}, [
+                  div([
                     onMount(() => {
                       mounts.push(item.peek())
                       return () => {}
