@@ -21,6 +21,10 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "@llui/test": "workspace:*"
+  },
   "description": "LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast",
   "keywords": [
     "llui",

@@ -7,18 +7,16 @@ function runCancel(
   componentSignal: AbortSignal,
   deps: Deps,
 ): boolean {
-  const { cancelControllers, debounceTimers, websockets } = deps.registry
+  const { cancelControllers, debounces, websockets } = deps.registry
   const existing = cancelControllers.get(effect.token)
   if (existing) {
     existing.abort()
     cancelControllers.delete(effect.token)
   }
 
-  const timer = debounceTimers.get(effect.token)
-  if (timer !== undefined) {
-    clearTimeout(timer)
-    debounceTimers.delete(effect.token)
-  }
+  // `cancel()` clears the one-shot, detaches its abort listener and drops the
+  // registry entry — the three moves are one operation by construction (#77).
+  debounces.get(effect.token)?.cancel()
 
   const ws = websockets.get(effect.token)
   if (ws) {

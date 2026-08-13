@@ -13,12 +13,13 @@ import { mulberry32, randomSeed } from './internal/prng.js'
  * - `'error'` — report as a property failure (with the scheduling stack). Use it
  *   when you own every effect in the component under test.
  * - `'warn'` — the DEFAULT. Report once per `propertyTest` call on `console.warn`
- *   and let the run pass. A timer can be armed at `dispose()` without being a
- *   defect (`@llui/effects`' `debounce` runner schedules a one-shot that checks
- *   `signal.aborted` when it fires instead of clearing on abort — it cannot
- *   dispatch into a disposed handle; issue #77), and when the timer lives inside a library
- *   the author cannot act on the report at all. Failing by default would break
- *   every existing suite whose component debounces.
+ *   and let the run pass. The sweep is indiscriminate by construction — it sees
+ *   every timer scheduled while the window is open, including ones the
+ *   environment or a third-party library armed — and a timer can be armed at
+ *   `dispose()` without being a defect (a one-shot that checks `signal.aborted`
+ *   when it fires cannot dispatch into a disposed handle). When the timer lives
+ *   inside a library the author cannot act on the report at all, so failing by
+ *   default would break suites over something they cannot fix.
  * - `'off'` — do not sweep. The harness then installs NO scheduling wrappers, so
  *   nothing patches the timer globals and no stack is captured per timer.
  */
