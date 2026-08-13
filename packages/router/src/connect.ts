@@ -20,7 +20,104 @@ export interface RouterEffect {
   y?: number
 }
 
+// ── Router environment ───────────────────────────────────────────
+
+/**
+ * The History / Location / scroll surface `connectRouter` depends on, injected
+ * rather than reached for globally — the same pattern `@llui/dom`'s
+ * `dom-env.ts` already models, and for the same three reasons: no
+ * `globalThis` mutation (strict-isolate runtimes forbid it), no process-level
+ * singleton two routers could collide on, and a test/SSR host can supply its
+ * own surface instead of shimming the world.
+ *
+ * The surface is deliberately narrow — exactly what the connector touches. The
+ * READ members return an empty/`null` value where the corresponding global is
+ * absent, matching the guards this replaced; the MUTATORS dereference their
+ * global at call time, so invoking one on a runtime with no history is the same
+ * error it always was.
+ */
+export interface RouterEnv {
+  /** `location.hash` (`''` where there is no location). */
+  readonly hash: string
+  /** `location.pathname` (`''` where there is no location). */
+  readonly pathname: string
+  /** `location.search` (`''` where there is no location). */
+  readonly search: string
+  /** `history.state` (`null` where there is no history). */
+  readonly historyState: unknown
+
+  /** Assign `location.hash` — a same-document navigation that fires `hashchange`. */
+  setHash(hash: string): void
+  /** `location.replace(url)` — swap the current entry without growing history. */
+  replaceLocation(url: string): void
+
+  pushState(state: unknown, url: string): void
+  replaceState(state: unknown, url: string): void
+  back(): void
+  forward(): void
+  /** `history.go(delta)` — used to REWIND a blocked pop, never a fresh push. */
+  go(delta: number): void
+
+  scrollTo(x: number, y: number): void
+
+  /**
+   * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
+   * caller never has to hold the handler identity to detach it.
+   */
+  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
+}
+
+/**
+ * Wrap the browser globals as a {@link RouterEnv} — the default for
+ * `connectRouter`.
+ *
+ * Reads delegate through getters, so evaluating this on a server process before
+ * a DOM exists is safe: the globals are only dereferenced when a member is
+ * actually used, and the read members fall back rather than throwing (the
+ * connector seeds its starting route at construction time, which happens at
+ * module scope in most apps).
+ */
+export function browserRouterEnv(): RouterEnv {
+  return {
+    get hash() {
+      return typeof location === 'undefined' ? '' : location.hash
+    },
+    get pathname() {
+      return typeof location === 'undefined' ? '' : location.pathname
+    },
+    get search() {
+      return typeof location === 'undefined' ? '' : location.search
+    },
+    get historyState() {
+      return typeof history === 'undefined' ? null : history.state
+    },
+    setHash: (hash) => {
+      location.hash = hash
+    },
+    replaceLocation: (url) => location.replace(url),
+    pushState: (state, url) => history.pushState(state, '', url),
+    replaceState: (state, url) => history.replaceState(state, '', url),
+    back: () => history.back(),
+    forward: () => history.forward(),
+    go: (delta) => history.go(delta),
+    scrollTo: (x, y) => window.scrollTo(x, y),
+    onUrlChange: (event, handler) => {
+      window.addEventListener(event, handler)
+      return () => {
+        window.removeEventListener(event, handler)
+      }
+    },
+  }
+}
+
 export interface ConnectOptions<R> {
+  /**
+   * The History/Location surface to drive (default: {@link browserRouterEnv}).
+   * Inject one to route a test, an SSR host, or an embedded frame through its
+   * own history without touching the page's.
+   */
+  env?: RouterEnv
+
   /**
    * Called before entering a new route. Return:
    * - `void` / `undefined` → allow navigation
@@ -132,6 +229,13 @@ export interface ConnectedRouter<R> {
 /** history.state key holding our monotonic navigation index. */
 const STATE_KEY = '__llui_idx'
 
+/** Our navigation index carried by a history state, or `null` if absent. */
+function indexOf(state: unknown): number | null {
+  if (!state || typeof state !== 'object') return null
+  const value = (state as Record<string, unknown>)[STATE_KEY]
+  return typeof value === 'number' ? value : null
+}
+
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
@@ -142,12 +246,17 @@ export function connectRouter<R>(
   const navigateMsg: (route: R) => unknown =
     options?.navigateMsg ?? ((r: R) => ({ type: 'navigate', route: r }))
 
+  // Every history/location touch below goes through this. Never reach for
+  // `location`/`history`/`window` directly here (#111).
+  const env = options?.env ?? browserRouterEnv()
+
   // Seed currentRoute from the current location so the first navigation's
   // guards see the actual starting route as `from` (not null) and a
-  // blocked navigation can restore the real starting URL.
+  // blocked navigation can restore the real starting URL. With no location the
+  // env reads as `''`, which matches to the root route (or the fallback under a
+  // base) — exactly what the `'#/'`/`'/'` defaults this replaced resolved to.
   function currentInput(): string {
-    if (typeof location === 'undefined') return router.mode === 'hash' ? '#/' : '/'
-    return router.mode === 'hash' ? location.hash : location.pathname + location.search
+    return router.mode === 'hash' ? env.hash : env.pathname + env.search
   }
   let currentRoute: R | null = (() => {
     try {
@@ -161,13 +270,8 @@ export function connectRouter<R>(
   // popstate is undone with history.go(delta) (never a fresh pushState, which
   // would grow a forward entry on every block).
   let currentIndex = 0
-  if (
-    typeof history !== 'undefined' &&
-    history.state &&
-    typeof (history.state as Record<string, unknown>)[STATE_KEY] === 'number'
-  ) {
-    currentIndex = (history.state as Record<string, number>)[STATE_KEY]!
-  }
+  const seededIndex = indexOf(env.historyState)
+  if (seededIndex !== null) currentIndex = seededIndex
   // Suppress the echo event our own URL mutation triggers, so a single
   // navigation dispatches exactly once (see findings 2a/2b/2c).
   let suppressNextHashchange = false
@@ -175,11 +279,11 @@ export function connectRouter<R>(
 
   function pushUrl(path: string): void {
     currentIndex += 1
-    history.pushState({ [STATE_KEY]: currentIndex }, '', path)
+    env.pushState({ [STATE_KEY]: currentIndex }, path)
   }
 
   function replaceUrl(path: string): void {
-    history.replaceState({ [STATE_KEY]: currentIndex }, '', path)
+    env.replaceState({ [STATE_KEY]: currentIndex }, path)
   }
 
   function sameHash(a: string, b: string): boolean {
@@ -189,9 +293,9 @@ export function connectRouter<R>(
 
   /** Set location.hash, optionally suppressing the echo hashchange dispatch. */
   function setHash(newHash: string, suppress: boolean): void {
-    if (sameHash(location.hash, newHash)) return
+    if (sameHash(env.hash, newHash)) return
     if (suppress) suppressNextHashchange = true
-    location.hash = newHash
+    env.setHash(newHash)
   }
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route
@@ -249,8 +353,8 @@ export function connectRouter<R>(
         if (finalRoute === null) return
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          if (!sameHash(location.hash, finalPath)) suppressNextHashchange = true
-          location.replace(finalPath)
+          if (!sameHash(env.hash, finalPath)) suppressNextHashchange = true
+          env.replaceLocation(finalPath)
         } else {
           replaceUrl(finalPath)
         }
@@ -283,13 +387,13 @@ export function connectRouter<R>(
         break
       }
       case 'back':
-        history.back()
+        env.back()
         break
       case 'forward':
-        history.forward()
+        env.forward()
         break
       case 'scroll':
-        window.scrollTo(effect.x!, effect.y!)
+        env.scrollTo(effect.x!, effect.y!)
         break
     }
   }
@@ -341,14 +445,12 @@ export function connectRouter<R>(
             } else if (suppressNextPopstate) {
               suppressNextPopstate = false
               // Resync the index to the entry history.go landed us on.
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
+              const landed = indexOf(env.historyState)
+              if (landed !== null) currentIndex = landed
               return
             }
 
-            const input =
-              router.mode === 'hash' ? location.hash : location.pathname + location.search
-            const route = router.match(input)
+            const route = router.match(currentInput())
             const finalRoute = runGuards(route)
             if (finalRoute === null) {
               // Guard blocked the browser-driven navigation — restore the URL.
@@ -357,20 +459,17 @@ export function connectRouter<R>(
                   // Reverse the pop with history.go(delta), tracked by a
                   // monotonic index — NEVER pushState, which would leave a
                   // stray forward entry on every block (finding 2c).
-                  const st = history.state as Record<string, unknown> | null
-                  const poppedIdx =
-                    st && typeof st[STATE_KEY] === 'number' ? (st[STATE_KEY] as number) : 0
-                  const delta = currentIndex - poppedIdx
+                  const delta = currentIndex - (indexOf(env.historyState) ?? 0)
                   if (delta !== 0) {
                     suppressNextPopstate = true
-                    history.go(delta)
+                    env.go(delta)
                   }
                 } else {
                   // Hash mode: restore the previous hash without dispatching.
                   const restore = router.href(currentRoute)
-                  if (!sameHash(location.hash, restore)) {
+                  if (!sameHash(env.hash, restore)) {
                     suppressNextHashchange = true
-                    location.hash = restore
+                    env.setHash(restore)
                   }
                 }
               }
@@ -378,16 +477,15 @@ export function connectRouter<R>(
             }
             // Allowed — resync index to the entry we're now on.
             if (router.mode === 'history') {
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
+              const landed = indexOf(env.historyState)
+              if (landed !== null) currentIndex = landed
             }
             currentRoute = finalRoute
             send(factory(finalRoute))
           }
-          window.addEventListener(event, handler)
-          return () => {
-            window.removeEventListener(event, handler)
-          }
+          // The env hands back its own unsubscribe, so the mount teardown never
+          // has to name the target it registered on.
+          return env.onUrlChange(event, handler)
         }),
       ]
     },

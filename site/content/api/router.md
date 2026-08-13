@@ -42,10 +42,11 @@ const routing = connectRouter(router)
 
 ### Router
 
-| Function                       | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `createRouter(routes, config)` | Create router instance (`history` or `hash` mode)       |
-| `connectRouter(router)`        | Connect router to LLui effects, returns routing helpers |
+| Function                       | Description                                                 |
+| ------------------------------ | ----------------------------------------------------------- |
+| `createRouter(routes, config)` | Create router instance (`history` or `hash` mode)           |
+| `connectRouter(router)`        | Connect router to LLui effects, returns routing helpers     |
+| `browserRouterEnv()`           | The default History/Location adapter `connectRouter` drives |
 
 ### Routing Helpers (from connectRouter)
 
@@ -59,6 +60,29 @@ const routing = connectRouter(router)
 | `.back()`                             | Navigate back effect                                          |
 | `.forward()`                          | Navigate forward effect                                       |
 | `.scroll()`                           | Scroll restoration effect                                     |
+
+## History / Location adapter
+
+`connectRouter` never reaches for `location`, `history` or `window` directly —
+every URL read and mutation goes through an injectable `RouterEnv`, the same
+pattern `@llui/dom` uses for `DomEnv`. The default is `browserRouterEnv()`,
+whose reads fall back to `''`/`null` where the global is absent, so building the
+connector at module scope on a server is safe.
+
+Pass your own to drive a test, an SSR host, or an embedded frame without
+touching the page's history:
+
+```ts
+import { connectRouter, browserRouterEnv } from '@llui/router/connect'
+import type { RouterEnv } from '@llui/router/connect'
+
+const routing = connectRouter(router, { env: myEnv })
+```
+
+`RouterEnv` members: `hash` / `pathname` / `search` / `historyState` (reads),
+`setHash` / `replaceLocation` / `pushState` / `replaceState` / `back` /
+`forward` / `go` / `scrollTo` (mutations), and `onUrlChange(event, handler)`
+which returns its own unsubscribe.
 
 ## Guards
 
