@@ -155,6 +155,12 @@ paste behaviour instead of silently swallowing the event.
 function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
+### `$isMarkdownListNode()`
+
+```typescript
+function $isMarkdownListNode(node: LexicalNode | null | undefined): node is MarkdownListNode
+```
+
 ### `$isWikiLinkNode()`
 
 ```typescript
@@ -169,6 +175,15 @@ exporter relies on that position (see the transformer's `export`).
 
 ```typescript
 function $setFrontmatter(source: string | null): void
+```
+
+### `asListMarker()`
+
+Narrow an unknown to a {@link ListMarker}, or `null`. `find` keeps this a
+lookup rather than a cast: the element type IS `ListMarker`.
+
+```typescript
+function asListMarker(value: unknown): ListMarker | null
 ```
 
 ### `blockAtPoint()`
@@ -376,6 +391,16 @@ function indicatorRect(blocks: readonly BlockRect[], target: DropTarget): Indica
 
 ```typescript
 function init(opts: InitOptions): [EditorState, EditorEffect[]]
+```
+
+### `isCheckedMarker()`
+
+Whether a task marker's interior means "ticked". GFM ticks `[x]` and `[X]`
+alike; reading it case-sensitively is exactly the #100 defect, so every place
+that asks the question asks it through this one predicate.
+
+```typescript
+function isCheckedMarker(inner: string | undefined): boolean
 ```
 
 ### `isImageData()`
@@ -587,6 +612,17 @@ function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 
 ## Types
 
+### `AnyListNode`
+
+Either list class. `MarkdownListNode` IS a `ListNode` at runtime, but Lexical
+encodes a node's config chain in its `$config()` return type, and this node
+deliberately declares a different one — so the two are not assignable to each
+other and a helper that takes both has to say so.
+
+```typescript
+export type AnyListNode = ListNode | MarkdownListNode
+```
+
 ### `BlockType`
 
 The block kind at the selection — base rich-text kinds plus list/code,
@@ -723,6 +759,16 @@ Which surfaces a command item appears in (default: all).
 
 ```typescript
 export type ItemSurface = 'toolbar' | 'floating' | 'slash' | 'context'
+```
+
+### `ListMarker`
+
+The character a list was authored with: a bullet (`-`/`*`/`+`) or an ordered
+delimiter (`.`/`)`). Both are "the marker" for CommonMark's purposes — §5.3
+gives them the same rule.
+
+```typescript
+export type ListMarker = '-' | '*' | '+' | '.' | ')'
 ```
 
 ### `OverlayKind`
@@ -1445,6 +1491,18 @@ export interface WikiLinkPluginOptions {
 
 ## Classes
 
+### `MarkdownListNode`
+
+A list that remembers the character it was authored with.
+
+```typescript
+class MarkdownListNode extends ListNode {
+  $config()
+  getMarker(): ListMarker | null
+  setMarker(marker: ListMarker | null): this
+}
+```
+
 ### `WikiLinkNode`
 
 An atomic inline wikilink. Extends `TextNode` so the caret, selection and
@@ -1504,9 +1562,14 @@ const FRONTMATTER_BRIDGE_TYPE
 ### `GFM_NODES`
 
 Node classes required to render the GFM superset.
+`LexicalNodeConfig`, not `Klass<LexicalNode>`: lists are registered as a
+`{ replace, with, withKlass }` redirect onto `MarkdownListNode`, which is the
+only way to take a node's own `$config` transform out of play. See
+`nodes/list.ts` — without it two adjacent lists with different markers cannot
+exist in the tree at all, whoever built them.
 
 ```typescript
-const GFM_NODES: ReadonlyArray<Klass<LexicalNode>>
+const GFM_NODES: ReadonlyArray<LexicalNodeConfig>
 ```
 
 ### `GFM_TRANSFORMERS`
@@ -1538,6 +1601,18 @@ the rendering itself must change — mapping the URL is what
 
 ```typescript
 const IMAGE_BRIDGE_TYPE
+```
+
+### `MARKDOWN_LIST_NODES`
+
+The node registrations a marker-aware editor needs: the stock `ListNode`
+(which the replacement is keyed on and which still deserializes any document
+saved before this existed), this subclass, and the redirect that makes
+`$createListNode` — and therefore every list command, transformer and DOM
+conversion in `@lexical/list` — produce the subclass.
+
+```typescript
+const MARKDOWN_LIST_NODES: readonly LexicalNodeConfig[]
 ```
 
 ### `STRIKETHROUGH_CLASS`

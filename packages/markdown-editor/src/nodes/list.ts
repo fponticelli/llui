@@ -1,0 +1,208 @@
+// A marker-aware `ListNode` — the node half of issue #129.
+//
+// ## Why a node subclass is unavoidable here
+//
+// CommonMark 0.31 §5.3: "Changing the bullet or ordered list delimiter starts a
+// new list." `- a` then `* b` is two lists. A blank line between items of the
+// SAME marker only makes the list LOOSE — it does not split it — so a marker
+// change is the ONLY way CommonMark can express two adjacent lists at all. An
+// editor that cannot round-trip one therefore has no valid serialization for
+// that document.
+//
+// The obvious place to fix that is the markdown importer, and it is not enough.
+// Two adjacent same-type lists cannot survive in a stock Lexical tree AT ALL,
+// no matter who built them: `ListNode`'s own `$config().$transform` calls
+// `mergeNextSiblingListIfSameType`, which merges any two adjacent lists whose
+// `listType` matches — and `-`, `*` and `+` all map to `bullet`. Build two by
+// hand, in a headless editor, with no markdown involved, and they are one list
+// by the end of the update. Re-splitting them from a second transform is not an
+// option either: upstream would merge them again on the next pass, and the
+// transform loop would never reach a fixed point.
+//
+// So the marker has to be part of the merge decision, and the merge decision
+// lives in a transform this package can only replace by owning the node. A
+// subclass whose own `$config()` declares `extends: ElementNode` skips
+// `ListNode`'s config entirely — `iterStaticNodeConfigChain` follows the
+// declared `extends` in preference to the prototype chain — which is what takes
+// the unconditional merge out of the picture. That also drops the two other
+// things `ListNode`'s config carries, so both are restored here: `importDOM` is
+// re-declared from `super.$config()` (HTML paste of `<ul>`/`<ol>` must keep
+// working) and the ordered-value bookkeeping is re-implemented below.
+//
+// `$createListNode` is redirected onto this class by the `{replace, with,
+// withKlass}` entry in {@link MARKDOWN_LIST_NODES}, so every list in the editor
+// — typed, imported, pasted, or made by `INSERT_UNORDERED_LIST_COMMAND` — is a
+// `MarkdownListNode`. Nothing else in the package needs to know: `$isListNode`
+// and `$getNearestNodeOfType(…, ListNode)` are `instanceof` checks that a
+// subclass satisfies.
+//
+// If Lexical ever makes the sibling merge marker-aware (or lets a node opt out
+// of the transform), delete this module and go back to the stock `ListNode`.
+
+import {
+  $getState,
+  $setState,
+  createState,
+  ElementNode,
+  type LexicalNode,
+  type LexicalNodeConfig,
+} from 'lexical'
+import { $isListItemNode, $isListNode, ListNode } from '@lexical/list'
+
+/** The character a list was authored with: a bullet (`-`/`*`/`+`) or an ordered
+ * delimiter (`.`/`)`). Both are "the marker" for CommonMark's purposes — §5.3
+ * gives them the same rule. */
+export type ListMarker = '-' | '*' | '+' | '.' | ')'
+
+const MARKERS: readonly ListMarker[] = ['-', '*', '+', '.', ')']
+
+/** Narrow an unknown to a {@link ListMarker}, or `null`. `find` keeps this a
+ * lookup rather than a cast: the element type IS `ListMarker`. */
+export function asListMarker(value: unknown): ListMarker | null {
+  return MARKERS.find((marker) => marker === value) ?? null
+}
+
+/**
+ * The authored marker, or `null` for a list nobody spelled one for — a list
+ * made by the toolbar, by `INSERT_UNORDERED_LIST_COMMAND`, or pasted as HTML.
+ *
+ * `null` is not the same as `'-'`, and the difference is what keeps the split
+ * rule from firing where no author ever changed a marker: an unspelled list
+ * merges with anything of its type and adopts that list's marker.
+ */
+const markerState = createState('lluiListMarker', {
+  parse: asListMarker,
+  resetOnCopyNode: true,
+})
+
+/** Either list class. `MarkdownListNode` IS a `ListNode` at runtime, but Lexical
+ * encodes a node's config chain in its `$config()` return type, and this node
+ * deliberately declares a different one — so the two are not assignable to each
+ * other and a helper that takes both has to say so. */
+export type AnyListNode = ListNode | MarkdownListNode
+
+/** A list that remembers the character it was authored with. */
+export class MarkdownListNode extends ListNode {
+  // `extends: ElementNode` is the whole point: `iterStaticNodeConfigChain`
+  // follows a config's declared `extends` in preference to the prototype chain,
+  // so declaring `ElementNode` is what takes `ListNode`'s config — and with it
+  // the unconditional adjacent-list merge — out of this node's chain.
+  //
+  // That is also precisely what TypeScript objects to. Lexical encodes the
+  // config chain in the `$config()` RETURN TYPE (a `STATIC_NODE_TYPE` accessor
+  // accumulated through `extends`), so a subclass that declares an `extends`
+  // other than its real superclass returns a record that is not assignable to
+  // the superclass's. The divergence is the feature, and it is the only lever
+  // the runtime offers — there is no way to unregister a transform a registered
+  // node's `$config` contributes.
+  //
+  // The suppression is narrow and self-policing: if Lexical ever makes this
+  // assignable the directive itself becomes an error, and if Lexical ever stops
+  // honouring a declared `extends` the #129 cases in
+  // `test/list-import.test.ts` fail loudly rather than silently.
+  // @ts-expect-error — deliberate config-chain divergence; see above.
+  $config() {
+    const inherited = super.$config().list
+    return this.config('md-list', {
+      // Restored explicitly, because skipping `ListNode`'s config also skips
+      // the DOM conversions that make HTML paste of `<ul>`/`<ol>` work.
+      ...(inherited?.importDOM === undefined ? {} : { importDOM: inherited.importDOM }),
+      $transform: $reconcileMarkdownList,
+      extends: ElementNode,
+    })
+  }
+
+  getMarker(): ListMarker | null {
+    return $getState(this, markerState)
+  }
+
+  setMarker(marker: ListMarker | null): this {
+    return $setState(this, markerState, marker)
+  }
+}
+
+export function $isMarkdownListNode(
+  node: LexicalNode | null | undefined,
+): node is MarkdownListNode {
+  return node instanceof MarkdownListNode
+}
+
+/**
+ * Two lists may be joined when they are the same `listType` and no AUTHOR ever
+ * distinguished them. Two spelled markers that differ is precisely CommonMark's
+ * "a new list starts here"; anything else (either side unspelled) merges, and
+ * the spelled marker wins.
+ */
+function canJoinLists(list: MarkdownListNode, next: MarkdownListNode): boolean {
+  if (list.getListType() !== next.getListType()) return false
+  const marker = list.getMarker()
+  const nextMarker = next.getMarker()
+  return marker === null || nextMarker === null || marker === nextMarker
+}
+
+/**
+ * Append `list2`'s children to `list1` and drop `list2`, splicing a nested list
+ * at the seam into the one before it so a merge does not leave two sibling
+ * sublists inside adjacent items. (A port of `@lexical/list`'s unexported
+ * `mergeLists`, which this node's transform replaces.)
+ */
+function $mergeLists(list1: AnyListNode, list2: AnyListNode): void {
+  const lastOfFirst = list1.getLastChild()
+  const firstOfSecond = list2.getFirstChild()
+  if ($isListItemNode(lastOfFirst) && $isListItemNode(firstOfSecond)) {
+    const nestedA = lastOfFirst.getFirstChild()
+    const nestedB = firstOfSecond.getFirstChild()
+    if ($isListNode(nestedA) && $isListNode(nestedB)) {
+      $mergeLists(nestedA, nestedB)
+      firstOfSecond.remove()
+    }
+  }
+  const toMerge = list2.getChildren()
+  if (toMerge.length > 0) list1.append(...toMerge)
+  list2.remove()
+}
+
+/**
+ * Give every item the ordinal it should carry, and clear a stray `checked` on a
+ * list that is not a check list. (A port of `@lexical/list`'s unexported
+ * `updateChildrenListItemValue`, for the same reason as {@link $mergeLists}.)
+ */
+function $updateChildrenListItemValue(list: AnyListNode): void {
+  const isNotChecklist = list.getListType() !== 'check'
+  let value = list.getStart()
+  for (const child of list.getChildren()) {
+    if (!$isListItemNode(child)) continue
+    if (child.getValue() !== value) child.setValue(value)
+    if (isNotChecklist && child.getChecked() !== undefined) child.setChecked(undefined)
+    // An item that only holds a nested list is not itself numbered.
+    if (!$isListNode(child.getFirstChild())) value++
+  }
+}
+
+/** This node's `$transform`: `ListNode`'s job, with the merge made marker-aware. */
+function $reconcileMarkdownList(node: MarkdownListNode): void {
+  const next = node.getNextSibling()
+  if ($isMarkdownListNode(next) && canJoinLists(node, next)) {
+    if (node.getMarker() === null) node.setMarker(next.getMarker())
+    $mergeLists(node, next)
+  }
+  $updateChildrenListItemValue(node)
+}
+
+/**
+ * The node registrations a marker-aware editor needs: the stock `ListNode`
+ * (which the replacement is keyed on and which still deserializes any document
+ * saved before this existed), this subclass, and the redirect that makes
+ * `$createListNode` — and therefore every list command, transformer and DOM
+ * conversion in `@lexical/list` — produce the subclass.
+ */
+export const MARKDOWN_LIST_NODES: readonly LexicalNodeConfig[] = [
+  ListNode,
+  MarkdownListNode,
+  {
+    replace: ListNode,
+    with: (node: ListNode): MarkdownListNode =>
+      new MarkdownListNode(node.getListType(), node.getStart()),
+    withKlass: MarkdownListNode,
+  },
+]

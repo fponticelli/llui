@@ -139,6 +139,24 @@ export { GFM_NODES, GFM_TRANSFORMERS, HIGHLIGHT_TRANSFORMER } from './transforme
 // The CommonMark-correct fenced-code transformer. Already part of
 // `GFM_TRANSFORMERS`; exported for consumers assembling a transformer set by hand.
 export { CODE_INFO_TRANSFORMER, normalizeCodeInfo } from './transformers/code.js'
+// The CommonMark-correct list transformers — a marker change starts a new list
+// (#129) and `[X]` ticks a box (#100). Already part of `GFM_TRANSFORMERS`; they
+// require `MARKDOWN_LIST_NODES` (already part of `GFM_NODES`) to be registered,
+// since two adjacent lists cannot survive a stock `ListNode`.
+export {
+  CHECK_LIST_TRANSFORMER,
+  ORDERED_LIST_TRANSFORMER,
+  UNORDERED_LIST_TRANSFORMER,
+  isCheckedMarker,
+} from './transformers/list.js'
+export {
+  MARKDOWN_LIST_NODES,
+  MarkdownListNode,
+  $isMarkdownListNode,
+  asListMarker,
+  type ListMarker,
+  type AnyListNode,
+} from './nodes/list.js'
 // `setTransformerPrecedence` breaks ties between SAME-rank transformers, so a
 // collision (e.g. wikilink vs upstream LINK, which both match at the same index)
 // is resolved structurally instead of by the order a consumer lists plugins in.
