@@ -1,5 +1,6 @@
 import { describe, it, expect, expectTypeOf, vi } from 'vitest'
 import { handleEffects, upload, type UploadEffect, type Effect, type ApiError } from '../src/index'
+import { trackAbortListeners } from './helpers/track-abort-listeners'
 
 type Msg =
   | { type: 'progress'; loaded: number; total: number }
@@ -169,6 +170,36 @@ describe('runUpload error contract', () => {
     // the (previously dead) ontimeout handler now fires a timeout ApiError
     FakeXHR.last!.ontimeout?.()
     expect(send).toHaveBeenCalledWith({ type: 'error', error: { kind: 'timeout' } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('retires its abort listener once the request settles', () => {
+    // The listener exists to abort an IN-FLIGHT upload. Once the request has
+    // settled it can only retain a finished XHR, and a component uploading in a
+    // loop would keep one per upload for its whole life (issue #77).
+    vi.stubGlobal('XMLHttpRequest', FakeXHR)
+    const send = vi.fn()
+    const handler = handleEffects<Effect>().else(() => {})
+    const controller = new AbortController()
+    const listeners = trackAbortListeners(controller.signal)
+
+    for (let i = 0; i < 3; i++) {
+      handler({
+        effect: makeEffect((e) => ({ type: 'error', error: e })) as Effect,
+        send,
+        signal: controller.signal,
+      })
+      FakeXHR.last!.respond(200, 'OK', '{}')
+    }
+
+    // The chain itself registers exactly ONE listener per mount signal (its
+    // registry teardown), on the first dispatch and never again; everything
+    // after it is per-upload and must be handed back.
+    const [chainTeardown, ...perUpload] = listeners.added
+    expect(perUpload).toHaveLength(3)
+    expect(listeners.removed).toEqual(perUpload)
+    expect(listeners.removed).not.toContain(chainTeardown)
 
     vi.unstubAllGlobals()
   })

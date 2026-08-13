@@ -17,12 +17,21 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
     }
   }
 
+  // Aborting the scope aborts the request; SETTLING the request retires the
+  // listener. A long-lived component uploading N files would otherwise leave N
+  // dead listeners — each retaining a finished XHR — on its mount signal. Same
+  // rule as `timeout`/`debounce` (issue #77): whoever finishes first releases
+  // the other.
+  const onAbort = (): void => xhr.abort()
+  const settled = (): void => signal.removeEventListener('abort', onAbort)
+
   xhr.upload.onprogress = (e: ProgressEvent) => {
     if (signal.aborted) return
     send(effect.onProgress(e.loaded, e.total))
   }
 
   xhr.onload = () => {
+    settled()
     if (signal.aborted) return
     let data: unknown
     try {
@@ -47,16 +56,18 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
   }
 
   xhr.onerror = () => {
+    settled()
     if (signal.aborted) return
     send(effect.onError({ kind: 'network', message: 'Upload failed' }))
   }
 
   xhr.ontimeout = () => {
+    settled()
     if (signal.aborted) return
     send(effect.onError({ kind: 'timeout' }))
   }
 
-  signal.addEventListener('abort', () => xhr.abort(), { once: true })
+  signal.addEventListener('abort', onAbort, { once: true })
 
   xhr.send(effect.body)
 }

@@ -59,7 +59,7 @@ export function handleEffectsWith<E extends { type: string }, M = never>(
     if (cached) return cached
     const registry: Registry = {
       cancelControllers: new Map(),
-      debounceTimers: new Map(),
+      debounces: new Map(),
       websockets: new Map(),
     }
     registries.set(signal, registry)
@@ -69,8 +69,11 @@ export function handleEffectsWith<E extends { type: string }, M = never>(
         () => {
           for (const ctrl of registry.cancelControllers.values()) ctrl.abort()
           registry.cancelControllers.clear()
-          for (const timer of registry.debounceTimers.values()) clearTimeout(timer)
-          registry.debounceTimers.clear()
+          // Each entry clears its own timer and drops its own abort listener;
+          // it removes itself from the map too, so the `clear()` is belt and
+          // braces against an entry that has already been superseded.
+          for (const debounce of [...registry.debounces.values()]) debounce.cancel()
+          registry.debounces.clear()
           for (const ws of registry.websockets.values()) {
             ws.onclose = null // don't dispatch app onClose after unmount
             ws.close()

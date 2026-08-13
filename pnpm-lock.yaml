@@ -615,7 +615,14 @@ importers:
         specifier: workspace:*
         version: link:../compiler
 
-  packages/effects: {}
+  packages/effects:
+    devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@llui/test':
+        specifier: workspace:*
+        version: link:../test
 
   packages/lexical:
     devDependencies:

@@ -30,8 +30,22 @@ export type PluginFn = (ctx: {
  */
 export interface Registry {
   cancelControllers: Map<string, AbortController>
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>
+  debounces: Map<string, DebounceEntry>
   websockets: Map<string, WebSocket>
+}
+
+/**
+ * A pending debounce one-shot, held as its TEARDOWN rather than as a bare timer
+ * id (issue #77). Retiring a debounce is two moves that must never come apart:
+ * clear the timer, and detach the `'abort'` listener that exists to clear it. A
+ * cancel — or the next keystroke superseding this one — that cleared only the
+ * timer would leave one listener per superseded debounce hanging off the mount's
+ * signal for the life of the component. `cancel()` also drops this entry from
+ * the registry, and is idempotent, so the mount-wide teardown, `cancel(key)` and
+ * the abort listener can all call it in any order.
+ */
+export interface DebounceEntry {
+  cancel(): void
 }
 
 /**
