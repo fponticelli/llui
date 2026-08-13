@@ -308,6 +308,13 @@ function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: 
 
 ### `extractStateSchema()`
 
+Walk `type State = { … }` (or a type matching a user-provided name) and emit
+a JSON-serializable shape descriptor. Supports primitives, string-literal
+unions, arrays, nested objects, `T | undefined` optional fields and
+`T | null` nullable ones (optionality and nullability are distinct — see
+{@link StateType}).
+Returns null if the named type isn't found or isn't a type literal.
+
 ```typescript
 function extractStateSchema(source: string, typeName = 'State'): StateSchema | null
 ```
@@ -608,7 +615,7 @@ function sparseMsgAnnotations(
 
 Build a TypeScript expression representing the given StateType as a
 runtime-readable literal. The emission shape mirrors the StateType
-tagged union — `string`/`number`/`boolean`/`unknown` become string
+tagged union — `string`/`number`/`boolean`/`null`/`unknown` become string
 literals; the structural kinds become object literals with a `kind`
 field plus the appropriate payload (`of`/`fields`/`values`).
 Used by the transform for state-schema emission. The shape
@@ -988,11 +995,25 @@ export type SchemaHashInput = {
 
 ### `StateType`
 
+Descriptor for one state field's type, as consumed by agents/devtools.
+`'null'` describes a field whose declared type includes `null`. It is a
+VALUE, not an absence: `null` survives JSON (state must be
+JSON-serializable) and TypeScript keeps `field: T | null` required, so a
+nullable field is emitted as `{kind: 'union', of: [T, 'null']}` and NEVER
+as `{kind: 'optional'}`. When `T` is itself a union its members are spliced
+into that list rather than nested, so the member list stays flat:
+`string | number | null` is `{kind: 'union', of: ['string', 'number',
+'null']}`. `T | undefined` is the opposite case — it means
+the field may be absent, and is emitted as `{kind: 'optional', of: T}`
+exactly like `field?: T`. A field declared `T | null | undefined` is both:
+`{kind: 'optional', of: {kind: 'union', of: [T, 'null']}}`.
+
 ```typescript
 export type StateType =
   | 'string'
   | 'number'
   | 'boolean'
+  | 'null'
   | 'unknown'
   | { kind: 'enum'; values: string[] }
   | { kind: 'array'; of: StateType }
