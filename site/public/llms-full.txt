@@ -17184,9 +17184,30 @@ function blockSource(node: RootContent, source: string): string
 
 Walk the tree and collect every link/image reference definition, keyed by
 lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
+The result is the WHOLE-document table — a definition anywhere, including one
+that arrives late in a streamed tail, resolves for a reference anywhere.
+Collection is incremental: blocks reused from the previous parse contribute
+their already-collected definitions instead of being re-walked, so a streamed
+append costs O(tail) rather than O(document).
+BREAKING (behaviour, not just the type): this used to build and hand back a
+FRESH, safely-mutable `Map` on every call. It now returns the LIVE memoized
+table for that tree. The `ReadonlyMap` type says so, but a cast defeats it —
+`(collectDefinitions(root) as Map<string, Definition>).delete('r')` permanently
+poisons the cache for `root`, and every later render of that tree sees the
+damage. Copy it (`new Map(collectDefinitions(root))`) if you need to mutate.
+For the same reason the tree itself is treated as immutable once parsed: do not
+mutate a tree's nodes and re-collect, the memo will not notice.
 
 ```typescript
-function collectDefinitions(root: Root): Map<string, Definition>
+function collectDefinitions(root: Root): ReadonlyMap<string, Definition>
+```
+
+### `collectDocumentLabels()`
+
+The document-global labels of `root` (see {@link DocumentLabels}).
+
+```typescript
+function collectDocumentLabels(root: Root): DocumentLabels
 ```
 
 ### `createMarkdown()`
@@ -17201,6 +17222,29 @@ Build a reactive Markdown view bound to a specific parser.
 
 ```typescript
 function createMarkdown(parse: ParseFn)
+```
+
+### `definitionBlocksScanned()`
+
+Test/benchmark hook: reads (and optionally resets) the number of TOP-LEVEL
+BLOCKS examined by definition collection (memoized or not). A streamed append
+must examine only the freshly parsed tail blocks — the reused prefix is carried
+over as already-merged entries, so this stays CONSTANT as the document grows
+rather than sweeping every block per change.
+
+```typescript
+function definitionBlocksScanned(reset = false): number
+```
+
+### `definitionNodesVisited()`
+
+Test/benchmark hook: reads (and optionally resets) the number of mdast nodes
+visited by definition collection. A streamed append must visit only the freshly
+parsed tail blocks — reused prefix blocks contribute their already-collected
+definitions without being re-walked.
+
+```typescript
+function definitionNodesVisited(reset = false): number
 ```
 
 ### `incrementalParse()`
@@ -17347,6 +17391,21 @@ export type TransformLink = (
 ```
 
 ## Interfaces
+
+### `DocumentLabels`
+
+The document-global label tables of one tree.
+
+```typescript
+export interface DocumentLabels {
+  /** Link/image reference definitions by lowercased identifier (first wins). */
+  readonly definitions: ReadonlyMap<string, Definition>
+  /** Namespaced label identifiers — `l:` for reference definitions, `f:` for
+   * footnote definitions — so a link def `x` stays distinct from a footnote def
+   * `x`. This is the set the incremental parser's reuse guard compares. */
+  readonly ids: ReadonlySet<string>
+}
+```
 
 ### `IncrementalResult`
 
