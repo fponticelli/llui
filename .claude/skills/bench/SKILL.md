@@ -83,18 +83,13 @@ Single runs have ±15% variance. Use `--runs 3` or `--runs 5` before saving a ba
 Both suites require a local clone of `js-framework-benchmark`. If a run fails, tell the user to run:
 
 ```bash
-pnpm bench:setup            # one-time: clone jfb-repo + compile webdriver-ts (both suites need this)
+pnpm bench:setup            # one-time: clone jfb-repo, install it, compile webdriver-ts, build the ticker apps (both suites need this)
 pnpm bench:ticker:setup     # one-time, TICKER ONLY: symlink ticker apps + apply jfb patches
 ```
 
-`bench:setup` clones the repo into `benchmarks/js-framework-benchmark-repo/` and compiles `webdriver-ts` (gitignored). The **ticker** suite additionally needs `bench:ticker:setup`, which symlinks the ticker apps and applies the jfb patches managed by `scripts/setup-ticker.ts`. `pnpm bench:all` will fail on the ticker leg if `bench:ticker:setup` hasn't been run.
+`bench:setup` (`scripts/setup-bench.ts`) clones the repo into `benchmarks/js-framework-benchmark-repo/` (gitignored), installs its three trees (repo root, `server/`, `webdriver-ts/`), compiles `webdriver-ts`, and builds the five ticker apps. On a fresh clone the `server/` tree is actually produced by upstream's own root `postinstall` (`cd server && npm install`), so that step usually only VERIFIES it and runs `npm ci` when it doesn't match the lockfile. It is idempotent — a re-run reuses the clone, skips an install whose tree still matches its `package-lock.json`, and skips apps that already have a `dist/main.js` (`--force` redoes everything; `--skip-ticker-apps` stops after the harness). The **ticker** suite additionally needs `bench:ticker:setup`, which symlinks the ticker apps and applies the jfb patches managed by `scripts/setup-ticker.ts`. `pnpm bench:all` will fail on the ticker leg if `bench:ticker:setup` hasn't been run.
 
-If manual setup is needed:
-
-```
-git clone https://github.com/krausest/js-framework-benchmark.git benchmarks/js-framework-benchmark-repo
-cd benchmarks/js-framework-benchmark-repo && npm ci && cd webdriver-ts && npm ci && npm run compile
-```
+**Do NOT hand-run the install chain** (issue #81). Upstream's own root manifest does not resolve under npm's strict peer checking (`eslint@^10` vs `eslint-plugin-react`'s `<=9` peer), so a plain `npm ci` at the jfb repo root aborts with ERESOLVE — and in a `&&` chain it takes the `server/` and `webdriver-ts/` installs down with it. `bench:setup` retries the root with `--legacy-peer-deps` (only on a genuine `npm error code ERESOLVE`), then VERIFIES each install against its `package-lock.json` — every declared `node_modules/...` path must exist, transitive deps included — and fails naming the step that broke. npm's exit code is not evidence: `npm ci --omit=dev` exits 0 on a tree with no devDependencies, and a missing transitive (`fastify`'s `find-my-way`) leaves every direct dep in place while still breaking the server at boot. If you ever see `Cannot find module 'yargs'`, a missing `@types/node`, or `jfb server failed to start on port 8080`, the cause is an install that never ran — the fix is `pnpm bench:setup`, not a manual `npm ci`.
 
 The runners auto-detect a running jfb server on port 8080 but validate it before use — stale/broken repos are skipped in favor of the workspace copy.
 

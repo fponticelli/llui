@@ -27,7 +27,10 @@ pnpm --filter @llui/dom check
 cd packages/dom && pnpm vitest run test/signals/runtime.test.ts
 
 # Benchmarks (js-framework-benchmark)
-pnpm bench:setup              # One-time: clone + compile js-framework-benchmark repo
+pnpm bench:setup              # One-time: clone + install + compile the js-framework-benchmark repo,
+                              # then build the 5 ticker apps (scripts/setup-bench.ts; idempotent).
+                              # Never hand-run the npm ci chain — upstream's root install ERESOLVEs
+                              # and a && chain silently skips the installs the harness needs (#81).
 pnpm bench                    # Build + run jfb + compare against saved baseline
 pnpm bench --runs 3           # N runs, median-of-medians (reduces single-run noise)
 pnpm bench --save             # Overwrite baseline with current results
