@@ -19,6 +19,7 @@ import { signalToProduce } from './lower.js'
 import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings } from './helper-bindings.js'
+import { CANONICAL_HELPER_NAMES, type HelperEmitNames } from './runtime-helpers.js'
 
 // ── Import-binding recognition context ────────────────────────────────────────
 // The per-file `@llui/dom` binding set that gates every framework-call
@@ -40,6 +41,30 @@ export function setHelperBindings(b: HelperBindings | null): void {
  * bare-identifier callee). */
 function resolveCallee(call: ts.CallExpression): string | null {
   return (currentBindings ?? EMPTY_BINDINGS).resolveCall(call)
+}
+
+// ── Emitted runtime-helper identifiers ───────────────────────────────────────
+// Which IDENTIFIER each `@llui/dom` helper is emitted under in this file. Normally
+// the canonical name, but the component transform aliases any helper whose name
+// the file already uses, because the import it injects would otherwise re-declare
+// (or be shadowed by) it — issue #90. The alias has to be decided BEFORE lowering
+// and used at every emission site: a post-hoc rename of the emitted text can't
+// work, since an edit's text also carries VERBATIM user code where the same name
+// legitimately means the user's binding. Ambient + module-scoped like the binding
+// set above; unset (null) means canonical names.
+//
+// The setter RETURNS THE PRIOR VALUE and the caller restores it in `finally`,
+// rather than resetting to the default: a nested lowering (a re-entrant transform
+// driven from a hook) must leave the outer file's table exactly as it found it, or
+// the outer file finishes lowering against canonical names and emits calls that
+// bind to the user's value. Same reasoning as the runtime's commit-scope guards.
+let emitNames: HelperEmitNames = CANONICAL_HELPER_NAMES
+/** Set the ambient helper emit-name table for the file being lowered (null =
+ * canonical names), returning the table it replaced for the caller to restore. */
+export function setHelperEmitNames(names: HelperEmitNames | null): HelperEmitNames {
+  const prev = emitNames
+  emitNames = names ?? CANONICAL_HELPER_NAMES
+  return prev
 }
 
 // ── Auto-batch ambient context (Opportunity A) ───────────────────────────────
@@ -687,7 +712,7 @@ export function transformNodeExpr(
       const arg = node.arguments[0]
       if (!arg) return node.getText(sf)
       if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
-        return `staticText(${arg.getText(sf)})`
+        return `${emitNames.staticText}(${arg.getText(sf)})`
       }
       // Only lower when the arg is rooted in the bag signal. A signal-bound LOCAL
       // (e.g. `const n = state.at('n'); … text(n)` in a block-body view) is opaque
@@ -697,7 +722,7 @@ export function transformNodeExpr(
       const { produce, deps } = signalToProduce(arg, sf, roots)
       if (produce === null) return node.getText(sf) // unlowerable — runtime `text` consumes the handle
       if (collect) for (const d of deps) collect.add(d)
-      return `signalText((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
+      return `${emitNames.signalText}((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
     }
 
     if (callee === 'each') {
@@ -804,7 +829,7 @@ export function transformNodeExpr(
           const source = emitSource(factoryDeps)
           if (source !== null) {
             eachLoweredHook?.(eachPos)
-            return `signalEachDirect(${source}, ${keySrc}, ${factory})`
+            return `${emitNames.signalEachDirect}(${source}, ${keySrc}, ${factory})`
           }
         }
         if (!renderFn) reportBail('each-direct', 'missing-render', eachPos)
@@ -834,10 +859,11 @@ export function transformNodeExpr(
           if (source !== null) {
             eachLoweredHook?.(eachPos)
             const prelude = [...leaked].map(
-              (p) => `const ${p} = rowHandle(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
+              (p) =>
+                `const ${p} = ${emitNames.rowHandle}(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
             )
             const param = leaked.size > 0 ? 'getCtx' : ''
-            return `signalEach(${source}, ${keySrc}, ${emitArm(body, prelude, param)})`
+            return `${emitNames.signalEach}(${source}, ${keySrc}, ${emitArm(body, prelude, param)})`
           }
         }
         // unlowerable render -> fall through to verbatim (runtime authoring each)
@@ -886,7 +912,7 @@ export function transformNodeExpr(
           // (its arms' value deps are collected by the lowerArmArray calls above).
           if (collect) for (const d of condLowered.deps) collect.add(d)
           const elseSrc = orElse ? `, ${emitArm(elseBody!, [])}` : ''
-          return `signalShow(${condSpec}, ${emitArm(thenBody, [])}${elseSrc})`
+          return `${emitNames.signalShow}(${condSpec}, ${emitArm(thenBody, [])}${elseSrc})`
         }
         // unlowerable arm -> fall through to verbatim (runtime authoring show)
       }
@@ -978,7 +1004,7 @@ export function transformNodeExpr(
             // changes (arm value deps are collected by the lowerArmArray calls above).
             if (collect)
               for (const d of discDep !== null ? [discDep] : valueLowered.deps) collect.add(d)
-            return `signalBranch(${discSpec}, { ${armsSrc.join(', ')} })`
+            return `${emitNames.signalBranch}(${discSpec}, { ${armsSrc.join(', ')} })`
           }
           // unlowerable arm -> fall through to verbatim (runtime authoring branch)
         }
@@ -1020,7 +1046,7 @@ export function transformNodeExpr(
         }
         if (armsOk) {
           if (collect) for (const d of signalToProduce(value, sf, roots).deps) collect.add(d)
-          return `signalBranch(${valueSpec2}, { ${armsSrc.join(', ')} })`
+          return `${emitNames.signalBranch}(${valueSpec2}, { ${armsSrc.join(', ')} })`
         }
         // unlowerable arm -> fall through to verbatim (runtime authoring branch)
       }
@@ -1048,7 +1074,7 @@ export function transformNodeExpr(
           // tag / mount / unmount are imperative — kept verbatim
           return p.getText(sf)
         })
-        return `signalForeign({ ${props.join(', ')} })`
+        return `${emitNames.signalForeign}({ ${props.join(', ')} })`
       }
     }
 
@@ -1084,7 +1110,7 @@ export function transformNodeExpr(
       const childrenSrc = childrenExpr
         ? `[${childrenExpr.elements.map((c) => transformNodeExpr(c, sf, roots, collect)).join(', ')}]`
         : '[]'
-      return `el(${JSON.stringify(callee)}, ${propsSrc}, ${childrenSrc})`
+      return `${emitNames.el}(${JSON.stringify(callee)}, ${propsSrc}, ${childrenSrc})`
     }
   }
 
@@ -1405,7 +1431,7 @@ function lowerRowFactory(
           if (produce === null) return bail('row-prop-unlowerable')
           if (collect) for (const d of deps) collect.add(d)
           bindings.push(
-            `{ deps: ${hoistDeps(deps)}, produce: ${hoistProduce(produce)}, commit: (v) => applyAttr(${locate(id)}, ${JSON.stringify(name)}, v) }`,
+            `{ deps: ${hoistDeps(deps)}, produce: ${hoistProduce(produce)}, commit: (v) => ${emitNames.applyAttr}(${locate(id)}, ${JSON.stringify(name)}, v) }`,
           )
           continue
         }
@@ -1426,7 +1452,7 @@ function lowerRowFactory(
           // once PER CLONE via `applyAttr` on the located node (`.peek()` reads → live
           // ctx; a leaked handle is caught by the final guard). style./IDL names bailed.
           wire.push(
-            `applyAttr(${locate(id)}, ${JSON.stringify(name)}, ${rewriteHandlerReads(init, sf, hRoots)})`,
+            `${emitNames.applyAttr}(${locate(id)}, ${JSON.stringify(name)}, ${rewriteHandlerReads(init, sf, hRoots)})`,
           )
         }
       }
@@ -1542,7 +1568,7 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
     const stateDeps = [...collected]
       .filter((d) => d === 'state' || d.startsWith('state.'))
       .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
-    return `eachDirect(${items.getText(sf)}, ${keySrc}, ${factory}, ${depsArr(stateDeps)})`
+    return `${emitNames.eachDirect}(${items.getText(sf)}, ${keySrc}, ${factory}, ${depsArr(stateDeps)})`
   }
   // Mid-tier: the factory bailed (its reason is reported) — try the render-arm
   // lowering. Item reads compile to ctx producers; verbatim children survive
@@ -1572,9 +1598,10 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
     // authoring each creates), so verbatim helper children receive a Signal<T>.
     // The arm always takes `getCtx` here: rewritten handlers reference it.
     const prelude = [...leaked].map(
-      (p) => `const ${p} = rowHandle(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
+      (p) =>
+        `const ${p} = ${emitNames.rowHandle}(getCtx, ${p === indexParam ? "'index'" : "'item'"})`,
     )
-    return `eachArm(${items.getText(sf)}, ${keySrc}, ${emitArm(armBody, prelude, 'getCtx')})`
+    return `${emitNames.eachArm}(${items.getText(sf)}, ${keySrc}, ${emitArm(armBody, prelude, 'getCtx')})`
   }
   return null
 }
@@ -1593,7 +1620,7 @@ function transformProps(
         const { produce, deps } = signalToProduce(p.initializer, sf, roots)
         if (produce !== null) {
           if (collect) for (const d of deps) collect.add(d)
-          return `${name}: react((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
+          return `${name}: ${emitNames.react}((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
         }
         // unlowerable — keep verbatim so the runtime binder consumes the handle
         return `${name}: ${p.initializer.getText(sf)}`

@@ -14,6 +14,115 @@ function assertParses(src: string): void {
   expect(diags.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([])
 }
 
+/** Every identifier the module's TOP-LEVEL statements bind in the value namespace —
+ * imports of any kind, `const`/`let`/`var` (destructuring included), function/class/
+ * enum declarations. Written independently of the compiler's own collector so the
+ * duplicate-binding assertions below fail if that collector stops being consulted. */
+function topLevelBindingNames(src: string): string[] {
+  const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const out: string[] = []
+  const addBindingName = (n: ts.BindingName): void => {
+    if (ts.isIdentifier(n)) out.push(n.text)
+    else for (const el of n.elements) if (ts.isBindingElement(el)) addBindingName(el.name)
+  }
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st)) {
+      const clause = st.importClause
+      if (!clause) continue
+      if (clause.name) out.push(clause.name.text)
+      const nb = clause.namedBindings
+      if (nb && ts.isNamespaceImport(nb)) out.push(nb.name.text)
+      else if (nb && ts.isNamedImports(nb)) for (const spec of nb.elements) out.push(spec.name.text)
+    } else if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) addBindingName(d.name)
+    } else if (
+      (ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) &&
+      st.name &&
+      ts.isIdentifier(st.name)
+    ) {
+      out.push(st.name.text)
+    } else if (ts.isEnumDeclaration(st)) {
+      out.push(st.name.text)
+    }
+  }
+  return out
+}
+
+/** A duplicate top-level binding is a SyntaxError in the emitted module (issue #90) —
+ * and one the parser alone does NOT report, so it needs its own check. */
+function assertNoDuplicateTopLevelBindings(src: string): void {
+  const names = topLevelBindingNames(src)
+  expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([])
+}
+
+/** The local name any `@llui/dom` import in `src` binds the export `helper` to
+ * (its canonical name, or the alias chosen around a collision), or null when the
+ * file imports it under no name at all. */
+function injectedBindingFor(src: string, helper: string): string | null {
+  const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  for (const st of sf.statements) {
+    if (
+      !ts.isImportDeclaration(st) ||
+      !ts.isStringLiteral(st.moduleSpecifier) ||
+      st.moduleSpecifier.text !== '@llui/dom'
+    ) {
+      continue
+    }
+    const nb = st.importClause?.namedBindings
+    if (!nb || !ts.isNamedImports(nb)) continue
+    for (const spec of nb.elements) {
+      if ((spec.propertyName ?? spec.name).text === helper) return spec.name.text
+    }
+  }
+  return null
+}
+
+/** One node built by the stub runtime below. */
+interface StubNode {
+  helper: string
+  tag?: unknown
+}
+
+/** Execute a transformed module against a STUB `@llui/dom` and return what its
+ * component's `view` builds. This is the behavioural half of the #90 gate: it
+ * proves WHICH binding the lowered call reached, where a text assertion could
+ * not — a skipped injection (or an alias not threaded into the call sites) makes
+ * the view call the fixture's own `el`, which throws.
+ *
+ * The transform's output is ESM; rewrite its `@llui/dom` imports to a destructure
+ * of the stub (and drop `export`) so it runs as a plain function body. Fixtures
+ * used here are written without type annotations so the result is valid JS. */
+function runLoweredView(out: string): StubNode[] {
+  const js = out
+    .replace(
+      /import \{([^}]*)\} from '@llui\/dom'/g,
+      (_m, names: string) => `const { ${names.replace(/(\w+) as (\w+)/g, '$1: $2')} } = __dom`,
+    )
+    .replace(/^export /gm, '')
+  const node = (helper: string) => (tag?: unknown) => ({ helper, tag })
+  const stub = {
+    component: (config: unknown) => config,
+    el: node('el'),
+    signalText: node('signalText'),
+    staticText: node('staticText'),
+    div: () => {
+      throw new Error('authoring `div` must not run in lowered output')
+    },
+    text: () => {
+      throw new Error('authoring `text` must not run in lowered output')
+    },
+  }
+  const build = new Function('__dom', `${js}\nreturn C.view({ state: {}, send: () => {} })`)
+  const built: unknown = build(stub)
+  if (!Array.isArray(built)) throw new Error('view did not return an array')
+  return built.map((n: unknown) => {
+    if (typeof n !== 'object' || n === null || !('helper' in n) || typeof n.helper !== 'string') {
+      throw new Error(`unexpected view node: ${String(n)}`)
+    }
+    return { helper: n.helper, tag: 'tag' in n ? n.tag : undefined }
+  })
+}
+
 describe('transformSignalComponentSource', () => {
   it('rewrites a signal view and injects the runtime import', () => {
     const src = [
@@ -945,6 +1054,239 @@ describe('transformSignalComponentSource', () => {
       assertParses(out)
       // the shadowed `div([])` must NOT become el("div", ...)
       expect(out).not.toContain('el("div"')
+    })
+  })
+
+  // Issue #90: the injected `import { … } from '@llui/dom'` declares TOP-LEVEL
+  // bindings, so it must consult EVERY top-level declaration in the file — not
+  // just the file's other `@llui/dom` import specifiers. A collision is resolved
+  // by ALIASING (and emitting the alias at the lowered call sites), never by
+  // skipping: a skipped import silently leaves the lowered call bound to the
+  // user's value.
+  describe('import injection: top-level name collisions (#90)', () => {
+    const COLLIDING_DECLARATIONS: ReadonlyArray<readonly [label: string, decl: string]> = [
+      ['const', "const el = document.createElement('span')"],
+      ['function', 'function el() { return 1 }'],
+      ['class', 'class el {}'],
+      ['let', 'let el'],
+      ['var', 'var el = 1'],
+      ['destructuring', 'const { el } = { el: 1 }'],
+      ['array destructuring', 'const [el] = [1]'],
+      ['export const', "export const el = 'mine'"],
+      ['enum', 'enum el { a }'],
+      ['non-dom named import', "import { el } from './my-helpers.js'"],
+      ['default import', "import el from './my-helpers.js'"],
+      ['type-only import', "import type { el } from './my-types.js'"],
+      ['namespace import', "import * as el from './my-helpers.js'"],
+    ]
+
+    /** A component whose `div(...)` lowers to the runtime `el(...)`, prefixed by
+     * a user declaration that takes the `el` name. */
+    const sourceWith = (decl: string): string =>
+      [
+        "import { component, div, text } from '@llui/dom'",
+        decl,
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+
+    for (const [label, decl] of COLLIDING_DECLARATIONS) {
+      it(`aliases the injected helper around a top-level ${label} of the same name`, () => {
+        const out = transformSignalComponentSource(sourceWith(decl), { fileName: 'x.tsx' })
+        assertParses(out)
+        assertNoDuplicateTopLevelBindings(out)
+        const bound = injectedBindingFor(out, 'el')
+        expect(bound).not.toBeNull()
+        expect(bound).not.toBe('el') // the canonical name is taken → aliased
+        // the lowered call must use the ALIAS, so it reaches the runtime helper
+        expect(out).toContain(`${bound!}("div"`)
+      })
+    }
+
+    it('the lowered call reaches the runtime helper, not the user binding', () => {
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        "const el = () => { throw new Error('user el called') }",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      // Executed against a stub `@llui/dom`: if the injection were skipped (or the
+      // alias not threaded into the call sites) this throws from the user's `el`.
+      const nodes = runLoweredView(out)
+      expect(nodes).toEqual([{ helper: 'el', tag: 'div' }])
+    })
+
+    it('dodges a binding that shadows the helper only INSIDE the lowered view', () => {
+      // Block-body views ARE lowered, so the emitted call lands in a scope the
+      // user's own `const el` shadows. A top-level-only collision scan misses it
+      // and the lowered `el("div", …)` silently calls the user's function.
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => {',
+        "    const el = () => { throw new Error('user el called') }",
+        "    return [div([text(state.at('n'))])]",
+        '  },',
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      expect(injectedBindingFor(out, 'el')).not.toBe('el')
+      expect(runLoweredView(out)).toEqual([{ helper: 'el', tag: 'div' }])
+    })
+
+    it('dodges a `var` hoisted out of a top-level block', () => {
+      // `var` in a block hoists to MODULE scope, so it collides with the injected
+      // import — but it is invisible to a scan of the file's top-level statements.
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        "if (globalThis) { var el = () => { throw new Error('user el called') } }",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      expect(injectedBindingFor(out, 'el')).not.toBe('el')
+      // executing proves the duplicate declaration is gone AND the call routes right
+      expect(runLoweredView(out)).toEqual([{ helper: 'el', tag: 'div' }])
+    })
+
+    it('a namespace import does not trigger a false collision on its members', () => {
+      const src = [
+        "import * as dom from '@llui/dom'",
+        "import { component, div, text } from '@llui/dom'",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      // `el` is free (only `dom` is bound) → injected under its canonical name
+      expect(injectedBindingFor(out, 'el')).toBe('el')
+      expect(out).toContain('el("div"')
+    })
+
+    it('still subtracts a helper the file already imports from @llui/dom', () => {
+      const src = [
+        "import { component, el, div, text } from '@llui/dom'",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      // exactly one binding of `el`, the user's own — no alias, no re-import
+      expect(injectedBindingFor(out, 'el')).toBe('el')
+      expect(topLevelBindingNames(out).filter((n) => n === 'el')).toEqual(['el'])
+      expect(out).toContain('el("div"')
+    })
+
+    it('aliases when a @llui/dom import binds the helper name to a DIFFERENT export', () => {
+      // `text as el` takes the name `el` — subtracting on the LOCAL name alone
+      // would leave the lowered `el(...)` calling the text helper.
+      const src = [
+        "import { component, text as el, div } from '@llui/dom'",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([el(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      const bound = injectedBindingFor(out, 'el')
+      expect(bound).not.toBeNull()
+      expect(bound).not.toBe('el')
+      expect(out).toContain(`${bound!}("div"`)
+    })
+
+    it('over-approximates on a type-only declaration, and stays correct', () => {
+      // A `type`/`interface` name lives in the TYPE namespace and could not
+      // actually collide with a value import, so the alias here is unnecessary.
+      // That is the deliberate trade: the collision test is "does this identifier
+      // occur at all", which cannot miss a real collision (a hoisted `var`, a
+      // shadow inside a lowered block-body view) at the price of the occasional
+      // alias nobody needed. What must hold either way is that the lowered call
+      // reaches whatever the injected import binds.
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'type el = string',
+        'interface signalText { x: number }',
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      const el = injectedBindingFor(out, 'el')
+      const signalText = injectedBindingFor(out, 'signalText')
+      expect(el).not.toBeNull()
+      expect(signalText).not.toBeNull()
+      expect(out).toContain(`${el!}("div"`)
+      expect(out).toContain(`${signalText!}((s) => s.n`)
+    })
+
+    it('picks a fresh alias when the obvious one is itself taken', () => {
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        "const el = 'mine'",
+        "const el$llui = 'also mine'",
+        'export const C = component({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      const bound = injectedBindingFor(out, 'el')
+      expect(bound).not.toBeNull()
+      expect(bound).not.toBe('el')
+      expect(bound).not.toBe('el$llui')
+      expect(out).toContain(`${bound!}("div"`)
+    })
+
+    it('aliases in a .ts file with a generic arrow (ScriptKind is per filename)', () => {
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'const identity = <T,>(x: T): T => x',
+        "const el = 'mine'",
+        'export const C = component({',
+        '  init: () => ({ n: identity(0) }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [div([text(state.at('n'))])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, { fileName: 'x.ts' })
+      assertParses(out)
+      assertNoDuplicateTopLevelBindings(out)
+      const bound = injectedBindingFor(out, 'el')
+      expect(bound).not.toBe('el')
+      expect(out).toContain(`${bound!}("div"`)
     })
   })
 })
