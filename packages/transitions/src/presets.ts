@@ -168,6 +168,10 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const easing = opts.easing ?? 'ease-out'
   const appear = opts.appear !== false
   const sizeProp = axis === 'y' ? 'height' : 'width'
+  // The one property collapse transitions — anything else ending on the element
+  // (a hover `background-color`, a sibling fade) must not resolve the wait and
+  // let the runtime detach the row mid-collapse (#105).
+  const sizeProperties = [sizeProp]
   const runs = createRunScope()
   const reducedMotion = (): boolean => opts.respectReducedMotion !== false && prefersReducedMotion()
 
@@ -210,7 +214,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     forceReflow(el)
     style[sizeProp] = `${naturalSize}px`
 
-    return waitForEnd(el, duration).then(() => {
+    return waitForEnd(el, duration, sizeProperties).then(() => {
       if (!runs.isCurrent(el, token)) return
       restore()
       runs.end(el, token)
@@ -244,7 +248,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     forceReflow(el)
     style[sizeProp] = '0px'
 
-    return waitForEnd(el, duration).then(() => {
+    return waitForEnd(el, duration, sizeProperties).then(() => {
       // Leave finished — under show/branch/each the runtime removes the element
       // next, so keep the collapsed state. SETTLE rather than `end` the run: on
       // a REUSED element (the `@llui/vike` route seam calls enter on the element

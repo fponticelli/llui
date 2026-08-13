@@ -10,6 +10,7 @@ import {
   snapshotInline,
   restoreInline,
   removeClassesOnly,
+  animatedProperties,
 } from './style-utils.js'
 import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
 
@@ -48,6 +49,13 @@ import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
  * route seam calls `enter` on the very element it just left — the enter clears
  * that residue before snapshotting its own baseline.
  *
+ * Completion: a phase resolves only once EVERY property it animates (the style
+ * keys of its `from`/`to` values) has reported a `transitionend` on the element
+ * itself — an unrelated `transitionend` (a hover `background-color`, or the fast
+ * half of `transition: opacity 100ms, transform 500ms`) does not end the phase,
+ * because the runtime detaches a leaving node on exactly that promise. A
+ * class-only spec names no properties, so any end on the target resolves it.
+ *
  * Duration (used only for the fallback timer / when no CSS transition fires):
  *  - If `duration` is given, it is used verbatim.
  *  - Otherwise, computed `transition-duration + transition-delay` is read after
@@ -58,6 +66,12 @@ export function transition(spec: TransitionSpec): TransitionOptions {
   // One scope per bundle: enter↔leave interrupt each other, but this bundle
   // never clobbers a sibling bundle merged onto the same element.
   const runs = createRunScope()
+
+  // The properties each phase animates between, so a `transitionend` for some
+  // unrelated property on the same element can't resolve the wait early and let
+  // the runtime detach the node mid-animation (#105). Computed once per bundle.
+  const enterProperties = animatedProperties(spec.enterFrom, spec.enterTo)
+  const leaveProperties = animatedProperties(spec.leaveFrom, spec.leaveTo)
 
   const reducedMotion = (): boolean => spec.respectReducedMotion !== false && prefersReducedMotion()
 
@@ -115,7 +129,7 @@ export function transition(spec: TransitionSpec): TransitionOptions {
 
     return Promise.all(
       els.map((el, i) =>
-        waitForEnd(el, duration).then(() => {
+        waitForEnd(el, duration, enterProperties).then(() => {
           // Superseded by a newer run — leave cleanup to that run.
           if (!runs.isCurrent(el, tokens[i]!)) return
           cleanups[i]!()
@@ -178,7 +192,7 @@ export function transition(spec: TransitionSpec): TransitionOptions {
     const duration = spec.duration ?? detectDuration(els[0]!)
     return Promise.all(
       els.map((el, i) =>
-        waitForEnd(el, duration).then(() => {
+        waitForEnd(el, duration, leaveProperties).then(() => {
           // Leave completed. We don't strip its resting values: under
           // show/branch/each the element is about to be removed, and blanking
           // `opacity: 0` here would flash the outgoing content back for a frame.

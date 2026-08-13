@@ -10,6 +10,8 @@
 //      delayed cleanup checks that its token is still the current one before
 //      touching the element.
 
+import { camelToKebab } from './style-utils.js'
+
 /** Buffer added to the fallback timer so styles settle before resolution. */
 export const TIMING_BUFFER_MS = 16
 
@@ -37,30 +39,78 @@ export function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms + TIMING_BUFFER_MS))
 }
 
+/** The `propertyName` a `transitionend` carries, when it carries one at all. */
+function endedProperty(e: Event): string | undefined {
+  const name = (e as TransitionEvent).propertyName
+  return typeof name === 'string' ? name : undefined
+}
+
 /**
  * Resolve when the element's CSS transition/animation ends, or after
  * `durationMs` (+ buffer) as a fallback — whichever comes first. The fallback
  * is essential: in a background/throttled tab `transitionend` never fires, so
  * without it a Promise-gated leave would deadlock (e.g. route navigation).
+ *
+ * `properties` names the CSS properties this phase actually animates (see
+ * `animatedProperties`); camelCase DOM keys are accepted and normalized. It is
+ * load-bearing, not an optimization: the
+ * runtime DETACHES a leaving node on this promise (`arm-controller.ts`), so
+ * resolving on some unrelated `transitionend` — a hover `background-color` on
+ * the same element, or the fast half of a `transition: opacity 100ms, transform
+ * 500ms` pair — removes the node mid-animation (issue #105). Every listed
+ * property must end before the wait resolves; a property that never fires falls
+ * through to the timer, so being over-inclusive can only cost the early resolve,
+ * never a hang.
+ *
+ * Two deliberate escape hatches:
+ *  - An EMPTY `properties` means "nothing to discriminate on" — a class-driven
+ *    spec contributes no style keys — so any end on the target resolves.
+ *  - A `transitionend` with no `propertyName` (a synthetic `new Event(...)`)
+ *    resolves too, for the same reason: there is no property to match, and
+ *    ignoring what may be the genuine completion signal risks a stall. Every
+ *    real browser populates the field, so this only affects synthetic events.
+ *
+ * `animationend` stays target-filtered only. It reports an `animationName` (a
+ * `@keyframes` identifier), which carries no relation to a CSS property, so
+ * there is nothing here to match it against.
  */
-export function waitForEnd(el: Element, durationMs: number): Promise<void> {
+export function waitForEnd(
+  el: Element,
+  durationMs: number,
+  properties?: readonly string[],
+): Promise<void> {
   if (durationMs <= 0) return Promise.resolve()
   return new Promise<void>((resolve) => {
     let done = false
+    // Consumed as each property's end arrives; empty ⇒ unfiltered. Normalized
+    // here rather than trusted from the caller: a camelCase name would match no
+    // event and silently downgrade every wait to its fallback timer.
+    const pending = new Set((properties ?? []).map(camelToKebab))
     const finish = (): void => {
       if (done) return
       done = true
-      el.removeEventListener('transitionend', onEnd)
-      el.removeEventListener('animationend', onEnd)
+      el.removeEventListener('transitionend', onTransitionEnd)
+      el.removeEventListener('animationend', onAnimationEnd)
       clearTimeout(timer)
       resolve()
     }
-    const onEnd = (e: Event): void => {
+    const onTransitionEnd = (e: Event): void => {
       // Ignore bubbled events from descendants.
+      if (e.target !== el) return
+      const property = endedProperty(e)
+      if (pending.size === 0 || property === undefined || property === '') {
+        finish()
+        return
+      }
+      // An unrelated property finishing says nothing about this phase.
+      if (!pending.delete(property)) return
+      if (pending.size === 0) finish()
+    }
+    const onAnimationEnd = (e: Event): void => {
       if (e.target === el) finish()
     }
-    el.addEventListener('transitionend', onEnd)
-    el.addEventListener('animationend', onEnd)
+    el.addEventListener('transitionend', onTransitionEnd)
+    el.addEventListener('animationend', onAnimationEnd)
     const timer = setTimeout(finish, durationMs + TIMING_BUFFER_MS)
   })
 }

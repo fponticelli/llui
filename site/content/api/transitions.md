@@ -347,6 +347,12 @@ The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
   be detached) but stays registered, so if the element is instead reused — the
   route seam calls `enter` on the very element it just left — the enter clears
   that residue before snapshotting its own baseline.
+  Completion: a phase resolves only once EVERY property it animates (the style
+  keys of its `from`/`to` values) has reported a `transitionend` on the element
+  itself — an unrelated `transitionend` (a hover `background-color`, or the fast
+  half of `transition: opacity 100ms, transform 500ms`) does not end the phase,
+  because the runtime detaches a leaving node on exactly that promise. A
+  class-only spec names no properties, so any end on the target resolves it.
   Duration (used only for the fallback timer / when no CSS transition fires):
 - If `duration` is given, it is used verbatim.
 - Otherwise, computed `transition-duration + transition-delay` is read after

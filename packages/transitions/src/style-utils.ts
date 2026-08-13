@@ -38,7 +38,7 @@ function formatStyleValue(prop: string, value: string | number): string {
  * `font-weight`, `-webkit-transform`). Custom properties (`--foo`) and already
  * kebab-cased keys pass through unchanged.
  */
-function camelToKebab(key: string): string {
+export function camelToKebab(key: string): string {
   return key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 }
 
@@ -113,6 +113,28 @@ export function styleKeysOf(value: TransitionValue | undefined): string[] {
     return keys
   }
   return Object.keys(value)
+}
+
+/**
+ * The kebab-case CSS property names a phase animates BETWEEN — the union of the
+ * style keys of its `from` and `to` values, which is what `TransitionEvent`
+ * reports as `propertyName`. Used by {@link waitForEnd} to ignore a
+ * `transitionend` for some unrelated property on the same element (issue #105).
+ *
+ * The `active` value is deliberately NOT a source: it carries the `transition:`
+ * declaration itself plus helpers like `transform-origin`, none of which ever
+ * fire an end of their own — blocking on them would strand every wait on its
+ * fallback timer. Class portions contribute nothing either, so a class-driven
+ * spec yields an empty list and the wait falls back to accepting any end.
+ */
+export function animatedProperties(
+  ...values: ReadonlyArray<TransitionValue | undefined>
+): string[] {
+  const seen = new Set<string>()
+  for (const value of values) {
+    for (const key of styleKeysOf(value)) seen.add(camelToKebab(key))
+  }
+  return Array.from(seen)
 }
 
 /**
