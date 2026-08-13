@@ -233,3 +233,28 @@ describe('navigation-menu RTL', () => {
     expect(send).not.toHaveBeenCalled()
   })
 })
+
+describe('navigation-menu.connect — tab sequence (WCAG 2.1.1)', () => {
+  it('the default state has exactly one tab stop', () => {
+    // `focused` starts null and only a trigger's own onFocus ever sets it, so
+    // without a fallback EVERY trigger reads -1 and the whole nav is
+    // unreachable by Tab (#122).
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const ids = ['home', 'products', 'about']
+    const triggers = ids.map((id) => p.item(id, { isBranch: id !== 'home' }).trigger)
+    const s = init()
+    const stops = triggers.filter((t) => read(t.tabindex, s) === 0)
+    expect(stops).toHaveLength(1)
+    // …and it is the FIRST item handed to `item()`, i.e. document order.
+    expect(read(triggers[0]!.tabindex, s)).toBe(0)
+  })
+
+  it('once an item is focused it owns the tab stop', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const first = p.item('home', { isBranch: false }).trigger
+    const second = p.item('products', { isBranch: true }).trigger
+    const s = init({ focused: 'products' })
+    expect(read(first.tabindex, s)).toBe(-1)
+    expect(read(second.tabindex, s)).toBe(0)
+  })
+})

@@ -225,6 +225,15 @@ describe('color-picker.connect area + alpha + swatches', () => {
     expect(vt).toContain('100')
   })
 
+  it('area thumb exposes aria-valuenow (required on role=slider)', () => {
+    // ARIA 1.2 makes aria-valuenow a REQUIRED property of slider, and the
+    // aria-valuetext definition says authors MUST also specify it (#122).
+    const p = connect(rootSignal(), vi.fn())
+    const s = init({ hsl: { h: 0, s: 100, l: 50 } })
+    // Horizontal axis of the 2D area = saturation.
+    expect(read(p.areaThumb['aria-valuenow'], s)).toBe(s.hsv.s)
+  })
+
   it('area thumb arrow keys nudge S/V (Shift = coarse)', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send, { step: 1, coarseStep: 10 })

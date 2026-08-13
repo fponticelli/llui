@@ -333,7 +333,9 @@ export interface TableCheckboxParts {
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
   'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+  tabindex: Signal<number>
   onClick: (e: MouseEvent) => void
+  onKeyDown: (e: KeyboardEvent) => void
 }
 
 export interface TableParts {
@@ -545,9 +547,21 @@ export function connect(
         if (isSomeSelected(s)) return 'indeterminate'
         return 'unchecked'
       }),
+      // `role="checkbox"` without a tab stop or a key handler made row and
+      // select-all selection mouse-only — APG's Checkbox pattern requires both
+      // (#122).
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       // The checkbox is a self-contained control; stop the click from bubbling
       // to an enclosing clickable header cell (which would also toggle sort).
       onClick: tagSend(send, ['toggleAll'], (e) => {
+        e.stopPropagation()
+        send({ type: 'toggleAll' })
+      }),
+      // Same containment hazard on the keyboard: the enclosing column header
+      // also acts on Space (toggle sort), so claim the key here.
+      onKeyDown: tagSend(send, ['toggleAll'], (e) => {
+        if (e.key !== ' ') return
+        e.preventDefault()
         e.stopPropagation()
         send({ type: 'toggleAll' })
       }),
@@ -558,11 +572,21 @@ export function connect(
       'data-scope': 'table',
       'data-part': 'row-checkbox',
       'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
+      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       // The checkbox lives INSIDE the clickable row, which also toggles the row
       // on click. Without stopping propagation the click would fire twice
       // (checkbox + row), cancelling out to a no-op. Stop it here so a click on
       // the checkbox toggles exactly once.
       onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+        e.stopPropagation()
+        if (e.shiftKey) send({ type: 'selectRange', index })
+        else send({ type: 'toggleRow', id, index })
+      }),
+      // The enclosing gridcell's own Space handler also toggles the row, so the
+      // same double-fire-cancels-out hazard applies to the keyboard.
+      onKeyDown: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+        if (e.key !== ' ') return
+        e.preventDefault()
         e.stopPropagation()
         if (e.shiftKey) send({ type: 'selectRange', index })
         else send({ type: 'toggleRow', id, index })

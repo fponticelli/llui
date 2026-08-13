@@ -323,6 +323,11 @@ export interface ColorPickerParts {
   areaThumb: {
     role: 'slider'
     'aria-label': string
+    /** ARIA 1.2 lists this as a REQUIRED property of `slider`, and the
+     * `aria-valuetext` definition says authors must also specify it. The area
+     * is 2D, so it reports the horizontal axis (saturation) numerically and
+     * leaves both axes to `aria-valuetext`. */
+    'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-disabled': Signal<'true' | undefined>
     tabindex: Signal<number>
@@ -478,6 +483,9 @@ export function connect(
       role: 'slider',
       'aria-label':
         opts.areaLabel ?? `${locale.colorPicker.saturation} / ${locale.colorPicker.lightness}`,
+      // Required on role="slider" (#122). Horizontal axis = saturation, 0..100
+      // — the slider defaults for valuemin/valuemax already match.
+      'aria-valuenow': state.map((s) => s.hsv.s),
       // 2D value: report both saturation and value (HSV) axes.
       'aria-valuetext': state.map(
         (s) => `${locale.colorPicker.saturation} ${s.hsv.s}%, Value ${s.hsv.v}%`,

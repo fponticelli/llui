@@ -196,6 +196,21 @@ export function connect(
     }
   }
 
+  // Roving-tabindex fallback. `focused` starts null and only a trigger's own
+  // onFocus ever sets it, so with a bare `focused === id ? 0 : -1` EVERY trigger
+  // reads -1 on the default state and the whole nav is unreachable by Tab —
+  // WCAG 2.1.1 (#122). The siblings that solve this (radio-group, tabs,
+  // menubar) fall back to the first enabled item in their `items` list, but
+  // this machine deliberately does not index the tree: the consumer owns it.
+  // So `connect` remembers the FIRST id handed to `item()`, which for any
+  // depth-first view is the first trigger in document order, and gives it the
+  // tab stop while nothing is focused.
+  let firstItemId: string | null = null
+  const tabStop = (id: string) => (st: NavMenuState) => {
+    if (st.focused !== null) return st.focused === id ? 0 : -1
+    return firstItemId === id ? 0 : -1
+  }
+
   return {
     root: {
       'aria-label': opts.label ?? locale.navigationMenu.label,
@@ -207,6 +222,7 @@ export function connect(
     },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
+      if (firstItemId === null) firstItemId = id
       return {
         trigger: {
           type: 'button',
@@ -218,7 +234,7 @@ export function connect(
           'data-part': 'trigger',
           'data-state': state.map((st) => (isOpen(st, id) ? 'open' : 'closed')),
           'data-value': id,
-          tabindex: state.map((st) => (st.focused === id ? 0 : -1)),
+          tabindex: state.map(tabStop(id)),
           onClick: tagSend(send, ['toggleBranch'], () => {
             if (options.isBranch) {
               send({ type: 'toggleBranch', id, ancestorIds })

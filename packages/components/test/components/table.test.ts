@@ -433,6 +433,65 @@ describe('table.connect — parts', () => {
     pc.selectAllCheckbox.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
   })
+
+  // The checkbox parts dictate role="checkbox" but shipped no tabindex and no
+  // key handler, so row / select-all selection was mouse-only (#122). APG's
+  // Checkbox pattern requires both.
+  it('checkbox parts are in the tab sequence', () => {
+    const base = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })
+    const pc = connect(rootSignal(), vi.fn(), { id: 't' })
+    expect(read(pc.rowCheckbox('r2', 1).tabindex, base)).toBe(0)
+    expect(read(pc.selectAllCheckbox.tabindex, base)).toBe(0)
+    const disabled = { ...base, disabled: true }
+    expect(read(pc.rowCheckbox('r2', 1).tabindex, disabled)).toBe(-1)
+    expect(read(pc.selectAllCheckbox.tabindex, disabled)).toBe(-1)
+  })
+
+  it('rowCheckbox toggles the row on Space', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalState(init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })),
+      send,
+      { id: 't' },
+    )
+    const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    const stop = vi.spyOn(e, 'stopPropagation')
+    pc.rowCheckbox('r2', 1).onKeyDown(e)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleRow', id: 'r2', index: 1 })
+    expect(e.defaultPrevented).toBe(true)
+    // The checkbox sits INSIDE a gridcell whose own Space handler also toggles
+    // the row; without stopping the key would toggle twice and cancel out.
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('selectAllCheckbox toggles everything on Space', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalState(init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })),
+      send,
+      { id: 't' },
+    )
+    const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    const stop = vi.spyOn(e, 'stopPropagation')
+    pc.selectAllCheckbox.onKeyDown(e)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+    expect(e.defaultPrevented).toBe(true)
+    // The select-all sits inside a sortable column header whose Space toggles
+    // sort — same double-fire hazard.
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('checkbox parts ignore other keys', () => {
+    const send = vi.fn()
+    const pc = connect(
+      signalState(init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })),
+      send,
+      { id: 't' },
+    )
+    pc.rowCheckbox('r2', 1).onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
+    pc.selectAllCheckbox.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(send).not.toHaveBeenCalled()
+  })
 })
 
 describe('table.connect — full grid keyboard nav with single tab stop', () => {
