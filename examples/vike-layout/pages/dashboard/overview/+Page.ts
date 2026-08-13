@@ -10,7 +10,7 @@ type OverviewMsg =
   | { type: 'add' }
   /**
    * @intent("Remove the widget with the given id from the overview list")
-   * @example({"type":"remove","id":1})
+   * @example("{\"type\":\"remove\",\"id\":1}")
    */
   | { type: 'remove'; id: number }
 

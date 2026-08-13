@@ -52,6 +52,16 @@
 //                       `lowerProps({})` key walk on the element MOUNT path — the
 //                       hot path for list rendering (issue #82, same class as #58).
 //                       Performance + noise; has a fix (blocking, like attr-name).
+//   agent-annotation-syntax — a malformed agent annotation (`@intent`/`@example`/
+//                       `@warning`/`@emits`/`@routeGated`/`@should`/`@validates`):
+//                       an unescaped quote inside the string, an unterminated
+//                       string, an unquoted argument, wrong arity. The grammar
+//                       DROPS what it can't read unambiguously, and a dropped
+//                       `@routeGated` is an ungated action while a dropped
+//                       `@validates` is an unchecked field — both silent at
+//                       runtime, so the build is the only place to say so
+//                       (issue #89; the audit's `agent-validates-syntax`,
+//                       generalized to every tag in the shared grammar).
 //
 // Each diagnostic has a message, a source position (start offset + length), and —
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
@@ -62,6 +72,7 @@ import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edit
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, bindingNames } from './helper-bindings.js'
 import { scriptKindForFilename } from './script-kind.js'
+import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -1141,7 +1152,89 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // rebinds the name to a plain value — so only a free/ambient `state` (the component
   // signal) is linted as a signal.
   visit(sf, STATE_ROOTS, false)
+  diags.push(...annotationSyntaxDiagnostics(sf))
   return diags
+}
+
+// A cheap pre-check so a file with no agent annotation at all never pays for
+// the comment walk. Mirrors the call form the grammar recognizes (`@tag(`).
+const ANNOTATION_CALL_PRECHECK = new RegExp(
+  `@(?:${Object.keys(ANNOTATION_TAGS).join('|')})[ \\t]*\\(`,
+)
+
+/**
+ * ---- agent-annotation-syntax: a malformed agent annotation ----
+ *
+ * The rule the #36 audit called for as `agent-validates-syntax`, generalized:
+ * it covers every tag in the shared annotation grammar (`annotation-args.ts`),
+ * not just `@validates`, because all seven parsers share one tokenizer now.
+ *
+ * WHY IT MUST BE A BUILD ERROR: an annotation the grammar cannot read
+ * unambiguously is DROPPED (never half-read). Dropping is the safe outcome for
+ * the parser but not for the author — a dropped `@routeGated` is an ungated
+ * variant the agent may dispatch, and a dropped `@validates` is a field nobody
+ * checks. Both are invisible at runtime (the agent boundary catches its
+ * `new Function` failures and degrades to "allow"), so the build is the only
+ * place the author can still be told (issue #89).
+ *
+ * SCOPE — deliberately narrow, and this is the false-positive story: only
+ * `/** … *\/` blocks in the positions the extractors actually READ are checked
+ * — a type alias, each member of its union, and any property signature. JSDoc
+ * on a function/const/parameter is PROSE (this repo's own sources document the
+ * grammar with `@emits("k1", "k2", ...)` and `@validates(...)` placeholders),
+ * and an annotation there would be inert anyway, so flagging it would fail
+ * valid builds for no safety gain. A line comment, a plain `/* *\/` block, and
+ * a string literal are never comments the extractors read, so they are never
+ * flagged either. A tag NOT in the call form (standard block-form `@example`
+ * followed by a code block) is not an annotation at all and is left alone.
+ */
+function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
+  if (!ANNOTATION_CALL_PRECHECK.test(sf.text)) return []
+  const out: SignalDiagnostic[] = []
+  const seen = new Set<number>()
+  const scanAt = (pos: number): void => {
+    for (const range of ts.getLeadingCommentRanges(sf.text, pos) ?? []) {
+      if (range.kind !== ts.SyntaxKind.MultiLineCommentTrivia) continue
+      if (seen.has(range.pos)) continue
+      seen.add(range.pos)
+      const text = sf.text.slice(range.pos, range.end)
+      if (!text.startsWith('/**')) continue
+      for (const err of scanAnnotationCalls(text).errors) {
+        out.push({
+          rule: 'agent-annotation-syntax',
+          message: err.message,
+          start: range.pos + err.start,
+          length: err.length,
+        })
+      }
+    }
+  }
+  const walk = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node)) {
+      // The alias's own JSDoc, then one scan position per union member —
+      // mirroring `extractMsgAnnotations` / `readLeadingJSDocForMember`: a
+      // member's JSDoc sits BEFORE its `|` separator, which is not part of the
+      // member node, so the scan starts at the previous member's `end` (and at
+      // the alias body's `pos` for the first).
+      scanAt(node.pos)
+      const body = node.type
+      if (ts.isUnionTypeNode(body)) {
+        body.types.forEach((_m, i) => {
+          const prev = i === 0 ? undefined : body.types[i - 1]
+          scanAt(prev === undefined ? body.pos : prev.end)
+        })
+      } else {
+        scanAt(body.pos)
+      }
+    } else if (ts.isPropertySignature(node)) {
+      // `@should` / `@validates` on a Msg or State field.
+      scanAt(node.pos)
+    }
+    node.forEachChild(walk)
+  }
+  walk(sf)
+  out.sort((a, b) => a.start - b.start)
+  return out
 }
 
 /** A lint diagnostic with source position resolved (1-based line, 0-based col). */
@@ -1171,7 +1264,33 @@ export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLint
     true,
     scriptKindForFilename(fileName),
   )
-  return lintSignals(sf).map((d) => {
+  return resolvePositions(sf, lintSignals(sf))
+}
+
+/**
+ * Run ONLY `agent-annotation-syntax` over a module that is not a signal
+ * component. A Msg union commonly lives in a plain `msg.ts` sibling that
+ * carries no `component(` call, so `lintSignalSource` never sees it — yet that
+ * is exactly where `@routeGated`/`@validates` are authored. The adapter calls
+ * this for every other TS module it transforms; the rule's own pre-check makes
+ * it a string test on files with no annotations.
+ */
+export function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindForFilename(fileName),
+  )
+  return resolvePositions(sf, annotationSyntaxDiagnostics(sf))
+}
+
+function resolvePositions(
+  sf: ts.SourceFile,
+  diags: readonly SignalDiagnostic[],
+): SignalLintMessage[] {
+  return diags.map((d) => {
     const lc = sf.getLineAndCharacterOfPosition(d.start)
     return {
       rule: d.rule,

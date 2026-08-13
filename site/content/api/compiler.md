@@ -64,6 +64,14 @@ props parameter is positional with a `= {}` default, so omitting it allocates th
 
 ## Functions
 
+### `allAnnotationArgs()`
+
+Arguments of every well-formed call of `tag`, in source order.
+
+```typescript
+function allAnnotationArgs(text: string, tag: string): string[][]
+```
+
 ### `annotationsToObjectLiteral()`
 
 Build a TS object-literal expression for the annotation map. Used by
@@ -338,6 +346,16 @@ function findTypeSource(
 ): Promise<ResolvedTypeSource | null>
 ```
 
+### `firstAnnotationArgs()`
+
+Arguments of the FIRST well-formed call of `tag`, or null when the tag is
+absent or every occurrence is malformed. Malformed never degrades to a
+partial value — that is the whole point of this module.
+
+```typescript
+function firstAnnotationArgs(text: string, tag: string): string[] | null
+```
+
 ### `hasNonDefaultAnnotation()`
 
 Whether the annotation map carries any non-default values. Used to
@@ -403,6 +421,19 @@ True when `f` is a rich descriptor (object with `type` key).
 
 ```typescript
 function isRichField(f: MsgField): f is MsgFieldRich
+```
+
+### `lintAnnotationSyntaxSource()`
+
+Run ONLY `agent-annotation-syntax` over a module that is not a signal
+component. A Msg union commonly lives in a plain `msg.ts` sibling that
+carries no `component(` call, so `lintSignalSource` never sees it — yet that
+is exactly where `@routeGated`/`@validates` are authored. The adapter calls
+this for every other TS module it transforms; the rule's own pre-check makes
+it a string test on files with no annotations.
+
+```typescript
+function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[]
 ```
 
 ### `lintSignalSource()`
@@ -555,6 +586,19 @@ Limitations:
 function resolveLocalConstInitializer(
   use: ts.Identifier,
 ): ts.Expression | ts.FunctionDeclaration | null
+```
+
+### `scanAnnotationCalls()`
+
+Scan `text` (a comment, or any string) for `@tag(…)` calls of the given tags.
+Defaults to every tag in {@link ANNOTATION_TAGS}. Arity is enforced here, so
+a call in `calls` is always usable as-is.
+
+```typescript
+function scanAnnotationCalls(
+  text: string,
+  tags: readonly string[] = Object.keys(ANNOTATION_TAGS),
+): AnnotationScan
 ```
 
 ### `serializeManifest()`
@@ -1018,6 +1062,54 @@ export type TypeIndex = Map<string, ts.TypeNode | ts.InterfaceDeclaration>
 
 ## Interfaces
 
+### `AnnotationCall`
+
+A well-formed `@tag(…)` call and its parsed arguments.
+
+```typescript
+export interface AnnotationCall {
+  tag: string
+  args: string[]
+  /** Offset of the `@` within the scanned comment text. */
+  start: number
+  /** Length from the `@` through the closing `)`. */
+  length: number
+}
+```
+
+### `AnnotationScan`
+
+```typescript
+export interface AnnotationScan {
+  calls: AnnotationCall[]
+  errors: AnnotationSyntaxError[]
+}
+```
+
+### `AnnotationSyntaxError`
+
+A malformed `@tag(…)` call. Positions are relative to the scanned text.
+
+```typescript
+export interface AnnotationSyntaxError {
+  tag: string
+  message: string
+  start: number
+  length: number
+}
+```
+
+### `AnnotationTagSpec`
+
+Arity of one annotation tag. `max: null` means variadic.
+
+```typescript
+export interface AnnotationTagSpec {
+  min: number
+  max: number | null
+}
+```
+
 ### `BuildManifestOptions`
 
 ```typescript
@@ -1278,6 +1370,7 @@ export interface MsgFieldRich {
    *   @validates("v >= 0 && v <= 100")        // weight 0–100
    *   @validates("v.length > 0")              // non-empty string
    *   @validates("/^[a-z0-9-]+$/.test(v)")    // slug format
+   *   @validates("v === \"admin\"")           // embedded quote: escape it
    *
    * The predicate runs ONLY at the agent boundary. Human-driven
    * dispatches bypass it because TypeScript already validated the

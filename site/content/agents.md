@@ -263,6 +263,36 @@ component itself and shape what Claude sees in `describe_app` and
 `describe_context`. Per-field `@should("...")` hints document expected
 shapes for payload fields.
 
+### Annotation argument grammar
+
+Every tag that takes arguments — `@intent`, `@example`, `@warning`, `@emits`,
+`@routeGated`, `@should`, `@validates` — shares one grammar:
+
+```
+@tag("first argument"[, "second argument"])
+```
+
+- **The `(` follows the tag on the same line.** A tag not in the call form is
+  not an annotation — plain block-form JSDoc (`@example` followed by a code
+  block) is left alone.
+- **Arguments are quoted strings**, `"…"` or `“…”` (a curly opener must be
+  closed by a curly closer). `@example({"type":"inc"})` is _not_ an argument
+  list; quote it: `@example("{\"type\":\"inc\"}")`.
+- **Escape an embedded quote as `\"`** — it round-trips intact, so a predicate
+  can say `@validates("v === \"admin\"")`. `\\` is a literal backslash. Every
+  **other** backslash sequence is preserved verbatim, so a regex predicate
+  (`@validates("/^\d{5}$/.test(v)")`) means what it says. Single quotes inside
+  a double-quoted string need no escaping at all.
+- **A string may wrap across JSDoc lines.** The continuation's `* ` decoration
+  collapses to a single space.
+
+Anything outside this grammar is a **build error** (`agent-annotation-syntax`),
+not a best-effort read. That matters most for the two predicate tags: a
+half-read `@routeGated` compiles to nothing at the agent boundary and degrades
+to an _always-open_ gate, and a half-read `@validates` degrades to _accept
+everything_ — silently, because the boundary contains its own compile failures.
+The compiler refuses to guess, and the build tells you instead.
+
 **CSP note.** The predicate annotations that gate affordance visibility —
 `@routeGated("expr", "reason")` and field-level `@validates("expr")` — are
 compiled to functions with `new Function(...)` at runtime (they evaluate the

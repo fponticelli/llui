@@ -274,8 +274,13 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
  * Predicate is compiled lazily via `new Function('state', 'return (' +
  * src + ')')` and cached in a module-level Map. Compile failures
  * (syntactically broken predicates) degrade to "available" so a single
- * malformed annotation doesn't wrongly mark a variant unavailable — the
- * build-time linter is the right place to catch syntactic issues.
+ * malformed annotation doesn't wrongly mark a variant unavailable.
+ *
+ * That fallback is defence in depth, NOT the guard: an always-open gate is
+ * a silent wrong answer. Nothing broken should reach here in the first
+ * place — the compiler's annotation grammar refuses to half-read a
+ * predicate and the `agent-annotation-syntax` lint rule fails the build on
+ * one (issue #89). Keep the try/catch; never rely on it.
  */
 function gateFields(
   ann: MessageAnnotations | undefined,

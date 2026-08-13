@@ -910,3 +910,142 @@ describe('lintSignalSource — ScriptKind follows the filename extension', () =>
     expect(diags.map((d) => d.rule)).toContain('operator-on-signal')
   })
 })
+
+describe('agent-annotation-syntax (issue #89 — the audit’s `agent-validates-syntax`)', () => {
+  // The annotation grammar is a real quoted-string tokenizer now; anything it
+  // cannot read UNAMBIGUOUSLY is a build error rather than a silently
+  // truncated predicate (a truncated `@routeGated` is an always-open gate, a
+  // truncated `@validates` accepts everything).
+  const doc = (body: string): string =>
+    `/**\n * ${body}\n */\ntype Msg = { type: 'x'; f: string }\n`
+
+  it('flags an UNESCAPED inner quote in every annotation tag', () => {
+    expect(rules(doc('@routeGated("state.mode === "admin"")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("v === "a"")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@should("say "hi"")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@intent("say "hi"")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@example("send("x")")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@warning("drops the "cloud" copy")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@emits("http:"GET"")'))).toContain('agent-annotation-syntax')
+  })
+
+  it('flags an unterminated string, a missing `)`, and an unquoted argument', () => {
+    expect(rules(doc('@intent("never closed'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("v > 0"'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates(v > 0)'))).toContain('agent-annotation-syntax')
+  })
+
+  it('flags wrong arity (too few / too many arguments)', () => {
+    expect(rules(doc('@routeGated()'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@routeGated("a", "b", "c")'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates("a", "b")'))).toContain('agent-annotation-syntax')
+  })
+
+  it('flags a mismatched curly/straight quote pair', () => {
+    expect(rules(doc('@intent(“say hi")'))).toContain('agent-annotation-syntax')
+  })
+
+  it('does NOT flag well-formed tags, including escaped and curly quotes', () => {
+    expect(rules(doc('@routeGated("state.mode === \\"admin\\"", "admins only")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules(doc('@routeGated("state.step === \'review\'")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules(doc('@validates("/^\\d{5}$/.test(v)")'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@intent(“fancy quotes”)'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@emits("http", "log")'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@should("Cite the source.") @validates("v.length > 0")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+  })
+
+  it('does NOT flag standard block-form JSDoc `@example` (no call parens)', () => {
+    // The universal JSDoc spelling — `@example` followed by a code block, not
+    // by `("…")`. The extractor ignores it; so must the rule.
+    const src = [
+      '/**',
+      ' * @example',
+      " * send({ type: 'inc' })",
+      ' */',
+      "type Msg = { type: 'inc' }",
+    ].join('\n')
+    expect(rules(src)).not.toContain('agent-annotation-syntax')
+    const inline = [
+      '/**',
+      " * @example send({ type: 'inc' })",
+      ' */',
+      "type Msg = { type: 'inc' }",
+    ].join('\n')
+    expect(rules(inline)).not.toContain('agent-annotation-syntax')
+  })
+
+  it('does NOT flag a lookalike outside a JSDoc block (string literal, line comment)', () => {
+    expect(rules('const s = \'@validates("v === "a"")\'')).not.toContain('agent-annotation-syntax')
+    expect(rules('// @validates("v === "a"")\nconst n = 1')).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules('/* @validates("v === "a"") */\nconst n = 1')).not.toContain(
+      'agent-annotation-syntax',
+    )
+  })
+
+  it('does NOT flag PROSE in a JSDoc the extractors never read', () => {
+    // Real false positives found by running the rule over this repo: the
+    // compiler's and agent's own sources DOCUMENT the grammar with
+    // placeholders. An annotation on a function/const is inert anyway, so
+    // flagging it would fail valid builds for no safety gain.
+    const fnDoc = [
+      '/**',
+      ' * Match `@emits("k1", "k2", ...)` — comma-separated effect kinds.',
+      ' * Malformed `@intent (no quoted string)` is treated as "no intent".',
+      ' * Compiles a `@validates(...)` predicate.',
+      ' */',
+      'function readEmits(comment: string): string[] { return [] }',
+    ].join('\n')
+    expect(rules(fnDoc)).not.toContain('agent-annotation-syntax')
+    const constDoc = ['/**', ' * @validates("v === "a"")', ' */', 'const x = 1'].join('\n')
+    expect(rules(constDoc)).not.toContain('agent-annotation-syntax')
+  })
+
+  it('DOES flag the same malformation on a property signature and a union member', () => {
+    const field = [
+      "type Msg = { type: 'x'",
+      '  /** @validates("v === "a"") */',
+      '  role: string',
+      '}',
+    ].join('\n')
+    expect(rules(field)).toContain('agent-annotation-syntax')
+    const secondMember = [
+      'type Msg =',
+      "  | { type: 'a' }",
+      '  /** @routeGated("state.m === "b"") */',
+      "  | { type: 'b' }",
+    ].join('\n')
+    expect(rules(secondMember)).toContain('agent-annotation-syntax')
+    const iface = [
+      'interface State {',
+      '  /** @should("say "hi"") */',
+      '  note?: string',
+      '}',
+    ].join('\n')
+    expect(rules(iface)).toContain('agent-annotation-syntax')
+  })
+
+  it('does NOT flag an unrelated tag whose name merely starts the same', () => {
+    expect(rules(doc('@intentional("v === "a"")'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@examples("a" "b")'))).not.toContain('agent-annotation-syntax')
+  })
+
+  it('quotes the offending tag and names the fix', () => {
+    const msg = messageFor(doc('@validates("v === "a"")'), 'agent-annotation-syntax')
+    expect(msg).toContain('@validates')
+    expect(msg).toContain('\\"')
+  })
+
+  it('fires through lintSignalSource on a plain `.ts` Msg module', () => {
+    // Msg unions usually live in a `.ts` sibling, not the `.tsx` view file.
+    const src = doc('@routeGated("state.mode === "admin"")')
+    expect(lintSignalSource(src, 'msg.ts').map((d) => d.rule)).toContain('agent-annotation-syntax')
+  })
+})

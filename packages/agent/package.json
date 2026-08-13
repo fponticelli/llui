@@ -65,6 +65,7 @@
     "@llui/dom": "workspace:^"
   },
   "devDependencies": {
+    "@llui/compiler": "workspace:*",
     "@llui/dom": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13"

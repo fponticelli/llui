@@ -30,7 +30,7 @@ export type Msg =
   | ModulesMsg<typeof children>
   /**
    * @intent("Copy the given text to the clipboard")
-   * @example({"type":"copyText","value":"https://llui.dev"})
+   * @example("{\"type\":\"copyText\",\"value\":\"https://llui.dev\"}")
    */
   | { type: 'copyText'; value: string }
 

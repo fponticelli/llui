@@ -16,6 +16,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformSignalComponentSourceWithMap,
   lintSignalSource,
+  lintAnnotationSyntaxSource,
   applyLintFixes,
   type ExternalTypeSources,
   type PreExtractedSchemas,
@@ -1515,9 +1516,30 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         return { code: out, map }
       }
 
-      // Non-signal `.ts`/`.tsx` files pass through untouched. The legacy
-      // accessor compiler was removed in the signal-runtime migration; the
-      // signal branch above is now the only compilation path.
+      // Non-signal `.ts`/`.tsx` files pass through untouched — but they still
+      // get `agent-annotation-syntax`. A Msg union routinely lives in a plain
+      // `msg.ts` with no `component(` call, and that is precisely where
+      // `@routeGated`/`@validates` are authored; without this the one rule that
+      // can catch a malformed, silently-dropped predicate would never see them
+      // (issue #89). The rule pre-checks the source string, so a module with no
+      // annotation call never pays for a parse.
+      const annotationMsgs = lintAnnotationSyntaxSource(code, id)
+      if (annotationMsgs.length > 0) {
+        const rel = relative(crossFileRoot ?? process.cwd(), id)
+        const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
+        const first = annotationMsgs[0]!
+        const body = annotationMsgs
+          .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
+          .join('\n')
+        this.error({
+          message: `[llui] signal lint failed (${annotationMsgs.length} error${
+            annotationMsgs.length > 1 ? 's' : ''
+          }):\n${body}`,
+          loc: { file: id, line: first.line, column: first.column },
+        })
+      }
+      // The legacy accessor compiler was removed in the signal-runtime
+      // migration; the signal branch above is now the only compilation path.
       return undefined
     },
 

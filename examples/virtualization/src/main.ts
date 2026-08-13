@@ -68,12 +68,12 @@ type State = {
 type Msg =
   /**
    * @intent("Regenerate the log dataset with the given row count")
-   * @example({"type":"setCount","count":10000})
+   * @example("{\"type\":\"setCount\",\"count\":10000}")
    */
   | { type: 'setCount'; count: number }
   /**
    * @intent("Report the current number of DOM-rendered rows after a virtualization pass")
-   * @example({"type":"visibleChanged","n":48})
+   * @example("{\"type\":\"visibleChanged\",\"n\":48}")
    */
   | { type: 'visibleChanged'; n: number }
 

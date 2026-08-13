@@ -100,17 +100,17 @@ export type Msg =
   | ModulesMsg<typeof children>
   /**
    * @intent("Handle confirm dialog actions")
-   * @example({"type":"confirm","msg":{"type":"confirm"}})
+   * @example("{\"type\":\"confirm\",\"msg\":{\"type\":\"confirm\"}}")
    */
   | { type: 'confirm'; msg: ConfirmDialogMsg }
   /**
    * @intent("Emit a new toast notification")
-   * @example({"type":"emitToast","kind":"success","title":"Saved","description":"Changes persisted."})
+   * @example("{\"type\":\"emitToast\",\"kind\":\"success\",\"title\":\"Saved\",\"description\":\"Changes persisted.\"}")
    */
   | { type: 'emitToast'; kind: ToastKind; title: string; description: string }
   /**
    * @intent("Ask for user confirmation before a destructive action")
-   * @example({"type":"askConfirm","tag":"deleteAccount","title":"Delete account?","description":"This cannot be undone.","destructive":true})
+   * @example("{\"type\":\"askConfirm\",\"tag\":\"deleteAccount\",\"title\":\"Delete account?\",\"description\":\"This cannot be undone.\",\"destructive\":true}")
    */
   | { type: 'askConfirm'; tag: string; title: string; description: string; destructive: boolean }
 

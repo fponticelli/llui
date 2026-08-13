@@ -28,6 +28,7 @@ export {
 } from './signals/element-helpers.js'
 export {
   lintSignalSource,
+  lintAnnotationSyntaxSource,
   applyLintFixes,
   type SignalLintMessage,
   type SignalDiagnostic,
@@ -43,6 +44,7 @@ export * from './version.js'
 // registry / factory system and the `@llui/compiler-{introspection,devtools}`
 // packages that fed it were removed once the signal transform superseded
 // the `transformLlui` orchestrator.
+export * from './annotation-args.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'

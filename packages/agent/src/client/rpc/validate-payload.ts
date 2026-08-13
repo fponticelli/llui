@@ -372,8 +372,14 @@ const predicateCache = new Map<string, (v: unknown) => boolean>()
  * The predicate sees `v` as the field's value and inherits the host
  * environment's globals (Math, JSON, RegExp, etc.). On any compile
  * error, returns a no-op `() => true` so a malformed predicate doesn't
- * break dispatch — the build-time linter (`agent-validates-syntax`,
- * future) is the right place to catch syntactic issues.
+ * break dispatch.
+ *
+ * That fallback is defence in depth, NOT the guard: "accept everything" is
+ * a silent wrong answer. Nothing broken should reach here in the first
+ * place — the compiler's annotation grammar refuses to half-read a
+ * predicate and the `agent-annotation-syntax` lint rule fails the build on
+ * one (issue #89; the rule the audit called `agent-validates-syntax`).
+ * Keep the try/catch; never rely on it.
  */
 function compilePredicate(src: string): (v: unknown) => boolean {
   let fn = predicateCache.get(src)
