@@ -97,7 +97,7 @@ describe('collectSignalDeps — depth', () => {
         view: ({ state }) => [text(state.map((s) => s.a.b.c.d.e.f))],
       })
     `
-    expect(collectSignalDeps(src).paths).toEqual(['a.b.c.d.e.f'])
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['a.b.c.d.e.f'])
   })
 
   it('a truncated report would be a STRICT prefix — the gate is exact equality', () => {
@@ -128,7 +128,7 @@ describe('collectSignalDeps — coarsening', () => {
         view: ({ state }) => [text(state.map((s) => JSON.stringify(s)))],
       })
     `
-    const result = collectSignalDeps(src)
+    const result = collectSignalDeps(src, { fileName: 'in.ts' })
     expect(result.wholeState).toBe(true)
     expect(result.paths).toEqual([])
   })
@@ -148,7 +148,7 @@ describe('collectSignalDeps — coarsening', () => {
         ],
       })
     `
-    const result = collectSignalDeps(src)
+    const result = collectSignalDeps(src, { fileName: 'in.ts' })
     expect(result.paths).toEqual(['a'])
     expect(result.wholeState).toBe(false)
   })
@@ -160,7 +160,7 @@ describe('collectSignalDeps — scope', () => {
   })
 
   it('reports zero views for a file with no signal component', () => {
-    const result = collectSignalDeps(`export const x = 1`)
+    const result = collectSignalDeps('export const x = 1', { fileName: 'in.ts' })
     expect(result.views).toBe(0)
     expect(result.paths).toEqual([])
   })
@@ -176,7 +176,7 @@ describe('collectSignalDeps — scope', () => {
         view: ({ state: st }) => [text(st.at('a').at('b'))],
       })
     `
-    expect(collectSignalDeps(src).paths).toEqual(['a.b'])
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['a.b'])
   })
 
   it('collects each component in a multi-component file', () => {
@@ -197,7 +197,7 @@ describe('collectSignalDeps — scope', () => {
         view: ({ state }) => [text(state.at('two').at('deep'))],
       })
     `
-    const result = collectSignalDeps(src)
+    const result = collectSignalDeps(src, { fileName: 'in.ts' })
     expect(result.views).toBe(2)
     expect(result.paths).toEqual(['one.deep', 'two.deep'])
   })
@@ -221,6 +221,165 @@ describe('collectSignalDeps — scope', () => {
         ],
       })
     `
-    expect(collectSignalDeps(src).paths).toEqual(['rows', 'ui.sel.id'])
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['rows', 'ui.sel.id'])
+  })
+})
+
+/**
+ * A dependency walker carries a NAME through a subtree, and both of the defects
+ * below are that name matching something it does not denote. They are the same
+ * failure #92 exists to remove — a confident answer that is not true — so they
+ * are pinned at the shape level, not just at the file that caught them.
+ */
+describe('collectSignalDeps — an identifier is only a root where it is READ', () => {
+  // Every case here yields a whole-state read (`opaque: true`) if the walk
+  // root-matches identifiers in NAME position. `paths` stays complete throughout;
+  // the bug was purely an invented extra dependency.
+  const cases: Array<[string, string]> = [
+    [
+      'object-literal key — the `connect`/`overlay` wiring CLAUDE.md documents',
+      `dialogConnect({ state: state.at('dialog'), send })`,
+    ],
+    ['binding propertyName', `foreign({ mount: ({ el, state: sig }) => sig })`],
+    ['member access on another object', `plain(opts.state)`],
+    ['a shorthand-bound local that is not the root', `plain(({ state: inner }) => inner)`],
+  ]
+  for (const [label, slot] of cases) {
+    it(`does not treat a ${label} as a whole-state read`, () => {
+      const src = `
+        import { component, div, text } from '@llui/dom'
+        type State = { a: { b: string }; dialog: { open: boolean } }
+        export const C = component<State, { type: 'noop' }>({
+          name: 'C',
+          init: () => [{ a: { b: '' }, dialog: { open: false } }, []],
+          update: (s) => [s, []],
+          view: ({ state, send }) => [div({}, [text(state.at('a').at('b'))]), ${slot}],
+        })
+      `
+      const result = collectSignalDeps(src, { fileName: 'in.ts' })
+      expect(result.wholeState).toBe(false)
+      expect(result.paths).toContain('a.b')
+    })
+  }
+
+  it('still counts a shorthand `{ state }` in an object LITERAL as a real read', () => {
+    // The one identifier in "name position" that IS a value reference. Handing the
+    // whole handle to a helper is a genuine whole-state dependency.
+    const src = `
+      import { component, foreign } from '@llui/dom'
+      type State = { a: number }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [foreign({ state })],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).wholeState).toBe(true)
+  })
+
+  it('counts a declaration site as a declaration, not a read', () => {
+    const src = `
+      import { component, text } from '@llui/dom'
+      type State = { a: number }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [text(state.at('a'))],
+      })
+    `
+    // `({ state })` in the bag pattern and `state.at` — one declaration, one read.
+    expect(collectSignalDeps(src, { fileName: 'in.ts' })).toEqual({
+      paths: ['a'],
+      wholeState: false,
+      views: 1,
+    })
+  })
+})
+
+describe('collectSignalDeps — rooting is scope-aware', () => {
+  it('drops the root inside a callback that rebinds its name', () => {
+    // The row arm's `state` is a plain ROW handle. Reading roots through it
+    // invents a top-level `label` that does not exist in State, and flags a
+    // whole-state read that never happened.
+    const src = `
+      import { component, each, li, text, ul } from '@llui/dom'
+      type State = { rows: { id: string; label: string }[] }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ rows: [] }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          ul({}, [
+            each(state.at('rows'), (r) => r.id, (state) => [li({}, [text(state.at('label'))])]),
+          ]),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' })).toEqual({
+      paths: ['rows'],
+      wholeState: false,
+      views: 1,
+    })
+  })
+
+  it('drops the root inside a block that rebinds its name', () => {
+    const src = `
+      import { component, text } from '@llui/dom'
+      type State = { a: number }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          text(state.at('a')),
+          derive(() => {
+            const state = somethingElse()
+            return state.at('phantom')
+          }),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['a'])
+  })
+
+  it('restores the root after the shadowing scope ends', () => {
+    const src = `
+      import { component, each, li, text, ul } from '@llui/dom'
+      type State = { rows: { id: string }[]; after: { deep: string } }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ rows: [], after: { deep: '' } }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          ul({}, [each(state.at('rows'), (r) => r.id, (state) => [li({}, [text(state.at('x'))])])]),
+          text(state.at('after').at('deep')),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['after.deep', 'rows'])
+  })
+})
+
+describe('collectSignalDeps — ScriptKind', () => {
+  it('parses a .ts generic arrow as TS, not TSX', () => {
+    // `<T>(x: T)` reads as an unclosed JSX element under TSX; the file would parse
+    // to garbage and report `views: 0` with no error at all. `fileName` is required
+    // precisely so no caller can fall into a default that misparses.
+    const src = `
+      import { component, text } from '@llui/dom'
+      const identity = <T>(x: T): T => x
+      type State = { a: { b: string } }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: { b: '' } }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [text(state.at('a').at('b'))],
+      })
+    `
+    const asTs = collectSignalDeps(src, { fileName: 'in.ts' })
+    expect(asTs.views).toBe(1)
+    expect(asTs.paths).toEqual(['a.b'])
   })
 })

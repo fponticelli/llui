@@ -49,8 +49,16 @@ export function bindingNames(name: ts.BindingName): string[] {
  * `const`/`function`/`class` declarations, `for` initializers, and `catch`
  * bindings. (A declaration appearing after the use still lexically shadows, so
  * position within the scope is not considered — conservative: when unsure we
- * treat the name as shadowed, i.e. NOT a helper, which only forgoes lowering.) */
-function scopeIntroduces(node: ts.Node, name: string): boolean {
+ * treat the name as shadowed, i.e. NOT a helper, which only forgoes lowering.)
+ *
+ * Exported because every walker that carries a NAME through a subtree owes the
+ * same discipline: a signal root, like a helper binding, stops being itself the
+ * moment an inner scope rebinds its name — `each(…, (state) => …)` inside a view
+ * whose bag root is also `state` is a plain row handle, not the component state.
+ * `collect-signal-deps.ts` prunes its roots with this. Reuse it rather than
+ * re-deriving shadowing per walker; the cases below are the ones hand-rolled
+ * versions forget (`for` initializers, `catch`, hoisted function/class names). */
+export function scopeIntroduces(node: ts.Node, name: string): boolean {
   if (
     ts.isFunctionDeclaration(node) ||
     ts.isFunctionExpression(node) ||

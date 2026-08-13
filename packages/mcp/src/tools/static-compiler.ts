@@ -106,11 +106,11 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
         breakdown,
         paths,
         // An empty path set means two very different things, and a caller that
-        // can't tell them apart draws the wrong conclusion: no component view
-        // was found to analyze, versus a view that reads nothing.
+        // can't tell them apart draws the wrong conclusion: nothing here could be
+        // rooted, versus a view that genuinely reads nothing.
         ...(views === 0
           ? {
-              note: 'No signal component view found in this file. Paths are collected per `component({ view: ({ state }) => … })`; a view-helper function roots in a caller-supplied Signal handle, so its reads are attributed at the call site instead.',
+              note: 'No view with a destructured `state` bag was found in this file, so there was nothing to root paths against. Paths are collected per `component({ view: ({ state }) => … })`. A view written as `view: (bag) => …` (bag not destructured), or a view-helper function taking a caller-supplied Signal handle, is not analyzed here — its reads are attributed at the call site instead. This does NOT mean the file has no reactive dependencies.',
             }
           : {}),
       }

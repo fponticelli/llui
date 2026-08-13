@@ -24,13 +24,23 @@
 //   - `''` — the whole state — is reported as `wholeState`, never as a path.
 
 import ts from 'typescript'
-import { analyzeSignalExpr, isSignalExpr, viewSignalRoots, type Roots } from './extract-deps.js'
-import { HelperBindings } from './helper-bindings.js'
+import {
+  analyzeSignalExpr,
+  isSignalExpr,
+  viewSignalRoots,
+  type RootInfo,
+  type Roots,
+} from './extract-deps.js'
+import { HelperBindings, scopeIntroduces } from './helper-bindings.js'
 import { scriptKindForFilename } from './script-kind.js'
 
 export interface CollectSignalDepsOptions {
-  /** Source file path — decides the parse ScriptKind (`.ts` vs `.tsx`). */
-  fileName?: string
+  /** Source file path. REQUIRED, and not merely for reporting: it decides the
+   * parse ScriptKind, and a `.ts` file parsed as TSX misparses the generic arrow
+   * form (`const id = <T>(x: T): T => x`) — which here would not raise an error,
+   * it would silently return `views: 0, paths: []`. There is no default that is
+   * right for both extensions, so the caller states it. */
+  fileName: string
 }
 
 export interface SignalDepsResult {
@@ -56,9 +66,9 @@ export interface SignalDepsResult {
  */
 export function collectSignalDeps(
   source: string,
-  opts: CollectSignalDepsOptions = {},
+  opts: CollectSignalDepsOptions,
 ): SignalDepsResult {
-  const fileName = opts.fileName ?? 'm.tsx'
+  const fileName = opts.fileName
   const sf = ts.createSourceFile(
     fileName,
     source,
@@ -78,11 +88,23 @@ export function collectSignalDeps(
    * matters: `state.at('user').at('profile')` contains `state.at('user')`, and
    * counting both would report the coarse prefix alongside the precise path. */
   const collect = (node: ts.Node, roots: Roots): void => {
-    if (isExpression(node) && isSignalExpr(node, roots)) {
+    if (couldBeSignalExpr(node) && isSignalExpr(node, roots)) {
       for (const p of analyzeSignalExpr(node, roots)) all.add(p)
       return
     }
-    node.forEachChild((c) => collect(c, roots))
+    // Scope-aware rooting: a name is only THE root while nothing between here and
+    // the view rebinds it. `each(state.at('rows'), key, (state) => …)` hands the
+    // row arm a plain row handle that happens to reuse the name — reading roots
+    // through it invents top-level paths that do not exist (`label` for a row's
+    // `state.at('label')`) and flags a whole-state read that never happened.
+    let childRoots = roots
+    const shadowed = [...roots.keys()].filter((name) => scopeIntroduces(node, name))
+    if (shadowed.length > 0) {
+      const pruned = new Map<string, RootInfo>(roots)
+      for (const name of shadowed) pruned.delete(name)
+      childRoots = pruned
+    }
+    node.forEachChild((c) => collect(c, childRoots))
   }
 
   const visit = (node: ts.Node): void => {
@@ -114,17 +136,71 @@ export function collectSignalDeps(
   return { paths: [...all].sort(), wholeState, views }
 }
 
-/** Expression-node guard for the maximal-signal walk. `isSignalExpr` only ever
- * matches identifiers and calls, so the narrow set below is sufficient — and
- * keeps the walk from re-testing every token. */
-function isExpression(n: ts.Node): n is ts.Expression {
-  return (
-    ts.isIdentifier(n) ||
+/** Could `n` be a maximal signal expression? The forms `isSignalExpr` can match,
+ * and — for a bare identifier — only where it is an actual VALUE reference.
+ *
+ * The identifier half is the whole point. `forEachChild` yields identifiers that
+ * are property KEYS and binding NAMES, not reads: the `state` in
+ * `connect({ state: state.at('dialog') })`, in `({ el, state: sig }) => …`, in
+ * `opts.state`, and in the row parameter `(state) => …`. Matching those against
+ * the root name reports a whole-state read the code never performs — an
+ * affirmative `opaque: true` on the canonical `connect`/`overlay` wiring. A tool
+ * that lies confidently is the exact failure #92 exists to remove, so this
+ * predicate must reject a name slot; when it is unsure it says yes, because
+ * over-reporting a dependency is sound and under-reporting is not. */
+function couldBeSignalExpr(n: ts.Node): n is ts.Expression {
+  if (
     ts.isCallExpression(n) ||
-    ts.isPropertyAccessExpression(n) ||
     ts.isParenthesizedExpression(n) ||
     ts.isAsExpression(n) ||
     ts.isNonNullExpression(n) ||
     ts.isSatisfiesExpression(n)
-  )
+  ) {
+    return true
+  }
+  // A PropertyAccess is never itself a signal expression (`isSignalExpr` matches
+  // `.at`/`.map`/`.peek` CALLS), and descending into it is how `obj.state` gets
+  // reached — so let the walk continue rather than testing it here.
+  return ts.isIdentifier(n) && isValueReference(n)
+}
+
+/** Is this identifier a READ of a binding, rather than a name being declared or a
+ * static member/property key? Unknown parents default to `true` (a read), so a
+ * shape not enumerated here coarsens instead of vanishing. */
+function isValueReference(id: ts.Identifier): boolean {
+  const p = id.parent
+  if (!p) return true
+  // `{ state }` in an object LITERAL really does read `state` (unlike `{ state }`
+  // in a binding PATTERN, which declares it — `isBindingElement` below).
+  if (ts.isShorthandPropertyAssignment(p)) return true
+  if (ts.isPropertyAccessExpression(p)) return p.expression === id // `state.at` yes, `obj.state` no
+  if (ts.isQualifiedName(p)) return p.left === id
+  if (ts.isPropertyAssignment(p)) return p.initializer === id // `{ state: … }` key is not a read
+  if (ts.isBindingElement(p)) return false // both `propertyName` and `name` are declarations
+  if (ts.isParameter(p) || ts.isVariableDeclaration(p)) return p.initializer === id
+  if (
+    ts.isFunctionDeclaration(p) ||
+    ts.isClassDeclaration(p) ||
+    ts.isMethodDeclaration(p) ||
+    ts.isMethodSignature(p) ||
+    ts.isPropertyDeclaration(p) ||
+    ts.isPropertySignature(p) ||
+    ts.isGetAccessorDeclaration(p) ||
+    ts.isSetAccessorDeclaration(p) ||
+    ts.isEnumMember(p) ||
+    ts.isImportSpecifier(p) ||
+    ts.isExportSpecifier(p) ||
+    ts.isImportClause(p) ||
+    ts.isNamespaceImport(p) ||
+    ts.isTypeReferenceNode(p) ||
+    ts.isTypeParameterDeclaration(p) ||
+    ts.isInterfaceDeclaration(p) ||
+    ts.isTypeAliasDeclaration(p) ||
+    ts.isLabeledStatement(p) ||
+    ts.isBreakOrContinueStatement(p) ||
+    ts.isMetaProperty(p)
+  ) {
+    return false
+  }
+  return true
 }

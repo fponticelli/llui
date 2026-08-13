@@ -196,7 +196,7 @@ describe('llui_static_collect_paths', () => {
     expect(result.paths).toHaveLength(65)
   })
 
-  it('says so when the file has no component view to collect from', async () => {
+  it('says so when the file has no view it can root against', async () => {
     const file = join(tmp, 'helper.ts')
     writeFileSync(file, `export const x = 1`)
     const result = (await runTool('llui_static_collect_paths', { file })) as {
@@ -204,7 +204,65 @@ describe('llui_static_collect_paths', () => {
       note?: string
     }
     expect(result.total).toBe(0)
-    expect(result.note).toMatch(/No signal component view/)
+    expect(result.note).toMatch(/destructured `state` bag/)
+    // A file the tool cannot root must not read as "this file depends on nothing".
+    expect(result.note).toMatch(/does NOT mean the file has no reactive dependencies/)
+  })
+
+  // A component whose bag is NOT destructured (`view: (bag) => …`) is a real
+  // component the tool cannot root paths against. The note must not claim the
+  // file has no component view — it does.
+  it('does not claim a non-destructured-bag view is "no component view"', async () => {
+    const file = join(tmp, 'bag.ts')
+    writeFileSync(
+      file,
+      `
+        import { component, text } from '@llui/dom'
+        type S = { a: number }
+        type M = { type: 'noop' }
+        export const C = component<S, M>({
+          name: 'C',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: (bag) => [text(bag.state.at('a'))],
+        })
+      `,
+    )
+    const result = (await runTool('llui_static_collect_paths', { file })) as { note?: string }
+    expect(result.note).toMatch(/bag not destructured/)
+  })
+
+  // Issue #92 review: the replacement walker asserted a whole-state read wherever
+  // the root NAME appeared, including as an object-literal key. That fires on the
+  // `connect`/`overlay` wiring CLAUDE.md documents as canonical — an affirmative,
+  // wrong `opaque: true` handed to an LLM, i.e. the same class of defect #92 set
+  // out to remove.
+  it('does not report `opaque` for the canonical connect/overlay wiring', async () => {
+    const file = join(tmp, 'connect.ts')
+    writeFileSync(
+      file,
+      `
+        import { component, div, text } from '@llui/dom'
+        import { dialog } from '@llui/components'
+        type S = { dialog: { open: boolean }; title: string }
+        type M = { type: 'noop' }
+        export const C = component<S, M>({
+          name: 'C',
+          init: () => [{ dialog: { open: false }, title: '' }, []],
+          update: (s) => [s, []],
+          view: ({ state, send }) => [
+            div({}, [text(state.at('title'))]),
+            dialog.overlay({ state: state.at('dialog'), send, parts: {}, content: [] }),
+          ],
+        })
+      `,
+    )
+    const result = (await runTool('llui_static_collect_paths', { file })) as {
+      opaque: boolean
+      paths: string[]
+    }
+    expect(result.opaque).toBe(false)
+    expect(result.paths).toEqual(['dialog', 'title'])
   })
 })
 

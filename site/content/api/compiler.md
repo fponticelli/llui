@@ -171,7 +171,7 @@ covers every descendant, because an immutable update replaces the prefix
 reference) but it misreports what the code actually reads.
 
 ```typescript
-function collectSignalDeps(source: string, opts: CollectSignalDepsOptions = {}): SignalDepsResult
+function collectSignalDeps(source: string, opts: CollectSignalDepsOptions): SignalDepsResult
 ```
 
 ### `computeSchemaHash()`
@@ -957,8 +957,12 @@ export interface CodeAction {
 
 ```typescript
 export interface CollectSignalDepsOptions {
-  /** Source file path — decides the parse ScriptKind (`.ts` vs `.tsx`). */
-  fileName?: string
+  /** Source file path. REQUIRED, and not merely for reporting: it decides the
+   * parse ScriptKind, and a `.ts` file parsed as TSX misparses the generic arrow
+   * form (`const id = <T>(x: T): T => x`) — which here would not raise an error,
+   * it would silently return `views: 0, paths: []`. There is no default that is
+   * right for both extensions, so the caller states it. */
+  fileName: string
 }
 ```
 
