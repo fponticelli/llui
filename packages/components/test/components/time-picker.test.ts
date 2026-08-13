@@ -4,6 +4,7 @@ import {
   update,
   connect,
   displayHours,
+  hoursFromDisplay,
   period,
   formatTime,
 } from '../../src/components/time-picker'
@@ -57,6 +58,26 @@ describe('helpers', () => {
     )
   })
 
+  it('setHours preserves the meridiem in 12-hour format (#125 defect 5)', () => {
+    // The hours FIELD of a 12-hour picker reads 1..12, so a typed "3" at 15:00
+    // means 3 PM. Reading it as a 24-hour value silently flipped PM to AM.
+    const pm = init({ format: '12', value: { hours: 15, minutes: 0, seconds: 0 } })
+    expect(update(pm, { type: 'setHours', hours: 3 })[0].value.hours).toBe(15)
+    expect(update(pm, { type: 'setHours', hours: 12 })[0].value.hours).toBe(12)
+    const am = init({ format: '12', value: { hours: 3, minutes: 0, seconds: 0 } })
+    expect(update(am, { type: 'setHours', hours: 9 })[0].value.hours).toBe(9)
+    expect(update(am, { type: 'setHours', hours: 12 })[0].value.hours).toBe(0)
+  })
+
+  it('hoursFromDisplay is the inverse of displayHours', () => {
+    for (const hours of [0, 1, 11, 12, 13, 23]) {
+      for (const format of ['12', '24'] as const) {
+        const s = init({ format, value: { hours, minutes: 0, seconds: 0 } })
+        expect(hoursFromDisplay(displayHours(s), s)).toBe(hours)
+      }
+    }
+  })
+
   it('period returns AM or PM', () => {
     expect(period(init({ value: { hours: 9, minutes: 0, seconds: 0 } }))).toBe('AM')
     expect(period(init({ value: { hours: 13, minutes: 0, seconds: 0 } }))).toBe('PM')
@@ -72,6 +93,19 @@ describe('helpers', () => {
 
 describe('time-picker.connect', () => {
   const p = connect(rootSignal(), vi.fn())
+
+  it('typing an hour into a 12-hour picker keeps the meridiem (#125 defect 5)', () => {
+    const send = vi.fn()
+    const pc = connect(rootSignal(), send)
+    const target = document.createElement('input')
+    target.value = '3'
+    const ev = new Event('input')
+    Object.defineProperty(ev, 'target', { value: target })
+    pc.hoursInput.onInput(ev)
+    expect(send).toHaveBeenCalledWith({ type: 'setHours', hours: 3 })
+    const pm = init({ format: '12', value: { hours: 15, minutes: 0, seconds: 0 } })
+    expect(update(pm, send.mock.calls[0]![0])[0].value.hours).toBe(15)
+  })
 
   it('hoursInput ArrowUp sends incrementHours', () => {
     const send = vi.fn()

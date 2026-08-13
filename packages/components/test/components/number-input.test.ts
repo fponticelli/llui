@@ -18,9 +18,14 @@ describe('number-input reducer', () => {
   })
 
   it('increment adds step', () => {
-    const s0 = init({ value: 5, step: 2 })
+    const s0 = init({ value: 4, step: 2 })
     const [s] = update(s0, { type: 'increment' })
-    expect(s.value).toBe(7)
+    expect(s.value).toBe(6)
+    // Same press from the off-grid 5 (the grid is anchored at 0 here, since min
+    // is unbounded) lands ON the grid instead of adding a step — it used to
+    // answer 7 and keep the value off-grid forever, which #125 lists as a
+    // defect and `setValue` never agreed with.
+    expect(update(init({ value: 5, step: 2 }), { type: 'increment' })[0].value).toBe(6)
   })
 
   it('increment from null treats as 0', () => {
@@ -70,6 +75,22 @@ describe('number-input reducer', () => {
     const s0 = init({ value: 5, disabled: true })
     const [s] = update(s0, { type: 'increment' })
     expect(s.value).toBe(5)
+  })
+
+  it('snaps an exponential-notation step (#125 defect 1)', () => {
+    const s0 = init({ min: 0, max: 1, step: 1e-7 })
+    const [s1] = update(s0, { type: 'setValue', value: 3e-7 })
+    expect(s1.value).toBe(3e-7)
+    const [s2] = update({ ...s0, rawText: '0.0000003' }, { type: 'commit' })
+    expect(s2.value).toBe(3e-7)
+  })
+
+  it('increment/decrement land on the grid from an off-grid start (#125 defect 2)', () => {
+    const s0 = init({ value: 3, min: 0, max: 100, step: 2 })
+    expect(update(s0, { type: 'increment' })[0].value).toBe(4)
+    expect(update(s0, { type: 'decrement' })[0].value).toBe(2)
+    // A multiplier does not skip past the grid on the first press.
+    expect(update(s0, { type: 'increment', multiplier: 10 })[0].value).toBe(4)
   })
 
   it('handles fractional step without drift', () => {

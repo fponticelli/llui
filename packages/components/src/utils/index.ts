@@ -34,6 +34,12 @@ export {
 export { TreeCollection } from './tree-collection.js'
 export type { TreeNode } from './tree-collection.js'
 
+export { clamp, clampToStep, decimalPlaces, snapToStep, stepBy } from './number.js'
+export type { NumericGrid } from './number.js'
+
+export { isDateOnly, parseDateValue } from './date.js'
+export type { DateValue, ParsedDateValue } from './date.js'
+
 export { resolveDir, flipArrow, resolveTextDirection } from './direction.js'
 export type { TextDirection } from './direction.js'
 

@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { clamp } from '../utils/number.js'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -64,10 +65,6 @@ export interface ImageCropperInit {
   aspectRatio?: number | null
   minSize?: number
   disabled?: boolean
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v))
 }
 
 function clampCrop(crop: CropRect, image: { width: number; height: number }): CropRect {

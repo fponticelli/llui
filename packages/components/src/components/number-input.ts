@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { clampToStep, stepBy } from '../utils/number.js'
 
 /**
  * Number input — numeric field with increment/decrement buttons. Clamps
@@ -59,26 +60,14 @@ export function init(opts: NumberInputInit = {}): NumberInputState {
   }
 }
 
-function clamp(n: number, min: number, max: number): number {
-  if (n < min) return min
-  if (n > max) return max
-  return n
-}
-
-function snap(n: number, step: number, anchor = 0): number {
-  if (step <= 0) return n
-  const origin = isFinite(anchor) ? anchor : 0
-  const decimals = decimalPlaces(step)
-  const steps = Math.round((n - origin) / step)
-  const snapped = origin + steps * step
-  return Number(snapped.toFixed(decimals))
-}
-
-function decimalPlaces(n: number): number {
-  if (Math.floor(n) === n) return 0
-  const str = n.toString()
-  const dot = str.indexOf('.')
-  return dot === -1 ? 0 : str.length - dot - 1
+/**
+ * Store a value the grid already validated, keeping `rawText` in step. Every
+ * mutation lands here so the displayed text can never disagree with `value`.
+ * `NumberInputState` names its bounds `min`/`max`/`step`, so it IS a
+ * `NumericGrid` — the clamp/snap rules take the state itself.
+ */
+function commit(state: NumberInputState, value: number): NumberInputState {
+  return { ...state, value, rawText: String(value) }
 }
 
 export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInputState, never[]] {
@@ -88,10 +77,7 @@ export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInp
   }
   switch (msg.type) {
     case 'setValue': {
-      const v =
-        msg.value === null
-          ? null
-          : clamp(snap(msg.value, state.step, state.min), state.min, state.max)
+      const v = msg.value === null ? null : clampToStep(msg.value, state)
       return [{ ...state, value: v, rawText: v === null ? '' : String(v) }, []]
     }
     case 'setRawText':
@@ -100,27 +86,16 @@ export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInp
       const parsed = parseFloat(state.rawText)
       if (isNaN(parsed))
         return [{ ...state, rawText: state.value === null ? '' : String(state.value) }, []]
-      const v = clamp(snap(parsed, state.step, state.min), state.min, state.max)
-      return [{ ...state, value: v, rawText: String(v) }, []]
+      return [commit(state, clampToStep(parsed, state)), []]
     }
-    case 'increment': {
-      const base = state.value ?? 0
-      const raw = base + state.step * (msg.multiplier ?? 1)
-      const decimals = decimalPlaces(state.step)
-      const v = clamp(Number(raw.toFixed(decimals)), state.min, state.max)
-      return [{ ...state, value: v, rawText: String(v) }, []]
-    }
-    case 'decrement': {
-      const base = state.value ?? 0
-      const raw = base - state.step * (msg.multiplier ?? 1)
-      const decimals = decimalPlaces(state.step)
-      const v = clamp(Number(raw.toFixed(decimals)), state.min, state.max)
-      return [{ ...state, value: v, rawText: String(v) }, []]
-    }
+    case 'increment':
+      return [commit(state, stepBy(state.value ?? 0, msg.multiplier ?? 1, state)), []]
+    case 'decrement':
+      return [commit(state, stepBy(state.value ?? 0, -(msg.multiplier ?? 1), state)), []]
     case 'toMin':
-      return [{ ...state, value: state.min, rawText: String(state.min) }, []]
+      return [commit(state, clampToStep(state.min, state)), []]
     case 'toMax':
-      return [{ ...state, value: state.max, rawText: String(state.max) }, []]
+      return [commit(state, clampToStep(state.max, state)), []]
     case 'setDisabled':
       return [{ ...state, disabled: msg.disabled }, []]
   }

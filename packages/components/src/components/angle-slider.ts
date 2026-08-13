@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { clamp, clampToStep, stepBy } from '../utils/number.js'
 
 /**
  * Angle slider — a circular input that selects a value in 0..360 degrees
@@ -51,21 +52,12 @@ export interface AngleSliderInit {
   dir?: 'ltr' | 'rtl'
 }
 
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v))
-}
-
-function roundToStep(value: number, step: number, min: number): number {
-  if (step <= 0) return value
-  return min + Math.round((value - min) / step) * step
-}
-
 export function init(opts: AngleSliderInit = {}): AngleSliderState {
   const min = opts.min ?? 0
   const max = opts.max ?? 360
   const step = opts.step ?? 1
   return {
-    value: clamp(roundToStep(opts.value ?? 0, step, min), min, max),
+    value: clampToStep(opts.value ?? 0, { min, max, step }),
     min,
     max,
     step,
@@ -82,20 +74,12 @@ export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSlid
     }
   }
   switch (msg.type) {
-    case 'setValue': {
-      const v = clamp(roundToStep(msg.value, state.step, state.min), state.min, state.max)
-      return [{ ...state, value: v }, []]
-    }
-    case 'increment': {
-      const steps = msg.steps ?? 1
-      const v = clamp(state.value + state.step * steps, state.min, state.max)
-      return [{ ...state, value: v }, []]
-    }
-    case 'decrement': {
-      const steps = msg.steps ?? 1
-      const v = clamp(state.value - state.step * steps, state.min, state.max)
-      return [{ ...state, value: v }, []]
-    }
+    case 'setValue':
+      return [{ ...state, value: clampToStep(msg.value, state) }, []]
+    case 'increment':
+      return [{ ...state, value: stepBy(state.value, msg.steps ?? 1, state) }, []]
+    case 'decrement':
+      return [{ ...state, value: stepBy(state.value, -(msg.steps ?? 1), state) }, []]
     case 'setMin':
       return [{ ...state, min: msg.min, value: clamp(state.value, msg.min, state.max) }, []]
     case 'setMax':

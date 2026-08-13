@@ -77,6 +77,26 @@ describe('slider reducer', () => {
     expect(s1.value[0]).toBe(70)
   })
 
+  it('setValue clamps and snaps every thumb, like setThumb (#125 defect 3)', () => {
+    const [a] = update(init({ value: [0], step: 5 }), { type: 'setValue', value: [23] })
+    expect(a.value).toEqual([25])
+    const [b] = update(init({ value: [0] }), { type: 'setValue', value: [150] })
+    expect(b.value).toEqual([100])
+    const [c] = update(init({ value: [0] }), { type: 'setValue', value: [-20] })
+    expect(c.value).toEqual([0])
+  })
+
+  it('setValue respects the thumb gap, like setThumb (#125 defect 3)', () => {
+    const s0 = init({ value: [20, 80], minStepsBetweenThumbs: 10 })
+    const [s] = update(s0, { type: 'setValue', value: [75, 80] })
+    expect(s.value).toEqual([70, 80])
+  })
+
+  it('increment lands on the grid from an off-grid start (#125 defect 2)', () => {
+    const [s] = update(init({ value: [3], step: 2 }), { type: 'increment', index: 0 })
+    expect(s.value[0]).toBe(4)
+  })
+
   it('avoids floating-point drift with fractional steps', () => {
     const [s] = update(init({ step: 0.1 }), { type: 'setThumb', index: 0, value: 0.3 })
     expect(s.value[0]).toBe(0.3)

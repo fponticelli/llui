@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { clamp } from '../utils/number.js'
 
 /**
  * Floating panel — a draggable + resizable window-like surface, useful
@@ -71,10 +72,6 @@ export interface FloatingPanelInit {
   maxSize?: { width: number; height: number } | null
   open?: boolean
   disabled?: boolean
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v))
 }
 
 export function init(opts: FloatingPanelInit = {}): FloatingPanelState {

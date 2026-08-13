@@ -27,7 +27,7 @@ export interface TimePickerState {
 export type TimePickerMsg =
   /** @intent("Set the full time value (hours/minutes/seconds)") */
   | { type: 'setValue'; value: TimeValue }
-  /** @intent("Set the hours field directly") */
+  /** @intent("Set the hours field directly — 0-23 in 24-hour format, 1-12 in 12-hour format where the current AM/PM is kept") */
   | { type: 'setHours'; hours: number }
   /** @intent("Set the minutes field directly") */
   | { type: 'setMinutes'; minutes: number }
@@ -74,7 +74,10 @@ export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerS
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
     case 'setHours':
-      return [{ ...state, value: { ...state.value, hours: mod(msg.hours, 24) } }, []]
+      return [
+        { ...state, value: { ...state.value, hours: hoursFromDisplay(msg.hours, state) } },
+        [],
+      ]
     case 'setMinutes':
       return [{ ...state, value: { ...state.value, minutes: mod(msg.minutes, 60) } }, []]
     case 'setSeconds':
@@ -111,6 +114,19 @@ export function displayHours(state: TimePickerState): number {
   if (state.format === '24') return state.value.hours
   const h = state.value.hours % 12
   return h === 0 ? 12 : h
+}
+
+/**
+ * Inverse of `displayHours`: turn a value from the hours FIELD into the stored
+ * 24-hour value. In 12-hour format the field reads 1..12, so it only says which
+ * hour of the half-day — the meridiem has to come from the current value. The
+ * single mutation path used `mod(hours, 24)` instead, so typing "3" at 15:00
+ * stored 03:00 and silently flipped PM to AM (#125).
+ */
+export function hoursFromDisplay(hours: number, state: TimePickerState): number {
+  if (state.format === '24') return mod(hours, 24)
+  const half = mod(hours, 12) // 12 o'clock is the 0th hour of its half-day
+  return period(state) === 'PM' ? half + 12 : half
 }
 
 /** AM or PM for 12-hour format. */
@@ -259,4 +275,12 @@ export function connect(
   }
 }
 
-export const timePicker = { init, update, connect, displayHours, period, formatTime }
+export const timePicker = {
+  init,
+  update,
+  connect,
+  displayHours,
+  hoursFromDisplay,
+  period,
+  formatTime,
+}

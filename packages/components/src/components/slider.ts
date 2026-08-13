@@ -1,5 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { clamp, clampToStep, stepBy } from '../utils/number.js'
 
 /**
  * Slider — numeric input controlled by drag or keyboard. Supports multiple
@@ -66,55 +67,55 @@ export function init(opts: SliderInit = {}): SliderState {
   }
 }
 
-function clamp(n: number, min: number, max: number): number {
-  if (n < min) return min
-  if (n > max) return max
-  return n
-}
-
-function snapToStep(n: number, min: number, step: number): number {
-  const steps = Math.round((n - min) / step)
-  const snapped = min + steps * step
-  // Avoid floating-point drift — round to precision of step
-  const decimals = decimalPlaces(step)
-  return Number(snapped.toFixed(decimals))
-}
-
-function decimalPlaces(n: number): number {
-  if (Math.floor(n) === n) return 0
-  const str = n.toString()
-  const dot = str.indexOf('.')
-  return dot === -1 ? 0 : str.length - dot - 1
+/**
+ * Place one thumb: clamp+snap through the shared grid, then bound it by its
+ * neighbours. `values` is the array being built (not necessarily `state.value`)
+ * so `setValue` can fold this over every index and get exactly what a sequence
+ * of `setThumb`s would produce.
+ */
+function withThumb(
+  state: SliderState,
+  values: readonly number[],
+  index: number,
+  rawValue: number,
+): number[] {
+  const { min, max, step, minStepsBetweenThumbs } = state
+  const next = [...values]
+  const snapped = clampToStep(rawValue, state)
+  // Enforce gap with neighbors
+  const gap = minStepsBetweenThumbs * step
+  const lowerBound = index > 0 ? (next[index - 1] ?? min) + gap : min
+  const upperBound = index < next.length - 1 ? (next[index + 1] ?? max) - gap : max
+  next[index] = clamp(snapped, lowerBound, upperBound)
+  return next
 }
 
 function setThumbValue(state: SliderState, index: number, rawValue: number): number[] {
-  const { min, max, step, minStepsBetweenThumbs } = state
-  const snapped = snapToStep(clamp(rawValue, min, max), min, step)
-  const value = [...state.value]
-  // Enforce gap with neighbors
-  const gap = minStepsBetweenThumbs * step
-  const lowerBound = index > 0 ? (value[index - 1] ?? min) + gap : min
-  const upperBound = index < value.length - 1 ? (value[index + 1] ?? max) - gap : max
-  value[index] = clamp(snapped, lowerBound, upperBound)
-  return value
+  return withThumb(state, state.value, index, rawValue)
 }
 
 export function update(state: SliderState, msg: SliderMsg): [SliderState, never[]] {
   if (state.disabled && msg.type !== 'setDisabled' && msg.type !== 'setDir') return [state, []]
   switch (msg.type) {
-    case 'setValue':
-      return [{ ...state, value: msg.value }, []]
+    case 'setValue': {
+      // Every thumb goes through the SAME clamp+snap+gap path `setThumb` uses.
+      // It used to store the array raw, so a programmatic set could hold values
+      // no drag could ever produce — off-grid, or outside [min,max] (#125).
+      let value: number[] = [...msg.value]
+      for (let i = 0; i < value.length; i++) value = withThumb(state, value, i, value[i]!)
+      return [{ ...state, value }, []]
+    }
     case 'setThumb':
       return [{ ...state, value: setThumbValue(state, msg.index, msg.value) }, []]
     case 'increment': {
       const m = msg.multiplier ?? 1
       const current = state.value[msg.index] ?? state.min
-      return [{ ...state, value: setThumbValue(state, msg.index, current + state.step * m) }, []]
+      return [{ ...state, value: setThumbValue(state, msg.index, stepBy(current, m, state)) }, []]
     }
     case 'decrement': {
       const m = msg.multiplier ?? 1
       const current = state.value[msg.index] ?? state.min
-      return [{ ...state, value: setThumbValue(state, msg.index, current - state.step * m) }, []]
+      return [{ ...state, value: setThumbValue(state, msg.index, stepBy(current, -m, state)) }, []]
     }
     case 'toMin':
       return [{ ...state, value: setThumbValue(state, msg.index, state.min) }, []]
@@ -302,15 +303,14 @@ export function valueFromPoint(
   clientX: number,
   clientY: number,
 ): number {
-  const { min, max, step, orientation } = state
+  const { min, max, orientation } = state
   let pct: number
   if (orientation === 'horizontal') {
     pct = (clientX - rect.left) / rect.width
   } else {
     pct = 1 - (clientY - rect.top) / rect.height
   }
-  const raw = min + pct * (max - min)
-  return snapToStep(clamp(raw, min, max), min, step)
+  return clampToStep(min + pct * (max - min), state)
 }
 
 /** Determine which thumb index is closest to a given raw value. */

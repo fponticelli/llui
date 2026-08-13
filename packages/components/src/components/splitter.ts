@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { clamp } from '../utils/number.js'
 
 /**
  * Splitter — resizable panes with a draggable handle. The handle's position
@@ -61,10 +62,6 @@ export function init(opts: SplitterInit = {}): SplitterState {
     dragging: false,
     dir: opts.dir ?? 'ltr',
   }
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
 }
 
 export function update(state: SplitterState, msg: SplitterMsg): [SplitterState, never[]] {

@@ -36,6 +36,22 @@ describe('pin-input reducer', () => {
     expect(s.values[4]).toBe('')
   })
 
+  it('setAll distributes across every slot, skipping separators (#125 defect 6)', () => {
+    const s0 = init({ length: 6, type: 'numeric' })
+    const [s] = update(s0, { type: 'setAll', values: '123-456'.split('') })
+    // Sanitizing per SLOT left a hole where the separator fell.
+    expect(s.values).toEqual(['1', '2', '3', '4', '5', '6'])
+    expect(s.focusedIndex).toBe(5)
+  })
+
+  it('setAll accepts multi-character entries', () => {
+    const [s] = update(init({ length: 4, type: 'numeric' }), {
+      type: 'setAll',
+      values: ['12 34'],
+    })
+    expect(s.values).toEqual(['1', '2', '3', '4'])
+  })
+
   it('clear resets everything', () => {
     const s0 = { ...init({ length: 3 }), values: ['1', '2', '3'], focusedIndex: 2 }
     const [s] = update(s0, { type: 'clear' })
