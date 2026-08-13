@@ -123,6 +123,63 @@ describe('pushDismissable()', () => {
     cleanup()
   })
 
+  // A layer that DECLINES Escape must not swallow it: the documented contract
+  // for `disableEscape` / an `onEscape` router returning false is "propagates".
+  // Offering the key only to `stack[top]` black-holed it instead (#123).
+  it('Escape falls through to the layer beneath when the top layer disables it', () => {
+    const onA = vi.fn()
+    const onB = vi.fn()
+    const ca = pushDismissable({ element: container, onDismiss: onA })
+    const cb = pushDismissable({ element: outside, onDismiss: onB, disableEscape: true })
+    dispatchKey('Escape')
+    expect(onB).not.toHaveBeenCalled()
+    expect(onA).toHaveBeenCalledTimes(1)
+    cb()
+    ca()
+  })
+
+  it('Escape falls through when the top layer’s onEscape router declines', () => {
+    const onA = vi.fn()
+    const onB = vi.fn()
+    const routerB = vi.fn(() => false)
+    const ca = pushDismissable({ element: container, onDismiss: onA })
+    const cb = pushDismissable({ element: outside, onDismiss: onB, onEscape: routerB })
+    dispatchKey('Escape')
+    expect(routerB).toHaveBeenCalledTimes(1)
+    expect(onB).not.toHaveBeenCalled()
+    expect(onA).toHaveBeenCalledTimes(1)
+    cb()
+    ca()
+  })
+
+  it('the walk stops at the first layer that claims', () => {
+    const onA = vi.fn()
+    const onB = vi.fn()
+    const middle = document.createElement('div')
+    document.body.append(middle)
+    const ca = pushDismissable({ element: container, onDismiss: onA })
+    const cb = pushDismissable({ element: middle, onDismiss: onB })
+    const cc = pushDismissable({ element: outside, onDismiss: vi.fn(), disableEscape: true })
+    dispatchKey('Escape')
+    // C declined, B claimed → A never sees it.
+    expect(onB).toHaveBeenCalledTimes(1)
+    expect(onA).not.toHaveBeenCalled()
+    cc()
+    cb()
+    ca()
+  })
+
+  it('a fully-declining stack leaves the event unclaimed', () => {
+    const onA = vi.fn()
+    const ca = pushDismissable({ element: container, onDismiss: onA, disableEscape: true })
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    const stop = vi.spyOn(event, 'stopPropagation')
+    document.dispatchEvent(event)
+    expect(onA).not.toHaveBeenCalled()
+    expect(stop).not.toHaveBeenCalled()
+    ca()
+  })
+
   it('cleanup removes layer from stack', () => {
     const onDismiss = vi.fn()
     const cleanup = pushDismissable({ element: container, onDismiss })

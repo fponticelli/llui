@@ -161,6 +161,14 @@ onMount(() => registerNestedLayer(() => overlayRootElement()))
 
 While registered, the element (and its descendants) is treated as inside by all three utilities. Prefer the resolver form — register once for the overlay's lifetime and return the live root only while open.
 
+### Live regions and the modal sweep
+
+`aria-hidden` never hides a **live region** — `aria-live="polite"`/`"assertive"`, `role="alert"`, `role="status"`, `role="log"` — because a hidden live region is simply never read out, so a toast raised while a dialog is open would be silent for screen-reader users. This needs no registration and covers your own regions as well as `toast`/`async-list`/`clipboard`/`date-input`/`field`. Exemption is precise: the sweep descends through an ancestor that merely _contains_ a live region and still hides everything hanging off the path down to it.
+
+### Escape and the dismissable stack
+
+Escape is offered to the layers top-down until one **claims** it. A layer declines by setting `disableEscape` or returning `false` from its `onEscape` router; the key then falls through to the layer beneath instead of being swallowed.
+
 ## Styling (opt-in)
 
 Components are fully headless by default. An opt-in styling layer provides two complementary mechanisms:

@@ -170,22 +170,25 @@ export function connect(
   let closeTimer: ReturnType<typeof setTimeout> | null = null
 
   // A pending close timer must not act after the menu unmounts, or it dispatches
-  // to a disposed handle. Capture a trigger at schedule time; if it was live
-  // then but is detached when the timer fires, the menu unmounted — drop it.
-  // (No trigger in the DOM at all, e.g. a unit test → no guard.)
+  // to a disposed handle. Capture THIS instance's root at schedule time; if it
+  // was live then but is detached when the timer fires, the menu unmounted —
+  // drop it. The root comes from the event's `currentTarget`: a
+  // `document.querySelector('[data-scope="navigation-menu"]…')` picks the first
+  // nav in DOCUMENT ORDER, so a second instance checked the FIRST one's liveness
+  // and happily dispatched into its own disposed handle (#123). (No element at
+  // all, e.g. a unit test dispatching a bare object → no guard.)
   const detached = (el: Element | null): boolean => el !== null && !el.isConnected
-  const anyTrigger = (): Element | null =>
-    typeof document === 'undefined'
-      ? null
-      : document.querySelector('[data-scope="navigation-menu"][data-part="trigger"]')
+  const eventRoot = (e: { currentTarget?: EventTarget | null } | undefined): Element | null => {
+    const t = e?.currentTarget
+    return t instanceof Element ? t : null
+  }
 
-  const scheduleClose = (): void => {
+  const scheduleClose = (root: Element | null): void => {
     if (!closeOnLeave) return
     if (closeTimer) clearTimeout(closeTimer)
-    const trigger = anyTrigger()
     closeTimer = setTimeout(() => {
       closeTimer = null
-      if (!detached(trigger)) send({ type: 'closeAll' })
+      if (!detached(root)) send({ type: 'closeAll' })
     }, 150)
   }
 
@@ -217,7 +220,7 @@ export function connect(
       'data-scope': 'navigation-menu',
       'data-part': 'root',
       'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
-      onPointerLeave: () => scheduleClose(),
+      onPointerLeave: (e: PointerEvent) => scheduleClose(eventRoot(e)),
       onPointerEnter: () => cancelClose(),
     },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {

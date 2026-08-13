@@ -5,6 +5,21 @@
  * and `inert` to every sibling at each level. Previous attribute values are
  * recorded and restored on cleanup.
  *
+ * Two kinds of element are EXEMPT: registered nested layers (see
+ * `registerNestedLayer`) and live regions — `aria-live`, `role="alert"`,
+ * `role="status"`, `role="log"`. A live region under `aria-hidden` is simply
+ * never read out, so a modal that sweeps one silences the app's announcement
+ * channel for exactly as long as it is open (#123). Live regions are matched by
+ * selector rather than registration because they are plain part bags with no
+ * mount hook of their own, and because that also covers consumer-authored ones.
+ *
+ * An exempt element does NOT spare its whole ancestor subtree: the sweep
+ * descends through any element that merely CONTAINS one and hides everything
+ * hanging off the path down to it. (Skipping the ancestor wholesale would leave
+ * the entire app interactive behind the modal the moment a form somewhere held
+ * an `aria-live` error message.) `inert` and `aria-hidden` both inherit, so
+ * leaving the path clear is the only way an exempt element stays reachable.
+ *
  * Nested calls are supported — each layer only touches elements that haven't
  * been claimed by a higher layer (tracked via a WeakMap reference count).
  */
@@ -16,30 +31,46 @@ interface Snapshot {
   inert: string | null
 }
 
+/** Elements whose whole purpose is to be announced while something else has
+ * focus. `aria-live="off"` is explicitly not one. */
+const LIVE_REGION_SELECTOR =
+  '[aria-live="polite"],[aria-live="assertive"],[role="alert"],[role="status"],[role="log"]'
+
 const ownership = new WeakMap<Element, number>()
 const snapshots = new WeakMap<Element, Snapshot>()
 
 export function setAriaHiddenOutside(target: Element): () => void {
   if (typeof document === 'undefined') return () => {}
   const claimed: Element[] = []
-  // Registered nested layers (and their ancestors) are part of this layer — a
-  // sibling that contains one must stay interactive, so never inert it.
-  const nested = getNestedLayers()
+  const exempt = [...getNestedLayers(), ...document.querySelectorAll(LIVE_REGION_SELECTOR)]
 
-  walkSiblings(target, (sibling) => {
-    if (containsNestedLayer(sibling, nested)) return
-    const count = ownership.get(sibling) ?? 0
+  const claim = (el: Element): void => {
+    const count = ownership.get(el) ?? 0
     if (count === 0) {
-      snapshots.set(sibling, {
-        ariaHidden: sibling.getAttribute('aria-hidden'),
-        inert: sibling.getAttribute('inert'),
+      snapshots.set(el, {
+        ariaHidden: el.getAttribute('aria-hidden'),
+        inert: el.getAttribute('inert'),
       })
-      sibling.setAttribute('aria-hidden', 'true')
-      sibling.setAttribute('inert', '')
+      el.setAttribute('aria-hidden', 'true')
+      el.setAttribute('inert', '')
     }
-    ownership.set(sibling, count + 1)
-    claimed.push(sibling)
-  })
+    ownership.set(el, count + 1)
+    claimed.push(el)
+  }
+
+  /** Hide `el`, or — when it holds an exempt element — hide AROUND it. */
+  const hide = (el: Element): void => {
+    if (isOrContainsExempt(el, exempt)) {
+      if (isExemptItself(el, exempt)) return
+      for (const child of Array.from(el.children)) {
+        if (!shouldSkip(child)) hide(child)
+      }
+      return
+    }
+    claim(el)
+  }
+
+  walkSiblings(target, hide)
 
   return () => {
     for (const el of claimed) {
@@ -81,10 +112,16 @@ function shouldSkip(el: Element): boolean {
   return tag === 'script' || tag === 'style' || tag === 'link' || tag === 'meta' || tag === 'title'
 }
 
-/** Whether `el` is, or is an ancestor of, any registered nested layer. */
-function containsNestedLayer(el: Element, nested: Element[]): boolean {
-  for (const layer of nested) {
-    if (el === layer || el.contains(layer)) return true
+/** Whether `el` is, or is an ancestor of, any exempt element. */
+function isOrContainsExempt(el: Element, exempt: Element[]): boolean {
+  for (const other of exempt) {
+    if (el === other || el.contains(other)) return true
   }
   return false
+}
+
+/** Whether `el` is an exempt element itself (descending into it is pointless —
+ * the whole subtree must stay reachable). */
+function isExemptItself(el: Element, exempt: Element[]): boolean {
+  return exempt.includes(el)
 }

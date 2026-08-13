@@ -32,17 +32,28 @@ interface Layer {
   handleEscape(event: KeyboardEvent): boolean
 }
 
-// Global stack — topmost layer gets to process events first. Only the
-// topmost claims the escape key.
+// Global stack — topmost layer gets to process events first. Exactly one layer
+// CLAIMS the escape key; a layer that declines passes it down.
 const stack: Layer[] = []
 let keyListenerAttached = false
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
-  const top = stack[stack.length - 1]
-  if (!top) return
-  const claimed = top.handleEscape(event)
-  if (claimed) event.stopPropagation()
+  // Walk DOWN from the top until a layer claims the key. Offering it to the top
+  // layer alone black-holed Escape whenever that layer declined (`disableEscape`,
+  // or an `onEscape` router returning false) — the documented meaning of
+  // declining is "propagates", and the layer beneath never saw it (#123).
+  // Iterate a SNAPSHOT and re-check membership: a handler runs arbitrary
+  // consumer code that may pop layers (its own included) mid-walk.
+  const snapshot = stack.slice()
+  for (let i = snapshot.length - 1; i >= 0; i--) {
+    const layer = snapshot[i]!
+    if (!stack.includes(layer)) continue
+    if (layer.handleEscape(event)) {
+      event.stopPropagation()
+      return
+    }
+  }
 }
 
 function ensureKeyListener(): void {

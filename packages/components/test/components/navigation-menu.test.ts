@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, isOpen } from '../../src/components/navigation-menu'
 import type { NavMenuState } from '../../src/components/navigation-menu'
 import { rootSignal, signalOf, read } from '../_signal'
@@ -180,6 +180,63 @@ describe('navigation-menu.connect', () => {
     const content = p.item('file', { isBranch: true }).content
     expect(read(content.hidden, init())).toBe(true)
     expect(read(content.hidden, init({ open: ['file'] }))).toBe(false)
+  })
+})
+
+describe('navigation-menu close timer resolves its OWN instance (#123)', () => {
+  // Two navs in one document. The guard used to `document.querySelector` the
+  // FIRST `[data-part="trigger"]` in document order, so the second instance
+  // checked the FIRST one's liveness and dispatched into a disposed handle.
+  function makeNav(id: string): HTMLElement {
+    const root = document.createElement('nav')
+    root.setAttribute('data-scope', 'navigation-menu')
+    root.setAttribute('data-part', 'root')
+    const trigger = document.createElement('button')
+    trigger.id = `${id}:trigger:home`
+    trigger.setAttribute('data-scope', 'navigation-menu')
+    trigger.setAttribute('data-part', 'trigger')
+    root.append(trigger)
+    return root
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+  })
+
+  it('drops the close when its own root has detached, even if a sibling nav is live', () => {
+    const navA = makeNav('a')
+    const navB = makeNav('b')
+    document.body.append(navA, navB)
+
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'b' })
+    // Dispatch a real event so `currentTarget` is navB, as it is in the browser.
+    navB.addEventListener('pointerleave', (e) => p.root.onPointerLeave(e as PointerEvent))
+    navB.dispatchEvent(new Event('pointerleave'))
+
+    // navB unmounts while the timer is pending; navA stays in the document.
+    navB.remove()
+    expect(navA.isConnected).toBe(true)
+    vi.advanceTimersByTime(200)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('still closes while its own root is live (the guard is not vacuous)', () => {
+    const navA = makeNav('a')
+    const navB = makeNav('b')
+    document.body.append(navA, navB)
+
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'b' })
+    navB.addEventListener('pointerleave', (e) => p.root.onPointerLeave(e as PointerEvent))
+    navB.dispatchEvent(new Event('pointerleave'))
+    vi.advanceTimersByTime(200)
+    expect(send).toHaveBeenCalledWith({ type: 'closeAll' })
   })
 })
 
