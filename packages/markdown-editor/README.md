@@ -52,7 +52,17 @@ Markdown into it directly bypasses that decision and re-opens the echo loop.
 | `@llui/markdown-editor`                   | `markdownEditor()` component   |
 | `@llui/markdown-editor/plugins/core`      | Core GFM transformers          |
 | `@llui/markdown-editor/plugins/callout`   | Callout/admonition transformer |
+| `@llui/markdown-editor/plugins/table`     | `tablePlugin()` — GFM tables   |
 | `@llui/markdown-editor/surfaces/toolbar`  | Toolbar surface                |
 | `@llui/markdown-editor/styles/editor.css` | Editor styles                  |
 
-Peers on `@llui/dom`, `@llui/lexical`, `@llui/components`, `lexical`, and the relevant `@lexical/*` packages (`^0.46`).
+Peers on `@llui/dom`, `@llui/lexical`, `@llui/components`, `lexical`, and the relevant `@lexical/*` packages (`^0.49`).
+
+`@lexical/table` is an **optional** peer. It is imported by exactly one module —
+the table plugin — which is why that plugin is _not_ re-exported from the barrel:
+
+```ts
+import { tablePlugin } from '@llui/markdown-editor/plugins/table'
+```
+
+An editor without tables neither installs nor bundles `@lexical/table`.
