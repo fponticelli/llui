@@ -340,6 +340,7 @@ describe('persistent layouts — SSR chain render', () => {
       v: 3,
       layers: ['AppLayout', 'ReportsPage'],
       seeded: [false, false],
+      initFingerprints: [expect.any(String), expect.any(String)],
     })
   })
 
@@ -367,6 +368,7 @@ describe('persistent layouts — SSR chain render', () => {
       v: 3,
       layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'],
       seeded: [false, false, false],
+      initFingerprints: [expect.any(String), expect.any(String), expect.any(String)],
     })
   })
 
@@ -540,6 +542,7 @@ describe('persistent layouts — route-scoped section layout (issue #33)', () =>
       v: 3,
       layers: ['AppLayout', 'DocsLayout', 'Article-intro'],
       seeded: [false, false, false],
+      initFingerprints: [expect.any(String), expect.any(String), expect.any(String)],
     })
   })
 })

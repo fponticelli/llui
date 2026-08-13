@@ -7,6 +7,24 @@
 import { normalizeUpdateResult } from '@llui/dom'
 import type { Renderable } from '@llui/dom'
 
+declare global {
+  // Vite/Rollup substitute `import.meta.env.DEV`; raw tsc sees undefined, so the
+  // dev checks stay off. Merges with @llui/dom's identical augmentation.
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+
+/**
+ * True in a development build. The determinism checks below take this as an
+ * explicit `dev` PARAMETER rather than reading the flag themselves — that keeps
+ * the "off in production" half of the contract directly testable, and leaves the
+ * single substituted expression here for the bundler to fold.
+ */
+export function isDevBuild(): boolean {
+  return import.meta.env?.DEV === true
+}
+
 /**
  * A type-erased signal component as the adapter handles it. Layouts and pages are
  * `SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter treats them
@@ -22,6 +40,15 @@ import type { Renderable } from '@llui/dom'
  */
 export interface AnyLayer {
   readonly name?: string
+  /**
+   * MUST BE DETERMINISTIC. The hydration envelope ships no state, so a layer
+   * without a data slice is re-seeded on the client by calling this again —
+   * `Date.now()`, `Math.random()`, `crypto.randomUUID()` or a module-level
+   * counter here renders one state on the server and hydrates another. Emit the
+   * varying value from an effect after mount, or resolve it server-side and pass
+   * it in through the layer's data slice. Dev builds check and warn (see
+   * {@link buildManifest} / {@link checkInitDeterminism}).
+   */
   init(): unknown
   update(state: unknown, msg: unknown): unknown
   view(bag: unknown): Renderable
@@ -147,6 +174,45 @@ export interface HydrationManifest {
    * {@link verifyManifest}).
    */
   seeded: boolean[]
+
+  /**
+   * DEV BUILDS ONLY — a {@link stateFingerprint} of each init()-seeded layer's
+   * server state (`null` for a data-seeded layer, absent entirely in production).
+   *
+   * Re-seeding a layer by calling its `init()` again on the client is only sound
+   * if `init()` is DETERMINISTIC. Nothing enforces that, and a violation is
+   * invisible: `init: () => ({ id: Date.now() })` renders one state server-side
+   * and hydrates another, with the manifest, the chain and the DOM structure all
+   * perfectly in agreement. The fingerprint spans the one boundary the
+   * divergence actually lives on, so the client can compare and warn (see
+   * {@link checkInitDeterminism}). It is a hash, never the state, and it is not
+   * emitted at all in production.
+   */
+  initFingerprints?: (string | null)[]
+}
+
+/**
+ * Stable content hash of a layer's seed state — 32-bit FNV-1a over its JSON, hex.
+ *
+ * Comparable across the server→client boundary because State is JSON-serializable
+ * by contract and one `init()` body always builds its object in the same key
+ * order. Returns `null` for a state JSON cannot express (a cycle, a `BigInt`),
+ * which is a State-shape violation of its own and not this check's business to
+ * report — declining is what keeps a dev-only probe from throwing.
+ */
+export function stateFingerprint(state: unknown): string | null {
+  let json: string
+  try {
+    json = JSON.stringify(state) ?? 'undefined'
+  } catch {
+    return null
+  }
+  let h = 0x811c9dc5
+  for (let i = 0; i < json.length; i++) {
+    h ^= json.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
 }
 
 /**
@@ -164,17 +230,88 @@ export function layerKey(def: AnyLayer, index: number): string {
  * Build the integrity manifest for a full chain (`[...layouts, page]`).
  * `chainData` is that chain's index-aligned data array (see
  * {@link buildChainData}); only the PRESENCE of each slice is recorded, never
- * its value — the manifest ships inside the HTML document.
+ * its value — the manifest ships inside the HTML document. `seedStates` is the
+ * state each layer actually rendered against.
+ *
+ * When `dev` is set this also runs the SAME-TICK half of the init()-determinism
+ * check: every init()-seeded layer's `init()` is called a second time and
+ * compared against what was rendered, which catches a counter, a `Math.random()`
+ * or a mutable module binding right where it happens. The time-dependent cases
+ * survive a same-tick double call — those are left to the client-side
+ * fingerprint comparison in {@link checkInitDeterminism}. With `dev` off, no
+ * extra `init()` runs and no fingerprints are emitted.
  */
 export function buildManifest(
   chain: LayoutChain,
   chainData: readonly unknown[],
+  seedStates: readonly unknown[],
+  dev: boolean,
 ): HydrationManifest {
-  return {
+  const manifest: HydrationManifest = {
     v: HYDRATION_MANIFEST_VERSION,
     layers: chain.map((def, i) => layerKey(def, i)),
     seeded: chain.map((_def, i) => seedFor(chainData[i]) !== undefined),
   }
+  if (!dev) return manifest
+
+  manifest.initFingerprints = chain.map((def, i) => {
+    // A data-seeded layer never calls init() on either side — nothing to check.
+    if (seedFor(chainData[i]) !== undefined) return null
+    const rendered = stateFingerprint(seedStates[i])
+    const second = stateFingerprint(seedStateFor(def, undefined))
+    if (rendered !== null && second !== null && rendered !== second) {
+      console.warn(
+        `[llui/vike] <${layerKey(def, i)}> (chain layer ${i}) has a NON-DETERMINISTIC ` +
+          `init(): two calls in the same server render produced different state. This ` +
+          `layer ships no state to the client — it is re-seeded by calling init() again ` +
+          `during hydration — so the browser will render something other than the HTML ` +
+          `you just sent. Move the varying value (a counter, Math.random(), ` +
+          `crypto.randomUUID(), Date.now()) out of init(): emit it from an effect, or ` +
+          `resolve it server-side and pass it in through the layer's data slice. ` +
+          `(dev-only check; not run in production builds)`,
+      )
+    }
+    return rendered
+  })
+  return manifest
+}
+
+/**
+ * Client half of the init()-determinism check: compare the state this layer just
+ * re-seeded itself with against the fingerprint the server recorded, and warn
+ * when they differ. Dev-only, and a no-op against a production server envelope
+ * (which carries no fingerprints) so a dev client never fails on a prod server.
+ *
+ * This is a WARNING, not a throw: the state divergence is already committed by
+ * the time it is observable, the app is running, and the fix is in the author's
+ * `init()` — turning a working-but-wrong page into a blank one helps nobody.
+ * The seed-ORIGIN mismatch in {@link verifyManifest} throws instead, because
+ * there the adapter can still refuse before binding anything.
+ */
+export function checkInitDeterminism(
+  manifest: HydrationManifest,
+  index: number,
+  def: AnyLayer,
+  data: unknown,
+  state: unknown,
+  dev: boolean,
+): void {
+  if (!dev) return
+  if (seedFor(data) !== undefined) return
+  const expected = manifest.initFingerprints?.[index]
+  if (expected === undefined || expected === null) return
+  const actual = stateFingerprint(state)
+  if (actual === null || actual === expected) return
+  console.warn(
+    `[llui/vike] <${layerKey(def, index)}> (chain layer ${index}) has a NON-DETERMINISTIC ` +
+      `init(): it produced different state on the client than on the server, so the ` +
+      `hydrated DOM no longer matches the HTML that was sent. A layer with no data ` +
+      `slice is re-seeded by calling init() again in the browser, which requires it to ` +
+      `return the same value on both sides. Move the varying value (Date.now(), ` +
+      `Math.random(), crypto.randomUUID(), a counter) out of init(): emit it from an ` +
+      `effect after mount, or resolve it server-side and pass it in through the layer's ` +
+      `data slice. (dev-only check; not run in production builds)`,
+  )
 }
 
 /**
@@ -253,5 +390,13 @@ export function verifyManifest(
             `\`passToClient\`/onBeforeRender split produces exactly this).`,
     )
   }
-  return { v: HYDRATION_MANIFEST_VERSION, layers, seeded }
+  // `initFingerprints` is dev-only and therefore absent from a production
+  // server's envelope — carried through when present, never required.
+  const fingerprints = manifest.initFingerprints
+  return {
+    v: HYDRATION_MANIFEST_VERSION,
+    layers,
+    seeded,
+    initFingerprints: Array.isArray(fingerprints) ? fingerprints : undefined,
+  }
 }

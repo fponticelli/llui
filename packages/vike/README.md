@@ -277,6 +277,27 @@ The manifest is versioned (`v`) and lists every layer outermost → page. On hyd
 
 The chain's data array is built index-aligned with the chain, so a short or missing `lluiLayoutData` can never slide the page's `+data` slice onto a layout.
 
+#### `init()` must be deterministic
+
+Because no state is shipped, a layer with no data slice is re-seeded on the client by **calling its own `init()` again**. That is only sound if `init()` returns the same value in both places. It is a hard precondition of SSR under this adapter:
+
+```ts
+// ✗ renders one state on the server and hydrates a different one
+init: () => ({ id: crypto.randomUUID(), openedAt: Date.now() })
+
+// ✓ deterministic — the client re-seed reproduces the server's state exactly
+init: () => ({ id: null, openedAt: null })
+```
+
+Anything varying — `Date.now()`, `Math.random()`, `crypto.randomUUID()`, a module-level counter, a mutable module binding — must come from somewhere else:
+
+- **emit it from an effect** so it is produced once, after mount, through a message; or
+- **resolve it server-side** and pass it in through the layer's data slice, so both sides read the same value.
+
+Dev builds check this for you and warn, naming the layer. The server calls each init()-seeded layer's `init()` a second time and compares (catching counters and `Math.random()`), and records a hash of the resulting state in the manifest so the client can compare its own re-seed against it (catching the time-dependent cases, which look perfectly stable within one server tick). Both checks are gated on the dev build: production emits no hashes and makes no extra `init()` call.
+
+This is a warning rather than a thrown error — by the time it is observable the state divergence has already happened, the app is running, and the fix is in your `init()`.
+
 ### Page Transitions
 
 `createOnRenderClient` accepts `onLeave` and `onEnter` hooks that fire around the dispose-and-remount cycle on client navigation. `onLeave` is awaited — return a promise to defer the swap until a leave animation finishes:
