@@ -104,6 +104,13 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * The active rate limiter. Exposed so surfaces composed AROUND the
+   * core — notably the MCP router, which runs BEFORE `router` and would
+   * otherwise never consult one — share the same buckets instead of
+   * running unthrottled or building a second limiter with its own state.
+   */
+  rateLimiter: RateLimiter
+  /**
    * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
    * the `corsOrigins` core option. `undefined`/empty means same-origin
    * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
@@ -272,6 +279,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     registry,
     tokenStore,
     auditSink,
+    rateLimiter,
     acceptConnection,
     allowedOrigins,
     slidingTtlMs,

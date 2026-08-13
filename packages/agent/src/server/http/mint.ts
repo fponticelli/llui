@@ -3,6 +3,7 @@ import type { IdentityResolver } from '../identity.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { mintToken } from '../token.js'
+import { clientIpOf } from '../client-ip.js'
 import { LAP_VERSION, type MintResponse, type TokenRecord } from '../../protocol.js'
 
 /**
@@ -160,24 +161,6 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
-}
-
-/**
- * Best-effort client IP for anonymous rate-limiting. Prefers the first
- * `X-Forwarded-For` hop (the original client behind proxies), then
- * `X-Real-IP`. Falls back to a shared constant so anonymous callers
- * without any forwarding header still share ONE throttle bucket rather
- * than each getting an unlimited allowance.
- */
-function clientIpOf(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for')
-  if (xff) {
-    const first = xff.split(',')[0]?.trim()
-    if (first) return first
-  }
-  const real = req.headers.get('x-real-ip')
-  if (real) return real.trim()
-  return 'anon'
 }
 
 function toWsUrl(httpOrigin: string): string {

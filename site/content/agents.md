@@ -206,6 +206,41 @@ const server = app.listen(8787)
 server.on('upgrade', agent.wsUpgrade)
 ```
 
+### Built-in MCP endpoint (optional)
+
+Pass `mcp: true` (or an `McpRouterOptions` object) to
+`createLluiAgentServer` / `AgentPairingDurableObject` to serve MCP
+directly at `/agent/mcp`, so Claude Desktop can connect without the
+`llui-agent` bridge process.
+
+The endpoint stays reachable **without** a bearer — `connect_session` is
+where this protocol authenticates, and a client has to get far enough to
+call it. Each `initialize` allocates a transport plus a fully-registered
+MCP server, so that open path is bounded on four axes:
+
+| Option                       | Default   | What it bounds                                                                                                                                                                                      |
+| ---------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxSessions`                | `64`      | Total retained sessions. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                                             |
+| `maxUnauthenticatedSessions` | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session. |
+| `unauthenticatedTtlMs`       | `60000`   | Idle window before a session that never connected is closed and swept.                                                                                                                              |
+| `idleTtlMs`                  | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                              |
+
+Two further rules apply to every `initialize`:
+
+- It is **rate-limited** through the server's own `rateLimiter` (default
+  30/minute), keyed by client IP — `X-Forwarded-For`, then `X-Real-IP`,
+  then one shared bucket. Set `rateLimiter` on the server options to
+  change it.
+- An `Authorization: Bearer` header, **if present**, must be a valid LLui
+  agent token or the request is rejected `401` having allocated nothing.
+  Omitting the header is still fine; presenting a bogus one is not. A
+  valid bearer only buys admission outside the anonymous quota — every
+  tool still refuses until `connect_session` binds a token.
+
+Requests on an already-established session are not throttled here; their
+tool handlers reach LAP through the core router, which gates them on the
+per-token bucket.
+
 ### Client
 
 ```ts

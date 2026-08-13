@@ -35,6 +35,10 @@ export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHand
         coreRouter: core.router,
         tokenStore: core.tokenStore,
         lapBasePath,
+        // The MCP router runs BEFORE `core.router`, so it has to consult
+        // the limiter itself — sharing the core's instance keeps the
+        // session-allocating path in the same buckets as `/agent/mint`.
+        rateLimiter: core.rateLimiter,
         slidingTtlMs: core.slidingTtlMs,
       },
       mcpOpts,

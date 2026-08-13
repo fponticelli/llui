@@ -58,3 +58,35 @@ describe('AgentPairingDurableObject /__resolve', () => {
     expect(await tidOf(await isolatedDO.fetch(resolveReq(token)))).toBeNull()
   })
 })
+
+describe('AgentPairingDurableObject MCP session bound (#102)', () => {
+  it('bounds retained MCP sessions across repeated unauthenticated initializes', async () => {
+    // A DO's 128 MB ceiling is reached at ~1,100 unbounded sessions, so
+    // the bound has to hold on THIS path, not only in the Node factory.
+    const doInstance = new AgentPairingDurableObject({
+      mcp: { maxSessions: 8, maxUnauthenticatedSessions: 4 },
+    })
+    for (let i = 0; i < 200; i++) {
+      await doInstance.fetch(
+        new Request('http://do/agent/mcp', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: {
+              protocolVersion: '2025-06-18',
+              capabilities: {},
+              clientInfo: { name: 'test', version: '1' },
+            },
+          }),
+        }),
+      )
+    }
+    expect(doInstance.mcpRouter?.liveSessionCount()).toBeLessThanOrEqual(8)
+  })
+})
