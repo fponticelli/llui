@@ -119,6 +119,15 @@ jobs:
         # a change to the shared vitest config (e.g. a define flip).
         run: TURBO_DAEMON=false pnpm turbo test --concurrency=2
 
+      # Root `scripts/` belongs to no workspace package, so `turbo test` above
+      # cannot see it — these tests run under their own vitest config and would
+      # otherwise execute only in `pnpm verify`, which CI does not call. A gate
+      # that never runs is not a gate: `scripts/lib/verify-install.ts` is what
+      # stops `bench:setup` from reporting success over an incomplete install
+      # (#81), so it has to be checked here.
+      - name: Test root scripts
+        run: pnpm test:scripts
+
       # Boot every built example in headless Chromium and fail on any
       # console.error / page error. Catches issue-#5-class bugs where
       # the bundle compiles cleanly but crashes on first paint
