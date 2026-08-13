@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { LluiMcpServer } from '../src/index'
 
@@ -15,6 +16,35 @@ describe('llui_find_msg_producers', () => {
       rootDir: resolve(ROOT, 'examples/counter/src'),
     })) as { hits: Array<{ file: string; line: number; column: number; context: string }> }
     expect(Array.isArray(result.hits)).toBe(true)
+  })
+
+  // Issue #86: the search must cover THIS repo, not whatever happens to sit in
+  // the tree. Plain `grep -rn` had no exclusions at all, so it walked
+  // `node_modules` and any vendored checkout (here a gitignored
+  // js-framework-benchmark clone) and would report a `send({type:...})` from
+  // somebody else's package as a producer in this project. It is also what made
+  // this file's runtime a function of whether `pnpm bench:setup` had ever run.
+  it('never reports a hit from a gitignored or vendored path', async () => {
+    const server = new LluiMcpServer()
+    const result = (await server.handleToolCall('llui_find_msg_producers', {
+      msgType: 'inc',
+      rootDir: ROOT,
+    })) as { hits: Array<{ file: string }> }
+
+    // Non-vacuous: if the search stopped finding anything, the assertion below
+    // would pass for the wrong reason.
+    expect(result.hits.length).toBeGreaterThan(0)
+
+    const ignored = result.hits.filter((h) => {
+      try {
+        execFileSync('git', ['-C', ROOT, 'check-ignore', '-q', h.file], { stdio: 'ignore' })
+        return true // exit 0 == the path IS ignored
+      } catch {
+        return false
+      }
+    })
+    expect(ignored.map((h) => h.file)).toEqual([])
+    expect(result.hits.filter((h) => h.file.includes('node_modules'))).toEqual([])
   })
 
   it('returns empty hits for a nonexistent msg type', async () => {
