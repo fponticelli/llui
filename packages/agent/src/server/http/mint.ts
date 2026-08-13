@@ -26,6 +26,16 @@ export type MintDeps = {
    * unthrottled (the core always wires one).
    */
   rateLimiter?: RateLimiter
+  /**
+   * Bucket key for an anonymous caller (one the identity resolver
+   * returns nothing for). Defaults to {@link clientIpOf} with NO proxy
+   * trust, which puts every such caller in one shared bucket — see that
+   * module for why a forwarding header is not a default identity. Hosts
+   * behind a proxy, or with the socket address in hand, pass a resolver
+   * built by `createClientIpResolver`; `createLluiAgentCore` builds one
+   * from its `trustProxy`/`clientAddress` options and wires it here.
+   */
+  clientIp?: (req: Request) => string
   lapBasePath: string
   /**
    * Permit minting a remote-control token for an UNAUTHENTICATED caller
@@ -85,7 +95,7 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   // client IP for anonymous callers) — otherwise a caller who can reach
   // the endpoint could spam token records into the store unbounded.
   if (deps.rateLimiter) {
-    const rlKey = uid ?? clientIpOf(req)
+    const rlKey = uid ?? (deps.clientIp ?? clientIpOf)(req)
     const rl = await deps.rateLimiter.check(rlKey, 'identity')
     if (!rl.allowed) {
       await deps.auditSink.write({

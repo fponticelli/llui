@@ -8,8 +8,9 @@ import type { PairingRegistry } from './ws/pairing-registry.js'
 import type { AcceptResult } from './core.js'
 import type { PairingConnection } from './ws/pairing-registry.js'
 import type { McpRouterOptions } from './mcp/router.js'
+import type { ClientAddressResolver } from './client-ip.js'
 
-export type { McpRouterOptions }
+export type { McpRouterOptions, ClientAddressResolver }
 
 /**
  * Options accepted by `createLluiAgentServer`. All values are
@@ -49,6 +50,30 @@ export type ServerOptions = {
   /** Rate limiter. Defaults to `defaultRateLimiter` with 30/minute. */
   rateLimiter?: RateLimiter
 
+  /**
+   * Number of TRUSTED reverse proxies in front of this server, used to
+   * derive the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint` and the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no `X-Forwarded-For` / `X-Real-IP` is
+   * read at all. Those are ordinary request headers, so on a
+   * direct-to-origin deployment the caller picks their value, and a
+   * limiter keyed on a caller-chosen string is not a limiter. Set this
+   * only when a proxy you control is guaranteed to be in the path; the
+   * hop `n` from the END of the chain is then the one it wrote.
+   */
+  trustProxy?: boolean | number
+
+  /**
+   * Peer (socket) address of a request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header — Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip` (the edge
+   * overwrites that one, unlike `X-Forwarded-For`). Without it, and
+   * without `trustProxy`, all such callers share ONE bucket.
+   */
+  clientAddress?: ClientAddressResolver
+
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
@@ -61,9 +86,11 @@ export type ServerOptions = {
    *
    * Also the retention window for a closed session's registry buffers —
    * its `describe_recent_actions` ring and buffered confirm outcomes
-   * survive a drop for exactly this long, then are reclaimed. Past it
-   * the bearer has to rotate anyway, so there is nothing left for the
-   * history to serve.
+   * survive a drop for exactly this long, then are reclaimed. That is a
+   * memory bound, not a lifetime: `/resume/claim` rotates the bearer but
+   * keeps the same `tid`, and the registry is keyed by `tid`, so a
+   * resume LATER than this window reattaches to the same session with an
+   * empty recent-action history. `0` drops the buffers on close.
    */
   pairingGraceMs?: number
 

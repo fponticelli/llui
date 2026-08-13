@@ -22,6 +22,7 @@ import { createLapRouter } from './lap/router.js'
 import { InMemoryPairingRegistry } from './ws/pairing-registry.js'
 import { tokenHashOf } from './token.js'
 import { isSlidingTtlExpired } from './sliding-ttl.js'
+import { createClientIpResolver, type ClientAddressResolver } from './client-ip.js'
 
 /**
  * Default resolver: every caller is unauthenticated (`null`). With this
@@ -49,6 +50,26 @@ export type CoreOptions = {
    * `MintDeps.allowAnonymous`.
    */
   allowAnonymous?: boolean
+  /**
+   * Number of TRUSTED reverse proxies in front of this server, for
+   * deriving the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint`, the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no `X-Forwarded-For` / `X-Real-IP` is
+   * read, because on a direct-to-origin deployment those are written by
+   * the caller and one bucket per caller-chosen value is not a limit.
+   * Set it only when a proxy you control is guaranteed to be in the
+   * path. See `client-ip.ts`.
+   */
+  trustProxy?: boolean | number
+  /**
+   * Peer (socket) address of the request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header: Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip`. Without
+   * it (and without `trustProxy`) they share one bucket.
+   */
+  clientAddress?: ClientAddressResolver
   /**
    * Sliding (inactivity) TTL in ms. When set, a token unused for longer
    * than this is rejected on every verify (LAP/MCP and WS upgrade) even
@@ -88,9 +109,14 @@ export type CoreOptions = {
    * Doubles as the retention window for a closed session's registry
    * buffers (`describe_recent_actions` ring + buffered confirm
    * outcomes): they survive a drop for exactly this long, then are
-   * swept. Past the window the bearer must rotate through
-   * `/resume/claim`, so retained history has nothing left to serve —
-   * and holding it anyway leaked one buffer per browser-tab lifecycle.
+   * swept — a memory bound, since holding them leaked one buffer per
+   * browser-tab lifecycle (#101).
+   *
+   * Note what that costs: `/resume/claim` rotates the bearer but keeps
+   * the SAME tid, and the registry is keyed by tid, so a resume later
+   * than this window reattaches to a session whose recent-action history
+   * has been dropped. `describe_recent_actions` starts empty there. With
+   * `0`, it starts empty after any close at all.
    */
   pendingResumeGraceMs?: number
 }
@@ -117,6 +143,14 @@ export type AgentCoreHandle = {
    * running unthrottled or building a second limiter with its own state.
    */
   rateLimiter: RateLimiter
+  /**
+   * The bucket key this deployment uses for a caller with no resolved
+   * identity. Exposed for the same reason as `rateLimiter`: the MCP
+   * router runs BEFORE `router` and has to key its own limiter, and
+   * two surfaces disagreeing about which hop is trustworthy is how one
+   * of them ends up trusting an attacker-supplied header.
+   */
+  clientIp: (req: Request) => string
   /**
    * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
    * the `corsOrigins` core option. `undefined`/empty means same-origin
@@ -161,18 +195,31 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
   const allowAnonymous = opts.allowAnonymous ?? false
   const slidingTtlMs = opts.slidingTtlMs
   const allowedOrigins = opts.corsOrigins
+  const clientIp = createClientIpResolver({
+    trustProxy: opts.trustProxy,
+    clientAddress: opts.clientAddress,
+  })
 
   const registry: PairingRegistry =
     opts.registry ??
     new InMemoryPairingRegistry({
       // Tie the closed-session buffer retention to the pending-resume
-      // grace: that window is exactly how long a dropped socket can come
-      // back on the SAME bearer and expect its `describe_recent_actions`
-      // history intact. Past it the bearer must rotate through
-      // `/resume/claim`, so the retained history has nothing left to
-      // serve — and holding it anyway is what made every tab reload leak
-      // (#101). `pendingResumeGraceMs: 0` (opt out of grace) therefore
-      // drops the buffers on close.
+      // grace: that window is how long a dropped socket can come back on
+      // the SAME bearer and expect its `describe_recent_actions` history
+      // intact.
+      //
+      // Be precise about what happens PAST the window, because the
+      // obvious reading is wrong: `/resume/claim` rotates the token hash
+      // but KEEPS the tid (`resume.ts` → `rotateTokenHash(rec.tid, …)`),
+      // and this registry is keyed by tid — so a resumed session is the
+      // same key and COULD still be served its old history. Retention
+      // ends anyway, because it is a memory bound, not a consequence of
+      // the tid dying: holding the ring forever is what made every tab
+      // reload leak (#101). The cost is stated plainly: a resume later
+      // than this window starts with an EMPTY recent-action history.
+      // `pendingResumeGraceMs: 0` therefore drops the buffers on close —
+      // that record is immediately resume-claimable, and a claim will
+      // find nothing buffered.
       closedRetentionMs: pendingResumeGraceMs,
       onLogAppend: (tid, entry) => {
         void auditSink.write({
@@ -195,6 +242,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     identityResolver,
     auditSink,
     rateLimiter,
+    clientIp,
     lapBasePath,
     allowAnonymous,
     registry,
@@ -296,6 +344,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     tokenStore,
     auditSink,
     rateLimiter,
+    clientIp,
     acceptConnection,
     allowedOrigins,
     slidingTtlMs,

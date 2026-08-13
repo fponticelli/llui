@@ -39,6 +39,13 @@ export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHand
         // the limiter itself — sharing the core's instance keeps the
         // session-allocating path in the same buckets as `/agent/mint`.
         rateLimiter: core.rateLimiter,
+        // …and the same bucket KEY. Two surfaces disagreeing about which
+        // hop is trustworthy is how one of them ends up keyed on a
+        // caller-supplied header.
+        clientIp: core.clientIp,
+        // …and the same audit trail: a 401/429/503 here is the same
+        // class of event `/agent/mint` already records.
+        auditSink: core.auditSink,
         slidingTtlMs: core.slidingTtlMs,
       },
       mcpOpts,

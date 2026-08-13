@@ -126,6 +126,10 @@ export class AgentPairingDurableObject {
           // Runs BEFORE `agent.router`, so it consults the limiter
           // itself; sharing the core's instance keeps one set of buckets.
           rateLimiter: this.agent.rateLimiter,
+          // …and the same bucket key, so the MCP surface and `/agent/mint`
+          // agree on which hop this deployment can trust.
+          clientIp: this.agent.clientIp,
+          auditSink: this.agent.auditSink,
           slidingTtlMs: this.agent.slidingTtlMs,
         },
         mcpOpts,
