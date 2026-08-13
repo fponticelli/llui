@@ -36,12 +36,12 @@ if (currentUser.isStaff) installAnnotateHud()
 
 `installAnnotateHud(opts)` takes every `mountAnnotateHud` option plus `trigger` (default `true`, the `Cmd/Ctrl+Shift+A` bootstrap listener), and defaults `allowProduction: true` + `isolate: true` (shadow-DOM style isolation). It returns `{ activate, dispose }`: `activate()` resolves to the live `AnnotateHudHandle` and is idempotent, `dispose()` drops the bootstrap listener.
 
-**Do not import `mountAnnotateHud` from the barrel in a production entry.** The mount gate (`import.meta.env.DEV`, unless `allowProduction`) is a _runtime_ check inside a module that statically imports the editor, so no bundler can drop it — the HUD ships whether or not it ever mounts. Measured on this package with a stock production Vite build:
+**Do not import `mountAnnotateHud` from the barrel in a production entry.** The mount gate (`import.meta.env.DEV`, unless `allowProduction`) is a _runtime_ check inside a module that statically imports the editor, so no bundler can drop it — the HUD ships whether or not it ever mounts. Measured against this package's built `dist/` with Vite 8.0.3 (production, `minify: 'esbuild'`, `target: 'es2022'`, `@llui/dom` bundled in); your own numbers will move with your Vite and Lexical versions:
 
 | App entry imports                                | Entry chunk                          | Deferred                         |
 | ------------------------------------------------ | ------------------------------------ | -------------------------------- |
-| `installAnnotateHud` from `…/install`            | **1.8 kB** (999 B gzip)              | 506 kB JS + 13 kB CSS, on demand |
-| `mountAnnotateHud` from `@llui/devmode-annotate` | **506 kB** (161 kB gzip) + 13 kB CSS | —                                |
+| `installAnnotateHud` from `…/install`            | **1.85 kB** (1.02 kB gzip)           | 527 kB JS + 13 kB CSS, on demand |
+| `mountAnnotateHud` from `@llui/devmode-annotate` | **527 kB** (171 kB gzip) + 13 kB CSS | —                                |
 
 (`test/entry-boundaries.test.ts` pins the properties those numbers rest on: `src/install.ts` reaches the HUD only through an erased `import type` and a dynamic `import()`, and the store entry below never reaches the HUD at all.)
 
@@ -66,6 +66,8 @@ The HUD talks to a `NotesStore`, not to `/_llui/*` directly. Pass `store` to run
 - `httpStore({ baseUrl, headers })` — a host backend speaking the same wire protocol.
 - Your own adapter implementing `NotesStore` (including `dispose()`, which the HUD calls from `destroy()` to release object URLs and connections).
 
+`destroy()` disposes the store it was **given**, not only one it created — it has to, because an inline `installAnnotateHud({ store: indexedDbStore() })` leaves nobody else holding a reference and object URLs are never garbage-collected. So the HUD takes over that instance: `indexedDbStore` revokes every screenshot URL it handed out, and `httpStore` closes every live `EventSource`. If your own code also drives a store, give the HUD a separate instance — they are cheap and share the same backing storage.
+
 Import them from `@llui/devmode-annotate/stores`, **not** from the package barrel — the barrel is the HUD, so naming a store there would pull the editor into your entry chunk and undo the lazy install:
 
 ```ts
@@ -75,7 +77,7 @@ import { indexedDbStore } from '@llui/devmode-annotate/stores'
 installAnnotateHud({ store: indexedDbStore() })
 ```
 
-The store entry is eager (you construct the store up front): measured at 59 kB / 20 kB gzip, almost all of it the frontmatter serializer. The HUD itself still waits for activation.
+The store entry is eager (you construct the store up front): measured at 58 kB / 20 kB gzip under the same build, with zero occurrences of Lexical in the output. The HUD itself still waits for activation.
 
 ## Opting out / customizing
 

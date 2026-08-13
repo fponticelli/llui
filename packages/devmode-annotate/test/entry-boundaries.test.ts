@@ -12,10 +12,13 @@ import { describe, expect, it } from 'vitest'
 //   2. `src/stores/index.ts` — the entry a live app names to inject a custom
 //      store — never reaches `src/index.ts` at all.
 //
-// Measured on the built package (vite 8, production, minified): the install
-// entry ships a 1.8 kB chunk and defers 506 kB of JS + 13 kB of CSS to a chunk
-// fetched on activation; importing `mountAnnotateHud` from the barrel instead
-// puts all 506 kB in the entry chunk, mounted or not.
+// Measured on the built package (vite 8.0.3, production, `minify: 'esbuild'`,
+// `target: 'es2022'`, `@llui/dom` bundled in): the install entry ships a
+// 1.85 kB chunk and defers 527 kB of JS + 13 kB of CSS to a chunk fetched on
+// activation; importing `mountAnnotateHud` from the barrel instead puts all
+// 527 kB in the entry chunk, mounted or not. The `./stores` entry is 58 kB
+// with zero occurrences of Lexical. Absolute sizes move with the Vite and
+// Lexical versions — the SHAPE below is what this test pins.
 
 declare global {
   // vite/vitest provide `import.meta.glob`; declare the narrow shape we use so the
