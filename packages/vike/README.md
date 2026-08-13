@@ -296,6 +296,8 @@ Anything varying — `Date.now()`, `Math.random()`, `crypto.randomUUID()`, a mod
 
 Dev builds check this for you and warn, naming the layer. The server calls each init()-seeded layer's `init()` a second time and compares (catching counters and `Math.random()`), and records a hash of the resulting state in the manifest so the client can compare its own re-seed against it (catching the time-dependent cases, which look perfectly stable within one server tick). Both checks are gated on the dev build: production emits no hashes and makes no extra `init()` call.
 
+Both compare JSON hashes, so they reach exactly as far as LLui's [JSON-serializable State invariant](https://llui.dev/architecture) does: state carrying a `Set`, a `Map`, a function or an `undefined`-valued property is already invalid, and a value `JSON.stringify` drops or flattens can vary between server and client while still hashing identically — `init: () => ({ tags: new Set([++n]) })` slips past both checks. Keep state JSON-serializable and the determinism check means what it says; break that invariant and it is the least of what breaks (devtools time-travel, `@llui/test` replay and agent snapshots go with it).
+
 This is a warning rather than a thrown error — by the time it is observable the state divergence has already happened, the app is running, and the fix is in your `init()`.
 
 ### Page Transitions
