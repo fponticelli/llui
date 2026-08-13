@@ -22,6 +22,7 @@ import { component, div, text } from '@llui/dom'
 import { createOnRenderHtml } from '../src/on-render-html.js'
 import type { RenderHtmlResult } from '../src/on-render-html.js'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client.js'
+import { pageSlot } from '../src/page-slot.js'
 import { buildManifest, stateFingerprint } from '../src/chain.js'
 
 const env = browserEnv()
@@ -130,6 +131,77 @@ describe('a Date.now()-based init() is caught at hydration', () => {
     const render = createOnRenderClient({})
     await render({ Page: StablePage, isHydration: true })
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('each layer is checked against ITS OWN recorded state', () => {
+  // A fingerprint is per LAYER: entry `i` must hash layer `i`'s state. With one
+  // non-deterministic layer in a two-layer chain, exactly one warning must fire
+  // and it must name that layer. Hash the wrong layer's state and the chain
+  // reports a divergence on a layer that never had one — spurious noise on every
+  // multi-layer app, and a real divergence buried under it.
+  const StableShell = component<{ theme: string }, never, never>({
+    name: 'StableShell',
+    init: () => ({ theme: 'light' }),
+    update: (s) => s,
+    view: ({ state }) => [div({ class: 's' }, [text(state.map((s) => s.theme)), pageSlot()])],
+  })
+
+  const ClockShell = component<{ openedAt: number }, never, never>({
+    name: 'ClockShell',
+    init: () => ({ openedAt: Date.now() }),
+    update: (s) => s,
+    view: ({ state }) => [
+      div({ class: 's' }, [text(state.map((s) => String(s.openedAt))), pageSlot()]),
+    ],
+  })
+
+  const ClockPage = component<{ renderedAt: number }, never, never>({
+    name: 'ClockPage',
+    init: () => ({ renderedAt: Date.now() }),
+    update: (s) => s,
+    view: ({ state }) => [div({ class: 'p' }, [text(state.map((s) => String(s.renderedAt)))])],
+  })
+
+  it('names the inner page when only the page reads the clock', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const serverRender = createOnRenderHtml({ domEnv, Layout: StableShell })
+    const result = await serverRender({ Page: ClockPage })
+    expect(warn).not.toHaveBeenCalled()
+    primeHydration(result)
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:05Z'))
+    const render = createOnRenderClient({ Layout: StableShell })
+    await render({ Page: ClockPage, isHydration: true })
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/ClockPage/)
+    expect(String(warn.mock.calls[0]![0])).not.toMatch(/StableShell/)
+  })
+
+  it('names the outer layout when only the layout reads the clock', async () => {
+    // The direction that catches an index bug: with every entry hashing layer
+    // 0's state, the deterministic PAGE compares its own state against the
+    // layout's fingerprint and warns about a layer that is perfectly fine.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const serverRender = createOnRenderHtml({ domEnv, Layout: ClockShell })
+    const result = await serverRender({ Page: StablePage })
+    expect(warn).not.toHaveBeenCalled()
+    primeHydration(result)
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:05Z'))
+    const render = createOnRenderClient({ Layout: ClockShell })
+    await render({ Page: StablePage, isHydration: true })
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/ClockShell/)
+    expect(String(warn.mock.calls[0]![0])).not.toMatch(/StablePage/)
   })
 })
 
