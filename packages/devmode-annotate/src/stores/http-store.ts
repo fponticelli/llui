@@ -52,6 +52,10 @@ export function createHttpNotesStore(opts: HttpNotesStoreOptions): NotesStore {
   const get = async (url: string): Promise<Response> =>
     doFetch(url, { headers: await resolveHeaders(opts.headers) })
 
+  // Every live SSE connection, so `dispose()` can close the ones whose
+  // unsubscribe was never called (a host that drops the store mid-stream).
+  const liveSources = new Set<EventSource>()
+
   const send = async (url: string, method: string, body?: unknown): Promise<Response> => {
     const headers: Record<string, string> = { ...(await resolveHeaders(opts.headers)) }
     if (body !== undefined) headers['content-type'] = 'application/json'
@@ -153,6 +157,7 @@ export function createHttpNotesStore(opts: HttpNotesStoreOptions): NotesStore {
         sub.onEvent(parsed)
       }
       source.addEventListener('message', onMessage)
+      liveSources.add(source)
       // NOTE: we intentionally do NOT forward EventSource 'error' events to
       // `sub.onError`. The browser fires 'error' on every routine auto-
       // reconnect, so escalating them would spam logs for benign blips;
@@ -161,7 +166,15 @@ export function createHttpNotesStore(opts: HttpNotesStoreOptions): NotesStore {
       return () => {
         source?.removeEventListener('message', onMessage)
         source?.close()
+        if (source) liveSources.delete(source)
       }
+    },
+
+    dispose(): void {
+      // No object URLs here (screenshots are plain server URLs); the only
+      // out-of-heap resource is an SSE connection.
+      for (const source of liveSources) source.close()
+      liveSources.clear()
     },
   }
 }

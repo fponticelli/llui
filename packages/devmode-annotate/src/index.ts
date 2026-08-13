@@ -1786,6 +1786,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     toastTimeouts.clear()
   })
   disposers.add(() => unsubscribeEvents?.())
+  // After the subscription is gone: the store releases its out-of-heap
+  // resources (the IndexedDB adapter's screenshot object URLs, an SSE
+  // connection). Not a close — the store stays usable, so disposing one the
+  // host injected and reuses is safe.
+  disposers.add(() => store.dispose())
   disposers.add(() => reproRecorder.stop())
   disposers.add(() => consoleCapture?.dispose())
   disposers.add(() => dismissActiveOverlay())

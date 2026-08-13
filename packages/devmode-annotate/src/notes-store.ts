@@ -148,4 +148,12 @@ export interface NotesStore {
    *  A noop subscription (returning a noop unsubscribe) is valid when the
    *  store has no live channel. */
   subscribeEvents(sub: EventSubscription): () => void
+
+  /** Release everything the store holds outside the JS heap — object URLs,
+   *  open connections — so a HUD mount/destroy cycle reclaims it (the HUD
+   *  calls this from `destroy()`). Idempotent, and NOT a close: the store
+   *  stays usable, lazily re-creating whatever a later call needs. Required
+   *  on the port (not optional) so an adapter can't forget it and leak
+   *  silently — a store with nothing to release implements a no-op. */
+  dispose(): void
 }
