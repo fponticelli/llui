@@ -197,22 +197,68 @@ interface EncodedSourceMap {
 }
 
 /**
- * Shift a source map down by the number of NEWLINES in `prepend`. Prepending
- * full lines of un-mapped content (e.g. the dev relay bootstrap) moves every
- * generated line down by K without changing any column, so the exact map
- * transform is to prefix K empty generated-line groups (`;`) to `mappings`.
- * Keeps the map coherent so a token in the original file still resolves.
+ * Prepend whole lines of un-mapped content (the dev relay bootstrap) to a
+ * transform result AND shift its map down by the same line count — one function
+ * that owns both halves, so the text edit can never happen without the
+ * compensation (issue #87: the shift used to sit behind its own `map ? … : null`
+ * conditional and was skipped exactly when the transform lowered nothing but the
+ * prepend still moved every line).
+ *
+ * The plugin is `enforce: 'pre'`, so nothing downstream can compensate: an
+ * unshifted map makes `vite:esbuild` treat the prepended text as part of the
+ * original file and every line number in the module is off by K for the whole
+ * dev session (stack traces, breakpoints, coverage).
+ *
+ * `map === null` means the signal transform returned the source untouched. That
+ * is not permission to skip the shift — it only means there is no map to shift
+ * yet, so an IDENTITY map for `code` is synthesized first (hires, matching every
+ * other map this plugin emits, so fidelity does not depend on whether the
+ * transform happened to lower something). When `prepend` is empty there is no
+ * shift to owe and the transform's own map (or its absence) passes through
+ * unchanged — synthesizing one there would be pure cost on the untouched path.
+ *
+ * Prepending K full lines moves every generated line down by K without changing
+ * any column, so the exact map transform is to prefix K empty generated-line
+ * groups (`;`) to `mappings`. That equivalence REQUIRES whole lines: a prepend
+ * not ending in a newline would also shift the columns of the original line 0,
+ * which no number of `;` groups expresses — so it is rejected rather than
+ * silently mapped wrong. The invariant is checked here, not left to the (single)
+ * call site, so the guarantee is total rather than true-by-current-usage.
  */
-function prependLinesToMap(map: SourceMap, prepend: string): EncodedSourceMap {
+function prependLines(
+  code: string,
+  map: SourceMap | null,
+  prepend: string,
+  fileName: string,
+): { code: string; map: EncodedSourceMap | null } {
+  if (prepend === '') return { code, map: map === null ? null : encodeMap(map) }
+  if (!prepend.endsWith('\n')) {
+    throw new Error(
+      '[llui] prependLines: prepended content must end with a newline — a partial ' +
+        'line shifts columns that a line-granular map shift cannot express.',
+    )
+  }
   let lines = 0
   for (let i = 0; i < prepend.length; i++) if (prepend.charCodeAt(i) === 10) lines++
+  const base =
+    map ??
+    new MagicString(code).generateMap({ source: fileName, includeContent: true, hires: true })
+  const encoded = encodeMap(base)
+  return {
+    code: prepend + code,
+    map: { ...encoded, mappings: ';'.repeat(lines) + encoded.mappings },
+  }
+}
+
+/** magic-string's `SourceMap` narrowed to the plain v3 object Vite expects. */
+function encodeMap(map: SourceMap): EncodedSourceMap {
   return {
     version: 3,
     ...(map.file ? { file: map.file } : {}),
     sources: map.sources,
     ...(map.sourcesContent ? { sourcesContent: map.sourcesContent } : {}),
     names: map.names,
-    mappings: ';'.repeat(lines) + map.mappings,
+    mappings: map.mappings,
   }
 }
 
@@ -1494,25 +1540,19 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         // modules (no `component(`) never arm it, even when they carry an
         // `each(` the transform touched — `hasComponentCall` gates that.
         if (hasComponentCall && transformed.map !== null) sawSignalComponent = true
-        let out = transformed.code
         // Dev + MCP: signal files bypass the legacy compiler that injects the
         // relay, so inject startRelay (guarded to fire once) + the HMR handshake.
-        // The bootstrap is prepended AFTER the transform, so shift the map down
-        // by its line count to keep offsets aligned.
-        let bootstrap = ''
-        if (devMode && mcpPort !== null) {
-          bootstrap =
-            `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
-            `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
-            `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n`
-          out = bootstrap + out
-        }
-        // `transformed.map` is non-null here: the string pre-check guaranteed a
-        // signal component, so the transform actually rewrote something.
-        const map: EncodedSourceMap | null = transformed.map
-          ? prependLinesToMap(transformed.map, bootstrap)
-          : null
-        return { code: out, map }
+        // The bootstrap is prepended AFTER the transform — `prependLines` owns
+        // BOTH halves (the text and the matching map shift) so they cannot
+        // disagree, including when the transform lowered nothing and handed us
+        // `map: null` (issue #87).
+        const bootstrap =
+          devMode && mcpPort !== null
+            ? `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
+              `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
+              `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n`
+            : ''
+        return prependLines(transformed.code, transformed.map, bootstrap, id)
       }
 
       // Non-signal `.ts`/`.tsx` files pass through untouched. The legacy
