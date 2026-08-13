@@ -50,6 +50,7 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 - Single quotes, no semicolons, trailing commas
 - Prefix unused parameters with `_`
+- **Control characters in string literals are written as ESCAPES (`\0`), never as raw bytes.** git has no file-type database — it sniffs, and ONE NUL in the first 8000 bytes makes it call the file binary, after which `git diff`, `git log -p` and GitHub's PR review hide every change to it by default. That is how `packages/markdown/src/keying.ts` (the re-render decision for reused prefix blocks) and `packages/vite-plugin/src/notes/trusted-tasks.ts` (the marker gating an agent spawn) both went unreviewable (#94). Both encodings produce the same string at runtime; only one is diffable. `scripts/test/source-encoding.test.ts` fails the build if a raw NUL comes back
 - Configured via `.prettierrc` and `eslint.config.ts` (flat config)
 
 ## Monorepo Structure

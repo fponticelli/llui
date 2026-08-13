@@ -8,7 +8,7 @@ import {
   keyingHashComputations,
   type ParseCache,
 } from '../src/index.js'
-import type { Nodes, Root } from 'mdast'
+import type { Definition, Nodes, Root } from 'mdast'
 
 const keysFor = (
   src: string,
@@ -157,5 +157,109 @@ describe('toKeyedBlocks — per-block hash memoization (streaming O(tail))', () 
     cache = r2.cache
     const k2 = keysOf(r2.root, s2)
     expect(k2[0]).not.toBe(k1[0])
+  })
+})
+
+describe('referenceFingerprint — the NUL separator invariant (#94)', () => {
+  // Written as the `\0` ESCAPE here for the same reason keying.ts writes it that
+  // way: a raw byte turns the file binary for git.
+  const NUL = '\0'
+
+  // That the FILE holds no raw NUL — the half of #94 that keeps this file
+  // reviewable — is pinned repo-wide in `scripts/test/source-encoding.test.ts`;
+  // this package has no node types to read itself with. What follows is the other
+  // half: why U+0000 is the right VALUE for the separator.
+
+  it('cannot occur in a definition identifier, url or title (CommonMark U+0000 → U+FFFD)', () => {
+    // This is the whole justification for the sentinel. micromark performs the
+    // substitution in its PREPROCESSOR — upstream of every tokenizer and of any
+    // user-supplied syntax extension — so no Markdown source can smuggle a NUL
+    // into a fingerprinted field, raw or via the `&#0;` character reference.
+    const src = `[a${NUL}b]: /u${NUL}rl "t${NUL}itle"\n\n[e]: /a&#0;b "&#0;"\n`
+    const defs = collectDefinitions(parseMarkdown(src))
+    expect(defs.size).toBe(2)
+    for (const [id, def] of defs) {
+      expect(id).not.toContain(NUL)
+      expect(def.url).not.toContain(NUL)
+      expect(def.title ?? '').not.toContain(NUL)
+    }
+    // Replaced, not dropped: the label is still one definition, spelled U+FFFD.
+    expect([...defs.keys()]).toContain('a�b')
+  })
+
+  it('separates url from title unambiguously (a `|` in a url is not a field break)', () => {
+    // The previous `${id}=${url}|${title}` layout fingerprinted these two
+    // definition states IDENTICALLY (`l:r=/a|b|`): url `/a|b` with no title, and
+    // url `/a` with title `b|`. Same block source ⇒ same key ⇒ the paragraph
+    // never re-renders and keeps the wrong href.
+    const inUrl = keysFor('see [x][r]\n\n[r]: /a|b')[0]
+    const inTitle = keysFor('see [x][r]\n\n[r]: /a "b|"')[0]
+    expect(inUrl).not.toBe(inTitle)
+  })
+
+  it('cannot be forged by a separator INSIDE a url (fields are length-prefixed)', () => {
+    // The case the parser cannot reach but the PUBLIC SURFACE can: `toKeyedBlocks`,
+    // `renderMarkdown` and `createMarkdown(parse)` are all exported, and the
+    // definition table is derived from whatever tree the caller's `ParseFn`
+    // returns — a custom parser or an mdastExtension never passes micromark's
+    // preprocessor, so a url CAN hold a SEP.
+    //
+    // Fixed arity alone only fixes field POSITIONS while every field is SEP-free.
+    // These two definitions join to the identical field string (`p<SEP>q<SEP>r`),
+    // so with SEP-joined fields they fingerprint the same and the `|` bug returns
+    // verbatim: same block source, same key, stale href. Length-prefixing each
+    // field makes the encoding injective for ANY content — note that
+    // length-prefixing the whole RECORD does NOT fix this, since both splittings
+    // produce a body of the same length.
+    const src = 'see [x][r] here\n\n[r]: /p'
+    const opts = resolveOptions({})
+    const table = (url: string, title: string | null): ReadonlyMap<string, Definition> =>
+      new Map([['r', { type: 'definition', identifier: 'r', label: 'r', url, title }]])
+    const keyWith = (url: string, title: string | null): string | number =>
+      toKeyedBlocks(parseMarkdown(src), src, opts, table(url, title))[0]!.key
+    expect(keyWith(`p${NUL}q`, 'r')).not.toBe(keyWith('p', `q${NUL}r`))
+  })
+
+  it('distinguishes an EMPTY title from an ABSENT one', () => {
+    // `title ?? ''` collapses the two. mdast-util-from-markdown happens to
+    // normalize `[r]: /u ""` to `title: null`, so Markdown source alone cannot
+    // reach the difference — but `Definition['title']` is `string | null |
+    // undefined`, `mdastExtensions` is a public option and the definition table is
+    // a PARAMETER here, so the fingerprint must not lean on that normalization.
+    // The definition must be IN the source for `[x][r]` to parse as a
+    // linkReference at all (an unresolvable one stays literal text); the table the
+    // fingerprint reads is then supplied here, with the two titles under test.
+    const src = 'see [x][r]\n\n[r]: /u'
+    const opts = resolveOptions({})
+    const table = (title: string | null): ReadonlyMap<string, Definition> =>
+      new Map([['r', { type: 'definition', identifier: 'r', label: 'r', url: '/u', title }]])
+    const keyWith = (title: string | null): string | number =>
+      toKeyedBlocks(parseMarkdown(src), src, opts, table(title))[0]!.key
+    expect(keyWith(null)).not.toBe(keyWith(''))
+  })
+
+  it('distinguishes an ABSENT definition from one whose fields spell the absent record', () => {
+    const undefinedRef = keysFor('see [x][r]')[0]
+    const emptyUrl = keysFor('see [x][r]\n\n[r]: <>')[0]
+    expect(undefinedRef).not.toBe(emptyUrl)
+  })
+
+  it('does not let a raw NUL in the SOURCE forge a fingerprint (length-prefixed hash)', () => {
+    // `blockSource` slices the source the CALLER passed — before micromark's
+    // substitution — so it is the ONE hashed component that can still contain a
+    // NUL. Without the length prefix, `source + fingerprint` is ambiguous: the
+    // forged paragraph below (a ref-FREE block whose text spells the record layout
+    // verbatim, `[^n]` staying literal with no definition) hashes exactly like the
+    // real one plus its footnote fingerprint. Same node type, same hash ⇒ same key,
+    // so a stream editing one into the other would never re-render the block.
+    //
+    // The forged text must spell the CURRENT record layout to be a real forgery —
+    // `\0ref:` then the four length-prefixed fields of `f:n` (`3\0f:n`, `1\0f`,
+    // `0\0`, `0\0`). If the layout changes, recompute it here rather than deleting
+    // the test: a version of this that no longer spells the layout still passes,
+    // and pins nothing.
+    const real = keysFor('a[^n]\n\n[^n]: d')[0]
+    const forged = keysFor(`a[^n]${NUL}ref:3${NUL}f:n1${NUL}f0${NUL}0${NUL}`)[0]
+    expect(forged).not.toBe(real)
   })
 })
