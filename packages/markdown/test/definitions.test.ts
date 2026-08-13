@@ -206,20 +206,20 @@ describe('definition collection — a TAIL definition still resolves for a PREFI
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('renders a tail footnote definition without tripping the dev assertion (DOM)', () => {
-    // NARROW ON PURPOSE — read the name literally. This asserts the footnote
-    // DEFINITION reaches the DOM; it does NOT assert that the earlier `see[^1]`
-    // REFERENCE re-rendered to point at it. That half is broken independently of
-    // this change (`keying.ts:referenceFingerprint` collects only `linkReference`
-    // /`imageReference`, never `footnoteReference`, so a prefix footnote
-    // reference's content-id is blind to its definition arriving); it reproduces
-    // identically on main, is out of scope for #73 and is filed separately. Do not
-    // read this test as coverage of the reference side.
+  it('renders a tail footnote definition AND resolves the prefix reference (DOM)', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mounted = mountReactive('intro\n\nsee[^1]\n\n')
+    // Until the definition exists, `see[^1]` is literal text — no reference node.
+    expect(body(mounted.container).querySelector('.footnote-ref')).toBeNull()
     mounted.set('intro\n\nsee[^1]\n\n[^1]: the note\n')
     const el = body(mounted.container)
     expect(el.textContent).toContain('the note')
+    // Both halves: the definition SECTION renders, and the reused PREFIX block
+    // re-renders into a real footnote reference pointing at it (#84).
+    expect(el.querySelector('.footnote-definition')?.id).toBe('fn-1')
+    expect(el.querySelector('.footnote-ref a')?.getAttribute('href')).toBe('#fn-1')
+    expect(el.querySelector('p')?.textContent).toBe('intro')
+    expect(el.querySelectorAll('p')[1]?.textContent).toBe('see1')
     expect(spy).not.toHaveBeenCalled()
   })
 })

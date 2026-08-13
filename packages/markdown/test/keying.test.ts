@@ -56,6 +56,24 @@ describe('toKeyedBlocks — content hash', () => {
     expect(unresolved).not.toBe(resolved)
   })
 
+  it('folds a consumed FOOTNOTE reference into a ref-bearing block key (#84)', () => {
+    // `see[^a]` is LITERAL TEXT until `[^a]:` exists, so the block's source slice
+    // and node type are identical either way — only the fingerprint can tell the
+    // two apart. Blind to `footnoteReference`, it cannot, and the streamed prefix
+    // block keeps its key (and its stale literal-text DOM) forever.
+    const unresolved = keysFor('see[^a] here')[0]
+    const resolved = keysFor('see[^a] here\n\n[^a]: the note')[0]
+    expect(unresolved).not.toBe(resolved)
+  })
+
+  it('keeps a link reference and a footnote reference with the SAME id distinct', () => {
+    // Un-namespaced ids would collapse `[a][x]` and `and[^x]` into one entry, so
+    // the footnote definition arriving would leave the fingerprint unchanged.
+    const linkOnly = keysFor('see [a][x] and[^x]\n\n[x]: /link')[0]
+    const both = keysFor('see [a][x] and[^x]\n\n[x]: /link\n\n[^x]: the note')[0]
+    expect(linkOnly).not.toBe(both)
+  })
+
   it('leaves ref-FREE blocks with a pure content key (unchanged by unrelated defs)', () => {
     const bare = keysFor('plain paragraph')[0]
     const withDef = keysFor('plain paragraph\n\n[r]: /x')[0]

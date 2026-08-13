@@ -16,7 +16,7 @@ import { gfm } from 'micromark-extension-gfm'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import type { Root } from 'mdast'
 import { incrementalParse, collectDefinitions, type ParseCache } from '../src/index.js'
-import { mountReactive, body } from './util.js'
+import { mountReactive, mountStatic, body } from './util.js'
 import type { ReactiveMounted } from './util.js'
 
 const parse = (src: string): Root =>
@@ -53,6 +53,54 @@ afterEach(() => {
   mounted = undefined
   vi.restoreAllMocks()
 })
+
+/** Rendered HTML of `el` with COMMENT nodes stripped. The reactive path renders its
+ * blocks through a keyed `each`, which brackets them with anchor comments the static
+ * path has no reason to emit; everything else must match exactly. */
+function domSig(el: HTMLElement): string {
+  const clone = el.cloneNode(true) as HTMLElement
+  const walker = clone.ownerDocument.createTreeWalker(clone, NodeFilter.SHOW_COMMENT)
+  const comments: ChildNode[] = []
+  while (walker.nextNode()) comments.push(walker.currentNode as ChildNode)
+  for (const c of comments) c.remove()
+  return clone.innerHTML
+}
+
+/** The `.markdown-body` signature of a COLD (fresh, never-streamed) static mount —
+ * the reference every streamed step must reproduce. */
+function coldHtml(src: string): string {
+  const cold = mountStatic(src)
+  try {
+    return domSig(body(cold.container))
+  } finally {
+    cold.cleanup()
+  }
+}
+
+/** Stream `steps` through ONE reactive mount, asserting after every step that the
+ * live DOM equals a cold render of that step's source.
+ *
+ * This is the comparator that catches KEYING/re-render gaps, and the only one that
+ * does: the incremental tree and the collected definition table can both be exactly
+ * right (`feed()` above proves that much) while a reused prefix block keeps a stale
+ * content-id and is therefore never rebuilt — the DOM is the only place the gap is
+ * observable. Issue #84 was exactly that shape. */
+function streamAndCompare(steps: readonly string[]): void {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const [first, ...rest] = steps
+  if (first === undefined) throw new Error('streamAndCompare needs at least one step')
+  mounted = mountReactive(first)
+  expect(domSig(body(mounted.container)), `cold mismatch at ${JSON.stringify(first)}`).toBe(
+    coldHtml(first),
+  )
+  for (const src of rest) {
+    mounted.set(src)
+    expect(domSig(body(mounted.container)), `streamed mismatch at ${JSON.stringify(src)}`).toBe(
+      coldHtml(src),
+    )
+  }
+  expect(spy).not.toHaveBeenCalled()
+}
 
 describe('incrementalParse — tree equals full parse', () => {
   it('append-only growth reuses the stable prefix blocks', () => {
@@ -250,6 +298,139 @@ describe('reactive markdown — streaming DOM (dev assertion active)', () => {
     expect(el.querySelector('h1')?.textContent).toBe('Doc')
     expect(el.querySelectorAll('li')).toHaveLength(2)
     expect(el.querySelector('pre code')?.textContent).toContain('code')
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+describe('reactive markdown — streamed DOM equals a cold render (footnotes, #84)', () => {
+  // `see[^a]` is literal text until `[^a]:` exists, so the definition arriving in
+  // the TAIL must rebuild the reused PREFIX block. That decision is made by the
+  // block's content-id (keying.ts), which folds in the references the block
+  // consumes — footnote references included. With `footnoteReference` missing from
+  // that fingerprint the prefix keeps its key and stays literal text forever, while
+  // the tree, the definition table and the definition SECTION are all still correct.
+  const head = 'intro\n\nsee[^a] here\n\nmiddle one\n\nmiddle two\n\n'
+
+  it('resolves a prefix footnote reference when its definition arrives in the tail', () => {
+    streamAndCompare([
+      'intro\n\n',
+      'intro\n\nsee[^a] here\n\n',
+      head + 'middle three\n\n',
+      head + 'middle three\n\n[^a]: the',
+      head + 'middle three\n\n[^a]: the note\n',
+    ])
+    const el = body(mounted!.container)
+    // The prefix paragraph is a real footnote reference, not the literal `[^a]`.
+    const ref = el.querySelector('.footnote-ref a')
+    expect(ref?.getAttribute('href')).toBe('#fn-a')
+    expect(el.querySelectorAll('p')[1]?.textContent).toBe('seea here')
+  })
+
+  it('re-renders the prefix reference when the footnote definition is EDITED', () => {
+    streamAndCompare([
+      head,
+      head + '[^a]: the note\n',
+      head + '[^a]: an edited note\n',
+      // Renaming the label undefines `a`: the prefix reference must revert to text.
+      head + '[^b]: an edited note\n',
+    ])
+    const el = body(mounted!.container)
+    expect(el.querySelector('.footnote-ref')).toBeNull()
+    expect(el.querySelectorAll('p')[1]?.textContent).toBe('see[^a] here')
+  })
+
+  it('reverts the prefix reference to literal text when the definition is REMOVED', () => {
+    streamAndCompare([head + '[^a]: the note\n', head])
+    const el = body(mounted!.container)
+    expect(el.querySelector('.footnote-ref')).toBeNull()
+    expect(el.textContent).not.toContain('the note')
+  })
+
+  it('handles a footnote and a link reference sharing one identifier in one block', () => {
+    // Un-namespaced reference ids would collapse the link ref `x` and the footnote
+    // ref `x` into one fingerprint entry, so the footnote definition arriving would
+    // leave the fingerprint (and the key, and the DOM) unchanged.
+    const doc = 'see [a][x] and[^x] here\n\n'
+    streamAndCompare([doc, doc + '[x]: /link\n', doc + '[x]: /link\n\n[^x]: the note\n'])
+    const el = body(mounted!.container)
+    expect(el.querySelector('p a')?.getAttribute('href')).toBe('/link')
+    expect(el.querySelector('.footnote-ref a')?.getAttribute('href')).toBe('#fn-x')
+  })
+})
+
+describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', () => {
+  // The generalization of the tests above, and the net that found #84 in the first
+  // place: assemble random documents from a block corpus that is deliberately dense
+  // in reference/definition pairs, stream each one in small chunks, and compare the
+  // live DOM to a cold render at EVERY step. Any keying/re-render gap — a block that
+  // should rebuild and doesn't, or rebuilds wrong — shows up here and nowhere else.
+  //
+  // The generator is a SEEDED PRNG, so the corpus is fixed and a failure is exactly
+  // reproducible from its reported trial number. Do not make it time/Math.random
+  // based: a flaky differential test gets muted, and a muted one catches nothing.
+
+  /** Block fragments, weighted toward the reference machinery: link, image and
+   * footnote references, their definitions, and later REDEFINITIONS of the same
+   * identifiers (so trials exercise arrival, edit and shadowing). */
+  const BLOCKS: readonly string[] = [
+    '# Heading\n',
+    'plain paragraph text\n',
+    'see [a][r] link ref\n',
+    'img ![alt][img] here\n',
+    'note[^fn] here\n',
+    '[r]: /url "T"\n',
+    '[img]: /pic.png\n',
+    '[^fn]: the footnote body\n',
+    '- one\n- two\n',
+    '> quoted [b][r]\n',
+    '```js\ncode();\n```\n',
+    '| a | b |\n| - | - |\n| 1 | 2 |\n',
+    '---\n',
+    '**bold** and `code` and <https://x.test>\n',
+    '[r]: /other\n',
+    '[^fn]: an edited footnote body\n',
+  ]
+
+  /** mulberry32 — a small, fully deterministic PRNG (no dependency, no global state). */
+  function rng(seed: number): () => number {
+    let a = seed >>> 0
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0
+      let t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  it('streamed DOM equals a cold render across 120 generated documents', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (let trial = 0; trial < 120; trial++) {
+      const rnd = rng(trial * 7919 + 13)
+      const blocks: string[] = []
+      const count = 2 + Math.floor(rnd() * 6)
+      for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
+      const doc = blocks.join('\n')
+
+      // Stream the document in 1–12 character chunks, the shape an LLM token
+      // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
+      const steps: string[] = []
+      for (let pos = 0; pos < doc.length; ) {
+        pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
+        steps.push(doc.slice(0, pos))
+      }
+
+      const live = mountReactive(steps[0] ?? '')
+      try {
+        for (const src of steps) {
+          live.set(src)
+          expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
+            coldHtml(src),
+          )
+        }
+      } finally {
+        live.cleanup()
+      }
+    }
     expect(spy).not.toHaveBeenCalled()
   })
 })
