@@ -17,7 +17,7 @@ import { createOnRenderHtml } from '../src/on-render-html.js'
 import type { RenderHtmlResult } from '../src/on-render-html.js'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client.js'
 import { pageSlot } from '../src/page-slot.js'
-import { HYDRATION_MANIFEST_VERSION } from '../src/chain.js'
+import { HYDRATION_MANIFEST_VERSION, buildChainData, verifyManifest } from '../src/chain.js'
 
 const env = browserEnv()
 const domEnv = () => env
@@ -145,6 +145,63 @@ describe('a client pageContext missing lluiLayoutData fails loudly', () => {
     const render = createOnRenderClient({ Layout: Shell })
     await render({ Page: Article, lluiLayoutData: layoutData, isHydration: true })
     expect(container.querySelector('.shell')!.textContent).toContain('franco@example.com')
+  })
+})
+
+describe('an envelope this build cannot read fails loudly', () => {
+  // These three guards are only reachable from an envelope THIS build did not
+  // produce — a server on an older @llui/vike, or a hand-rolled one. Every other
+  // test in the package feeds `verifyManifest` an envelope the current producer
+  // just built, which can never carry a stale `v` or a malformed `seeded`, so
+  // the guards go unexercised (and a deletion of them goes unnoticed) unless the
+  // envelope is built by hand here.
+  const chain = [Shell, Article]
+  // Shell seeded from its data slice, Article from init() — the shape every
+  // envelope below claims to describe.
+  const chainData = buildChainData(1, [{ user: 'franco@example.com' }], undefined)
+  const layers = ['Shell', 'Article']
+
+  it('rejects the v2 envelope of an older server build, naming both versions', () => {
+    expect(() => verifyManifest({ v: 2, layers, seeded: [true, false] }, chain, chainData)).toThrow(
+      /version mismatch: got 2, expected 3/,
+    )
+  })
+
+  it('rejects an envelope with no version at all', () => {
+    expect(() => verifyManifest({ layers, seeded: [true, false] }, chain, chainData)).toThrow(
+      /version mismatch: got undefined, expected 3/,
+    )
+  })
+
+  it('rejects a v3 envelope carrying no per-layer seed flags', () => {
+    // v3's whole point is `seeded`. An envelope that claims v3 without it is a
+    // build skew of its own — never silently treat the layers as unseeded.
+    expect(() =>
+      verifyManifest({ v: HYDRATION_MANIFEST_VERSION, layers }, chain, chainData),
+    ).toThrow(/missing its per-layer seed flags/)
+  })
+
+  it('rejects a v3 envelope whose seed flags do not cover every layer', () => {
+    expect(() =>
+      verifyManifest({ v: HYDRATION_MANIFEST_VERSION, layers, seeded: [true] }, chain, chainData),
+    ).toThrow(/missing its per-layer seed flags/)
+  })
+
+  it('accepts a hand-built envelope that does match this build', () => {
+    // The negative half: the three throws above are about SKEW, not about
+    // rejecting anything hand-built.
+    expect(
+      verifyManifest(
+        { v: HYDRATION_MANIFEST_VERSION, layers, seeded: [true, false] },
+        chain,
+        chainData,
+      ),
+    ).toEqual({
+      v: HYDRATION_MANIFEST_VERSION,
+      layers,
+      seeded: [true, false],
+      initFingerprints: undefined,
+    })
   })
 })
 
