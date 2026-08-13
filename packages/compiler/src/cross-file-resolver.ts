@@ -42,6 +42,83 @@ export interface PreExtractedSchemas {
 }
 
 /**
+ * Everything the adapter resolved from sibling files for ONE
+ * `component<State, Msg, Effect>` type-argument tuple.
+ */
+export interface CrossFileResolution {
+  typeSources?: ExternalTypeSources
+  preExtracted?: PreExtractedSchemas
+}
+
+/**
+ * Per-file cross-file resolutions, keyed by {@link crossFileKey} of a
+ * `component()` call's effective type-argument names.
+ *
+ * Keyed PER CALL, not per file (issue #91): a file may declare component A with
+ * an imported `Msg` and component B with a local one, and B must not be handed
+ * A's schema/annotations. A wrong schema on the agent/devtools ABI is worse than
+ * a missing one — a call with no entry here simply falls back to the transform's
+ * file-local extractors.
+ */
+export type CrossFileResolutions = ReadonlyMap<string, CrossFileResolution>
+
+/** The `State`/`Msg`/`Effect` names the file-local extractors assume when a
+ * `component()` call is untyped. */
+export const CONVENTION_TYPE_NAMES = {
+  state: 'State',
+  msg: 'Msg',
+  effect: 'Effect',
+} as const
+
+/**
+ * The EFFECTIVE State/Msg/Effect type names for a `component<…>()` call: its own
+ * type arguments where they are plain identifiers, else the
+ * {@link CONVENTION_TYPE_NAMES} the file-local extractors fall back to.
+ *
+ * The adapter (pre-resolution) and the transform (metadata emission + lookup)
+ * MUST both derive names through this function: they meet on the
+ * {@link crossFileKey} built from the result, and any divergence would make the
+ * lookup silently miss and degrade to file-local extraction.
+ */
+export function componentTypeNames(call: ts.CallExpression): {
+  state: string
+  msg: string
+  effect: string
+} {
+  const raw = readComponentTypeArgNames(call)
+  return {
+    state: raw.state ?? CONVENTION_TYPE_NAMES.state,
+    msg: raw.msg ?? CONVENTION_TYPE_NAMES.msg,
+    effect: raw.effect ?? CONVENTION_TYPE_NAMES.effect,
+  }
+}
+
+/**
+ * The {@link CrossFileResolutions} key for a tuple of effective type names — both
+ * the transform's metadata cache key and the adapter's lookup key.
+ *
+ * The key is the NAME tuple, not the resolved declaration, so two calls that name
+ * the same types share one entry. That is exact for the TOP-LEVEL declarations and
+ * module imports this resolver walks. Two known cases where a name is NOT a unique
+ * referent — both pre-existing limits shared with the file-local extractors, which
+ * key off names the same way:
+ *
+ *  - **Shadowing.** A `Msg` declared inside a block/function scope collides with a
+ *    top-level `Msg`; the resolver only ever sees the top-level one, so a component
+ *    under the shadow is keyed as if it used the outer type.
+ *  - **Non-identifier type arguments.** An inline literal, a generic instantiation
+ *    or a qualified name (`A.Msg`) is not a plain identifier, so
+ *    {@link componentTypeNames} falls back to the convention name — and two calls
+ *    with DIFFERENT qualified types collide on that one key.
+ *
+ * Both produce the same wrongly-shared or file-local schema they produced before
+ * per-call keying; the fix is name resolution through a checker, not a wider key.
+ */
+export function crossFileKey(names: { state: string; msg: string; effect: string }): string {
+  return `${names.state}\0${names.msg}\0${names.effect}`
+}
+
+/**
  * Cross-file type resolver.
  *
  * The schema/annotation extractors (`extractMsgAnnotations`,
@@ -59,15 +136,22 @@ export interface PreExtractedSchemas {
  * against that source and produce the same output they would have for
  * a co-located declaration.
  *
- * Limitations:
- *  - Composition (`type Msg = ImportedA | { type: 'b' }`): only the
- *    locally-declared variants are extracted; the imported half isn't
- *    walked recursively into. The lint rule `agent-msg-resolvable`
- *    catches this case at lint time.
- *  - Namespace imports (`import * as ns from './msg'`) and `export *`:
- *    not followed. Same lint coverage.
+ * Limitations of `findTypeSource` itself (all of them SILENT — nothing
+ * warns, and the affected metadata is simply absent):
+ *  - Composition (`type Msg = ImportedA | { type: 'b' }`): it locates the
+ *    alias but does not walk INTO the union. The composition-aware
+ *    extractors below (`extractMsgAnnotationsCrossFile`,
+ *    `extractDiscriminatedUnionSchemaCrossFile`) do recurse, and are what
+ *    the adapter calls for Msg/Effect.
+ *  - Namespace imports (`import * as ns from './msg'`): not followed.
+ *    (`export *` re-export barrels ARE followed — step 4.)
  *  - Generic types: not parameterized resolution; the type argument
  *    must resolve to a concrete type alias.
+ *
+ * NOTE for future readers: this file used to attribute these gaps to a lint
+ * rule named `agent-msg-resolvable`. That rule belonged to the DELETED
+ * `@llui/eslint-plugin` and was never reimplemented as a compiler rule — there
+ * is no guard. Do not re-add the claim without the rule (issue #91).
  */
 
 export interface ResolveContext {
@@ -99,9 +183,10 @@ export interface ResolvedTypeSource {
 /**
  * Walk imports + re-exports to find where a type alias is actually
  * declared. Returns the source string and local name of the alias in
- * its declaring file. Returns `null` if the chain leads to an unresolved
- * module, a re-export through `export *`, a namespace import, or a
- * dead-end (alias not declared anywhere we can see).
+ * its declaring file. `export *` barrels ARE followed (step 4, first hit
+ * in textual order wins). Returns `null` if the chain leads to an
+ * unresolved module, a namespace import, or a dead-end (alias not
+ * declared anywhere we can see).
  */
 export async function findTypeSource(
   typeName: string,
@@ -231,9 +316,10 @@ export async function findTypeSource(
  *
  * Conflict policy: if two composed branches contribute the same
  * discriminant string (e.g. both halves declare `{ type: 'inc' }`),
- * the first one walked wins. The lint rule `agent-msg-resolvable`
- * fires before this point on most pathological cases; ESLint's
- * type-checker would flag the duplicate independently.
+ * the first one walked wins — silently. Nothing in the toolchain flags
+ * the duplicate (see the note in this file's header about the lint rule
+ * that no longer exists); a duplicate discriminant is a type error the
+ * user's own `tsc` reports independently.
  */
 export async function extractMsgAnnotationsCrossFile(
   source: string,
@@ -460,8 +546,10 @@ function collectOneVariant(
  *
  * Limitations:
  *  - Only follows direct named imports (`import type { X } from './y'`).
- *    Namespace imports and `export *` aren't followed (the lint rule
- *    `agent-msg-resolvable` already catches the namespace case).
+ *    A namespace import, or a name reachable only through an `export *`
+ *    in THIS file, contributes nothing to the index (`findTypeSource`
+ *    does follow `export *` once it has a name to chase). Nothing warns
+ *    when one is skipped — the field type just stays `'unknown'`.
  *  - The resolved external type must itself be a type alias or
  *    interface in the target file — chained re-exports beyond the first
  *    hop fall back to `'unknown'`.
