@@ -6,7 +6,7 @@ import { join, relative } from 'node:path'
 import { z } from 'zod'
 
 const execFileAsync = promisify(execFile)
-import { lintSignalSource } from '@llui/compiler'
+import { lintSignalSource, parseModule } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
 import { assertWithinWorkspace } from '../util/workspace.js'
@@ -147,7 +147,7 @@ export function registerSourceTools(registry: ToolRegistry): void {
         }
         let msgs: ReturnType<typeof lintSignalSource>
         try {
-          msgs = lintSignalSource(source, file)
+          msgs = lintSignalSource(parseModule(file, source))
         } catch (err) {
           failed++
           diagnostics.push({

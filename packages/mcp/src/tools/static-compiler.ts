@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { transformSignalComponentSource, collectSignalDeps } from '@llui/compiler'
+import { transformSignalComponentSource, collectSignalDeps, parseModule } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 
 /**
@@ -50,9 +50,8 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
           error: `Could not read file: ${(err as Error).message}`,
         }
       }
-      const output = transformSignalComponentSource(source, {
+      const output = transformSignalComponentSource(parseModule(absPath, source), {
         emitAgentMetadata: true,
-        fileName: absPath,
       })
       // The signal transform returns the source unchanged when the file has
       // no signal `component()` to lower; surface that as a no-op note.
@@ -88,7 +87,7 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
           error: `Could not read file: ${(err as Error).message}`,
         }
       }
-      const { paths, wholeState, views } = collectSignalDeps(source, { fileName: absPath })
+      const { paths, wholeState, views } = collectSignalDeps(parseModule(absPath, source))
 
       // Top-level field rollup so callers can see which slices dominate.
       const byTopLevel = new Map<string, number>()

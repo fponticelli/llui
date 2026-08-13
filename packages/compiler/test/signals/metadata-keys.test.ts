@@ -4,7 +4,7 @@
 // must therefore emit the FINAL key name itself; nothing downstream is allowed to
 // rewrite it.
 import { describe, it, expect } from 'vitest'
-import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+import { transformSignalComponentSource } from '../parsed.js'
 import { COMPILER_META_KEYS } from '../../src/emit-names.js'
 
 const SRC = [

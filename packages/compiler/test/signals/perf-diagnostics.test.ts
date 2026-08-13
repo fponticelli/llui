@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+import { transformSignalComponentSource } from '../parsed.js'
 import type { Diagnostic } from '../../src/diagnostic.js'
 import type { LowerBail } from '../../src/signals/transform-view.js'
 

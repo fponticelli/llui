@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { transformUseClientSsr, hasUseClientDirective } from '../src/index.js'
+import { parseModule } from '@llui/compiler'
+import { transformUseClientSsr as transformModule, hasUseClientDirective } from '../src/index.js'
+
+/** The transform takes a parsed module — one parse, under the real filename's
+ * ScriptKind (#93). These tests are about the stubbing, so they hand over text. */
+const transformUseClientSsr = (source: string, fileName: string) =>
+  transformModule(parseModule(fileName, source))
 
 describe("'use client' directive detection", () => {
   it('detects the directive as the first statement', () => {

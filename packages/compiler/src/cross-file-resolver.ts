@@ -10,10 +10,12 @@ import {
 } from './msg-schema.js'
 import { extractStateSchema } from './state-schema.js'
 import { extractMsgAnnotations, parseAnnotations } from './msg-annotations.js'
+import type { ModuleCache, ParsedModule } from './parse.js'
 
 /**
- * Resolved external type sources for the file under analysis: the source
- * string + local alias name for each of the `State` / `Msg` / `Effect`
+ * Resolved external type sources for the file under analysis: the declaring
+ * MODULE (already parsed — the extractors reuse that tree rather than re-parsing
+ * the sibling, #93) + local alias name for each of the `State` / `Msg` / `Effect`
  * type arguments that the host adapter (vite-plugin) chased to their
  * declaring file via `findTypeSource`. The schema/annotation extractors
  * run against these instead of the focal file when the alias lives
@@ -21,9 +23,9 @@ import { extractMsgAnnotations, parseAnnotations } from './msg-annotations.js'
  * extraction.
  */
 export interface ExternalTypeSources {
-  state?: { source: string; typeName: string }
-  msg?: { source: string; typeName: string }
-  effect?: { source: string; typeName: string }
+  state?: { module: ParsedModule; typeName: string }
+  msg?: { module: ParsedModule; typeName: string }
+  effect?: { module: ParsedModule; typeName: string }
 }
 
 /**
@@ -169,14 +171,26 @@ export interface ResolveContext {
    * in-memory map.
    */
   readSource: (absolutePath: string) => Promise<string>
+  /**
+   * Parse memo for this resolution pass. REQUIRED, and not a micro-optimization:
+   * one pass looks the same sibling up once per type argument, once per composed
+   * union member and again while enriching the type index — eight parses of one
+   * `msg.ts` was typical, plus ten of the focal module (issue #93). Every parse
+   * the resolver makes goes through it, so reuse does not depend on the caller
+   * remembering anything; the caller only decides the cache's LIFETIME (the Vite
+   * plugin: one per `transform`). Build one with `createModuleCache()`.
+   */
+  modules: ModuleCache
 }
 
 export interface ResolvedTypeSource {
-  /** The full source string of the file declaring the type alias. */
-  source: string
+  /** The parsed module declaring the type alias (from `ctx.modules`, so every
+   * later consumer of the same file reuses this tree). */
+  module: ParsedModule
   /** The local name of the alias *in that file* (after rename chains). */
   localName: string
-  /** Absolute path of the file declaring the alias (debug aid). */
+  /** Absolute path of the file declaring the alias (debug aid). Always
+   * `module.fileName`. */
   filePath: string
 }
 
@@ -190,28 +204,28 @@ export interface ResolvedTypeSource {
  */
 export async function findTypeSource(
   typeName: string,
-  source: string,
-  filePath: string,
+  mod: ParsedModule,
   ctx: ResolveContext,
   visited: Set<string> = new Set(),
 ): Promise<ResolvedTypeSource | null> {
+  const filePath = mod.fileName
   // Cycle prevention — re-export A → A is a tight loop that some
   // pathological re-export chains can produce. Bail rather than
   // infinitely recurse.
   if (visited.has(`${filePath}::${typeName}`)) return null
   visited.add(`${filePath}::${typeName}`)
 
-  const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+  const sf = mod.sourceFile()
 
   // 1. Local declaration wins. `type X = ...` or `interface X { ... }`
   //    (extractors only support type aliases today, but check both so
   //    the resolver itself isn't a footgun for future extractors).
   for (const stmt of sf.statements) {
     if (ts.isTypeAliasDeclaration(stmt) && stmt.name.text === typeName) {
-      return { source, localName: typeName, filePath }
+      return { module: mod, localName: typeName, filePath }
     }
     if (ts.isInterfaceDeclaration(stmt) && stmt.name.text === typeName) {
-      return { source, localName: typeName, filePath }
+      return { module: mod, localName: typeName, filePath }
     }
   }
 
@@ -232,7 +246,7 @@ export async function findTypeSource(
       const resolved = await ctx.resolveModule(stmt.moduleSpecifier.text, filePath)
       if (!resolved) return null
       const subSource = await ctx.readSource(resolved)
-      return findTypeSource(sourceName, subSource, resolved, ctx, visited)
+      return findTypeSource(sourceName, ctx.modules.get(resolved, subSource), ctx, visited)
     }
   }
 
@@ -269,7 +283,7 @@ export async function findTypeSource(
       // dynamic-only, etc.). Continue to the next barrel.
       continue
     }
-    const found = await findTypeSource(typeName, subSource, resolved, ctx, visited)
+    const found = await findTypeSource(typeName, ctx.modules.get(resolved, subSource), ctx, visited)
     if (found) return found
   }
 
@@ -292,7 +306,7 @@ export async function findTypeSource(
       const resolved = await ctx.resolveModule(stmt.moduleSpecifier.text, filePath)
       if (!resolved) return null
       const subSource = await ctx.readSource(resolved)
-      return findTypeSource(remoteName, subSource, resolved, ctx, visited)
+      return findTypeSource(remoteName, ctx.modules.get(resolved, subSource), ctx, visited)
     }
   }
 
@@ -322,33 +336,31 @@ export async function findTypeSource(
  * user's own `tsc` reports independently.
  */
 export async function extractMsgAnnotationsCrossFile(
-  source: string,
+  mod: ParsedModule,
   typeName: string,
-  filePath: string,
   ctx: ResolveContext,
 ): Promise<Record<string, MessageAnnotations> | null> {
   const out: Record<string, MessageAnnotations> = {}
-  const ok = await collectMsgVariants(typeName, source, filePath, ctx, out, new Set())
+  const ok = await collectMsgVariants(typeName, mod, ctx, out, new Set())
   if (!ok) return null
   return Object.keys(out).length === 0 ? null : out
 }
 
 async function collectMsgVariants(
   typeName: string,
-  source: string,
-  filePath: string,
+  mod: ParsedModule,
   ctx: ResolveContext,
   out: Record<string, MessageAnnotations>,
   visitedAliases: Set<string>,
 ): Promise<boolean> {
-  const located = await findTypeSource(typeName, source, filePath, ctx, new Set())
+  const located = await findTypeSource(typeName, mod, ctx, new Set())
   if (!located) return false
 
   const aliasKey = `${located.filePath}::${located.localName}`
   if (visitedAliases.has(aliasKey)) return true
   visitedAliases.add(aliasKey)
 
-  const sf = ts.createSourceFile(located.filePath, located.source, ts.ScriptTarget.Latest, true)
+  const sf = located.module.sourceFile()
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
@@ -368,7 +380,7 @@ async function collectMsgVariants(
     if (ts.isTypeLiteralNode(member)) {
       const variant = readDiscriminantLiteral(member)
       if (!variant) continue
-      const comment = readLeadingJSDocForMember(located.source, alias, memberNodes, i)
+      const comment = readLeadingJSDocForMember(sf.text, alias, memberNodes, i)
       if (out[variant] === undefined) {
         out[variant] = parseAnnotations(comment)
       }
@@ -377,14 +389,7 @@ async function collectMsgVariants(
 
     if (ts.isTypeReferenceNode(member) && ts.isIdentifier(member.typeName)) {
       // Composed: recurse through the resolver.
-      await collectMsgVariants(
-        member.typeName.text,
-        located.source,
-        located.filePath,
-        ctx,
-        out,
-        visitedAliases,
-      )
+      await collectMsgVariants(member.typeName.text, located.module, ctx, out, visitedAliases)
       continue
     }
 
@@ -446,33 +451,31 @@ function readLeadingJSDocForMember(
  * instead of JSDoc annotations.
  */
 export async function extractDiscriminatedUnionSchemaCrossFile(
-  source: string,
+  mod: ParsedModule,
   typeName: string,
-  filePath: string,
   ctx: ResolveContext,
 ): Promise<MsgSchema | null> {
   const variants: MsgSchema['variants'] = {}
-  const ok = await collectSchemaVariants(typeName, source, filePath, ctx, variants, new Set())
+  const ok = await collectSchemaVariants(typeName, mod, ctx, variants, new Set())
   if (!ok) return null
   return Object.keys(variants).length === 0 ? null : { discriminant: 'type', variants }
 }
 
 async function collectSchemaVariants(
   typeName: string,
-  source: string,
-  filePath: string,
+  mod: ParsedModule,
   ctx: ResolveContext,
   variants: MsgSchema['variants'],
   visitedAliases: Set<string>,
 ): Promise<boolean> {
-  const located = await findTypeSource(typeName, source, filePath, ctx, new Set())
+  const located = await findTypeSource(typeName, mod, ctx, new Set())
   if (!located) return false
 
   const aliasKey = `${located.filePath}::${located.localName}`
   if (visitedAliases.has(aliasKey)) return true
   visitedAliases.add(aliasKey)
 
-  const sf = ts.createSourceFile(located.filePath, located.source, ts.ScriptTarget.Latest, true)
+  const sf = located.module.sourceFile()
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
@@ -491,18 +494,17 @@ async function collectSchemaVariants(
   // because the local index doesn't know about it. The synthesizer
   // would then emit `null` and the agent would have to guess at the
   // permissible literal-union values.
-  const typeIndex = await buildEnrichedTypeIndex(sf, located.source, located.filePath, ctx)
+  const typeIndex = await buildEnrichedTypeIndex(located.module, ctx)
 
   for (const member of memberNodes) {
     if (ts.isTypeLiteralNode(member)) {
-      collectOneVariant(member, variants, located.source, typeIndex)
+      collectOneVariant(member, variants, sf.text, typeIndex)
       continue
     }
     if (ts.isTypeReferenceNode(member) && ts.isIdentifier(member.typeName)) {
       await collectSchemaVariants(
         member.typeName.text,
-        located.source,
-        located.filePath,
+        located.module,
         ctx,
         variants,
         visitedAliases,
@@ -557,12 +559,9 @@ function collectOneVariant(
  *    field type just stays `'unknown'` as it would have without
  *    enrichment.
  */
-async function buildEnrichedTypeIndex(
-  sf: ts.SourceFile,
-  source: string,
-  filePath: string,
-  ctx: ResolveContext,
-): Promise<TypeIndex> {
+async function buildEnrichedTypeIndex(mod: ParsedModule, ctx: ResolveContext): Promise<TypeIndex> {
+  const sf = mod.sourceFile()
+  const filePath = mod.fileName
   const index: TypeIndex = new Map()
 
   // 1. Locally-declared aliases / interfaces.
@@ -594,14 +593,13 @@ async function buildEnrichedTypeIndex(
   //    imports. Intentional — root files almost always import the
   //    canonical name, and shallower-import names are more likely
   //    correct than deep-import collisions.
-  const fileQueue: Array<{ source: string; filePath: string; sf: ts.SourceFile }> = [
-    { source, filePath, sf },
-  ]
+  const fileQueue: ParsedModule[] = [mod]
   const visitedFiles = new Set<string>([filePath])
 
   while (fileQueue.length > 0) {
     const cur = fileQueue.shift()
     if (!cur) break
+    const curSf = cur.sourceFile()
 
     // Add this file's *own* local type declarations to the index so
     // sibling references inside the file's exported types resolve.
@@ -611,8 +609,8 @@ async function buildEnrichedTypeIndex(
     // First-write-wins: a local declaration in the entry file
     // shadows a same-named declaration in a transitively-walked
     // file (intentional — entry-file names are canonical).
-    if (cur.filePath !== filePath) {
-      for (const stmt of cur.sf.statements) {
+    if (cur.fileName !== filePath) {
+      for (const stmt of curSf.statements) {
         if (ts.isTypeAliasDeclaration(stmt)) {
           if (!index.has(stmt.name.text)) index.set(stmt.name.text, stmt.type)
         } else if (ts.isInterfaceDeclaration(stmt)) {
@@ -621,7 +619,7 @@ async function buildEnrichedTypeIndex(
       }
     }
 
-    for (const stmt of cur.sf.statements) {
+    for (const stmt of curSf.statements) {
       if (!ts.isImportDeclaration(stmt)) continue
       const named = stmt.importClause?.namedBindings
       if (!named || !ts.isNamedImports(named)) continue
@@ -636,17 +634,12 @@ async function buildEnrichedTypeIndex(
         // extraction anyway, so the failure is benign.
         let located: ResolvedTypeSource | null
         try {
-          located = await findTypeSource(importedName, cur.source, cur.filePath, ctx, new Set())
+          located = await findTypeSource(importedName, cur, ctx, new Set())
         } catch {
           located = null
         }
         if (!located) continue
-        const targetSf = ts.createSourceFile(
-          located.filePath,
-          located.source,
-          ts.ScriptTarget.Latest,
-          true,
-        )
+        const targetSf = located.module.sourceFile()
         let added = false
         for (const targetStmt of targetSf.statements) {
           if (ts.isTypeAliasDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
@@ -664,11 +657,7 @@ async function buildEnrichedTypeIndex(
         // declarations — flow into the index. Only queue once per file.
         if (added && !visitedFiles.has(located.filePath)) {
           visitedFiles.add(located.filePath)
-          fileQueue.push({
-            source: located.source,
-            filePath: located.filePath,
-            sf: targetSf,
-          })
+          fileQueue.push(located.module)
         }
       }
     }

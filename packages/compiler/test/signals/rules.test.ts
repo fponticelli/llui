@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import {
-  lintSignals,
-  lintSignalSource,
-  applyLintFixes,
-  type SignalDiagnostic,
-} from '../../src/signals/rules.js'
+import { lintSignals, applyLintFixes, type SignalDiagnostic } from '../../src/signals/rules.js'
+import { lintSignalSource } from '../parsed.js'
 
 function lint(src: string): SignalDiagnostic[] {
   const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)

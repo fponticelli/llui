@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { allAnnotationArgs, firstAnnotationArgs } from './annotation-args.js'
+import type { ParsedModule } from './parse.js'
 
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 
@@ -245,7 +246,9 @@ const DEFAULT: MessageAnnotations = {
  * silently lock out one audience.
  */
 export function extractMsgAnnotations(
-  source: string,
+  /** The module declaring the alias, already parsed ({@link ParsedModule} — one
+   * parse per pass, real-filename ScriptKind; see #93). */
+  mod: ParsedModule,
   /**
    * Name of the type alias to extract from. Defaults to `'Msg'` for
    * convention. Passed by the cross-file resolver when the alias has
@@ -254,7 +257,7 @@ export function extractMsgAnnotations(
    */
   typeName: string = 'Msg',
 ): Record<string, MessageAnnotations> | null {
-  const sf = ts.createSourceFile('msg.ts', source, ts.ScriptTarget.Latest, true)
+  const sf = mod.sourceFile()
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
@@ -281,7 +284,7 @@ export function extractMsgAnnotations(
     // that follows them — and the | bar is not part of the TypeLiteralNode.
     const prev = types[i - 1]
     const scanPos = i === 0 || prev === undefined ? alias.type.pos : prev.end
-    const comment = readLeadingJSDoc(source, scanPos)
+    const comment = readLeadingJSDoc(sf.text, scanPos)
     result[variant] = parseAnnotations(comment)
   }
   return Object.keys(result).length === 0 ? null : result

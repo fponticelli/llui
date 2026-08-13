@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+import { transformSignalComponentSource } from '../parsed.js'
+import { parseModule } from '../../src/parse.js'
 import { COMPILER_META_KEYS } from '../../src/emit-names.js'
 import { crossFileKey, type CrossFileResolution } from '../../src/cross-file-resolver.js'
 
@@ -284,7 +285,12 @@ describe('transformSignalComponentSource', () => {
             crossFileKey({ state: 'State', msg: 'Msg', effect: 'Effect' }),
             {
               preExtracted: { msgSchema: { discriminant: 'type', variants: { tick: {} } } },
-              typeSources: { state: { source: 'type S = { n: number }', typeName: 'S' } },
+              typeSources: {
+                state: {
+                  module: parseModule('state.ts', 'type S = { n: number }'),
+                  typeName: 'S',
+                },
+              },
             },
           ],
         ]),
@@ -411,7 +417,10 @@ describe('transformSignalComponentSource', () => {
             effectSchema: { discriminant: 'type', variants: { siblingFx: {} } },
           },
           typeSources: {
-            state: { source: 'type ImportedState = { i: number }', typeName: 'ImportedState' },
+            state: {
+              module: parseModule('sibling-state.ts', 'type ImportedState = { i: number }'),
+              typeName: 'ImportedState',
+            },
           },
         },
       ],

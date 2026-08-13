@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
-  findTypeSource,
-  extractMsgAnnotationsCrossFile,
-  extractDiscriminatedUnionSchemaCrossFile,
+  findTypeSource as findType,
+  extractMsgAnnotationsCrossFile as annotationsCrossFile,
+  extractDiscriminatedUnionSchemaCrossFile as schemaCrossFile,
   type ResolveContext,
 } from '../src/cross-file-resolver.js'
+import { createModuleCache } from '../src/parse.js'
 import path from 'node:path'
 
 /**
@@ -14,6 +15,8 @@ import path from 'node:path'
  */
 function memoryCtx(files: Record<string, string>): ResolveContext {
   return {
+    // One parse per file per pass (#93) — the same discipline the plugin uses.
+    modules: createModuleCache(),
     resolveModule: async (spec, importerPath) => {
       // Bare specifier: not relative — we don't try to resolve packages
       // in tests; returning null exercises the fallback path.
@@ -32,6 +35,24 @@ function memoryCtx(files: Record<string, string>): ResolveContext {
     },
   }
 }
+
+/** The three entry points take the ENTRY module already parsed; these shims keep
+ * the call sites reading `(name, source, filePath, ctx)` and park the entry module
+ * in the context's own cache, so the pass never parses a file twice (#93). */
+const findTypeSource = (name: string, source: string, filePath: string, ctx: ResolveContext) =>
+  findType(name, ctx.modules.get(filePath, source), ctx)
+const extractMsgAnnotationsCrossFile = (
+  source: string,
+  name: string,
+  filePath: string,
+  ctx: ResolveContext,
+) => annotationsCrossFile(ctx.modules.get(filePath, source), name, ctx)
+const extractDiscriminatedUnionSchemaCrossFile = (
+  source: string,
+  name: string,
+  filePath: string,
+  ctx: ResolveContext,
+) => schemaCrossFile(ctx.modules.get(filePath, source), name, ctx)
 
 describe('findTypeSource', () => {
   it('finds a locally-declared type alias', async () => {

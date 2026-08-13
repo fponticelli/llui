@@ -1,6 +1,10 @@
 // @llui/compiler — engine. Adapters consume through these re-exports.
 // Migration in progress (see docs/proposals/v2-compiler/v2a.md §4.4).
 export * from './emit-names.js'
+// The ONE parse: every entry point below takes a `ParsedModule` rather than a
+// source string, so a dev transform parses each module once (issue #93) and the
+// ScriptKind is fixed by the module's real filename in every consumer at once.
+export * from './parse.js'
 export * from './binding-descriptors.js'
 export * from './cross-file-resolver.js'
 export * from './diagnostic.js'
@@ -26,11 +30,7 @@ export {
   type DepResult,
 } from './signals/analyze-deps.js'
 export { analyzeSignalExpr, isSignalExpr, signalPathOf } from './signals/extract-deps.js'
-export {
-  collectSignalDeps,
-  type CollectSignalDepsOptions,
-  type SignalDepsResult,
-} from './signals/collect-signal-deps.js'
+export { collectSignalDeps, type SignalDepsResult } from './signals/collect-signal-deps.js'
 // Exported for the runtime-side drift gate: `@llui/dom`'s test suite asserts
 // these mirrors still match its own `authoring.ts` exports. The gate MUST live
 // there — `authoring.ts` is an input of `@llui/dom#test` but of no task in this

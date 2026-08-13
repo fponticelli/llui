@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { isNullLiteral, peelNullUnion, peelOptionalUnion } from './union-peel.js'
+import type { ParsedModule } from './parse.js'
 
 /**
  * Build a TypeScript expression representing the given StateType as a
@@ -108,9 +109,19 @@ const MAX_TYPE_DEPTH = 6
  * {@link StateType}).
  *
  * Returns null if the named type isn't found or isn't a type literal.
+ *
+ * Takes a {@link ParsedModule}, not a source string: the tree is shared with
+ * lint, the transform and the cross-file resolver (one parse per pass, #93), and
+ * the module carries the real filename — this used to parse every source as
+ * `input.ts`, i.e. a `.tsx` component's State was read out of a TSX file parsed
+ * as TS. TypeScript's error recovery masked that for most JSX; it did NOT where
+ * recovery consumes the statement that follows. A `.tsx` module with
+ * `const list = <ul>{xs.map(x => <li key={x}>{x}</li>)}</ul>` above
+ * `export type State` returned `null` here, so an `agent: true` build shipped no
+ * `$ss` — with no error anywhere.
  */
-export function extractStateSchema(source: string, typeName = 'State'): StateSchema | null {
-  const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+export function extractStateSchema(mod: ParsedModule, typeName = 'State'): StateSchema | null {
+  const sf = mod.sourceFile()
 
   // Collect local type aliases AND interfaces so references like `Todo[]` /
   // `user: User` resolve to their inline shape, whether declared as a `type` or

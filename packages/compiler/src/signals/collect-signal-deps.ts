@@ -32,16 +32,7 @@ import {
   type Roots,
 } from './extract-deps.js'
 import { HelperBindings, scopeIntroduces } from './helper-bindings.js'
-import { scriptKindForFilename } from './script-kind.js'
-
-export interface CollectSignalDepsOptions {
-  /** Source file path. REQUIRED, and not merely for reporting: it decides the
-   * parse ScriptKind, and a `.ts` file parsed as TSX misparses the generic arrow
-   * form (`const id = <T>(x: T): T => x`) — which here would not raise an error,
-   * it would silently return `views: 0, paths: []`. There is no default that is
-   * right for both extensions, so the caller states it. */
-  fileName: string
-}
+import type { ParsedModule } from '../parse.js'
 
 export interface SignalDepsResult {
   /** Absolute state paths, deduped and sorted. Excludes the whole-state read. */
@@ -56,26 +47,21 @@ export interface SignalDepsResult {
 }
 
 /**
- * Collect the dependency paths every signal component view in `source` reads.
+ * Collect the dependency paths every signal component view in `mod` reads.
  *
  * Paths are reported at full authored depth: `state.at('user').at('profile')
  * .at('address').at('city')` is `user.profile.address.city`, not a two-segment
  * prefix of it. Truncating to a prefix stays SOUND for gating (a dep on a prefix
  * covers every descendant, because an immutable update replaces the prefix
  * reference) but it misreports what the code actually reads.
+ *
+ * Takes a {@link ParsedModule} — which carries the real filename, and with it the
+ * parse ScriptKind. That is not merely for reporting: a `.ts` file parsed as TSX
+ * misparses the generic arrow form (`const id = <T>(x: T): T => x`), and here
+ * that would not raise an error, it would silently return `views: 0, paths: []`.
  */
-export function collectSignalDeps(
-  source: string,
-  opts: CollectSignalDepsOptions,
-): SignalDepsResult {
-  const fileName = opts.fileName
-  const sf = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKindForFilename(fileName),
-  )
+export function collectSignalDeps(mod: ParsedModule): SignalDepsResult {
+  const sf = mod.sourceFile()
   // Import-binding aware `component(...)` recognition — the same gate the
   // transform uses, so an aliased or shadowed `component` is classified
   // identically in both.

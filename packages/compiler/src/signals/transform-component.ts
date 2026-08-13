@@ -33,7 +33,7 @@ import { viewSignalRoots } from './extract-deps.js'
 import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
 import type { SourceMap } from 'magic-string'
 import { perfDiagnosticsForFile } from './perf-diagnostics.js'
-import { scriptKindForFilename } from './script-kind.js'
+import { parseModule, type ParsedModule } from '../parse.js'
 import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
@@ -52,10 +52,9 @@ export interface SignalTransformOptions {
   /** emit the msg/state/effect schemas + annotations for the agent surface
    * (keyed by `COMPILER_META_KEYS` — see emit-names.ts for the ABI) */
   emitAgentMetadata?: boolean
-  /** dev build — also emit the component meta `{ file, line }` */
+  /** dev build — also emit the component meta `{ file, line }` (the file is the
+   * module's own `fileName`, which the {@link ParsedModule} always carries) */
   devMode?: boolean
-  /** source file path, for the component meta's `file` */
-  fileName?: string
   /** Cross-file resolutions from the adapter (pre-extracted composition-aware
    * msg/effect schemas + annotations, and the declaring-file source for a `State`
    * that lives elsewhere), keyed PER `component()` CALL by {@link crossFileKey} of
@@ -95,13 +94,10 @@ function collectEmittedHelpers(edits: readonly Edit[], plan: HelperImportPlan): 
   const found = new Set<string>()
   for (const e of edits) {
     if (!e.text.includes('(')) continue // no call — nothing to collect (metadata, `batch,`)
-    const probe = ts.createSourceFile(
-      '__probe.tsx',
-      `const __x = [${e.text}]`,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    )
+    // A synthetic snippet, not a module — but it goes through the one parse
+    // function all the same, so `ts.createSourceFile` has exactly one call site
+    // in the package (see parse.ts and the guard in test/parse-module.test.ts).
+    const probe = parseModule('__probe.tsx', `const __x = [${e.text}]`).sourceFile()
     const walk = (n: ts.Node): void => {
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
         const canonical = canonicalOf.get(n.expression.text)
@@ -165,14 +161,14 @@ export interface SignalTransformResult {
  * Rewrite signal `view`s in a source file and inject the runtime import.
  * Returns the source unchanged if it contains no signal components.
  *
- * String-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
- * — kept for the many callers (mcp, dom codegen tests) that only need the code.
+ * Code-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
+ * — kept for the many callers (mcp, dom codegen tests) that need no source map.
  */
 export function transformSignalComponentSource(
-  source: string,
+  mod: ParsedModule,
   opts: SignalTransformOptions = {},
 ): string {
-  return transformSignalComponentSourceWithMap(source, opts).code
+  return transformSignalComponentSourceWithMap(mod, opts).code
 }
 
 /**
@@ -183,19 +179,16 @@ export function transformSignalComponentSource(
  * {@link applyEditsWithMap} splicer) in a later stage.
  */
 export function transformSignalComponentSourceWithMap(
-  source: string,
+  mod: ParsedModule,
   opts: SignalTransformOptions = {},
 ): SignalTransformResult {
-  // Parse with the ScriptKind implied by the filename: a `.ts` file using the
-  // generic-arrow form (`const id = <T>(x: T): T => x`) misparses as JSX under TSX.
-  const fileName = opts.fileName ?? 'm.tsx'
-  const sf = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKindForFilename(fileName),
-  )
+  // The module arrives parsed — with the ScriptKind its real filename implies (a
+  // `.ts` file using the generic-arrow form `const id = <T>(x: T): T => x`
+  // misparses as JSX under TSX) — and the SAME tree already served lint and the
+  // cross-file pre-resolution: one parse per dev transform (#93).
+  const fileName = mod.fileName
+  const source = mod.text
+  const sf = mod.sourceFile()
   const edits: Edit[] = []
   let transformedAny = false
 
@@ -231,17 +224,17 @@ export function transformSignalComponentSourceWithMap(
     const stateSrc = resolved?.typeSources?.state
     // This call's cross-file pre-extracted schemas take precedence; else extract
     // file-locally using the per-call type-argument names.
-    const msgSchema =
-      pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(source, msgName)
+    const msgSchema = pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(mod, msgName)
     const effectSchema =
-      pre?.effectSchema !== undefined ? pre.effectSchema : extractEffectSchema(source, effectName)
+      pre?.effectSchema !== undefined ? pre.effectSchema : extractEffectSchema(mod, effectName)
     const msgAnnotations =
-      pre?.msgAnnotations !== undefined
-        ? pre.msgAnnotations
-        : extractMsgAnnotations(source, msgName)
+      pre?.msgAnnotations !== undefined ? pre.msgAnnotations : extractMsgAnnotations(mod, msgName)
+    // A `State` declared in a sibling file arrives as that sibling's PARSED
+    // module (the adapter's resolver already parsed it), so extracting the state
+    // schema from it costs no second parse.
     const stateSchema = stateSrc
-      ? extractStateSchema(stateSrc.source, stateSrc.typeName)
-      : extractStateSchema(source, stateName)
+      ? extractStateSchema(stateSrc.module, stateSrc.typeName)
+      : extractStateSchema(mod, stateName)
     // Keys come from COMPILER_META_KEYS, never from a literal: the emitted name
     // IS the runtime ABI (`@llui/dom` / `@llui/agent` read it by that exact key
     // from a different bundle chunk), so it must be final here — nothing
@@ -306,11 +299,9 @@ export function transformSignalComponentSourceWithMap(
         (p) => !existing.has(p.split(':')[0]!.trim()),
       ),
     )
-    if (opts.devMode && opts.fileName && !existing.has(COMPILER_META_KEYS.componentMeta)) {
+    if (opts.devMode && !existing.has(COMPILER_META_KEYS.componentMeta)) {
       const line = sf.getLineAndCharacterOfPosition(callNode.getStart(sf)).line + 1
-      props.push(
-        `${COMPILER_META_KEYS.componentMeta}: ${JSON.stringify({ file: opts.fileName, line })}`,
-      )
+      props.push(`${COMPILER_META_KEYS.componentMeta}: ${JSON.stringify({ file: fileName, line })}`)
     }
     return props
   }
@@ -455,14 +446,7 @@ export function transformSignalComponentSourceWithMap(
 
     // Perf diagnostics: one `llui/each-verbatim` per each site that did NOT lower.
     if (recordedBails && loweredEachStarts && opts.onPerfDiagnostic) {
-      const diags = perfDiagnosticsForFile(
-        sf,
-        source,
-        fileName,
-        edits,
-        loweredEachStarts,
-        recordedBails,
-      )
+      const diags = perfDiagnosticsForFile(sf, fileName, edits, loweredEachStarts, recordedBails)
       for (const d of diags) opts.onPerfDiagnostic(d)
     }
   } finally {

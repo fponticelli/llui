@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transformSignalComponentSource } from '@llui/compiler'
+import { parseModule, transformSignalComponentSource as transformModule } from '@llui/compiler'
 import { mountSignalComponent } from '../../src/signals/component'
 import {
   signalText,
@@ -15,6 +15,11 @@ import {
 import { ul, li, button, span, text, show, eachDirect, eachArm } from '../../src/signals/authoring'
 import { derived, rowHandle } from '../../src/signals/handle'
 import { compileAndLoad, identityComponent } from './compile-and-load'
+
+/** The transform takes a parsed module (#93); these fixtures only care about the
+ * emitted code, so they hand over text under one `.tsx` name. */
+const transformSignalComponentSource = (source: string) =>
+  transformModule(parseModule('fixture.tsx', source))
 
 /** Runtime symbols for the compiled-runtime fixtures (the direct/each tiers). */
 const RUNTIME = {

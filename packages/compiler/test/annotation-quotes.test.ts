@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { extractMsgAnnotations } from '../src/msg-annotations.js'
-import { extractMsgSchema } from '../src/msg-schema.js'
+import { extractMsgAnnotations as extractAnnotations } from '../src/msg-annotations.js'
+import { extractMsgSchema as extractSchema } from '../src/msg-schema.js'
+import { parseModule } from '../src/parse.js'
+
+// The extractors take a parsed module (one parse per pass, real-filename
+// ScriptKind — #93); these tests are about the grammar, so they name a `.ts`
+// module and hand over the text.
+const extractMsgAnnotations = (src: string, typeName?: string) =>
+  extractAnnotations(parseModule('msg.ts', src), typeName)
+const extractMsgSchema = (src: string, typeName?: string) =>
+  extractSchema(parseModule('msg.ts', src), typeName)
 
 // Issue #89 — every annotation predicate parser used a `[^"”]*` character
 // class, so a predicate containing a quote was TRUNCATED at that quote and

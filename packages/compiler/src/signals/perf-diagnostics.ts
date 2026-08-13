@@ -112,7 +112,6 @@ function precedenceOf(reason: string): number {
  */
 export function perfDiagnosticsForFile(
   sf: ts.SourceFile,
-  sourceText: string,
   fileName: string,
   edits: readonly TextEdit[],
   loweredStarts: ReadonlySet<number>,
@@ -168,7 +167,7 @@ export function perfDiagnosticsForFile(
         `construction overhead instead of the compiled cloneNode factory (${detail})`,
       location: {
         file: fileName,
-        range: rangeFromOffsets(sourceText, c.start, c.calleeEnd),
+        range: rangeFromOffsets(sf, c.start, c.calleeEnd),
       },
     })
   }

@@ -171,15 +171,19 @@ function clearManifestCache(): void
 
 ### `collectSignalDeps()`
 
-Collect the dependency paths every signal component view in `source` reads.
+Collect the dependency paths every signal component view in `mod` reads.
 Paths are reported at full authored depth: `state.at('user').at('profile')
 .at('address').at('city')` is `user.profile.address.city`, not a two-segment
 prefix of it. Truncating to a prefix stays SOUND for gating (a dep on a prefix
 covers every descendant, because an immutable update replaces the prefix
 reference) but it misreports what the code actually reads.
+Takes a {@link ParsedModule} — which carries the real filename, and with it the
+parse ScriptKind. That is not merely for reporting: a `.ts` file parsed as TSX
+misparses the generic arrow form (`const id = <T>(x: T): T => x`), and here
+that would not raise an error, it would silently return `views: 0, paths: []`.
 
 ```typescript
-function collectSignalDeps(source: string, opts: CollectSignalDepsOptions): SignalDepsResult
+function collectSignalDeps(mod: ParsedModule): SignalDepsResult
 ```
 
 ### `componentTypeNames()`
@@ -223,6 +227,12 @@ ref chain); the empty path covers everything.
 function covers(emitted: Set<string>, path: string): boolean
 ```
 
+### `createModuleCache()`
+
+```typescript
+function createModuleCache(): ModuleCache
+```
+
 ### `crossFileKey()`
 
 The {@link CrossFileResolutions} key for a tuple of effective type names — both
@@ -257,17 +267,19 @@ instead of JSDoc annotations.
 
 ```typescript
 function extractDiscriminatedUnionSchemaCrossFile(
-  source: string,
+  mod: ParsedModule,
   typeName: string,
-  filePath: string,
   ctx: ResolveContext,
 ): Promise<MsgSchema | null>
 ```
 
 ### `extractEffectSchema()`
 
+The Effect union's schema. Same shape and same parse discipline as
+{@link extractMsgSchema}.
+
 ```typescript
-function extractEffectSchema(source: string, typeName: string = 'Effect'): MsgSchema | null
+function extractEffectSchema(mod: ParsedModule, typeName: string = 'Effect'): MsgSchema | null
 ```
 
 ### `extractMsgAnnotations()`
@@ -290,7 +302,7 @@ silently lock out one audience.
 
 ```typescript
 function extractMsgAnnotations(
-  source: string,
+  mod: ParsedModule,
   typeName: string = 'Msg',
 ): Record<string, MessageAnnotations> | null
 ```
@@ -316,17 +328,19 @@ user's own `tsc` reports independently.
 
 ```typescript
 function extractMsgAnnotationsCrossFile(
-  source: string,
+  mod: ParsedModule,
   typeName: string,
-  filePath: string,
   ctx: ResolveContext,
 ): Promise<Record<string, MessageAnnotations> | null>
 ```
 
 ### `extractMsgSchema()`
 
+The Msg union's schema, read from an already-parsed module ({@link ParsedModule}
+— one parse per pass, and the real filename's ScriptKind; see #93).
+
 ```typescript
-function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null
+function extractMsgSchema(mod: ParsedModule, typeName: string = 'Msg'): MsgSchema | null
 ```
 
 ### `extractStateSchema()`
@@ -337,9 +351,18 @@ unions, arrays, nested objects, `T | undefined` optional fields and
 `T | null` nullable ones (optionality and nullability are distinct — see
 {@link StateType}).
 Returns null if the named type isn't found or isn't a type literal.
+Takes a {@link ParsedModule}, not a source string: the tree is shared with
+lint, the transform and the cross-file resolver (one parse per pass, #93), and
+the module carries the real filename — this used to parse every source as
+`input.ts`, i.e. a `.tsx` component's State was read out of a TSX file parsed
+as TS. TypeScript's error recovery masked that for most JSX; it did NOT where
+recovery consumes the statement that follows. A `.tsx` module with
+`const list = <ul>{xs.map(x => <li key={x}>{x}</li>)}</ul>` above
+`export type State` returned `null` here, so an `agent: true` build shipped no
+`$ss` — with no error anywhere.
 
 ```typescript
-function extractStateSchema(source: string, typeName = 'State'): StateSchema | null
+function extractStateSchema(mod: ParsedModule, typeName = 'State'): StateSchema | null
 ```
 
 ### `fieldType()`
@@ -362,8 +385,7 @@ declared anywhere we can see).
 ```typescript
 function findTypeSource(
   typeName: string,
-  source: string,
-  filePath: string,
+  mod: ParsedModule,
   ctx: ResolveContext,
   visited: Set<string> = new Set(),
 ): Promise<ResolvedTypeSource | null>
@@ -436,21 +458,28 @@ Run ONLY `agent-annotation-syntax` over a module that is not a signal
 component. A Msg union commonly lives in a plain `msg.ts` sibling that
 carries no `component(` call, so `lintSignalSource` never sees it — yet that
 is exactly where `@routeGated`/`@validates` are authored. The adapter calls
-this for every other TS module it transforms; the rule's own pre-check makes
-it a string test on files with no annotations.
+this for every other TS module it transforms.
+The cheap string pre-check runs against `mod.text` BEFORE the module is parsed,
+so a file with no agent annotation costs a regex and nothing else — which is
+what keeps this affordable on every module in the project.
 
 ```typescript
-function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[]
+function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
 ### `lintSignalSource()`
 
-Parse `source` and run the signal lint rules, returning diagnostics with
-resolved line/column. The adapter (vite plugin) surfaces these as build
+Run the signal lint rules over an already-parsed module, returning diagnostics
+with resolved line/column. The adapter (vite plugin) surfaces these as build
 errors. Call only on confirmed signal components.
+Takes a {@link ParsedModule} so the tree it lints is the SAME one the transform
+and the cross-file resolver use — one parse per dev transform (#93). The
+module also fixes the ScriptKind from the real filename: a `.ts` file using the
+generic-arrow form (`const id = <T>(x: T): T => x`) misparses as JSX under TSX
+and fires a spurious `operator-on-signal` error.
 
 ```typescript
-function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[]
+function lintSignalSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
 ### `lookupHelperFromSymbol()`
@@ -498,14 +527,26 @@ match this compiler.
 function parseManifest(json: string): ParseManifestResult
 ```
 
+### `parseModule()`
+
+Pair `text` with the `fileName` it came from. The parse happens on the first
+{@link ParsedModule.sourceFile} call and is reused thereafter, so passing the
+SAME instance to lint, cross-file resolution and the transform costs one parse.
+Two calls with the same arguments produce two INDEPENDENT modules (and so two
+parses) — hold the instance, or go through a {@link ModuleCache}.
+
+```typescript
+function parseModule(fileName: string, text: string): ParsedModule
+```
+
 ### `rangeFromOffsets()`
 
-Convert a TS Compiler API `(start, end)` offset pair against a source
+Convert a TS Compiler API `(start, end)` offset pair against a parsed source
 file into the canonical `Range` shape. Used by emitters that have AST
 node positions but not pre-computed line/column.
 
 ```typescript
-function rangeFromOffsets(sourceText: string, start: number, end: number): Range
+function rangeFromOffsets(sf: ts.SourceFile, start: number, end: number): Range
 ```
 
 ### `readComponentTypeArgNames()`
@@ -699,11 +740,14 @@ function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceF
 
 Rewrite signal `view`s in a source file and inject the runtime import.
 Returns the source unchanged if it contains no signal components.
-String-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
-— kept for the many callers (mcp, dom codegen tests) that only need the code.
+Code-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
+— kept for the many callers (mcp, dom codegen tests) that need no source map.
 
 ```typescript
-function transformSignalComponentSource(source: string, opts: SignalTransformOptions = {}): string
+function transformSignalComponentSource(
+  mod: ParsedModule,
+  opts: SignalTransformOptions = {},
+): string
 ```
 
 ### `transformSignalComponentSourceWithMap()`
@@ -716,7 +760,7 @@ this map (and can compose the lint-autofix pass, which shares the same
 
 ```typescript
 function transformSignalComponentSourceWithMap(
-  source: string,
+  mod: ParsedModule,
   opts: SignalTransformOptions = {},
 ): SignalTransformResult
 ```
@@ -1124,19 +1168,6 @@ export interface CodeAction {
 }
 ```
 
-### `CollectSignalDepsOptions`
-
-```typescript
-export interface CollectSignalDepsOptions {
-  /** Source file path. REQUIRED, and not merely for reporting: it decides the
-   * parse ScriptKind, and a `.ts` file parsed as TSX misparses the generic arrow
-   * form (`const id = <T>(x: T): T => x`) — which here would not raise an error,
-   * it would silently return `views: 0, paths: []`. There is no default that is
-   * right for both extensions, so the caller states it. */
-  fileName: string
-}
-```
-
 ### `ComponentEntry`
 
 ```typescript
@@ -1231,8 +1262,9 @@ export interface DiagnosticRelatedInformation {
 
 ### `ExternalTypeSources`
 
-Resolved external type sources for the file under analysis: the source
-string + local alias name for each of the `State` / `Msg` / `Effect`
+Resolved external type sources for the file under analysis: the declaring
+MODULE (already parsed — the extractors reuse that tree rather than re-parsing
+the sibling, #93) + local alias name for each of the `State` / `Msg` / `Effect`
 type arguments that the host adapter (vite-plugin) chased to their
 declaring file via `findTypeSource`. The schema/annotation extractors
 run against these instead of the focal file when the alias lives
@@ -1241,9 +1273,9 @@ extraction.
 
 ```typescript
 export interface ExternalTypeSources {
-  state?: { source: string; typeName: string }
-  msg?: { source: string; typeName: string }
-  effect?: { source: string; typeName: string }
+  state?: { module: ParsedModule; typeName: string }
+  msg?: { module: ParsedModule; typeName: string }
+  effect?: { module: ParsedModule; typeName: string }
 }
 ```
 
@@ -1358,6 +1390,24 @@ export interface ManifestHelperLookup {
 }
 ```
 
+### `ModuleCache`
+
+Per-pass memo of {@link ParsedModule}s by path. The cross-file resolver looks
+the same sibling up once per type argument, per composed union member and
+again while enriching the type index — eight lookups of one `msg.ts` in a
+single pre-resolution pass was typical, each its own parse.
+Keyed by `fileName` and validated against the TEXT: a cached entry is reused
+only while the text is identical, so a file edited between passes (or a
+module the lint autofix rewrote mid-transform) re-parses instead of serving a
+stale tree. Scope one to a pass — the Vite plugin creates one per `transform`
+— rather than keeping a process-wide cache alive.
+
+```typescript
+export interface ModuleCache {
+  get(fileName: string, text: string): ParsedModule
+}
+```
+
 ### `MsgFieldRich`
 
 Rich per-field descriptor. Emitted only when there's something
@@ -1412,6 +1462,22 @@ export interface MsgFieldRich {
 export interface MsgSchema {
   discriminant: string
   variants: Record<string, Record<string, MsgField>>
+}
+```
+
+### `ParsedModule`
+
+A module's text plus, on demand, its parsed tree — parsed at most once no
+matter how many analyses ask for it.
+
+```typescript
+export interface ParsedModule {
+  /** The module's real path/name. Decides the parse ScriptKind. */
+  readonly fileName: string
+  /** The module's source text. Always available; never triggers a parse. */
+  readonly text: string
+  /** The parsed tree, with parent pointers. Memoized — parsed on first call. */
+  sourceFile(): ts.SourceFile
 }
 ```
 
@@ -1502,6 +1568,16 @@ export interface ResolveContext {
    * in-memory map.
    */
   readSource: (absolutePath: string) => Promise<string>
+  /**
+   * Parse memo for this resolution pass. REQUIRED, and not a micro-optimization:
+   * one pass looks the same sibling up once per type argument, once per composed
+   * union member and again while enriching the type index — eight parses of one
+   * `msg.ts` was typical, plus ten of the focal module (issue #93). Every parse
+   * the resolver makes goes through it, so reuse does not depend on the caller
+   * remembering anything; the caller only decides the cache's LIFETIME (the Vite
+   * plugin: one per `transform`). Build one with `createModuleCache()`.
+   */
+  modules: ModuleCache
 }
 ```
 
@@ -1509,11 +1585,13 @@ export interface ResolveContext {
 
 ```typescript
 export interface ResolvedTypeSource {
-  /** The full source string of the file declaring the type alias. */
-  source: string
+  /** The parsed module declaring the type alias (from `ctx.modules`, so every
+   * later consumer of the same file reuses this tree). */
+  module: ParsedModule
   /** The local name of the alias *in that file* (after rename chains). */
   localName: string
-  /** Absolute path of the file declaring the alias (debug aid). */
+  /** Absolute path of the file declaring the alias (debug aid). Always
+   * `module.fileName`. */
   filePath: string
 }
 ```
@@ -1573,10 +1651,9 @@ export interface SignalTransformOptions {
   /** emit the msg/state/effect schemas + annotations for the agent surface
    * (keyed by `COMPILER_META_KEYS` — see emit-names.ts for the ABI) */
   emitAgentMetadata?: boolean
-  /** dev build — also emit the component meta `{ file, line }` */
+  /** dev build — also emit the component meta `{ file, line }` (the file is the
+   * module's own `fileName`, which the {@link ParsedModule} always carries) */
   devMode?: boolean
-  /** source file path, for the component meta's `file` */
-  fileName?: string
   /** Cross-file resolutions from the adapter (pre-extracted composition-aware
    * msg/effect schemas + annotations, and the declaring-file source for a `State`
    * that lives elsewhere), keyed PER `component()` CALL by {@link crossFileKey} of

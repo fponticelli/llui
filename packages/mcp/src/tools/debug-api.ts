@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { lintSignalSource } from '@llui/compiler'
+import { lintSignalSource, parseModule } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
 import { diffState } from '../util/diff.js'
@@ -354,7 +354,7 @@ export function registerDebugApiTools(registry: ToolRegistry, opts?: DebugApiToo
       const source = await readFile(safePath, 'utf8')
       let msgs: ReturnType<typeof lintSignalSource>
       try {
-        msgs = lintSignalSource(source, safePath)
+        msgs = lintSignalSource(parseModule(safePath, source))
       } catch (err) {
         throw new Error(
           `llui_lint: lintSignalSource threw: ${(err as Error).message ?? String(err)}`,

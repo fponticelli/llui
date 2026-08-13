@@ -71,8 +71,8 @@ import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-dep
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, bindingNames } from './helper-bindings.js'
-import { scriptKindForFilename } from './script-kind.js'
 import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
+import type { ParsedModule } from '../parse.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -1313,21 +1313,18 @@ export interface SignalLintMessage {
 }
 
 /**
- * Parse `source` and run the signal lint rules, returning diagnostics with
- * resolved line/column. The adapter (vite plugin) surfaces these as build
+ * Run the signal lint rules over an already-parsed module, returning diagnostics
+ * with resolved line/column. The adapter (vite plugin) surfaces these as build
  * errors. Call only on confirmed signal components.
+ *
+ * Takes a {@link ParsedModule} so the tree it lints is the SAME one the transform
+ * and the cross-file resolver use — one parse per dev transform (#93). The
+ * module also fixes the ScriptKind from the real filename: a `.ts` file using the
+ * generic-arrow form (`const id = <T>(x: T): T => x`) misparses as JSX under TSX
+ * and fires a spurious `operator-on-signal` error.
  */
-export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[] {
-  // ScriptKind follows the extension: a `.ts` file using the generic-arrow form
-  // (`const id = <T>(x: T): T => x`) misparses as JSX under TSX, which fires a
-  // spurious `operator-on-signal` error.
-  const sf = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKindForFilename(fileName),
-  )
+export function lintSignalSource(mod: ParsedModule): SignalLintMessage[] {
+  const sf = mod.sourceFile()
   return resolvePositions(sf, lintSignals(sf))
 }
 
@@ -1336,17 +1333,15 @@ export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLint
  * component. A Msg union commonly lives in a plain `msg.ts` sibling that
  * carries no `component(` call, so `lintSignalSource` never sees it — yet that
  * is exactly where `@routeGated`/`@validates` are authored. The adapter calls
- * this for every other TS module it transforms; the rule's own pre-check makes
- * it a string test on files with no annotations.
+ * this for every other TS module it transforms.
+ *
+ * The cheap string pre-check runs against `mod.text` BEFORE the module is parsed,
+ * so a file with no agent annotation costs a regex and nothing else — which is
+ * what keeps this affordable on every module in the project.
  */
-export function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
-  const sf = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKindForFilename(fileName),
-  )
+export function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[] {
+  if (!ANNOTATION_CALL_PRECHECK.test(mod.text)) return []
+  const sf = mod.sourceFile()
   return resolvePositions(sf, annotationSyntaxDiagnostics(sf))
 }
 

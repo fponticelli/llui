@@ -18,8 +18,10 @@ import {
   lintSignalSource,
   lintAnnotationSyntaxSource,
   applyLintFixes,
+  createModuleCache,
   type CrossFileResolution,
   type CrossFileResolutions,
+  type ParsedModule,
   type SignalLintMessage,
   type PreExtractedSchemas,
 } from '@llui/compiler'
@@ -48,15 +50,15 @@ import {
 import ts from 'typescript'
 
 /**
- * Single pre-resolution pass run before the signal transform. Parses the
- * focal file ONCE, collects the type-argument names of EVERY `component()`
- * call in it, and resolves everything the transform's schema/annotation
- * extractors need from sibling files:
+ * Single pre-resolution pass run before the signal transform. Reads the focal
+ * module's already-parsed tree, collects the type-argument names of EVERY
+ * `component()` call in it, and resolves everything the transform's schema/
+ * annotation extractors need from sibling files:
  *
- *   - `typeSources` — the declaring-file source for each type arg that
- *     lives in another module (the transform's file-local extractors would
- *     otherwise emit `null`). Only `state` is consumed downstream, but msg/
- *     effect are resolved too for completeness.
+ *   - `typeSources` — the declaring MODULE for each type arg that lives in
+ *     another file (the transform's file-local extractors would otherwise
+ *     emit `null`). Only `state` is consumed downstream, but msg/effect are
+ *     resolved too for completeness.
  *   - `preExtracted` — composition-aware msg annotations + discriminated-
  *     union schemas for Msg/Effect (following `type Msg = Imported | {…}`).
  *
@@ -71,12 +73,11 @@ import ts from 'typescript'
  * Cost: one resolution per DISTINCT name tuple, not per call — two components
  * sharing `<State, Msg, Effect>` share one entry, and the whole pass is still
  * gated on the file containing a typed `component<`. Sibling sources are read
- * through the caller's caching `ctx`, so a second tuple re-parses cached text
- * rather than re-reading it.
+ * through the caller's caching `ctx` and PARSED through its module cache, so a
+ * second tuple re-reads nothing and re-parses nothing (#93).
  */
 async function preResolveAll(
-  source: string,
-  filePath: string,
+  mod: ParsedModule,
   ctx: ResolveContext,
 ): Promise<CrossFileResolutions | undefined> {
   // Cheap filter: nothing to resolve unless the file contains a
@@ -84,23 +85,27 @@ async function preResolveAll(
   // (An UNTYPED `component({…})` alongside a typed one is still resolved
   // below, under the State/Msg/Effect convention the transform falls back
   // to — but a file with only untyped calls stays off this path.)
-  if (!/\bcomponent\s*</.test(source)) return undefined
+  if (!/\bcomponent\s*</.test(mod.text)) return undefined
 
-  // Parse once; every call's tuple comes out of this one source file.
-  const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
-  const tuples = collectComponentTypeNames(sf)
+  // The module is already parsed — by the lint pass, or here on first touch —
+  // and the SAME tree goes on to the transform. Every call's tuple comes out of
+  // it, and every sibling the resolver reaches is parsed once through
+  // `ctx.modules` (this pass used to account for ~10 of the 17 parses one dev
+  // transform made of the same text; issue #93).
+  const filePath = mod.fileName
+  const tuples = collectComponentTypeNames(mod.sourceFile())
   if (tuples.size === 0) return undefined
 
-  // Resolve one type-arg name into an external source if it isn't declared
+  // Resolve one type-arg name into an external module if it isn't declared
   // locally (or if the resolver chases through imports).
   const resolveTypeSource = async (
     typeName: string,
-  ): Promise<{ source: string; typeName: string } | undefined> => {
-    const found = await findTypeSource(typeName, source, filePath, ctx)
+  ): Promise<{ module: ParsedModule; typeName: string } | undefined> => {
+    const found = await findTypeSource(typeName, mod, ctx)
     if (!found) return undefined
     // Declared locally → the transform's own extractor path handles it.
     if (found.filePath === filePath) return undefined
-    return { source: found.source, typeName: found.localName }
+    return { module: found.module, typeName: found.localName }
   }
 
   const resolutions = new Map<string, CrossFileResolution>()
@@ -109,9 +114,9 @@ async function preResolveAll(
       resolveTypeSource(names.state),
       resolveTypeSource(names.msg),
       resolveTypeSource(names.effect),
-      extractMsgAnnotationsCrossFile(source, names.msg, filePath, ctx),
-      extractDiscriminatedUnionSchemaCrossFile(source, names.msg, filePath, ctx),
-      extractDiscriminatedUnionSchemaCrossFile(source, names.effect, filePath, ctx),
+      extractMsgAnnotationsCrossFile(mod, names.msg, ctx),
+      extractDiscriminatedUnionSchemaCrossFile(mod, names.msg, ctx),
+      extractDiscriminatedUnionSchemaCrossFile(mod, names.effect, ctx),
     ])
 
     const resolution: CrossFileResolution = {}
@@ -1371,12 +1376,19 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       const cleanId = id.replace(/[?#][^]*$/, '')
       if (!/\.(?:ts|tsx|mts|cts)$/.test(cleanId)) return
 
+      // ONE parse cache for this `transform` call, declared before the first
+      // branch that could parse: every path below (the SSR stub, lint, cross-file
+      // resolution, the signal transform) goes through it, so no reader can end
+      // up with a private second parse of the same text (issue #93). Lifetime is
+      // the call — nothing is cached across transforms, so nothing goes stale.
+      const modules = createModuleCache()
+
       // `'use client'` directive — SSR builds replace the module with a
       // stub so top-level imports and side effects never run on the
       // server. Client builds pass through to the normal transform; the
       // directive is effectively a no-op on the client.
       if (options?.ssr && hasUseClientDirective(code)) {
-        const result = transformUseClientSsr(code, id)
+        const result = transformUseClientSsr(modules.get(cleanId, code))
         if (result) {
           const cwd = process.cwd()
           const rel = relative(cwd, id)
@@ -1441,7 +1453,23 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         //    the only effective channel for LLMs (see CLAUDE.md). `this.error`
         //    throws → halts. We report blocking errors BEFORE applying any fix,
         //    so their positions still match the unmodified `code`.
-        const lintMsgs = lintSignalSource(code, id)
+        // ONE parse for the whole transform: lint, cross-file pre-resolution and
+        // the signal transform all read this module through `modules` (issue #93).
+        // The autofix branch below is the single exception — it REWRITES `code`,
+        // so the tree parsed here no longer describes it and the cache re-parses
+        // the fixed text (a different text is never served from cache; the fixed
+        // tree is the one that goes on to lower).
+        //
+        // Parsed under `cleanId`, not the raw id: the ScriptKind is decided by the
+        // extension, and a Vite query suffix (`Widget.tsx?v=abc`) hides it —
+        // `scriptKindForFilename` falls through to TS for such an id, so a `.tsx`
+        // module would be parsed as TS. No misparse has been DEMONSTRATED from it
+        // (lint + transform output is byte-identical for `W.tsx` and `W.tsx?v=1`
+        // across the JSX forms tried), so this closes a LATENT wrong ScriptKind
+        // rather than a reproduced bug — but with one tree now threaded through
+        // lint, resolution and the transform, a wrong kind would be wrong in all
+        // three at once, which is why it is not left to chance.
+        const lintMsgs = lintSignalSource(modules.get(cleanId, code))
         if (lintMsgs.length > 0) {
           const rel = relative(crossFileRoot ?? process.cwd(), id)
           const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
@@ -1466,6 +1494,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             code = applyLintFixes(code, autoFixable).code
           }
         }
+        // Everything downstream analyses THIS module: the post-autofix text under
+        // the module's real path (so the ScriptKind is the real one).
+        const mod = modules.get(cleanId, code)
         // Resolve cross-file Msg/State/Effect types (same machinery the legacy
         // path uses) so types in sibling files still produce full agent metadata.
         // Helper-only files have no component to annotate — skip the resolution.
@@ -1492,6 +1523,10 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           const siblingLint: Array<{ file: string; msgs: SignalLintMessage[] }> = []
           const siblingSeen = new Set<string>()
           const ctx: ResolveContext = {
+            // The resolver parses every sibling through this cache, so a `msg.ts`
+            // reached once per type argument, once per composed union member and
+            // again while enriching the type index is parsed ONCE (#93).
+            modules,
             resolveModule: async (spec, importer) => {
               const result = await rr(spec, importer)
               if (!result || result.external) return null
@@ -1522,13 +1557,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
               }
               if (!siblingSeen.has(p)) {
                 siblingSeen.add(p)
-                const msgs = lintAnnotationSyntaxSource(content, p)
+                // Same cache the resolver reads the sibling through — the
+                // annotation lint costs no parse of its own (and none at all
+                // when the file carries no annotation call).
+                const msgs = lintAnnotationSyntaxSource(modules.get(p, content))
                 if (msgs.length > 0) siblingLint.push({ file: p, msgs })
               }
               return content
             },
           }
-          signalCrossFile = await preResolveAll(code, id, ctx)
+          signalCrossFile = await preResolveAll(mod, ctx)
           if (siblingLint.length > 0) {
             const first = siblingLint[0]!
             const firstMsg = first.msgs[0]!
@@ -1564,10 +1602,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         // through one MagicString instance, so its map is coherent against
         // `code` (which already carries any convention autofixes applied
         // above; the map's sourcesContent reflects that post-fix text).
-        const transformed = transformSignalComponentSourceWithMap(code, {
+        const transformed = transformSignalComponentSourceWithMap(mod, {
           emitAgentMetadata: Boolean(agent),
           devMode,
-          fileName: id,
           onPerfDiagnostic: perfWarn,
           crossFile: signalCrossFile,
         })
@@ -1599,7 +1636,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // can catch a malformed, silently-dropped predicate would never see them
       // (issue #89). The rule pre-checks the source string, so a module with no
       // annotation call never pays for a parse.
-      const annotationMsgs = lintAnnotationSyntaxSource(code, id)
+      // Lazy: the module is parsed only if the pre-check finds an annotation
+      // call in its text, so the many modules that carry none pay a regex.
+      const annotationMsgs = lintAnnotationSyntaxSource(modules.get(cleanId, code))
       if (annotationMsgs.length > 0) {
         const rel = relative(crossFileRoot ?? process.cwd(), id)
         const display = rel.length > 0 && !rel.startsWith('..') ? rel : id

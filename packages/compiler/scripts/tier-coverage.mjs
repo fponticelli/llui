@@ -9,6 +9,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, extname } from 'node:path'
 import ts from 'typescript'
 import { transformSignalComponentSource } from '../dist/signals/transform-component.js'
+import { parseModule } from '../dist/parse.js'
 
 const root = process.argv[2]
 if (!root) {
@@ -49,8 +50,12 @@ function routed(src) {
  * false hits on eachDirect/forEach/comments), with delegation analysis on the
  * render arg: which identifiers called in the returned array are imported, and
  * from where. */
-function analyzeSites(fileName, src) {
-  const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+function analyzeSites(mod) {
+  // The SAME parsed module the transform reads, so this scan and the transform
+  // cannot disagree. This used to force TSX while the transform parsed per real
+  // extension — one script, two answers, and for a `.ts` file using the generic
+  // arrow form the sites were counted off a misparse the transform never saw.
+  const sf = mod.sourceFile()
   const imports = new Map() // local name -> module specifier
   const localTopDecls = new Set() // top-level function/const names (same-file helpers)
   for (const st of sf.statements) {
@@ -213,10 +218,11 @@ for (const f of walk(root)) {
   const rel = relative(root, f)
   const bails = []
   const diags = []
+  // One parse per file, shared by the transform and the site scan below.
+  const mod = parseModule(rel, src)
   let out
   try {
-    out = transformSignalComponentSource(src, {
-      fileName: rel,
+    out = transformSignalComponentSource(mod, {
       onLowerBail: (b) => bails.push(b),
       onPerfDiagnostic: (d) => diags.push(d),
     })
@@ -224,7 +230,7 @@ for (const f of walk(root)) {
     files.push({ file: rel, error: String(e && e.message) })
     continue
   }
-  const sites = analyzeSites(rel, src)
+  const sites = analyzeSites(mod)
   if (sites.length === 0 && diags.length === 0) continue
 
   // tier counts from emitted output (helpers only the compiler emits)
