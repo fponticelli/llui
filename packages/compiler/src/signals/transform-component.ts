@@ -20,9 +20,15 @@ import {
   setHelperBindings,
   setLowerBailHook,
   setEachLoweredHook,
+  setHelperEmitNames,
   type LowerBail,
 } from './transform-view.js'
 import { HelperBindings } from './helper-bindings.js'
+import {
+  planHelperImports,
+  helperImportStatement,
+  type HelperImportPlan,
+} from './runtime-helpers.js'
 import { singleRoot, type Roots } from './extract-deps.js'
 import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
 import type { SourceMap } from 'magic-string'
@@ -73,31 +79,22 @@ export interface SignalTransformOptions {
   onPerfDiagnostic?: (diagnostic: Diagnostic) => void
 }
 
-const RUNTIME_HELPERS = [
-  'signalText',
-  'staticText',
-  'el',
-  'react',
-  'signalEach',
-  'signalEachDirect',
-  'eachDirect',
-  'eachArm',
-  'rowHandle',
-  'applyAttr',
-  'signalShow',
-  'signalBranch',
-  'signalForeign',
-]
-const RUNTIME_HELPER_SET = new Set(RUNTIME_HELPERS)
-
 type Edit = TextEdit
 
-/** The runtime helpers ACTUALLY emitted by the transform, collected by parsing the
- * edit replacement texts (compiler-generated code) and walking for calls to a known
- * helper. AST-based — so a helper name appearing in a user comment or string literal
- * (which lives in the untouched source, never in an edit text) is NOT a false match,
- * unlike the old `\bhelper\(` regex over the whole output. */
-function collectEmittedHelpers(edits: readonly Edit[]): Set<string> {
+/** The runtime helpers ACTUALLY emitted by the transform (as CANONICAL names),
+ * collected by parsing the edit replacement texts (compiler-generated code) and
+ * walking for calls to an identifier the plan emits a helper under. AST-based —
+ * so a helper name appearing in a user comment or string literal (which lives in
+ * the untouched source, never in an edit text) is NOT a false match, unlike the
+ * old `\bhelper\(` regex over the whole output.
+ *
+ * The lookup goes through the plan's EMITTED names, not the canonical ones: under
+ * a collision alias (issue #90) the generated call reads `el$llui(...)`, and a
+ * bare `el(...)` in that same text is verbatim USER code — the user's own binding,
+ * which must not pull in an import. */
+function collectEmittedHelpers(edits: readonly Edit[], plan: HelperImportPlan): Set<string> {
+  const canonicalOf = new Map<string, string>()
+  for (const [canonical, emitted] of Object.entries(plan.names)) canonicalOf.set(emitted, canonical)
   const found = new Set<string>()
   for (const e of edits) {
     if (!e.text.includes('(')) continue // no call — nothing to collect (metadata, `batch,`)
@@ -109,36 +106,15 @@ function collectEmittedHelpers(edits: readonly Edit[]): Set<string> {
       ts.ScriptKind.TSX,
     )
     const walk = (n: ts.Node): void => {
-      if (
-        ts.isCallExpression(n) &&
-        ts.isIdentifier(n.expression) &&
-        RUNTIME_HELPER_SET.has(n.expression.text)
-      ) {
-        found.add(n.expression.text)
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+        const canonical = canonicalOf.get(n.expression.text)
+        if (canonical) found.add(canonical)
       }
       n.forEachChild(walk)
     }
     walk(probe)
   }
   return found
-}
-
-/** Local binding names already imported from '@llui/dom' in this file — so the
- * injected import doesn't re-declare one the user already imported (a duplicate
- * binding is a SyntaxError). */
-function domImportedNames(sf: ts.SourceFile): Set<string> {
-  const out = new Set<string>()
-  for (const st of sf.statements) {
-    if (
-      ts.isImportDeclaration(st) &&
-      ts.isStringLiteral(st.moduleSpecifier) &&
-      st.moduleSpecifier.text === '@llui/dom'
-    ) {
-      const nb = st.importClause?.namedBindings
-      if (nb && ts.isNamedImports(nb)) for (const spec of nb.elements) out.add(spec.name.text)
-    }
-  }
-  return out
 }
 
 /** The `state` (and any extra) root names a signal view destructures from its
@@ -246,6 +222,13 @@ export function transformSignalComponentSourceWithMap(
   // recognition (below, and in the view transform): resolves aliases, excludes a
   // user's own binding of a helper name, and honors lexical shadowing.
   const bindings = HelperBindings.fromSourceFile(sf)
+
+  // Which identifier each runtime helper is EMITTED under — canonical unless the
+  // file already uses that name anywhere, where the injected import would either
+  // re-declare it or be shadowed at the emitted call site (issue #90). Decided
+  // here, BEFORE any lowering, and threaded into the view transform so every
+  // generated call site carries the alias.
+  const importPlan = planHelperImports(sf)
 
   // Introspection metadata is computed PER `component()` call: the Msg/State/Effect
   // type NAMES come from the call's own type arguments (`component<State, Msg, Effect>`),
@@ -383,6 +366,10 @@ export function transformSignalComponentSourceWithMap(
   }
   setHelperDecls(helpers)
   setHelperBindings(bindings)
+  // Save the prior table and restore it below, rather than resetting to canonical:
+  // a nested lowering must hand the outer file back its own aliases (see the
+  // setter's comment in transform-view.ts).
+  const prevEmitNames = setHelperEmitNames(importPlan.names)
   // Perf diagnostics need the full event stream to attribute reasons to the
   // each sites that end verbatim — record while forwarding to the user hook.
   const recordedBails: LowerBail[] | null = opts.onPerfDiagnostic ? [] : null
@@ -508,6 +495,7 @@ export function transformSignalComponentSourceWithMap(
   } finally {
     setHelperDecls(null)
     setHelperBindings(null)
+    setHelperEmitNames(prevEmitNames)
     setAutoBatchContext(null)
     setLowerBailHook(null)
     setEachLoweredHook(null)
@@ -516,12 +504,10 @@ export function transformSignalComponentSourceWithMap(
   if (!transformedAny) return { code: source, map: null }
 
   // inject import for the helpers actually EMITTED (collected from the edit texts,
-  // AST-based), minus any the file already imports from '@llui/dom' (avoids a
-  // duplicate-binding SyntaxError and comment/string false positives).
-  const emitted = collectEmittedHelpers(edits)
-  const alreadyImported = domImportedNames(sf)
-  const used = RUNTIME_HELPERS.filter((h) => emitted.has(h) && !alreadyImported.has(h))
-  const prepend = used.length > 0 ? `import { ${used.join(', ')} } from '@llui/dom'\n` : undefined
+  // AST-based), minus any the file already imports from '@llui/dom' under the same
+  // name, and aliased (`el as el$llui`) wherever the plan had to dodge a top-level
+  // binding of the user's — the alias the emitted call sites already used.
+  const prepend = helperImportStatement(importPlan, collectEmittedHelpers(edits, importPlan))
 
   // Every edit + the import prepend compose through one MagicString instance → a
   // coherent source map.
