@@ -303,15 +303,6 @@ export function _resetChainForTest(): void {
 }
 
 /**
- * Back-compat alias for the pre-layout test helper name.
- * @internal
- * @deprecated — use `_resetChainForTest` instead.
- */
-export function _resetCurrentHandleForTest(): void {
-  _resetChainForTest()
-}
-
-/**
  * Default onRenderClient hook — no layout, no animation hooks. Hydrates
  * on first load, mounts fresh on subsequent navs.
  */
