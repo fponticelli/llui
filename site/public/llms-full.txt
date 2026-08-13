@@ -10543,9 +10543,19 @@ function fade(opts: FadeOptions = {}): TransitionOptions
 
 FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
 `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
-It compares each surviving child's last-known position (kept in a
-`WeakMap<Element, DOMRect>`) against its new one and, for any that moved,
+It compares each surviving child's last-known LAYOUT position (kept in a
+`WeakMap<Element, Point>`) against its new one and, for any that moved,
 plays an inverse-then-identity transform so the row appears to glide.
+A pass is split into a read phase and a write phase: every measurement
+(`getBoundingClientRect`, the computed transform) happens before the first
+`cancel()`/`animate()`, so a K-row reorder forces layout ONCE rather than
+once per row. Do not reintroduce a write between the reads.
+Interruption: the live `Animation` is retained per element and cancelled
+before the next one starts, and the new delta is measured from where the row
+VISUALLY is — its previous layout box plus whatever translation the running
+glide had already applied — so an interrupted reorder continues rather than
+jumping. `getBoundingClientRect` reports the transformed box, so the stored
+position is the rect with that translation subtracted back out.
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
