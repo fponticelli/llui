@@ -425,25 +425,33 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     }
     case 'arrowRightFrom': {
       // If this branch is closed, expand it (triggering a lazy load when
-      // required); otherwise focus the first visible child (the next item in
-      // depth-first visibleItems order).
+      // required); otherwise move focus to its first enabled child.
       if (!state.expanded.includes(msg.id)) {
         return expandNode(state, msg.id)
       }
       // WAI-ARIA APG: "Right arrow: When focus is on an open node, moves focus
-      // to the first child node." An open node with NO children has nowhere to
-      // go — falling through to the next visible item focused the next SIBLING,
-      // which is ArrowDown's job (#122). Only decidable when the structure is
-      // known; without a `nodes` entry keep the depth-first neighbour.
+      // to the first child node."
       const meta = state.nodes[msg.id]
-      if (meta !== undefined && meta.children.length === 0) return [state, []]
+      if (meta !== undefined) {
+        // With the structure known the answer comes from the CHILDREN list, not
+        // from `visibleItems`. `visibleItems` is depth-first, so the item after
+        // a disabled child that is itself OPEN is that child's own descendant —
+        // scanning it walks straight out of the subtree and the target has to be
+        // thrown away, turning the key into a no-op when APG says focus moves to
+        // the next child. Returning `undefined` here covers BOTH terminal cases:
+        // an open node with no children at all (the next visible item is the
+        // next SIBLING, which is ArrowDown's job), and one whose every child is
+        // disabled (#122).
+        const first = meta.children.find((c) => !isNodeDisabled(state, c))
+        if (first === undefined) return [state, []]
+        return [{ ...state, focused: first }, []]
+      }
+      // Structure unknown (no `nodes` entry): the depth-first neighbour is the
+      // best available guess at "first child".
       const idx = state.visibleItems.indexOf(msg.id)
       if (idx === -1) return [state, []]
       const next = enabledVisibleFrom(state, idx + 1, 1)
       if (next === null) return [state, []]
-      // Skipping disabled children must not wander out of the subtree: with a
-      // known structure only a direct child is a valid target.
-      if (meta !== undefined && !meta.children.includes(next)) return [state, []]
       return [{ ...state, focused: next }, []]
     }
     case 'typeahead': {

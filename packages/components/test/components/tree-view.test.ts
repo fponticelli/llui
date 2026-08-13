@@ -669,6 +669,28 @@ describe('tree-view keyboard navigation and disabled nodes (#122)', () => {
     expect(s.focused).toBe('a2')
   })
 
+  it('ArrowRight skips a disabled OPEN child and lands on the next enabled CHILD', () => {
+    // The disabled first child is itself expanded, so the next VISIBLE item
+    // after it is its own grandchild — not a child of `a` at all. Scanning
+    // visibleItems finds `a1x` and the containment guard then rejects it,
+    // turning the whole key into a no-op. APG says focus moves to `a2`.
+    const s0 = init({
+      expanded: ['a', 'a1'],
+      visibleItems: ['a', 'a1', 'a1x', 'a2'],
+      ...nodesOf(
+        {
+          a: { children: ['a1', 'a2'] },
+          a1: { children: ['a1x'], disabled: true },
+          a1x: {},
+          a2: {},
+        },
+        ['a'],
+      ),
+    })
+    const [s] = update({ ...s0, focused: 'a' }, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a2')
+  })
+
   it('ArrowRight on an expanded branch whose children are all disabled is a no-op', () => {
     const s0 = init({
       expanded: ['a'],
