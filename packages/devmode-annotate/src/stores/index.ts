@@ -7,7 +7,7 @@
 // HUD into its entry chunk — importing `indexedDbStore` from the barrel would
 // undo the whole point of the lazy `./install` entry (#116).
 //
-// So nothing here may import `../index.js`, and `test/store-entry.test.ts`
+// So nothing here may import `../index.js`, and `test/entry-boundaries.test.ts`
 // fails the build if the graph below ever reaches it.
 
 export { devServerStore } from './dev-server-store.js'
