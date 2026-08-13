@@ -4,6 +4,7 @@ import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { type Placement } from '../utils/floating.js'
+import { indexMap, membershipSet } from '../utils/derive.js'
 
 /**
  * Combobox — text input paired with a filtered listbox dropdown. User
@@ -559,6 +560,12 @@ export function connect(
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
 
+  // Derived once per update and shared by every item, instead of a full array
+  // scan inside each item's props on every update (#124).
+  const selected = membershipSet<string>()
+  const disabled = membershipSet<string>()
+  const filteredIndex = indexMap<string>()
+
   return {
     root: {
       // The ARIA combobox lives on the INPUT (see `input` below). The root is a
@@ -664,20 +671,20 @@ export function connect(
         item: {
           role: 'option',
           id: itemId(value),
-          'aria-selected': state.map((s) => s.value.includes(value)),
+          'aria-selected': state.map((s) => selected(s.value).has(value)),
           'aria-disabled': state.map((s) =>
-            !isCreate && s.disabledItems.includes(value) ? 'true' : undefined,
+            !isCreate && disabled(s.disabledItems).has(value) ? 'true' : undefined,
           ),
-          'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+          'data-state': state.map((s) => (selected(s.value).has(value) ? 'selected' : undefined)),
           'data-highlighted': state.map((s) => (s.highlightedValue === value ? '' : undefined)),
           'data-disabled': state.map((s) =>
-            !isCreate && s.disabledItems.includes(value) ? '' : undefined,
+            !isCreate && disabled(s.disabledItems).has(value) ? '' : undefined,
           ),
           'data-create': isCreate ? '' : undefined,
           'data-scope': 'combobox',
           'data-part': 'item',
           'data-value': value,
-          'data-index': state.map((s) => String(s.filteredItems.indexOf(value))),
+          'data-index': state.map((s) => String(filteredIndex(s.filteredItems).get(value) ?? -1)),
           onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
           onPointerMove: tagSend(send, ['highlight'], () => {
             // Guard the send too: skip dispatching entirely when the row is

@@ -2,6 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { firstEnabled, nextEnabled, focusRovingItem } from '../utils/roving.js'
+import { deriveOnce, membershipSet } from '../utils/derive.js'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces
@@ -149,6 +150,17 @@ export function connect(
   state: Signal<ToggleGroupState>,
   send: Send<ToggleGroupMsg>,
 ): ToggleGroupParts {
+  // Derived once per update and shared by every item (#124). The roving tab
+  // stop is a whole-list question — reading it per item made ONE item's
+  // tabindex cost a scan of the entire list.
+  const selected = membershipSet<string>()
+  const disabled = membershipSet<string>()
+  const tabStop = deriveOnce(
+    (items: string[], value: string[], disabledItems: string[]): string | null =>
+      items.find((v) => value.includes(v) && !disabledItems.includes(v)) ??
+      firstEnabled(items, disabledItems),
+  )
+
   return {
     root: {
       role: 'group',
@@ -162,14 +174,14 @@ export function connect(
       root: {
         type: 'button',
         role: 'button',
-        'aria-pressed': state.map((s) => s.value.includes(value)),
+        'aria-pressed': state.map((s) => selected(s.value).has(value)),
         'aria-disabled': state.map((s) =>
-          s.disabled || s.disabledItems.includes(value) ? 'true' : undefined,
+          s.disabled || disabled(s.disabledItems).has(value) ? 'true' : undefined,
         ),
-        disabled: state.map((s) => s.disabled || s.disabledItems.includes(value)),
-        'data-state': state.map((s) => (s.value.includes(value) ? 'on' : 'off')),
+        disabled: state.map((s) => s.disabled || disabled(s.disabledItems).has(value)),
+        'data-state': state.map((s) => (selected(s.value).has(value) ? 'on' : 'off')),
         'data-disabled': state.map((s) =>
-          s.disabled || s.disabledItems.includes(value) ? '' : undefined,
+          s.disabled || disabled(s.disabledItems).has(value) ? '' : undefined,
         ),
         'data-scope': 'toggle-group',
         'data-part': 'item',
@@ -177,11 +189,9 @@ export function connect(
         // Roving tabindex: exactly one tab stop. Prefer the focused item;
         // else the first selected item; else the first enabled item.
         tabindex: state.map((s) => {
-          if (s.disabled || s.disabledItems.includes(value)) return -1
+          if (s.disabled || disabled(s.disabledItems).has(value)) return -1
           if (s.focused !== null) return s.focused === value ? 0 : -1
-          const selected = s.items.find((v) => s.value.includes(v) && !s.disabledItems.includes(v))
-          if (selected != null) return selected === value ? 0 : -1
-          return firstEnabled(s.items, s.disabledItems) === value ? 0 : -1
+          return tabStop(s.items, s.value, s.disabledItems) === value ? 0 : -1
         }),
         onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
         onFocus: tagSend(send, ['focusItem'], () => send({ type: 'focusItem', value })),

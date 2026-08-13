@@ -6,6 +6,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { membershipSet } from '../utils/derive.js'
 
 /**
  * Listbox — a list of selectable options. Supports single and multiple
@@ -220,6 +221,11 @@ export function connect(
   const rootId = `${opts.id}:root`
   const itemId = (index: number): string => `${opts.id}:item:${index}`
 
+  // Derived once per update and shared by every item, instead of a full array
+  // scan inside each item's props on every update (#124).
+  const selected = membershipSet<string>()
+  const disabled = membershipSet<string>()
+
   return {
     root: {
       role: 'listbox',
@@ -284,11 +290,13 @@ export function connect(
       root: {
         role: 'option',
         id: itemId(index),
-        'aria-selected': state.map((s) => s.value.includes(value)),
-        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
-        'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+        'aria-selected': state.map((s) => selected(s.value).has(value)),
+        'aria-disabled': state.map((s) =>
+          disabled(s.disabledItems).has(value) ? 'true' : undefined,
+        ),
+        'data-state': state.map((s) => (selected(s.value).has(value) ? 'selected' : undefined)),
         'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
-        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
+        'data-disabled': state.map((s) => (disabled(s.disabledItems).has(value) ? '' : undefined)),
         'data-scope': 'listbox',
         'data-part': 'item',
         'data-value': value,

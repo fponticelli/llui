@@ -2,6 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { deriveOnce, membershipSet } from '../utils/derive.js'
 
 /**
  * Radio group — a set of mutually-exclusive options. Users select one value
@@ -172,6 +173,14 @@ export function connect(
 ): RadioGroupParts {
   const itemId = (v: string): string => `${opts.id}:item:${v}`
 
+  // Derived once per update and shared by every item (#124). The roving tab
+  // stop is a whole-list question, so it is answered ONCE and each item only
+  // compares itself against the answer.
+  const disabled = membershipSet<string>()
+  const tabStop = deriveOnce((items: string[], disabledItems: string[]) =>
+    firstEnabled(items, disabledItems),
+  )
+
   return {
     root: {
       role: 'radiogroup',
@@ -188,23 +197,20 @@ export function connect(
         id: itemId(value),
         'aria-checked': state.map((s) => s.value === value),
         'aria-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? 'true' : undefined,
+          disabled(s.disabledItems).has(value) || s.disabled ? 'true' : undefined,
         ),
         'data-state': state.map((s) => (s.value === value ? 'checked' : 'unchecked')),
         'data-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? '' : undefined,
+          disabled(s.disabledItems).has(value) || s.disabled ? '' : undefined,
         ),
         'data-scope': 'radio-group',
         'data-part': 'item',
         'data-value': value,
         // Only currently-selected (or first if none selected) is tab-stop
         tabindex: state.map((st) => {
-          if (st.disabled || st.disabledItems.includes(value)) return -1
+          if (st.disabled || disabled(st.disabledItems).has(value)) return -1
           if (st.value === value) return 0
-          if (st.value === null) {
-            const first = firstEnabled(st.items, st.disabledItems)
-            return first === value ? 0 : -1
-          }
+          if (st.value === null) return tabStop(st.items, st.disabledItems) === value ? 0 : -1
           return -1
         }),
         onClick: tagSend(send, ['setValue'], () => send({ type: 'setValue', value })),

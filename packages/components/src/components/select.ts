@@ -9,6 +9,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { indexMap, membershipSet } from '../utils/derive.js'
 
 /**
  * Select — a trigger button that opens a listbox dropdown. Value(s) are
@@ -432,6 +433,13 @@ export function connect(
   const placeholder = opts.placeholder ?? ''
   const separator = opts.separator ?? ', '
 
+  // Per-item props run for EVERY item on EVERY update, so these lookups are
+  // derived once per update and shared instead of scanning the arrays per item
+  // (#124). One cell each, living in this instance's closure.
+  const selected = membershipSet<string>()
+  const disabled = membershipSet<string>()
+  const itemIndex = indexMap<string>()
+
   // Single keydown handler. DOM focus, aria-activedescendant, and this handler
   // all live on the TRIGGER (the combobox element) — the trigger-focused ARIA
   // pattern. Branch on open state: closed → open the popup; open → navigate the
@@ -539,7 +547,7 @@ export function connect(
     },
     hiddenOption: (value: string) => ({
       value,
-      selected: state.map((s) => s.value.includes(value)),
+      selected: state.map((s) => selected(s.value).has(value)),
       'data-scope': 'select',
       'data-part': 'hidden-option',
     }),
@@ -547,15 +555,17 @@ export function connect(
       item: {
         role: 'option',
         id: itemId(value),
-        'aria-selected': state.map((s) => s.value.includes(value)),
-        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
-        'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+        'aria-selected': state.map((s) => selected(s.value).has(value)),
+        'aria-disabled': state.map((s) =>
+          disabled(s.disabledItems).has(value) ? 'true' : undefined,
+        ),
+        'data-state': state.map((s) => (selected(s.value).has(value) ? 'selected' : undefined)),
         'data-highlighted': state.map((s) => (s.highlightedValue === value ? '' : undefined)),
-        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
+        'data-disabled': state.map((s) => (disabled(s.disabledItems).has(value) ? '' : undefined)),
         'data-scope': 'select',
         'data-part': 'item',
         'data-value': value,
-        'data-index': state.map((s) => String(s.items.indexOf(value))),
+        'data-index': state.map((s) => String(itemIndex(s.items).get(value) ?? -1)),
         onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
         onPointerMove: tagSend(send, ['highlight'], () => {
           if (state.peek()?.highlightedValue === value) return

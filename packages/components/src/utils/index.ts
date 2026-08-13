@@ -34,6 +34,8 @@ export {
 export { TreeCollection } from './tree-collection.js'
 export type { TreeNode } from './tree-collection.js'
 
+export { deriveOnce, indexMap, membershipSet } from './derive.js'
+
 export { clamp, clampToStep, decimalPlaces, snapToStep, stepBy } from './number.js'
 export type { NumericGrid } from './number.js'
 
