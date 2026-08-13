@@ -209,9 +209,14 @@ export function connectRouter<R>(
     }
   }
 
-  // Suppress the echo event our own URL mutation triggers, so a single
-  // navigation dispatches exactly once (see findings 2a/2b/2c).
-  let suppressNextHashchange = false
+  // The hashes our own writes are about to echo back as `hashchange`, in write
+  // order, so each navigation dispatches exactly once. A BOOLEAN cannot express
+  // this: hashchange events QUEUE, so two navigations in one tick echo twice
+  // and one flag swallows only the first — the second navigation's message is
+  // then dispatched a SECOND time, running the reducer and its effects twice
+  // (#108). `batch()` makes multi-send bursts an explicitly supported pattern,
+  // so a batched navigation is not an exotic case.
+  const pendingEchoes: string[] = []
   // The index a blocked navigation's `history.go` is restoring to, or `null`.
   // Keyed on the destination rather than a bare flag: `history.go` is
   // asynchronous and a delta it cannot reach fires nothing at all, so a flag
@@ -234,7 +239,7 @@ export function connectRouter<R>(
    */
   function setHash(newHash: string, suppress: boolean): boolean {
     if (sameHash(location.hash, newHash)) return false
-    if (suppress) suppressNextHashchange = true
+    if (suppress) pendingEchoes.push(normHash(newHash))
     location.hash = newHash
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
     // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
@@ -265,6 +270,24 @@ export function connectRouter<R>(
       }
     }
     return newRoute
+  }
+
+  /**
+   * Consume one queued echo if this `hashchange` is ours. The queue is only
+   * trusted while the URL is still where our last write left it: when it is
+   * not, a write we armed never landed and the event in hand is a GENUINE
+   * navigation, which must dispatch rather than be swallowed. That check is
+   * what keeps a stale entry from eating real events indefinitely — the failure
+   * mode the old boolean had (#103/#108).
+   */
+  function consumeHashEcho(): boolean {
+    if (pendingEchoes.length === 0) return false
+    if (!sameHash(location.hash, pendingEchoes[pendingEchoes.length - 1]!)) {
+      pendingEchoes.length = 0
+      return false
+    }
+    pendingEchoes.shift()
+    return true
   }
 
   /**
@@ -323,7 +346,7 @@ export function connectRouter<R>(
       // PUSHES, which grows history.length on every block and truncates every
       // forward entry above the blocked one (#103). The traversal echoes a
       // hashchange, which is suppressed like any of our own writes.
-      suppressNextHashchange = true
+      pendingEchoes.push(normHash(router.href(currentRoute)))
       history.go(delta)
       return
     }
@@ -365,7 +388,7 @@ export function connectRouter<R>(
         const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
           if (!sameHash(location.hash, finalPath)) {
-            suppressNextHashchange = true
+            pendingEchoes.push(normHash(finalPath))
             location.replace(finalPath)
             // `location.replace` swaps the current entry and DROPS its state,
             // so restamp it. The index is unchanged — nothing was pushed.
@@ -454,10 +477,7 @@ export function connectRouter<R>(
             // Swallow the echo event our own URL mutation triggered — it was
             // already dispatched (navigate) or is URL-only (push/replace).
             if (router.mode === 'hash') {
-              if (suppressNextHashchange) {
-                suppressNextHashchange = false
-                return
-              }
+              if (consumeHashEcho()) return
             } else if (consumePopstateRestore()) {
               return
             }
