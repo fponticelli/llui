@@ -1,8 +1,35 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { httpStore } from '../src/stores/http-store.js'
 import type { CreateNoteRequest } from '../src/note-types.js'
 
 const BASE = 'https://notes.example.com/api'
+
+// jsdom ships no EventSource. A minimal stub that records construction and
+// close, so the SSE half of `dispose()` is observable (the same shape as
+// `FakeES` in notes-store.test.ts / `StubEventSource` in live-feedback.test.ts).
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  closed = 0
+  listeners = new Map<string, (e: MessageEvent) => void>()
+  constructor(public url: string) {
+    FakeEventSource.instances.push(this)
+  }
+  addEventListener(type: string, cb: (e: MessageEvent) => void): void {
+    this.listeners.set(type, cb)
+  }
+  removeEventListener(type: string): void {
+    this.listeners.delete(type)
+  }
+  close(): void {
+    this.closed++
+  }
+}
+
+function stubEventSource(): typeof FakeEventSource {
+  FakeEventSource.instances = []
+  vi.stubGlobal('EventSource', FakeEventSource as unknown as typeof EventSource)
+  return FakeEventSource
+}
 
 interface Call {
   url: string
@@ -99,5 +126,67 @@ describe('httpStore', () => {
     const store = httpStore({ baseUrl: BASE, fetch })
     expect(await store.listSessions()).toHaveLength(1)
     expect(calls[0]!.headers.Authorization).toBeUndefined()
+  })
+})
+
+// #114 — the SSE half of `dispose()`. The URL-cache half is covered by
+// store-url-lifecycle.test.ts; without these, deleting the close loop in
+// `http-store.ts`'s `dispose()` leaves the whole suite green.
+describe('httpStore dispose()', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('closes an EventSource whose unsubscribe was never called', () => {
+    const ES = stubEventSource()
+    const { fetch } = recorder()
+    const store = httpStore({ baseUrl: BASE, fetch })
+    store.subscribeEvents({ role: 'hud', onEvent: () => {} })
+    store.subscribeEvents({ role: 'agent', onEvent: () => {} })
+    expect(ES.instances).toHaveLength(2)
+    expect(ES.instances.map((s) => s.closed)).toEqual([0, 0])
+
+    store.dispose()
+
+    expect(ES.instances.map((s) => s.closed)).toEqual([1, 1])
+  })
+
+  it('clears its live-source set, so a second dispose() does not re-close', () => {
+    const ES = stubEventSource()
+    const { fetch } = recorder()
+    const store = httpStore({ baseUrl: BASE, fetch })
+    store.subscribeEvents({ role: 'hud', onEvent: () => {} })
+    store.dispose()
+    expect(ES.instances[0]!.closed).toBe(1)
+
+    // Idempotent, and the set is empty rather than merely re-closed: a second
+    // dispose() touches nothing.
+    store.dispose()
+    expect(ES.instances[0]!.closed).toBe(1)
+  })
+
+  it('does not double-close a source whose unsubscribe already ran', () => {
+    const ES = stubEventSource()
+    const { fetch } = recorder()
+    const store = httpStore({ baseUrl: BASE, fetch })
+    const off = store.subscribeEvents({ role: 'hud', onEvent: () => {} })
+    off()
+    expect(ES.instances[0]!.closed).toBe(1)
+    store.dispose()
+    expect(ES.instances[0]!.closed).toBe(1)
+  })
+
+  it('stays usable after dispose(): a later subscribe opens a fresh source', () => {
+    const ES = stubEventSource()
+    const { fetch } = recorder()
+    const store = httpStore({ baseUrl: BASE, fetch })
+    store.subscribeEvents({ role: 'hud', onEvent: () => {} })
+    store.dispose()
+    store.subscribeEvents({ role: 'hud', onEvent: () => {} })
+    expect(ES.instances).toHaveLength(2)
+    expect(ES.instances[1]!.closed).toBe(0)
+    // …and the fresh one is tracked, so the next dispose() reaches it.
+    store.dispose()
+    expect(ES.instances[1]!.closed).toBe(1)
   })
 })
