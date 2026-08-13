@@ -105,10 +105,10 @@ describe('llui_static_collect_paths', () => {
           name: 'C',
           init: () => [{ user: { name: '', email: '' }, theme: 'light' }, []],
           update: (s) => [s, []],
-          view: ({ text }) => [
-            div([text((s) => s.user.name)]),
-            div([text((s) => s.user.email)]),
-            div([text((s) => s.theme)]),
+          view: ({ state }) => [
+            div({}, [text(state.at('user').at('name'))]),
+            div({}, [text(state.at('user').at('email'))]),
+            div({}, [text(state.at('theme'))]),
           ],
         })
       `,
@@ -127,10 +127,52 @@ describe('llui_static_collect_paths', () => {
     expect(result.paths.slice().sort()).toEqual(['theme', 'user.email', 'user.name'])
   })
 
+  // Issue #92: the tool used to route through a SECOND dependency analyzer that
+  // truncated every path at two segments, so a 4-level read reached the LLM as
+  // `user.profile`. It now shares the analyzer that builds the reconciler masks.
+  it('reports paths deeper than 2 levels', async () => {
+    const file = join(tmp, 'deep.ts')
+    writeFileSync(
+      file,
+      `
+        import { component, div, span, text } from '@llui/dom'
+        type S = { user: { profile: { address: { city: string; zip: string } } }; theme: string }
+        type M = { type: 'noop' }
+        export const C = component<S, M>({
+          name: 'C',
+          init: () => [
+            { user: { profile: { address: { city: '', zip: '' } } }, theme: 'light' },
+            [],
+          ],
+          update: (s) => [s, []],
+          view: ({ state }) => [
+            div({}, [text(state.at('user').at('profile').at('address').at('city'))]),
+            span({ title: state.map((s) => s.user.profile.address.zip) }, []),
+            div({}, [text(state.at('theme'))]),
+          ],
+        })
+      `,
+    )
+    const result = (await runTool('llui_static_collect_paths', { file })) as {
+      total: number
+      opaque: boolean
+      breakdown: Array<{ field: string; count: number }>
+      paths: string[]
+    }
+    expect(result.paths).toEqual(['theme', 'user.profile.address.city', 'user.profile.address.zip'])
+    expect(result.paths).not.toContain('user.profile') // the truncated answer
+    expect(result.total).toBe(3)
+    expect(result.opaque).toBe(false)
+    expect(result.breakdown).toEqual([
+      { field: 'user', count: 2 },
+      { field: 'theme', count: 1 },
+    ])
+  })
+
   it('reports a large path set without a fixed ceiling (chunked mask has no budget)', async () => {
     // 65 top-level state reads — the old two-word bitmask capped at 62; the
     // chunked-mask runtime has no ceiling, so all 65 paths are reported.
-    const reads = Array.from({ length: 65 }, (_, i) => `text((s) => s.f${i})`).join(', ')
+    const reads = Array.from({ length: 65 }, (_, i) => `text(state.at('f${i}'))`).join(', ')
     const file = join(tmp, 'big.ts')
     writeFileSync(
       file,
@@ -142,7 +184,7 @@ describe('llui_static_collect_paths', () => {
           name: 'C',
           init: () => [{} as S, []],
           update: (s) => [s, []],
-          view: ({ text }) => [div([${reads}])],
+          view: ({ state }) => [div({}, [${reads}])],
         })
       `,
     )
@@ -152,6 +194,75 @@ describe('llui_static_collect_paths', () => {
     }
     expect(result.total).toBe(65)
     expect(result.paths).toHaveLength(65)
+  })
+
+  it('says so when the file has no view it can root against', async () => {
+    const file = join(tmp, 'helper.ts')
+    writeFileSync(file, `export const x = 1`)
+    const result = (await runTool('llui_static_collect_paths', { file })) as {
+      total: number
+      note?: string
+    }
+    expect(result.total).toBe(0)
+    expect(result.note).toMatch(/destructured `state` bag/)
+    // A file the tool cannot root must not read as "this file depends on nothing".
+    expect(result.note).toMatch(/does NOT mean the file has no reactive dependencies/)
+  })
+
+  // A component whose bag is NOT destructured (`view: (bag) => …`) is a real
+  // component the tool cannot root paths against. The note must not claim the
+  // file has no component view — it does.
+  it('does not claim a non-destructured-bag view is "no component view"', async () => {
+    const file = join(tmp, 'bag.ts')
+    writeFileSync(
+      file,
+      `
+        import { component, text } from '@llui/dom'
+        type S = { a: number }
+        type M = { type: 'noop' }
+        export const C = component<S, M>({
+          name: 'C',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: (bag) => [text(bag.state.at('a'))],
+        })
+      `,
+    )
+    const result = (await runTool('llui_static_collect_paths', { file })) as { note?: string }
+    expect(result.note).toMatch(/bag not destructured/)
+  })
+
+  // Issue #92 review: the replacement walker asserted a whole-state read wherever
+  // the root NAME appeared, including as an object-literal key. That fires on the
+  // `connect`/`overlay` wiring CLAUDE.md documents as canonical — an affirmative,
+  // wrong `opaque: true` handed to an LLM, i.e. the same class of defect #92 set
+  // out to remove.
+  it('does not report `opaque` for the canonical connect/overlay wiring', async () => {
+    const file = join(tmp, 'connect.ts')
+    writeFileSync(
+      file,
+      `
+        import { component, div, text } from '@llui/dom'
+        import { dialog } from '@llui/components'
+        type S = { dialog: { open: boolean }; title: string }
+        type M = { type: 'noop' }
+        export const C = component<S, M>({
+          name: 'C',
+          init: () => [{ dialog: { open: false }, title: '' }, []],
+          update: (s) => [s, []],
+          view: ({ state, send }) => [
+            div({}, [text(state.at('title'))]),
+            dialog.overlay({ state: state.at('dialog'), send, parts: {}, content: [] }),
+          ],
+        })
+      `,
+    )
+    const result = (await runTool('llui_static_collect_paths', { file })) as {
+      opaque: boolean
+      paths: string[]
+    }
+    expect(result.opaque).toBe(false)
+    expect(result.paths).toEqual(['dialog', 'title'])
   })
 })
 

@@ -51,6 +51,29 @@ describe('buildManifest', () => {
     expect(entry!.viaParams[1]).toEqual({ index: 1, shape: 'opaque' })
   })
 
+  // Issue #92: the producer used to read its paths from a second analyzer that
+  // truncated at two segments, so `state.user.profile.address.city` was emitted
+  // as `user.profile` — coverage-sound but a coarser manifest than the source
+  // warrants, and disagreeing with the masks the transform builds.
+  it('emits reads at full depth — no two-segment truncation', () => {
+    const program = makeProgram(
+      '/virt/deep.ts',
+      `
+      export function cityLabel(state) {
+        return state.user.profile.address.city + ' ' + state.user.profile.address.zip
+      }
+      `,
+    )
+    const manifest = buildManifest(program, { srcRoot: '/virt' })
+    const entry = manifest.helpers['deep#cityLabel']
+    expect(entry).toBeDefined()
+    expect(entry!.viaParams[0]).toEqual({
+      index: 0,
+      shape: 'state-value',
+      reads: ['user.profile.address.city', 'user.profile.address.zip'],
+    })
+  })
+
   it('omits helpers that contribute no narrowing info', () => {
     const program = makeProgram('/virt/rating-group.ts', SRC)
     const manifest = buildManifest(program, { srcRoot: '/virt' })

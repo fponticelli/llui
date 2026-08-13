@@ -50,11 +50,19 @@ function union(a: Taint, b: Taint): Taint {
   return out
 }
 
+/** A function whose body this analyzer can walk: an inline accessor (arrow /
+ * function expression) or a declared helper. */
+export type AnalyzableFn = ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+
 /**
  * Analyze a signal-accessor function. Each parameter is treated as a tainted
  * root; the returned `deps[i]` is the set of paths read from parameter `i`.
+ *
+ * A parameter whose value ESCAPES (passed to a call, spread, returned whole)
+ * yields the empty path `''` — "the whole parameter" — which is what a caller
+ * must read as "cannot narrow this one".
  */
-export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): DepResult {
+export function analyzeAccessor(fn: AnalyzableFn): DepResult {
   const deps: Set<string>[] = fn.parameters.map(() => new Set<string>())
 
   // Scope chain of name -> taint. Inner scopes shadow outer ones, so a nested
@@ -318,7 +326,8 @@ export function analyzeAccessor(fn: ts.ArrowFunction | ts.FunctionExpression): D
     if (p.initializer) emit(evalExpr(p.initializer)) // top-level parameter default read
     bindPattern(p.name, new Set([enc(i, '')]))
   })
-  evalBody(fn.body)
+  // A `FunctionDeclaration` overload signature has no body — nothing to read.
+  if (fn.body) evalBody(fn.body)
 
   return { deps }
 }
