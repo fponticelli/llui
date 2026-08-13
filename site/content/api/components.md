@@ -1206,11 +1206,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabledItems` | `string[]`       |
 | `disabled`      | `boolean`        |
 | `orientation`   | `Orientation`    |
+| `loopFocus`     | `boolean`        |
 | `dir`           | `'ltr' \| 'rtl'` |
 
 **Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`, `setDir`
 
-**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, dir?: 'ltr' | 'rtl'`
+**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, loopFocus?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
