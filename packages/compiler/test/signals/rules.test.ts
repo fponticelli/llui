@@ -1299,6 +1299,54 @@ describe('tag-send-drift (issue #118)', () => {
     ).not.toContain('tag-send-drift')
   })
 
+  // ── the two knobs that decide false positives, pinned in BOTH directions ──
+  // Each of these dies if its knob is mutated away; the pair is what makes the
+  // completeness predicate testable at all. The earlier version of this test
+  // declared only the variant it dispatched, so direction 2 had nothing to
+  // report and it passed whatever the predicate returned.
+  it('keeps completeness across an inert event-method call on its own parameter', () => {
+    // `e.preventDefault()` must NOT count as an unreadable dispatch — it is the
+    // single most common statement in these handlers, and treating it as opaque
+    // would switch the over-declaration check off everywhere. Declaring 'b' and
+    // dispatching only 'a' is what proves completeness actually survived: if the
+    // predicate stops forgiving `preventDefault`, 'b' goes unreported.
+    const msgs = lint(
+      src(
+        [
+          "const p = tagSend(send, ['a', 'b'], (e) => {",
+          '  e.preventDefault()',
+          "  send({ type: 'a' })",
+          '})',
+        ].join('\n'),
+      ),
+    ).filter((d) => d.rule === 'tag-send-drift')
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]?.message).toContain("declares variant 'b'")
+  })
+
+  it('forfeits completeness when the dispatcher ESCAPES as a value', () => {
+    // `node.onclick = send` hands the dispatcher to something that can call it
+    // out of sight, so "I saw no dispatch of 'a'" stops being evidence. No call
+    // in this body forfeits completeness on its own, so the escape guard is the
+    // only thing keeping this clean — kill it and two diagnostics appear.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a'], (e) => {",
+            '  e.preventDefault()',
+            '  node.onclick = send',
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+    // The reviewer's shape: the dispatcher passed to a collaborator.
+    expect(rules(src("const p = tagSend(send, ['a'], (bus) => { bus.on(send) })"))).not.toContain(
+      'tag-send-drift',
+    )
+  })
+
   // ── negative: calls the completeness predicate must NOT forgive ───────────
   // Every one of these is valid code that an earlier predicate rejected: it
   // forgave ANY call rooted at a handler parameter — a bare call, an
