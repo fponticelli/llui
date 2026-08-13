@@ -163,11 +163,45 @@ const RECENT_LOG_CAP = 100
  */
 const CONFIRM_OUTCOME_TTL_MS = 5 * 60_000
 
+/**
+ * How long a CLOSED session's buffers (recent-log ring + confirm
+ * outcomes) stay readable before the sweep reclaims them. Matches the
+ * core's default pending-resume grace, because that window is exactly
+ * what the retention exists to serve: a brief drop followed by a
+ * reconnect keeps `describe_recent_actions` history intact, and past it
+ * the same bearer can no longer re-pair anyway.
+ *
+ * `createLluiAgentCore` overrides this with its configured
+ * `pendingResumeGraceMs` so the two never drift.
+ */
+const CLOSED_RETENTION_MS = 60_000
+
+/**
+ * Hard ceiling on how many CLOSED sessions may hold retained buffers at
+ * once. The TTL alone is not a bound — N tabs closing inside one window
+ * are all still within it — so the count cap is what makes the memory
+ * claim hold independently of the clock. Oldest-closed is evicted first.
+ */
+const MAX_CLOSED_SESSIONS = 128
+
 export class InMemoryPairingRegistry implements PairingRegistry {
   /** @see PairingRegistry.recentLogCap */
   readonly recentLogCap = RECENT_LOG_CAP
   private pairings = new Map<string, Pairing>()
   private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  private readonly closedRetentionMs: number
+  private readonly maxClosedSessions: number
+  private readonly now: () => number
+  /**
+   * tid → the moment its socket closed. Present ONLY while a session is
+   * closed but its buffers are still retained; `register` clears it and
+   * the sweep consumes it. This map is what #101 was missing: with no
+   * timestamp on the close, `recentLog` had nothing to age out on and a
+   * plain WS drop (tab reload, laptop lid) stranded up to 100 `LogEntry`
+   * objects per session permanently — only `unregister` (revoke, or a
+   * LAP version mismatch) ever freed them.
+   */
+  private closedAt = new Map<string, number>()
   /**
    * Per-tid ring buffer of recent log entries. Populated as the
    * registry sees `log-append` frames; trimmed to RECENT_LOG_CAP.
@@ -188,9 +222,72 @@ export class InMemoryPairingRegistry implements PairingRegistry {
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
+      /**
+       * How long a closed session's buffers stay readable, in ms.
+       * Default {@link CLOSED_RETENTION_MS}. `0` drops them the moment
+       * the socket closes — the right value when the host also opted out
+       * of the pending-resume grace, since no reconnect can then re-pair
+       * on the same bearer.
+       */
+      closedRetentionMs?: number
+      /** Ceiling on concurrently-retained closed sessions. Default 128. */
+      maxClosedSessions?: number
+      /** Wall clock in ms; injectable for tests. */
+      now?: () => number
     } = {},
   ) {
     this.onLogAppend = opts.onLogAppend ?? null
+    this.closedRetentionMs = Math.max(0, opts.closedRetentionMs ?? CLOSED_RETENTION_MS)
+    this.maxClosedSessions = Math.max(0, opts.maxClosedSessions ?? MAX_CLOSED_SESSIONS)
+    this.now = opts.now ?? (() => Date.now())
+  }
+
+  /**
+   * Diagnostics: how many tids currently hold retained buffers (the
+   * recent-log ring, the confirm-outcome table, or both) — live sessions
+   * and closed-but-not-yet-swept ones alike. This is the registry's own
+   * state, and the number the #101 retention bound is asserted against.
+   */
+  retainedBufferCount(): number {
+    const tids = new Set<string>(this.recentLog.keys())
+    for (const tid of this.confirmOutcomes.keys()) tids.add(tid)
+    return tids.size
+  }
+
+  /**
+   * Drop every buffer belonging to `tid`. The single teardown point, so
+   * a new buffer can never be added without a matching release.
+   */
+  private dropBuffers(tid: string): void {
+    this.recentLog.delete(tid)
+    this.confirmOutcomes.delete(tid)
+    this.closedAt.delete(tid)
+  }
+
+  /**
+   * Reclaim closed sessions: first everything past the retention window,
+   * then — while still over the count cap — the oldest-closed. Runs at
+   * every point that adds a closed session (`handleClose`), revives one
+   * (`register`), or reads a buffer, so a lapsed buffer can never be
+   * served and the retained set stays bounded without a timer holding
+   * the process open.
+   */
+  private sweepClosed(nowMs: number): void {
+    for (const [tid, at] of this.closedAt) {
+      if (nowMs - at >= this.closedRetentionMs) this.dropBuffers(tid)
+    }
+    while (this.closedAt.size > this.maxClosedSessions) {
+      let oldest: string | null = null
+      let oldestAt = Number.POSITIVE_INFINITY
+      for (const [tid, at] of this.closedAt) {
+        if (at < oldestAt) {
+          oldestAt = at
+          oldest = tid
+        }
+      }
+      if (oldest === null) return
+      this.dropBuffers(oldest)
+    }
   }
 
   /**
@@ -200,6 +297,9 @@ export class InMemoryPairingRegistry implements PairingRegistry {
    * RECENT_LOG_CAP have already been trimmed.
    */
   getRecentLog(tid: string, n: number): LogEntry[] {
+    // Sweep on read too: a lapsed buffer must not be served just because
+    // no later close/register happened to drive the sweep.
+    this.sweepClosed(this.now())
     const buf = this.recentLog.get(tid)
     if (!buf || buf.length === 0) return []
     const count = Math.min(Math.max(0, Math.floor(n)), buf.length)
@@ -210,11 +310,13 @@ export class InMemoryPairingRegistry implements PairingRegistry {
 
   /** @see PairingRegistry.getConfirmOutcome */
   getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null {
+    const nowMs = this.now()
+    this.sweepClosed(nowMs)
     const m = this.confirmOutcomes.get(tid)
     if (!m) return null
     const rec = m.get(confirmId)
     if (!rec) return null
-    if (Date.now() - rec.at > CONFIRM_OUTCOME_TTL_MS) {
+    if (nowMs - rec.at > CONFIRM_OUTCOME_TTL_MS) {
       m.delete(confirmId)
       if (m.size === 0) this.confirmOutcomes.delete(tid)
       return null
@@ -233,7 +335,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       m = new Map()
       this.confirmOutcomes.set(tid, m)
     }
-    const now = Date.now()
+    const now = this.now()
     m.set(frame.confirmId, { frame, at: now })
     for (const [cid, rec] of m) {
       if (now - rec.at > CONFIRM_OUTCOME_TTL_MS) m.delete(cid)
@@ -265,6 +367,13 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // property — which still references these very Sets — so unsubscription
     // keeps working transparently after the swap, and `dispatch` on the new
     // conn delivers to the migrated subscribers.
+    // This tid is live again, so its buffers are no longer on the
+    // closed-session retention clock — clear the marker BEFORE sweeping,
+    // or a re-pair arriving late in the window would reclaim the very
+    // history the retention exists to hand back.
+    this.closedAt.delete(tid)
+    this.sweepClosed(this.now())
+
     const existing = this.pairings.get(tid)
     const superseded = existing && !existing.closed && existing.conn !== conn ? existing : null
     if (superseded) {
@@ -311,8 +420,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
         // Best-effort — the socket may already be tearing down.
       }
     }
-    this.recentLog.delete(tid)
-    this.confirmOutcomes.delete(tid)
+    this.dropBuffers(tid)
   }
 
   isPaired(tid: string): boolean {
@@ -487,10 +595,19 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     p.closeHandlers.clear()
     p.subscribers.clear()
     this.pairings.delete(tid)
-    // The recent-log ring buffer is intentionally NOT dropped here: a
-    // brief WS drop followed by a reconnect within the pending-resume
-    // grace window should keep `describe_recent_actions` history intact.
-    // Hard teardown (revoke) goes through `unregister`, which drops it.
+    // The recent-log ring buffer and the confirm-outcome table are not
+    // dropped outright here: a brief WS drop followed by a reconnect
+    // within the pending-resume grace window should keep
+    // `describe_recent_actions` history intact. They are instead put on
+    // the retention clock — the close is TIMESTAMPED and swept, because
+    // keeping them forever (the #101 behaviour) meant every tab reload,
+    // navigation and flaky-network blip stranded up to `RECENT_LOG_CAP`
+    // entries per session for the process's lifetime. Hard teardown
+    // (revoke, LAP version mismatch) goes through `unregister`, which
+    // still drops both immediately.
+    const nowMs = this.now()
+    this.closedAt.set(tid, nowMs)
+    this.sweepClosed(nowMs)
   }
 }
 

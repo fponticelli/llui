@@ -13246,6 +13246,13 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * The active rate limiter. Exposed so surfaces composed AROUND the
+   * core — notably the MCP router, which runs BEFORE `router` and would
+   * otherwise never consult one — share the same buckets instead of
+   * running unthrottled or building a second limiter with its own state.
+   */
+  rateLimiter: RateLimiter
+  /**
    * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
    * the `corsOrigins` core option. `undefined`/empty means same-origin
    * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
@@ -13539,6 +13546,13 @@ export type CoreOptions = {
    * Default: 60 seconds — long enough for laptop sleep, brief Wi-Fi
    * flicker, and a server restart; short enough that a deliberately-
    * closed tab doesn't keep the record alive forever.
+   *
+   * Doubles as the retention window for a closed session's registry
+   * buffers (`describe_recent_actions` ring + buffered confirm
+   * outcomes): they survive a drop for exactly this long, then are
+   * swept. Past the window the bearer must rotate through
+   * `/resume/claim`, so retained history has nothing left to serve —
+   * and holding it anyway leaked one buffer per browser-tab lifecycle.
    */
   pendingResumeGraceMs?: number
 }
@@ -14510,6 +14524,12 @@ export type ServerOptions = {
    * (`/resume/claim`) path. Wired to the core's pending-resume grace.
    * Default 60 s; `0` opts out (a WS close immediately requires a
    * rotated token to reconnect).
+   *
+   * Also the retention window for a closed session's registry buffers —
+   * its `describe_recent_actions` ring and buffered confirm outcomes
+   * survive a drop for exactly this long, then are reclaimed. Past it
+   * the bearer has to rotate anyway, so there is nothing left for the
+   * history to serve.
    */
   pairingGraceMs?: number
 
@@ -14930,7 +14950,7 @@ single-DO bottleneck.
 ```typescript
 class AgentPairingDurableObject {
   agent: AgentCoreHandle
-  mcpRouter: ((req: Request) => Promise<Response | null>) | null
+  mcpRouter: McpRouter | null
   constructor(opts: DurableObjectOptions)
   fetch(req: Request): Promise<Response>
   resolveToken(req: Request): Promise<Response>
@@ -14957,11 +14977,30 @@ class InMemoryPairingRegistry implements PairingRegistry {
   recentLogCap
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  closedRetentionMs: number
+  maxClosedSessions: number
+  now: () => number
+  closedAt
   recentLog
   confirmOutcomes
   constructor(opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
+      /**
+       * How long a closed session's buffers stay readable, in ms.
+       * Default {@link CLOSED_RETENTION_MS}. `0` drops them the moment
+       * the socket closes — the right value when the host also opted out
+       * of the pending-resume grace, since no reconnect can then re-pair
+       * on the same bearer.
+       */
+      closedRetentionMs?: number
+      /** Ceiling on concurrently-retained closed sessions. Default 128. */
+      maxClosedSessions?: number
+      /** Wall clock in ms; injectable for tests. */
+      now?: () => number
     } = {})
+  retainedBufferCount(): number
+  dropBuffers(tid: string): void
+  sweepClosed(nowMs: number): void
   getRecentLog(tid: string, n: number): LogEntry[]
   getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
   recordConfirmOutcome(tid: string, frame: ConfirmResolvedFrame): void

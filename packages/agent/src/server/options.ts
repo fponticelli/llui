@@ -58,6 +58,12 @@ export type ServerOptions = {
    * (`/resume/claim`) path. Wired to the core's pending-resume grace.
    * Default 60 s; `0` opts out (a WS close immediately requires a
    * rotated token to reconnect).
+   *
+   * Also the retention window for a closed session's registry buffers —
+   * its `describe_recent_actions` ring and buffered confirm outcomes
+   * survive a drop for exactly this long, then are reclaimed. Past it
+   * the bearer has to rotate anyway, so there is nothing left for the
+   * history to serve.
    */
   pairingGraceMs?: number
 

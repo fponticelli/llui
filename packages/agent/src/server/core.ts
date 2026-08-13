@@ -84,6 +84,13 @@ export type CoreOptions = {
    * Default: 60 seconds — long enough for laptop sleep, brief Wi-Fi
    * flicker, and a server restart; short enough that a deliberately-
    * closed tab doesn't keep the record alive forever.
+   *
+   * Doubles as the retention window for a closed session's registry
+   * buffers (`describe_recent_actions` ring + buffered confirm
+   * outcomes): they survive a drop for exactly this long, then are
+   * swept. Past the window the bearer must rotate through
+   * `/resume/claim`, so retained history has nothing left to serve —
+   * and holding it anyway leaked one buffer per browser-tab lifecycle.
    */
   pendingResumeGraceMs?: number
 }
@@ -158,6 +165,15 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
   const registry: PairingRegistry =
     opts.registry ??
     new InMemoryPairingRegistry({
+      // Tie the closed-session buffer retention to the pending-resume
+      // grace: that window is exactly how long a dropped socket can come
+      // back on the SAME bearer and expect its `describe_recent_actions`
+      // history intact. Past it the bearer must rotate through
+      // `/resume/claim`, so the retained history has nothing left to
+      // serve — and holding it anyway is what made every tab reload leak
+      // (#101). `pendingResumeGraceMs: 0` (opt out of grace) therefore
+      // drops the buffers on close.
+      closedRetentionMs: pendingResumeGraceMs,
       onLogAppend: (tid, entry) => {
         void auditSink.write({
           at: entry.at,
