@@ -132,6 +132,9 @@ export interface ConnectedRouter<R> {
 /** history.state key holding our monotonic navigation index. */
 const STATE_KEY = '__llui_idx'
 
+/** The outcome of the guard pipeline for one navigation. */
+type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
+
 /** Our index stamped on a history entry, or `null` when nobody stamped it. */
 function readIndex(state: unknown): number | null {
   if (state !== null && typeof state === 'object') {
@@ -250,26 +253,28 @@ export function connectRouter<R>(
     return true
   }
   /**
-   * Run guards for a navigation to `newRoute`. Returns the final route
-   * to navigate to, or `null` if navigation should be blocked.
+   * Run guards for a navigation to `newRoute`. `redirected` is reported
+   * explicitly rather than inferred by comparing routes: a guard may return a
+   * structurally equal object, and `push`/`replace` need to know whether the
+   * URL they are about to write is the one their caller actually asked for.
    */
-  function runGuards(newRoute: R): R | null {
+  function runGuards(newRoute: R): GuardOutcome<R> {
     if (options?.beforeLeave && currentRoute !== null) {
-      if (!options.beforeLeave(currentRoute, newRoute)) return null
+      if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
     }
     if (options?.beforeEnter) {
       const result = options.beforeEnter(newRoute, currentRoute)
-      if (result === false) return null
+      if (result === false) return { blocked: true }
       // Any non-`false`, non-nullish return is a redirect Route. Routes are
       // generic `R` and may be primitives (e.g. a string-union route), so
       // gate on nullishness, NOT `typeof === 'object'` — the latter silently
       // dropped string/number redirects and let navigation proceed to the
       // original target (an auth-guard bypass).
       if (result !== undefined && result !== null) {
-        return result as R
+        return { blocked: false, route: result as R, redirected: true }
       }
     }
-    return newRoute
+    return { blocked: false, route: newRoute, redirected: false }
   }
 
   /**
@@ -365,39 +370,36 @@ export function connectRouter<R>(
 
   function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
     switch (effect.action) {
-      case 'push': {
+      case 'push':
+      case 'replace': {
         // URL only. In hash mode, suppress the echo hashchange so the listener
         // does not ALSO dispatch a navigate (finding 2b).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
+        const outcome = runGuards(targetRoute(effect))
+        if (outcome.blocked) return
+        const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
-          setHash(finalPath, true)
-        } else {
-          pushUrl(finalPath)
-        }
-        currentRoute = finalRoute
-        break
-      }
-      case 'replace': {
-        // URL only. Same echo suppression as push (finding 2b).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
-        if (router.mode === 'hash') {
-          if (!sameHash(location.hash, finalPath)) {
+          if (effect.action === 'push') {
+            setHash(finalPath, true)
+          } else if (!sameHash(location.hash, finalPath)) {
             pendingEchoes.push(normHash(finalPath))
             location.replace(finalPath)
             // `location.replace` swaps the current entry and DROPS its state,
             // so restamp it. The index is unchanged — nothing was pushed.
             history.replaceState({ [STATE_KEY]: currentIndex ?? 0 }, '')
           }
+        } else if (effect.action === 'push') {
+          pushUrl(finalPath)
         } else {
           replaceUrl(finalPath)
         }
-        currentRoute = finalRoute
+        currentRoute = outcome.route
+        // A guard REDIRECT wrote a URL the caller never asked for. push/replace
+        // are URL-only by contract — the caller's reducer already set
+        // `state.route` — but it set it to the REQUESTED route, so staying
+        // silent leaves `state.route` and the URL disagreeing permanently
+        // (#110). Only a redirect dispatches; the plain case keeps the
+        // documented URL-only contract.
+        if (outcome.redirected) send(navigateMsg(outcome.route))
         break
       }
       case 'navigate': {
@@ -412,17 +414,16 @@ export function connectRouter<R>(
         //
         // In hash mode we dispatch here AND suppress the echo hashchange, so
         // the listener does not double-dispatch the same message (finding 2a).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
+        const outcome = runGuards(targetRoute(effect))
+        if (outcome.blocked) return
+        const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
           setHash(finalPath, true)
         } else {
           pushUrl(finalPath)
         }
-        currentRoute = finalRoute
-        send(navigateMsg(finalRoute))
+        currentRoute = outcome.route
+        send(navigateMsg(outcome.route))
         break
       }
       case 'back':
@@ -484,15 +485,14 @@ export function connectRouter<R>(
 
             const input =
               router.mode === 'hash' ? location.hash : location.pathname + location.search
-            const route = router.match(input)
-            const finalRoute = runGuards(route)
-            if (finalRoute === null) {
+            const outcome = runGuards(router.match(input))
+            if (outcome.blocked) {
               restoreBlocked()
               return
             }
             adoptLandedEntry()
-            currentRoute = finalRoute
-            send(factory(finalRoute))
+            currentRoute = outcome.route
+            send(factory(outcome.route))
           }
           window.addEventListener(event, handler)
           return () => {
@@ -531,22 +531,23 @@ export function connectRouter<R>(
             // PRESENCE, never for a truthy value.
             if (anchor?.hasAttribute('download')) return
             e.preventDefault()
-            if (router.mode === 'hash') {
-              // Set the hash and let the listener run guards + dispatch — the
-              // single dispatch source in hash mode. (No suppression: we WANT
-              // the echo hashchange to drive the navigation.)
-              setHash(router.href(route), false)
-              return
-            }
-            // History mode is the primary nav path — run the SAME guard
-            // pipeline as the navigate() effect (guards → block/redirect/allow
-            // → pushState + send + currentRoute), so auth / unsaved-changes
-            // guards are never silently skipped (finding 1).
-            const finalRoute = runGuards(route)
-            if (finalRoute === null) return
-            pushUrl(router.href(finalRoute))
-            currentRoute = finalRoute
-            send(factory(finalRoute))
+            // BOTH modes run the same pipeline as the navigate() effect —
+            // guards → block/redirect/allow → URL write + send + currentRoute —
+            // so auth / unsaved-changes guards are never silently skipped
+            // (finding 1). Hash mode used to write the hash and leave the rest
+            // to the listener, which made a link INERT without a mounted
+            // listener() (zero dispatches, ever, and no guards at click time)
+            // and made a click on the CURRENT route a dead one: preventDefault
+            // ran, `setHash` bailed on the identical hash, and nothing followed
+            // (#110). A click on the current route is a request to re-enter it,
+            // so it dispatches; only the redundant URL write is skipped.
+            const outcome = runGuards(route)
+            if (outcome.blocked) return
+            const finalPath = router.href(outcome.route)
+            if (router.mode === 'hash') setHash(finalPath, true)
+            else pushUrl(finalPath)
+            currentRoute = outcome.route
+            send(factory(outcome.route))
           },
         },
         children,
