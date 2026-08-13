@@ -88,23 +88,26 @@ export interface Router<R> {
   fallback: R
 }
 
-// Non-enumerable tag attached to routes produced by `match`, carrying the
-// RouteDef that built them. `toPath`/`href` read it for a direct O(segments)
-// format with no round-trip and no per-format `build()` call. Non-enumerable
-// so it never shows up in JSON, equality checks, or object spreads.
-const ROUTE_DEF = Symbol('llui.routeDef')
-
-/** Primitive fixed fields a builder emits for a def, keyed by field name. */
+/** Per-def selection metadata, computed ONCE at createRouter. */
 interface DefMeta<R> {
   def: RouteDef<R>
   /** param + rest segment names — all must be present on a route to select this def */
   paramKeys: string[]
   /**
-   * The builder's primitive, non-param, non-query output fields (e.g. `page`,
-   * `tab`) computed ONCE at createRouter with sample params. `null` when the
-   * builder threw on sample params (selection then falls back to params only).
+   * The builder's CONSTANT output fields (e.g. `page`, `tab`): primitive,
+   * non-param, non-query fields whose value does not move when the params do.
+   * `null` when the builder threw on sample params (selection then falls back
+   * to params only).
    */
-  fixed: Record<string, string | number | boolean> | null
+  constants: Record<string, string | number | boolean> | null
+}
+
+/** Lexicographic compare of two selection scores; > 0 when `a` is the better fit. */
+function compareScore(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]! !== b[i]!) return a[i]! - b[i]!
+  }
+  return 0
 }
 
 export function createRouter<R>(
@@ -115,33 +118,14 @@ export function createRouter<R>(
   const mode = config?.mode ?? 'hash'
   const base = normalizeBase(config?.base)
 
-  function tagRoute(r: R, def: RouteDef<R>): R {
-    if (r !== null && typeof r === 'object') {
-      Object.defineProperty(r as object, ROUTE_DEF, {
-        value: def,
-        enumerable: false,
-        configurable: true,
-        writable: true,
-      })
-    }
-    return r
-  }
-
-  function getTag(r: R): RouteDef<R> | undefined {
-    if (r !== null && typeof r === 'object') {
-      return (r as Record<symbol, unknown>)[ROUTE_DEF] as RouteDef<R> | undefined
-    }
-    return undefined
-  }
-
   /** Placeholder params covering every path/query key a builder may read. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function sampleParamsFor(def: RouteDef<any>): Record<string, string> {
+  function sampleParamsFor(def: RouteDef<any>, value: string): Record<string, string> {
     const params: Record<string, string> = {}
     for (const seg of def.segments) {
-      if (typeof seg !== 'string') params[seg.name] = '1'
+      if (typeof seg !== 'string') params[seg.name] = value
     }
-    for (const key of def.queryKeys) params[key] = '1'
+    for (const key of def.queryKeys) params[key] = value
     return params
   }
 
@@ -171,33 +155,43 @@ export function createRouter<R>(
 
   // Fallback: an explicit config value, else the first route built with sample
   // params so a param-reading builder does not crash createRouter.
-  const fallback: R =
-    config?.fallback ?? tagRoute(defs[0]!.build(sampleParamsFor(defs[0]!)) as R, defs[0]!)
+  const fallback: R = config?.fallback ?? (defs[0]!.build(sampleParamsFor(defs[0]!, '1')) as R)
 
-  // Precompute per-def selection metadata ONCE. Never calls build({}) per
-  // format, never round-trips through match — replaces the old
-  // O(defs²×deepEqual) heuristic.
-  function computeFixed(
+  /**
+   * Precompute per-def selection metadata ONCE — `href()` is on the hot path of
+   * every link and must never call a builder.
+   *
+   * Classify the builder's emitted fields by building it TWICE with clearly
+   * different sample params and keeping only what did not move. A field that
+   * moves is param-DERIVED (`title: \`User ${id}\``, `upper: id.toUpperCase()`)
+   * and carries no information a route can be matched on; freezing one sample's
+   * value and demanding equality against it is what sent every real route to
+   * the fallback URL (#104). The two samples differ in length, characters AND
+   * numeric value, so the usual derivations — interpolation, case mapping,
+   * `.length`, `parseInt` — all move.
+   */
+  function computeConstants(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     def: RouteDef<any>,
     paramKeys: string[],
   ): Record<string, string | number | boolean> | null {
     try {
-      const out = def.build(sampleParamsFor(def)) as Record<string, unknown>
-      const fixed: Record<string, string | number | boolean> = {}
+      const a = def.build(sampleParamsFor(def, '1')) as Record<string, unknown>
+      const b = def.build(sampleParamsFor(def, '2zz')) as Record<string, unknown>
+      const constants: Record<string, string | number | boolean> = {}
       const querySet = new Set(def.queryKeys)
-      for (const key of Object.keys(out)) {
+      for (const key of Object.keys(a)) {
         if (paramKeys.includes(key)) continue
         if (querySet.has(key)) continue
-        const v = out[key]
+        const v = a[key]
         // Only primitive fields discriminate a route. Object/array fields (e.g.
         // a runtime `data` payload) are not part of the URL and would break
         // selection, so they are excluded.
-        if (v === null || v === undefined) continue
-        if (typeof v === 'object') continue
-        fixed[key] = v as string | number | boolean
+        if (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') continue
+        if (!Object.is(v, b[key])) continue
+        constants[key] = v
       }
-      return fixed
+      return constants
     } catch {
       // Builder threw on sample params — selection falls back to params only.
       return null
@@ -209,7 +203,7 @@ export function createRouter<R>(
     for (const seg of def.segments) {
       if (typeof seg !== 'string') paramKeys.push(seg.name)
     }
-    return { def: def as RouteDef<R>, paramKeys, fixed: computeFixed(def, paramKeys) }
+    return { def: def as RouteDef<R>, paramKeys, constants: computeConstants(def, paramKeys) }
   })
 
   function matchPathname(pathname: string): R {
@@ -237,30 +231,41 @@ export function createRouter<R>(
         for (const key of def.queryKeys) {
           if (queryParams[key] !== undefined) params[key] = queryParams[key]!
         }
-        return tagRoute(def.build(params) as R, def as RouteDef<R>)
+        return def.build(params) as R
       }
     }
 
     return fallback
   }
 
-  /** Pick the def that produced a route object, without round-tripping. */
+  /**
+   * Pick the def whose URL template a route belongs to, from the route's SHAPE
+   * alone — no builder call, no round-trip through `match`.
+   *
+   * A def is only viable if the route carries every path parameter it needs;
+   * without one there is no URL to format. Its constant fields then decide the
+   * fit, in two tiers:
+   *
+   * 1. STRICT — every constant the route actually carries agrees. This is the
+   *    discriminating tier: it is what keeps two shared-prefix defs separated
+   *    by a constant (`tab: 'authored'` vs `'favorited'`) apart. A constant the
+   *    route OMITS is a default this def would supply, not a contradiction, so
+   *    it does not disqualify — `href({page:'user', id:'7'})` must resolve
+   *    through a def that also emits `tab: 'profile'` (#104).
+   * 2. RELAXED — only when no def matches strictly. A builder-emitted field the
+   *    caller set to a NON-default value is not representable in the URL and
+   *    must not send the route to the fallback URL, so the def that agrees with
+   *    the most constants wins. Contradicting every constant while agreeing
+   *    with none means a different route entirely, never this URL.
+   */
   function selectDef(r: R): DefMeta<R> | null {
     const ro = r as Record<string, unknown>
-    let best: DefMeta<R> | null = null
+    let strict: DefMeta<R> | null = null
+    let strictScore: readonly number[] = []
+    let relaxed: DefMeta<R> | null = null
+    let relaxedScore: readonly number[] = []
+
     for (const meta of defMetas) {
-      // Every fixed field the builder emits must match the route's value.
-      if (meta.fixed) {
-        let ok = true
-        for (const key in meta.fixed) {
-          if (ro[key] !== meta.fixed[key]) {
-            ok = false
-            break
-          }
-        }
-        if (!ok) continue
-      }
-      // Every path parameter must be present on the route.
       let allParams = true
       for (const p of meta.paramKeys) {
         const v = ro[p]
@@ -270,11 +275,35 @@ export function createRouter<R>(
         }
       }
       if (!allParams) continue
-      // Prefer the most specific viable def (most params); on a tie, the
-      // later-registered def wins (matches the old "most specific first").
-      if (best === null || meta.paramKeys.length >= best.paramKeys.length) best = meta
+
+      let matched = 0
+      let mismatched = 0
+      if (meta.constants) {
+        for (const key in meta.constants) {
+          if (ro[key] === undefined) continue
+          if (ro[key] === meta.constants[key]) matched++
+          else mismatched++
+        }
+      }
+
+      if (mismatched === 0) {
+        // Prefer the most specific def (most params); on a tie the
+        // later-registered one wins (the longer, more specific pattern).
+        const score = [meta.paramKeys.length]
+        if (strict === null || compareScore(score, strictScore) >= 0) {
+          strict = meta
+          strictScore = score
+        }
+        continue
+      }
+      if (matched === 0) continue
+      const score = [matched, -mismatched, meta.paramKeys.length]
+      if (relaxed === null || compareScore(score, relaxedScore) >= 0) {
+        relaxed = meta
+        relaxedScore = score
+      }
     }
-    return best
+    return strict ?? relaxed
   }
 
   function formatWithDef(def: RouteDef<R>, r: R): string | null {
@@ -282,12 +311,6 @@ export function createRouter<R>(
   }
 
   function formatPath(r: R): string {
-    // Fast + exact path: a route produced by match carries its def.
-    const tagged = getTag(r)
-    if (tagged) {
-      const p = formatWithDef(tagged, r)
-      if (p !== null) return p
-    }
     const meta = selectDef(r)
     if (meta) {
       const p = formatWithDef(meta.def, r)
