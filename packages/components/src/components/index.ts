@@ -435,6 +435,7 @@ export type {
   CarouselParts,
   CarouselSlideParts,
   CarouselDrag,
+  CarouselEffect,
 } from './carousel.js'
 export type {
   DatePickerState,

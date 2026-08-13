@@ -160,11 +160,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             span({ class: 'text-text-muted' }, [
               text('Parsed: '),
               span({ class: 'font-mono text-text' }, [
-                text(
-                  state
-                    .at('date')
-                    .map((d) => (d.value ? d.value.toDateString() : '(invalid or empty)')),
-                ),
+                text(state.at('date').map((d) => d.value ?? '(invalid or empty)')),
               ]),
             ]),
             span({ ...di.errorText, class: 'text-red-600 font-medium' }, [

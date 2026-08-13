@@ -8753,7 +8753,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `dragging` | `CarouselDrag \| null` |
 | `dir` | `'ltr' \| 'rtl'` |
 
-**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `autoplayTick`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
 
 **Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number, swipeThreshold?: number, dir?: 'ltr' | 'rtl'`
 
@@ -8761,7 +8761,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
 
-**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`
+**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`, `isAutoplayRunning()`, `autoplayEffects()`
 
 ---
 
