@@ -14,7 +14,6 @@ import {
   QUOTE,
   UNORDERED_LIST,
   ORDERED_LIST,
-  CHECK_LIST,
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
   BOLD_STAR,
@@ -27,6 +26,7 @@ import {
   LINK,
 } from '@lexical/markdown'
 import { CODE_INFO_TRANSFORMER } from './code.js'
+import { CHECK_LIST_TRANSFORMER } from './list.js'
 
 /** Node classes required to render the GFM superset. */
 export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
@@ -66,9 +66,15 @@ export const INLINE_TEXT_TRANSFORMERS: readonly Transformer[] = [
 export const GFM_TRANSFORMERS: readonly Transformer[] = [
   HEADING,
   QUOTE,
-  // CHECK_LIST must precede the plain list transformers: `- [ ]`/`- [x]` also
-  // match `- `, so UNORDERED_LIST would otherwise swallow it as bullet text.
-  CHECK_LIST,
+  // The check-list transformer must precede the plain list transformers:
+  // `- [ ]`/`- [x]` also match `- `, so UNORDERED_LIST would otherwise swallow
+  // it as bullet text.
+  //
+  // NOT `@lexical/markdown`'s `CHECK_LIST`: that one matches the tick
+  // case-insensitively and then reads it case-sensitively, so `- [X] done`
+  // imports UNCHECKED and a re-save clears the user's box. See
+  // `transformers/list.ts`.
+  CHECK_LIST_TRANSFORMER,
   UNORDERED_LIST,
   ORDERED_LIST,
   // NOT `@lexical/markdown`'s `CODE`: that one captures the info string as a

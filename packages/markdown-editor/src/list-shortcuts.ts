@@ -44,6 +44,7 @@ import {
   type LexicalEditor,
 } from 'lexical'
 import { $createListNode, $isListItemNode, $isListNode, type ListItemNode } from '@lexical/list'
+import { isCheckedMarker } from './transformers/list.js'
 
 /**
  * A GFM task marker at the very start of a list item's text: `[ ] `, `[x] `,
@@ -54,12 +55,6 @@ import { $createListNode, $isListItemNode, $isListNode, type ListItemNode } from
  * below`, `- []x`), both of which must survive as literal text.
  */
 const TASK_MARKER = /^\[([\sxX]?)\]\s/
-
-/** GFM ticks `[x]` and `[X]` alike. Reading the marker case-sensitively is
- * exactly the defect behind #100, so it is spelled once, here. */
-export function isCheckedMarker(inner: string | undefined): boolean {
-  return inner !== undefined && inner.toLowerCase() === 'x'
-}
 
 /**
  * Move `item` out of its bullet list into a check list of its own, leaving the
