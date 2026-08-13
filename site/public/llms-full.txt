@@ -10260,6 +10260,30 @@ const routing = connectRouter(router, {
 })
 ```
 
+## Navigation semantics
+
+The same contract holds in **both** `history` and `hash` mode:
+
+- **`link()`** runs the guards at click time, writes the URL, and dispatches the
+  navigate message itself. It does **not** depend on `listener()` being mounted.
+  A click on the route you are already on still dispatches — it is a request to
+  re-enter that route, not a no-op — though no duplicate URL is written in hash
+  mode, where the hash is already correct. A blocked click writes nothing and
+  dispatches nothing.
+- **`listener()`** handles only **browser-driven** URL changes: back/forward and
+  the address bar. Our own writes never dispatch through it twice.
+- **`push()` / `replace()`** are **URL-only**: use them when the reducer that
+  emitted the effect already updated `state.route`. The one exception is a guard
+  **redirect** — the URL then points somewhere the caller never asked for, so the
+  navigate message is dispatched and `state.route` and the URL stay in agreement.
+  Use **`navigate()`** when you want the push _and_ the dispatch unconditionally.
+- A **blocked** browser navigation is undone by a history _traversal_, so the
+  stack, its length and every forward entry are left exactly as they were.
+
+`link()` never intercepts a click carrying a modifier key, a non-`_self`
+`target`, a `download` attribute, or a `defaultPrevented` set by an earlier
+handler — those are the browser's to handle.
+
 
 ## Functions
 
