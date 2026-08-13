@@ -169,14 +169,6 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
   const revoke = (url: string): void => {
     if (typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(url)
   }
-  /** Move `id` to the most-recently-used end so the entry a live `<img src>`
-   *  is bound to can never be the eviction victim. */
-  const touch = (id: string): void => {
-    const url = urlCache.get(id)
-    if (url === undefined) return
-    urlCache.delete(id)
-    urlCache.set(id, url)
-  }
   const evictOverflow = (): void => {
     // Map iteration is insertion order, so the head is the least recently
     // used; deleting the current key mid-iteration is well defined.
@@ -186,6 +178,15 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
       revoke(url)
     }
   }
+  /** Cache (or drop) `id`'s screenshot URL. Delete-then-set, so a re-read
+   *  lands at the MRU end — which is the ONLY thing that moves an entry there.
+   *  A URL only ever exists because `readNote`/import put it here, so the note
+   *  a browse row is displaying is at the MRU end as of the read that opened
+   *  it; it is not, however, immune from eviction — read 16 other notes and it
+   *  goes, and the `<img src>` bound to it goes blank. That is the bound
+   *  working as intended, and why `screenshotUrl` does NOT re-touch: it is
+   *  called from a reactive derive body, where a mutation is a smell (and one
+   *  gated out by the reconciler exactly when it would have mattered). */
   const cacheScreenshot = (id: string, bytes: Uint8Array | null): void => {
     const prev = urlCache.get(id)
     if (prev) {
@@ -475,8 +476,8 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
     },
 
     screenshotUrl(id: string): string {
-      // A read is a use: it keeps the displayed note at the MRU end.
-      touch(id)
+      // Pure lookup — see `cacheScreenshot` for why this does not touch the
+      // LRU. It runs inside a reactive derive.
       return urlCache.get(id) ?? ''
     },
 
