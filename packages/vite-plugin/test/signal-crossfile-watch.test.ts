@@ -110,4 +110,104 @@ describe('cross-file type resolution — watch + merged pre-resolution', () => {
     const out = await runTransform(llui({ agent: true }), code, join(dir, 'c.ts'), ctx)
     expect(out).toBeDefined()
   })
+
+  // ── agent-annotation-syntax on a TYPE-ONLY-imported sibling (issue #89) ──
+  // `import type { Msg } from './msg'` is ERASED by esbuild: `msg.ts` never
+  // enters the module graph and is never transformed, so the transform-hook
+  // lint never sees it — yet the resolver reads it right here and emits its
+  // annotations as `$ma`. That is the canonical layout, so without this the
+  // gate ships open in the most common case.
+  const COMPONENT = [
+    "import { component, text } from '@llui/dom'",
+    "import type { Msg } from './msg'",
+    'type State = { mode: string }',
+    'export const C = component<State, Msg>({',
+    "  init: () => ({ mode: 'viewer' }),",
+    '  update: (s) => s,',
+    "  view: ({ state }) => [text(state.at('mode'))],",
+    '})',
+  ].join('\n')
+
+  function ctxFor(msgPath: string): { ctx: Ctx; errors: unknown[] } {
+    const errors: unknown[] = []
+    const ctx: Ctx = {
+      warn: vi.fn(),
+      error: vi.fn((e: unknown) => {
+        errors.push(e)
+        throw new Error('this.error')
+      }),
+      resolve: vi.fn(async (spec: string) =>
+        spec === './msg' ? { id: msgPath, external: false } : null,
+      ),
+      addWatchFile: vi.fn(),
+    }
+    return { ctx, errors }
+  }
+
+  it('halts the build for a malformed annotation in a type-only-imported sibling', async () => {
+    const msgPath = join(dir, 'msg.ts')
+    const compPath = join(dir, 'c.ts')
+    writeFileSync(
+      msgPath,
+      [
+        'export type Msg =',
+        '  /** @routeGated("state.mode === "admin"") */',
+        "  | { type: 'purge' }",
+        "  | { type: 'noop' }",
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(compPath, COMPONENT)
+    const { ctx, errors } = ctxFor(msgPath)
+    await expect(runTransform(llui({ agent: true }), COMPONENT, compPath, ctx)).rejects.toThrow(
+      'this.error',
+    )
+    const err = errors[0] as { message: string; loc: { file: string } }
+    expect(err.message).toContain('agent-annotation-syntax')
+    // Reported against the SIBLING that carries the annotation, not the
+    // importer — the author needs the file they have to edit.
+    expect(err.message).toContain('msg.ts')
+    expect(err.loc.file).toBe(msgPath)
+  })
+
+  it('halts the build for an UNCOMPILABLE predicate in a type-only-imported sibling', async () => {
+    const msgPath = join(dir, 'msg.ts')
+    const compPath = join(dir, 'c.ts')
+    writeFileSync(
+      msgPath,
+      [
+        'export type Msg =',
+        '  /** @routeGated("f(state)) === 1") */',
+        "  | { type: 'purge' }",
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(compPath, COMPONENT)
+    const { ctx, errors } = ctxFor(msgPath)
+    await expect(runTransform(llui({ agent: true }), COMPONENT, compPath, ctx)).rejects.toThrow(
+      'this.error',
+    )
+    expect((errors[0] as { message: string }).message).toContain('agent-annotation-syntax')
+  })
+
+  it('leaves a WELL-FORMED sibling annotation alone and inlines its routeGate', async () => {
+    const msgPath = join(dir, 'msg.ts')
+    const compPath = join(dir, 'c.ts')
+    writeFileSync(
+      msgPath,
+      [
+        'export type Msg =',
+        '  /** @routeGated("state.mode === \\"admin\\"", "admins only") */',
+        "  | { type: 'purge' }",
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(compPath, COMPONENT)
+    const { ctx, errors } = ctxFor(msgPath)
+    const out = await runTransform(llui({ agent: true }), COMPONENT, compPath, ctx)
+    expect(errors).toEqual([])
+    expect(out).toBeDefined()
+    expect(out!.code).toContain(`${COMPILER_META_KEYS.msgAnnotations}:`)
+    expect(out!.code).toContain('state.mode === \\"admin\\"')
+  })
 })

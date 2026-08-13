@@ -52,6 +52,16 @@
 //                       `lowerProps({})` key walk on the element MOUNT path — the
 //                       hot path for list rendering (issue #82, same class as #58).
 //                       Performance + noise; has a fix (blocking, like attr-name).
+//   agent-annotation-syntax — a malformed agent annotation (`@intent`/`@example`/
+//                       `@warning`/`@emits`/`@routeGated`/`@should`/`@validates`):
+//                       an unescaped quote inside the string, an unterminated
+//                       string, an unquoted argument, wrong arity. The grammar
+//                       DROPS what it can't read unambiguously, and a dropped
+//                       `@routeGated` is an ungated action while a dropped
+//                       `@validates` is an unchecked field — both silent at
+//                       runtime, so the build is the only place to say so
+//                       (issue #89; the audit's `agent-validates-syntax`,
+//                       generalized to every tag in the shared grammar).
 //
 // Each diagnostic has a message, a source position (start offset + length), and —
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
@@ -62,6 +72,7 @@ import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edit
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, bindingNames } from './helper-bindings.js'
 import { scriptKindForFilename } from './script-kind.js'
+import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
 
 /** A single text replacement, as absolute char offsets into the linted source. */
 export interface LintEdit {
@@ -1141,7 +1152,153 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // rebinds the name to a plain value — so only a free/ambient `state` (the component
   // signal) is linted as a signal.
   visit(sf, STATE_ROOTS, false)
+  diags.push(...annotationSyntaxDiagnostics(sf))
   return diags
+}
+
+// A cheap pre-check so a file with no agent annotation at all never pays for
+// the comment walk. Mirrors the call form the grammar recognizes (`@tag(`).
+const ANNOTATION_CALL_PRECHECK = new RegExp(
+  `@(?:${Object.keys(ANNOTATION_TAGS).join('|')})[ \\t]*\\(`,
+)
+
+/**
+ * The two tags whose first argument is compiled and RUN at the agent boundary,
+ * with the name it is bound to there (`list-actions.ts` / `validate-payload.ts`).
+ */
+const PREDICATE_TAGS: Readonly<Record<string, string>> = {
+  routeGated: 'state',
+  validates: 'v',
+}
+
+/**
+ * Borrow the JS parser to check a predicate string, exactly as the runtime
+ * will wrap it. Returns the parse error's message, or null when it parses.
+ * The constructed function is DISCARDED — nothing is evaluated here.
+ */
+function predicateSyntaxError(src: string, boundName: string): string | null {
+  try {
+    new Function(boundName, `return (${src})`)
+    return null
+  } catch (e) {
+    return e instanceof Error ? e.message : 'syntax error'
+  }
+}
+
+/**
+ * ---- agent-annotation-syntax: a malformed agent annotation ----
+ *
+ * The rule the #36 audit called for as `agent-validates-syntax`, generalized:
+ * it covers every tag in the shared annotation grammar (`annotation-args.ts`),
+ * not just `@validates`, because all seven parsers share one tokenizer now.
+ *
+ * WHY IT MUST BE A BUILD ERROR: an annotation the grammar cannot read
+ * unambiguously is DROPPED (never half-read). Dropping is the safe outcome for
+ * the parser but not for the author — a dropped `@routeGated` is an ungated
+ * variant the agent may dispatch, and a dropped `@validates` is a field nobody
+ * checks. Both are invisible at runtime (the agent boundary catches its
+ * `new Function` failures and degrades to "allow"), so the build is the only
+ * place the author can still be told (issue #89).
+ *
+ * TWO CHECKS, because a well-formed annotation is not automatically a working
+ * one:
+ *   1. the ARGUMENT GRAMMAR (`annotation-args.ts`), and
+ *   2. for the two PREDICATE tags, that the captured string is parseable
+ *      JavaScript. `@routeGated("")`, `@validates("")` and an unbalanced paren
+ *      (`@validates("f(v)) === 1")`) sail through the grammar and then fail the
+ *      boundary's `new Function`, which degrades to gate-open / accept-all —
+ *      the very outcome this issue exists to prevent, reached by an ordinary
+ *      typo. The check CONSTRUCTS a function to borrow the JS parser and
+ *      throws the result away; it never calls it, so nothing is evaluated at
+ *      build time.
+ *
+ * SCOPE — deliberately narrow, and this is the false-positive story: only
+ * `/** … *\/` blocks in the positions the extractors actually READ are checked
+ * — a type alias, each member of its union, and any property signature. JSDoc
+ * on a function/const/parameter is PROSE (this repo's own sources document the
+ * grammar with `@emits("k1", "k2", ...)` and `@validates(...)` placeholders),
+ * and an annotation there would be inert anyway, so flagging it would fail
+ * valid builds for no safety gain. A line comment, a plain `/* *\/` block, and
+ * a string literal are never comments the extractors read, so they are never
+ * flagged either. A tag NOT in the call form (standard block-form `@example`
+ * followed by a code block) is not an annotation at all and is left alone.
+ *
+ * THE ONE ACCEPTED FALSE POSITIVE: prose in a SCANNED position that opens a
+ * paren right after a tag — `@example (see the docs)` on a Msg variant — reads
+ * as a malformed call and errors. That is the deliberate price of catching
+ * `@validates(v > 0)`, which is an author reaching for the annotation and
+ * getting silence; the two shapes are indistinguishable without guessing
+ * intent. A scan of 61,308 real files (this repo plus 60k `node_modules`
+ * sources) found ZERO occurrences, so the trade is heavily one-sided — but it
+ * IS a trade, and it is written down here rather than discovered later.
+ */
+function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
+  if (!ANNOTATION_CALL_PRECHECK.test(sf.text)) return []
+  const out: SignalDiagnostic[] = []
+  const seen = new Set<number>()
+  const scanAt = (pos: number): void => {
+    for (const range of ts.getLeadingCommentRanges(sf.text, pos) ?? []) {
+      if (range.kind !== ts.SyntaxKind.MultiLineCommentTrivia) continue
+      if (seen.has(range.pos)) continue
+      seen.add(range.pos)
+      const text = sf.text.slice(range.pos, range.end)
+      if (!text.startsWith('/**')) continue
+      const scan = scanAnnotationCalls(text)
+      for (const err of scan.errors) {
+        out.push({
+          rule: 'agent-annotation-syntax',
+          message: err.message,
+          start: range.pos + err.start,
+          length: err.length,
+        })
+      }
+      for (const call of scan.calls) {
+        const bound = PREDICATE_TAGS[call.tag]
+        if (bound === undefined) continue
+        const src = call.args[0]
+        if (src === undefined) continue
+        const failure = predicateSyntaxError(src, bound)
+        if (failure === null) continue
+        out.push({
+          rule: 'agent-annotation-syntax',
+          message:
+            `\`@${call.tag}("${src}")\` is not a valid JavaScript expression (${failure}). ` +
+            `The runtime compiles it as \`new Function('${bound}', 'return (' + src + ')')\`; ` +
+            'a predicate that does not parse degrades to ' +
+            (call.tag === 'routeGated' ? 'an ALWAYS-OPEN gate' : 'ACCEPT-EVERYTHING validation') +
+            ` at the agent boundary. Write an expression in \`${bound}\` that returns a boolean.`,
+          start: range.pos + call.start,
+          length: call.length,
+        })
+      }
+    }
+  }
+  const walk = (node: ts.Node): void => {
+    if (ts.isTypeAliasDeclaration(node)) {
+      // The alias's own JSDoc, then one scan position per union member —
+      // mirroring `extractMsgAnnotations` / `readLeadingJSDocForMember`: a
+      // member's JSDoc sits BEFORE its `|` separator, which is not part of the
+      // member node, so the scan starts at the previous member's `end` (and at
+      // the alias body's `pos` for the first).
+      scanAt(node.pos)
+      const body = node.type
+      if (ts.isUnionTypeNode(body)) {
+        body.types.forEach((_m, i) => {
+          const prev = i === 0 ? undefined : body.types[i - 1]
+          scanAt(prev === undefined ? body.pos : prev.end)
+        })
+      } else {
+        scanAt(body.pos)
+      }
+    } else if (ts.isPropertySignature(node)) {
+      // `@should` / `@validates` on a Msg or State field.
+      scanAt(node.pos)
+    }
+    node.forEachChild(walk)
+  }
+  walk(sf)
+  out.sort((a, b) => a.start - b.start)
+  return out
 }
 
 /** A lint diagnostic with source position resolved (1-based line, 0-based col). */
@@ -1171,7 +1328,33 @@ export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLint
     true,
     scriptKindForFilename(fileName),
   )
-  return lintSignals(sf).map((d) => {
+  return resolvePositions(sf, lintSignals(sf))
+}
+
+/**
+ * Run ONLY `agent-annotation-syntax` over a module that is not a signal
+ * component. A Msg union commonly lives in a plain `msg.ts` sibling that
+ * carries no `component(` call, so `lintSignalSource` never sees it — yet that
+ * is exactly where `@routeGated`/`@validates` are authored. The adapter calls
+ * this for every other TS module it transforms; the rule's own pre-check makes
+ * it a string test on files with no annotations.
+ */
+export function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindForFilename(fileName),
+  )
+  return resolvePositions(sf, annotationSyntaxDiagnostics(sf))
+}
+
+function resolvePositions(
+  sf: ts.SourceFile,
+  diags: readonly SignalDiagnostic[],
+): SignalLintMessage[] {
+  return diags.map((d) => {
     const lc = sf.getLineAndCharacterOfPosition(d.start)
     return {
       rule: d.rule,

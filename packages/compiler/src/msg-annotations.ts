@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { allAnnotationArgs, firstAnnotationArgs } from './annotation-args.js'
 
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 
@@ -355,63 +356,39 @@ export function parseAnnotations(comment: string): MessageAnnotations {
  * state, not a single field value).
  */
 function readRouteGate(comment: string): { gate: string | null; reason: string | null } {
-  const match = comment.match(
-    /@routeGated\s*\(\s*["“]([^"”]*)["”]\s*(?:,\s*["“]([^"”]*)["”]\s*)?\)/,
-  )
-  if (!match) return { gate: null, reason: null }
-  return { gate: match[1] ?? null, reason: match[2] ?? null }
+  const args = firstAnnotationArgs(comment, 'routeGated')
+  if (!args) return { gate: null, reason: null }
+  return { gate: args[0] ?? null, reason: args[1] ?? null }
 }
 
 /**
- * Match `@emits("k1", "k2", ...)` — comma-separated list of effect
- * kind strings. Each entry can use straight or curly quotes; the
- * separator is `,` with arbitrary whitespace. Returns the kinds in
- * source order (deduped). Empty when the tag is absent or has no
- * quoted strings.
+ * Read `@emits("k1", "k2", ...)` — the effect kinds this variant emits, in
+ * source order (deduped). Empty when the tag is absent or malformed.
  */
 function readEmits(comment: string): string[] {
-  // Match the whole `@emits(...)` parenthesized group so we can
-  // re-parse the inner content for individual quoted strings. The
-  // outer match is non-greedy on the closing paren to avoid eating
-  // through later JSDoc.
-  const outer = comment.match(/@emits\s*\(([^)]*)\)/)
-  if (!outer || outer[1] === undefined) return []
-  const inner = outer[1]
-  const seen = new Set<string>()
-  const out: string[] = []
-  const re = /["“]([^"”]*)["”]/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(inner)) !== null) {
-    const v = m[1]
-    if (v === undefined || seen.has(v)) continue
-    seen.add(v)
-    out.push(v)
-  }
-  return out
+  const args = firstAnnotationArgs(comment, 'emits')
+  if (!args) return []
+  return [...new Set(args)]
 }
 
 function readIntent(comment: string): string | null {
-  const match = comment.match(/@intent\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/)
-  return match?.[1] ?? null
+  return firstAnnotationArgs(comment, 'intent')?.[0] ?? null
 }
 
 /**
- * Match every `@example("\u2026")` (and curly-quote variant) in source
- * order. Multiple tags on one variant are common \u2014 typical-case,
- * edge-case-with-auth, etc. \u2014 so the parser collects all of them
- * rather than picking the first.
+ * Read every `@example("…")` in source order. Multiple tags on one variant
+ * are common — typical-case, edge-case-with-auth, etc. — so the parser
+ * collects all of them rather than picking the first.
  */
 function readExamples(comment: string): string[] {
-  const out: string[] = []
-  const re = /@example\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(comment)) !== null) {
-    if (m[1] !== undefined) out.push(m[1])
-  }
-  return out
+  // `!== undefined`, never truthiness: `@example("")` is well-formed and its
+  // value is the empty string. Dropping it would be exactly the silent-drop
+  // this module exists to stop (and the old regex kept it).
+  return allAnnotationArgs(comment, 'example').flatMap((args) =>
+    args[0] !== undefined ? [args[0]] : [],
+  )
 }
 
 function readWarning(comment: string): string | null {
-  const match = comment.match(/@warning\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/)
-  return match?.[1] ?? null
+  return firstAnnotationArgs(comment, 'warning')?.[0] ?? null
 }

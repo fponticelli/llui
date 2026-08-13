@@ -38,7 +38,7 @@ export type Msg =
   | { type: 'list'; msg: AsyncListMsg<Item> }
   /**
    * @intent("Update the input value for the QR code")
-   * @example({"type":"qrInput","value":"https://llui.dev"})
+   * @example("{\"type\":\"qrInput\",\"value\":\"https://llui.dev\"}")
    */
   | { type: 'qrInput'; value: string }
   /** @intent("Load the next page of async list items") */

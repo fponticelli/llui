@@ -13,7 +13,7 @@ type SettingsMsg =
   | { type: 'toggleAutoSave' }
   /**
    * @intent("Update the user's display name")
-   * @example({"type":"setDisplayName","value":"Alice"})
+   * @example("{\"type\":\"setDisplayName\",\"value\":\"Alice\"}")
    */
   | { type: 'setDisplayName'; value: string }
   /** @intent("Persist the current settings and show a confirmation toast") */

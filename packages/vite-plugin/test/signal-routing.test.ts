@@ -271,4 +271,53 @@ describe('vite-plugin — signal component routing', () => {
     expect(out!.code).toContain('__lluiRelayStarted') // start-once guard
     expect(out!.code).toContain("from '@llui/dom'") // still lowered
   })
+
+  // ── agent-annotation-syntax on NON-component modules (issue #89) ────────
+  // A Msg union usually lives in a plain `msg.ts` with no `component(` call —
+  // exactly where `@routeGated`/`@validates` are authored. Without this path
+  // the rule would never see the file, and a malformed (therefore DROPPED)
+  // predicate would ship as an ungated action / unchecked field.
+  const MALFORMED_MSG = [
+    'export type Msg =',
+    '  /** @routeGated("state.mode === "admin"") */',
+    "  | { type: 'purge' }",
+    "  | { type: 'noop' }",
+  ].join('\n')
+
+  it('halts the build for a malformed annotation in a module with no component()', async () => {
+    const errorMessages: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errorMessages.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, MALFORMED_MSG, '/tmp/msg.ts')).rejects.toThrow('this.error')
+    const msg = (errorMessages[0] as { message: string }).message
+    expect(msg).toContain('agent-annotation-syntax')
+    expect(msg).toContain('@routeGated')
+  })
+
+  it('leaves a WELL-FORMED annotation module alone (no error, no rewrite)', async () => {
+    const good = MALFORMED_MSG.replace(
+      '@routeGated("state.mode === "admin"")',
+      '@routeGated("state.mode === \\"admin\\"", "admins only")',
+    )
+    const warn = vi.fn()
+    const error = vi.fn(() => {
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn,
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, good, '/tmp/msg.ts')).resolves.toBeUndefined()
+    expect(error).not.toHaveBeenCalled()
+  })
 })

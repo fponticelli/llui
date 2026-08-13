@@ -145,12 +145,12 @@ export type Msg =
   | ModulesMsg<typeof children>
   /**
    * @intent("Set the wizard step-0 account name")
-   * @example({"type":"setWizardName","value":"Ada"})
+   * @example("{\"type\":\"setWizardName\",\"value\":\"Ada\"}")
    */
   | { type: 'setWizardName'; value: string }
   /**
    * @intent("Set a form-field profile value")
-   * @example({"type":"setProfileValue","field":"email","value":"a@b.com"})
+   * @example("{\"type\":\"setProfileValue\",\"field\":\"email\",\"value\":\"a@b.com\"}")
    */
   | { type: 'setProfileValue'; field: 'email' | 'username'; value: string }
 export type Effect = WizardEffect

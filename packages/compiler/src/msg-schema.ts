@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { peelOptionalUnion } from './union-peel.js'
+import { firstAnnotationArgs } from './annotation-args.js'
 
 /**
  * The "bare type" of a field. Covers five cases:
@@ -68,6 +69,7 @@ export interface MsgFieldRich {
    *   @validates("v >= 0 && v <= 100")        // weight 0–100
    *   @validates("v.length > 0")              // non-empty string
    *   @validates("/^[a-z0-9-]+$/.test(v)")    // slug format
+   *   @validates("v === \"admin\"")           // embedded quote: escape it
    *
    * The predicate runs ONLY at the agent boundary. Human-driven
    * dispatches bypass it because TypeScript already validated the
@@ -840,29 +842,30 @@ function readMemberJSDoc(source: string, member: ts.PropertySignature): string {
 }
 
 /**
- * Match `@should("…")` (and curly-quote variant) anywhere in the
- * JSDoc. Mirrors msg-annotations.ts's `@intent` parser — same grammar,
- * same tolerance for either ASCII or curly quotes.
- *
- * Returns the unescaped string content, or null when the tag is
- * absent or malformed.
+ * Read `@should("…")` anywhere in the JSDoc. Shares the annotation-argument
+ * grammar with every other tag (see `annotation-args.ts`), so an embedded
+ * quote written as `\"` round-trips and a malformed tag yields null rather
+ * than a truncated hint.
  */
 function readShouldHint(comment: string): string | null {
   if (!comment) return null
-  const match = comment.match(/@should\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
+  return firstAnnotationArgs(comment, 'should')?.[0] ?? null
 }
 
 /**
- * Match `@validates("predicate-expression")` (and curly-quote variant)
- * anywhere in the JSDoc. Returns the verbatim predicate string —
- * runtime validator compiles it with `new Function('v', 'return (' +
- * src + ')')`. Quote characters inside the predicate must be escaped
- * as the predicate runs through a regex match; for predicates that
- * need embedded quotes, use a regex literal or a named character class.
+ * Read `@validates("predicate-expression")` anywhere in the JSDoc. Returns the
+ * verbatim predicate string — the runtime validator compiles it with
+ * `new Function('v', 'return (' + src + ')')`.
+ *
+ * A quote inside the predicate is written escaped (`\"`) and arrives
+ * unescaped; every other backslash sequence is preserved verbatim, so
+ * `/^\d+$/.test(v)` works. A predicate this grammar cannot read
+ * UNAMBIGUOUSLY (an unescaped inner quote, an unterminated string) yields
+ * null — never a truncated predicate, which the runtime would fail to compile
+ * and degrade into "accept everything" (issue #89). The
+ * `agent-annotation-syntax` lint rule fails the build on the same input.
  */
 function readValidatesTag(comment: string): string | null {
   if (!comment) return null
-  const match = comment.match(/@validates\s*\(\s*["“]([^"”]*)["”]\s*\)/)
-  return match?.[1] ?? null
+  return firstAnnotationArgs(comment, 'validates')?.[0] ?? null
 }

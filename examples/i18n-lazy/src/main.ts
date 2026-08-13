@@ -139,7 +139,7 @@ type State = {
 type Msg =
   /**
    * @intent("Set the locale for the application")
-   * @example({"type":"setLocale","key":"fr"})
+   * @example("{\"type\":\"setLocale\",\"key\":\"fr\"}")
    * @emits("syncHtmlLocale")
    */
   | { type: 'setLocale'; key: LocaleKey }
@@ -147,7 +147,7 @@ type Msg =
   | { type: 'loadStats' }
   /**
    * @intent("Forward a sub-message to the dialog component")
-   * @example({"type":"dialog","msg":{"type":"open"}})
+   * @example("{\"type\":\"dialog\",\"msg\":{\"type\":\"open\"}}")
    */
   | { type: 'dialog'; msg: DialogMsg }
 

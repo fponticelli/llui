@@ -167,7 +167,8 @@ What it catches: the signal lint rules — `peek-in-slot`,
 `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`,
 `controlled-input`, `at-after-map` / `prefer-at-over-map`,
 `exhaustive-update`, `async-update`, `event-handler-casing`, `attr-name`,
-`empty-props`, and the shared `convention` checks.
+`empty-props`, `agent-annotation-syntax`, and the shared `convention`
+checks.
 
 ## Troubleshooting: `llui-mcp doctor`
 
@@ -196,7 +197,8 @@ not lint warnings — the same set `llui_lint` runs, plus the shared
 cross-file / agent / convention checks. They cover reactivity misuse
 (`peek-in-slot`, `operator-on-signal`, `pure-derive-body`,
 `no-node-construction-in-body`), controlled inputs, exhaustive `update()`,
-async `update()`, event-handler casing, attribute naming, and more.
+async `update()`, event-handler casing, attribute naming, malformed agent
+annotations (`agent-annotation-syntax`), and more.
 
 There is nothing to configure: the rules fire automatically through
 [`@llui/vite-plugin`](/api/vite-plugin), which surfaces them via

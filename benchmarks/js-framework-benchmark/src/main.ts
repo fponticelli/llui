@@ -103,12 +103,12 @@ type Msg =
   | { type: 'swaprows' }
   /**
    * @intent("Mark the given row as selected; clears any prior selection")
-   * @example({"type":"select","id":42})
+   * @example("{\"type\":\"select\",\"id\":42}")
    */
   | { type: 'select'; id: number }
   /**
    * @intent("Remove the row with the given id from the list")
-   * @example({"type":"remove","id":42})
+   * @example("{\"type\":\"remove\",\"id\":42}")
    */
   | { type: 'remove'; id: number }
 
