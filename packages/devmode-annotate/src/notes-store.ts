@@ -150,10 +150,27 @@ export interface NotesStore {
   subscribeEvents(sub: EventSubscription): () => void
 
   /** Release everything the store holds outside the JS heap — object URLs,
-   *  open connections — so a HUD mount/destroy cycle reclaims it (the HUD
-   *  calls this from `destroy()`). Idempotent, and NOT a close: the store
-   *  stays usable, lazily re-creating whatever a later call needs. Required
-   *  on the port (not optional) so an adapter can't forget it and leak
-   *  silently — a store with nothing to release implements a no-op. */
+   *  open connections — so a HUD mount/destroy cycle reclaims it. Idempotent.
+   *
+   *  The store stays USABLE (a later call lazily re-creates what it needs),
+   *  but this is not a no-op for anything already handed out: it is the
+   *  OWNER's teardown, and what it releases can belong to someone else.
+   *  `indexedDbStore` revokes every object URL `screenshotUrl` returned, so an
+   *  `<img>` the host is still displaying goes blank; `httpStore` closes every
+   *  live `EventSource`, so ANOTHER subscriber's `onEvent` goes silently dead
+   *  and nothing re-opens it.
+   *
+   *  This matters because `mountAnnotateHud` calls it from `destroy()` on the
+   *  store it was GIVEN — the HUD cannot leave an injected store undisposed
+   *  without re-opening the leak this exists to close (an inline
+   *  `installAnnotateHud({ store: indexedDbStore() })` keeps no reference the
+   *  host could dispose, and object URLs are not garbage-collected). So a host
+   *  that also uses the store from its own code should construct a SECOND
+   *  instance for the HUD; they are cheap and share the backing store.
+   *
+   *  Required on the port rather than optional so the compiler names it for
+   *  every adapter (a store with nothing to release implements a no-op) —
+   *  though that is a type-level guard only: a `as unknown as NotesStore` test
+   *  fake still reaches destroy() and throws there. */
   dispose(): void
 }

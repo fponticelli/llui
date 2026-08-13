@@ -189,7 +189,11 @@ export interface MountAnnotateOptions {
   origin?: string
   /** The notes transport. Defaults to `devServerStore(origin)` — the Vite
    *  dev-server endpoints. Inject a different adapter (IndexedDB, HTTP,
-   *  export bundle) to run the HUD without a dev server. */
+   *  export bundle) to run the HUD without a dev server.
+   *
+   *  `destroy()` calls `store.dispose()` on whatever it is given, so the HUD
+   *  takes over the instance's out-of-heap resources: give it its OWN store
+   *  rather than one the host also drives (see `NotesStore.dispose`). */
   store?: NotesStore
   /** Mount in a production build. By default the HUD only mounts under the
    *  dev server (`import.meta.env.DEV`); set this when a live app deliberately
@@ -1862,8 +1866,12 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
   disposers.add(() => unsubscribeEvents?.())
   // After the subscription is gone: the store releases its out-of-heap
   // resources (the IndexedDB adapter's screenshot object URLs, an SSE
-  // connection). Not a close — the store stays usable, so disposing one the
-  // host injected and reuses is safe.
+  // connection). This runs on an INJECTED store too, and has to: an inline
+  // `installAnnotateHud({ store: indexedDbStore() })` leaves the host no
+  // reference to dispose, and object URLs are not garbage-collected, so
+  // skipping it would re-open #114 in the documented production wiring. The
+  // cost is on the port doc (`notes-store.ts`): a host that ALSO drives the
+  // same instance from its own code should give the HUD a second one.
   disposers.add(() => store.dispose())
   disposers.add(() => reproRecorder.stop())
   disposers.add(() => dismissActiveOverlay())
