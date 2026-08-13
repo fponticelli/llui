@@ -402,35 +402,45 @@ describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', (
     }
   }
 
-  it('streamed DOM equals a cold render across 120 generated documents', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    for (let trial = 0; trial < 120; trial++) {
-      const rnd = rng(trial * 7919 + 13)
-      const blocks: string[] = []
-      const count = 2 + Math.floor(rnd() * 6)
-      for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
-      const doc = blocks.join('\n')
+  // 60s, not the 5s default: this mounts and streams 120 documents through the
+  // real reactive path, which is legitimately slow — ~5s idle, ~19s when the rest
+  // of the monorepo's suites are running beside it. The default timeout is sized
+  // for unit tests and turns machine load into a red build (it did exactly that
+  // at `pnpm turbo test`'s default concurrency, while passing standalone).
+  // Widen the budget rather than thin the corpus — the trial count is the point.
+  it(
+    'streamed DOM equals a cold render across 120 generated documents',
+    { timeout: 60_000 },
+    () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      for (let trial = 0; trial < 120; trial++) {
+        const rnd = rng(trial * 7919 + 13)
+        const blocks: string[] = []
+        const count = 2 + Math.floor(rnd() * 6)
+        for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
+        const doc = blocks.join('\n')
 
-      // Stream the document in 1–12 character chunks, the shape an LLM token
-      // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
-      const steps: string[] = []
-      for (let pos = 0; pos < doc.length; ) {
-        pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
-        steps.push(doc.slice(0, pos))
-      }
-
-      const live = mountReactive(steps[0] ?? '')
-      try {
-        for (const src of steps) {
-          live.set(src)
-          expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
-            coldHtml(src),
-          )
+        // Stream the document in 1–12 character chunks, the shape an LLM token
+        // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
+        const steps: string[] = []
+        for (let pos = 0; pos < doc.length; ) {
+          pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
+          steps.push(doc.slice(0, pos))
         }
-      } finally {
-        live.cleanup()
+
+        const live = mountReactive(steps[0] ?? '')
+        try {
+          for (const src of steps) {
+            live.set(src)
+            expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
+              coldHtml(src),
+            )
+          }
+        } finally {
+          live.cleanup()
+        }
       }
-    }
-    expect(spy).not.toHaveBeenCalled()
-  })
+      expect(spy).not.toHaveBeenCalled()
+    },
+  )
 })
