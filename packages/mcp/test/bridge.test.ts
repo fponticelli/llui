@@ -10,7 +10,20 @@ import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
  */
 
 let server: LluiMcpServer | null = null
-let port = 5200 // will be re-assigned per test to avoid collisions
+
+/**
+ * Start a bridge on an OS-assigned ephemeral port and return the port it
+ * actually got. A fixed port here is machine-global: any second run of
+ * this suite (a second worktree, CI fanning out) collided on the bind
+ * and failed somewhere else entirely (issue #85).
+ */
+async function startBridge(): Promise<number> {
+  server = new LluiMcpServer({ bridgePort: 0 })
+  await server.startBridge()
+  const bound = server.boundPort()
+  if (bound === null) throw new Error('bridge did not report a bound port')
+  return bound
+}
 
 afterEach(() => {
   server?.stopBridge()
@@ -51,9 +64,7 @@ function setupBrowserRelay(
 
 describe('MCP bridge (WebSocket)', () => {
   it('forwards tool calls to the connected browser and returns results', async () => {
-    port = 5301
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
 
     const browser = await setupBrowserRelay(port, {
       getState: () => ({ count: 42 }),
@@ -69,9 +80,7 @@ describe('MCP bridge (WebSocket)', () => {
   })
 
   it('llui_send_message validates, sends, flushes, returns new state', async () => {
-    port = 5302
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
 
     let count = 0
     const browser = await setupBrowserRelay(port, {
@@ -96,9 +105,7 @@ describe('MCP bridge (WebSocket)', () => {
   })
 
   it('llui_send_message returns validation errors without sending', async () => {
-    port = 5303
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
 
     let sendCalled = false
     const browser = await setupBrowserRelay(port, {
@@ -127,9 +134,7 @@ describe('MCP bridge (WebSocket)', () => {
   })
 
   it('rejects calls whose args fail the Zod schema before they reach the handler', async () => {
-    port = 5310
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
     let sendCalled = false
     const browser = await setupBrowserRelay(port, {
       send: () => {
@@ -148,9 +153,7 @@ describe('MCP bridge (WebSocket)', () => {
   })
 
   it('throws a RelayUnavailableError with a structured diagnostic when no browser is connected', async () => {
-    port = 5304
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
 
     try {
       await server.handleToolCall('llui_get_state', {})
@@ -169,9 +172,7 @@ describe('MCP bridge (WebSocket)', () => {
   })
 
   it('times out if browser does not respond', async () => {
-    port = 5305
-    server = new LluiMcpServer({ bridgePort: port })
-    server.startBridge()
+    const port = await startBridge()
 
     // Open a browser connection but don't respond to messages
     const browser = new WebSocket(`ws://127.0.0.1:${port}`)
@@ -206,20 +207,20 @@ describe('MCP active marker file', () => {
   })
 
   it('writes active.json on startBridge() with port + pid', async () => {
-    const s = new LluiMcpServer({ bridgePort: 5311 })
-    s.startBridge()
+    const s = new LluiMcpServer({ bridgePort: 0 })
+    await s.startBridge()
 
     expect(existsSync(path)).toBe(true)
     const data = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number }
-    expect(data.port).toBe(5311)
+    expect(data.port).toBe(s.boundPort())
     expect(data.pid).toBe(process.pid)
 
     s.stopBridge()
   })
 
   it('removes active.json on stopBridge()', async () => {
-    const s = new LluiMcpServer({ bridgePort: 5312 })
-    s.startBridge()
+    const s = new LluiMcpServer({ bridgePort: 0 })
+    await s.startBridge()
     expect(existsSync(path)).toBe(true)
 
     s.stopBridge()
@@ -227,15 +228,15 @@ describe('MCP active marker file', () => {
   })
 
   it('overwrites a stale marker file from a previous session', async () => {
-    // Simulate leftover from a crashed previous server
+    // Simulate leftover from a crashed previous server.
     mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, JSON.stringify({ port: 9999, pid: 0 }))
+    writeFileSync(path, JSON.stringify({ port: 9999, pid: 0 })) // marker payload, llui-no-bind
 
-    const s = new LluiMcpServer({ bridgePort: 5313 })
-    s.startBridge()
+    const s = new LluiMcpServer({ bridgePort: 0 })
+    await s.startBridge()
 
     const data = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number }
-    expect(data.port).toBe(5313)
+    expect(data.port).toBe(s.boundPort())
 
     s.stopBridge()
   })

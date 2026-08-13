@@ -45,9 +45,13 @@ describe('llui-mcp doctor', () => {
   })
 
   it('reports marker + pid when an MCP server is running', async () => {
-    // Spawn an HTTP-mode MCP, wait for marker, run doctor.
-    const port = 15230
-    const server = spawn(process.execPath, [CLI_PATH, '--http', String(port)], {
+    // Spawn an HTTP-mode MCP, wait for marker, run doctor. `--http 0`
+    // asks the OS for a free port: a fixed one is machine-global, and two
+    // concurrent runs of this file (two worktrees, CI fan-out) collided
+    // on the bind — one of them then died on the startup timeout below
+    // with no hint of the real cause (issue #85). Doctor discovers the
+    // port from the marker file, so nothing here needs to know it.
+    const server = spawn(process.execPath, [CLI_PATH, '--http', '0'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stderr = ''

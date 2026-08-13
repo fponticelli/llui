@@ -75,16 +75,36 @@ export function findWorkspaceRoot(start: string = process.cwd()): string {
 }
 
 /**
+ * Directory holding the MCP handshake state: the active-port marker and
+ * the per-launch HTTP bearer token.
+ *
+ * Defaults to the workspace root's cache (not the immediate cwd) so the
+ * MCP server and the Vite plugin always agree on a single location even
+ * when one runs from the repo root and the other from a subpackage.
+ *
+ * `LLUI_MCP_STATE_DIR` overrides it. Both this package and
+ * `@llui/vite-plugin` read that variable, so the two ends of the
+ * handshake move together — which is the point: the default is a single
+ * machine-global path per checkout, so two concurrent instances (two test
+ * runs, two agents driving the same repo) otherwise overwrite each
+ * other's marker and each connects the other's browser (issue #85).
+ *
+ * Read per call, not memoized, so a process that sets the variable during
+ * startup is still honored.
+ */
+export function mcpStateDir(cwd: string = process.cwd()): string {
+  const override = process.env['LLUI_MCP_STATE_DIR']
+  if (override) return resolve(override)
+  return resolve(findWorkspaceRoot(cwd), 'node_modules/.cache/llui-mcp')
+}
+
+/**
  * Path where the MCP server writes its active port marker. Vite plugins
  * watch this file to auto-trigger browser-side `__lluiConnect()` whenever
  * the MCP server starts, regardless of whether Vite or MCP started first.
- *
- * Resolved relative to the workspace root (not the immediate cwd) so the
- * MCP server and the Vite plugin always agree on a single location even
- * when one runs from the repo root and the other from a subpackage.
  */
 export function mcpActiveFilePath(cwd: string = process.cwd()): string {
-  return resolve(findWorkspaceRoot(cwd), 'node_modules/.cache/llui-mcp/active.json')
+  return resolve(mcpStateDir(cwd), 'active.json')
 }
 
 /**
@@ -96,7 +116,7 @@ export function mcpActiveFilePath(cwd: string = process.cwd()): string {
  * top-level `main()` side effect.
  */
 export function mcpHttpTokenPath(cwd: string = process.cwd()): string {
-  return resolve(findWorkspaceRoot(cwd), 'node_modules/.cache/llui-mcp/http-token')
+  return resolve(mcpStateDir(cwd), 'http-token')
 }
 
 // ── MCP Server ──────────────────────────────────────────────────
@@ -107,6 +127,9 @@ export interface LluiMcpServerOptions {
    * is stdio (the CLI default), the relay stands up its own server on
    * this port. When the MCP transport is HTTP, the relay attaches to
    * that HTTP server and the MCP protocol + bridge share a single port.
+   *
+   * `0` asks the OS for a free port; read the assigned one back with
+   * `boundPort()` once `startBridge()` has resolved.
    */
   bridgePort?: number
   /**
@@ -152,21 +175,22 @@ export interface LluiMcpServerOptions {
 export class LluiMcpServer {
   private readonly registry: ToolRegistry
   private readonly relay: WebSocketRelayTransport
-  private readonly bridgePort: number
+  /** What the caller ASKED for — `boundPort()` is what they got. */
+  private readonly requestedPort: number
   private readonly mcp: McpServer
   private readonly cdp: CdpSessionManager
   private readonly notesRoot: string
   private devUrl: string | null = null
 
   constructor(opts: LluiMcpServerOptions = {}) {
-    this.bridgePort = opts.bridgePort ?? 5200
+    this.requestedPort = opts.bridgePort ?? 5200
     this.registry = new ToolRegistry()
     // Pass bridgePort even in attachTo mode — the relay's diagnose()
     // needs it for the port field of BridgeDiagnostic. The `start()`
     // path is gated on `attachTo` first so a standalone listener
     // never gets created twice.
     this.relay = new WebSocketRelayTransport({
-      port: this.bridgePort,
+      port: this.requestedPort,
       attachTo: opts.attachTo,
       markerPath: mcpActiveFilePath(),
       // Enforced only in attachTo (shared-HTTP-port) mode, where cli.ts
@@ -308,13 +332,26 @@ export class LluiMcpServer {
    * Start a WebSocket server on the configured bridge port. The browser-side
    * relay (injected by the Vite plugin in dev mode) connects here and forwards
    * debug-API calls.
+   *
+   * Resolves once the bridge is listening — the marker file is written from
+   * inside that resolution, so it always names a port a client can reach
+   * (which, for the ephemeral `bridgePort: 0`, is knowable only then).
    */
-  startBridge(): void {
-    this.relay.start()
+  async startBridge(): Promise<void> {
+    await this.relay.start()
 
     // Write the active marker file so Vite plugins watching it can
     // dispatch an HMR custom event to auto-trigger browser connects.
     this.writeActiveFile()
+  }
+
+  /**
+   * The bridge port a client must connect to, or null before
+   * `startBridge()` has resolved. Differs from the requested `bridgePort`
+   * exactly when the caller asked for an ephemeral bind (`0`).
+   */
+  boundPort(): number | null {
+    return this.relay.boundPort()
   }
 
   stopBridge(): void {
@@ -327,7 +364,9 @@ export class LluiMcpServer {
       const path = mcpActiveFilePath()
       mkdirSync(dirname(path), { recursive: true })
       const payload: { port: number; pid: number; devUrl?: string } = {
-        port: this.bridgePort,
+        // The port that was actually bound, never the requested one: with
+        // `bridgePort: 0` the request is meaningless to a client.
+        port: this.boundPort() ?? this.requestedPort,
         pid: process.pid,
       }
       if (this.devUrl !== null) payload.devUrl = this.devUrl

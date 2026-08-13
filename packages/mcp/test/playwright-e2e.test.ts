@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { resolve, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import { createServer as createNetServer } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, Page } from 'playwright'
 import type { ViteDevServer } from 'vite'
@@ -52,31 +51,6 @@ function findWorkspaceRoot(start: string = process.cwd()): string {
 
 const WORKSPACE_ROOT = findWorkspaceRoot()
 const EXAMPLE_DIR = resolve(WORKSPACE_ROOT, 'examples/virtualization')
-// Pick a port from a 100-wide window. A retry loop in `setupHarness`
-// handles the rare birthday-paradox collision when multiple test files
-// run concurrently (the monorepo's `pnpm verify` can fan out 6+ test
-// processes against this range simultaneously). Without the retry the
-// loser races with EADDRINUSE — see the 2026-05-26 verify run.
-const pickMcpPort = (): number => 5400 + Math.floor(Math.random() * 100)
-
-/**
- * Probe whether a TCP port is bindable on 127.0.0.1 before handing it
- * to LluiMcpServer. WebSocketServer's bind error fires asynchronously
- * on an 'error' event — there's no synchronous way to know the bind
- * failed without rewiring the relay's startBridge. A pre-bind probe
- * (open a Server on the port, immediately close it) is the standard
- * test-harness shortcut.
- */
-function isPortFree(port: number): Promise<boolean> {
-  return new Promise<boolean>((res) => {
-    const probe = createNetServer()
-    probe.once('error', () => res(false))
-    probe.once('listening', () => {
-      probe.close(() => res(true))
-    })
-    probe.listen({ port, host: '127.0.0.1' })
-  })
-}
 
 // Import playwright and verify a chromium browser binary is available.
 // Returns null on any failure so the suite skips cleanly — fresh
@@ -151,24 +125,16 @@ async function startViteServer(): Promise<{ vite: ViteDevServer; viteUrl: string
 async function setupHarness(): Promise<Harness> {
   if (!playwright) throw new Error('playwright unavailable')
 
-  // 1. Pick a free port + start MCP server. The bridge port comes
-  //    from a 100-wide random range; parallel test processes (the
-  //    monorepo `pnpm verify` fans out 6+ vitest runs) occasionally
-  //    collide. Probe before binding because the WS server reports
-  //    EADDRINUSE asynchronously via an 'error' event.
-  let port: number | null = null
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const candidate = pickMcpPort()
-    if (await isPortFree(candidate)) {
-      port = candidate
-      break
-    }
-  }
-  if (port === null) {
-    throw new Error('MCP bridge: could not find a free port in 5400..5499 after 12 attempts')
-  }
-  const mcp = new LluiMcpServer({ bridgePort: port })
-  mcp.startBridge()
+  // 1. Start the MCP server on an OS-assigned port. This used to draw
+  //    from a 100-wide random window behind a probe-then-bind retry loop,
+  //    which is a race by construction: parallel runs (the monorepo's
+  //    `pnpm verify` fans out 6+ vitest processes) still lost the port
+  //    between the probe and the bind. `bridgePort: 0` cannot collide,
+  //    and `startBridge()` resolves once the port is knowable — which is
+  //    also what the browser must learn, via the marker file the Vite
+  //    plugin serves from `/__llui_mcp_status`.
+  const mcp = new LluiMcpServer({ bridgePort: 0 })
+  await mcp.startBridge()
 
   // 2. Start vite dev server programmatically (no file watcher)
   const { vite, viteUrl } = await startViteServer()

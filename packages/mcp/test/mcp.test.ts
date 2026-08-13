@@ -112,10 +112,10 @@ describe('LluiMcpServer', () => {
     await expect(server.handleToolCall('llui_get_state', {})).rejects.toThrow()
   })
 
-  it('writes devUrl to the marker file when provided', () => {
-    const server = new LluiMcpServer({ bridgePort: 5299 })
+  it('writes devUrl to the marker file when provided', async () => {
+    const server = new LluiMcpServer({ bridgePort: 0 })
     server.setDevUrl('http://localhost:5173')
-    server.startBridge()
+    await server.startBridge()
     const path = mcpActiveFilePath()
     expect(existsSync(path)).toBe(true)
     const marker = JSON.parse(readFileSync(path, 'utf8')) as {
@@ -123,14 +123,14 @@ describe('LluiMcpServer', () => {
       pid: number
       devUrl?: string
     }
-    expect(marker.port).toBe(5299)
+    expect(marker.port).toBe(server.boundPort())
     expect(marker.devUrl).toBe('http://localhost:5173')
     server.stopBridge()
   })
 
-  it('omits devUrl from the marker file when not set', () => {
-    const server = new LluiMcpServer({ bridgePort: 5298 })
-    server.startBridge()
+  it('omits devUrl from the marker file when not set', async () => {
+    const server = new LluiMcpServer({ bridgePort: 0 })
+    await server.startBridge()
     const marker = JSON.parse(readFileSync(mcpActiveFilePath(), 'utf8')) as {
       port: number
       devUrl?: string
@@ -150,13 +150,17 @@ describe('llui_lint tool', () => {
     const { fileURLToPath } = await import('node:url')
 
     // Write the temp file inside the project tree (within the workspace root, so
-    // the tool's workspace-containment guard accepts it). A FIXED, gitignored dir
-    // name — rather than a random `mkdtemp` — means at most one ever exists: it's
-    // swept before use and removed after, so a run killed mid-test (e.g. turbo
-    // aborting on another package's failure, which skips the `finally`) leaves a
-    // single gitignored dir that the next run overwrites, never a pile of stray dirs.
+    // the tool's workspace-containment guard accepts it). The dir name is
+    // gitignored and derived from the PID — not a fixed name, and not a random
+    // `mkdtemp`. Fixed was a machine-global resource just like a fixed port: a
+    // second concurrent run swept this directory out from under the first,
+    // between its write and the tool's read (issue #85). PID-derived keeps the
+    // property that motivated a fixed name — at most one dir per runner, swept
+    // before use and after, so a run killed mid-test (turbo aborting on another
+    // package's failure skips the `finally`) leaves a single gitignored dir the
+    // next run with that PID reclaims, never a pile of stray dirs.
     const projectRoot = resolve(fileURLToPath(import.meta.url), '../../../../')
-    const dir = join(projectRoot, 'tmp-lint-test')
+    const dir = join(projectRoot, `tmp-lint-test-${process.pid}`)
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
     const filePath = join(dir, 'sample.ts')

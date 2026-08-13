@@ -25,7 +25,6 @@ import { LluiMcpServer } from '../dist/index.js'
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const REPO_ROOT = resolve(__dirname, '../../..')
 const EXAMPLE_DIR = resolve(REPO_ROOT, 'examples/virtualization')
-const MCP_PORT = 5400 + Math.floor(Math.random() * 100)
 
 function log(...args) {
   console.log('[playwright-e2e]', ...args)
@@ -38,9 +37,12 @@ function fail(msg) {
 
 async function main() {
   // ── 1. Start MCP server (writes active.json) ────────────────────
-  log(`starting MCP server on port ${MCP_PORT}`)
-  const mcp = new LluiMcpServer({ bridgePort: MCP_PORT })
-  mcp.startBridge()
+  // Port 0: the OS picks a free one, so this harness can run beside a
+  // real dev session (or a second copy of itself) without a collision.
+  // The browser learns the port from the marker file, not from here.
+  const mcp = new LluiMcpServer({ bridgePort: 0 })
+  await mcp.startBridge()
+  log(`MCP server listening on port ${mcp.boundPort()}`)
 
   // ── 2. Start vite dev server in the example ─────────────────────
   log('spawning vite dev server in', EXAMPLE_DIR)
