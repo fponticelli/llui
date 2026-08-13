@@ -118,3 +118,119 @@ describe('mountAnnotateHud re-entrancy', () => {
     expect(document.body.innerHTML).toBe('')
   })
 })
+
+// The DOM is only half of what a partial mount can orphan. The HUD's four
+// GLOBAL listeners — document `keydown`, window `resize`, and auto-capture's
+// window `error` / `unhandledrejection` — used to be created in one block and
+// registered as disposers only in a trailing block below it. A throw between
+// the two points left all four attached with no handle to remove them: the
+// host keeps eating Escape and Cmd+Shift+A forever, and every later uncaught
+// error runs a handler whose HUD no longer exists. They are now registered at
+// their creation sites, which is what `addCore`-at-creation-time exists for.
+
+/** The four globals a partial mount could orphan. Other listeners the HUD
+ *  attaches live on nodes it removes, or on document but only while the
+ *  element picker / repro recorder is running, so they are out of scope. */
+const TRACKED_TYPES = new Set(['keydown', 'resize', 'error', 'unhandledrejection'])
+
+interface ListenerLedger {
+  /** `type` of every tracked listener added and not since removed. */
+  outstanding(): string[]
+  restore(): void
+}
+
+/** Patch `document` + `window` so every tracked add/remove is recorded, and
+ *  optionally make one `addEventListener(type)` throw — the injected fault
+ *  that stands in for anything going wrong mid-mount. */
+function trackGlobalListeners(throwOn?: string): ListenerLedger {
+  const live: Array<{ type: string; fn: EventListenerOrEventListenerObject | null }> = []
+  const targets: EventTarget[] = [document, window]
+  // Restore by ASSIGNING the original back, never by deleting the property:
+  // under vitest's jsdom bridge `window.addEventListener` is an accessor on
+  // globalThis, so a delete strips the bridge and every later patch stacks on
+  // the previous test's wrapper instead of replacing it.
+  const originals = targets.map((target) => ({
+    target,
+    original: { add: target.addEventListener, remove: target.removeEventListener },
+    add: target.addEventListener.bind(target),
+    remove: target.removeEventListener.bind(target),
+  }))
+
+  for (const o of originals) {
+    o.target.addEventListener = (type, fn, options): void => {
+      if (throwOn !== undefined && type === throwOn) {
+        throw new Error(`addEventListener(${type}) boom`)
+      }
+      o.add(type, fn, options)
+      if (TRACKED_TYPES.has(type)) live.push({ type, fn })
+    }
+    o.target.removeEventListener = (type, fn, options): void => {
+      o.remove(type, fn, options)
+      const i = live.findIndex((l) => l.type === type && l.fn === fn)
+      if (i >= 0) live.splice(i, 1)
+    }
+  }
+
+  return {
+    outstanding: () => live.map((l) => l.type).sort(),
+    restore(): void {
+      for (const o of originals) {
+        o.target.addEventListener = o.original.add
+        o.target.removeEventListener = o.original.remove
+      }
+      // Whatever the mount left attached would otherwise bleed into the next
+      // test — remove it with the ORIGINAL methods, which the ledger no longer
+      // sees, so `outstanding()` still reports what the mount itself leaked.
+      for (const l of live.splice(0)) {
+        for (const o of originals) o.remove(l.type, l.fn)
+      }
+    },
+  }
+}
+
+describe('a partial mount orphans no global listener', () => {
+  let ledger: ListenerLedger | null = null
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    ledger?.restore()
+    ledger = null
+    document.body.innerHTML = ''
+  })
+
+  it('control: a complete mount attaches them, and destroy() removes them all', () => {
+    ledger = trackGlobalListeners()
+    const handle = mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })
+    // Negative control — without this the assertions below pass vacuously. A
+    // SET, because the embedded editor's overlay plugin attaches a `resize` of
+    // its own; what matters is that all four of the HUD's globals are live.
+    expect(new Set(ledger.outstanding())).toEqual(
+      new Set(['error', 'keydown', 'resize', 'unhandledrejection']),
+    )
+    handle.destroy()
+    expect(ledger.outstanding()).toEqual([])
+  })
+
+  it('a throw while installing auto-capture unwinds keydown + resize', () => {
+    ledger = trackGlobalListeners('error')
+    expect(() => mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })).toThrow(
+      'addEventListener(error) boom',
+    )
+    expect(ledger.outstanding()).toEqual([])
+    expect(document.getElementById(HUD_ID)).toBeNull()
+  })
+
+  it('a throw between auto-capture’s two listeners unwinds all of them', () => {
+    ledger = trackGlobalListeners('unhandledrejection')
+    expect(() => mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })).toThrow(
+      'addEventListener(unhandledrejection) boom',
+    )
+    // `installAutoCapture` never returns here, so the HUD never receives an
+    // `AutoCapture` to dispose — the half-installed pair has to unwind itself.
+    expect(ledger.outstanding()).toEqual([])
+    expect(document.getElementById(HUD_ID)).toBeNull()
+  })
+})

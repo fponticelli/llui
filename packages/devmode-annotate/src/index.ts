@@ -1819,6 +1819,10 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     }
   }
   document.addEventListener('keydown', onKey)
+  // Registered HERE, not in the teardown block below: a throw between the two
+  // points would orphan a document-level listener with no handle to remove it,
+  // leaving the host eating Escape and Cmd+Shift+A forever.
+  disposers.add(() => document.removeEventListener('keydown', onKey))
 
   const onResize = (): void => {
     if (getState().modalOpen) {
@@ -1828,7 +1832,10 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     const current = readSavedPosition()
     if (current) applySavedPosition(root, current)
   }
-  if (typeof window !== 'undefined') window.addEventListener('resize', onResize)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', onResize)
+    disposers.add(() => window.removeEventListener('resize', onResize))
+  }
 
   // ── Auto-capture on uncaught error ────────────────────────────────────
   const autoCapture = installAutoCapture({
@@ -1837,16 +1844,15 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     setProse: (value) => handle.send({ type: 'setProse', value }),
     open,
   })
+  disposers.add(() => autoCapture.dispose())
 
   // ── Teardown registry ──────────────────────────────────────────────────
   // Every timer/listener/subscription/nested-app/DOM node registers its
   // teardown here, in the order the original destroy() ran them (the component
-  // + DOM removal last). `destroy()` folds over the registry.
-  disposers.add(() => document.removeEventListener('keydown', onKey))
-  disposers.add(() => {
-    if (typeof window !== 'undefined') window.removeEventListener('resize', onResize)
-  })
-  disposers.add(() => autoCapture.dispose())
+  // + DOM removal last). `destroy()` folds over the registry. Anything that
+  // grabs a resource the moment it is CREATED registers there instead (the
+  // console patch above, the three global listeners above, the component and
+  // its DOM); what is left below holds nothing until it is started.
   disposers.add(() => ticker.stop())
   disposers.add(() => persistence.dispose())
   disposers.add(() => {

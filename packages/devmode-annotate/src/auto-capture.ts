@@ -72,7 +72,15 @@ export function installAutoCapture(deps: AutoCaptureDeps): AutoCapture {
 
   if (enabled && typeof window !== 'undefined') {
     window.addEventListener('error', onWindowError)
-    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    try {
+      window.addEventListener('unhandledrejection', onUnhandledRejection)
+    } catch (err) {
+      // A half-installed pair is unrecoverable from the outside: the caller
+      // never receives the `AutoCapture` handle, so nothing can ever remove
+      // the listener that DID land. Unwind it here and rethrow.
+      window.removeEventListener('error', onWindowError)
+      throw err
+    }
   }
 
   return {

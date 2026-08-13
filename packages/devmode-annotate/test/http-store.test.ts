@@ -142,7 +142,7 @@ describe('httpStore dispose()', () => {
     const { fetch } = recorder()
     const store = httpStore({ baseUrl: BASE, fetch })
     store.subscribeEvents({ role: 'hud', onEvent: () => {} })
-    store.subscribeEvents({ role: 'agent', onEvent: () => {} })
+    store.subscribeEvents({ role: 'viewer', onEvent: () => {} })
     expect(ES.instances).toHaveLength(2)
     expect(ES.instances.map((s) => s.closed)).toEqual([0, 0])
 
