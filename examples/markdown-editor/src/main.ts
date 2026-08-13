@@ -23,7 +23,6 @@ import {
   wikilinkPlugin,
   mathPlugin,
   mermaidPlugin,
-  tablePlugin,
   mentionPlugin,
   emojiPlugin,
   calloutPlugin,
@@ -31,6 +30,9 @@ import {
   type DocCandidate,
   type EditorState,
 } from '@llui/markdown-editor'
+// The table plugin has its own entry point so `@lexical/table` stays an OPTIONAL
+// peer — an editor without tables neither installs nor bundles it.
+import { tablePlugin } from '@llui/markdown-editor/plugins/table'
 import '@llui/markdown-editor/styles/editor.css'
 import '@llui/markdown-editor/styles/block-drag.css'
 import './main.css'

@@ -39,9 +39,34 @@ app.subscribe((s) => console.log(s.value, `${s.wordCount} words`))
 
 Features are plugins you compose into the `plugins` list — only what you pass is wired in, so unused features tree-shake away. `corePlugin()` covers headings, lists, blockquotes, inline marks, and code. The rest are opt-in:
 
-`linkPlugin`, `imagePlugin`, `tablePlugin`, `hrPlugin`, `mathPlugin`, `mermaidPlugin`, `mentionPlugin`, `emojiPlugin`, `calloutPlugin`, `slashPlugin`, `contextMenuPlugin`, `floatingToolbarPlugin`.
+`linkPlugin`, `imagePlugin`, `hrPlugin`, `mathPlugin`, `mermaidPlugin`, `mentionPlugin`, `emojiPlugin`, `calloutPlugin`, `slashPlugin`, `contextMenuPlugin`, `floatingToolbarPlugin`.
 
 Author your own with `definePluginUI` and the `MarkdownPlugin` / `CommandItem` contract — the same shape the built-ins use.
+
+### Tables: a plugin with its own entry point
+
+`tablePlugin()` is the one plugin the barrel does **not** re-export:
+
+```ts
+import { tablePlugin } from '@llui/markdown-editor/plugins/table'
+
+markdownEditor({ plugins: [corePlugin(), tablePlugin()] })
+```
+
+```typescript
+function tablePlugin(): MarkdownPlugin
+```
+
+It is the only module in the package that imports `@lexical/table`, so a barrel
+re-export made that package's peer mandatory for _every_ consumer — a bundler
+cannot drop a dependency the entry module it resolves still references. Behind
+its own entry point, `@lexical/table` is an **optional** peer: an editor with no
+tables neither installs nor bundles it.
+
+Nothing else in the package needs the same treatment. Every other plugin's
+imports (`lexical`, `@lexical/utils`, `@lexical/link`, `@llui/dom`,
+`@llui/components/*`, …) are peers the editor core itself already pulls in, so
+moving them out of the barrel would remove no dependency.
 
 ## Images: displaying a `src` the document doesn't store
 
@@ -538,12 +563,6 @@ editor — the same predicate the importer uses, so the two never disagree.
 
 ```typescript
 function splitFrontmatter(markdown: string): [source: string, rest: string] | null
-```
-
-### `tablePlugin()`
-
-```typescript
-function tablePlugin(): MarkdownPlugin
 ```
 
 ### `toolbar()`

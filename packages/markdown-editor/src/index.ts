@@ -88,7 +88,10 @@ export {
   parseImageLine,
   formatImageLine,
 } from './transformers/image.js'
-export { tablePlugin } from './plugins/table.js'
+// NOT re-exported: `tablePlugin` — it lives at `@llui/markdown-editor/plugins/table`.
+// It is the only module in the package that imports `@lexical/table`, and a barrel
+// re-export makes that package's peer mandatory for every consumer, tables or not.
+// Its own entry point is what lets the peer be optional (#75).
 export {
   type CodeLanguagePluginOptions,
   type CodeLanguageState,

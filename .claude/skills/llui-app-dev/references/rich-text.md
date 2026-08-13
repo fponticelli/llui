@@ -43,13 +43,10 @@ hood via the `@llui/lexical` `foreign` seam.
 ```ts
 import { mountApp } from '@llui/dom'
 import { markdownEditor } from '@llui/markdown-editor'
-import {
-  corePlugin,
-  linkPlugin,
-  imagePlugin,
-  tablePlugin,
-  calloutPlugin,
-} from '@llui/markdown-editor'
+import { corePlugin, linkPlugin, imagePlugin, calloutPlugin } from '@llui/markdown-editor'
+// The table plugin is its OWN entry point — `@lexical/table` is an optional peer,
+// so an editor without tables neither installs nor bundles it.
+import { tablePlugin } from '@llui/markdown-editor/plugins/table'
 
 const app = mountApp(
   byId('editor'),
@@ -68,7 +65,7 @@ const app = mountApp(
 - **Drive it via the handle**, or embed it as a slice of a larger component:
   - `app.subscribe((s) => render(s))` — `EditorState` exposes `{ value, wordCount, charCount, dirty, readonly }`.
   - `app.send({ type: 'runCommand', id: 'bold' })`, `app.send({ type: 'setReadOnly', readonly: true })`, `app.send({ type: 'setValue', value })` (two-way binding).
-- **Plugins are opt-in and tree-shake** — only bundle what you use: `corePlugin, linkPlugin, imagePlugin, tablePlugin, hrPlugin, mathPlugin, mermaidPlugin, mentionPlugin, emojiPlugin, calloutPlugin, slashPlugin, contextMenuPlugin, floatingToolbarPlugin, singleBlockPlugin`. Transformers are contributed by plugins (`buildTransformers`/`GFM_TRANSFORMERS`).
+- **Plugins are opt-in and tree-shake** — only bundle what you use: `corePlugin, linkPlugin, imagePlugin, hrPlugin, mathPlugin, mermaidPlugin, mentionPlugin, emojiPlugin, calloutPlugin, slashPlugin, contextMenuPlugin, floatingToolbarPlugin, singleBlockPlugin` from the barrel, plus `tablePlugin` from `@llui/markdown-editor/plugins/table` (its own entry point, because `@lexical/table` is an optional peer). Transformers are contributed by plugins (`buildTransformers`/`GFM_TRANSFORMERS`).
 
 ### Review points
 
