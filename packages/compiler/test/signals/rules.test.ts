@@ -1317,6 +1317,59 @@ describe('tag-send-drift (issue #118)', () => {
     ).not.toContain('tag-send-drift')
   })
 
+  // ── negative: the dispatcher name REBOUND in an inner scope ──────────────
+  // Direction 1 attributes a `send({type:'x'})` to THIS tag only if that `send`
+  // is the dispatcher that was tagged. An inner binding of the same name is a
+  // DIFFERENT function, so carrying the name into its scope reports a dispatch
+  // that this control cannot make. Shadowing is decided by `scopeIntroduces`
+  // (the repo's one shadowing predicate) — never re-derived here.
+  it('does NOT flag a dispatch through a destructured parameter of the same name', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['open'], () => { items.forEach(({ send }) => send({ type: 'inner' })) })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a dispatch through an inner `const` of the same name', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['open'], () => { const send = other; send({ type: 'inner' }) })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT attribute a NESTED `tagSend` handler to the outer call', () => {
+    // The inner call is checked on its own — its handler's dispatches are the
+    // inner tag's business. Attributing them outward made the outer (correct)
+    // call report a variant it never emits.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['open'], () => { const q = tagSend(send, ['close'], () => send({ type: 'close' })); use(q) })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('still flags real drift in the same file as a shadowing handler', () => {
+    // The prune must not switch the rule off wholesale.
+    expect(
+      rules(
+        src(
+          [
+            "const a = tagSend(send, ['open'], () => { items.forEach(({ send }) => send({ type: 'inner' })) })",
+            "const b = tagSend(send, ['touch'], () => send({ type: 'touched' }))",
+          ].join('\n'),
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
   it('does NOT flag when the dispatcher is not the identifier being called', () => {
     // Only calls to the tagged dispatcher count. `send` here is a different
     // binding from the `dispatch` that was tagged, so nothing is correlated.

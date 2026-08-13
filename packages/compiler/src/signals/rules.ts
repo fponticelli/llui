@@ -77,7 +77,7 @@ import ts from 'typescript'
 import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
-import { HelperBindings, bindingNames } from './helper-bindings.js'
+import { HelperBindings, bindingNames, scopeIntroduces } from './helper-bindings.js'
 import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
 import type { ParsedModule } from '../parse.js'
 
@@ -1377,7 +1377,7 @@ function tagSendDriftDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): S
 
   const walk = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && bindings.resolveCall(node) === 'tagSend') {
-      checkTagSendCall(node, push)
+      checkTagSendCall(node, push, bindings)
     }
     node.forEachChild(walk)
   }
@@ -1395,6 +1395,7 @@ interface SeenDispatch {
 function checkTagSendCall(
   call: ts.CallExpression,
   push: (message: string, node: ts.Node) => void,
+  bindings: HelperBindings,
 ): void {
   if (call.arguments.length !== 3) return
   const [dispatcher, list, handler] = call.arguments
@@ -1407,7 +1408,7 @@ function checkTagSendCall(
   const declared = readVariantList(list)
   if (declared === null) return
 
-  const scan = scanHandlerDispatches(handler, dispatcher.text)
+  const scan = scanHandlerDispatches(handler, dispatcher.text, bindings)
 
   // Direction 1 — sound unconditionally.
   for (const seen of scan.dispatches) {
@@ -1457,38 +1458,64 @@ function readVariantList(list: ts.Expression): { value: string; node: ts.Node }[
  * Nested functions are walked: `setTimeout(() => send({type:'tick'}))` really
  * does dispatch `tick`. That same `setTimeout(…)` is a bare-identifier call, so
  * it also costs completeness — correct on both counts.
+ *
+ * SCOPE-AWARENESS is what makes direction 1 sound, and it is the one thing this
+ * walk cannot re-derive by hand. `dispatcherName` identifies the tagged
+ * dispatcher only while that name still RESOLVES to it: inside
+ * `items.forEach(({ send }) => send({type:'inner'}))` or after a
+ * `const send = other`, the same spelling is a DIFFERENT function, and
+ * attributing its dispatches to this tag reports a variant the control cannot
+ * emit. The prune uses {@link scopeIntroduces} — the repo's most complete
+ * shadowing predicate (params, block `const`/`let`/`var`, hoisted
+ * `function`/`class`, `for` initializers, `catch`) — because re-deriving
+ * shadowing per walker is how the cases at the end of that list get forgotten.
+ * Below a rebinding scope the subtree is still walked (its calls still cost
+ * completeness); only the dispatcher ATTRIBUTION stops.
+ *
+ * A nested `tagSend` is likewise not this call's business: the inner call is
+ * checked on its own, so its handler is skipped rather than folded into the
+ * outer tag's dispatch set.
  */
 function scanHandlerDispatches(
   handler: ts.ArrowFunction | ts.FunctionExpression,
   dispatcherName: string,
+  bindings: HelperBindings,
 ): { dispatches: SeenDispatch[]; complete: boolean } {
   const dispatches: SeenDispatch[] = []
   let complete = true
-  // The handler's own parameter names. A method call on one of these
-  // (`e.preventDefault()`) cannot reach the dispatcher, and is by far the most
-  // common statement in these handlers — counting it as opaque would switch
-  // direction 2 off everywhere and make it worthless.
+  // The handler's own parameter names — see {@link isInertParameterMethodCall}.
   const params = new Set(handler.parameters.flatMap((p) => bindingNames(p.name)))
 
-  const walk = (n: ts.Node): void => {
-    if (ts.isIdentifier(n) && n.text === dispatcherName && !isCalleeOf(n)) {
+  // `live` is false once the walk is inside a scope that REBINDS the dispatcher
+  // name; the identifier there denotes something else entirely.
+  const walk = (n: ts.Node, live: boolean): void => {
+    const inScope = live && !scopeIntroduces(n, dispatcherName)
+
+    if (inScope && ts.isIdentifier(n) && n.text === dispatcherName && !isCalleeOf(n)) {
       // The dispatcher escaping as a VALUE (`helper(send)`, `{ onX: send }`)
       // means dispatches can happen out of sight.
       complete = false
     }
     if (ts.isCallExpression(n)) {
-      if (ts.isIdentifier(n.expression) && n.expression.text === dispatcherName) {
+      if (inScope && ts.isIdentifier(n.expression) && n.expression.text === dispatcherName) {
         const variant = literalMsgType(n.arguments[0])
         if (variant === null) complete = false
         else dispatches.push({ variant, node: n.arguments[0] ?? n })
       } else if (!isCallOnOwnParameter(n, params)) {
         complete = false
       }
+      if (bindings.resolveCall(n) === 'tagSend' && n.arguments.length === 3) {
+        // Walk the dispatcher and the list (a `send` mentioned there still
+        // escapes) but NOT the inner handler.
+        const nestedHandler = n.arguments[2]
+        for (const arg of n.arguments) if (arg !== nestedHandler) walk(arg, inScope)
+        return
+      }
     }
-    n.forEachChild(walk)
+
+    n.forEachChild((c) => walk(c, inScope))
   }
-  const body = handler.body
-  walk(body)
+  walk(handler.body, true)
   return { dispatches, complete }
 }
 
