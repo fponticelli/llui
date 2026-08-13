@@ -1,12 +1,23 @@
 // `yjsCollab(config)` — framework-agnostic collaborative editing for the LLui ↔
 // Lexical seam. It composes `@lexical/yjs`'s primitives (the same wiring the
-// official React `CollaborationPlugin` performs) into a single `register(editor)`
-// step you hand to `lexicalForeign({ history: false, seedMode: 'deferred',
-// register })`. The CRDT document — not a markdown string — becomes the source
-// of truth, so the seam's built-in history and boot-time seed MUST be disabled;
-// this module supplies a scoped Yjs `UndoManager` and a sync-gated bootstrap
-// instead. The network provider is injected (bring `y-websocket` / `y-webrtc` /
-// `@hocuspocus/provider`), so this package stays transport-agnostic.
+// official React `CollaborationPlugin` performs) into a single registration step
+// you hand to `lexicalForeign` as `{ ...collab.foreign }`. The CRDT document —
+// not a markdown string — becomes the source of truth, so the seam's built-in
+// history and boot-time seed MUST be disabled; this module supplies a scoped Yjs
+// `UndoManager` and a sync-gated bootstrap instead. The network provider is
+// injected (bring `y-websocket` / `y-webrtc` / `@hocuspocus/provider`), so this
+// package stays transport-agnostic.
+//
+// THE PRECONDITIONS ARE NOT DOCUMENTATION (issue #72). Running `@lexical/history`
+// beside the CRDT undo manager double-applies every undo and diverges the shared
+// document, and seeding at boot on every peer duplicates content. Both used to be
+// rules the host had to remember while wiring `register` + `history: false` +
+// `seedMode: 'deferred'` — and forgetting either was silent. So this handle does
+// not expose a `register` member at all: its one registration function is named
+// `externalUndo`, the seam slot whose mere presence FORCES the built-in history
+// stack off, and `foreign` bundles it with `seedMode: 'deferred'` as one object
+// to spread. Wiring the binding and satisfying its preconditions are now the
+// same act; there is nothing left for a host to forget.
 
 import {
   $createParagraphNode,
@@ -38,6 +49,11 @@ import {
   type Provider,
 } from '@lexical/yjs'
 import { Doc as YDoc, UndoManager as YUndoManager } from 'yjs'
+import {
+  externalUndoOwner,
+  type ExternalUndoOwner,
+  type LexicalForeignOptions,
+} from '@llui/lexical'
 
 /** Compose teardown functions into one disposer (last-registered first). */
 function mergeDisposers(disposers: ReadonlyArray<() => void>): () => void {
@@ -107,12 +123,47 @@ export interface YjsCollabConfig {
   onPeers?: (count: number) => void
 }
 
+/** The complete set of `lexicalForeign` options a Yjs session requires, as ONE
+ * object to spread — `lexicalForeign({ …, ...collab.foreign })`.
+ *
+ * Both members are preconditions the host used to have to remember, and both
+ * fail SILENTLY when forgotten: a surviving `@lexical/history` stack
+ * double-applies undo across peers, and a boot-time seed duplicates content on
+ * every peer that mounts. Bundling them with the registration itself is what
+ * makes the unsafe wiring unrepresentable rather than merely documented. */
+export interface CollabForeignOptions {
+  /** The binding's registration, in the seam slot whose presence forces the
+   * built-in `@lexical/history` stack off. Branded as an `ExternalUndoOwner`, so
+   * the type system also refuses it in the seam's `register` slot. */
+  readonly externalUndo: ExternalUndoOwner
+  /** The sync-gated bootstrap replaces the seam's boot-time seed.
+   *
+   * `'auto'` is unconditionally wrong for a CRDT session — it seeds the local
+   * document at boot on EVERY peer — so it is folded in here rather than left as
+   * a second thing to remember. A host that genuinely needs to override it can
+   * still spread this fragment first and set `seedMode` after. */
+  readonly seedMode: 'deferred'
+}
+
 /** Live handle returned by {@link yjsCollab}. */
 export interface YjsCollab {
-  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
-   * Returns a disposer that tears down every listener, the provider connection,
-   * and the cursors overlay. */
-  register: (editor: LexicalEditor) => () => void
+  /** The seam options this session requires, ready to spread into
+   * `lexicalForeign`. The preferred wiring — see {@link CollabForeignOptions}. */
+  readonly foreign: CollabForeignOptions
+  /** Wire the binding onto an editor. Returns a disposer that tears down every
+   * listener, the provider connection, and the cursors overlay.
+   *
+   * Named for the `lexicalForeign` slot it must occupy: the seam forces the
+   * built-in `@lexical/history` stack off whenever `externalUndo` is set, and
+   * this binding owns undo (a Yjs `UndoManager` scoped to the local origin).
+   * There is deliberately no `register` member — that slot leaves local history
+   * registered, and a CRDT session cannot survive it. This value is BRANDED as
+   * an `ExternalUndoOwner`, so re-routing it into `register` under another name
+   * is a compile error too. Prefer spreading
+   * {@link YjsCollab.foreign}, which also carries `seedMode`; reach for this
+   * directly only when handing the binding to a host that assembles the seam
+   * options itself (e.g. `@llui/markdown-editor`'s `collab` option). */
+  readonly externalUndo: ExternalUndoOwner
   /** The shared Yjs document. */
   readonly doc: YDoc
   /** The network provider. */
@@ -121,8 +172,9 @@ export interface YjsCollab {
   connect: () => void
   /** Disconnect the provider. */
   disconnect: () => void
-  /** Release resources this handle OWNS. Call AFTER the `register` disposer has
-   * run. If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
+  /** Release resources this handle OWNS. Call AFTER the disposer returned by
+   * {@link YjsCollab.externalUndo} has run (the seam runs it at unmount).
+   * If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
    * provider factory didn't substitute one), the document is `destroy()`d and its
    * `docMap` entry removed. A caller-supplied `doc` is caller-owned and left
    * untouched — you destroy it yourself once every binding over it is gone. */
@@ -194,7 +246,7 @@ export function yjsCollab(config: YjsCollabConfig): YjsCollab {
   const autoConnect = config.autoConnect ?? true
   const user = config.user
 
-  const register = (editor: LexicalEditor): (() => void) => {
+  const registerBinding = (editor: LexicalEditor): (() => void) => {
     const binding = createBinding(
       editor,
       provider,
@@ -394,8 +446,24 @@ export function yjsCollab(config: YjsCollabConfig): YjsCollab {
     }
   }
 
+  // Branding is what makes the wiring one-way: an `ExternalUndoOwner` fits the
+  // seam's `externalUndo` slot and NOTHING else, so there is no key a host can
+  // rename this into that would leave local history alive.
+  const externalUndo = externalUndoOwner(registerBinding)
+
+  // TWO layers, both load-bearing — do not collapse them. `satisfies` proves the
+  // fragment is spreadable into the seam (a renamed/retyped slot fails here),
+  // while the `CollabForeignOptions` return type proves both members are still
+  // PRESENT — `satisfies` alone cannot, since both picked props are optional on
+  // `LexicalForeignOptions`.
+  const foreign = {
+    externalUndo,
+    seedMode: 'deferred',
+  } as const satisfies Pick<LexicalForeignOptions, 'externalUndo' | 'seedMode'>
+
   return {
-    register,
+    foreign,
+    externalUndo,
     doc,
     provider,
     connect: () => provider.connect(),

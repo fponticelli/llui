@@ -29,6 +29,10 @@ export {
 
 export {
   PROGRAMMATIC_TAG,
+  EXTERNAL_UNDO_BRAND,
+  type ExternalUndoOwner,
+  type ForeignRegister,
+  externalUndoOwner,
   type SelectionContext,
   type ForeignController,
   type LexicalForeignOptions,

@@ -18087,6 +18087,24 @@ export type CodeLanguageMsg =
   | { type: 'cancel' }
 ```
 
+### `CollabBinding`
+
+Disposer-returning binding the collab layer installs on the live editor.
+`@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
+both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
+nor a Loro dependency of its own.
+At least one slot must be filled — a binding that fills neither registers
+nothing at all, which the union below rejects at compile time. Either way the
+built-in history stack is off in collab mode (the editor hard-codes it), so a
+binding that owns no undo shows as "no undo" rather than fighting a local
+stack.
+
+```typescript
+export type CollabBinding =
+  | (CollabBindingSlots & { externalUndo: (editor: LexicalEditor) => () => void })
+  | (CollabBindingSlots & { register: ForeignRegister })
+```
+
 ### `CollabFactory`
 
 Builds the collab binding from the editor-supplied hooks.
@@ -18268,26 +18286,31 @@ export interface CodeLanguageState {
 }
 ```
 
-### `CollabBinding`
+### `CollabBindingSlots`
 
-Disposer-returning binding the collab layer installs on the live editor.
-`@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
-both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
-nor a Loro dependency of its own.
+The two disposer-returning registration slots a collab binding may fill.
+Both are wired at mount, in this order, after the editor's own registrations.
+See {@link CollabBinding}, which requires at least one of them.
 
 ```typescript
-export interface CollabBinding {
-  register: (editor: LexicalEditor) => () => void
+export interface CollabBindingSlots {
   /**
-   * A CRDT-aware undo owner, if the binding provides one SEPARATELY from
-   * `register`. When present it is handed to `lexicalForeign({ externalUndo })`,
+   * Document sync / presence / anything that is NOT the undo stack.
+   * `@llui/lexical-loro` splits its binding this way.
+   *
+   * Typed as `ForeignRegister`, so it rejects a binding branded as an undo owner
+   * (`@llui/lexical-collab`'s) — that belongs in `externalUndo` below.
+   */
+  register?: ForeignRegister
+  /**
+   * A CRDT-aware undo owner. It is handed to `lexicalForeign({ externalUndo })`,
    * which forces the built-in `@lexical/history` stack off so the two can never
    * both be live — this is what gives collab mode real, peer-scoped undo.
    *
-   * Optional because not every binding splits undo out this way: `yjsCollab`
-   * installs its own undo commands INSIDE `register`, so it leaves this unset and
-   * still owns undo. A binding that sets neither would leave the editor with no
-   * undo at all — see `@llui/lexical-loro`, which sets this.
+   * `@llui/lexical-collab` exposes its WHOLE binding here (its undo commands live
+   * inside it) precisely so no caller can route it through `register` and keep
+   * the local stack alive; `@llui/lexical-loro` sets it alongside a separate
+   * `register`.
    */
   externalUndo?: (editor: LexicalEditor) => () => void
 }
@@ -19081,6 +19104,17 @@ like `JSON.parse` returning a declared type).
 function decoratorBridge<Data>(type: string, view: (data: Signal<Data>, api: DecoratorApi<Data>) => Renderable): DecoratorBridge
 ```
 
+### `externalUndoOwner()`
+
+Mark `register` as the owner of the undo/redo stack, so it can only be wired
+into the seam slot that turns the built-in history stack off. The brand is
+inert at runtime — `register` is returned as-is, carrying one extra symbol
+property that nothing reads.
+
+```typescript
+function externalUndoOwner(register: (editor: LexicalEditor) => () => void): ExternalUndoOwner
+```
+
 ### `isMacPlatform()`
 
 Best-effort macOS detection (browser only; defaults to false off-DOM).
@@ -19202,6 +19236,30 @@ A per-commit subscriber. Runs inside the shared read context.
 
 ```typescript
 export type CommitListener = (facts: CommitFacts) => void
+```
+
+### `ExternalUndoOwner`
+
+A registration function that OWNS the editor's undo/redo stack. Built with
+{@link externalUndoOwner}; accepted by {@link LexicalForeignOptions.externalUndo}
+and REJECTED by {@link LexicalForeignOptions.register}.
+
+```typescript
+export type ExternalUndoOwner = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]: true
+}
+```
+
+### `ForeignRegister`
+
+A registration function that does NOT own undo — the shape of the seam's
+`register` slot. Any plain `(editor) => () => void` satisfies it; only an
+{@link ExternalUndoOwner} does not.
+
+```typescript
+export type ForeignRegister = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]?: never
+}
 ```
 
 ### `SerializedLLuiDecoratorNode`
@@ -19421,9 +19479,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * CRDT undo manager). When set, the built-in `@lexical/history` stack is
    * **forced off** — so a collab consumer cannot accidentally run both and
    * double-apply undo (the conflict is unrepresentable, not a doc footnote).
-   * Registered after rich-text like {@link ForeignOptions.register}; return
-   * a disposer. Setting `externalUndo` together with `history: true` is a
-   * configuration error and is reported. */
+   * Registered after rich-text like {@link LexicalForeignOptions.register};
+   * return a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported.
+   *
+   * Accepts a plain function (`@llui/lexical-loro` passes one) as well as an
+   * {@link ExternalUndoOwner} — the branded form, which the `register` slot
+   * refuses so an undo owner can never be wired into it by mistake. */
   externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
@@ -19440,8 +19502,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * plus the seam's {@link ForeignController} — the only sanctioned way for the
    * host to push a value into the document. */
   onReady?: (editor: LexicalEditor, controller: ForeignController) => void
-  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
-  register?: (editor: LexicalEditor) => () => void
+  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer.
+   *
+   * This slot leaves the built-in `@lexical/history` stack registered, so it
+   * REJECTS an {@link ExternalUndoOwner} — a binding that owns undo belongs in
+   * {@link LexicalForeignOptions.externalUndo}, which turns that stack off. Any
+   * plain `(editor) => () => void` is accepted unchanged. */
+  register?: ForeignRegister
   onError?: (error: Error) => void
 }
 ```
@@ -19729,6 +19796,15 @@ class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
 
 ## Constants
 
+### `EXTERNAL_UNDO_BRAND`
+
+Marker key of an {@link ExternalUndoOwner}. Exported only because the phantom
+property below names it — nothing reads it at runtime.
+
+```typescript
+const EXTERNAL_UNDO_BRAND: unique symbol
+```
+
 ### `PROGRAMMATIC_TAG`
 
 Lexical update tag marking a programmatic write (seed / controlled setValue),
@@ -19767,7 +19843,11 @@ const WIDGET_CLASS
 
 # @llui/lexical-collab
 
-Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `register` hook you wire into `lexicalForeign({ history: false, seedMode: 'deferred', register })` — or you pass it through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
+Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `foreign` fragment you spread into `lexicalForeign({ …, ...collab.foreign })` — or you pass the handle through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
+
+There is nothing else to remember: `foreign` carries the binding registration in the seam's `externalUndo` slot — whose presence **forces the built-in `@lexical/history` stack off** — together with `seedMode: 'deferred'`. The handle deliberately exposes no `register` member, so the combination that would run a local undo stack beside the CRDT one (and double-apply every undo) cannot be expressed.
+
+The registration is also **branded**: `collab.externalUndo` has type `ExternalUndoOwner`, which [`lexicalForeign`](/api/lexical)'s `register` slot rejects at compile time. So re-routing it under another key does not compile either. Plain registration functions are unaffected — a binding that splits `register` and `externalUndo` (see [`@llui/lexical-loro`](/api/lexical-loro)) type-checks unchanged.
 
 ```bash
 pnpm add @llui/lexical-collab @llui/lexical @lexical/yjs yjs
@@ -19809,6 +19889,32 @@ export type CollabProvider = Provider
 
 ## Interfaces
 
+### `CollabForeignOptions`
+
+The complete set of `lexicalForeign` options a Yjs session requires, as ONE
+object to spread — `lexicalForeign({ …, ...collab.foreign })`.
+Both members are preconditions the host used to have to remember, and both
+fail SILENTLY when forgotten: a surviving `@lexical/history` stack
+double-applies undo across peers, and a boot-time seed duplicates content on
+every peer that mounts. Bundling them with the registration itself is what
+makes the unsafe wiring unrepresentable rather than merely documented.
+
+```typescript
+export interface CollabForeignOptions {
+  /** The binding's registration, in the seam slot whose presence forces the
+   * built-in `@lexical/history` stack off. Branded as an `ExternalUndoOwner`, so
+   * the type system also refuses it in the seam's `register` slot. */
+  readonly externalUndo: ExternalUndoOwner
+  /** The sync-gated bootstrap replaces the seam's boot-time seed.
+   *
+   * `'auto'` is unconditionally wrong for a CRDT session — it seeds the local
+   * document at boot on EVERY peer — so it is folded in here rather than left as
+   * a second thing to remember. A host that genuinely needs to override it can
+   * still spread this fragment first and set `seedMode` after. */
+  readonly seedMode: 'deferred'
+}
+```
+
 ### `CollabUser`
 
 Local presence identity broadcast to peers (name + caret colour).
@@ -19830,10 +19936,23 @@ Live handle returned by {@link yjsCollab}.
 
 ```typescript
 export interface YjsCollab {
-  /** Wire the binding onto an editor; pass as `lexicalForeign({ register })`.
-   * Returns a disposer that tears down every listener, the provider connection,
-   * and the cursors overlay. */
-  register: (editor: LexicalEditor) => () => void
+  /** The seam options this session requires, ready to spread into
+   * `lexicalForeign`. The preferred wiring — see {@link CollabForeignOptions}. */
+  readonly foreign: CollabForeignOptions
+  /** Wire the binding onto an editor. Returns a disposer that tears down every
+   * listener, the provider connection, and the cursors overlay.
+   *
+   * Named for the `lexicalForeign` slot it must occupy: the seam forces the
+   * built-in `@lexical/history` stack off whenever `externalUndo` is set, and
+   * this binding owns undo (a Yjs `UndoManager` scoped to the local origin).
+   * There is deliberately no `register` member — that slot leaves local history
+   * registered, and a CRDT session cannot survive it. This value is BRANDED as
+   * an `ExternalUndoOwner`, so re-routing it into `register` under another name
+   * is a compile error too. Prefer spreading
+   * {@link YjsCollab.foreign}, which also carries `seedMode`; reach for this
+   * directly only when handing the binding to a host that assembles the seam
+   * options itself (e.g. `@llui/markdown-editor`'s `collab` option). */
+  readonly externalUndo: ExternalUndoOwner
   /** The shared Yjs document. */
   readonly doc: YDoc
   /** The network provider. */
@@ -19842,8 +19961,9 @@ export interface YjsCollab {
   connect: () => void
   /** Disconnect the provider. */
   disconnect: () => void
-  /** Release resources this handle OWNS. Call AFTER the `register` disposer has
-   * run. If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
+  /** Release resources this handle OWNS. Call AFTER the disposer returned by
+   * {@link YjsCollab.externalUndo} has run (the seam runs it at unmount).
+   * If `yjsCollab` created the `YDoc` itself (no `doc` was supplied and the
    * provider factory didn't substitute one), the document is `destroy()`d and its
    * `docMap` entry removed. A caller-supplied `doc` is caller-owned and left
    * untouched — you destroy it yourself once every binding over it is gone. */

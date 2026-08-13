@@ -4,6 +4,7 @@ import {
   $getRoot,
   $createParagraphNode,
   $createTextNode,
+  CLEAR_HISTORY_COMMAND,
   TextNode,
   type LexicalEditor,
 } from 'lexical'
@@ -283,6 +284,7 @@ describe('lexicalForeign — external undo owner (collab) forces history off', (
   function mountWith(opts: {
     externalUndo?: (e: LexicalEditor) => () => void
     history?: boolean
+    onReady?: (e: LexicalEditor) => void
   }): ReturnType<typeof mountApp> {
     const def = component<AppState, AppMsg, never>({
       name: 'ExternalUndo',
@@ -295,6 +297,7 @@ describe('lexicalForeign — external undo owner (collab) forces history off', (
           serialize,
           deserialize,
           defaultValue: 'x',
+          ...(opts.onReady ? { onReady: opts.onReady } : {}),
           ...(opts.externalUndo ? { externalUndo: opts.externalUndo } : {}),
           ...(opts.history !== undefined ? { history: opts.history } : {}),
         }),
@@ -319,6 +322,24 @@ describe('lexicalForeign — external undo owner (collab) forces history off', (
     app.dispose()
     app = null
     expect(disposed).toBe(true)
+  })
+
+  it('leaves the built-in @lexical/history stack unregistered', async () => {
+    // `@lexical/history` is the only registrant of CLEAR_HISTORY_COMMAND in this
+    // stack and its handler returns `true`, so a "handled" dispatch means the
+    // built-in stack is live. No `history` option is passed here: the external
+    // owner alone must be enough to turn it off.
+    let editor!: LexicalEditor
+    app = mountWith({ externalUndo: () => () => {}, onReady: (e) => (editor = e) })
+    await wait(10)
+    expect(editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined)).toBe(false)
+  })
+
+  it('control: registers the built-in stack when no external owner is set', async () => {
+    let editor!: LexicalEditor
+    app = mountWith({ onReady: (e) => (editor = e) })
+    await wait(10)
+    expect(editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined)).toBe(true)
   })
 
   it('reports the misconfiguration when externalUndo is combined with history:true', async () => {

@@ -3,7 +3,7 @@
 Opt-in **collaborative editing** for the LLui ↔ Lexical binding. It composes
 [`@lexical/yjs`](https://www.npmjs.com/package/@lexical/yjs)'s CRDT primitives —
 the same wiring the official React `CollaborationPlugin` performs — into a single
-`register(editor)` step you hand to `lexicalForeign` (or, more commonly, to the
+options fragment you spread into `lexicalForeign` (or, more commonly, into the
 markdown editor's `collab` option).
 
 The network **provider is injected**: bring your own
@@ -33,9 +33,19 @@ So `@llui/lexical` exposes the seam options this package plugs into — most
 importantly **`externalUndo`**, which takes ownership of the undo stack AND forces
 the built-in `@lexical/history` stack off in one place, so the two can never both
 run and double-apply an undo — plus `seedMode: 'deferred'` for the sync-gated
-bootstrap. Pass `yjsCollab(...).register` as `externalUndo` (see below); prefer it
-over the older manual `history: false` + `register` pairing, where forgetting the
-`history: false` silently double-applies undo.
+bootstrap.
+
+**You never set either yourself.** `yjsCollab(...)` returns them pre-filled as
+`collab.foreign`, a fragment you spread into `lexicalForeign`; the handle exposes
+its registration only as `externalUndo` and has no `register` member at all. So
+wiring the binding and disabling local history are the same act, and the pairing
+that silently double-applies undo has no spelling.
+
+Renaming your way around that doesn't work either: `collab.externalUndo` is an
+`ExternalUndoOwner`, a branded function type that `lexicalForeign`'s `register`
+slot **rejects at compile time**. Plain registration functions are unaffected —
+`@llui/lexical-loro`'s split `register` + `externalUndo` binding still type-checks
+unchanged.
 
 ## Usage with the markdown editor (recommended)
 
@@ -82,12 +92,11 @@ lexicalForeign({
   serialize,
   deserialize,
   readonly,
-  // `externalUndo` owns the undo stack AND force-disables the built-in
-  // @lexical/history stack — you can't accidentally run both and double-apply
-  // undo. `collab.register` wires the scoped CRDT undo manager + sync-gated
-  // bootstrap; its `(editor) => () => void` shape is exactly `externalUndo`'s.
-  externalUndo: collab.register,
-  seedMode: 'deferred', // collab bootstrap replaces the boot-time seed
+  // Everything a CRDT session needs from the seam, in one spread: the binding
+  // registration in the `externalUndo` slot (which force-disables the built-in
+  // @lexical/history stack) plus `seedMode: 'deferred'` (the sync-gated
+  // bootstrap replaces the boot-time seed). Nothing left to remember.
+  ...collab.foreign,
 })
 ```
 

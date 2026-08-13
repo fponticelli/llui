@@ -103,6 +103,17 @@ function decoratorBridge<Data>(
 ): DecoratorBridge
 ```
 
+### `externalUndoOwner()`
+
+Mark `register` as the owner of the undo/redo stack, so it can only be wired
+into the seam slot that turns the built-in history stack off. The brand is
+inert at runtime — `register` is returned as-is, carrying one extra symbol
+property that nothing reads.
+
+```typescript
+function externalUndoOwner(register: (editor: LexicalEditor) => () => void): ExternalUndoOwner
+```
+
 ### `isMacPlatform()`
 
 Best-effort macOS detection (browser only; defaults to false off-DOM).
@@ -227,6 +238,30 @@ A per-commit subscriber. Runs inside the shared read context.
 
 ```typescript
 export type CommitListener = (facts: CommitFacts) => void
+```
+
+### `ExternalUndoOwner`
+
+A registration function that OWNS the editor's undo/redo stack. Built with
+{@link externalUndoOwner}; accepted by {@link LexicalForeignOptions.externalUndo}
+and REJECTED by {@link LexicalForeignOptions.register}.
+
+```typescript
+export type ExternalUndoOwner = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]: true
+}
+```
+
+### `ForeignRegister`
+
+A registration function that does NOT own undo — the shape of the seam's
+`register` slot. Any plain `(editor) => () => void` satisfies it; only an
+{@link ExternalUndoOwner} does not.
+
+```typescript
+export type ForeignRegister = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]?: never
+}
 ```
 
 ### `SerializedLLuiDecoratorNode`
@@ -446,9 +481,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * CRDT undo manager). When set, the built-in `@lexical/history` stack is
    * **forced off** — so a collab consumer cannot accidentally run both and
    * double-apply undo (the conflict is unrepresentable, not a doc footnote).
-   * Registered after rich-text like {@link ForeignOptions.register}; return
-   * a disposer. Setting `externalUndo` together with `history: true` is a
-   * configuration error and is reported. */
+   * Registered after rich-text like {@link LexicalForeignOptions.register};
+   * return a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported.
+   *
+   * Accepts a plain function (`@llui/lexical-loro` passes one) as well as an
+   * {@link ExternalUndoOwner} — the branded form, which the `register` slot
+   * refuses so an undo owner can never be wired into it by mistake. */
   externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
@@ -465,8 +504,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * plus the seam's {@link ForeignController} — the only sanctioned way for the
    * host to push a value into the document. */
   onReady?: (editor: LexicalEditor, controller: ForeignController) => void
-  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
-  register?: (editor: LexicalEditor) => () => void
+  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer.
+   *
+   * This slot leaves the built-in `@lexical/history` stack registered, so it
+   * REJECTS an {@link ExternalUndoOwner} — a binding that owns undo belongs in
+   * {@link LexicalForeignOptions.externalUndo}, which turns that stack off. Any
+   * plain `(editor) => () => void` is accepted unchanged. */
+  register?: ForeignRegister
   onError?: (error: Error) => void
 }
 ```
@@ -753,6 +797,15 @@ class LLuiDecoratorNode extends DecoratorNode<HTMLElement> {
 ```
 
 ## Constants
+
+### `EXTERNAL_UNDO_BRAND`
+
+Marker key of an {@link ExternalUndoOwner}. Exported only because the phantom
+property below names it — nothing reads it at runtime.
+
+```typescript
+const EXTERNAL_UNDO_BRAND: unique symbol
+```
 
 ### `PROGRAMMATIC_TAG`
 

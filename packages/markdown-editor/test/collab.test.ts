@@ -7,7 +7,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { component, mountApp, text, type Signal } from '@llui/dom'
 import { $getRoot, type LexicalEditor } from 'lexical'
-import { markdownEditor, type CollabFactory, type CollabHooks } from '../src/editor.js'
+import {
+  markdownEditor,
+  type CollabBinding,
+  type CollabFactory,
+  type CollabHooks,
+} from '../src/editor.js'
 import type { CollabStatus } from '../src/state.js'
 
 let container: HTMLElement
@@ -124,6 +129,54 @@ describe('markdownEditor — collab seam', () => {
     app.dispose()
     app = null
     expect(c.disposed()).toBe(true)
+  })
+
+  // `CollabBinding` is a union over the two registration slots, and the two real
+  // bindings fill them differently: `@llui/lexical-collab` exposes ONLY
+  // `externalUndo` (so its wiring cannot leave local history alive — issue #72),
+  // while `@llui/lexical-loro` splits `register` + `externalUndo`. Neither
+  // package is a dependency here, so these fakes stand in for their shapes and
+  // pin that every slot the editor accepts is actually wired and disposed.
+  describe('binding shapes', () => {
+    const wired: string[] = []
+    const disposed: string[] = []
+    /** A registration slot that records when it is wired and when it is torn down. */
+    const slot =
+      (name: string) =>
+      (_editor: LexicalEditor): (() => void) => {
+        wired.push(name)
+        return () => disposed.push(name)
+      }
+
+    beforeEach(() => {
+      wired.length = 0
+      disposed.length = 0
+    })
+
+    /** Mount `binding`, then assert exactly `expected` slots were wired at mount
+     * and torn down at unmount. */
+    function expectSlots(binding: CollabBinding, expected: readonly string[]): void {
+      app = mountApp(container, markdownEditor({ collab: () => binding }))
+      expect([...wired].sort()).toEqual([...expected].sort())
+      app.dispose()
+      app = null
+      expect([...disposed].sort()).toEqual([...expected].sort())
+    }
+
+    it('wires an externalUndo-only binding (the @llui/lexical-collab shape)', () => {
+      expectSlots({ externalUndo: slot('externalUndo') }, ['externalUndo'])
+    })
+
+    it('wires a register-only binding', () => {
+      expectSlots({ register: slot('register') }, ['register'])
+    })
+
+    it('wires both slots of a split binding (the @llui/lexical-loro shape)', () => {
+      expectSlots({ register: slot('register'), externalUndo: slot('externalUndo') }, [
+        'register',
+        'externalUndo',
+      ])
+    })
   })
 
   it('rejects collab + value (the CRDT owns the content, not a signal)', () => {
