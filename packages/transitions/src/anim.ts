@@ -115,7 +115,7 @@ export function waitForEnd(
   })
 }
 
-// ── Per-element run registry (interruption handling) ────────────────
+// ── Per-node run registry (interruption handling) ──────────────────
 
 interface RunEntry {
   token: symbol
@@ -131,12 +131,24 @@ interface RunEntry {
 }
 
 /**
- * A run scope owns one `WeakMap<Element, run>`. Each `transition()` /
- * `collapse()` bundle creates ITS OWN scope, so a phase interrupts only the
- * previous phase of the SAME bundle (enter↔leave on a reused element), while
- * independent bundles composed onto the same element via `mergeTransitions`
- * (e.g. `fade()` opacity + `slide()` transform) coexist without clobbering
- * each other. The map is weak, so detached elements are never retained.
+ * A run scope owns one `WeakMap<Node, run>`. Each bundle creates ITS OWN scope,
+ * so a phase interrupts only the previous phase of the SAME bundle (enter↔leave
+ * on a reused element), while independent bundles composed onto the same element
+ * via `mergeTransitions` (e.g. `fade()` opacity + `slide()` transform) coexist
+ * without clobbering each other. The map is weak, so detached nodes are never
+ * retained.
+ *
+ * This is the package's ONE cancellation mechanism. `transition()`, `collapse()`,
+ * `spring()`, `stagger()` and `flip()` all route through it — cancellation used
+ * to be written four times and shared twice, which is precisely why the #40
+ * interrupt fix landed in half the helpers (#111). A new helper that needs
+ * per-element phase state asks for a scope; it does not hand-roll a `WeakMap`
+ * with a `cancelled` flag. `test/shared-cancellation.test.ts` fails the build if
+ * one comes back.
+ *
+ * Keyed on `Node`, not `Element`: `stagger()` defers whole node lists, comment
+ * anchors included, and losing a non-element node from the registry would leave
+ * its pending phase uncancellable.
  */
 export interface RunScope {
   /**
@@ -144,21 +156,21 @@ export interface RunScope {
    * element's baseline styles for a new run, so the snapshot reflects the
    * restored (clean) state rather than a superseded run's transient values.
    */
-  supersede(el: Element): void
+  supersede(el: Node): void
   /**
    * Register a new run on `el`, returning its token. `rollback` undoes this
    * run's transient mutations and fires if a later run supersedes this one.
    */
-  register(el: Element, rollback: () => void): symbol
+  register(el: Node, rollback: () => void): symbol
   /** True while `token` is still the element's current run (not superseded). */
-  isCurrent(el: Element, token: symbol): boolean
+  isCurrent(el: Node, token: symbol): boolean
   /**
    * True when `el` has an IN-FLIGHT run — i.e. a phase is mid-animation and
    * about to be superseded. Lets a leave detect that it is interrupting an
    * enter. A {@link RunScope.settle}d run is registered but not in flight, so
    * it reads as false.
    */
-  isActive(el: Element): boolean
+  isActive(el: Node): boolean
   /**
    * Mark `token`'s run finished while KEEPING its rollback registered, for a
    * phase that intentionally leaves resting values on the element (a completed
@@ -170,17 +182,17 @@ export interface RunScope {
    * collected with it and the rollback simply never runs. No-op if `token` has
    * already been superseded.
    */
-  settle(el: Element, token: symbol): void
+  settle(el: Node, token: symbol): void
   /**
    * Clear the run entry outright if `token` is still current, WITHOUT firing its
    * rollback. For a phase that already restored the element itself (a completed
    * `enter`), so there is nothing left for a later phase to undo.
    */
-  end(el: Element, token: symbol): void
+  end(el: Node, token: symbol): void
 }
 
 export function createRunScope(): RunScope {
-  const runs = new WeakMap<Element, RunEntry>()
+  const runs = new WeakMap<Node, RunEntry>()
   return {
     supersede(el) {
       const prev = runs.get(el)

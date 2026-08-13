@@ -1,6 +1,6 @@
 import type { TransitionOptions } from '@llui/dom'
 import { asElements } from './style-utils.js'
-import { prefersReducedMotion } from './anim.js'
+import { prefersReducedMotion, createRunScope } from './anim.js'
 
 export interface FlipOptions {
   duration?: number
@@ -108,9 +108,11 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
   const respectReduced = opts.respectReducedMotion !== false
   // Weak: entries vanish with their elements. No strong retention of rows.
   const positions = new WeakMap<Element, Point>()
-  // The live glide per element, so the next pass can cancel it instead of
-  // stacking a second animation on the same transform.
-  const animations = new WeakMap<Element, Animation>()
+  // The live glide per element, held on the package's shared run registry (#111):
+  // the run's rollback IS `animation.cancel()`, so superseding a row's run is
+  // exactly "stop the glide in flight", and `isActive` answers "is this row
+  // mid-glide" for the read phase.
+  const glides = createRunScope()
 
   const captureAfterFrame = (els: HTMLElement[]): void => {
     const run = (): void => {
@@ -153,7 +155,7 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         // Only OUR glide displaces the row from its layout box. A constant
         // author transform is folded into both the stored position and the new
         // rect, so it cancels out and must not be read (or subtracted) here.
-        const glide = animations.has(child) ? currentTranslation(child) : NO_TRANSLATION
+        const glide = glides.isActive(child) ? currentTranslation(child) : NO_TRANSLATION
         measured.push({ child, rect: child.getBoundingClientRect(), glide })
       }
 
@@ -176,14 +178,13 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         if (dx === 0 && dy === 0) continue
         if (typeof child.animate !== 'function') continue
 
-        animations.get(child)?.cancel()
-        animations.set(
-          child,
-          child.animate(
-            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
-            { duration, easing, fill: 'backwards' },
-          ),
+        // Supersede cancels the glide still in flight, if any.
+        glides.supersede(child)
+        const animation = child.animate(
+          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
+          { duration, easing, fill: 'backwards' },
         )
+        glides.register(child, () => animation.cancel())
       }
     },
   }
