@@ -109,6 +109,23 @@ function applySelection(state: ListboxState, value: string): string[] {
   return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
 }
 
+/**
+ * Where the highlight lands after the item list is replaced. It follows its
+ * VALUE when that value survives, and clamps to the last item otherwise — an
+ * index left pointing past the new list rendered a dangling
+ * `aria-activedescendant` (#128).
+ */
+function rehighlight(state: ListboxState, items: string[]): number | null {
+  if (state.highlightedIndex === null) return null
+  if (items.length === 0) return null
+  const highlighted = state.items[state.highlightedIndex]
+  if (highlighted !== undefined) {
+    const moved = items.indexOf(highlighted)
+    if (moved !== -1) return moved
+  }
+  return Math.min(state.highlightedIndex, items.length - 1)
+}
+
 export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, never[]] {
   if (state.disabled) return [state, []]
   switch (msg.type) {
@@ -151,7 +168,16 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
       const disabled = msg.disabled ?? state.disabledItems
       // Preserve only values still in the items list and not disabled
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
-      return [{ ...state, items: msg.items, disabledItems: disabled, value }, []]
+      return [
+        {
+          ...state,
+          items: msg.items,
+          disabledItems: disabled,
+          value,
+          highlightedIndex: rehighlight(state, msg.items),
+        },
+        [],
+      ]
     }
     case 'typeahead': {
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
@@ -218,7 +244,9 @@ export function connect(
   opts: ConnectOptions,
 ): ListboxParts {
   const rootId = `${opts.id}:root`
-  const itemId = (index: number): string => `${opts.id}:item:${index}`
+  // Value-based, like select and combobox: a positional id changes under the
+  // same value the moment the list is filtered or reordered (#128).
+  const itemId = (value: string): string => `${opts.id}:item:${encodeURIComponent(value)}`
 
   return {
     root: {
@@ -232,7 +260,9 @@ export function connect(
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'aria-activedescendant': state.map((s) => {
         const idx = s.highlightedIndex
-        return idx === null ? undefined : itemId(idx)
+        // An index with no item names nothing — never emit a dangling id.
+        const highlighted = idx === null ? undefined : s.items[idx]
+        return highlighted === undefined ? undefined : itemId(highlighted)
       }),
       tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       id: rootId,
@@ -283,7 +313,7 @@ export function connect(
     item: (value: string, index: number): ListboxItemParts => ({
       root: {
         role: 'option',
-        id: itemId(index),
+        id: itemId(value),
         'aria-selected': state.map((s) => s.value.includes(value)),
         'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
         'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),

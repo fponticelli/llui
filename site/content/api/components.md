@@ -1498,7 +1498,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `deselectable`  | `boolean`        |
 | `dir`           | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
+**Messages:** `setValue`, `setItems`, `focusTab`, `activateTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
 
 **Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean, dir?: 'ltr' | 'rtl'`
 

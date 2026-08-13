@@ -20,7 +20,7 @@ export { registerNestedLayer, getNestedLayers, isInNestedLayer } from './nested-
 export { getFocusables, isFocusable } from './focusables.js'
 export type { ElementSource } from './dom.js'
 
-export { attachFloating, flipPlacement } from './floating.js'
+export { attachFloating } from './floating.js'
 export type { FloatingOptions, Placement } from './floating.js'
 
 export {

@@ -97,3 +97,50 @@ describe('listbox.connect', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'typeahead', char: 'a' }))
   })
 })
+
+// Item ids were positional (`l:item:0`), so the same value carried a different
+// id once the list was filtered, and `setItems` never clamped the highlight —
+// leaving `aria-activedescendant` pointing at an id that no longer renders
+// (#128). select and combobox were already fixed the same way.
+describe('listbox item identity is value-based', () => {
+  const p = connect(rootSignal(), vi.fn(), { id: 'lb' })
+
+  it('the id follows the value, not the position', () => {
+    const unfiltered = p.item('c', 2).root.id
+    const filtered = p.item('c', 0).root.id
+    expect(unfiltered).toBe(filtered)
+    expect(unfiltered).toBe(`lb:item:${encodeURIComponent('c')}`)
+  })
+
+  it('escapes values that are not id-safe', () => {
+    expect(p.item('a b/c', 0).root.id).toBe('lb:item:a%20b%2Fc')
+  })
+
+  it('aria-activedescendant names the highlighted VALUE', () => {
+    const s = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 2 }
+    expect(read(p.root['aria-activedescendant'], s)).toBe(p.item('c', 2).root.id)
+  })
+
+  it('aria-activedescendant is undefined when the highlight has no item', () => {
+    const s = { ...init({ items: ['a', 'b'] }), highlightedIndex: 4 }
+    expect(read(p.root['aria-activedescendant'], s)).toBeUndefined()
+  })
+
+  it('setItems keeps the highlight on its value when the value survives', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 2 }
+    const [s] = update(s0, { type: 'setItems', items: ['x', 'c'] })
+    expect(s.highlightedIndex).toBe(1)
+  })
+
+  it('setItems clamps a highlight that outlived its item', () => {
+    const s0 = { ...init({ items: ['a', 'b', 'c', 'd', 'e'] }), highlightedIndex: 4 }
+    const [s] = update(s0, { type: 'setItems', items: ['a', 'b'] })
+    expect(s.highlightedIndex).toBe(1)
+  })
+
+  it('setItems drops the highlight when there is nothing left to highlight', () => {
+    const s0 = { ...init({ items: ['a', 'b'] }), highlightedIndex: 1 }
+    const [s] = update(s0, { type: 'setItems', items: [] })
+    expect(s.highlightedIndex).toBeNull()
+  })
+})

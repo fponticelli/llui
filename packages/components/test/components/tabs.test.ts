@@ -318,14 +318,57 @@ describe('tabs.connect', () => {
 
   it('deselectable: clicking active tab clears value', () => {
     const s0 = init({ items: ['a', 'b'], value: 'a', deselectable: true })
-    const [s1] = update(s0, { type: 'focusTab', value: 'a' })
+    const [s1] = update(s0, { type: 'activateTab', value: 'a' })
     expect(s1.value).toBe('')
   })
 
   it('non-deselectable (default): clicking active tab keeps it', () => {
     const s0 = init({ items: ['a', 'b'], value: 'a' })
-    const [s1] = update(s0, { type: 'focusTab', value: 'a' })
+    const [s1] = update(s0, { type: 'activateTab', value: 'a' })
     expect(s1.value).toBe('a')
+  })
+
+  // A mouse press on a <button> fires focus and THEN click. While the toggle
+  // lived on `focusTab` — sent by both handlers — those two messages cancelled
+  // out and a single click was a net no-op (#128).
+  it('deselectable: focus does NOT toggle, so one real click deselects', () => {
+    const s0 = init({ items: ['a', 'b'], value: 'a', deselectable: true })
+    const [afterFocus] = update(s0, { type: 'focusTab', value: 'a' })
+    expect(afterFocus.value).toBe('a')
+    expect(afterFocus.focused).toBe('a')
+    const [afterClick] = update(afterFocus, { type: 'activateTab', value: 'a' })
+    expect(afterClick.value).toBe('')
+  })
+
+  it('deselectable: clicking a deselected tab selects it again', () => {
+    const s0 = { ...init({ items: ['a', 'b'], value: '', deselectable: true }), focused: 'a' }
+    const [s1] = update(s0, { type: 'activateTab', value: 'a' })
+    expect(s1.value).toBe('a')
+  })
+
+  it('activateTab ignores disabled items and always tracks focus', () => {
+    const s0 = init({ items: ['a', 'b'], value: 'a', disabledItems: ['b'] })
+    const [s1] = update(s0, { type: 'activateTab', value: 'b' })
+    expect(s1).toBe(s0)
+    const [s2] = update(s0, { type: 'activateTab', value: 'a' })
+    expect(s2.focused).toBe('a')
+  })
+
+  it('activateFocused deselects the active tab when deselectable', () => {
+    const s0 = { ...init({ items: ['a', 'b'], value: 'a', deselectable: true }), focused: 'a' }
+    const [s1] = update(s0, { type: 'activateFocused' })
+    expect(s1.value).toBe('')
+    const [s2] = update(s1, { type: 'activateFocused' })
+    expect(s2.value).toBe('a')
+  })
+
+  it('trigger onClick dispatches activateTab and onFocus dispatches focusTab', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'x' })
+    p.item('a').trigger.onFocus(new FocusEvent('focus'))
+    expect(send).toHaveBeenLastCalledWith({ type: 'focusTab', value: 'a' })
+    p.item('a').trigger.onClick(new MouseEvent('click'))
+    expect(send).toHaveBeenLastCalledWith({ type: 'activateTab', value: 'a' })
   })
 
   it('loopFocus: false stops at last item', () => {

@@ -195,3 +195,80 @@ describe('image-cropper.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'reset' })
   })
 })
+
+// The ratio lock used to be broken by the clamp that followed it: the height
+// was derived from the ratio and then each axis was clamped INDEPENDENTLY, so
+// an over-tall crop was squashed back to the image's own ratio (#128).
+describe('aspect-ratio lock survives clamping', () => {
+  const ratioOf = (c: { width: number; height: number }): number => c.width / c.height
+
+  it('setAspectRatio on a full-size crop scales down instead of squashing', () => {
+    const s0 = init({
+      image: { width: 100, height: 100 },
+      crop: { x: 0, y: 0, width: 100, height: 100 },
+    })
+    const [s] = update(s0, { type: 'setAspectRatio', ratio: 0.5 })
+    expect(ratioOf(s.crop)).toBeCloseTo(0.5)
+    expect(s.crop.width).toBeLessThanOrEqual(100)
+    expect(s.crop.height).toBeLessThanOrEqual(100)
+  })
+
+  it('setAspectRatio wider than the image fits inside it, on ratio', () => {
+    const s0 = init({
+      image: { width: 100, height: 100 },
+      crop: { x: 0, y: 0, width: 100, height: 100 },
+    })
+    const [s] = update(s0, { type: 'setAspectRatio', ratio: 4 })
+    expect(ratioOf(s.crop)).toBeCloseTo(4)
+    expect(s.crop.width).toBeLessThanOrEqual(100)
+    expect(s.crop.height).toBeLessThanOrEqual(100)
+  })
+
+  it('setCrop off-ratio is corrected to the locked ratio', () => {
+    const s0 = init({
+      image: { width: 400, height: 400 },
+      crop: { x: 0, y: 0, width: 100, height: 50 },
+      aspectRatio: 2,
+    })
+    const [s] = update(s0, { type: 'setCrop', crop: { x: 10, y: 10, width: 200, height: 200 } })
+    expect(ratioOf(s.crop)).toBeCloseTo(2)
+  })
+
+  it('applyResize keeps the ratio when the minSize floor bites', () => {
+    const s0 = {
+      ...init({
+        image: { width: 400, height: 400 },
+        crop: { x: 0, y: 0, width: 200, height: 100 },
+        aspectRatio: 2,
+        minSize: 50,
+      }),
+      resizing: 'e' as const,
+    } as ImageCropperState
+    // Drag far past the floor: width wants 0, so both axes hit the floor —
+    // previously that clamped each axis to 50 and produced a 1:1 crop.
+    const [s] = update(s0, { type: 'resizeMove', dx: -400, dy: 0 })
+    expect(ratioOf(s.crop)).toBeCloseTo(2)
+    expect(Math.min(s.crop.width, s.crop.height)).toBeGreaterThanOrEqual(50)
+  })
+
+  it('applyResize keeps the ratio when the crop is dragged past the image edge', () => {
+    const s0 = {
+      ...init({
+        image: { width: 200, height: 200 },
+        crop: { x: 0, y: 0, width: 100, height: 50 },
+        aspectRatio: 2,
+      }),
+      resizing: 'se' as const,
+    } as ImageCropperState
+    const [s] = update(s0, { type: 'resizeMove', dx: 400, dy: 0 })
+    expect(ratioOf(s.crop)).toBeCloseTo(2)
+    expect(s.crop.x + s.crop.width).toBeLessThanOrEqual(200)
+    expect(s.crop.y + s.crop.height).toBeLessThanOrEqual(200)
+  })
+
+  it('free-form crops still clamp per axis', () => {
+    const s0 = init({ image: { width: 100, height: 100 } })
+    const [s] = update(s0, { type: 'setCrop', crop: { x: 0, y: 0, width: 500, height: 20 } })
+    expect(s.crop).toEqual({ x: 0, y: 0, width: 100, height: 20 })
+  })
+})

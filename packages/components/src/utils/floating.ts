@@ -1,6 +1,7 @@
 import {
   computePosition,
   autoUpdate,
+  platform as domPlatform,
   offset as offsetMw,
   flip as flipMw,
   shift as shiftMw,
@@ -23,20 +24,21 @@ export type { Placement }
 import type { TextDirection } from './direction.js'
 
 /**
- * Flip the logical `-start`/`-end` suffix of a placement under rtl so that
- * `*-start` resolves to the inline-start (visually right) edge and `*-end` to
- * the inline-end (visually left) edge. Physical placements (no suffix, or the
- * `left`/`right` sides) and ltr are returned unchanged.
+ * The platform floating-ui positions against, with `isRTL` answered by the
+ * caller's declared direction instead of the floating element's computed style.
+ *
+ * `@floating-ui/core` already negates the INLINE-axis alignment when `isRTL`
+ * is true, so a `*-start` placement resolves to the inline-start edge on its
+ * own. We used to rewrite `bottom-start` → `bottom-end` before handing the
+ * placement over; under `<html dir="rtl">` a portaled overlay computes to rtl,
+ * so BOTH negations applied and cancelled out, landing the overlay exactly
+ * where LTR would (#128). Declaring the direction here keeps it to one
+ * negation, and keeps it on the inline axis — the old rewrite also flipped
+ * `left-start`/`right-start`, whose alignment runs down the BLOCK axis and is
+ * not mirrored by reading direction at all.
  */
-export function flipPlacement(placement: Placement, dir: TextDirection): Placement {
-  if (dir !== 'rtl') return placement
-  if (placement.endsWith('-start')) {
-    return `${placement.slice(0, -'-start'.length)}-end` as Placement
-  }
-  if (placement.endsWith('-end')) {
-    return `${placement.slice(0, -'-end'.length)}-start` as Placement
-  }
-  return placement
+function directedPlatform(dir: TextDirection): typeof domPlatform {
+  return { ...domPlatform, isRTL: () => dir === 'rtl' }
 }
 
 export interface FloatingOptions {
@@ -53,9 +55,11 @@ export interface FloatingOptions {
   /** Shift along axis to stay in view (default: padding 8 unless false). */
   shift?: boolean | { padding?: number }
   /**
-   * Reading direction. Under `'rtl'`, logical `*-start`/`*-end` placements flip
-   * so they track the inline-start/inline-end edges. Default `'ltr'` — callers
-   * that omit it behave exactly as before.
+   * Reading direction. Under `'rtl'`, logical `*-start`/`*-end` placements
+   * track the inline-start/inline-end edges. When given it is AUTHORITATIVE —
+   * it overrides the direction the floating element happens to compute to,
+   * which for a portaled overlay is the direction of wherever it landed.
+   * Omit it to leave that decision to the page, as floating-ui does by default.
    */
   dir?: TextDirection
   /** Optional arrow element to position. */
@@ -81,12 +85,12 @@ export function attachFloating(opts: FloatingOptions): () => void {
     offset = 0,
     flip = true,
     shift = true,
-    dir = 'ltr',
+    dir,
     arrow,
     onUpdate,
   } = opts
 
-  const resolvedPlacement = flipPlacement(placement, dir)
+  const platform = dir === undefined ? undefined : directedPlatform(dir)
 
   const middleware: Middleware[] = []
   if (offset > 0) middleware.push(offsetMw(offset))
@@ -102,25 +106,27 @@ export function attachFloating(opts: FloatingOptions): () => void {
   floating.style.left = '0'
 
   const update = (): void => {
-    void computePosition(anchor, floating, { placement: resolvedPlacement, middleware }).then(
-      ({ x, y, placement: actual, middlewareData }) => {
-        floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
-        floating.dataset.placement = actual
-        if (arrow && middlewareData.arrow) {
-          const { x: ax, y: ay } = middlewareData.arrow
-          if (ax != null) arrow.style.left = `${ax}px`
-          if (ay != null) arrow.style.top = `${ay}px`
-        }
-        onUpdate?.({
-          x,
-          y,
-          placement: actual,
-          arrow: middlewareData.arrow
-            ? { x: middlewareData.arrow.x, y: middlewareData.arrow.y }
-            : undefined,
-        })
-      },
-    )
+    void computePosition(anchor, floating, {
+      placement,
+      middleware,
+      ...(platform ? { platform } : {}),
+    }).then(({ x, y, placement: actual, middlewareData }) => {
+      floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
+      floating.dataset.placement = actual
+      if (arrow && middlewareData.arrow) {
+        const { x: ax, y: ay } = middlewareData.arrow
+        if (ax != null) arrow.style.left = `${ax}px`
+        if (ay != null) arrow.style.top = `${ay}px`
+      }
+      onUpdate?.({
+        x,
+        y,
+        placement: actual,
+        arrow: middlewareData.arrow
+          ? { x: middlewareData.arrow.x, y: middlewareData.arrow.y }
+          : undefined,
+      })
+    })
   }
 
   return autoUpdate(anchor, floating, update)

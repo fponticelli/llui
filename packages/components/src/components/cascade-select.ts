@@ -60,7 +60,11 @@ export function update(
   state: CascadeSelectState,
   msg: CascadeSelectMsg,
 ): [CascadeSelectState, never[]] {
-  if (state.disabled && msg.type !== 'clear') return [state, []]
+  // `setLevels` is the HOST's data write and always lands; `setValue` and
+  // `clear` are the user's actions and are gated. The test used to be
+  // inverted — a disabled instance accepted `clear` and could never be given
+  // new data (#128).
+  if (state.disabled && msg.type !== 'setLevels') return [state, []]
   switch (msg.type) {
     case 'setLevels': {
       const values = new Array<string | null>(msg.levels.length).fill(null)
