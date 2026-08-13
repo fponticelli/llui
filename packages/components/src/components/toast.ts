@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { presenceEndHandler } from '../utils/presence-end.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -358,7 +358,6 @@ export function connect(
       // rebuilds this row if `id` changes.
       const toast = toastSig.peek()
       const live = politeness(toast)
-      const onEnd = (): void => send({ type: 'animationEnd', id: toast.id })
       return {
         root: {
           role: live === 'assertive' ? 'alert' : 'status',
@@ -374,8 +373,7 @@ export function connect(
           onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
           onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
           onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          onAnimationEnd: presenceEndHandler(onEnd),
-          onTransitionEnd: presenceEndHandler(onEnd),
+          ...presenceEndProps(send, { type: 'animationEnd', id: toast.id }),
         },
         title: {
           id: `${toast.id}:title`,

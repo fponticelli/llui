@@ -8,7 +8,11 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { focusRovingItem } from '../utils/roving.js'
-import { membershipSet } from '../utils/derive.js'
+import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
+
+/** A tree row is never "disabled" — the whole visible list is navigable. */
+const NO_DISABLED: readonly string[] = []
 
 /**
  * Tree view — hierarchical list with expand/collapse. Items are identified
@@ -382,7 +386,15 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       return [{ ...state, focused: state.visibleItems[state.visibleItems.length - 1] ?? null }, []]
     case 'setVisibleItems':
       return [
-        { ...state, visibleItems: msg.ids, visibleLabels: msg.labels ?? state.visibleLabels },
+        {
+          ...state,
+          visibleItems: msg.ids,
+          visibleLabels: msg.labels ?? state.visibleLabels,
+          // Collapsing a branch (or filtering) can drop the focused row. The
+          // roving tabindex is keyed off `focused`, so a dangling one left
+          // EVERY row at -1 and the tree unreachable by Tab (#126).
+          focused: pruneToEnabled(msg.ids, NO_DISABLED, state.focused),
+        },
         [],
       ]
     case 'arrowLeftFrom': {
@@ -649,6 +661,11 @@ export function connect(
   const indeterminate = membershipSet<string>()
   const loading = membershipSet<string>()
   const loadFailed = membershipSet<string>()
+  // The tree's single tab stop: the focused row, or the first visible one when
+  // nothing is focused (or what was focused is gone). Answered once per update.
+  const tabStop = deriveOnce((visibleItems: string[], focused: string | null) =>
+    rovingTabStop(visibleItems, NO_DISABLED, focused),
+  )
 
   return {
     root: {
@@ -682,7 +699,7 @@ export function connect(
         ),
         'aria-level': depth + 1,
         'aria-busy': state.map((s) => (loading(s.loading).has(id) ? 'true' : undefined)),
-        tabindex: state.map((s) => (s.focused === id ? 0 : -1)),
+        tabindex: state.map((s) => (tabStop(s.visibleItems, s.focused) === id ? 0 : -1)),
         'data-scope': 'tree-view',
         'data-part': 'item',
         'data-value': id,

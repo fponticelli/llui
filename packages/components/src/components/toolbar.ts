@@ -1,6 +1,15 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
+import { deriveOnce, membershipSet } from '../utils/derive.js'
+import {
+  firstEnabled,
+  isEnabledItem,
+  lastEnabled,
+  nextEnabled,
+  pruneToEnabled,
+  rovingTabStop,
+} from '../utils/list-navigation.js'
 
 /**
  * Toolbar — a roving-tabindex container for a set of controls (buttons,
@@ -58,53 +67,18 @@ export function init(opts: ToolbarInit = {}): ToolbarState {
   }
 }
 
-function nextEnabled(
-  items: string[],
-  disabled: string[],
-  from: string,
-  delta: 1 | -1,
-  loop: boolean,
-): string | null {
-  if (items.length === 0) return null
-  const idx = items.indexOf(from)
-  if (idx === -1) return null
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const raw = idx + delta * i
-    if (!loop && (raw < 0 || raw >= n)) return null
-    const next = items[((raw % n) + n) % n]!
-    if (!disabled.includes(next)) return next
-  }
-  return null
-}
-
-function firstEnabled(items: string[], disabled: string[]): string | null {
-  for (const v of items) if (!disabled.includes(v)) return v
-  return null
-}
-
-function lastEnabled(items: string[], disabled: string[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (!disabled.includes(v)) return v
-  }
-  return null
-}
-
 export function update(state: ToolbarState, msg: ToolbarMsg): [ToolbarState, never[]] {
   if (state.disabled && msg.type !== 'setItems') return [state, []]
   switch (msg.type) {
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
-      const focused =
-        state.focused && msg.items.includes(state.focused) && !disabled.includes(state.focused)
-          ? state.focused
-          : null
+      // A `focused` the new list no longer holds must go, or the roving
+      // tabindex has no owner and Tab skips the whole toolbar.
+      const focused = pruneToEnabled(msg.items, disabled, state.focused)
       return [{ ...state, items: msg.items, disabledItems: disabled, focused }, []]
     }
     case 'setFocused':
-      if (!state.items.includes(msg.value) || state.disabledItems.includes(msg.value))
-        return [state, []]
+      if (!isEnabledItem(state.items, state.disabledItems, msg.value)) return [state, []]
       return [{ ...state, focused: msg.value }, []]
     case 'focusNext': {
       const to = nextEnabled(state.items, state.disabledItems, msg.from, 1, state.loopFocus)
@@ -187,13 +161,16 @@ export function connect(
 
   // The toolbar is a single tab stop: the focused item (or, if none is
   // focused, the first enabled item) carries tabindex 0; every other item is
-  // -1 and is reached only via arrow keys.
+  // -1 and is reached only via arrow keys. Answered ONCE per update — asking
+  // per item made one item's tabindex cost a scan of the whole list (#124).
+  const disabledItems = membershipSet<string>()
+  const stopValue = deriveOnce((items: string[], disabled: string[], focused: string | null) =>
+    rovingTabStop(items, disabled, focused),
+  )
   const tabStop = (value: string): Signal<number> =>
     state.map((s) => {
-      if (s.disabled || s.disabledItems.includes(value)) return -1
-      if (s.focused === value) return 0
-      if (s.focused === null && firstEnabled(s.items, s.disabledItems) === value) return 0
-      return -1
+      if (s.disabled || disabledItems(s.disabledItems).has(value)) return -1
+      return stopValue(s.items, s.disabledItems, s.focused) === value ? 0 : -1
     })
 
   return {
@@ -223,10 +200,10 @@ export function connect(
         'data-part': 'item',
         'data-value': value,
         'data-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? '' : undefined,
+          disabledItems(s.disabledItems).has(value) || s.disabled ? '' : undefined,
         ),
         'aria-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? 'true' : undefined,
+          disabledItems(s.disabledItems).has(value) || s.disabled ? 'true' : undefined,
         ),
         tabindex: tabStop(value),
         onFocus: tagSend(send, ['setFocused'], () => send({ type: 'setFocused', value })),

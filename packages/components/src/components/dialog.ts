@@ -3,8 +3,9 @@ import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
-import { presenceEndHandler } from '../utils/presence-end.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
+import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
 
 /**
  * Dialog — modal / non-modal overlay. Ties together focus-trap, dismissable,
@@ -79,15 +80,13 @@ export function init(opts: DialogInit = {}): DialogState {
   }
 }
 
-function openTo(state: DialogState): DialogState {
-  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
-  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
-}
-
-function closeTo(state: DialogState): DialogState {
-  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
-  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
-}
+// The open/close/end triple is the SHARED presence machine (`presence.ts`) —
+// five overlays used to carry a byte-identical private copy (#126).
+// A partial slice without `skipAnimations` counts as animated, as before.
+const openTo = (state: DialogState): DialogState =>
+  presenceOpen(state, state.skipAnimations === true)
+const closeTo = (state: DialogState): DialogState =>
+  presenceClose(state, state.skipAnimations === true)
 
 export function update(state: DialogState, msg: DialogMsg): [DialogState, never[]] {
   switch (msg.type) {
@@ -101,9 +100,7 @@ export function update(state: DialogState, msg: DialogMsg): [DialogState, never[
       return [msg.open ? openTo(state) : closeTo(state), []]
     case 'animationEnd':
     case 'transitionEnd':
-      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
-      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
-      return [state, []]
+      return [presenceEnd(state), []]
   }
 }
 
@@ -245,8 +242,7 @@ export function connect(
       'data-state': state.map(statusOf),
       'data-scope': 'dialog',
       'data-part': 'content',
-      onAnimationEnd: presenceEndHandler(() => send({ type: 'animationEnd' })),
-      onTransitionEnd: presenceEndHandler(() => send({ type: 'transitionEnd' })),
+      ...presenceEndProps(send, { type: 'animationEnd' }, { type: 'transitionEnd' }),
     },
     title: {
       id: titleId,

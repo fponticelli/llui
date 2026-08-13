@@ -10,6 +10,12 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { indexMap, membershipSet } from '../utils/derive.js'
+import {
+  applySelection,
+  firstEnabledIndex,
+  lastEnabledIndex,
+  nextEnabledIndex,
+} from '../utils/list-navigation.js'
 
 /**
  * Select — a trigger button that opens a listbox dropdown. Value(s) are
@@ -112,43 +118,6 @@ export function init(opts: SelectInit = {}): SelectState {
   }
 }
 
-function firstEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = 0; i < items.length; i++) {
-    if (!disabled.includes(items[i]!)) return i
-  }
-  return null
-}
-
-function lastEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (!disabled.includes(items[i]!)) return i
-  }
-  return null
-}
-
-function nextEnabledIndex(
-  items: string[],
-  disabled: string[],
-  from: number | null,
-  delta: 1 | -1,
-): number | null {
-  if (items.length === 0) return null
-  const start = from === null ? (delta === 1 ? -1 : items.length) : from
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const idx = (start + delta * i + n * n) % n
-    if (!disabled.includes(items[idx]!)) return idx
-  }
-  return null
-}
-
-function applySelection(state: SelectState, value: string): string[] {
-  if (state.disabledItems.includes(value)) return state.value
-  if (state.selectionMode === 'single') return [value]
-  const isActive = state.value.includes(value)
-  return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
-}
-
 /** The value at `idx` in `items`, or null when `idx` is null/out of bounds. */
 function valueAt(items: string[], idx: number | null): string | null {
   return idx === null ? null : (items[idx] ?? null)
@@ -189,7 +158,10 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
         ? [{ ...state, open: false, highlightedValue: null }, []]
         : [{ ...state, open: true, highlightedValue: highlightOnOpen(state) }, []]
     case 'selectOption': {
-      const value = applySelection(state, msg.value)
+      const value = applySelection(state.value, msg.value, {
+        mode: state.selectionMode,
+        disabled: state.disabledItems,
+      })
       // Single mode closes on selection; multi stays open
       const open = state.selectionMode === 'single' ? false : state.open
       const highlightedValue = open ? state.highlightedValue : null
@@ -261,7 +233,10 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
     case 'selectHighlighted': {
       const v = state.highlightedValue
       if (v === null || !state.items.includes(v)) return [state, []]
-      const value = applySelection(state, v)
+      const value = applySelection(state.value, v, {
+        mode: state.selectionMode,
+        disabled: state.disabledItems,
+      })
       const open = state.selectionMode === 'single' ? false : state.open
       return [{ ...state, value, open, highlightedValue: open ? state.highlightedValue : null }, []]
     }

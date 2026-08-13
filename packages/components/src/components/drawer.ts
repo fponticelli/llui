@@ -4,6 +4,8 @@ import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
+import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
  * Drawer — a panel that slides in from a screen edge. Structurally
@@ -50,15 +52,12 @@ export function init(opts: DrawerInit = {}): DrawerState {
   }
 }
 
-function openTo(state: DrawerState): DrawerState {
-  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
-  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
-}
-
-function closeTo(state: DrawerState): DrawerState {
-  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
-  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
-}
+// The open/close/end triple is the SHARED presence machine (`presence.ts`) —
+// five overlays used to carry a byte-identical private copy (#126).
+const openTo = (state: DrawerState): DrawerState =>
+  presenceOpen(state, state.skipAnimations === true)
+const closeTo = (state: DrawerState): DrawerState =>
+  presenceClose(state, state.skipAnimations === true)
 
 export function update(state: DrawerState, msg: DrawerMsg): [DrawerState, never[]] {
   switch (msg.type) {
@@ -72,9 +71,7 @@ export function update(state: DrawerState, msg: DrawerMsg): [DrawerState, never[
       return [msg.open ? openTo(state) : closeTo(state), []]
     case 'animationEnd':
     case 'transitionEnd':
-      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
-      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
-      return [state, []]
+      return [presenceEnd(state), []]
   }
 }
 
@@ -211,8 +208,7 @@ export function connect(
       'data-scope': 'drawer',
       'data-part': 'content',
       'data-side': side,
-      onAnimationEnd: () => send({ type: 'animationEnd' }),
-      onTransitionEnd: () => send({ type: 'transitionEnd' }),
+      ...presenceEndProps(send, { type: 'animationEnd' }, { type: 'transitionEnd' }),
     },
     title: {
       id: titleId,

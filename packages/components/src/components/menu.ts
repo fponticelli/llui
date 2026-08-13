@@ -3,7 +3,7 @@ import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
-import { presenceEndHandler } from '../utils/presence-end.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   type MenuNode,
@@ -331,16 +331,7 @@ export function connect(
       'data-scope': 'menu',
       'data-part': 'content',
       onKeyDown: parts.rootKeyNav,
-      onAnimationEnd: tagSend(
-        send,
-        ['animationEnd'],
-        presenceEndHandler(() => send({ type: 'animationEnd' })),
-      ),
-      onTransitionEnd: tagSend(
-        send,
-        ['animationEnd'],
-        presenceEndHandler(() => send({ type: 'animationEnd' })),
-      ),
+      ...presenceEndProps(send, { type: 'animationEnd' }),
     },
     item: parts.item,
     checkboxItem: parts.checkboxItem,

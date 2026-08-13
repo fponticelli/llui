@@ -7,6 +7,12 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { membershipSet } from '../utils/derive.js'
+import {
+  applySelection,
+  firstEnabledIndex,
+  lastEnabledIndex,
+  nextEnabledIndex,
+} from '../utils/list-navigation.js'
 
 /**
  * Listbox — a list of selectable options. Supports single and multiple
@@ -72,49 +78,20 @@ export function init(opts: ListboxInit = {}): ListboxState {
   }
 }
 
-function nextEnabledIndex(
-  items: string[],
-  disabled: string[],
-  from: number | null,
-  delta: 1 | -1,
-): number | null {
-  if (items.length === 0) return null
-  const start = from === null ? (delta === 1 ? -1 : items.length) : from
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const idx = (start + delta * i + n * n) % n
-    if (!disabled.includes(items[idx]!)) return idx
-  }
-  return null
-}
-
-function firstEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = 0; i < items.length; i++) {
-    if (!disabled.includes(items[i]!)) return i
-  }
-  return null
-}
-
-function lastEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (!disabled.includes(items[i]!)) return i
-  }
-  return null
-}
-
-function applySelection(state: ListboxState, value: string): string[] {
-  if (state.disabledItems.includes(value)) return state.value
-  if (state.selectionMode === 'single') return [value]
-  // multiple
-  const isActive = state.value.includes(value)
-  return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
-}
-
 export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, never[]] {
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'select':
-      return [{ ...state, value: applySelection(state, msg.value) }, []]
+      return [
+        {
+          ...state,
+          value: applySelection(state.value, msg.value, {
+            mode: state.selectionMode,
+            disabled: state.disabledItems,
+          }),
+        },
+        [],
+      ]
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
     case 'clear':
@@ -146,7 +123,16 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
       if (state.highlightedIndex === null) return [state, []]
       const v = state.items[state.highlightedIndex]
       if (v === undefined) return [state, []]
-      return [{ ...state, value: applySelection(state, v) }, []]
+      return [
+        {
+          ...state,
+          value: applySelection(state.value, v, {
+            mode: state.selectionMode,
+            disabled: state.disabledItems,
+          }),
+        },
+        [],
+      ]
     }
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems

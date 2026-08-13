@@ -1,4 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
+import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
  * Presence — track mount/unmount lifecycle with exit-delay support.
@@ -75,6 +76,50 @@ export function update(state: PresenceState, msg: PresenceMsg): [PresenceState, 
   }
 }
 
+/**
+ * The presence slice an OVERLAY carries alongside its own state: the logical
+ * `open` flag plus the animation phase layered over it.
+ *
+ * Dialog, drawer, popover, hover-card and tooltip each had a byte-identical
+ * private copy of the three transitions below (#126). The machines agreed —
+ * their HANDLERS did not — but five copies is five chances to drift, so the
+ * transitions live here and every overlay reduces through them.
+ */
+export interface PresenceOverlay {
+  open: boolean
+  /** Optional because a partial `{ open }` bridge slice may omit it; an absent
+   * status is neither opening nor closing, so it only ever gets WRITTEN. */
+  status?: PresenceStatus
+}
+
+/**
+ * Move toward open. `skipAnimations` lands on 'open' immediately; otherwise the
+ * overlay sits in 'opening' until an end event calls {@link presenceEnd}.
+ * Already-open state comes back by REFERENCE so a redundant open is a no-op for
+ * the reference-equality reconciler.
+ */
+export function presenceOpen<S extends PresenceOverlay>(state: S, skipAnimations: boolean): S {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: skipAnimations ? 'open' : 'opening' }
+}
+
+/** Move toward closed — the mirror of {@link presenceOpen}. */
+export function presenceClose<S extends PresenceOverlay>(state: S, skipAnimations: boolean): S {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: skipAnimations ? 'closed' : 'closing' }
+}
+
+/**
+ * Advance past the enter/exit animation. Only 'opening'/'closing' move; any
+ * other status is returned unchanged, so a stray end event cannot reopen or
+ * unmount anything.
+ */
+export function presenceEnd<S extends PresenceOverlay>(state: S): S {
+  if (state.status === 'opening') return { ...state, status: 'open' }
+  if (state.status === 'closing') return { ...state, status: 'closed', open: false }
+  return state
+}
+
 /** Whether the element should be in the DOM (mounted). */
 export function isMounted(state: PresenceState): boolean {
   if (!state.unmountOnExit) return true
@@ -104,15 +149,13 @@ export interface PresenceParts {
 /** Signal-surface connect: takes the component's `presence` state slice as a
  * Signal and returns reactive (handle-based) props for spreading into a view. */
 export function connect(state: Signal<PresenceState>, send: Send<PresenceMsg>): PresenceParts {
-  const onEnd = (): void => send({ type: 'animationEnd' })
   return {
     root: {
       'data-scope': 'presence',
       'data-part': 'root',
       'data-state': state.map((s) => s.status),
       hidden: state.map((s) => s.status === 'closed' && !s.unmountOnExit),
-      onAnimationEnd: onEnd,
-      onTransitionEnd: onEnd,
+      ...presenceEndProps(send, { type: 'animationEnd' }),
     },
   }
 }

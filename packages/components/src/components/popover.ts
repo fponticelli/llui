@@ -4,8 +4,9 @@ import { LocaleContext } from '../locale.js'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
-import { presenceEndHandler } from '../utils/presence-end.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
+import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
 
 /**
  * Popover — click-triggered, non-modal floating overlay anchored to its
@@ -52,15 +53,12 @@ export function init(opts: PopoverInit = {}): PopoverState {
   }
 }
 
-function openTo(state: PopoverState): PopoverState {
-  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
-  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
-}
-
-function closeTo(state: PopoverState): PopoverState {
-  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
-  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
-}
+// The open/close/end triple is the SHARED presence machine (`presence.ts`) —
+// five overlays used to carry a byte-identical private copy (#126).
+const openTo = (state: PopoverState): PopoverState =>
+  presenceOpen(state, state.skipAnimations === true)
+const closeTo = (state: PopoverState): PopoverState =>
+  presenceClose(state, state.skipAnimations === true)
 
 export function update(state: PopoverState, msg: PopoverMsg): [PopoverState, never[]] {
   switch (msg.type) {
@@ -74,9 +72,7 @@ export function update(state: PopoverState, msg: PopoverMsg): [PopoverState, nev
       return [msg.open ? openTo(state) : closeTo(state), []]
     case 'animationEnd':
     case 'transitionEnd':
-      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
-      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
-      return [state, []]
+      return [presenceEnd(state), []]
   }
 }
 
@@ -184,8 +180,7 @@ export function connect(
       'data-state': state.map((st) => st.status),
       'data-scope': 'popover',
       'data-part': 'content',
-      onAnimationEnd: presenceEndHandler(() => send({ type: 'animationEnd' })),
-      onTransitionEnd: presenceEndHandler(() => send({ type: 'transitionEnd' })),
+      ...presenceEndProps(send, { type: 'animationEnd' }, { type: 'transitionEnd' }),
     },
     title: {
       id: titleId,

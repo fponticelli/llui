@@ -7,6 +7,7 @@ import * as treeView from '../../src/components/tree-view'
 import * as radioGroup from '../../src/components/radio-group'
 import * as toggleGroup from '../../src/components/toggle-group'
 import * as menu from '../../src/components/menu'
+import * as toolbar from '../../src/components/toolbar'
 import { rootSignal } from '../_signal'
 
 /**
@@ -190,6 +191,23 @@ describe('per-item lookups are O(1) in the list length (#124)', () => {
         disabledItems: counted([items[1]!], counter),
       }
       const parts = toggleGroup.connect(rootSignal(), vi.fn())
+      return {
+        state,
+        read: () => {
+          for (const v of items) readAll(parts.item(v), state)
+        },
+      }
+    })
+  })
+
+  it('toolbar', () => {
+    expectConstantScans((items, counter) => {
+      const state: toolbar.ToolbarState = {
+        ...toolbar.init({ items }),
+        items: counted(items, counter),
+        disabledItems: counted([items[1]!], counter),
+      }
+      const parts = toolbar.connect(rootSignal(), vi.fn(), { id: 'tb' })
       return {
         state,
         read: () => {

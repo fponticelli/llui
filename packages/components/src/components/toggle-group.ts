@@ -1,7 +1,8 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { firstEnabled, nextEnabled, focusRovingItem } from '../utils/roving.js'
+import { focusRovingItem } from '../utils/roving.js'
+import { nextEnabled, pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnce, membershipSet } from '../utils/derive.js'
 
 /**
@@ -95,11 +96,14 @@ export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGro
     }
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
-    case 'setItems':
-      return [
-        { ...state, items: msg.items, disabledItems: msg.disabled ?? state.disabledItems },
-        [],
-      ]
+    case 'setItems': {
+      const disabledItems = msg.disabled ?? state.disabledItems
+      // A `focused` the new list no longer holds must go: the roving tabindex
+      // is keyed off it, so a dangling one left EVERY item at -1 and dropped
+      // the group out of the Tab order (#126).
+      const focused = pruneToEnabled(msg.items, disabledItems, state.focused)
+      return [{ ...state, items: msg.items, disabledItems, focused }, []]
+    }
     case 'focusItem': {
       if (state.disabledItems.includes(msg.value)) return [state, []]
       return [{ ...state, focused: msg.value }, []]
@@ -156,9 +160,20 @@ export function connect(
   const selected = membershipSet<string>()
   const disabled = membershipSet<string>()
   const tabStop = deriveOnce(
-    (items: string[], value: string[], disabledItems: string[]): string | null =>
-      items.find((v) => value.includes(v) && !disabledItems.includes(v)) ??
-      firstEnabled(items, disabledItems),
+    (
+      items: string[],
+      value: string[],
+      disabledItems: string[],
+      focused: string | null,
+    ): string | null =>
+      // Preference order: the focused item, then the first selected one, then
+      // the first enabled one — so the group always has exactly one tab stop.
+      rovingTabStop(
+        items,
+        disabledItems,
+        focused,
+        items.find((v) => value.includes(v) && !disabledItems.includes(v)),
+      ),
   )
 
   return {
@@ -190,8 +205,7 @@ export function connect(
         // else the first selected item; else the first enabled item.
         tabindex: state.map((s) => {
           if (s.disabled || disabled(s.disabledItems).has(value)) return -1
-          if (s.focused !== null) return s.focused === value ? 0 : -1
-          return tabStop(s.items, s.value, s.disabledItems) === value ? 0 : -1
+          return tabStop(s.items, s.value, s.disabledItems, s.focused) === value ? 0 : -1
         }),
         onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
         onFocus: tagSend(send, ['focusItem'], () => send({ type: 'focusItem', value })),
