@@ -1,4 +1,5 @@
 import type { TransitionOptions } from '@llui/dom'
+import type { RunScope } from './anim.js'
 import { asElements } from './style-utils.js'
 import { prefersReducedMotion, createRunScope } from './anim.js'
 
@@ -59,6 +60,42 @@ function numberAt(parts: readonly string[], index: number): number {
 }
 
 /**
+ * End `token`'s glide run once the animation completes.
+ *
+ * The run is what {@link currentTranslation} is gated on, and the gate exists
+ * precisely so a row's CONSTANT author transform (a hover lift, a drag offset)
+ * is never mistaken for a glide of ours. A run that is registered and never
+ * ended therefore does not merely leak a WeakMap entry: from the row's first
+ * glide onward every pass attributes the AUTHOR's translation to us and
+ * computes the delta against it — one reorder in three silently animating the
+ * wrong distance, one not animating at all. `fill: 'backwards'` means the
+ * element is back on its own `transform` the moment the glide ends, so the run
+ * must end with it.
+ *
+ * `Animation.finished` is the standard completion signal, but `animate()` is
+ * only feature-detected as a function here: a shim (or a test double) may
+ * return nothing at all, or an object without `finished`. There the run simply
+ * stays registered until the next pass supersedes it, which is the pre-fix
+ * behaviour and no worse. A CANCELLED animation REJECTS `finished` — that is the
+ * superseding pass's own doing, so it is swallowed rather than left to surface
+ * as an unhandled rejection (the token guard makes the resolve path a no-op
+ * for a superseded run anyway).
+ */
+function endRunOnFinish(
+  glides: RunScope,
+  child: Element,
+  animation: Animation,
+  token: symbol,
+): void {
+  const finished: Promise<unknown> | undefined = animation?.finished
+  if (finished === undefined || typeof finished.then !== 'function') return
+  void finished.then(
+    () => glides.end(child, token),
+    () => {},
+  )
+}
+
+/**
  * FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
  *
  * `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
@@ -76,7 +113,10 @@ function numberAt(parts: readonly string[], index: number): number {
  * VISUALLY is — its previous layout box plus whatever translation the running
  * glide had already applied — so an interrupted reorder continues rather than
  * jumping. `getBoundingClientRect` reports the transformed box, so the stored
- * position is the rect with that translation subtracted back out.
+ * position is the rect with that translation subtracted back out. The run ENDS
+ * when the glide completes: only while one is live is the computed transform
+ * ours to read, and a run left registered makes every later pass measure a
+ * row's own author transform as if it were a glide.
  *
  * Element retention is deliberately weak: the tracked positions live in a
  * `WeakMap` and the working set is derived from `parent`'s live children
@@ -184,7 +224,10 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
           [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
           { duration, easing, fill: 'backwards' },
         )
-        glides.register(child, () => animation.cancel())
+        // `?.` for the same reason `endRunOnFinish` guards: `animate()` is only
+        // feature-detected as a function, and a shim may hand back nothing.
+        const token = glides.register(child, () => animation?.cancel())
+        endRunOnFinish(glides, child, animation, token)
       }
     },
   }

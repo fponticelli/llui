@@ -13,6 +13,14 @@ interface StubAnimation {
   cancel: () => void
   cancelled: number
   keyframes: unknown
+  /**
+   * Modelled on the real WAAPI member: resolves when the animation completes,
+   * and REJECTS when it is cancelled. Nothing resolves it on its own — a test
+   * calls {@link StubAnimation.settle} at the point the browser would finish.
+   */
+  finished: Promise<void>
+  /** Complete the animation, as the browser does when its duration elapses. */
+  settle: () => void
 }
 
 /** A `parent` whose children are instrumented to log every read and write. */
@@ -40,12 +48,24 @@ function makeList(count: number) {
     }
     child.animate = ((keyframes: unknown) => {
       log.push('write')
+      let settle!: () => void
+      let abort!: () => void
+      const finished = new Promise<void>((resolve, reject) => {
+        settle = resolve
+        // WAAPI rejects `finished` with an AbortError when an animation is
+        // cancelled. Anything reading `finished` must handle that rejection or
+        // the cancel ledger below turns into an unhandled rejection.
+        abort = () => reject(new Error('AbortError'))
+      })
       const anim: StubAnimation = {
         keyframes,
         cancelled: 0,
+        finished,
+        settle,
         cancel: () => {
           log.push('write')
           anim.cancelled++
+          abort()
         },
       }
       animations.push(anim)
@@ -70,8 +90,18 @@ function makeList(count: number) {
 
 function parseTranslate(value: string): [number, number] {
   const m = value.match(/translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/)
-  if (!m) return [0, 0]
-  return [parseFloat(m[1]!), parseFloat(m[2]!)]
+  if (m) return [parseFloat(m[1]!), parseFloat(m[2]!)]
+  // A BROWSER serializes a computed transform as `matrix(a, b, c, d, tx, ty)`,
+  // never as the authored function — so an author-set `transform` reads back in
+  // this form, and `getBoundingClientRect` folds it into the box. jsdom reports
+  // `none` for both, which is exactly why the author-transform case below was
+  // invisible to this suite.
+  const matrix = value.match(/^matrix\(([^)]*)\)$/)
+  if (matrix) {
+    const parts = matrix[1]!.split(',')
+    return [parseFloat(parts[4] ?? '0'), parseFloat(parts[5] ?? '0')]
+  }
+  return [0, 0]
 }
 
 /** How many times the pass switched from writing back to reading. */
@@ -174,6 +204,62 @@ describe('flip() read/write batching', () => {
       { transform: 'translate(-140px, 0px)' },
       { transform: 'translate(0, 0)' },
     ])
+  })
+
+  it('ends the glide run on completion, so an author transform is never read as ours', async () => {
+    // A row carrying a CONSTANT author transform — a hover lift, a drag offset,
+    // ordinary code. It is folded into every rect the row reports, so it cancels
+    // out of the delta and must never be read as a glide of ours.
+    //
+    // The glide run used to be registered and never ended, so from the first
+    // glide onward `isActive` stayed true and the read phase attributed the
+    // AUTHOR's 50px to us: pass 2 computed dx = 0 (no animation at all, the row
+    // jumped 100px) and pass 3 computed −50 (half the real delta).
+    const { parent, children, layout, transform, animations } = makeList(1)
+    const child = children[0]!
+    transform.set(child, 'matrix(1, 0, 0, 1, 50, 0)')
+
+    const f = flip()
+    f.enter!([child])
+
+    for (let pass = 1; pass <= 3; pass++) {
+      layout.set(child, { left: pass * 100, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+      // The glide runs to completion before the next reorder.
+      animations[pass - 1]?.settle()
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    // Every pass moved the row exactly 100px, so every glide is −100.
+    expect(animations).toHaveLength(3)
+    expect(animations.map((a) => a.keyframes)).toEqual([
+      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
+      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
+      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
+    ])
+  })
+
+  it('stops reading the computed transform once the glide has finished', async () => {
+    // The direct consequence of the run never ending: `getComputedStyle` was
+    // called for every surviving row on every structural reconcile, forever.
+    const { parent, children, layout, transform, animations, log } = makeList(1)
+    const child = children[0]!
+    transform.set(child, 'matrix(1, 0, 0, 1, 50, 0)')
+    const f = flip()
+    f.enter!([child])
+
+    layout.set(child, { left: 100, top: 0 })
+    f.onTransition!({ entering: [], leaving: [], parent })
+    animations[0]!.settle()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // With the run ended, the next pass reads the rect and nothing else.
+    layout.set(child, { left: 200, top: 0 })
+    log.length = 0
+    f.onTransition!({ entering: [], leaving: [], parent })
+    expect(log.filter((op) => op === 'read')).toHaveLength(1)
   })
 
   it('stores the untransformed layout box, so the next pass measures from it', () => {

@@ -203,7 +203,10 @@ before the next one starts, and the new delta is measured from where the row
 VISUALLY is — its previous layout box plus whatever translation the running
 glide had already applied — so an interrupted reorder continues rather than
 jumping. `getBoundingClientRect` reports the transformed box, so the stored
-position is the rect with that translation subtracted back out.
+position is the rect with that translation subtracted back out. The run ENDS
+when the glide completes: only while one is live is the computed transform
+ours to read, and a run left registered makes every later pass measure a
+row's own author transform as if it were a glide.
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
