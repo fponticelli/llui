@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
 import { COMPILER_META_KEYS } from '../../src/emit-names.js'
+import { crossFileKey, type CrossFileResolution } from '../../src/cross-file-resolver.js'
 
 /** Parse the lowered source and assert it has no syntax errors — catches edit
  * overlaps / duplication (e.g. pass-2 double-lowering a pass-1 each) that a
@@ -265,7 +266,7 @@ describe('transformSignalComponentSource', () => {
 
     it('uses cross-file preExtracted schemas + external state source', () => {
       // Msg/State declared in sibling files (not locally) — the adapter resolves
-      // them and passes preExtracted + typeSources.
+      // them and passes the resolution keyed by this call's type-arg names.
       const src = [
         "import { component } from '@llui/dom'",
         "import type { Msg } from './msgs'",
@@ -278,8 +279,15 @@ describe('transformSignalComponentSource', () => {
       ].join('\n')
       const out = transformSignalComponentSource(src, {
         emitAgentMetadata: true,
-        preExtracted: { msgSchema: { discriminant: 'type', variants: { tick: {} } } },
-        typeSources: { state: { source: 'type S = { n: number }', typeName: 'S' } },
+        crossFile: new Map([
+          [
+            crossFileKey({ state: 'State', msg: 'Msg', effect: 'Effect' }),
+            {
+              preExtracted: { msgSchema: { discriminant: 'type', variants: { tick: {} } } },
+              typeSources: { state: { source: 'type S = { n: number }', typeName: 'S' } },
+            },
+          ],
+        ]),
       })
       expect(out).toContain('"variants":{"tick":{}}') // from preExtracted (cross-file)
       expect(out).toContain(`${COMPILER_META_KEYS.stateSchema}:`) // from external state source
@@ -354,6 +362,123 @@ describe('transformSignalComponentSource', () => {
     ].map((m) => m[1])
     expect(hashes).toHaveLength(2)
     expect(hashes[0]).not.toBe(hashes[1])
+  })
+
+  describe('cross-file resolutions are per component() call (#91)', () => {
+    // A adopts an imported Msg (the adapter resolved it); B declares its own
+    // LOCALLY. The pre-extracted result used to be a FILE-WIDE override, so B
+    // was handed A's schema/annotations — wrong metadata on the agent ABI, which
+    // is worse than none. Keyed per call, B falls back to file-local extraction.
+    const importedMsgSchema = {
+      discriminant: 'type',
+      variants: { fromSibling: {} },
+    } as const
+
+    const componentSrc = (first: 'imported' | 'local'): string => {
+      const imported =
+        "const Imported = component<ImportedState, ImportedMsg>({ init: () => ({i:0}), update: (s)=>s, view: ({ state }) => [text(state.at('i'))] })"
+      const local =
+        "const Local = component<LocalState, LocalMsg>({ init: () => ({l:0}), update: (s)=>s, view: ({ state }) => [text(state.at('l'))] })"
+      return [
+        "import { component, text } from '@llui/dom'",
+        "import type { ImportedMsg } from './msg'",
+        "import type { ImportedState } from './state'",
+        "type LocalMsg = { type: 'localOnly' }",
+        'type LocalState = { l: number }',
+        ...(first === 'imported' ? [imported, local] : [local, imported]),
+      ].join('\n')
+    }
+
+    const resolutions = new Map<string, CrossFileResolution>([
+      [
+        crossFileKey({ state: 'ImportedState', msg: 'ImportedMsg', effect: 'Effect' }),
+        {
+          preExtracted: {
+            msgSchema: importedMsgSchema,
+            msgAnnotations: {
+              fromSibling: {
+                intent: 'From the sibling module',
+                alwaysAffordable: false,
+                requiresConfirm: false,
+                dispatchMode: 'shared',
+                examples: [],
+                warning: null,
+                emits: [],
+                routeGate: null,
+                routeGateReason: null,
+              },
+            },
+            effectSchema: { discriminant: 'type', variants: { siblingFx: {} } },
+          },
+          typeSources: {
+            state: { source: 'type ImportedState = { i: number }', typeName: 'ImportedState' },
+          },
+        },
+      ],
+    ])
+
+    /** The metadata slice emitted for the component bound to `name`. */
+    const sliceFor = (out: string, name: string): string => {
+      const start = out.indexOf(`const ${name} = component<`)
+      expect(start).toBeGreaterThanOrEqual(0)
+      const next = out.indexOf('const ', start + 6)
+      return next < 0 ? out.slice(start) : out.slice(start, next)
+    }
+
+    for (const order of ['imported', 'local'] as const) {
+      it(`gives each call its own schema, annotations and Effect schema (${order} first)`, () => {
+        const out = transformSignalComponentSource(componentSrc(order), {
+          emitAgentMetadata: true,
+          crossFile: resolutions,
+        })
+        assertParses(out)
+        const imported = sliceFor(out, 'Imported')
+        const local = sliceFor(out, 'Local')
+
+        // The call whose types the adapter resolved gets the cross-file result…
+        expect(imported).toContain('"variants":{"fromSibling":{}}')
+        expect(imported).toContain('"From the sibling module"')
+        expect(imported).toContain('"variants":{"siblingFx":{}}')
+        expect(imported).toContain('"i":"number"') // external State source
+
+        // …and the call with a LOCAL Msg never sees it.
+        expect(local).toContain('"variants":{"localOnly":{}}')
+        expect(local).not.toContain('fromSibling')
+        expect(local).not.toContain('From the sibling module')
+        expect(local).not.toContain('siblingFx')
+        expect(local).toContain('"l":"number"') // file-local State, not the external one
+        expect(local).not.toContain('"i":"number"')
+      })
+    }
+
+    it('falls back to file-local extraction when the call has no resolution entry', () => {
+      const out = transformSignalComponentSource(componentSrc('local'), {
+        emitAgentMetadata: true,
+        crossFile: new Map(),
+      })
+      expect(sliceFor(out, 'Local')).toContain('"variants":{"localOnly":{}}')
+    })
+
+    it('keys an untyped component() call by the State/Msg/Effect convention', () => {
+      // The transform falls back to the convention names for an untyped call, so
+      // the adapter must key its resolution the same way or the lookup silently
+      // misses. `crossFileKey` + `componentTypeNames` are the shared derivation.
+      const src = [
+        "import { component, text } from '@llui/dom'",
+        "import type { Msg } from './msg'",
+        "const Untyped = component({ init: () => ({n:0}), update: (s)=>s, view: ({ state }) => [text(state.at('n'))] })",
+      ].join('\n')
+      const out = transformSignalComponentSource(src, {
+        emitAgentMetadata: true,
+        crossFile: new Map([
+          [
+            crossFileKey({ state: 'State', msg: 'Msg', effect: 'Effect' }),
+            { preExtracted: { msgSchema: importedMsgSchema } },
+          ],
+        ]),
+      })
+      expect(out).toContain('"variants":{"fromSibling":{}}')
+    })
   })
 
   it('handles multiple signal components in one file', () => {

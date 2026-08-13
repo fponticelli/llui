@@ -4958,6 +4958,24 @@ function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
 }
 ```
 
+### `componentTypeNames()`
+
+The EFFECTIVE State/Msg/Effect type names for a `component<…>()` call: its own
+type arguments where they are plain identifiers, else the
+{@link CONVENTION_TYPE_NAMES} the file-local extractors fall back to.
+The adapter (pre-resolution) and the transform (metadata emission + lookup)
+MUST both derive names through this function: they meet on the
+{@link crossFileKey} built from the result, and any divergence would make the
+lookup silently miss and degrade to file-local extraction.
+
+```typescript
+function componentTypeNames(call: ts.CallExpression): {
+  state: string
+  msg: string
+  effect: string
+}
+```
+
 ### `computeSchemaHash()`
 
 Stable hex SHA-256 (first 32 chars) over a normalized JSON serialization
@@ -4968,6 +4986,29 @@ needs to re-send its schema payload (dev hot-reload).
 
 ```typescript
 function computeSchemaHash(input: SchemaHashInput): string
+```
+
+### `crossFileKey()`
+
+The {@link CrossFileResolutions} key for a tuple of effective type names — both
+the transform's metadata cache key and the adapter's lookup key.
+The key is the NAME tuple, not the resolved declaration, so two calls that name
+the same types share one entry. That is exact for the TOP-LEVEL declarations and
+module imports this resolver walks. Two known cases where a name is NOT a unique
+referent — both pre-existing limits shared with the file-local extractors, which
+key off names the same way:
+ - **Shadowing.** A `Msg` declared inside a block/function scope collides with a
+   top-level `Msg`; the resolver only ever sees the top-level one, so a component
+   under the shadow is keyed as if it used the outer type.
+ - **Non-identifier type arguments.** An inline literal, a generic instantiation
+   or a qualified name (`A.Msg`) is not a plain identifier, so
+   {@link componentTypeNames} falls back to the convention name — and two calls
+   with DIFFERENT qualified types collide on that one key.
+Both produce the same wrongly-shared or file-local schema they produced before
+per-call keying; the fix is name resolution through a checker, not a wider key.
+
+```typescript
+function crossFileKey(names: { state: string; msg: string; effect: string }): string
 ```
 
 ### `detectOpaqueStateFlow()`
@@ -5030,9 +5071,10 @@ produces the same map the runtime expects regardless of how the
 developer organized the type declarations.
 Conflict policy: if two composed branches contribute the same
 discriminant string (e.g. both halves declare `{ type: 'inc' }`),
-the first one walked wins. The lint rule `agent-msg-resolvable`
-fires before this point on most pathological cases; ESLint's
-type-checker would flag the duplicate independently.
+the first one walked wins — silently. Nothing in the toolchain flags
+the duplicate (see the note in this file's header about the lint rule
+that no longer exists); a duplicate discriminant is a type error the
+user's own `tsc` reports independently.
 
 ```typescript
 function extractMsgAnnotationsCrossFile(source: string, typeName: string, filePath: string, ctx: ResolveContext): Promise<Record<string, MessageAnnotations> | null>
@@ -5080,9 +5122,10 @@ function fieldType(f: MsgField): MsgFieldType
 
 Walk imports + re-exports to find where a type alias is actually
 declared. Returns the source string and local name of the alias in
-its declaring file. Returns `null` if the chain leads to an unresolved
-module, a re-export through `export *`, a namespace import, or a
-dead-end (alias not declared anywhere we can see).
+its declaring file. `export *` barrels ARE followed (step 4, first hit
+in textual order wins). Returns `null` if the chain leads to an
+unresolved module, a namespace import, or a dead-end (alias not
+declared anywhere we can see).
 
 ```typescript
 function findTypeSource(typeName: string, source: string, filePath: string, ctx: ResolveContext, visited: Set<string> = new Set()): Promise<ResolvedTypeSource | null>
@@ -5469,6 +5512,20 @@ The literal property keys emitted into the bundle.
 export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
 ```
 
+### `CrossFileResolutions`
+
+Per-file cross-file resolutions, keyed by {@link crossFileKey} of a
+`component()` call's effective type-argument names.
+Keyed PER CALL, not per file (issue #91): a file may declare component A with
+an imported `Msg` and component B with a local one, and B must not be handed
+A's schema/annotations. A wrong schema on the agent/devtools ABI is worse than
+a missing one — a call with no entry here simply falls back to the transform's
+file-local extractors.
+
+```typescript
+export type CrossFileResolutions = ReadonlyMap<string, CrossFileResolution>
+```
+
 ### `DiagnosticCategory`
 
 ```typescript
@@ -5806,6 +5863,18 @@ export interface ContextRead {
 }
 ```
 
+### `CrossFileResolution`
+
+Everything the adapter resolved from sibling files for ONE
+`component<State, Msg, Effect>` type-argument tuple.
+
+```typescript
+export interface CrossFileResolution {
+  typeSources?: ExternalTypeSources
+  preExtracted?: PreExtractedSchemas
+}
+```
+
 ### `Diagnostic`
 
 ```typescript
@@ -6106,15 +6175,21 @@ that declares the requested type alias, returning that file's source
 string + the local name of the alias there. Extractors then run
 against that source and produce the same output they would have for
 a co-located declaration.
-Limitations:
- - Composition (`type Msg = ImportedA | { type: 'b' }`): only the
-   locally-declared variants are extracted; the imported half isn't
-   walked recursively into. The lint rule `agent-msg-resolvable`
-   catches this case at lint time.
- - Namespace imports (`import * as ns from './msg'`) and `export *`:
-   not followed. Same lint coverage.
+Limitations of `findTypeSource` itself (all of them SILENT — nothing
+warns, and the affected metadata is simply absent):
+ - Composition (`type Msg = ImportedA | { type: 'b' }`): it locates the
+   alias but does not walk INTO the union. The composition-aware
+   extractors below (`extractMsgAnnotationsCrossFile`,
+   `extractDiscriminatedUnionSchemaCrossFile`) do recurse, and are what
+   the adapter calls for Msg/Effect.
+ - Namespace imports (`import * as ns from './msg'`): not followed.
+   (`export *` re-export barrels ARE followed — step 4.)
  - Generic types: not parameterized resolution; the type argument
    must resolve to a concrete type alias.
+NOTE for future readers: this file used to attribute these gaps to a lint
+rule named `agent-msg-resolvable`. That rule belonged to the DELETED
+`@llui/eslint-plugin` and was never reimplemented as a compiler rule — there
+is no guard. Do not re-add the claim without the rule (issue #91).
 
 ```typescript
 export interface ResolveContext {
@@ -6191,18 +6266,14 @@ export interface SignalTransformOptions {
   devMode?: boolean
   /** source file path, for the component meta's `file` */
   fileName?: string
-  /** cross-file pre-extracted, composition-aware schemas (msg/effect/annotations)
-   * resolved by the adapter; takes precedence over file-local extraction. */
-  preExtracted?: {
-    msgSchema?: unknown
-    effectSchema?: unknown
-    msgAnnotations?: Record<string, MessageAnnotations> | null
-  }
-  /** cross-file resolved external type sources (for `State`, which isn't a union
-   * so composition doesn't apply — extract from its declaring file). */
-  typeSources?: {
-    state?: { source: string; typeName: string }
-  }
+  /** Cross-file resolutions from the adapter (pre-extracted composition-aware
+   * msg/effect schemas + annotations, and the declaring-file source for a `State`
+   * that lives elsewhere), keyed PER `component()` CALL by {@link crossFileKey} of
+   * the call's effective type-argument names. A call with an entry uses it in
+   * preference to file-local extraction; a call WITHOUT one falls back to the
+   * file-local extractors. It is deliberately not a file-wide value: that made a
+   * second component in the file inherit the first's schema (issue #91). */
+  crossFile?: CrossFileResolutions
   /** Lowering-bail telemetry: called for every lowering ATTEMPT that gave up and
    * fell back to a slower path (see {@link LowerBail}). Coverage tooling and the
    * future `perf` diagnostics channel consume this; it does not affect output. */
@@ -6334,6 +6405,15 @@ release time.
 
 ```typescript
 const COMPILER_VERSION
+```
+
+### `CONVENTION_TYPE_NAMES`
+
+The `State`/`Msg`/`Effect` names the file-local extractors assume when a
+`component()` call is untyped.
+
+```typescript
+const CONVENTION_TYPE_NAMES
 ```
 
 ### `DOM_INTERNAL_MODULE_SPECIFIER`

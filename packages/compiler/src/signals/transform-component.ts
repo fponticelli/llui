@@ -37,11 +37,12 @@ import { scriptKindForFilename } from './script-kind.js'
 import type { Diagnostic } from '../diagnostic.js'
 import { extractMsgSchema, extractEffectSchema } from '../msg-schema.js'
 import { extractStateSchema } from '../state-schema.js'
+import { extractMsgAnnotations, sparseMsgAnnotations } from '../msg-annotations.js'
 import {
-  extractMsgAnnotations,
-  sparseMsgAnnotations,
-  type MessageAnnotations,
-} from '../msg-annotations.js'
+  componentTypeNames,
+  crossFileKey,
+  type CrossFileResolutions,
+} from '../cross-file-resolver.js'
 import { computeSchemaHash } from '../schema-hash.js'
 import { COMPILER_META_KEYS } from '../emit-names.js'
 
@@ -55,18 +56,14 @@ export interface SignalTransformOptions {
   devMode?: boolean
   /** source file path, for the component meta's `file` */
   fileName?: string
-  /** cross-file pre-extracted, composition-aware schemas (msg/effect/annotations)
-   * resolved by the adapter; takes precedence over file-local extraction. */
-  preExtracted?: {
-    msgSchema?: unknown
-    effectSchema?: unknown
-    msgAnnotations?: Record<string, MessageAnnotations> | null
-  }
-  /** cross-file resolved external type sources (for `State`, which isn't a union
-   * so composition doesn't apply — extract from its declaring file). */
-  typeSources?: {
-    state?: { source: string; typeName: string }
-  }
+  /** Cross-file resolutions from the adapter (pre-extracted composition-aware
+   * msg/effect schemas + annotations, and the declaring-file source for a `State`
+   * that lives elsewhere), keyed PER `component()` CALL by {@link crossFileKey} of
+   * the call's effective type-argument names. A call with an entry uses it in
+   * preference to file-local extraction; a call WITHOUT one falls back to the
+   * file-local extractors. It is deliberately not a file-wide value: that made a
+   * second component in the file inherit the first's schema (issue #91). */
+  crossFile?: CrossFileResolutions
   /** Lowering-bail telemetry: called for every lowering ATTEMPT that gave up and
    * fell back to a slower path (see {@link LowerBail}). Coverage tooling and the
    * future `perf` diagnostics channel consume this; it does not affect output. */
@@ -234,18 +231,22 @@ export function transformSignalComponentSourceWithMap(
   // type NAMES come from the call's own type arguments (`component<State, Msg, Effect>`),
   // falling back to the `State`/`Msg`/`Effect` convention when the call is untyped. A
   // second component in the same file with a different Msg union therefore gets its own
-  // schema/hash — not the first component's. Results are memoized per name-tuple so two
-  // components sharing the same types don't re-extract.
+  // schema/hash — not the first component's. The adapter's cross-file resolutions are
+  // looked up under the SAME name-tuple key (issue #91), so they can't leak across calls
+  // either. Results are memoized per name-tuple so two components sharing the same types
+  // don't re-extract.
   const shouldEmit = Boolean(opts.emitAgentMetadata || opts.devMode)
   const metaCache = new Map<string, string[]>()
-  const metaPropsFor = (stateName: string, msgName: string, effectName: string): string[] => {
-    const key = `${stateName}\0${msgName}\0${effectName}`
+  const metaPropsFor = (names: { state: string; msg: string; effect: string }): string[] => {
+    const { state: stateName, msg: msgName, effect: effectName } = names
+    const key = crossFileKey(names)
     const cached = metaCache.get(key)
     if (cached) return cached
-    const pre = opts.preExtracted
-    const stateSrc = opts.typeSources?.state
-    // Cross-file pre-extracted schemas take precedence; else extract file-locally
-    // using the per-call type-argument names.
+    const resolved = opts.crossFile?.get(key)
+    const pre = resolved?.preExtracted
+    const stateSrc = resolved?.typeSources?.state
+    // This call's cross-file pre-extracted schemas take precedence; else extract
+    // file-locally using the per-call type-argument names.
     const msgSchema =
       pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(source, msgName)
     const effectSchema =
@@ -285,15 +286,6 @@ export function transformSignalComponentSourceWithMap(
     return props
   }
 
-  /** The type name for the `i`th type argument of a `component<…>(…)` call (0 = State,
-   * 1 = Msg, 2 = Effect), or `fallback` when the call is untyped / the argument isn't a
-   * plain type reference. */
-  const typeArgName = (call: ts.CallExpression, i: number, fallback: string): string => {
-    const ta = call.typeArguments?.[i]
-    if (ta && ts.isTypeReferenceNode(ta) && ts.isIdentifier(ta.typeName)) return ta.typeName.text
-    return fallback
-  }
-
   /** The metadata property strings to splice into a component config, minus any
    * field the author already wrote (user-provided takes precedence). */
   const metaForComponent = (
@@ -325,11 +317,8 @@ export function transformSignalComponentSourceWithMap(
         props.push(`name: ${JSON.stringify(decl.name.text)}`)
       }
     }
-    const stateName = typeArgName(callNode, 0, 'State')
-    const msgName = typeArgName(callNode, 1, 'Msg')
-    const effectName = typeArgName(callNode, 2, 'Effect')
     props.push(
-      ...metaPropsFor(stateName, msgName, effectName).filter(
+      ...metaPropsFor(componentTypeNames(callNode)).filter(
         (p) => !existing.has(p.split(':')[0]!.trim()),
       ),
     )
