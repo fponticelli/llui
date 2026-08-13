@@ -482,6 +482,22 @@ and fires a spurious `operator-on-signal` error.
 function lintSignalSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
+### `lintTagSendSource()`
+
+Run ONLY `tag-send-drift` over a module that is not a signal component — the
+companion to {@link lintAnnotationSyntaxSource}, and needed for the same
+reason: `tagSend` is a LIBRARY-author helper, so the canonical call site is a
+plain `connect()` module with no `component(` call in it, which
+`lintSignalSource` never sees. Without this the rule would cover only the
+rarest call sites.
+Same pre-check discipline: the name is looked for in `mod.text` BEFORE the
+module is parsed, so a module that never mentions `tagSend` costs one
+substring search.
+
+```typescript
+function lintTagSendSource(mod: ParsedModule): SignalLintMessage[]
+```
+
 ### `lookupHelperFromSymbol()`
 
 Resolve the manifest helper entry for a call-site callee symbol.

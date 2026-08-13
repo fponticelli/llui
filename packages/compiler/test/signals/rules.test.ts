@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { lintSignals, applyLintFixes, type SignalDiagnostic } from '../../src/signals/rules.js'
-import { lintSignalSource } from '../parsed.js'
+import { lintSignalSource, lintTagSendSource } from '../parsed.js'
 
 function lint(src: string): SignalDiagnostic[] {
   const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)
@@ -1145,5 +1145,210 @@ describe('agent-annotation-syntax (issue #89 — the audit’s `agent-validates-
       "type Msg = { type: 'inc' }",
     ].join('\n')
     expect(rules(src)).not.toContain('agent-annotation-syntax')
+  })
+})
+
+// Issue #118 — `tagSend(send, ['touch'], () => send({ type: 'touch' }))`.
+//
+// The tag list and the `type` the callback actually dispatches are two
+// INDEPENDENT facts, and nothing checked that they agree. `__lluiVariants` is
+// read by `signals/element.ts` and feeds the agent/devtools surface: it is how
+// an agent learns which Msg variants a control can emit, so a drifted tag is a
+// string that LIES to a model — the same silent class as #89's truncated
+// predicate and #92's wrong dependency answers. The compiler-emitted tags are
+// derived from the `send` call itself and cannot drift; only hand-written ones
+// can, which is exactly what this rule reads.
+describe('tag-send-drift (issue #118)', () => {
+  const IMPORT = "import { tagSend } from '@llui/dom'\n"
+  const src = (body: string): string => IMPORT + body
+
+  // ── positive: a dispatched type missing from the list ────────────────────
+  // This direction is SOUND unconditionally: a literal `send({type:'x'})` in
+  // the handler is a dispatch that provably happens, so a list without `'x'`
+  // understates the handler no matter what else the body does.
+  it('flags a dispatched `type` that the tag list omits', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['touch'], () => send({ type: 'touched', f: 1 }))")),
+    ).toContain('tag-send-drift')
+  })
+
+  it('flags a second dispatched `type` in a multi-branch handler', () => {
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['increment'], (e) => {",
+            "  if (e.key === 'ArrowUp') send({ type: 'increment' })",
+            "  else send({ type: 'decrement' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('flags a dispatch from a nested callback inside the handler', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['start'], () => { setTimeout(() => send({ type: 'tick' }), 1) })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  // ── positive: a declared tag the handler never dispatches ────────────────
+  // Only checked when the handler's dispatch set is provably COMPLETE — see
+  // the negative cases below for what forfeits that.
+  it('flags a declared variant the handler never dispatches', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['touch', 'blur'], () => send({ type: 'touch' }))")),
+    ).toContain('tag-send-drift')
+  })
+
+  // ── the message must be patchable on the first retry ─────────────────────
+  it('quotes the offending variant and names the fix', () => {
+    // A one-character typo trips BOTH directions — the dispatched variant is
+    // undeclared AND the declared one is never dispatched — which together
+    // describe the mistake exactly.
+    const msgs = lint(src("const p = tagSend(send, ['touch'], () => send({ type: 'touched' }))"))
+      .filter((d) => d.rule === 'tag-send-drift')
+      .map((d) => d.message)
+    expect(msgs).toHaveLength(2)
+    expect(msgs.some((m) => m.includes("dispatches `{ type: 'touched' }`"))).toBe(true)
+    expect(msgs.some((m) => m.includes("declares variant 'touch'"))).toBe(true)
+    for (const m of msgs) expect(m).toContain('__lluiVariants')
+    const over = messageFor(
+      src("const p = tagSend(send, ['touch', 'blur'], () => send({ type: 'touch' }))"),
+      'tag-send-drift',
+    )
+    expect(over).toContain("'blur'")
+  })
+
+  // ── negative: the shapes that must stay clean ────────────────────────────
+  // A false positive here blocks a valid library build, so these matter more
+  // than the positives. Every one is a real shape from `@llui/components`,
+  // `@llui/agent` or `@llui/markdown-editor`.
+  it('does NOT flag a matching tag list', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['touch'], () => send({ type: 'touch', field: 'a' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['increment', 'decrement'], (e) => {",
+            "  if (e.key === 'ArrowUp') send({ type: 'increment' })",
+            "  else send({ type: 'decrement' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a spread or computed tag list — the list is not readable', () => {
+    expect(
+      rules(src("const p = tagSend(send, [...names], () => send({ type: 'x' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(rules(src("const p = tagSend(send, [KEY], () => send({ type: 'x' }))"))).not.toContain(
+      'tag-send-drift',
+    )
+    expect(rules(src("const p = tagSend(send, names, () => send({ type: 'x' }))"))).not.toContain(
+      'tag-send-drift',
+    )
+  })
+
+  it('does NOT flag a non-literal handler — its dispatches are not visible', () => {
+    // `tagSend(send, ['hide'], dismissOnEscape)` is real (`@llui/components`).
+    expect(rules(src("const p = tagSend(send, ['hide'], dismissOnEscape))"))).not.toContain(
+      'tag-send-drift',
+    )
+  })
+
+  it('does NOT flag a handler that delegates to a helper', () => {
+    // `tagSend(send, ['commit'], (e) => commitFromEvent(e.target))` — the
+    // dispatch happens one call away and is invisible here. Reporting
+    // "declares 'commit', dispatches nothing" would be a false positive.
+    expect(
+      rules(src("const p = tagSend(send, ['commit'], (e) => commitFromEvent(e.target)))")),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['setValue', 'commit'], (e) => {",
+            '  helper(e)',
+            "  send({ type: 'setValue' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a dispatch whose payload is not a readable literal', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['setValue'], () => send({ type: msgType }))")),
+    ).not.toContain('tag-send-drift')
+    expect(rules(src("const p = tagSend(send, ['fwd'], (m) => send(m))"))).not.toContain(
+      'tag-send-drift',
+    )
+    expect(
+      rules(src("const p = tagSend(send, ['a', 'b'], () => send({ ...base, type: 'a' }))")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a handler calling a method on its own parameter', () => {
+    // `e.preventDefault()` must not count as an unreadable dispatch — it is
+    // the single most common statement in these handlers, and treating it as
+    // opaque would switch the over-declaration check off everywhere.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['submit'], (e) => {",
+            '  e.preventDefault()',
+            "  send({ type: 'submit' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag when the dispatcher is not the identifier being called', () => {
+    // Only calls to the tagged dispatcher count. `send` here is a different
+    // binding from the `dispatch` that was tagged, so nothing is correlated.
+    expect(
+      rules(src("const p = tagSend(dispatch, ['x'], () => send({ type: 'y' })))")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a user function that merely shares the name `tagSend`', () => {
+    const own = [
+      'function tagSend(a, b, c) { return c }',
+      "const p = tagSend(send, ['touch'], () => send({ type: 'touched' }))",
+    ].join('\n')
+    expect(rules(own)).not.toContain('tag-send-drift')
+  })
+
+  it('does not crash on a `tagSend` call of another arity', () => {
+    expect(() => rules(src("const p = tagSend('rm', () => send({ type: 'rm' }))"))).not.toThrow()
+    expect(rules(src("const p = tagSend('rm', () => send({ type: 'rm' }))"))).not.toContain(
+      'tag-send-drift',
+    )
+  })
+
+  // The canonical `tagSend` call site is a library `connect()` module with NO
+  // `component(` call in it, which `lintSignalSource` never reaches — so the
+  // rule must also run on the non-component path the adapter uses.
+  it('fires through the non-component entry point', () => {
+    const drift = src("export const p = tagSend(send, ['touch'], () => send({ type: 'touched' }))")
+    expect(lintTagSendSource(drift, 'connect.ts').map((d) => d.rule)).toContain('tag-send-drift')
+    const clean = src("export const p = tagSend(send, ['touch'], () => send({ type: 'touch' }))")
+    expect(lintTagSendSource(clean, 'connect.ts')).toEqual([])
+    // …and a module that never mentions the helper is skipped before parsing.
+    expect(lintTagSendSource('export const n = 1', 'plain.ts')).toEqual([])
   })
 })

@@ -111,11 +111,18 @@ describe('SignalComponentHandle — agent/HMR parity', () => {
     const h = mountSignalComponent<S, M>(container, {
       init: () => ({ count: 0 }),
       update: (s) => s,
+      // The tag deliberately names a DIFFERENT variant from the one the
+      // handler dispatches, so the assertion below can only pass if the
+      // descriptor comes from `__lluiVariants` rather than from the `send`
+      // call. It used to say `'Inc'` — not a Msg variant at all — which stopped
+      // compiling when #118 narrowed `libraryVariants` to `readonly M['type'][]`;
+      // `'noop'` is a real variant and keeps the tag ≠ dispatched-type property
+      // the test exists to check.
       view: ({ send }) => [
-        el('button', { onClick: tagSend(send, ['Inc'], () => send({ type: 'inc' })) }, []),
+        el('button', { onClick: tagSend(send, ['noop'], () => send({ type: 'inc' })) }, []),
       ],
     })
-    expect(h.getBindingDescriptors()).toEqual([{ variant: 'Inc' }])
+    expect(h.getBindingDescriptors()).toEqual([{ variant: 'noop' }])
   })
 })
 

@@ -20,6 +20,7 @@ import {
 import {
   lintSignalSource as lintModule,
   lintAnnotationSyntaxSource as lintAnnotationSyntaxModule,
+  lintTagSendSource as lintTagSendModule,
   type SignalLintMessage,
 } from '../src/signals/rules.js'
 
@@ -47,4 +48,8 @@ export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLint
 
 export function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
   return lintAnnotationSyntaxModule(parseModule(fileName, source))
+}
+
+export function lintTagSendSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
+  return lintTagSendModule(parseModule(fileName, source))
 }

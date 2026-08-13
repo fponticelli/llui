@@ -43,6 +43,7 @@ export {
 export {
   lintSignalSource,
   lintAnnotationSyntaxSource,
+  lintTagSendSource,
   applyLintFixes,
   type SignalLintMessage,
   type SignalDiagnostic,

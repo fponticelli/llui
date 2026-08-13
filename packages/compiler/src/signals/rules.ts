@@ -62,6 +62,13 @@
 //                       runtime, so the build is the only place to say so
 //                       (issue #89; the audit's `agent-validates-syntax`,
 //                       generalized to every tag in the shared grammar).
+//   tag-send-drift    — a `tagSend(send, ['x'], () => send({type:'y'}))` whose
+//                       hand-written variant list disagrees with the `type` its
+//                       own handler dispatches. That list becomes
+//                       `__lluiVariants`, which the agent/devtools surface reads
+//                       to tell an LLM which Msg variants a control can emit, so
+//                       a drifted tag is a string that LIES to a model — silent
+//                       at runtime, like #89 and #92 (issue #118).
 //
 // Each diagnostic has a message, a source position (start offset + length), and —
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
@@ -1153,6 +1160,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // signal) is linted as a signal.
   visit(sf, STATE_ROOTS, false)
   diags.push(...annotationSyntaxDiagnostics(sf))
+  diags.push(...tagSendDriftDiagnostics(sf, bindings))
   return diags
 }
 
@@ -1314,6 +1322,211 @@ function annotationSyntaxDiagnostics(sf: ts.SourceFile): SignalDiagnostic[] {
   return out
 }
 
+/**
+ * ---- tag-send-drift: a `tagSend` variant list that disagrees with its handler ----
+ *
+ * `tagSend(send, ['touch'], () => send({ type: 'touch', field: name }))` states
+ * the same fact TWICE, and until this rule nothing checked that the two agree.
+ * The compiler-emitted tags cannot drift — they are derived from the `send`
+ * call itself — but every HAND-WRITTEN call site in `@llui/components`,
+ * `@llui/agent` and `@llui/markdown-editor` (and in any consumer writing their
+ * own `connect`) carries the variant names as free-standing string literals.
+ *
+ * WHY IT MUST BE A BUILD ERROR: `__lluiVariants` is read at
+ * `packages/dom/src/signals/element.ts` and feeds the agent/devtools surface —
+ * it is how an agent learns which Msg variants a control can emit. A drifted
+ * tag is therefore a string that LIES to a model, silently, with no runtime
+ * symptom: the same class as #89 (a truncated predicate at the agent boundary)
+ * and #92 (an analyzer returning wrong dependency answers). A type-level fix
+ * (`readonly M['type'][]`) catches a MISSPELLING but not drift — `'touch'` and
+ * `'blur'` are both valid `M['type']`, so only reading the handler can tell
+ * them apart. Hence a rule, on top of the narrowed signature.
+ *
+ * TWO DIRECTIONS, with different soundness, and the asymmetry is the whole
+ * design — a false positive here blocks a valid library build:
+ *
+ *   1. DISPATCHED-BUT-UNDECLARED is checked unconditionally. A literal
+ *      `send({type:'x'})` inside the handler is a dispatch that provably
+ *      happens, so a list omitting `'x'` understates the handler no matter
+ *      what else the body does. Nothing can make this direction wrong.
+ *   2. DECLARED-BUT-NEVER-DISPATCHED is checked ONLY when the handler's
+ *      dispatch set is provably COMPLETE, because "I did not see it" is not
+ *      "it does not happen": `tagSend(send, ['commit'], (e) =>
+ *      commitFromEvent(e))` dispatches one call away, and flagging it would
+ *      fail a valid build. Completeness requires every call in the body to be
+ *      either a readable dispatch or a method call on one of the handler's own
+ *      parameters (`e.preventDefault()`); one bare-identifier call, one
+ *      dispatch with an unreadable payload, or one mention of the dispatcher
+ *      outside callee position forfeits it.
+ *
+ * The whole rule bails — reporting nothing — unless all three arguments are
+ * readable: an identifier dispatcher, an array literal of string literals, and
+ * an inline function. A spread/computed list, a named-function handler, or a
+ * `tagSend` of another arity is invisible to this analysis, not a violation.
+ */
+function tagSendDriftDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): SignalDiagnostic[] {
+  const out: SignalDiagnostic[] = []
+  const push = (message: string, node: ts.Node): void => {
+    out.push({
+      rule: 'tag-send-drift',
+      message,
+      start: node.getStart(sf),
+      length: node.getWidth(sf),
+    })
+  }
+
+  const walk = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && bindings.resolveCall(node) === 'tagSend') {
+      checkTagSendCall(node, push)
+    }
+    node.forEachChild(walk)
+  }
+  walk(sf)
+  out.sort((a, b) => a.start - b.start)
+  return out
+}
+
+/** One readable dispatch found in a handler body, plus the node to point at. */
+interface SeenDispatch {
+  variant: string
+  node: ts.Node
+}
+
+function checkTagSendCall(
+  call: ts.CallExpression,
+  push: (message: string, node: ts.Node) => void,
+): void {
+  if (call.arguments.length !== 3) return
+  const [dispatcher, list, handler] = call.arguments
+  if (dispatcher === undefined || list === undefined || handler === undefined) return
+  // The dispatcher must be a plain identifier: it is the only thing that lets a
+  // call inside the handler be attributed to THIS tag.
+  if (!ts.isIdentifier(dispatcher)) return
+  if (!ts.isArrowFunction(handler) && !ts.isFunctionExpression(handler)) return
+
+  const declared = readVariantList(list)
+  if (declared === null) return
+
+  const scan = scanHandlerDispatches(handler, dispatcher.text)
+
+  // Direction 1 — sound unconditionally.
+  for (const seen of scan.dispatches) {
+    if (declared.some((d) => d.value === seen.variant)) continue
+    push(
+      `\`tagSend\` dispatches \`{ type: '${seen.variant}' }\` but its variant list is ` +
+        `[${declared.map((d) => `'${d.value}'`).join(', ')}] — add '${seen.variant}' to the list, ` +
+        'or fix the dispatched type. That list becomes `__lluiVariants`, which the agent/devtools ' +
+        'surface reads to tell an LLM which Msg variants this control can emit; a list that ' +
+        'disagrees with the handler lies to the agent, silently and with no runtime symptom.',
+      seen.node,
+    )
+  }
+
+  // Direction 2 — only when nothing in the body could dispatch unseen.
+  if (!scan.complete) return
+  for (const tag of declared) {
+    if (scan.dispatches.some((s) => s.variant === tag.value)) continue
+    push(
+      `\`tagSend\` declares variant '${tag.value}' but its handler never dispatches ` +
+        `\`{ type: '${tag.value}' }\` — remove it from the list, or dispatch it. That list becomes ` +
+        '`__lluiVariants`, which the agent/devtools surface reads to tell an LLM which Msg ' +
+        'variants this control can emit; a variant it cannot actually emit lies to the agent.',
+      tag.node,
+    )
+  }
+}
+
+/** The variant list, or null when any element is not a plain string literal
+ * (a spread, a computed name, an identifier) — unreadable is not a violation. */
+function readVariantList(list: ts.Expression): { value: string; node: ts.Node }[] | null {
+  if (!ts.isArrayLiteralExpression(list)) return null
+  const out: { value: string; node: ts.Node }[] = []
+  for (const el of list.elements) {
+    if (!ts.isStringLiteralLike(el)) return null
+    out.push({ value: el.text, node: el })
+  }
+  return out
+}
+
+/**
+ * Every readable `dispatcher({type: '…'})` inside `handler`, plus whether the
+ * set is COMPLETE — i.e. whether anything in the body could dispatch a variant
+ * this scan did not see. See the rule's doc comment for why the two answers
+ * carry different weight.
+ *
+ * Nested functions are walked: `setTimeout(() => send({type:'tick'}))` really
+ * does dispatch `tick`. That same `setTimeout(…)` is a bare-identifier call, so
+ * it also costs completeness — correct on both counts.
+ */
+function scanHandlerDispatches(
+  handler: ts.ArrowFunction | ts.FunctionExpression,
+  dispatcherName: string,
+): { dispatches: SeenDispatch[]; complete: boolean } {
+  const dispatches: SeenDispatch[] = []
+  let complete = true
+  // The handler's own parameter names. A method call on one of these
+  // (`e.preventDefault()`) cannot reach the dispatcher, and is by far the most
+  // common statement in these handlers — counting it as opaque would switch
+  // direction 2 off everywhere and make it worthless.
+  const params = new Set(handler.parameters.flatMap((p) => bindingNames(p.name)))
+
+  const walk = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && n.text === dispatcherName && !isCalleeOf(n)) {
+      // The dispatcher escaping as a VALUE (`helper(send)`, `{ onX: send }`)
+      // means dispatches can happen out of sight.
+      complete = false
+    }
+    if (ts.isCallExpression(n)) {
+      if (ts.isIdentifier(n.expression) && n.expression.text === dispatcherName) {
+        const variant = literalMsgType(n.arguments[0])
+        if (variant === null) complete = false
+        else dispatches.push({ variant, node: n.arguments[0] ?? n })
+      } else if (!isCallOnOwnParameter(n, params)) {
+        complete = false
+      }
+    }
+    n.forEachChild(walk)
+  }
+  const body = handler.body
+  walk(body)
+  return { dispatches, complete }
+}
+
+/** True when `id` occupies the callee position of its parent call. */
+function isCalleeOf(id: ts.Identifier): boolean {
+  const parent = id.parent
+  return parent !== undefined && ts.isCallExpression(parent) && parent.expression === id
+}
+
+/** True for `p.foo()` / `p.a.b()` where `p` is one of the handler's parameters. */
+function isCallOnOwnParameter(call: ts.CallExpression, params: ReadonlySet<string>): boolean {
+  let cur: ts.Expression = call.expression
+  while (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) {
+    cur = cur.expression
+  }
+  return ts.isIdentifier(cur) && params.has(cur.text)
+}
+
+/** The `type` of a dispatched message when it is a readable object literal with
+ * a string-literal `type` and no spread; null otherwise (a variable payload, a
+ * computed type, a spread that could carry its own `type`). */
+function literalMsgType(arg: ts.Expression | undefined): string | null {
+  if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return null
+  let found: string | null = null
+  for (const prop of arg.properties) {
+    // A spread can contribute (or override) `type`, so the literal is no longer
+    // the whole story.
+    if (ts.isSpreadAssignment(prop)) return null
+    if (!ts.isPropertyAssignment(prop)) continue
+    const name = prop.name
+    const key = ts.isIdentifier(name) ? name.text : ts.isStringLiteralLike(name) ? name.text : null
+    if (key !== 'type') continue
+    if (!ts.isStringLiteralLike(prop.initializer)) return null
+    found = prop.initializer.text
+  }
+  return found
+}
+
 /** A lint diagnostic with source position resolved (1-based line, 0-based col). */
 export interface SignalLintMessage {
   rule: string
@@ -1356,6 +1569,24 @@ export function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage
   if (!ANNOTATION_CALL_PRECHECK.test(mod.text)) return []
   const sf = mod.sourceFile()
   return resolvePositions(sf, annotationSyntaxDiagnostics(sf))
+}
+
+/**
+ * Run ONLY `tag-send-drift` over a module that is not a signal component — the
+ * companion to {@link lintAnnotationSyntaxSource}, and needed for the same
+ * reason: `tagSend` is a LIBRARY-author helper, so the canonical call site is a
+ * plain `connect()` module with no `component(` call in it, which
+ * `lintSignalSource` never sees. Without this the rule would cover only the
+ * rarest call sites.
+ *
+ * Same pre-check discipline: the name is looked for in `mod.text` BEFORE the
+ * module is parsed, so a module that never mentions `tagSend` costs one
+ * substring search.
+ */
+export function lintTagSendSource(mod: ParsedModule): SignalLintMessage[] {
+  if (!mod.text.includes('tagSend')) return []
+  const sf = mod.sourceFile()
+  return resolvePositions(sf, tagSendDriftDiagnostics(sf, HelperBindings.fromSourceFile(sf)))
 }
 
 function resolvePositions(

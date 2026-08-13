@@ -946,23 +946,35 @@ Resolution rules — choose whichever is defined and non-empty:
    Returns `fn` mutated (via `Object.assign`) so the same reference
    remains identity-equal — important for downstream code that diffs
    handlers across re-bindings.
-   @example
+   `libraryVariants` and the `type` the handler dispatches are two
+   statements of ONE fact, and they used to be unchecked against each
+   other — a drifted tag lies to the agent about what a control does,
+   silently (issue #118). Two guards now cover it, and neither is
+   sufficient alone:
+
+- the TYPE `readonly M['type'][]` (this signature) rejects a name
+  that is not a Msg variant at all, including where the handler is
+  a named function the compiler cannot read; and
+- the compiler's `tag-send-drift` rule reads the handler and
+  rejects a tag that names the WRONG variant — which type-checks,
+  since `'touch'` and `'blur'` are equally valid `M['type']`.
+  @example
 
 ```ts
 import { tagSend } from '@llui/dom'
 export function connect<S>(get, send, opts) {
   return {
     trigger: {
-      onClick: tagSend(send, ['Open'], () => send({ type: 'open' })),
+      onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
   }
 }
 ```
 
 ```typescript
-function tagSend<F extends (...args: never[]) => unknown>(
-  send: unknown,
-  libraryVariants: readonly string[],
+function tagSend<M extends { type: string }, F extends (...args: never[]) => unknown>(
+  send: VariantTaggable<M>,
+  libraryVariants: readonly M['type'][],
   fn: F,
 ): F
 ```
