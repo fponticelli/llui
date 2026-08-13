@@ -42,6 +42,28 @@ export function singleRoot(name: string): Roots {
   return new Map([[name, { value: 's', dep: '' }]])
 }
 
+/**
+ * The signal roots a component `view` destructures from its bag parameter, or
+ * null when the function isn't a signal view (no object-pattern bag, or no
+ * `state` in it). The returned root is keyed by the LOCAL alias the body uses,
+ * so `view: ({ state: st }) => …` roots at `st`.
+ *
+ * Shared by the component transform (which lowers against these roots) and the
+ * file-level dep collector (which analyzes against them) so both agree on what
+ * "the state" is called in a given view.
+ */
+export function viewSignalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Roots | null {
+  const param = viewFn.parameters[0]
+  if (!param || !ts.isObjectBindingPattern(param.name)) return null
+  for (const el of param.name.elements) {
+    if (!ts.isIdentifier(el.name)) continue
+    const key =
+      el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text
+    if (key === 'state') return singleRoot(el.name.text)
+  }
+  return null
+}
+
 /** Peel semantically-transparent wrappers — parentheses and the type-only casts
  * `as`/`!`/`satisfies` — so signal recognition/lowering sees the underlying
  * expression. A cast like `state.at('b') as any` denotes the SAME signal as

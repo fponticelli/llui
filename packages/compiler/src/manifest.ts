@@ -393,8 +393,8 @@ function liftPathsForArg(arg: ts.Expression | undefined, ctx: SubstitutionContex
 /**
  * Unwrap a call-site argument into the accessor function expression, if any.
  * Accepts inline arrows, function expressions, and identifiers that
- * resolve to a local const initializer (one level — Phase 3's walker
- * generalizes this via the existing `resolveAccessorBody`).
+ * resolve to a local const initializer (one level; a Phase 3 walker with a
+ * `ts.Program` would follow cross-file aliases too).
  */
 function unwrapAccessorArg(arg: ts.Expression): ts.ArrowFunction | ts.FunctionExpression | null {
   if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) return arg

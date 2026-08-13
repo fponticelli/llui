@@ -23,7 +23,7 @@ import {
   type LowerBail,
 } from './transform-view.js'
 import { HelperBindings } from './helper-bindings.js'
-import { singleRoot, type Roots } from './extract-deps.js'
+import { viewSignalRoots } from './extract-deps.js'
 import { applyEditsWithMap, type TextEdit } from './apply-edits.js'
 import type { SourceMap } from 'magic-string'
 import { perfDiagnosticsForFile } from './perf-diagnostics.js'
@@ -139,22 +139,6 @@ function domImportedNames(sf: ts.SourceFile): Set<string> {
     }
   }
   return out
-}
-
-/** The `state` (and any extra) root names a signal view destructures from its
- * bag parameter, or null if this isn't a signal view. */
-function signalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Roots | null {
-  const param = viewFn.parameters[0]
-  if (!param || !ts.isObjectBindingPattern(param.name)) return null
-  for (const el of param.name.elements) {
-    if (!ts.isIdentifier(el.name)) continue
-    const key =
-      el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text
-    if (key === 'state') {
-      return singleRoot(el.name.text) // the local alias used in the body
-    }
-  }
-  return null
 }
 
 /** The view bag's destructuring pattern plus the local name bound to `send` and
@@ -424,7 +408,7 @@ export function transformSignalComponentSourceWithMap(
           (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
         ) {
           const viewFn = prop.initializer
-          const roots = signalRoots(viewFn)
+          const roots = viewSignalRoots(viewFn)
           const arr = returnedArray(viewFn)
           if (roots && arr) {
             // Auto-batch (Opportunity A): wrap straight-line multi-`send` handlers

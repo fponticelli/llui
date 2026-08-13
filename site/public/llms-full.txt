@@ -4840,6 +4840,26 @@ props parameter is positional with a `= {}` default, so omitting it allocates th
 
 ## Functions
 
+### `analyzeAccessor()`
+
+Analyze a signal-accessor function. Each parameter is treated as a tainted
+root; the returned `deps[i]` is the set of paths read from parameter `i`.
+A parameter whose value ESCAPES (passed to a call, spread, returned whole)
+yields the empty path `''` — "the whole parameter" — which is what a caller
+must read as "cannot narrow this one".
+
+```typescript
+function analyzeAccessor(fn: AnalyzableFn): DepResult
+```
+
+### `analyzeSignalExpr()`
+
+The set of absolute dependency paths a signal-valued expression reads.
+
+```typescript
+function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string>
+```
+
 ### `annotationsToObjectLiteral()`
 
 Build a TS object-literal expression for the annotation map. Used by
@@ -4908,54 +4928,17 @@ function buildManifest(program: ts.Program, opts: BuildManifestOptions): Manifes
 function clearManifestCache(): void
 ```
 
-### `collectDeps()`
+### `collectSignalDeps()`
 
-String-input convenience over {@link collectStatePathsFromSource}: parse a
-source file and return the sorted set of unique state dependency paths read
-by its reactive accessors, plus the opaque-flow flag. These are the paths
-the runtime's chunked-mask reconciler gates each binding on.
-Files that don't import from `@llui/dom` return an empty set. `extraPaths`
-(paths discovered through in-repo view-helpers in *other* files, via the
-cross-file resolver) are unioned in so cross-file helpers contribute to the
-consumer's dependency set.
+Collect the dependency paths every signal component view in `source` reads.
+Paths are reported at full authored depth: `state.at('user').at('profile')
+.at('address').at('city')` is `user.profile.address.city`, not a two-segment
+prefix of it. Truncating to a prefix stays SOUND for gating (a dep on a prefix
+covers every descendant, because an immutable update replaces the prefix
+reference) but it misreports what the code actually reads.
 
 ```typescript
-function collectDeps(source: string, extraPaths?: ReadonlySet<string>): {
-  paths: string[]
-  opaque: boolean
-  /** AST node that first triggered the opaque-flow flag (if any). */
-  opaqueNode?: ts.Node
-  /** Short human label for the opaque shape. */
-  opaqueShape?: string
-}
-```
-
-### `collectStatePathsFromSource()`
-
-Walk the AST and collect every unique state access path referenced by
-a reactive accessor. A reactive accessor is one of:
-  - An inline arrow / function expression at a reactive position
-    (`text(s => s.count)`, `div({ title: s => s.title })`,
-    `show({ when: s => s.gated })`, etc.).
-  - An Identifier at a reactive position that resolves to a callable
-    in this file — a const-bound arrow / function expression,
-    a hoisted function declaration, or `const x = memo(arrow)`.
-The second case lets authors refactor a literal arrow into a named
-helper without the analyzer losing its dependency paths. When a reactive
-accessor can't be resolved, the file is marked opaque and the runtime
-coarsens those bindings to the whole-state sentinel (correct, but every
-such binding fires on every state change).
-The emitted dependency paths feed the runtime's chunked-mask reconciler
-(each binding's `deps` array). `collectDeps` (below) is the string-input
-convenience wrapper.
-
-```typescript
-function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
-  paths: Set<string>
-  opaque: boolean
-  opaqueNode?: ts.Node
-  opaqueShape?: string
-}
+function collectSignalDeps(source: string, opts: CollectSignalDepsOptions = {}): SignalDepsResult
 ```
 
 ### `computeSchemaHash()`
@@ -4970,10 +4953,15 @@ needs to re-send its schema payload (dev hot-reload).
 function computeSchemaHash(input: SchemaHashInput): string
 ```
 
-### `detectOpaqueStateFlow()`
+### `covers()`
+
+Does emitted dependency set `emitted` COVER a change at `path`? A dep on a
+prefix covers any descendant (immutable update changes the prefix ref); a dep
+deeper than the changed node is also covered (the change propagates up the
+ref chain); the empty path covers everything.
 
 ```typescript
-function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void
+function covers(emitted: Set<string>, path: string): boolean
 ```
 
 ### `extractDiscriminatedUnionSchemaCrossFile()`
@@ -5044,17 +5032,6 @@ function extractMsgAnnotationsCrossFile(source: string, typeName: string, filePa
 function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null
 ```
 
-### `extractPaths()`
-
-Extract state access paths from an expression body.
-Handles:
-- Direct property access: param.field, param.field.subfield
-- Bracket notation with string literal: param['field']
-
-```typescript
-function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void
-```
-
 ### `extractStateSchema()`
 
 ```typescript
@@ -5112,40 +5089,24 @@ fully-default variant from absence, so these are emission-redundant.
 function isDefaultAnnotation(v: MessageAnnotations): boolean
 ```
 
-### `isMemoCallWithArrowArg()`
-
-Recognize `memo(arrow)` / `memo(fn)` calls so the inner accessor can
-be analyzed for state-path masking. The runtime `memo()` returns a
-cached accessor — its body's reads determine when it re-evaluates,
-not the call site.
-
-```typescript
-function isMemoCallWithArrowArg(expr: ts.Expression): expr is ts.CallExpression & {
-  arguments: readonly [ts.ArrowFunction | ts.FunctionExpression, ...ts.Expression[]]
-}
-```
-
-### `isReactiveAccessor()`
-
-Determines if a node is at a reactive-accessor position — either an
-inline arrow / function expression OR an identifier that's about to
-be resolved to one. The check is identity-based on `parent.arguments[0]`
-etc., so the same logic works for both shapes.
-Exported so the cross-file resolver can use the same gate. Without this
-gate the resolver descends into every 1-param arrow in the file —
-including `onEffect: (bag) => bag.send(...)` — and pollutes
-`__prefixes` with non-state property names (issue #5, bug 3).
-
-```typescript
-function isReactiveAccessor(node: ts.Node): boolean
-```
-
 ### `isRichField()`
 
 True when `f` is a rich descriptor (object with `type` key).
 
 ```typescript
 function isRichField(f: MsgField): f is MsgFieldRich
+```
+
+### `isSignalExpr()`
+
+Is `expr` STRUCTURALLY a signal expression (a `state`/`.at`/`.map`/`.peek`
+chain or `derived(...)`)? Strict on shape — does NOT return true merely because
+a signal appears somewhere inside (e.g. an event handler `() => send(state.at(
+'x').peek())` is NOT a signal expression). Used to distinguish reactive slots
+from handlers/static values in the view transform.
+
+```typescript
+function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): boolean
 ```
 
 ### `lintSignalSource()`
@@ -5243,50 +5204,10 @@ the file isn't a descendant.
 function relativizeFile(absoluteFile: string, root: string): string
 ```
 
-### `resolveAccessorBody()`
-
-Resolve a value at a reactive-accessor position down to the callable
-AST node we can mask-analyze. Returns `null` when the value isn't a
-recognized accessor shape — caller leaves the call unchanged (runtime
-falls back to FULL_MASK, which is correct just slower).
-Recognized shapes:
-  - `(s) => …` (ArrowFunction)
-  - `function (s) { … }` (FunctionExpression)
-  - `memo((s) => …)` — returns the inner arrow
-  - `someIdentifier` resolving to any of the above (or to a hoisted
-    `function X(s) { … }` declaration)
-When `checker` is supplied, identifier resolution follows alias chains
-across files: `import { matrixOrEmpty } from '../state'` becomes
-resolvable. Without a checker the resolver falls back to file-local
-`const`/`function` lookup. The cross-file path requires the
-identifier's AST node to be bound to the checker's Program — pass
-nodes obtained via `program.getSourceFile(...)`, not from a freshly
-`ts.createSourceFile`'d copy. (See AnalysisContext.program.)
-
-```typescript
-function resolveAccessorBody(value: ts.Expression, checker?: ts.TypeChecker): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null
-```
-
 ### `resolveFieldType()`
 
 ```typescript
 function resolveFieldType(type: ts.TypeNode, typeIndex: TypeIndex = new Map(), depth = MAX_FIELD_DEPTH): MsgFieldType
-```
-
-### `resolveLocalConstInitializer()`
-
-Walk parent chains to find a `const X = ...` declaration matching
-`use.text`, or a hoisted `function X(...)` declaration. Returns the
-resolved declaration or `null` for unresolvable references (imports,
-parameters, this-bindings, etc.).
-Limitations:
-  - Only `const`. `let` resolution is unsafe — we can't track later
-    reassignments without a type checker.
-  - Only single-binding declarations (`const a = …`, not `const a = …, b = …`).
-  - The declaration must dominate the use (lexical scope).
-
-```typescript
-function resolveLocalConstInitializer(use: ts.Identifier): ts.Expression | ts.FunctionDeclaration | null
 ```
 
 ### `serializeManifest()`
@@ -5300,19 +5221,14 @@ in their meaningful order (e.g. `viaParams` is index-ordered). 2-space indent
 function serializeManifest(manifest: Manifest): string
 ```
 
-### `shadowsStateParam()`
+### `signalPathOf()`
 
-Returns true when one of the function's parameter bindings would
-shadow an outer identifier named `stateParam`. Covers identifier
-params (`(s) => …`), simple destructured patterns (`({s}) => …`),
-and array patterns (`([s]) => …`). Tracking shadowing avoids a
-common false positive where a nested arrow's `s` is mis-attributed
-to the outer accessor's state parameter — most notably bites the
-`track({ deps: (s) => [...] })` escape hatch when the outer
-accessor is also `(s) => …`.
+The single absolute path an `.at()`-chain expression denotes, or `null` if it
+is not a simple path (e.g. a `.map`/`derived` result, or rooted at something
+other than a known signal root).
 
 ```typescript
-function shadowsStateParam(parameters: ts.NodeArray<ts.ParameterDeclaration>, stateParam: string): boolean
+function signalPathOf(expr: ts.Expression, roots: Roots): string | null
 ```
 
 ### `sparseMsgAnnotations()`
@@ -5439,6 +5355,15 @@ function transformSignalComponentSourceWithMap(source: string, opts: SignalTrans
 ```
 
 ## Types
+
+### `AnalyzableFn`
+
+A function whose body this analyzer can walk: an inline accessor (arrow /
+function expression) or a declared helper.
+
+```typescript
+export type AnalyzableFn = ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+```
 
 ### `CompilerDomInternalImport`
 
@@ -5755,6 +5680,15 @@ export interface CodeAction {
 }
 ```
 
+### `CollectSignalDepsOptions`
+
+```typescript
+export interface CollectSignalDepsOptions {
+  /** Source file path — decides the parse ScriptKind (`.ts` vs `.tsx`). */
+  fileName?: string
+}
+```
+
 ### `ComponentEntry`
 
 ```typescript
@@ -5782,6 +5716,17 @@ export interface ContextRead {
   context: string
   /** Sub-paths within the context value the helper reads. */
   subPaths: string[]
+}
+```
+
+### `DepResult`
+
+Per-parameter dependency paths. `deps[i]` holds dotted relative paths read
+from parameter `i`; the empty string `''` means the whole parameter.
+
+```typescript
+export interface DepResult {
+  deps: Set<string>[]
 }
 ```
 
@@ -6009,28 +5954,6 @@ export interface MsgSchema {
 }
 ```
 
-### `OpaqueOut`
-
-Mutable collector for "the file's __prefixes must degrade to the
-whole-state sentinel" — written by every accessor walker that sees
-an opaque shape (unresolvable delegation, dynamic `s[expr]`, state
-in a spread, etc.). The first triggering site is captured so a
-downstream diagnostic can point the author at the line that
-silently degraded mask precision for every binding in the file.
-Subsequent leaks DON'T overwrite — the surface diagnostic is "fix
-this one and rerun"; flooding the user with every leak found is
-lower value than a precise first cause.
-
-```typescript
-export interface OpaqueOut {
-  value: boolean
-  /** First opaque shape encountered. Stable across calls — only set when value flips false→true. */
-  node?: ts.Node
-  /** Short human label for the shape (e.g. "dynamic element access `s[expr]`"). */
-  shape?: string
-}
-```
-
 ### `Position`
 
 ```typescript
@@ -6124,6 +6047,22 @@ export interface ResolvedTypeSource {
   localName: string
   /** Absolute path of the file declaring the alias (debug aid). */
   filePath: string
+}
+```
+
+### `SignalDepsResult`
+
+```typescript
+export interface SignalDepsResult {
+  /** Absolute state paths, deduped and sorted. Excludes the whole-state read. */
+  paths: string[]
+  /** At least one binding reads the state wholesale (dep path `''`), so the
+   * runtime cannot gate it on any narrower path. */
+  wholeState: boolean
+  /** How many signal component views were analyzed. Zero means the file has no
+   * `component({ view: ({ state }) => … })` — `paths` being empty says nothing
+   * about the file's reactivity. */
+  views: number
 }
 ```
 

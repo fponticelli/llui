@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { transformSignalComponentSource, collectDeps } from '@llui/compiler'
+import { transformSignalComponentSource, collectSignalDeps } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 
 /**
@@ -71,7 +71,7 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
     {
       name: 'llui_static_collect_paths',
       description:
-        'Return the reactive state-access dependency paths the @llui/compiler would extract from a file (the paths the runtime gates each binding on), with a per-top-level-field breakdown. Companion to `llui_explain_mask` (live) — works without a running app, useful for understanding why a binding does/does not pick up a state change. `opaque` is true when an unresolvable accessor forced whole-state coarsening.',
+        'Return the reactive state-access dependency paths the @llui/compiler would extract from a file (the paths the runtime gates each binding on), with a per-top-level-field breakdown. Paths are reported at full depth (`user.profile.address.city`, not a two-segment prefix). Companion to `llui_explain_mask` (live) — works without a running app, useful for understanding why a binding does/does not pick up a state change. `opaque` is true when a binding reads the whole state and so cannot be gated on any narrower path.',
       schema: z.object({
         file: z.string().describe('Absolute or workspace-relative path to a .ts/.tsx file.'),
       }),
@@ -88,12 +88,11 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
           error: `Could not read file: ${(err as Error).message}`,
         }
       }
-      const { paths, opaque } = collectDeps(source)
-      const sorted = [...paths].sort()
+      const { paths, wholeState, views } = collectSignalDeps(source, { fileName: absPath })
 
       // Top-level field rollup so callers can see which slices dominate.
       const byTopLevel = new Map<string, number>()
-      for (const p of sorted) {
+      for (const p of paths) {
         const top = p.split('.', 1)[0]!
         byTopLevel.set(top, (byTopLevel.get(top) ?? 0) + 1)
       }
@@ -102,10 +101,18 @@ export function registerStaticCompilerTools(registry: ToolRegistry): void {
         .map(([field, count]) => ({ field, count }))
 
       return {
-        total: sorted.length,
-        opaque,
+        total: paths.length,
+        opaque: wholeState,
         breakdown,
-        paths: sorted,
+        paths,
+        // An empty path set means two very different things, and a caller that
+        // can't tell them apart draws the wrong conclusion: no component view
+        // was found to analyze, versus a view that reads nothing.
+        ...(views === 0
+          ? {
+              note: 'No signal component view found in this file. Paths are collected per `component({ view: ({ state }) => … })`; a view-helper function roots in a caller-supplied Signal handle, so its reads are attributed at the call site instead.',
+            }
+          : {}),
       }
     },
   )
