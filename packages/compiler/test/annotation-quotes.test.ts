@@ -223,3 +223,96 @@ type Msg =
     expect(extractMsgAnnotations(src)?.oops?.intent).toBeNull()
   })
 })
+
+// Issue #98 — the `@example({…})` JSON-literal form.
+//
+// Before #89 the parsers required a quote right after `(`, so
+// `@example({"type":"select"})` was silently ignored: thirteen files' worth of
+// authors independently reached for that spelling and none of their examples
+// ever reached the agent. #89 converted them to the escaped-quote form, which
+// is correct but genuinely hostile to write and to read. The tokenizer already
+// tracks quote state, so brace-matching on top of it is the cheap part; the
+// load-bearing part is that a malformed literal is an ERROR, never a silent
+// drop — the silent drop is what made this invisible for a year.
+//
+// The form is scoped to `@example` ALONE. `@routeGated`/`@validates` take
+// JavaScript predicates and `@intent`/`@warning`/`@should` take prose; a brace
+// there is a mistake, and accepting it would invent a second spelling of a
+// concept that has none.
+describe('annotation args — the `@example({…})` JSON form (issue #98)', () => {
+  const examples = (body: string): string[] | undefined =>
+    extractMsgAnnotations(`type Msg =\n  /** ${body} */\n  | { type: 'x' }\n`)?.x?.examples
+
+  it("parses a JSON object argument and produces the quoted form's value", () => {
+    expect(examples('@example({"type":"select","id":42})')).toEqual(['{"type":"select","id":42}'])
+    // The differential: both spellings of the same example reach `$ma`
+    // identically. That equality is what makes the JSON form a convenience
+    // rather than a second dialect.
+    expect(examples('@example({"type":"select","id":42})')).toEqual(
+      examples('@example("{\\"type\\":\\"select\\",\\"id\\":42}")'),
+    )
+  })
+
+  it('does not end the scan on a brace inside a string', () => {
+    expect(examples('@example({"a":"}"})')).toEqual(['{"a":"}"}'])
+    expect(examples('@example({"a":"{"})')).toEqual(['{"a":"{"}'])
+    // …nor on a brace behind an escaped quote inside a string.
+    expect(examples('@example({"a":"\\"}"})')).toEqual(['{"a":"\\"}"}'])
+  })
+
+  it('matches nested braces', () => {
+    expect(examples('@example({"a":{"b":{"c":1}}})')).toEqual(['{"a":{"b":{"c":1}}}'])
+  })
+
+  it('wraps across JSDoc lines like a quoted string does', () => {
+    const src = `
+type Msg =
+  /**
+   * @example({
+   *   "type": "select",
+   *   "id": 42
+   * })
+   */
+  | { type: 'x' }
+`
+    const got = extractMsgAnnotations(src)?.x?.examples
+    expect(got).toHaveLength(1)
+    expect(JSON.parse(got![0]!)).toEqual({ type: 'select', id: 42 })
+  })
+
+  it('accepts a JSON array too — an example payload is not always an object', () => {
+    expect(examples('@example([{"type":"a"},{"type":"b"}])')).toEqual([
+      '[{"type":"a"},{"type":"b"}]',
+    ])
+  })
+
+  it('DROPS a malformed literal rather than half-reading it', () => {
+    // The lint rule turns each of these into a build error (see
+    // rules.test.ts); the extractor must never emit a partial value.
+    expect(examples('@example({not json})')).toEqual([])
+    expect(examples("@example({'type':'select'})")).toEqual([])
+    expect(examples('@example({"a":1,})')).toEqual([])
+    expect(examples('@example({"a":1)')).toEqual([])
+  })
+
+  it('mixes with the quoted form in one JSDoc block', () => {
+    expect(examples('@example("plain prose") @example({"type":"x"})')).toEqual([
+      'plain prose',
+      '{"type":"x"}',
+    ])
+  })
+
+  it('does NOT extend the brace form to any other tag', () => {
+    const ann = (body: string) =>
+      extractMsgAnnotations(`type Msg =\n  /** ${body} */\n  | { type: 'x' }\n`)?.x
+    expect(ann('@intent({"a":1})')?.intent).toBeNull()
+    expect(ann('@warning({"a":1})')?.warning).toBeNull()
+    expect(ann('@routeGated({"a":1})')?.routeGate).toBeNull()
+    expect(ann('@emits({"a":1})')?.emits).toEqual([])
+  })
+
+  it('leaves the quoted form byte-for-byte unchanged', () => {
+    expect(examples('@example("send({ type: \'x\' })")')).toEqual(["send({ type: 'x' })"])
+    expect(examples('@example("")')).toEqual([''])
+  })
+})

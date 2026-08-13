@@ -270,14 +270,25 @@ Every tag that takes arguments — `@intent`, `@example`, `@warning`, `@emits`,
 
 ```
 @tag("first argument"[, "second argument"])
+@example({"type": "inc"})                    // @example only
 ```
 
 - **The `(` follows the tag on the same line.** A tag not in the call form is
   not an annotation — plain block-form JSDoc (`@example` followed by a code
   block) is left alone.
 - **Arguments are quoted strings**, `"…"` or `“…”` (a curly opener must be
-  closed by a curly closer). `@example({"type":"inc"})` is _not_ an argument
-  list; quote it: `@example("{\"type\":\"inc\"}")`.
+  closed by a curly closer).
+- **`@example` also takes a bare JSON literal** — `@example({"type":"select","id":42})`
+  or `@example([…])` — scanned to its balanced closer (a `}` inside a JSON
+  string does not end it) and captured verbatim. It must **parse as JSON**;
+  a malformed literal is a build error, never a silently dropped example.
+  Both spellings produce the same value, so
+  `@example("{\"type\":\"inc\"}")` and `@example({"type":"inc"})` are
+  interchangeable — **use the JSON form for payload examples** and the quoted
+  form for everything else (prose, a `send(…)` snippet). The JSON form is
+  `@example`-only: the other tags take a predicate (`@routeGated`,
+  `@validates`) or prose (`@intent`, `@warning`, `@should`, `@emits`), which a
+  JSON literal cannot be, so a brace after any of them is a build error.
 - **Escape an embedded quote as `\"`** — it round-trips intact, so a predicate
   can say `@validates("v === \"admin\"")`. `\\` is a literal backslash. Every
   **other** backslash sequence is preserved verbatim, so a regex predicate

@@ -32,7 +32,7 @@ type Msg =
   /**
    * @intent("Delete an item by id")
    * @warning("Permanently removes the item — last-delete is recorded but the row is gone.")
-   * @example("{\"type\":\"delete\",\"id\":\"42\"}")
+   * @example({"type":"delete","id":"42"})
    * @requiresConfirm
    */
   | { type: 'delete'; id: string }
@@ -40,24 +40,24 @@ type Msg =
   | { type: 'signOut' }
   /**
    * @intent("Navigate to the named view")
-   * @example("{\"type\":\"nav\",\"to\":\"reports\"}")
+   * @example({"type":"nav","to":"reports"})
    * @alwaysAffordable
    */
   | { type: 'nav'; to: 'home' | 'reports' }
   // ──────────────── agent sub-component messages ────────────────────────────
   /**
    * @intent("Forward a sub-message to the agent connect helper")
-   * @example("{\"type\":\"agent\",\"sub\":\"connect\",\"msg\":{\"type\":\"connect\"}}")
+   * @example({"type":"agent","sub":"connect","msg":{"type":"connect"}})
    */
   | { type: 'agent'; sub: 'connect'; msg: agentConnect.AgentConnectMsg }
   /**
    * @intent("Forward a sub-message to the agent confirm helper")
-   * @example("{\"type\":\"agent\",\"sub\":\"confirm\",\"msg\":{\"type\":\"approve\",\"id\":\"abc\"}}")
+   * @example({"type":"agent","sub":"confirm","msg":{"type":"approve","id":"abc"}})
    */
   | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.AgentConfirmMsg }
   /**
    * @intent("Forward a sub-message to the agent log helper")
-   * @example("{\"type\":\"agent\",\"sub\":\"log\",\"msg\":{\"type\":\"clear\"}}")
+   * @example({"type":"agent","sub":"log","msg":{"type":"clear"}})
    */
   | { type: 'agent'; sub: 'log'; msg: agentLog.AgentLogMsg }
 

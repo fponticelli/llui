@@ -1086,4 +1086,64 @@ describe('agent-annotation-syntax (issue #89 — the audit’s `agent-validates-
     const src = doc('@routeGated("state.mode === "admin"")')
     expect(lintSignalSource(src, 'msg.ts').map((d) => d.rule)).toContain('agent-annotation-syntax')
   })
+
+  // ── the `@example({…})` JSON form (issue #98) ──────────────────────────
+  // The rule is the second half of the grammar: the tokenizer DROPS what it
+  // cannot read, so without a matching build error the JSON form would fail
+  // the same silent way the whole form failed before #89.
+  it('does NOT flag a well-formed `@example({…})`', () => {
+    expect(rules(doc('@example({"type":"select","id":42})'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+    expect(rules(doc('@example({"a":"}"})'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@example({"a":{"b":[1,2]}})'))).not.toContain('agent-annotation-syntax')
+    expect(rules(doc('@example([{"type":"a"}])'))).not.toContain('agent-annotation-syntax')
+    // …and the quoted form is untouched by any of it.
+    expect(rules(doc('@example("{\\"type\\":\\"select\\"}")'))).not.toContain(
+      'agent-annotation-syntax',
+    )
+  })
+
+  it('flags an `@example({…})` whose literal is not valid JSON', () => {
+    expect(rules(doc('@example({not json})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc("@example({'type':'select'})"))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@example({"a":1,})'))).toContain('agent-annotation-syntax')
+  })
+
+  it('flags an `@example({…})` whose braces never balance', () => {
+    expect(rules(doc('@example({"a":1)'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@example({"a":{"b":1})'))).toContain('agent-annotation-syntax')
+  })
+
+  it('the JSON message names the tag and says the value must be JSON', () => {
+    const msg = messageFor(doc('@example({not json})'), 'agent-annotation-syntax')
+    expect(msg).toContain('@example')
+    expect(msg).toContain('JSON')
+  })
+
+  // NEGATIVE: the brace form belongs to `@example` alone. A brace after any
+  // other tag is a mistake — accepting it would invent a second spelling of a
+  // concept (a predicate, prose) that has exactly one.
+  it('flags a brace argument on every tag OTHER than `@example`', () => {
+    expect(rules(doc('@intent({"a":1})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@warning({"a":1})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@should({"a":1})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@validates({"a":1})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@routeGated({"a":1})'))).toContain('agent-annotation-syntax')
+    expect(rules(doc('@emits({"a":1})'))).toContain('agent-annotation-syntax')
+  })
+
+  // NEGATIVE: standard block-form `@example` with a brace on the NEXT line is
+  // ordinary JSDoc, not a call — the `(` rule is what separates them, and the
+  // JSON form must not widen it.
+  it('does NOT flag block-form `@example` followed by an object literal', () => {
+    const src = [
+      '/**',
+      ' * @example',
+      ' * { "type": "inc" }',
+      ' */',
+      "type Msg = { type: 'inc' }",
+    ].join('\n')
+    expect(rules(src)).not.toContain('agent-annotation-syntax')
+  })
 })

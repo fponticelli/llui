@@ -1212,6 +1212,19 @@ function predicateSyntaxError(src: string, boundName: string): string | null {
  *      throws the result away; it never calls it, so nothing is evaluated at
  *      build time.
  *
+ * `@example` additionally accepts a bare JSON object/array literal
+ * (`@example({"type":"inc"})` — issue #98), which the grammar validates as
+ * JSON for the same reason check 2 exists: a balanced-but-not-JSON literal
+ * reads fine and then hands an LLM a payload it cannot use.
+ *
+ * BOTH `@example` spellings stay supported permanently and produce the same
+ * value, rather than one replacing the other: the quoted form is the only one
+ * that can carry prose or a `send(…)` snippet, and the JSON form is the only
+ * one an author writes without escaping every inner quote. The convention is
+ * JSON for payloads, quoted for everything else — and this repo's own payload
+ * examples (`packages/agent-e2e/src/host.ts`) use the JSON form, because a
+ * source that contradicts the documented preference is what an LLM copies.
+ *
  * SCOPE — deliberately narrow, and this is the false-positive story: only
  * `/** … *\/` blocks in the positions the extractors actually READ are checked
  * — a type alias, each member of its union, and any property signature. JSDoc

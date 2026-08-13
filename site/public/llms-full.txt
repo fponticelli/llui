@@ -5863,6 +5863,21 @@ Arity of one annotation tag. `max: null` means variadic.
 export interface AnnotationTagSpec {
   min: number
   max: number | null
+  /**
+   * Whether an argument may be written as a bare JSON object/array literal
+   * instead of a quoted string (issue #98).
+   *
+   * `@example` ONLY, and deliberately so. An example IS a payload — a JSON
+   * object is what the tag's value already spells, just with every inner quote
+   * escaped, and thirteen files' worth of authors independently reached for
+   * the unescaped form before #89 made it an error. Every other tag takes
+   * something a JSON literal cannot be: `@routeGated`/`@validates` take a
+   * JavaScript predicate, `@intent`/`@warning`/`@should` take prose, `@emits`
+   * takes effect kinds. Accepting a brace there would invent a second spelling
+   * for a concept that has exactly one — so a brace after any other tag stays
+   * a build error.
+   */
+  json?: true
 }
 ```
 
