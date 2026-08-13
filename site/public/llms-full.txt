@@ -11685,7 +11685,13 @@ export interface AnyLayer {
    * counter here renders one state on the server and hydrates another. Emit the
    * varying value from an effect after mount, or resolve it server-side and pass
    * it in through the layer's data slice. Dev builds check and warn (see
-   * {@link buildManifest} / {@link checkInitDeterminism}).
+   * {@link buildManifest} / {@link checkInitDeterminism}) — but only as far as
+   * the JSON-serializable-State invariant holds: the check compares JSON
+   * fingerprints, so variation the runtime's own State contract already forbids
+   * (a `Set`/`Map`/function/`undefined` property, anything `JSON.stringify`
+   * drops or flattens) can differ on the two sides and still fingerprint alike.
+   * Deterministic `init()` and JSON-serializable state are one precondition,
+   * not two.
    */
   init(): unknown
   update(state: unknown, msg: unknown): unknown
