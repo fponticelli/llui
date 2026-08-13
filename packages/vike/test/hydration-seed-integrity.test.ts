@@ -10,7 +10,7 @@
 // The manifest now carries a per-layer "seeded from data" flag, and the chain's
 // data array is built index-aligned so a short/missing `lluiLayoutData` can never
 // slide the page's slice onto a layout.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { browserEnv } from '@llui/dom/ssr'
 import { component, div, text } from '@llui/dom'
 import { createOnRenderHtml } from '../src/on-render-html.js'
@@ -229,5 +229,63 @@ describe('chain data is index-aligned with the chain', () => {
     await render({ Page: Article, data: { title: 'Hydration' }, isHydration: true })
     expect(container.querySelector('.shell')!.textContent).toContain('anonymous')
     expect(container.querySelector('.article')!.textContent).toBe('Hydration')
+  })
+})
+
+describe('an over-long lluiLayoutData does not vanish quietly', () => {
+  // The surplus CANNOT be seeded anywhere — there is no layer to put it on — so
+  // dropping it is right. Doing it silently is not: this whole alignment change
+  // exists so a seed never goes missing without a word, and a data hook filling
+  // slices no layer receives is the same disagreement seen from the other end.
+  afterEach(() => vi.restoreAllMocks())
+
+  it('warns in dev, naming the counts and the dropped range', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const chainData = buildChainData(1, [{ user: 'a' }, { user: 'b' }, { user: 'c' }], {
+      title: 'T',
+    })
+
+    // Still index-aligned: layer 0 keeps its own slice, the page keeps its data.
+    expect(chainData).toEqual([{ user: 'a' }, { title: 'T' }])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/3 slice\(s\)/)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/1 layer\(s\)/)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/DROPPED/)
+  })
+
+  it('warns from a real server render whose data hook outran the chain', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const render = createOnRenderHtml({ domEnv, Layout: Shell })
+
+    const result = await render({
+      Page: Article,
+      lluiLayoutData: [{ user: 'franco@example.com' }, { user: 'nobody@example.com' }],
+    })
+
+    // The chain rendered correctly off the first slice…
+    expect(getHtml(result)).toContain('franco@example.com')
+    expect(result.pageContext.lluiState.seeded).toEqual([true, false])
+    // …and the orphan slice was reported rather than swallowed.
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]![0])).toMatch(/DROPPED/)
+  })
+
+  it('stays silent when every slice has a layer to land on', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    buildChainData(2, [{ user: 'a' }, { user: 'b' }], { title: 'T' })
+    // A SHORT array is the normal `passToClient` case and is caught by the
+    // manifest's seed flags, not here — no warning for it either.
+    buildChainData(2, [], { title: 'T' })
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('says nothing in a production build', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(buildChainData(1, [{ user: 'a' }, { user: 'b' }], undefined, false)).toEqual([
+      { user: 'a' },
+      undefined,
+    ])
+    expect(warn).not.toHaveBeenCalled()
   })
 })

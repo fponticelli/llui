@@ -142,12 +142,30 @@ export function seedStateFor(def: AnyLayer, data: unknown): unknown {
  * the layer names. Padding to the layout count keeps the indices meaningful; the
  * manifest's `seeded` flags (see {@link buildManifest}) then catch the missing
  * slices themselves.
+ *
+ * The opposite mismatch — MORE slices than layers — cannot be repaired here
+ * (there is no layer to put them on) so the surplus is dropped, but dev builds
+ * warn rather than swallowing it: a slice that a data hook took the trouble to
+ * produce and no layer ever receives is a chain/data disagreement, and this
+ * whole function exists so no seed goes missing quietly.
  */
 export function buildChainData(
   layoutCount: number,
   layoutData: readonly unknown[],
   pageData: unknown,
+  dev: boolean = DEV_BUILD,
 ): readonly unknown[] {
+  if (DEV_BUILD && dev && layoutData.length > layoutCount) {
+    console.warn(
+      `[llui/vike] lluiLayoutData carries ${layoutData.length} slice(s) but the ` +
+        `resolved layout chain has ${layoutCount} layer(s), so slice(s) ` +
+        `${layoutCount}…${layoutData.length - 1} are DROPPED — no layer is seeded ` +
+        `from them. The data hook filling lluiLayoutData and the Layout chain have ` +
+        `drifted apart: a route-scoped resolver that returns a shorter chain than ` +
+        `the data hook assumes produces exactly this. (dev-only check; not run in ` +
+        `production builds)`,
+    )
+  }
   const out: unknown[] = []
   for (let i = 0; i < layoutCount; i++) out.push(layoutData[i])
   out.push(pageData)
