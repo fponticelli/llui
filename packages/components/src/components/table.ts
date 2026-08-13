@@ -333,7 +333,8 @@ export interface TableCheckboxParts {
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
   'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
-  tabindex: Signal<number>
+  /** Always `-1`: a `role="grid"` has exactly ONE tab stop, the roving cell. */
+  tabindex: -1
   onClick: (e: MouseEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
 }
@@ -397,11 +398,23 @@ export function connect(
         'pageUp',
         'toggleRow',
         'activateRow',
+        'toggleAll',
       ],
       (e) => {
         const s = state.peek()
         const id = s.rows[rowIndex]
         const origin = e.currentTarget as Element | null
+        // APG Grid: "Control + A — selects all cells". This is the select-all
+        // checkbox's keyboard route: it lives in a `columnheader`, which is not
+        // in the roving sequence and carries no tab stop, so without this the
+        // control is mouse-only (#122). Giving it a tab stop of its own would
+        // put a second, independent tab stop inside `role="grid"`.
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+          if (s.selectionMode !== 'multiple') return
+          e.preventDefault()
+          send({ type: 'toggleAll' })
+          return
+        }
         switch (e.key) {
           case 'ArrowRight':
             e.preventDefault()
@@ -547,10 +560,12 @@ export function connect(
         if (isSomeSelected(s)) return 'indeterminate'
         return 'unchecked'
       }),
-      // `role="checkbox"` without a tab stop or a key handler made row and
-      // select-all selection mouse-only — APG's Checkbox pattern requires both
-      // (#122).
-      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
+      // Out of the tab sequence, like every other part inside `role="grid"`
+      // except the one roving cell. The select-all has no cell of its own — it
+      // lives in a `columnheader` — so its keyboard route is Ctrl/Cmd+A from any
+      // cell (APG Grid), not a tab stop of its own. The Space handler below
+      // still applies when the checkbox is focused programmatically (#122).
+      tabindex: -1,
       // The checkbox is a self-contained control; stop the click from bubbling
       // to an enclosing clickable header cell (which would also toggle sort).
       onClick: tagSend(send, ['toggleAll'], (e) => {
@@ -572,7 +587,12 @@ export function connect(
       'data-scope': 'table',
       'data-part': 'row-checkbox',
       'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
-      tabindex: state.map((s) => (s.disabled ? -1 : 0)),
+      // Out of the tab sequence. A tab stop per row would put N of them inside a
+      // `role="grid"`, which contradicts APG's single-tab-stop Grid pattern —
+      // and it is unnecessary: the enclosing gridcell's Space already toggles
+      // the row from the grid's one tab stop. The handler below stays for a
+      // programmatically-focused checkbox (#122).
+      tabindex: -1,
       // The checkbox lives INSIDE the clickable row, which also toggles the row
       // on click. Without stopping propagation the click would fire twice
       // (checkbox + row), cancelling out to a no-op. Stop it here so a click on

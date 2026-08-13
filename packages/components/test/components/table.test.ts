@@ -434,14 +434,17 @@ describe('table.connect — parts', () => {
     expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
   })
 
-  // The checkbox parts dictate role="checkbox" but shipped no tabindex and no
-  // key handler, so row / select-all selection was mouse-only (#122). APG's
-  // Checkbox pattern requires both.
-  it('checkbox parts are in the tab sequence', () => {
+  // The checkbox parts ship a Space handler (#122 — selection used to be
+  // mouse-only) but stay OUT of the tab sequence. A `role="grid"` has exactly
+  // one tab stop under APG's Grid pattern; N focusable row checkboxes inside it
+  // is a regression, not an improvement, and row selection is already operable
+  // from that single tab stop (cell + arrows + Space). The Space handler stays
+  // for when the checkbox is focused programmatically.
+  it('checkbox parts stay OUT of the tab sequence (grid keeps one tab stop)', () => {
     const base = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })
     const pc = connect(rootSignal(), vi.fn(), { id: 't' })
-    expect(read(pc.rowCheckbox('r2', 1).tabindex, base)).toBe(0)
-    expect(read(pc.selectAllCheckbox.tabindex, base)).toBe(0)
+    expect(read(pc.rowCheckbox('r2', 1).tabindex, base)).toBe(-1)
+    expect(read(pc.selectAllCheckbox.tabindex, base)).toBe(-1)
     const disabled = { ...base, disabled: true }
     expect(read(pc.rowCheckbox('r2', 1).tabindex, disabled)).toBe(-1)
     expect(read(pc.selectAllCheckbox.tabindex, disabled)).toBe(-1)
@@ -560,16 +563,73 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
     expect(send).toHaveBeenCalledWith({ type: 'activateRow', id: 'r2', index: 1 })
   })
 
-  it('only one cell has tabindex 0 across the grid', () => {
-    const s = init({ columns: COLS, rows: ROWS, focusedCell: { rowIndex: 2, colIndex: 1 } })
+  // The name says "the grid", so the count must cover EVERY part that carries a
+  // tabindex — not just the cells. Counting cells alone let N focusable row
+  // checkboxes be added inside the grid with this test still green.
+  it('exactly one tab stop across the whole grid, counting every part', () => {
+    const s = init({
+      columns: COLS,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: 2, colIndex: 1 },
+    })
     const p = connect(rootSignal(), vi.fn(), { id: 't' })
+    // Widened to `number` on purpose: the checkbox parts are TYPED as the
+    // literal `-1`, and comparing that to 0 directly is a compile error rather
+    // than a runtime count.
+    const isTabStop = (part: { tabindex: Signal<number> | number }): boolean =>
+      read<number>(part.tabindex, s) === 0
     let zeroCount = 0
     for (let r = 0; r < ROWS.length; r++) {
       for (let c = 0; c < COLS.length; c++) {
-        if (read(p.cell(r, c).tabindex, s) === 0) zeroCount++
+        if (isTabStop(p.cell(r, c))) zeroCount++
       }
+      if (isTabStop(p.rowCheckbox(ROWS[r]!, r))) zeroCount++
     }
+    if (isTabStop(p.selectAllCheckbox)) zeroCount++
     expect(zeroCount).toBe(1)
+  })
+
+  // The select-all is the one selection control with no cell of its own — it
+  // lives in a `columnheader`, which carries no tabindex and is not in the
+  // roving sequence. APG's Grid pattern gives it Ctrl+A from any cell, which
+  // keeps the single tab stop intact.
+  it('Ctrl/Cmd+A from a cell toggles every row', () => {
+    const s = init({
+      columns: COLS,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: 1, colIndex: 1 },
+    })
+    const { send, pc } = make(s)
+    press(pc.cell(1, 1), 'a', { ctrlKey: true })
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+    send.mockClear()
+    press(pc.cell(1, 1), 'A', { metaKey: true })
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+  })
+
+  it('a bare "a" is left to typeahead / the consumer, and single-select ignores Ctrl+A', () => {
+    const multi = init({
+      columns: COLS,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: 1, colIndex: 1 },
+    })
+    const bare = make(multi)
+    press(bare.pc.cell(1, 1), 'a')
+    expect(bare.send).not.toHaveBeenCalled()
+
+    const single = make(
+      init({
+        columns: COLS,
+        rows: ROWS,
+        selectionMode: 'single',
+        focusedCell: { rowIndex: 1, colIndex: 1 },
+      }),
+    )
+    press(single.pc.cell(1, 1), 'a', { ctrlKey: true })
+    expect(single.send).not.toHaveBeenCalled()
   })
 })
 
