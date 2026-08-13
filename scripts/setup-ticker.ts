@@ -4,12 +4,14 @@
  * has refreshed the upstream clone.
  *
  * Steps:
- *   1. Verify each ticker framework app is built (`dist/main.js` present).
+ *   1. Verify each ticker framework app is built (`dist/main.js` present) —
+ *      reporting ALL unbuilt apps at once. `pnpm bench:setup` builds them.
  *   2. Symlink each app into <jfb-repo>/frameworks/keyed/<name>-ticker.
  *   3. Inject the 8 CPU benchmark infos into webdriver-ts/src/benchmarksCommon.ts.
  *   4. Inject the 8 benchmark classes + array entries into
  *      webdriver-ts/src/benchmarksWebdriverCDP.ts.
- *   5. Run `npm install` + `npm run compile` in webdriver-ts.
+ *   5. Run `npm run compile` in webdriver-ts (its deps come from
+ *      `pnpm bench:setup`).
  *
  * The injections use begin/end markers so a second run replaces the
  * block in place instead of duplicating it.
@@ -65,14 +67,23 @@ console.log(`Using jfb-repo at ${JFB_REPO}`)
 
 // ── Step 1+2: verify built bundles, then symlink ─────────────────
 
-for (const fw of FRAMEWORKS) {
-  const src = resolve(TICKER_DIR, 'frameworks', fw)
-  const dist = resolve(src, 'dist/main.js')
-  if (!existsSync(dist)) {
-    console.error(`Missing build: ${dist}`)
-    console.error(`Run \`pnpm --filter jfb-ticker-${fw} build-prod\` first.`)
-    process.exit(1)
+// Report EVERY missing bundle at once — naming only the first sends you
+// through one build-fix-rerun cycle per framework (issue #81).
+const unbuilt = FRAMEWORKS.filter(
+  (fw) => !existsSync(resolve(TICKER_DIR, 'frameworks', fw, 'dist/main.js')),
+)
+if (unbuilt.length > 0) {
+  console.error(`${unbuilt.length} of ${FRAMEWORKS.length} ticker apps are not built:`)
+  for (const fw of unbuilt) {
+    console.error(
+      `  missing ${relative(ROOT, resolve(TICKER_DIR, 'frameworks', fw, 'dist/main.js'))}`,
+    )
   }
+  console.error('\nBuild them all with:')
+  console.error('  pnpm bench:setup')
+  console.error('or individually with:')
+  for (const fw of unbuilt) console.error(`  pnpm --filter jfb-ticker-${fw} build-prod`)
+  process.exit(1)
 }
 
 const keyedDir = resolve(JFB_REPO, 'frameworks', 'keyed')
@@ -246,8 +257,10 @@ if (skipBuild) {
   console.log(`Compiling webdriver-ts (${wdDir})...`)
   try {
     execSync('npm run compile', { cwd: wdDir, stdio: 'inherit' })
-  } catch (e) {
-    console.error('webdriver-ts compile failed. Inspect the patched files for errors.')
+  } catch {
+    console.error('webdriver-ts compile failed.')
+    console.error(`If the errors are missing modules or types, ${wdDir}/node_modules is`)
+    console.error('incomplete — run `pnpm bench:setup`. Otherwise inspect the patched files.')
     process.exit(1)
   }
 }

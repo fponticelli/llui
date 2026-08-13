@@ -2,10 +2,11 @@
  * Run js-framework-benchmark for LLui and display comparison.
  *
  * Prerequisites:
- *   1. Clone the jfb repo:
- *      git clone https://github.com/krausest/js-framework-benchmark.git benchmarks/js-framework-benchmark-repo
- *   2. Install + build it:
- *      cd benchmarks/js-framework-benchmark-repo && npm ci && cd webdriver-ts && npm ci && npm run compile
+ *   pnpm bench:setup   # clone + install (root/server/webdriver-ts) + compile
+ *
+ * Do NOT hand-run the install chain: upstream's root `npm ci` fails with
+ * ERESOLVE and takes the two installs the harness actually needs down with
+ * it. `scripts/setup-bench.ts` handles that and verifies every step.
  *
  * Usage:
  *   pnpm -w run bench                         # Run LLui only, compare against saved baselines
@@ -131,21 +132,14 @@ const chromeMode = headful ? '' : ' --headless'
 console.log(`📦 jfb repo: ${JFB_REPO}`)
 
 if (!existsSync(JFB_REPO)) {
-  console.error('ERROR: js-framework-benchmark repo not found.')
-  console.error(
-    `Clone it:\n  git clone https://github.com/krausest/js-framework-benchmark.git ${WORKSPACE_REPO}`,
-  )
-  console.error(
-    'Then install:\n  cd ' +
-      WORKSPACE_REPO +
-      ' && npm ci && cd webdriver-ts && npm ci && npm run compile',
-  )
+  console.error(`ERROR: js-framework-benchmark repo not found at ${WORKSPACE_REPO}.`)
+  console.error('Run:\n  pnpm bench:setup')
   process.exit(1)
 }
 
 if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/dist/benchmarkRunner.js'))) {
-  console.error('ERROR: webdriver-ts not compiled. Run:')
-  console.error(`  cd ${JFB_REPO}/webdriver-ts && npm ci && npm run compile`)
+  console.error(`ERROR: webdriver-ts not compiled in ${JFB_REPO}. Run:`)
+  console.error('  pnpm bench:setup')
   process.exit(1)
 }
 
@@ -212,7 +206,6 @@ if (!existsSync(resolve(jfbLluiDir, 'package-lock.json'))) {
 
 // ── Start server if not running ──
 
-let serverStarted = false
 try {
   runCapture('curl -sf http://localhost:8080/ls')
 } catch {
@@ -231,10 +224,11 @@ try {
     }
   }
   if (!ready) {
-    console.error('ERROR: jfb server failed to start on port 8080')
+    console.error('ERROR: jfb server failed to start on port 8080.')
+    console.error(`Check that ${JFB_REPO}/server/node_modules is installed:`)
+    console.error('  pnpm bench:setup')
     process.exit(1)
   }
-  serverStarted = true
 }
 
 // ── Determine which frameworks to run ──

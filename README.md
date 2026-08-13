@@ -110,7 +110,7 @@ pnpm turbo build          # Build all packages
 pnpm turbo test           # Run 1200+ tests across all packages
 pnpm turbo check          # Type-check
 pnpm turbo lint           # ESLint
-pnpm bench:setup          # One-time: clone + compile js-framework-benchmark
+pnpm bench:setup          # One-time: clone + install + compile js-framework-benchmark (and build the ticker apps)
 pnpm bench                # Run LLui benchmark (add --save to update baseline)
 ```
 
