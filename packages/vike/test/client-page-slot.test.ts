@@ -84,8 +84,9 @@ describe('client pageSlot with comment anchor', () => {
 
     // Set up the hydration integrity manifest that the adapter expects.
     ;(window as Record<string, unknown>).__LLUI_STATE__ = {
-      v: 2,
+      v: 3,
       layers: ['TestLayout', 'PageA'],
+      seeded: [false, false],
     }
 
     const render = createOnRenderClient({ Layout })
@@ -261,8 +262,9 @@ describe('mount-suffix failure + double-hydration guards', () => {
       '<!--llui-mount-end-->' +
       '</div>'
     ;(window as Record<string, unknown>).__LLUI_STATE__ = {
-      v: 2,
+      v: 3,
       layers: ['TestLayout', 'PageA'],
+      seeded: [false, false],
     }
 
     const render = createOnRenderClient({ Layout })

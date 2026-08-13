@@ -5,6 +5,7 @@ import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 import {
   resolveLayoutChain as resolveChain,
+  buildChainData,
   seedFor,
   seedStateFor,
   verifyManifest,
@@ -345,7 +346,7 @@ async function renderClient(
   const layoutChain = resolveChain(options.Layout, pageContext as LayoutResolverContext)
   const layoutData = pageContext.lluiLayoutData ?? []
   const newChain: LayoutChain = [...layoutChain, pageContext.Page]
-  const newChainData: readonly unknown[] = [...layoutData, pageContext.data]
+  const newChainData = buildChainData(layoutChain.length, layoutData, pageContext.data)
 
   if (pageContext.isHydration) {
     // Double-hydration guard: a hydration render must start from an empty chain.
@@ -545,7 +546,7 @@ function mountChain(
       // Verify the server manifest against this chain (fails loud on drift), then
       // reconstruct this layer's seed locally: the server ran no effects, so its
       // rendered state was always `data ?? init()` — no need to ship state.
-      if (i === startAt) verifyManifest(opts.serverStateEnvelope, chain)
+      if (i === startAt) verifyManifest(opts.serverStateEnvelope, chain, chainData)
       const layerState = seedStateFor(def, layerData)
       handle = hydrateSignalApp(target, def, layerState, {
         runInitEffects: opts.runInitEffectsOnHydrate,

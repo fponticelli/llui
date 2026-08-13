@@ -6,6 +6,7 @@ import type { VikePageContextData } from './vike-namespace.js'
 import {
   resolveLayoutChain as resolveChain,
   buildManifest,
+  buildChainData,
   seedFor,
   type AnyLayer,
   type LayoutChain,
@@ -226,7 +227,7 @@ async function renderPage(
   // Full chain: every layout, then the page. Always at least one entry
   // (the page) since Vike's pageContext always has a Page.
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
-  const chainData: readonly unknown[] = [...layoutData, pageContext.data]
+  const chainData = buildChainData(layoutChain.length, layoutData, pageContext.data)
 
   const { html, manifest, collectedHead } = _renderChain(chain, chainData, env)
 
@@ -355,7 +356,7 @@ export function _renderChain(
     // Serialize collected head BEFORE disposing (dispose releases the writers).
     const collectedHead = headSink.serialize(env)
 
-    return { html, manifest: buildManifest(chain), collectedHead }
+    return { html, manifest: buildManifest(chain, chainData), collectedHead }
   } finally {
     // Dispose every layer's build — on the success path after serialization, and
     // on ANY error path so a failed render never leaks build state or head writers.

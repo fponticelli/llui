@@ -336,7 +336,11 @@ describe('persistent layouts — SSR chain render', () => {
     const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     const result = await render({ Page: ReportsPage })
 
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['AppLayout', 'ReportsPage'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['AppLayout', 'ReportsPage'],
+      seeded: [false, false],
+    })
   })
 
   it('renders nested layout chain into composed HTML', async () => {
@@ -360,8 +364,9 @@ describe('persistent layouts — SSR chain render', () => {
 
     // Manifest lists all three layers by name, outermost → page.
     expect(result.pageContext.lluiState).toEqual({
-      v: 2,
+      v: 3,
       layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'],
+      seeded: [false, false, false],
     })
   })
 
@@ -532,8 +537,9 @@ describe('persistent layouts — route-scoped section layout (issue #33)', () =>
 
     // Chain-aware manifest: AppLayout + DocsLayout + the article page.
     expect(result.pageContext.lluiState).toEqual({
-      v: 2,
+      v: 3,
       layers: ['AppLayout', 'DocsLayout', 'Article-intro'],
+      seeded: [false, false, false],
     })
   })
 })
