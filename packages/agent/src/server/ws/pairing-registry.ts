@@ -166,10 +166,18 @@ const CONFIRM_OUTCOME_TTL_MS = 5 * 60_000
 /**
  * How long a CLOSED session's buffers (recent-log ring + confirm
  * outcomes) stay readable before the sweep reclaims them. Matches the
- * core's default pending-resume grace, because that window is exactly
- * what the retention exists to serve: a brief drop followed by a
- * reconnect keeps `describe_recent_actions` history intact, and past it
- * the same bearer can no longer re-pair anyway.
+ * core's default pending-resume grace, because that window is what the
+ * retention exists to serve: a brief drop followed by a reconnect keeps
+ * `describe_recent_actions` history intact.
+ *
+ * Past the window the buffers go, and the session may well come back
+ * regardless — `/resume/claim` rotates the bearer but keeps the same
+ * tid, which is the key this registry uses, so a resumed session is not
+ * a new one and would still be servable. The window is a MEMORY bound:
+ * without it a plain WS close (tab reload, laptop lid) stranded up to
+ * `RECENT_LOG_CAP` entries per session for the process's lifetime
+ * (#101). The accepted cost is that a resume later than this starts with
+ * an empty recent-action history.
  *
  * `createLluiAgentCore` overrides this with its configured
  * `pendingResumeGraceMs` so the two never drift.
@@ -225,9 +233,9 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       /**
        * How long a closed session's buffers stay readable, in ms.
        * Default {@link CLOSED_RETENTION_MS}. `0` drops them the moment
-       * the socket closes — the right value when the host also opted out
-       * of the pending-resume grace, since no reconnect can then re-pair
-       * on the same bearer.
+       * the socket closes: a reconnect then has to rotate its bearer
+       * through `/resume/claim`, and while that reattaches to the SAME
+       * tid, this registry has already let its history go.
        */
       closedRetentionMs?: number
       /** Ceiling on concurrently-retained closed sessions. Default 128. */
@@ -367,12 +375,20 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // property — which still references these very Sets — so unsubscription
     // keeps working transparently after the swap, and `dispatch` on the new
     // conn delivers to the migrated subscribers.
-    // This tid is live again, so its buffers are no longer on the
-    // closed-session retention clock — clear the marker BEFORE sweeping,
-    // or a re-pair arriving late in the window would reclaim the very
-    // history the retention exists to hand back.
-    this.closedAt.delete(tid)
+    // Sweep FIRST, then clear the marker. The order is the semantic, and
+    // it is the one that makes the retention window mean something: a
+    // re-pair inside the window gets its history back, a re-pair past it
+    // does not — and which one you get depends on elapsed time ALONE.
+    //
+    // Clearing first inverts that. It revives a lapsed buffer, but only
+    // when no unrelated registry traffic (any read, close or other
+    // register, all of which sweep) happened to reclaim it first — so
+    // whether a resumed session sees its own history would depend on
+    // what other sessions did in the meantime. A nondeterministic
+    // retention window is not a window. Past it, `describe_recent_
+    // actions` starts empty; see `closedRetentionMs`.
     this.sweepClosed(this.now())
+    this.closedAt.delete(tid)
 
     const existing = this.pairings.get(tid)
     const superseded = existing && !existing.closed && existing.conn !== conn ? existing : null

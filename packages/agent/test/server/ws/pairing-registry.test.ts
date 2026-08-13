@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
-import type { ClientFrame, ServerFrame, HelloFrame } from '../../../src/protocol.js'
+import type { ClientFrame, ServerFrame, HelloFrame, LogEntry } from '../../../src/protocol.js'
 
 type Fake = {
   send: ReturnType<typeof vi.fn>
@@ -446,6 +446,50 @@ describe('WsPairingRegistry closed-session retention (#101)', () => {
     expect(reg.getRecentLog('t1', 10)).toEqual([])
     expect(reg.getConfirmOutcome('t1', 'c1')).toBeNull()
     expect(reg.retainedBufferCount()).toBe(0)
+  })
+
+  /**
+   * The retention window is the WHOLE contract: whether a re-pair gets
+   * its history back must depend on elapsed time and nothing else. The
+   * sweep therefore runs BEFORE `register` clears the closed marker — the
+   * reverse order revives a lapsed buffer, and only when no unrelated
+   * registry traffic (a read, a close, another register) happened to
+   * sweep it first, which makes the outcome nondeterministic.
+   */
+  it('does not revive a buffer whose retention window already lapsed', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emitClose()
+
+    // Past the window, with NO intervening registry traffic to sweep it.
+    c.advance(60_001)
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+
+    expect(reg.getRecentLog('t1', 10)).toEqual([])
+  })
+
+  it('gives a lapsed re-pair the same empty history whether or not a sweep ran first', () => {
+    const build = (sweepFirst: boolean): LogEntry[] => {
+      const c = clock()
+      const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+      const a = mkFake()
+      reg.register('t1', getConn(a))
+      a.emit(logFrame('e1'))
+      a.emitClose()
+      c.advance(60_001)
+      // Unrelated registry traffic that happens to drive the sweep.
+      if (sweepFirst) reg.getRecentLog('t-other', 1)
+      const b = mkFake()
+      reg.register('t1', getConn(b))
+      return reg.getRecentLog('t1', 10)
+    }
+
+    expect(build(true)).toEqual(build(false))
+    expect(build(false)).toEqual([])
   })
 
   it('a re-registered session is no longer counted as closed', () => {
