@@ -635,6 +635,24 @@ export type CodeLanguageMsg =
   | { type: 'cancel' }
 ```
 
+### `CollabBinding`
+
+Disposer-returning binding the collab layer installs on the live editor.
+`@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
+both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
+nor a Loro dependency of its own.
+At least one slot must be filled — a binding that fills neither registers
+nothing at all, which the union below rejects at compile time. Either way the
+built-in history stack is off in collab mode (the editor hard-codes it), so a
+binding that owns no undo shows as "no undo" rather than fighting a local
+stack.
+
+```typescript
+export type CollabBinding =
+  | (CollabBindingSlots & { externalUndo: (editor: LexicalEditor) => () => void })
+  | (CollabBindingSlots & { register: ForeignRegister })
+```
+
 ### `CollabFactory`
 
 Builds the collab binding from the editor-supplied hooks.
@@ -816,26 +834,31 @@ export interface CodeLanguageState {
 }
 ```
 
-### `CollabBinding`
+### `CollabBindingSlots`
 
-Disposer-returning binding the collab layer installs on the live editor.
-`@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
-both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
-nor a Loro dependency of its own.
+The two disposer-returning registration slots a collab binding may fill.
+Both are wired at mount, in this order, after the editor's own registrations.
+See {@link CollabBinding}, which requires at least one of them.
 
 ```typescript
-export interface CollabBinding {
-  register: (editor: LexicalEditor) => () => void
+export interface CollabBindingSlots {
   /**
-   * A CRDT-aware undo owner, if the binding provides one SEPARATELY from
-   * `register`. When present it is handed to `lexicalForeign({ externalUndo })`,
+   * Document sync / presence / anything that is NOT the undo stack.
+   * `@llui/lexical-loro` splits its binding this way.
+   *
+   * Typed as `ForeignRegister`, so it rejects a binding branded as an undo owner
+   * (`@llui/lexical-collab`'s) — that belongs in `externalUndo` below.
+   */
+  register?: ForeignRegister
+  /**
+   * A CRDT-aware undo owner. It is handed to `lexicalForeign({ externalUndo })`,
    * which forces the built-in `@lexical/history` stack off so the two can never
    * both be live — this is what gives collab mode real, peer-scoped undo.
    *
-   * Optional because not every binding splits undo out this way: `yjsCollab`
-   * installs its own undo commands INSIDE `register`, so it leaves this unset and
-   * still owns undo. A binding that sets neither would leave the editor with no
-   * undo at all — see `@llui/lexical-loro`, which sets this.
+   * `@llui/lexical-collab` exposes its WHOLE binding here (its undo commands live
+   * inside it) precisely so no caller can route it through `register` and keep
+   * the local stack alive; `@llui/lexical-loro` sets it alongside a separate
+   * `register`.
    */
   externalUndo?: (editor: LexicalEditor) => () => void
 }

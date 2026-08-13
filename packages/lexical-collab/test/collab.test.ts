@@ -75,7 +75,7 @@ function peer(
     seed: opts.seed,
     user: opts.name ? { name: opts.name, color: '#f00' } : undefined,
   })
-  const dispose = collab.register(editor)
+  const dispose = collab.externalUndo(editor)
   return { editor, doc, provider, dispose }
 }
 
@@ -196,7 +196,7 @@ describe('yjsCollab — presence', () => {
         aPeers = n
       },
     })
-    const disposeA = collabA.register(editorA)
+    const disposeA = collabA.externalUndo(editorA)
     await flush()
 
     const b = peer(hub, { id: 'room', name: 'Babbage' })
@@ -230,7 +230,7 @@ describe('yjsCollab — already-synced bootstrap', () => {
       shouldBootstrap: true,
       seed: seedText('ready'),
     })
-    const dispose = collab.register(editor)
+    const dispose = collab.externalUndo(editor)
     await flush()
     expect(readText(editor)).toBe('ready')
     dispose()
@@ -253,7 +253,7 @@ describe('yjsCollab — document ownership', () => {
       destroyed = true
     })
 
-    const dispose = collab.register(makeEditor())
+    const dispose = collab.externalUndo(makeEditor())
     dispose()
     collab.destroy()
 
@@ -276,7 +276,7 @@ describe('yjsCollab — document ownership', () => {
       destroyed = true
     })
 
-    const dispose = collab.register(makeEditor())
+    const dispose = collab.externalUndo(makeEditor())
     dispose()
     collab.destroy()
 

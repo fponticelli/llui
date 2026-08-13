@@ -4,6 +4,7 @@ export {
   type EditorConfig,
   type EditorParts,
   type CollabBinding,
+  type CollabBindingSlots,
   type CollabHooks,
   type CollabFactory,
   markdownEditor,

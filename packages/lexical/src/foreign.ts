@@ -44,6 +44,46 @@ import { createWidgetRuntime, type NodeWidget } from './nodewidget.js'
  * so the outbound change listener doesn't echo it back to the host. */
 export const PROGRAMMATIC_TAG = '@llui/lexical:programmatic'
 
+// ── The undo-ownership brand ────────────────────────────────────────────────
+// `register` and `externalUndo` below take the SAME shape — `(editor) => () =>
+// void` — and differ only in that filling `externalUndo` forces the built-in
+// `@lexical/history` stack off. That symmetry is a trap: a binding that owns
+// undo (a CRDT session) wired into `register` compiles, runs, and silently
+// double-applies every undo (issue #72). A phantom brand breaks the symmetry in
+// the type system without changing any signature: `register` carries an
+// optional `never` at the brand key, which every PLAIN function still satisfies
+// (`@llui/lexical-loro`'s split binding is unaffected) but a branded owner does
+// not. So the unsafe wiring is a compile error, not a code review.
+
+/** Marker key of an {@link ExternalUndoOwner}. Exported only because the phantom
+ * property below names it — nothing reads it at runtime. */
+export const EXTERNAL_UNDO_BRAND: unique symbol = Symbol('@llui/lexical:external-undo-owner')
+
+/** A registration function that OWNS the editor's undo/redo stack. Built with
+ * {@link externalUndoOwner}; accepted by {@link LexicalForeignOptions.externalUndo}
+ * and REJECTED by {@link LexicalForeignOptions.register}. */
+export type ExternalUndoOwner = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]: true
+}
+
+/** A registration function that does NOT own undo — the shape of the seam's
+ * `register` slot. Any plain `(editor) => () => void` satisfies it; only an
+ * {@link ExternalUndoOwner} does not. */
+export type ForeignRegister = ((editor: LexicalEditor) => () => void) & {
+  readonly [EXTERNAL_UNDO_BRAND]?: never
+}
+
+/** Mark `register` as the owner of the undo/redo stack, so it can only be wired
+ * into the seam slot that turns the built-in history stack off. The brand is
+ * inert at runtime — `register` is returned as-is, carrying one extra symbol
+ * property that nothing reads. */
+export function externalUndoOwner(
+  register: (editor: LexicalEditor) => () => void,
+): ExternalUndoOwner {
+  const brand: { readonly [EXTERNAL_UNDO_BRAND]: true } = { [EXTERNAL_UNDO_BRAND]: true }
+  return Object.assign(register, brand)
+}
+
 /** Context handed to the selection callback on every commit. */
 export interface SelectionContext {
   editor: LexicalEditor
@@ -105,9 +145,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * CRDT undo manager). When set, the built-in `@lexical/history` stack is
    * **forced off** — so a collab consumer cannot accidentally run both and
    * double-apply undo (the conflict is unrepresentable, not a doc footnote).
-   * Registered after rich-text like {@link ForeignOptions.register}; return
-   * a disposer. Setting `externalUndo` together with `history: true` is a
-   * configuration error and is reported. */
+   * Registered after rich-text like {@link LexicalForeignOptions.register};
+   * return a disposer. Setting `externalUndo` together with `history: true` is a
+   * configuration error and is reported.
+   *
+   * Accepts a plain function (`@llui/lexical-loro` passes one) as well as an
+   * {@link ExternalUndoOwner} — the branded form, which the `register` slot
+   * refuses so an undo owner can never be wired into it by mistake. */
   externalUndo?: (editor: LexicalEditor) => () => void
   /** When the document is seeded. `'auto'` (default) seeds from
    * `value`/`defaultValue` at mount. `'deferred'` skips the boot-time seed so an
@@ -124,8 +168,13 @@ export interface LexicalForeignOptions<Emit = unknown> {
    * plus the seam's {@link ForeignController} — the only sanctioned way for the
    * host to push a value into the document. */
   onReady?: (editor: LexicalEditor, controller: ForeignController) => void
-  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer. */
-  register?: (editor: LexicalEditor) => () => void
+  /** Extra registration after rich-text (e.g. markdown shortcuts). Disposer.
+   *
+   * This slot leaves the built-in `@lexical/history` stack registered, so it
+   * REJECTS an {@link ExternalUndoOwner} — a binding that owns undo belongs in
+   * {@link LexicalForeignOptions.externalUndo}, which turns that stack off. Any
+   * plain `(editor) => () => void` is accepted unchanged. */
+  register?: ForeignRegister
   onError?: (error: Error) => void
 }
 
