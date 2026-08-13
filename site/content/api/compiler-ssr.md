@@ -53,7 +53,7 @@ __clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
   Left untouched: `export type …` / `interface` (erased by TS anyway).
 
 ```typescript
-function transformUseClientSsr(source: string, _filename: string): UseClientTransformResult | null
+function transformUseClientSsr(mod: ParsedModule): UseClientTransformResult | null
 ```
 
 ## Interfaces

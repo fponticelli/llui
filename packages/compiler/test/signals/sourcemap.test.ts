@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { decode } from '@jridgewell/sourcemap-codec'
-import { transformSignalComponentSourceWithMap } from '../../src/signals/transform-component.js'
+import { transformSignalComponentSourceWithMap } from '../parsed.js'
 
 /** 0-based line + column of the first occurrence of `needle` in `text`. */
 function posOf(text: string, needle: string): { line: number; column: number } {

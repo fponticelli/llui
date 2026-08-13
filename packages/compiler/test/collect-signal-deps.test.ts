@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { collectSignalDeps } from '../src/signals/collect-signal-deps'
-import { transformSignalComponentSource } from '../src/signals/transform-component'
+import { collectSignalDeps as collectDeps } from '../src/signals/collect-signal-deps'
+import { transformSignalComponentSource as transformSource } from '../src/signals/transform-component'
+import { parseModule } from '../src/parse.js'
+
+/** Both entry points take a parsed module (one parse per pass, real-filename
+ * ScriptKind — #93). `fileName` stays explicit at every call site here because
+ * these tests care about it: `in.ts` vs `in.tsx` is the generic-arrow case. */
+const collectSignalDeps = (src: string, opts: { fileName: string }) =>
+  collectDeps(parseModule(opts.fileName, src))
+const transformSignalComponentSource = (src: string, opts: { fileName: string }) =>
+  transformSource(parseModule(opts.fileName, src))
 
 /**
  * The file-level dependency-path collector behind `llui_static_collect_paths`.

@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { extractMsgAnnotations, extractMsgSchema, lintAnnotationSyntaxSource } from '@llui/compiler'
+import {
+  extractMsgAnnotations as extractAnnotations,
+  extractMsgSchema as extractSchema,
+  lintAnnotationSyntaxSource as lintAnnotationSyntaxModule,
+  parseModule,
+} from '@llui/compiler'
+
+/** The compiler entry points take a parsed module (#93); this test is about the
+ * annotation/runtime boundary, so it hands over text under a `msg.ts` name. */
+const extractMsgAnnotations = (src: string) => extractAnnotations(parseModule('msg.ts', src))
+const extractMsgSchema = (src: string) => extractSchema(parseModule('msg.ts', src))
+const lintAnnotationSyntaxSource = (src: string, fileName: string) =>
+  lintAnnotationSyntaxModule(parseModule(fileName, src))
 import { handleListActions, type ListActionsHost } from '../../../src/client/rpc/list-actions.js'
 import { validatePayload } from '../../../src/client/rpc/validate-payload.js'
 import type { MessageAnnotations } from '../../../src/protocol.js'

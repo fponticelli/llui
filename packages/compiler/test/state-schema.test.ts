@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { extractStateSchema } from '../src/state-schema.js'
+import { extractStateSchema as extractSchema } from '../src/state-schema.js'
+import { parseModule } from '../src/parse.js'
+
+/** The extractor takes a parsed module (#93); these tests are about the State
+ * type grammar, so they name a `.ts` module and hand over the text. */
+const extractStateSchema = (src: string, typeName?: string) =>
+  extractSchema(parseModule('state.ts', src), typeName)
 
 describe('extractStateSchema', () => {
   it('extracts a `type State = { … }` alias (existing)', () => {

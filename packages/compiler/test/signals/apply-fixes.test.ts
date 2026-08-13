@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { lintSignalSource, applyLintFixes } from '../../src/signals/rules.js'
+import { applyLintFixes } from '../../src/signals/rules.js'
+import { lintSignalSource } from '../parsed.js'
 import { applyTextEdits, mergeNonOverlapping } from '../../src/signals/apply-edits.js'
 
 describe('applyTextEdits', () => {

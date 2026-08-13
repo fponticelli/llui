@@ -12,7 +12,11 @@
 // four hand-rolled copies this replaces.
 
 import ts from 'typescript'
-import { transformSignalComponentSource, type SignalTransformOptions } from '@llui/compiler'
+import {
+  parseModule,
+  transformSignalComponentSource,
+  type SignalTransformOptions,
+} from '@llui/compiler'
 import type { SignalComponentDef } from '../../src/signals/component'
 
 /** Runtime symbols made visible to the evaluated module body, by name. Keys must be
@@ -41,7 +45,9 @@ export function compileAndLoadAll(
     if (!IDENTIFIER.test(p))
       throw new Error(`compileAndLoad: ${JSON.stringify(p)} is not a valid identifier`)
   }
-  const lowered = transformSignalComponentSource(authored, opts)
+  // The compiler takes a parsed module (one parse per pass, ScriptKind from the
+  // real filename — #93). These fixtures are authored as `.tsx`-shaped sources.
+  const lowered = transformSignalComponentSource(parseModule('authored.tsx', authored), opts)
   const body = lowered
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('import '))

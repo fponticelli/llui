@@ -12,6 +12,7 @@
 // @llui/compiler's transform.ts).
 
 import ts from 'typescript'
+import type { ParsedModule } from '@llui/compiler'
 
 // ── 'use client' directive ───────────────────────────────────────
 
@@ -53,11 +54,12 @@ export interface UseClientTransformResult {
  *
  * Left untouched: `export type …` / `interface` (erased by TS anyway).
  */
-export function transformUseClientSsr(
-  source: string,
-  _filename: string,
-): UseClientTransformResult | null {
-  const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+export function transformUseClientSsr(mod: ParsedModule): UseClientTransformResult | null {
+  // The module arrives parsed under its real filename's ScriptKind. This used to
+  // parse every source as `input.ts`, so a `'use client'` `.tsx` module was read
+  // as TS (#93) — error recovery carried most JSX through, but a form whose
+  // recovery consumes the next statement would drop an export from the stub.
+  const sourceFile = mod.sourceFile()
 
   // Find the first non-comment, non-directive-whitespace statement.
   // 'use client' should be the literal first statement in the file.

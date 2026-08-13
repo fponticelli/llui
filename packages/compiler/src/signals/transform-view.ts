@@ -20,6 +20,7 @@ import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-d
 import { ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings } from './helper-bindings.js'
 import { CANONICAL_HELPER_NAMES, type HelperEmitNames } from './runtime-helpers.js'
+import { parseModule } from '../parse.js'
 
 // ── Import-binding recognition context ────────────────────────────────────────
 // The per-file `@llui/dom` binding set that gates every framework-call
@@ -371,12 +372,7 @@ function inlineHelperRender(
     declSubs.length > 0
       ? `(${renderParams}) => { ${declSubs.join('; ')}; return ${retArr} }`
       : `(${renderParams}) => ${retArr}`
-  const newSf = ts.createSourceFile(
-    '__inl.ts',
-    `const __r = ${inlinedSrc}`,
-    ts.ScriptTarget.Latest,
-    true,
-  )
+  const newSf = parseModule('__inl.ts', `const __r = ${inlinedSrc}`).sourceFile()
   let arrow: ts.Expression | null = null
   const find = (n: ts.Node): void => {
     if (arrow) return
@@ -481,7 +477,7 @@ function isSignalHandleExpr(expr: ts.Expression, roots: Roots): boolean {
 // merely contains the name as a substring (e.g. `class: 'activity-item'`) is not a
 // false positive. Defensive: an unparseable `src` counts as a leak (conservative).
 function loweredLeaksIdent(src: string, ident: string): boolean {
-  const sf = ts.createSourceFile('__leak.ts', `const __x = (${src})`, ts.ScriptTarget.Latest, true)
+  const sf = parseModule('__leak.ts', `const __x = (${src})`).sourceFile()
   let leaks = false
   const visit = (n: ts.Node): void => {
     if (leaks) return

@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
-  extractMsgAnnotations,
+  extractMsgAnnotations as extractAnnotations,
   hasNonDefaultAnnotation,
   isDefaultAnnotation,
   sparseMsgAnnotations,
   type MessageAnnotations,
 } from '../src/msg-annotations.js'
+import { parseModule } from '../src/parse.js'
+
+/** The extractor takes a parsed module (#93); these tests are about the
+ * annotation grammar, so they name a `.ts` module and hand over the text. */
+const extractMsgAnnotations = (src: string, typeName?: string) =>
+  extractAnnotations(parseModule('msg.ts', src), typeName)
 
 const DEFAULT: MessageAnnotations = {
   intent: null,

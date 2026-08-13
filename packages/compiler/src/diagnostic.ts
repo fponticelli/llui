@@ -16,6 +16,8 @@
 //     a doc revision.
 //   - `location` is always project-relative on emission (shared.md §6.4).
 
+import type ts from 'typescript'
+
 export type DiagnosticSeverity = 'error' | 'warning' | 'info'
 
 export type DiagnosticCategory =
@@ -86,30 +88,36 @@ export interface Diagnostic {
 }
 
 /**
- * Convert a TS Compiler API `(start, end)` offset pair against a source
+ * Convert a TS Compiler API `(start, end)` offset pair against a parsed source
  * file into the canonical `Range` shape. Used by emitters that have AST
  * node positions but not pre-computed line/column.
  */
-export function rangeFromOffsets(sourceText: string, start: number, end: number): Range {
+export function rangeFromOffsets(sf: ts.SourceFile, start: number, end: number): Range {
   return {
-    start: offsetToPosition(sourceText, start),
-    end: offsetToPosition(sourceText, end),
+    start: offsetToPosition(sf, start),
+    end: offsetToPosition(sf, end),
   }
 }
 
-function offsetToPosition(sourceText: string, offset: number): Position {
-  // Linear scan — adequate for emitter-time use. A line-table cache
-  // would help for high-frequency emitters; v2c diagnostic-volume is
-  // low enough that this is not yet load-bearing.
-  let line = 0
-  let lineStart = 0
-  for (let i = 0; i < offset && i < sourceText.length; i++) {
-    if (sourceText.charCodeAt(i) === 10 /* \n */) {
-      line++
-      lineStart = i + 1
-    }
-  }
-  return { line, column: offset - lineStart }
+function offsetToPosition(sf: ts.SourceFile, offset: number): Position {
+  // The SourceFile's line map (a binary search over precomputed line starts),
+  // not the O(offset) character scan this used to do — free once every emitter
+  // holds a parsed module anyway (#93).
+  //
+  // The LOW end of the clamp is the load-bearing half: `getLineAndCharacterOfPosition`
+  // throws a `Debug Failure` for a negative position, while a position PAST the
+  // end merely returns an out-of-range character. The scan it replaces was total,
+  // so an emitter handing over a stale or synthesized offset used to get a
+  // nonsense-but-harmless position; it must not start throwing out of a
+  // diagnostic path instead. Both ends are pinned in diagnostic-schema.test.ts.
+  //
+  // One deliberate semantic change: the line map counts U+2028/U+2029 and a lone
+  // `\r` as line breaks, where the deleted scan counted `\n` only. CRLF is
+  // identical either way, and agreeing with `tsc`'s own diagnostic positions is
+  // the point of using its map.
+  const pos = offset < 0 ? 0 : offset > sf.text.length ? sf.text.length : offset
+  const lc = sf.getLineAndCharacterOfPosition(pos)
+  return { line: lc.line, column: lc.character }
 }
 
 /**

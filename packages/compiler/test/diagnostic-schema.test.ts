@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { rangeFromOffsets, relativizeFile } from '../src/index.js'
+import { parseModule, rangeFromOffsets as rangeIn, relativizeFile } from '../src/index.js'
+
+/** `rangeFromOffsets` resolves through the SourceFile's line map (#93), so the
+ * text arrives parsed. */
+const rangeFromOffsets = (source: string, start: number, end: number) =>
+  rangeIn(parseModule('d.ts', source).sourceFile(), start, end)
 
 /**
  * Canonical Diagnostic schema.
@@ -28,6 +33,27 @@ describe('rangeFromOffsets', () => {
     // Offset 9 is "n" inside "line 1" (line 1, column 2).
     const r = rangeFromOffsets(SOURCE, 9, 10)
     expect(r.start).toEqual({ line: 1, column: 2 })
+  })
+
+  it('clamps an out-of-range offset instead of throwing (#93)', () => {
+    // The line map replaced a total linear scan. `getLineAndCharacterOfPosition`
+    // THROWS a `Debug Failure` on a negative position — an emitter handing over a
+    // stale or synthesized offset must still get a diagnostic, not a crash out of
+    // the diagnostic path. (Past the end it does not throw, but is clamped too so
+    // the position stays inside the file.)
+    expect(() => rangeFromOffsets(SOURCE, -5, -1)).not.toThrow()
+    expect(rangeFromOffsets(SOURCE, -5, -1).start).toEqual({ line: 0, column: 0 })
+    expect(rangeFromOffsets(SOURCE, SOURCE.length + 99, SOURCE.length + 99).start).toEqual({
+      line: 2,
+      column: 6,
+    })
+  })
+
+  it('agrees with the TypeScript line map on CRLF', () => {
+    // The deleted scan counted `\n` only; the map also treats a lone `\r` (and
+    // U+2028/9) as a break. CRLF is the common case and is identical either way.
+    const crlf = 'line 0\r\nline 1'
+    expect(rangeFromOffsets(crlf, 8, 9).start).toEqual({ line: 1, column: 0 })
   })
 })
 

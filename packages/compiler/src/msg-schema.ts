@@ -1,6 +1,7 @@
 import ts from 'typescript'
 import { peelOptionalUnion } from './union-peel.js'
 import { firstAnnotationArgs } from './annotation-args.js'
+import type { ParsedModule } from './parse.js'
 
 /**
  * The "bare type" of a field. Covers five cases:
@@ -215,16 +216,23 @@ export function fieldType(f: MsgField): MsgFieldType {
   return isRichField(f) ? f.type : f
 }
 
-export function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null {
-  return extractDiscriminatedUnionSchema(source, typeName)
+/** The Msg union's schema, read from an already-parsed module ({@link ParsedModule}
+ * — one parse per pass, and the real filename's ScriptKind; see #93). */
+export function extractMsgSchema(mod: ParsedModule, typeName: string = 'Msg'): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(mod, typeName)
 }
 
-export function extractEffectSchema(source: string, typeName: string = 'Effect'): MsgSchema | null {
-  return extractDiscriminatedUnionSchema(source, typeName)
+/** The Effect union's schema. Same shape and same parse discipline as
+ * {@link extractMsgSchema}. */
+export function extractEffectSchema(
+  mod: ParsedModule,
+  typeName: string = 'Effect',
+): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(mod, typeName)
 }
 
-function extractDiscriminatedUnionSchema(source: string, typeName: string): MsgSchema | null {
-  const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+function extractDiscriminatedUnionSchema(mod: ParsedModule, typeName: string): MsgSchema | null {
+  const sf = mod.sourceFile()
   const typeIndex = buildTypeIndex(sf)
 
   for (const stmt of sf.statements) {
@@ -232,7 +240,7 @@ function extractDiscriminatedUnionSchema(source: string, typeName: string): MsgS
     if (stmt.name.text !== typeName) continue
 
     const variants: MsgSchema['variants'] = {}
-    collectVariants(stmt.type, variants, source, typeIndex)
+    collectVariants(stmt.type, variants, sf.text, typeIndex)
 
     if (Object.keys(variants).length === 0) return null
 

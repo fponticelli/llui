@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { extractMsgSchema } from '../src/msg-schema'
+import { extractMsgSchema as extractSchema } from '../src/msg-schema'
+import { parseModule } from '../src/parse.js'
+
+/** The extractor takes a parsed module (#93); these tests are about the schema
+ * grammar, so they name a `.ts` module and hand over the text. */
+const extractMsgSchema = (src: string, typeName?: string) =>
+  extractSchema(parseModule('msg.ts', src), typeName)
 
 describe('extractMsgSchema', () => {
   it('extracts variants from a Msg type alias', () => {

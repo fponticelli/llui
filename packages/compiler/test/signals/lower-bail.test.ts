@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transformSignalComponentSource } from '../../src/signals/transform-component.js'
+import { transformSignalComponentSource } from '../parsed.js'
 import type { LowerBail } from '../../src/signals/transform-view.js'
 
 /** Wrap a view-body fragment in a minimal signal component so pass 1 lowers it. */
