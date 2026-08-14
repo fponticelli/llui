@@ -12,6 +12,11 @@ export { presenceEndHandler } from './presence-end.js'
 export { pushFocusTrap } from './focus-trap.js'
 export type { FocusTrapOptions } from './focus-trap.js'
 
+// A custom overlay that restores focus on teardown must route that move through
+// `engineFocus`/`runEngineFocus`, or every OTHER open layer reads it as an
+// outside interaction and dismisses (#155).
+export { engineFocus, runEngineFocus, isEngineFocusInProgress } from './engine-focus.js'
+
 export { setAriaHiddenOutside } from './aria-hidden.js'
 export { lockBodyScroll } from './remove-scroll.js'
 

@@ -250,11 +250,11 @@ describe('the outside aspect is narrowed so sibling layers still dismiss each ot
             state: state.at('lower'),
             send: lowerSend,
             parts: lowerParts,
-            // Focus restore is off on BOTH so the assertion isolates the
-            // outside-CLICK path: dismissing a popover otherwise focuses its
-            // trigger, and that focus move is itself an outside interaction for
-            // the sibling — a second, unrelated cascade.
-            restoreFocus: false,
+            // PRODUCTION DEFAULTS on both popovers — `restoreFocus` is on. That
+            // matters: dismissing a popover focuses its trigger, and that focus
+            // move used to read as an outside interaction for the sibling, so the
+            // lower popover ALSO dismissed (#155). This test only isolated the
+            // outside-CLICK path while that was true.
             content: () => [
               div({ ...lowerParts.content }, [button({ id: 'lower-action' }, [text('Lower')])]),
             ],
@@ -264,7 +264,6 @@ describe('the outside aspect is narrowed so sibling layers still dismiss each ot
             state: state.at('upper'),
             send: upperSend,
             parts: upperParts,
-            restoreFocus: false,
             content: () => [
               div({ ...upperParts.content }, [button({ id: 'upper-action' }, [text('Upper')])]),
             ],

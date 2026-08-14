@@ -7,6 +7,7 @@ import { registerNestedLayer, type NestedLayerAspect } from './nested-layer.js'
 import { lockBodyScroll } from './remove-scroll.js'
 import { attachFloating, type Placement } from './floating.js'
 import { getElementByIdInScope } from './root-scope.js'
+import { engineFocus } from './engine-focus.js'
 import type { TextDirection } from './direction.js'
 
 /**
@@ -286,7 +287,17 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       if (opts.focusOnOpenId) {
         const target = resolveId(root, opts.focusOnOpenId)
         if (target) {
-          target.focus({ preventScroll: true })
+          // Engine-initiated like the restore below, and routed through the same
+          // guard for the same reason (#155) — but note this one is DEFENSIVE:
+          // no configuration of this engine can observe it today. With a
+          // `dismiss` the layer was pushed a few lines above and is therefore
+          // topmost, so every OTHER watcher is gated off by `shouldDispatch`;
+          // without one the overlay registers the `outside` aspect, so its
+          // content reads as "inside a nested layer" to every watcher. Narrow
+          // either of those and this line is what keeps opening a layer from
+          // dismissing the one beneath it. Consequently it has no mutation
+          // coverage — there is no shipped shape that fails without it.
+          engineFocus(target, { preventScroll: true })
           if (opts.focusOnOpenSelect && target instanceof HTMLInputElement) {
             const seed = target.value
             if (seed !== '') target.setSelectionRange(0, seed.length)
@@ -309,7 +320,10 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
             active === null
         }
         for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-        if (doRestore && els.anchor) els.anchor.focus()
+        // `engineFocus`, not a bare `.focus()`: this move is the engine's own
+        // bookkeeping and must not read as an outside interaction to a SIBLING
+        // layer still open (#155) — the anchor is outside every one of them.
+        if (doRestore && els.anchor) engineFocus(els.anchor)
       }
     })
 
