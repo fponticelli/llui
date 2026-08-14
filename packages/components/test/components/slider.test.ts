@@ -94,8 +94,22 @@ describe('slider reducer', () => {
   })
 
   it('increment lands on the grid from an off-grid start (#125 defect 2)', () => {
-    const [s] = update(init({ value: [3], step: 2 }), { type: 'increment', index: 0 })
+    // init snaps now, so the off-grid start is built directly — the shape a
+    // rehydrated state can still hold.
+    const offGrid = { ...init({ step: 2 }), value: [3] }
+    const [s] = update(offGrid, { type: 'increment', index: 0 })
     expect(s.value[0]).toBe(4)
+  })
+
+  it('init clamps, snaps and applies the thumb gap to the seed value (#125)', () => {
+    expect(init({ value: [3], step: 2 }).value).toEqual([4])
+    expect(
+      init({ value: [500, -20], min: 0, max: 50, step: 5 }).value.every((v) => v >= 0 && v <= 50),
+    ).toBe(true)
+    expect(init({ value: [-1000, -1000], min: 0, max: 100, step: 5 }).value).toEqual([0, 0])
+    expect(
+      init({ value: [0, 5], min: 0, max: 100, step: 5, minStepsBetweenThumbs: 2 }).value,
+    ).toEqual([0, 10])
   })
 
   it('avoids floating-point drift with fractional steps', () => {

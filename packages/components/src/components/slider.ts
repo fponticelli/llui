@@ -55,7 +55,11 @@ export interface SliderInit {
 }
 
 export function init(opts: SliderInit = {}): SliderState {
-  return {
+  // init IS a mutation path. It used to store `opts.value` verbatim, which made
+  // it the one remaining way to seed thumbs no drag could produce — off-grid,
+  // outside [min,max], or closer together than the gap allows (#125). The seed
+  // goes through the SAME normalisation `setValue` uses.
+  const state: SliderState = {
     value: opts.value ?? [0],
     min: opts.min ?? 0,
     max: opts.max ?? 100,
@@ -65,6 +69,7 @@ export function init(opts: SliderInit = {}): SliderState {
     minStepsBetweenThumbs: opts.minStepsBetweenThumbs ?? 0,
     dir: opts.dir ?? 'ltr',
   }
+  return { ...state, value: normalizeValues(state, state.value) }
 }
 
 /**
@@ -106,6 +111,19 @@ function setThumbValue(state: SliderState, index: number, rawValue: number): num
   return withThumb(state, state.value, index, rawValue)
 }
 
+/**
+ * Normalise a whole thumb array — the path `init` and `setValue` share.
+ *
+ * NORMALISE FIRST, bound second: folding `withThumb` over the raw array bounds
+ * each thumb by its still-unnormalised neighbour, which is how a raw value
+ * leaked back into state through the gap clamp (#125).
+ */
+function normalizeValues(state: SliderState, values: readonly number[]): number[] {
+  let next = values.map((v) => clampToStep(v, state))
+  for (let i = 0; i < next.length; i++) next = withThumb(state, next, i, next[i]!)
+  return next
+}
+
 export function update(state: SliderState, msg: SliderMsg): [SliderState, never[]] {
   if (state.disabled && msg.type !== 'setDisabled' && msg.type !== 'setDir') return [state, []]
   switch (msg.type) {
@@ -113,12 +131,7 @@ export function update(state: SliderState, msg: SliderMsg): [SliderState, never[
       // Every thumb goes through the SAME clamp+snap+gap path `setThumb` uses.
       // It used to store the array raw, so a programmatic set could hold values
       // no drag could ever produce — off-grid, or outside [min,max] (#125).
-      // NORMALISE FIRST, bound second: folding over the raw array bounds each
-      // thumb by its still-unnormalised neighbour, which is how the raw input
-      // leaked back into state through the gap clamp.
-      let value: number[] = msg.value.map((v) => clampToStep(v, state))
-      for (let i = 0; i < value.length; i++) value = withThumb(state, value, i, value[i]!)
-      return [{ ...state, value }, []]
+      return [{ ...state, value: normalizeValues(state, msg.value) }, []]
     }
     case 'setThumb':
       return [{ ...state, value: setThumbValue(state, msg.index, msg.value) }, []]

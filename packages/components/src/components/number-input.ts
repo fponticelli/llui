@@ -48,12 +48,19 @@ export interface NumberInputInit {
 }
 
 export function init(opts: NumberInputInit = {}): NumberInputState {
-  const value = opts.value ?? null
-  return {
-    value,
+  // init IS a mutation path. It used to store `opts.value` verbatim, which made
+  // it the one remaining way to seed a value no other path could produce —
+  // off-grid or outside [min,max] (#125).
+  const grid = {
     min: opts.min ?? -Infinity,
     max: opts.max ?? Infinity,
     step: opts.step ?? 1,
+  }
+  const seed = opts.value ?? null
+  const value = seed === null ? null : clampToStep(seed, grid)
+  return {
+    value,
+    ...grid,
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,
     rawText: value === null ? '' : String(value),
