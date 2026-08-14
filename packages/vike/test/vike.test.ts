@@ -69,7 +69,12 @@ describe('onRenderHtml', () => {
     expect(html).not.toContain('"greeting":"hello"')
     expect(html).toContain('"layers"')
     // Manifest: version + the chain's layer names (page-only chain here).
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['TestPage'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['TestPage'],
+      seeded: [false],
+      initFingerprints: [expect.any(String)],
+    })
   })
 
   it('uses the per-layer data slice as the seed state', async () => {
@@ -121,7 +126,12 @@ describe('onRenderHtml', () => {
     // so it can't appear in the document at all.
     expect(html).not.toContain(payload)
     // The manifest carries only the (developer-authored) layer name.
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['Malicious'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['Malicious'],
+      seeded: [false],
+      initFingerprints: [expect.any(String)],
+    })
   })
 
   it('escapes script-breakout sequences in a component NAME embedded in the manifest', async () => {
@@ -156,7 +166,12 @@ describe('createOnRenderHtml', () => {
     expect(html).toContain('<main id="root">')
     expect(html).toContain('hello')
     expect(html).toContain('__LLUI_STATE__')
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['TestPage'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['TestPage'],
+      seeded: [false],
+      initFingerprints: [expect.any(String)],
+    })
   })
 
   it('passes pageContext to document function', async () => {
@@ -213,7 +228,11 @@ describe('onRenderClient', () => {
     container.id = 'app'
     container.innerHTML = serverHtml
     document.body.appendChild(container)
-    ;(window as Record<string, unknown>).__LLUI_STATE__ = { v: 2, layers: ['TestPage'] }
+    ;(window as Record<string, unknown>).__LLUI_STATE__ = {
+      v: 3,
+      layers: ['TestPage'],
+      seeded: [false],
+    }
 
     await onRenderClient({ Page: TestPage, isHydration: true })
 
@@ -289,7 +308,11 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
     const html = getHtml(result)
     const match = html.match(/<div id="app">([\s\S]*?)<\/div>/)
     container.innerHTML = match?.[1] ?? ''
-    ;(window as Record<string, unknown>).__LLUI_STATE__ = { v: 2, layers: ['TestPage'] }
+    ;(window as Record<string, unknown>).__LLUI_STATE__ = {
+      v: 3,
+      layers: ['TestPage'],
+      seeded: [false],
+    }
 
     let leaveCount = 0
     let enterCount = 0

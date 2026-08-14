@@ -229,21 +229,76 @@ For the rarer case where a layout needs to **probe a page** (e.g. "is your form 
 
 #### Layout data
 
-Layouts can have their own server-fetched data alongside per-page `+data.ts` by populating `pageContext.lluiLayoutData` as an array matching the layout chain (outermost first). Each layout's `init(layoutData)` receives its slice.
+Layouts can have their own server-fetched data alongside per-page `+data.ts` by populating `pageContext.lluiLayoutData` as an array matching the layout chain (outermost first).
 
-Wire this from Vike's config mechanism however you like — the adapter just reads `pageContext.lluiLayoutData` when present.
+In the signal runtime `init()` takes **no arguments**, so a layer's data slice is used **as** that layer's initial state; `init()` runs only when the slice is `undefined`. Type the slice as the layer's `State` — there is no `init(layoutData)` hook to receive it:
+
+```ts
+// lluiLayoutData[0] IS AppLayout's state.
+type AppLayoutState = { user: string; unread: number }
+
+export const AppLayout = component<AppLayoutState, AppLayoutMsg>({
+  name: 'AppLayout',
+  // Runs only when lluiLayoutData[0] is absent (e.g. a client-side mount for a
+  // route whose data hook didn't populate it).
+  init: () => ({ user: 'anonymous', unread: 0 }),
+  // ...
+})
+```
+
+**You must list `lluiLayoutData` in Vike's `passToClient`.** Vike forwards a `pageContext` key to the browser only when it is declared there. Without it the key exists during SSR and is `undefined` on the client, so the server renders the real data and the client re-seeds the same layout from `init()`:
+
+```ts
+// pages/+config.ts
+export default {
+  passToClient: ['lluiLayoutData'],
+}
+```
+
+The adapter no longer lets that pass silently — hydration throws and names the layer (see [Hydration manifest](#hydration-manifest) below). Add any other custom `pageContext` key your layers read to the same list; `data` and `routeParams` are already passed by Vike itself.
 
 #### Hydration manifest
 
 `window.__LLUI_STATE__` carries a small **integrity manifest**, not per-layer state:
 
 ```js
-window.__LLUI_STATE__ = { v: 2, layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'] }
+window.__LLUI_STATE__ = {
+  v: 3,
+  layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'],
+  seeded: [true, false, true],
+}
 ```
 
-The server render runs **no effects** — it only bakes each layer's initial state into HTML — so every layer's seed is exactly `data ?? init()`, both of which the client already has (Vike re-supplies `pageContext.data` / `lluiLayoutData` on hydration). Shipping the full state again would be dead weight, so the client reconstructs each seed locally and the script only ships the chain's layer names.
+The server render runs **no effects** — it only bakes each layer's initial state into HTML — so every layer's seed is exactly `data ?? init()`. Shipping the full state again would be dead weight, so the client reconstructs each seed locally and the script ships only the chain's layer names plus, per layer, **where the seed came from**.
 
-The manifest is versioned (`v`) and lists every layer outermost → page. On hydration the client verifies it against the chain it's about to build: a wrong version, a wrong layer count, or a divergent layer at any index throws a clear error instead of silently binding the wrong instance. Unnamed layers use a stable per-index key (`layer:0`, `layer:1`, …), normalized identically on both sides, so an unnamed page or layout hydrates cleanly.
+That last part is load-bearing rather than decorative. The client can only reconstruct a data-seeded layer if the data actually reached the browser, and it does so only when the key is in [`passToClient`](#layout-data). `seeded[i]` records whether the SERVER used a data slice for layer `i`; hydration compares it against what the client has and throws — naming the layer and the fix — when the two disagree in either direction. Comparing layer names alone could not see this: the names match perfectly while every layout silently reverts to `init()`.
+
+The manifest is versioned (`v`) and lists every layer outermost → page. On hydration the client verifies it against the chain it's about to build: a wrong version, a wrong layer count, a divergent layer at any index, or a seed that reached one side only throws a clear error instead of silently binding the wrong instance. Unnamed layers use a stable per-index key (`layer:0`, `layer:1`, …), normalized identically on both sides, so an unnamed page or layout hydrates cleanly.
+
+The chain's data array is built index-aligned with the chain, so a short or missing `lluiLayoutData` can never slide the page's `+data` slice onto a layout.
+
+#### `init()` must be deterministic
+
+Because no state is shipped, a layer with no data slice is re-seeded on the client by **calling its own `init()` again**. That is only sound if `init()` returns the same value in both places. It is a hard precondition of SSR under this adapter:
+
+```ts
+// ✗ renders one state on the server and hydrates a different one
+init: () => ({ id: crypto.randomUUID(), openedAt: Date.now() })
+
+// ✓ deterministic — the client re-seed reproduces the server's state exactly
+init: () => ({ id: null, openedAt: null })
+```
+
+Anything varying — `Date.now()`, `Math.random()`, `crypto.randomUUID()`, a module-level counter, a mutable module binding — must come from somewhere else:
+
+- **emit it from an effect** so it is produced once, after mount, through a message; or
+- **resolve it server-side** and pass it in through the layer's data slice, so both sides read the same value.
+
+Dev builds check this for you and warn, naming the layer. The server calls each init()-seeded layer's `init()` a second time and compares (catching counters and `Math.random()`), and records a hash of the resulting state in the manifest so the client can compare its own re-seed against it (catching the time-dependent cases, which look perfectly stable within one server tick). Both checks are gated on the dev build: production emits no hashes and makes no extra `init()` call.
+
+Both compare JSON hashes, so they reach exactly as far as LLui's [JSON-serializable State invariant](https://llui.dev/architecture) does: state carrying a `Set`, a `Map`, a function or an `undefined`-valued property is already invalid, and a value `JSON.stringify` drops or flattens can vary between server and client while still hashing identically — `init: () => ({ tags: new Set([++n]) })` slips past both checks. Keep state JSON-serializable and the determinism check means what it says; break that invariant and it is the least of what breaks (devtools time-travel, `@llui/test` replay and agent snapshots go with it).
+
+This is a warning rather than a thrown error — by the time it is observable the state divergence has already happened, the app is running, and the fix is in your `init()`.
 
 ### Page Transitions
 

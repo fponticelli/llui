@@ -57,7 +57,14 @@ describe('unnamed components hydrate cleanly (finding #1)', () => {
   it('server manifest uses stable per-index fallback keys', async () => {
     const render = createOnRenderHtml({ domEnv, Layout: UnnamedLayout })
     const result = await render({ Page: UnnamedPage })
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['layer:0', 'layer:1'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['layer:0', 'layer:1'],
+      seeded: [false, false],
+      // Dev-only init()-determinism fingerprints (see chain.ts); one per
+      // init()-seeded layer, opaque hashes.
+      initFingerprints: [expect.any(String), expect.any(String)],
+    })
   })
 
   it('hydrates an unnamed layout + page without throwing a mismatch', async () => {
@@ -229,7 +236,13 @@ describe('hydration reconstructs seed without a full state script (finding #10)'
     const scriptMatch = html.match(/window\.__LLUI_STATE__ = (\{[\s\S]*?\})<\/script>/)
     expect(scriptMatch).not.toBeNull()
     expect(scriptMatch![1]).not.toContain('from-server-data')
-    expect(JSON.parse(scriptMatch![1])).toEqual({ v: 2, layers: ['DataPage'] })
+    expect(JSON.parse(scriptMatch![1])).toEqual({
+      v: 3,
+      layers: ['DataPage'],
+      seeded: [true],
+      // Data-seeded: init() never runs on either side, so nothing to fingerprint.
+      initFingerprints: [null],
+    })
 
     // Client hydrates from data (Vike re-supplies pageContext.data), not the script.
     const container = primeHydration(result)

@@ -79,7 +79,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
     // No Layout — the page is the only layer, so it hydrates at the root
     // container via hydrateSignalApp; no anchor mount is involved. The default
     // now RUNS init effects because SSR ran none.
-    const envelope = { v: 2, layers: ['PageWithInit'] }
+    const envelope = { v: 3, layers: ['PageWithInit'], seeded: [false] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -92,7 +92,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
     const render = createOnRenderClient({
       runInitEffectsOnHydrate: true,
     })
-    const envelope = { v: 2, layers: ['PageWithInit'] }
+    const envelope = { v: 3, layers: ['PageWithInit'], seeded: [false] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -109,7 +109,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       Layout: LayoutDef,
       runInitEffectsOnHydrate: true,
     })
-    const envelope = { v: 2, layers: ['LayoutWithInit', 'PageWithInit'] }
+    const envelope = { v: 3, layers: ['LayoutWithInit', 'PageWithInit'], seeded: [false, false] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -131,7 +131,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
       Layout: LayoutDef,
       runInitEffectsOnHydrate: false,
     })
-    const envelope = { v: 2, layers: ['LayoutWithInit', 'PageWithInit'] }
+    const envelope = { v: 3, layers: ['LayoutWithInit', 'PageWithInit'], seeded: [false, false] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
 
     await render({ Page: PageDef, isHydration: true })
@@ -151,7 +151,7 @@ describe('vike — runInitEffectsOnHydrate plumbing through layout chain', () =>
     })
 
     // Simulate hydration first (opt-out → no effects).
-    const envelope = { v: 2, layers: ['PageWithInit'] }
+    const envelope = { v: 3, layers: ['PageWithInit'], seeded: [false] }
     ;(window as { __LLUI_STATE__?: unknown }).__LLUI_STATE__ = envelope
     await render({ Page: PageDef, isHydration: true })
     expect(seenPage).toEqual([])

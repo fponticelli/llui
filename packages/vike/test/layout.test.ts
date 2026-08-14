@@ -151,6 +151,25 @@ function makeArticlePage(slug: string): SignalComponentDef<{ slug: string }, nev
   }
 }
 
+// The dev manifest's `initFingerprints[i]` — `stateFingerprint` (FNV-1a over
+// the state's JSON, hex) of each fixture's OWN init() state. Pinned as literals
+// rather than recomputed from the producer, so the manifest assertions below
+// compare against a value derived independently of the code under test.
+//
+// Every entry differs, which is what makes the assertions load-bearing: the
+// fixtures' init states were deliberately chosen distinct, so a manifest that
+// hashed one layer's state for every entry (the classic per-layer index bug)
+// cannot match. That mechanism is the only one that sees a `Date.now()` in
+// init() across the server→client boundary; an index bug in it warns about the
+// wrong layer on every multi-layer app and hides a real divergence.
+const FINGERPRINTS = {
+  AppLayout: '69198e6a', // { session: 'anonymous' }
+  DashboardLayout: 'c3206f3e', // { active: 'reports' }
+  ReportsPage: '14fd1926', // { view: 'summary' }
+  DocsLayout: '56ad5d70', // { section: 'guide' }
+  'Article-intro': '36904606', // { slug: 'intro' }
+} as const
+
 // ──── Tests ────
 
 describe('persistent layouts — client mount + nav', () => {
@@ -336,7 +355,19 @@ describe('persistent layouts — SSR chain render', () => {
     const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     const result = await render({ Page: ReportsPage })
 
-    expect(result.pageContext.lluiState).toEqual({ v: 2, layers: ['AppLayout', 'ReportsPage'] })
+    expect(result.pageContext.lluiState).toEqual({
+      v: 3,
+      layers: ['AppLayout', 'ReportsPage'],
+      seeded: [false, false],
+      // Pinned per LAYER, not merely "some string": the fingerprint is the one
+      // mechanism that catches a `Date.now()` in init() across the
+      // server→client boundary, and it is only worth anything if entry `i`
+      // hashes layer `i`'s OWN state. `expect.any(String)` cannot see an index
+      // bug — hashing seedStates[0] for every layer passes it — and that bug
+      // would fire a spurious warning on every multi-layer app while masking a
+      // real divergence. See FINGERPRINTS above for the exact states.
+      initFingerprints: [FINGERPRINTS.AppLayout, FINGERPRINTS.ReportsPage],
+    })
   })
 
   it('renders nested layout chain into composed HTML', async () => {
@@ -360,8 +391,16 @@ describe('persistent layouts — SSR chain render', () => {
 
     // Manifest lists all three layers by name, outermost → page.
     expect(result.pageContext.lluiState).toEqual({
-      v: 2,
+      v: 3,
       layers: ['AppLayout', 'DashboardLayout', 'ReportsPage'],
+      seeded: [false, false, false],
+      // Three layers with three genuinely distinct init states — the fixture
+      // that pins fingerprint[i] to layer i (see FINGERPRINTS).
+      initFingerprints: [
+        FINGERPRINTS.AppLayout,
+        FINGERPRINTS.DashboardLayout,
+        FINGERPRINTS.ReportsPage,
+      ],
     })
   })
 
@@ -532,8 +571,14 @@ describe('persistent layouts — route-scoped section layout (issue #33)', () =>
 
     // Chain-aware manifest: AppLayout + DocsLayout + the article page.
     expect(result.pageContext.lluiState).toEqual({
-      v: 2,
+      v: 3,
       layers: ['AppLayout', 'DocsLayout', 'Article-intro'],
+      seeded: [false, false, false],
+      initFingerprints: [
+        FINGERPRINTS.AppLayout,
+        FINGERPRINTS.DocsLayout,
+        FINGERPRINTS['Article-intro'],
+      ],
     })
   })
 })

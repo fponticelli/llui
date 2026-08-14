@@ -6,7 +6,9 @@ import type { VikePageContextData } from './vike-namespace.js'
 import {
   resolveLayoutChain as resolveChain,
   buildManifest,
-  seedFor,
+  buildChainData,
+  isDevBuild,
+  seedStateFor,
   type AnyLayer,
   type LayoutChain,
   type LayoutOption,
@@ -131,6 +133,10 @@ export interface RenderHtmlOptions {
    * The server renders the full chain as one composed HTML tree. Client
    * hydration reads the matching manifest and reconstructs the chain
    * layer-by-layer.
+   *
+   * **Every layer's `init()` must be deterministic.** The manifest ships no
+   * state: a layer with no data slice is re-seeded by calling its `init()` again
+   * in the browser. See {@link AnyLayer.init}.
    */
   Layout?: LayoutOption<ServerLayoutResolverContext>
 
@@ -226,7 +232,7 @@ async function renderPage(
   // Full chain: every layout, then the page. Always at least one entry
   // (the page) since Vike's pageContext always has a Page.
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
-  const chainData: readonly unknown[] = [...layoutData, pageContext.data]
+  const chainData = buildChainData(layoutChain.length, layoutData, pageContext.data)
 
   const { html, manifest, collectedHead } = _renderChain(chain, chainData, env)
 
@@ -282,6 +288,9 @@ export function _renderChain(
   const rootContexts: ReadonlyMap<symbol, unknown> = new Map([[HEAD_SINK.id, headSink]])
 
   let outermostNodes: readonly Node[] = []
+  // The state each layer actually rendered against, for the manifest's dev-only
+  // init()-determinism fingerprints.
+  const seedStates: unknown[] = []
   // Collected up-front so a throw anywhere in the layer loop or the
   // serialization still runs EVERY layer's teardown (no leaked build state /
   // head writers on the error path).
@@ -299,10 +308,15 @@ export function _renderChain(
 
       // Build this layer's tree against the server DomEnv. Per-layer data is the
       // seed state (signal init() takes no data) — the SINGLE init()/build for this
-      // layer, so the HTML and any recorded seed can never disagree. Contexts
+      // layer, so the HTML and any recorded seed can never disagree. Resolving the
+      // seed HERE rather than letting renderNodes fall back to init() internally is
+      // what makes "can never disagree" true of the manifest fingerprint too: the
+      // very object that was rendered is the one that gets hashed. Contexts
       // captured at the parent layer's pageSlot() are replayed so providers above
       // the slot reach here.
-      const { nodes, dispose } = renderNodes(def, seedFor(layerData), env, currentSlotContexts)
+      const seedState = seedStateFor(def, layerData)
+      seedStates.push(seedState)
+      const { nodes, dispose } = renderNodes(def, seedState, env, currentSlotContexts)
       disposers.push(dispose)
 
       if (i === 0) {
@@ -355,7 +369,11 @@ export function _renderChain(
     // Serialize collected head BEFORE disposing (dispose releases the writers).
     const collectedHead = headSink.serialize(env)
 
-    return { html, manifest: buildManifest(chain), collectedHead }
+    return {
+      html,
+      manifest: buildManifest(chain, chainData, seedStates, isDevBuild()),
+      collectedHead,
+    }
   } finally {
     // Dispose every layer's build — on the success path after serialization, and
     // on ANY error path so a failed render never leaks build state or head writers.

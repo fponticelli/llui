@@ -5,10 +5,14 @@ import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 import {
   resolveLayoutChain as resolveChain,
+  buildChainData,
+  checkInitDeterminism,
+  isDevBuild,
   seedFor,
   seedStateFor,
   verifyManifest,
   type AnyLayer,
+  type HydrationManifest,
   type LayoutChain,
   type LayoutOption,
 } from './chain.js'
@@ -120,6 +124,10 @@ export interface RenderClientOptions {
    *
    * Layers shared between the previous and next navigation stay mounted.
    * Only the divergent suffix is disposed and re-mounted.
+   *
+   * **Every layer's `init()` must be deterministic.** Hydration ships no state:
+   * a layer with no data slice is re-seeded by calling its `init()` again in the
+   * browser. See {@link AnyLayer.init}.
    */
   Layout?: LayoutOption<LayoutResolverContext>
 
@@ -295,15 +303,6 @@ export function _resetChainForTest(): void {
 }
 
 /**
- * Back-compat alias for the pre-layout test helper name.
- * @internal
- * @deprecated — use `_resetChainForTest` instead.
- */
-export function _resetCurrentHandleForTest(): void {
-  _resetChainForTest()
-}
-
-/**
  * Default onRenderClient hook — no layout, no animation hooks. Hydrates
  * on first load, mounts fresh on subsequent navs.
  */
@@ -345,7 +344,7 @@ async function renderClient(
   const layoutChain = resolveChain(options.Layout, pageContext as LayoutResolverContext)
   const layoutData = pageContext.lluiLayoutData ?? []
   const newChain: LayoutChain = [...layoutChain, pageContext.Page]
-  const newChainData: readonly unknown[] = [...layoutData, pageContext.data]
+  const newChainData = buildChainData(layoutChain.length, layoutData, pageContext.data)
 
   if (pageContext.isHydration) {
     // Double-hydration guard: a hydration render must start from an empty chain.
@@ -520,6 +519,9 @@ function mountChain(
 ): void {
   let mountTarget: HTMLElement | Comment = initialTarget
   let contexts: ReadonlyMap<symbol, unknown> | undefined = initialContexts
+  // Set once the server envelope has been verified (hydrate mode only); kept so
+  // each layer can compare its re-seeded state against the recorded fingerprint.
+  let manifest: HydrationManifest | null = null
 
   for (let i = startAt; i < chain.length; i++) {
     const def = chain[i]!
@@ -545,8 +547,13 @@ function mountChain(
       // Verify the server manifest against this chain (fails loud on drift), then
       // reconstruct this layer's seed locally: the server ran no effects, so its
       // rendered state was always `data ?? init()` — no need to ship state.
-      if (i === startAt) verifyManifest(opts.serverStateEnvelope, chain)
+      if (i === startAt) manifest = verifyManifest(opts.serverStateEnvelope, chain, chainData)
       const layerState = seedStateFor(def, layerData)
+      // Re-seeding by re-running init() is only sound if init() is deterministic.
+      // Dev-only: compare against what the server rendered and warn on divergence.
+      if (manifest) {
+        checkInitDeterminism(manifest, i, def, layerData, layerState, isDevBuild())
+      }
       handle = hydrateSignalApp(target, def, layerState, {
         runInitEffects: opts.runInitEffectsOnHydrate,
         contexts,

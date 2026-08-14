@@ -326,6 +326,21 @@ itself assignable to `SignalComponentDef<unknown,unknown,unknown>`, so
 ```typescript
 export interface AnyLayer {
   readonly name?: string
+  /**
+   * MUST BE DETERMINISTIC. The hydration envelope ships no state, so a layer
+   * without a data slice is re-seeded on the client by calling this again —
+   * `Date.now()`, `Math.random()`, `crypto.randomUUID()` or a module-level
+   * counter here renders one state on the server and hydrates another. Emit the
+   * varying value from an effect after mount, or resolve it server-side and pass
+   * it in through the layer's data slice. Dev builds check and warn (see
+   * {@link buildManifest} / {@link checkInitDeterminism}) — but only as far as
+   * the JSON-serializable-State invariant holds: the check compares JSON
+   * fingerprints, so variation the runtime's own State contract already forbids
+   * (a `Set`/`Map`/function/`undefined` property, anything `JSON.stringify`
+   * drops or flattens) can differ on the two sides and still fingerprint alike.
+   * Deterministic `init()` and JSON-serializable state are one precondition,
+   * not two.
+   */
   init(): unknown
   update(state: unknown, msg: unknown): unknown
   view(bag: unknown): Renderable
@@ -560,6 +575,10 @@ export interface RenderClientOptions {
    *
    * Layers shared between the previous and next navigation stay mounted.
    * Only the divergent suffix is disposed and re-mounted.
+   *
+   * **Every layer's `init()` must be deterministic.** Hydration ships no state:
+   * a layer with no data slice is re-seeded by calling its `init()` again in the
+   * browser. See {@link AnyLayer.init}.
    */
   Layout?: LayoutOption<LayoutResolverContext>
 
@@ -656,6 +675,10 @@ export interface RenderHtmlOptions {
    * The server renders the full chain as one composed HTML tree. Client
    * hydration reads the matching manifest and reconstructs the chain
    * layer-by-layer.
+   *
+   * **Every layer's `init()` must be deterministic.** The manifest ships no
+   * state: a layer with no data slice is re-seeded by calling its `init()` again
+   * in the browser. See {@link AnyLayer.init}.
    */
   Layout?: LayoutOption<ServerLayoutResolverContext>
 
