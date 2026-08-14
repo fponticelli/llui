@@ -23,7 +23,8 @@
  *      so with `n` trusted proxies the last `n` entries are the ones
  *      they authored and everything left of those arrived in the
  *      caller's own header. The hop to read is therefore `n` from the
- *      END, never the first.
+ *      END, never the first — and the chain has to be at least `n` long
+ *      to have come through them at all (see below).
  *   2. `clientAddress` — a host-supplied peer (socket) address. Not
  *      derivable from a WHATWG `Request`, so the host has to pass it:
  *      Node from `socket.remoteAddress`, Cloudflare from
@@ -31,6 +32,36 @@
  *   3. `'anon'` — one SHARED bucket. Anonymous callers throttle each
  *      other, which is coarse; it is deliberately not "one bucket per
  *      caller-supplied string", which throttles nobody.
+ *
+ * ── WHAT `trustProxy: n` ASSERTS, AND WHY IT IS ONLY ABOUT XFF ─────
+ * Declaring `n` proxies asserts that `n` proxies you control are in the
+ * path AND that each of them APPENDS to `X-Forwarded-For`. Everything
+ * here follows from that one statement, so both of its failure modes
+ * are refusals rather than guesses:
+ *
+ *   - A chain SHORTER than `n` did not pass through `n` appending
+ *     proxies, so nothing in it is evidence. It used to be clamped to
+ *     index 0 and returned, which handed a direct caller a fresh bucket
+ *     per request under any `n > 1` (measured: `trustProxy: 2`, 60
+ *     single-entry chains, 60 buckets).
+ *   - NO chain, under the same declaration, is the same violation.
+ *     `X-Real-IP` used to be read there, which made the declaration
+ *     bypassable by simply omitting `X-Forwarded-For` (measured:
+ *     `trustProxy: 1`, 60 varied `X-Real-IP` values, 60 buckets). It is
+ *     never read now: it is SET rather than appended, so unlike a chain
+ *     it carries no structure that says a proxy wrote it.
+ *
+ * A deployment behind a proxy that writes only `X-Real-IP` — nginx with
+ * `proxy_set_header X-Real-IP` and no `X-Forwarded-For`, a common
+ * config — is therefore NOT covered by `trustProxy`. It says so with
+ * `clientAddress: (req) => req.headers.get('x-real-ip')`, the same
+ * explicit deployment statement Cloudflare's `cf-connecting-ip` uses.
+ *
+ * What remains, unavoidably: a chain of exactly `n` entries is what a
+ * direct client behind `n` appending proxies produces AND what a caller
+ * who spoofs `n` entries produces, and no property of the request tells
+ * them apart. `trustProxy` is trusted input; declare it only for
+ * proxies that are really there and really append.
  */
 
 /**
@@ -42,17 +73,26 @@ export type ClientAddressResolver = (req: Request) => string | null | undefined
 export type ClientIpOptions = {
   /**
    * Number of TRUSTED reverse proxies between the client and this
-   * server. `0`/`false` (the default) trusts no forwarding header at
-   * all; `true` means one. Set this only when a proxy you control is
-   * guaranteed to be in the path — declaring proxies that are not there
-   * makes an attacker-supplied hop readable again.
+   * server, each of which APPENDS to `X-Forwarded-For`. `0`/`false`
+   * (the default) trusts no forwarding header at all; `true` means one.
+   *
+   * Set this only when proxies you control are guaranteed to be in the
+   * path AND to write that header: declaring proxies that are not there
+   * makes a caller-supplied hop readable again, and declaring one that
+   * writes only `X-Real-IP` reads nothing at all (use `clientAddress`
+   * for that deployment).
    */
   trustProxy?: boolean | number
   /**
    * Peer address supplied by the host runtime. Preferred over the
    * `'anon'` fallback, and used ahead of nothing else: behind a trusted
    * proxy the socket address is the PROXY's — identical for every
-   * client — so the forwarded chain wins when `trustProxy` is set.
+   * client — so a usable forwarded chain wins when `trustProxy` is set.
+   *
+   * This is also the hook for a proxy header this module will not trust
+   * on its own — `(req) => req.headers.get('cf-connecting-ip')`, or
+   * `x-real-ip` behind an nginx that sets it. Naming the header here
+   * makes it a deployment statement instead of a guess.
    */
   clientAddress?: ClientAddressResolver
 }
@@ -79,20 +119,16 @@ export function clientIpOf(req: Request, opts: ClientIpOptions = {}): string {
       .split(',')
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
-    if (chain.length > 0) {
-      // With `hops` trusted proxies the last `hops` entries were written
-      // by them; index `length - hops` is the address the outermost
-      // trusted proxy saw. A chain SHORTER than that means every entry
-      // was trusted-written, so its leftmost is the real client.
-      const idx = Math.max(0, chain.length - hops)
-      const hop = chain[idx]
+    // With `hops` trusted proxies the last `hops` entries were written
+    // by them; index `length - hops` is the address the outermost
+    // trusted proxy saw. A chain shorter than `hops` did not come
+    // through them, so it is caller-written in full and is dropped
+    // rather than clamped — and no forwarding header is consulted after
+    // it. See the module header for both measurements.
+    if (chain.length >= hops) {
+      const hop = chain[chain.length - hops]
       if (hop) return hop
     }
-    // `X-Real-IP` carries a single value written by the immediate proxy,
-    // so it is readable under the same declaration — but only when no
-    // chain was present, since the chain is the richer signal.
-    const real = req.headers.get('x-real-ip')?.trim()
-    if (real) return real
   }
 
   const peer = opts.clientAddress?.(req)?.trim()

@@ -41,11 +41,19 @@ describe('clientIpOf', () => {
     )
   })
 
-  it('takes the leftmost hop when the chain is shorter than the declared depth', () => {
-    // Every entry was then written by a trusted proxy, so the leftmost
-    // one IS the real client.
+  it('refuses a chain SHORTER than the declared depth', () => {
+    // `n` trusted proxies each append one entry, so a legitimate chain
+    // carries at least `n`. A shorter one cannot have passed through
+    // them, so every entry in it is caller-written — and the old code
+    // clamped the index to 0 and returned exactly that. Measured before
+    // the fix: `trustProxy: 2`, 60 single-entry chains, 60 buckets.
     const resolve = createClientIpResolver({ trustProxy: 3 })
-    expect(resolve(req({ 'x-forwarded-for': '203.0.113.7, 10.0.0.1' }))).toBe('203.0.113.7')
+    expect(resolve(req({ 'x-forwarded-for': '203.0.113.7, 10.0.0.1' }))).toBe('anon')
+
+    const buckets = new Set<string>()
+    const twoHops = createClientIpResolver({ trustProxy: 2 })
+    for (let i = 0; i < 60; i++) buckets.add(twoHops(req({ 'x-forwarded-for': `10.0.0.${i}` })))
+    expect(buckets).toEqual(new Set(['anon']))
   })
 
   it('accepts trustProxy: true as one hop', () => {
@@ -53,12 +61,35 @@ describe('clientIpOf', () => {
     expect(resolve(req({ 'x-forwarded-for': '1.2.3.4, 203.0.113.7' }))).toBe('203.0.113.7')
   })
 
-  it('reads x-real-ip only with a trusted proxy and no forwarded chain', () => {
+  it('never trusts x-real-ip, even with a declared proxy', () => {
+    // `X-Real-IP` is SET rather than appended, so nothing in it says a
+    // proxy wrote it. Reading it whenever no chain was present made the
+    // whole trust declaration bypassable by omitting `X-Forwarded-For`:
+    // measured before the fix, `trustProxy: 1` plus 60 varied
+    // `X-Real-IP` values produced 60 buckets. A deployment whose proxy
+    // really does write only `X-Real-IP` says so through
+    // `clientAddress`, which is a deployment statement rather than a
+    // guess about a header.
     const trusting = createClientIpResolver({ trustProxy: 1 })
-    expect(trusting(req({ 'x-real-ip': '203.0.113.7' }))).toBe('203.0.113.7')
+    const buckets = new Set<string>()
+    for (let i = 0; i < 60; i++) buckets.add(trusting(req({ 'x-real-ip': `10.0.0.${i}` })))
+    expect(buckets).toEqual(new Set(['anon']))
+
+    // The chain still decides when one is present.
     expect(trusting(req({ 'x-forwarded-for': '1.2.3.4', 'x-real-ip': '203.0.113.7' }))).toBe(
       '1.2.3.4',
     )
+  })
+
+  it('reads a header-only proxy through clientAddress instead', () => {
+    // The supported way to run behind an nginx that sets `X-Real-IP` and
+    // no `X-Forwarded-For`: the host names the header it trusts, so the
+    // trust is declared once by the deployment rather than inferred per
+    // request.
+    const resolve = createClientIpResolver({
+      clientAddress: (r) => r.headers.get('x-real-ip'),
+    })
+    expect(resolve(req({ 'x-real-ip': '203.0.113.7' }))).toBe('203.0.113.7')
   })
 
   it('prefers the forwarded chain over the peer address behind a trusted proxy', () => {

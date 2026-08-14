@@ -55,19 +55,22 @@ export type CoreOptions = {
    * deriving the rate-limit bucket key of a caller with no resolved
    * identity (`/agent/mint`, the MCP `initialize` path).
    *
-   * SECURITY: defaults to `0` — no `X-Forwarded-For` / `X-Real-IP` is
-   * read, because on a direct-to-origin deployment those are written by
-   * the caller and one bucket per caller-chosen value is not a limit.
-   * Set it only when a proxy you control is guaranteed to be in the
-   * path. See `client-ip.ts`.
+   * SECURITY: defaults to `0` — no forwarding header is read, because
+   * on a direct-to-origin deployment those are written by the caller
+   * and one bucket per caller-chosen value is not a limit. Set it only
+   * when proxies you control are guaranteed to be in the path AND to
+   * APPEND to `X-Forwarded-For`; `X-Real-IP` is never read. See
+   * `client-ip.ts`.
    */
   trustProxy?: boolean | number
   /**
    * Peer (socket) address of the request, which a WHATWG `Request` does
    * not carry. Supply it to give unidentified callers per-connection
    * throttle buckets without trusting any header: Node from
-   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip`. Without
-   * it (and without `trustProxy`) they share one bucket.
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip`. It is
+   * also how a deployment declares a proxy header `trustProxy` will not
+   * trust on its own, e.g. `(req) => req.headers.get('x-real-ip')`.
+   * Without it (and without `trustProxy`) they share one bucket.
    */
   clientAddress?: ClientAddressResolver
   /**
