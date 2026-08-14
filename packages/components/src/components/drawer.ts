@@ -282,10 +282,9 @@ export function overlay(opts: OverlayOptions): Mountable {
     focusTrap: trapFocus
       ? { initialFocus: opts.initialFocus, restoreFocus: opts.restoreFocus !== false }
       : undefined,
-    dismiss:
-      closeOnEscape || closeOnOutsideClick
-        ? { disableEscape: !closeOnEscape, disableOutside: !closeOnOutsideClick }
-        : undefined,
+    // Always pushed — see the note on `dialog.overlay`: the layer is this
+    // drawer's place on the stack, not just its dismissal wiring (#123).
+    dismiss: { disableEscape: !closeOnEscape, disableOutside: !closeOnOutsideClick },
   })
 }
 

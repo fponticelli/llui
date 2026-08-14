@@ -2,6 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -144,6 +145,13 @@ export function connect(
       closeTimer = null
     }
   }
+
+  // Cancel anything still pending when the component unmounts. The detached
+  // guard below already makes a late timer HARMLESS; this makes it not exist.
+  // Best-effort: `connect()` is also called from unit tests with no build
+  // context, where there is no scope to hook and the guard is the whole story
+  // (#123).
+  onScopeTeardown(clearTimers)
 
   // A hover-intent timer must not act after the component unmounts (its trigger
   // leaves the DOM), or it dispatches to a disposed handle. Capture the trigger

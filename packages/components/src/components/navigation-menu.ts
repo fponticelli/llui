@@ -2,6 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { flipArrow } from '../utils/direction.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -29,6 +30,16 @@ export interface NavMenuState {
    *  ancestor automatically closes its descendants. */
   open: string[]
   focused: string | null
+  /**
+   * Ids of the top-level items in document order, when the consumer renders a
+   * DYNAMIC list. Purely the roving-tabindex fallback: while nothing is focused
+   * the first entry owns the nav's single tab stop. Leave it empty for a static
+   * menu — `connect` then falls back to the first id handed to `item()`, which
+   * is document order for any depth-first view. Same escape hatch as
+   * `radio-group`/`tabs`, which keep their `items` list in state for exactly
+   * this reason.
+   */
+  items: string[]
   disabled: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
@@ -47,10 +58,14 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @intent("Replace the top-level item order used for the roving tab stop") */
+  | { type: 'setItems'; items: string[] }
 
 export interface NavMenuInit {
   open?: string[]
   focused?: string | null
+  /** Top-level item ids in document order — see `NavMenuState.items`. */
+  items?: string[]
   disabled?: boolean
   dir?: 'ltr' | 'rtl'
 }
@@ -59,6 +74,7 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
   return {
     open: opts.open ?? [],
     focused: opts.focused ?? null,
+    items: opts.items ?? [],
     disabled: opts.disabled ?? false,
     dir: opts.dir ?? 'ltr',
   }
@@ -66,6 +82,8 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
 
 export function update(state: NavMenuState, msg: NavMenuMsg): [NavMenuState, never[]] {
   if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
+  // Accepted while disabled: it is presentation order, not an interaction.
+  if (msg.type === 'setItems') return [{ ...state, items: msg.items }, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'openBranch': {
@@ -170,22 +188,25 @@ export function connect(
   let closeTimer: ReturnType<typeof setTimeout> | null = null
 
   // A pending close timer must not act after the menu unmounts, or it dispatches
-  // to a disposed handle. Capture a trigger at schedule time; if it was live
-  // then but is detached when the timer fires, the menu unmounted — drop it.
-  // (No trigger in the DOM at all, e.g. a unit test → no guard.)
+  // to a disposed handle. Capture THIS instance's root at schedule time; if it
+  // was live then but is detached when the timer fires, the menu unmounted —
+  // drop it. The root comes from the event's `currentTarget`: a
+  // `document.querySelector('[data-scope="navigation-menu"]…')` picks the first
+  // nav in DOCUMENT ORDER, so a second instance checked the FIRST one's liveness
+  // and happily dispatched into its own disposed handle (#123). (No element at
+  // all, e.g. a unit test dispatching a bare object → no guard.)
   const detached = (el: Element | null): boolean => el !== null && !el.isConnected
-  const anyTrigger = (): Element | null =>
-    typeof document === 'undefined'
-      ? null
-      : document.querySelector('[data-scope="navigation-menu"][data-part="trigger"]')
+  const eventRoot = (e: { currentTarget?: EventTarget | null } | undefined): Element | null => {
+    const t = e?.currentTarget
+    return t instanceof Element ? t : null
+  }
 
-  const scheduleClose = (): void => {
+  const scheduleClose = (root: Element | null): void => {
     if (!closeOnLeave) return
     if (closeTimer) clearTimeout(closeTimer)
-    const trigger = anyTrigger()
     closeTimer = setTimeout(() => {
       closeTimer = null
-      if (!detached(trigger)) send({ type: 'closeAll' })
+      if (!detached(root)) send({ type: 'closeAll' })
     }, 150)
   }
 
@@ -196,17 +217,48 @@ export function connect(
     }
   }
 
+  // Cancel a still-pending close when the nav unmounts. The guard above already
+  // makes a late timer HARMLESS; this makes it not exist. Best-effort:
+  // `connect()` is also called from unit tests with no build context, where
+  // there is no scope to hook and the guard is the whole story (#123).
+  onScopeTeardown(cancelClose)
+
+  // Roving-tabindex fallback. `focused` starts null and only a trigger's own
+  // onFocus ever sets it, so with a bare `focused === id ? 0 : -1` EVERY trigger
+  // reads -1 on the default state and the whole nav is unreachable by Tab —
+  // WCAG 2.1.1 (#122). The siblings that solve this (radio-group, tabs,
+  // menubar) fall back to the first enabled item in their `items` list, but
+  // this machine deliberately does not index the tree: the consumer owns it.
+  // So the fallback comes from `state.items` when the consumer maintains it —
+  // the current top-level order, so a list rendered through `each` re-seats the
+  // tab stop as rows come and go.
+  //
+  // `firstItemId` is the STATIC-MENU fallback only: the first id handed to
+  // `item()`, which for any depth-first view is the first trigger in document
+  // order. It is a LATCH, and a latch is wrong for a dynamic list — `item()`
+  // runs once per row build, so removing the row that happened to build first
+  // leaves the latch pointing at an id that no longer exists and the nav loses
+  // its tab stop entirely. `state.items` therefore WINS wherever it is
+  // populated; the latch only answers when it is empty.
+  let firstItemId: string | null = null
+  const tabStop = (id: string) => (st: NavMenuState) => {
+    if (st.focused !== null) return st.focused === id ? 0 : -1
+    const first = st.items.length > 0 ? st.items[0] : firstItemId
+    return first === id ? 0 : -1
+  }
+
   return {
     root: {
       'aria-label': opts.label ?? locale.navigationMenu.label,
       'data-scope': 'navigation-menu',
       'data-part': 'root',
       'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
-      onPointerLeave: () => scheduleClose(),
+      onPointerLeave: (e: PointerEvent) => scheduleClose(eventRoot(e)),
       onPointerEnter: () => cancelClose(),
     },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
+      if (firstItemId === null) firstItemId = id
       return {
         trigger: {
           type: 'button',
@@ -218,7 +270,7 @@ export function connect(
           'data-part': 'trigger',
           'data-state': state.map((st) => (isOpen(st, id) ? 'open' : 'closed')),
           'data-value': id,
-          tabindex: state.map((st) => (st.focused === id ? 0 : -1)),
+          tabindex: state.map(tabStop(id)),
           onClick: tagSend(send, ['toggleBranch'], () => {
             if (options.isBranch) {
               send({ type: 'toggleBranch', id, ancestorIds })

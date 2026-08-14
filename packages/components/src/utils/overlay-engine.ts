@@ -3,6 +3,7 @@ import { show, portal, onMount, div } from '@llui/dom'
 import { pushDismissable } from './dismissable.js'
 import { pushFocusTrap } from './focus-trap.js'
 import { setAriaHiddenOutside } from './aria-hidden.js'
+import { registerNestedLayer, type NestedLayerAspect } from './nested-layer.js'
 import { lockBodyScroll } from './remove-scroll.js'
 import { attachFloating, type Placement } from './floating.js'
 import { getElementByIdInScope } from './root-scope.js'
@@ -125,6 +126,27 @@ export interface OverlayEngineOptions<S> {
   focusTrap?: OverlayFocusTrapConfig
   lockScroll?: boolean
   hideSiblings?: boolean
+  /**
+   * Whether this overlay registers its live content as a NESTED LAYER while the
+   * interaction phase is up (see `registerNestedLayer`). Defaults to "this
+   * overlay is not modal" — `!(focusTrap || hideSiblings)`.
+   *
+   * WHY non-modal only. Every one of these overlays portals to a body-level
+   * sibling, so an overlay opened from inside an open dialog lands OUTSIDE the
+   * dialog's focus trap and its `inert` sweep. Registering makes Tab reach it and
+   * keeps it out of the sweep. A MODAL surface must NOT register: it is the layer
+   * everything else is nested in, and registering it would let a trap on the
+   * layer beneath Tab into it and would make its own CONTENT read as "inside a
+   * nested layer" for an overlay open on top of it — so a click anywhere in the
+   * dialog's panel would stop dismissing an inner `select`. (`content` is the
+   * element registered below, and it is only the panel: `dialog` renders
+   * `backdrop`, `positioner` and `content` as three separate parts, so a click
+   * on the dialog's BACKGROUND is outside the registered element either way.)
+   *
+   * The aspects are narrowed further (see below): outside-click cooperation
+   * between engine overlays comes from the dismissable STACK, not the registry.
+   */
+  nestedLayer?: boolean
   /** Element id to focus once the overlay opens. */
   focusOnOpenId?: string
   /** Select the focused input's existing value (searchable-select prefill). */
@@ -153,6 +175,32 @@ export interface OverlayEngineOptions<S> {
 }
 
 export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
+  // A modal surface owns the layer everything else nests INSIDE, so it never
+  // registers as a nested layer of something else.
+  const isModal = opts.focusTrap !== undefined || opts.hideSiblings === true
+  const registersNestedLayer = opts.nestedLayer ?? !isModal
+  // `focus` + `hide` always: those two consumers have no other mechanism, and
+  // they are the ones the dismissable stack says nothing about.
+  //
+  // `outside` ONLY when this overlay pushes no dismissable layer. With a layer,
+  // `shouldDispatch` already limits outside-clicks to the topmost one, which is
+  // ORDERED and therefore strictly better than the registry's flat, global
+  // answer. Adding `outside` on top of it breaks SIBLING layers: two popovers
+  // open at once, a click inside the lower one is an outside interaction for the
+  // upper one and must dismiss it — but the registry has no notion of which
+  // layer asked, so the upper one would read the click as "inside a nested
+  // layer" and stay open. (Pinned by `overlay-nested-layer.integration.test.ts`
+  // — "a pointerdown inside the lower sibling popover dismisses the upper one".)
+  // The dialog-with-an-inner-`select` case is NOT what this narrowing protects:
+  // that one is covered by `isModal` above, since a modal never registers at all
+  // whatever aspects it would have named.
+  //
+  // Without a layer — a `tooltip` with `closeOnEscape: false` — nothing speaks
+  // for the overlay at all, so a click inside it would dismiss the layer beneath.
+  const nestedLayerAspects: NestedLayerAspect[] = opts.dismiss
+    ? ['focus', 'hide']
+    : ['focus', 'hide', 'outside']
+
   const resolveId = (root: Node, id: string): HTMLElement | null => {
     if (opts.idScope === 'document') {
       return typeof document === 'undefined' ? null : document.getElementById(id)
@@ -198,6 +246,11 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
 
       const cleanups: Array<() => void> = []
 
+      // Registered FIRST so it unwinds LAST (cleanups run LIFO): the trap and
+      // sweep teardowns below may consult the registry on their way out.
+      if (registersNestedLayer) {
+        cleanups.push(registerNestedLayer(els.content, { aspects: nestedLayerAspects }))
+      }
       if (opts.floating && !opts.floating.persistent) {
         cleanups.push(attachFloatingFor(els))
       }

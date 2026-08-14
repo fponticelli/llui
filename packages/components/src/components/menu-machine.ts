@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   typeaheadAccumulate,
@@ -527,19 +528,44 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       delete closeTimers[value]
     }
   }
+  // A pending hover timer must not act once the menu unmounts, or it dispatches
+  // into a disposed handle (#123). Capture the subtrigger at SCHEDULE time and
+  // drop the message if it was live then but is detached when the timer fires.
+  // `ids.subTriggerId` is instance-scoped, so this resolves THIS menu even with
+  // several on the page. (No element at all — a unit test that renders nothing —
+  // means no guard, exactly as in tooltip/hover-card.)
+  //
+  //
+  // The guard is the CORRECTNESS half. The tidy-up half — cancelling the timer
+  // outright — is `onScopeTeardown` below: `connect()` must stay callable from a
+  // unit test with no build context, so it hooks the scope only when there is
+  // one to hook, and the guard covers the rest.
+  const detached = (el: Element | null): boolean => el !== null && !el.isConnected
+  const subTriggerEl = (value: string): Element | null =>
+    typeof document === 'undefined' ? null : document.getElementById(ids.subTriggerId(value))
+
+  onScopeTeardown(() => {
+    for (const value of Object.keys(openTimers)) clearOpenTimer(value)
+    for (const value of Object.keys(closeTimers)) clearCloseTimer(value)
+  })
+
   const scheduleOpenSub = (value: string): void => {
     clearCloseTimer(value)
     clearOpenTimer(value)
+    const trigger = subTriggerEl(value)
     openTimers[value] = setTimeout(() => {
       delete openTimers[value]
+      if (detached(trigger)) return
       send({ type: 'openSub', value })
     }, hoverDelay)
   }
   const scheduleCloseSub = (value: string): void => {
     clearOpenTimer(value)
     clearCloseTimer(value)
+    const trigger = subTriggerEl(value)
     closeTimers[value] = setTimeout(() => {
       delete closeTimers[value]
+      if (detached(trigger)) return
       // `closeSub` pops the DEEPEST open submenu. Only fire it when THIS submenu
       // is the deepest open one — otherwise a shallower level's pointerleave
       // would wrongly collapse a deeper, still-hovered submenu.

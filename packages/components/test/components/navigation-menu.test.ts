@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, isOpen } from '../../src/components/navigation-menu'
 import type { NavMenuState } from '../../src/components/navigation-menu'
 import { rootSignal, signalOf, read } from '../_signal'
@@ -183,6 +183,63 @@ describe('navigation-menu.connect', () => {
   })
 })
 
+describe('navigation-menu close timer resolves its OWN instance (#123)', () => {
+  // Two navs in one document. The guard used to `document.querySelector` the
+  // FIRST `[data-part="trigger"]` in document order, so the second instance
+  // checked the FIRST one's liveness and dispatched into a disposed handle.
+  function makeNav(id: string): HTMLElement {
+    const root = document.createElement('nav')
+    root.setAttribute('data-scope', 'navigation-menu')
+    root.setAttribute('data-part', 'root')
+    const trigger = document.createElement('button')
+    trigger.id = `${id}:trigger:home`
+    trigger.setAttribute('data-scope', 'navigation-menu')
+    trigger.setAttribute('data-part', 'trigger')
+    root.append(trigger)
+    return root
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+  })
+
+  it('drops the close when its own root has detached, even if a sibling nav is live', () => {
+    const navA = makeNav('a')
+    const navB = makeNav('b')
+    document.body.append(navA, navB)
+
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'b' })
+    // Dispatch a real event so `currentTarget` is navB, as it is in the browser.
+    navB.addEventListener('pointerleave', (e) => p.root.onPointerLeave(e as PointerEvent))
+    navB.dispatchEvent(new Event('pointerleave'))
+
+    // navB unmounts while the timer is pending; navA stays in the document.
+    navB.remove()
+    expect(navA.isConnected).toBe(true)
+    vi.advanceTimersByTime(200)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('still closes while its own root is live (the guard is not vacuous)', () => {
+    const navA = makeNav('a')
+    const navB = makeNav('b')
+    document.body.append(navA, navB)
+
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'b' })
+    navB.addEventListener('pointerleave', (e) => p.root.onPointerLeave(e as PointerEvent))
+    navB.dispatchEvent(new Event('pointerleave'))
+    vi.advanceTimersByTime(200)
+    expect(send).toHaveBeenCalledWith({ type: 'closeAll' })
+  })
+})
+
 describe('navigation-menu RTL', () => {
   it('init defaults dir to ltr; respects opts.dir', () => {
     expect(init().dir).toBe('ltr')
@@ -231,5 +288,61 @@ describe('navigation-menu RTL', () => {
       new KeyboardEvent('keydown', { key: 'ArrowRight' }),
     )
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('navigation-menu.connect — tab sequence (WCAG 2.1.1)', () => {
+  it('the default state has exactly one tab stop', () => {
+    // `focused` starts null and only a trigger's own onFocus ever sets it, so
+    // without a fallback EVERY trigger reads -1 and the whole nav is
+    // unreachable by Tab (#122).
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const ids = ['home', 'products', 'about']
+    const triggers = ids.map((id) => p.item(id, { isBranch: id !== 'home' }).trigger)
+    const s = init()
+    const stops = triggers.filter((t) => read(t.tabindex, s) === 0)
+    expect(stops).toHaveLength(1)
+    // …and it is the FIRST item handed to `item()`, i.e. document order.
+    expect(read(triggers[0]!.tabindex, s)).toBe(0)
+  })
+
+  it('a dynamic list keeps its tab stop when the first item is removed', () => {
+    // With items rendered through `each`, `item()` is called per ROW, so the
+    // connect-time latch pins whichever id happened to build first — forever.
+    // Remove that row and the latched id no longer exists: every remaining
+    // trigger reads -1 and the nav loses its tab stop entirely, re-opening the
+    // WCAG 2.1.1 defect this component just closed. `items` in state is the
+    // current order (the same escape hatch radio-group/tabs use) and wins over
+    // the latch.
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const home = p.item('home', { isBranch: false }).trigger
+    const products = p.item('products', { isBranch: true }).trigger
+    const about = p.item('about', { isBranch: false }).trigger
+
+    const all = init({ items: ['home', 'products', 'about'] })
+    expect(read(home.tabindex, all)).toBe(0)
+
+    // 'home' has been removed from the rendered list.
+    const without = init({ items: ['products', 'about'] })
+    const triggers = [home, products, about]
+    expect(triggers.filter((t) => read(t.tabindex, without) === 0)).toHaveLength(1)
+    expect(read(products.tabindex, without)).toBe(0)
+  })
+
+  it('setItems re-seats the tab stop while nothing is focused', () => {
+    const [s] = update(init({ items: ['a', 'b'] }), { type: 'setItems', items: ['b', 'c'] })
+    expect(s.items).toEqual(['b', 'c'])
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const b = p.item('b', { isBranch: false }).trigger
+    expect(read(b.tabindex, s)).toBe(0)
+  })
+
+  it('once an item is focused it owns the tab stop', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const first = p.item('home', { isBranch: false }).trigger
+    const second = p.item('products', { isBranch: true }).trigger
+    const s = init({ focused: 'products' })
+    expect(read(first.tabindex, s)).toBe(-1)
+    expect(read(second.tabindex, s)).toBe(0)
   })
 })

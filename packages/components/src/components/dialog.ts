@@ -336,10 +336,13 @@ export function overlay(opts: OverlayOptions): Mountable {
     focusTrap: trapFocus
       ? { initialFocus: opts.initialFocus, restoreFocus: opts.restoreFocus !== false }
       : undefined,
-    dismiss:
-      closeOnEscape || closeOnOutsideClick
-        ? { disableEscape: !closeOnEscape, disableOutside: !closeOnOutsideClick }
-        : undefined,
+    // Always pushed, even when BOTH dismissal routes are off. The layer is not
+    // only "how this dialog closes" — it is this dialog's place on the stack,
+    // which is what stops the layer BENEATH it from treating a click inside this
+    // dialog as an outside interaction (#123). Declining both merely means the
+    // layer claims nothing: Escape falls through to the layer below and no
+    // outside watcher is attached.
+    dismiss: { disableEscape: !closeOnEscape, disableOutside: !closeOnOutsideClick },
   })
 }
 

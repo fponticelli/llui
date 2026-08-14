@@ -4,6 +4,7 @@ import {
   getNestedLayers,
   isInNestedLayer,
   _nestedLayerCount,
+  ALL_NESTED_LAYER_ASPECTS,
 } from '../../src/utils/nested-layer'
 import { watchInteractOutside } from '../../src/utils/interact-outside'
 import { pushDismissable } from '../../src/utils/dismissable'
@@ -35,6 +36,30 @@ describe('nested-layer registry', () => {
     expect(getNestedLayers()).toEqual([]) // closed
     open = true
     expect(getNestedLayers()).toEqual([el]) // opened, no re-registration
+    cleanup()
+  })
+
+  it('a registration with no aspects participates in all three', () => {
+    const el = document.createElement('div')
+    document.body.append(el)
+    const cleanup = registerNestedLayer(el)
+    for (const aspect of ALL_NESTED_LAYER_ASPECTS) {
+      expect(getNestedLayers(aspect)).toEqual([el])
+      expect(isInNestedLayer(el, aspect)).toBe(true)
+    }
+    cleanup()
+  })
+
+  it('a narrowed registration is invisible to the aspects it did not name', () => {
+    const el = document.createElement('div')
+    document.body.append(el)
+    const cleanup = registerNestedLayer(el, { aspects: ['focus', 'hide'] })
+    expect(getNestedLayers('focus')).toEqual([el])
+    expect(getNestedLayers('hide')).toEqual([el])
+    expect(getNestedLayers('outside')).toEqual([])
+    expect(isInNestedLayer(el, 'outside')).toBe(false)
+    // Aspect-less lookups still see it (the registry-wide view).
+    expect(getNestedLayers()).toEqual([el])
     cleanup()
   })
 

@@ -225,6 +225,19 @@ describe('color-picker.connect area + alpha + swatches', () => {
     expect(vt).toContain('100')
   })
 
+  it('area thumb exposes aria-valuenow (required on role=slider)', () => {
+    // ARIA 1.2 makes aria-valuenow a REQUIRED property of slider, and the
+    // aria-valuetext definition says authors MUST also specify it (#122).
+    const p = connect(rootSignal(), vi.fn())
+    // The fixture must separate the axes: `hsl {h:0,s:100,l:50}` yields
+    // `hsv.s === hsv.v === 100`, so pointing the assertion at the WRONG axis
+    // still passes. `hsl {h:0,s:50,l:25}` gives distinct s and v.
+    const s = init({ hsl: { h: 0, s: 50, l: 25 } })
+    expect(s.hsv.s).not.toBe(s.hsv.v)
+    // Horizontal axis of the 2D area = saturation.
+    expect(read(p.areaThumb['aria-valuenow'], s)).toBe(s.hsv.s)
+  })
+
   it('area thumb arrow keys nudge S/V (Shift = coarse)', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send, { step: 1, coarseStep: 10 })

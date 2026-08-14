@@ -28,7 +28,18 @@ export interface TableSort {
   direction: SortDirection
 }
 
+/**
+ * The row index of the HEADER row. The header is part of the grid's roving
+ * sequence — APG's data-grid examples make column headers focusable exactly
+ * because they carry controls (sort here, plus the select-all checkbox) — so it
+ * needs a coordinate. `-1` is the natural one: `aria-rowindex` already models
+ * the header as row 1 with data row `i` at `i + 2`, so the header sits one row
+ * above data row 0.
+ */
+export const HEADER_ROW_INDEX = -1
+
 export interface TableCellCoord {
+  /** Row index into `rows`, or {@link HEADER_ROW_INDEX} for the header row. */
   rowIndex: number
   colIndex: number
 }
@@ -138,10 +149,31 @@ function cycleSort(state: TableState, columnId: string): TableSort | null {
   return null
 }
 
-function clampCell(state: TableState, cell: TableCellCoord): TableCellCoord | null {
-  if (state.rows.length === 0 || state.columns.length === 0) return null
+/**
+ * Clamp a coordinate into the grid.
+ *
+ * `minRow` is the top of the addressable row space. It is {@link
+ * HEADER_ROW_INDEX} for everything that ROVES (arrow moves, page moves, and the
+ * DOM→state focus sync) — the header row is the top of the grid, so ArrowUp from
+ * data row 0 lands on it and ArrowUp from it stays put. It stays `0` for the
+ * "jump to a data corner" messages (`gridStart`/`gridEnd`), whose contract is the
+ * first/last DATA cell.
+ *
+ * Returns `null` when nothing is addressable: no columns at all, or no row in
+ * `[minRow, rows.length - 1]`. Note that with `minRow === HEADER_ROW_INDEX` a
+ * grid with zero data rows still has its header row, which is what keeps an
+ * empty grid keyboard-reachable.
+ */
+function clampCell(
+  state: TableState,
+  cell: TableCellCoord,
+  minRow: number = 0,
+): TableCellCoord | null {
+  if (state.columns.length === 0) return null
+  const maxRow = state.rows.length - 1
+  if (maxRow < minRow) return null
   return {
-    rowIndex: clamp(cell.rowIndex, 0, state.rows.length - 1),
+    rowIndex: clamp(cell.rowIndex, minRow, maxRow),
     colIndex: clamp(cell.colIndex, 0, state.columns.length - 1),
   }
 }
@@ -199,22 +231,30 @@ export function update(state: TableState, msg: TableMsg): [TableState, never[]] 
       return [state, []]
     case 'setRows': {
       const selection = state.selection.filter((id) => msg.rows.includes(id))
+      // Re-clamped against the roving row space: a grid whose rows all go away
+      // keeps its focus on the header rather than losing it entirely.
       const focusedCell = state.focusedCell
-        ? clampCell({ ...state, rows: msg.rows }, state.focusedCell)
+        ? clampCell({ ...state, rows: msg.rows }, state.focusedCell, HEADER_ROW_INDEX)
         : null
       return [{ ...state, rows: msg.rows, selection, focusedCell, rangeAnchor: null }, []]
     }
     case 'setColumns': {
       const focusedCell = state.focusedCell
-        ? clampCell({ ...state, columns: msg.columns }, state.focusedCell)
+        ? clampCell({ ...state, columns: msg.columns }, state.focusedCell, HEADER_ROW_INDEX)
         : null
       return [{ ...state, columns: msg.columns, focusedCell }, []]
     }
     case 'focusCell':
+      // The DOM→state half of the roving tabindex, so it must accept every
+      // focusable coordinate — the header row included.
       return [
         {
           ...state,
-          focusedCell: clampCell(state, { rowIndex: msg.rowIndex, colIndex: msg.colIndex }),
+          focusedCell: clampCell(
+            state,
+            { rowIndex: msg.rowIndex, colIndex: msg.colIndex },
+            HEADER_ROW_INDEX,
+          ),
         },
         [],
       ]
@@ -223,7 +263,7 @@ export function update(state: TableState, msg: TableMsg): [TableState, never[]] 
       const target = state.focusedCell
         ? { rowIndex: base.rowIndex + msg.dRow, colIndex: base.colIndex + msg.dCol }
         : base
-      return [{ ...state, focusedCell: clampCell(state, target) }, []]
+      return [{ ...state, focusedCell: clampCell(state, target, HEADER_ROW_INDEX) }, []]
     }
     case 'rowStart': {
       if (state.focusedCell === null) return [state, []]
@@ -236,25 +276,41 @@ export function update(state: TableState, msg: TableMsg): [TableState, never[]] 
         [],
       ]
     }
-    case 'gridStart':
-      return [{ ...state, focusedCell: clampCell(state, { rowIndex: 0, colIndex: 0 }) }, []]
-    case 'gridEnd':
-      return [
-        {
-          ...state,
-          focusedCell: clampCell(state, {
-            rowIndex: state.rows.length - 1,
-            colIndex: state.columns.length - 1,
-          }),
-        },
-        [],
-      ]
+    // gridStart/gridEnd keep the DATA corners: Ctrl+Home/Ctrl+End are documented
+    // as "first/last cell of the grid body", and the header is reached by
+    // arrowing up rather than by a corner jump.
+    //
+    // A grid with no data rows has no such corner, so `clampCell` returns null.
+    // Focus must then be LEFT ALONE rather than cleared: on an empty grid the
+    // focused cell is the header, and wiping it takes away both the focus ring
+    // and the tab stop while DOM focus sits on a header that just became
+    // `tabindex="-1"`. "Nowhere to jump to" is a no-op, not a reset.
+    case 'gridStart': {
+      const clamped = clampCell(state, { rowIndex: 0, colIndex: 0 })
+      if (clamped === null) return [state, []]
+      return [{ ...state, focusedCell: clamped }, []]
+    }
+    case 'gridEnd': {
+      const clamped = clampCell(state, {
+        rowIndex: state.rows.length - 1,
+        colIndex: state.columns.length - 1,
+      })
+      if (clamped === null) return [state, []]
+      return [{ ...state, focusedCell: clamped }, []]
+    }
+    // Page moves rove, so they share the arrow keys' row space: APG's "if focus
+    // is in the first row of the grid, focus does not move" — and with a
+    // focusable header the header IS the first row.
     case 'pageDown': {
       const base = state.focusedCell ?? { rowIndex: 0, colIndex: 0 }
       return [
         {
           ...state,
-          focusedCell: clampCell(state, { ...base, rowIndex: base.rowIndex + state.pageSize }),
+          focusedCell: clampCell(
+            state,
+            { ...base, rowIndex: base.rowIndex + state.pageSize },
+            HEADER_ROW_INDEX,
+          ),
         },
         [],
       ]
@@ -264,7 +320,11 @@ export function update(state: TableState, msg: TableMsg): [TableState, never[]] 
       return [
         {
           ...state,
-          focusedCell: clampCell(state, { ...base, rowIndex: base.rowIndex - state.pageSize }),
+          focusedCell: clampCell(
+            state,
+            { ...base, rowIndex: base.rowIndex - state.pageSize },
+            HEADER_ROW_INDEX,
+          ),
         },
         [],
       ]
@@ -292,11 +352,24 @@ export interface TableColumnHeaderParts {
   role: 'columnheader'
   id: string
   'aria-sort': Signal<'ascending' | 'descending' | 'none' | undefined>
+  /**
+   * Roving tab stop. The header row participates in the grid's single-tab-stop
+   * sequence, because it hosts controls — the sort toggle on every sortable
+   * column, and the select-all checkbox — that are otherwise unreachable by
+   * keyboard.
+   */
+  tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'column-header'
   'data-column': string
+  /** Always {@link HEADER_ROW_INDEX} — addresses the header for roving DOM focus. */
+  'data-row-index': typeof HEADER_ROW_INDEX
+  /** 0-based column index (`-1` for a column not in `columns`). */
+  'data-col-index': Signal<number>
+  'data-focused': Signal<'' | undefined>
   'data-sortable': Signal<'' | undefined>
   'data-sort': Signal<SortDirection | undefined>
+  onFocus: (e: FocusEvent) => void
   onClick: (e: MouseEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
 }
@@ -333,7 +406,10 @@ export interface TableCheckboxParts {
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
   'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+  /** Always `-1`: a `role="grid"` has exactly ONE tab stop, the roving cell. */
+  tabindex: -1
   onClick: (e: MouseEvent) => void
+  onKeyDown: (e: KeyboardEvent) => void
 }
 
 export interface TableParts {
@@ -351,7 +427,24 @@ export interface TableParts {
   columnHeader: (columnId: string) => TableColumnHeaderParts
   row: (id: string, index: number) => TableRowParts
   cell: (rowIndex: number, colIndex: number) => TableCellParts
-  selectAllCheckbox: TableCheckboxParts
+  /**
+   * The select-all checkbox, for the `columnheader` of `columnId`.
+   *
+   * The column id is a PARAMETER rather than a `connect()` option because the
+   * checkbox is unreachable by keyboard without it: it has no gridcell of its
+   * own, and every part inside a `role="grid"` except the one roving stop is
+   * `tabindex="-1"`, so its only keyboard route is Enter/Space on the roving
+   * header that hosts it — and the machine can only route that key if it knows
+   * which header. As an option it was forgettable, and forgetting it failed
+   * SILENTLY (no warning, no error; the key sorted the column or did nothing).
+   * As a required argument you cannot render the checkbox without answering the
+   * question, so the failure mode is gone at compile time.
+   *
+   * `columnId` must be a column in `state.columns` — that is what gives the
+   * header a colIndex to rove to. A column not in the list can never take the
+   * roving stop, and its header will not send `toggleAll` either.
+   */
+  selectAllCheckbox: (columnId: string) => TableCheckboxParts
   rowCheckbox: (id: string, index: number) => TableCheckboxParts
 }
 
@@ -366,92 +459,137 @@ export function connect(
 ): TableParts {
   const rootId = `${opts.id}:root`
   const headerId = (columnId: string): string => `${opts.id}:colheader:${columnId}`
+  const colIndexOf = (s: TableState, columnId: string): number =>
+    s.columns.findIndex((c) => c.id === columnId)
+
+  /**
+   * The columns whose header hosts a select-all checkbox — filled in by
+   * `selectAllCheckbox(columnId)` as the consumer renders it.
+   *
+   * The header's key handler cannot know this when it is BUILT — the consumer
+   * places `columnHeader` and `selectAllCheckbox` in whatever order its view
+   * happens to use — and it does not need to. Views are built ONCE, and a key
+   * event can only arrive after the build has finished, so the handler reads
+   * this set at EVENT time and sees every checkbox that was actually placed.
+   * Reading what was RENDERED, rather than trusting a declaration made up
+   * front, is also what keeps the two halves from drifting apart.
+   */
+  const selectAllColumns = new Set<string>()
+
+  /** The messages every roving part may send. */
+  const NAV_MSGS = [
+    'moveCell',
+    'rowStart',
+    'rowEnd',
+    'gridStart',
+    'gridEnd',
+    'pageDown',
+    'pageUp',
+  ] as const
 
   // The focused grid cell is tracked in state (roving tabindex), but AT and
-  // keyboard focus follow the real DOM — so after every cell move we must
-  // focus the newly-active cell, addressed by its data-row-index/data-col-index.
+  // keyboard focus follow the real DOM — so after every move we must focus the
+  // newly-active part, addressed by its data-row-index/data-col-index. Both the
+  // cells and the column headers carry that coordinate pair, which is what lets
+  // the header row join the sequence.
   const focusFocusedCell = (origin: Element | null): void => {
     if (origin === null) return
     const fc = state.peek().focusedCell
     if (fc === null) return
     const root: ParentNode =
       origin.closest('[data-scope="table"][data-part="root"]') ?? origin.ownerDocument ?? origin
+    const part = fc.rowIndex === HEADER_ROW_INDEX ? 'column-header' : 'cell'
     const el = root.querySelector(
-      `[data-scope="table"][data-part="cell"][data-row-index="${fc.rowIndex}"][data-col-index="${fc.colIndex}"]`,
+      `[data-scope="table"][data-part="${part}"][data-row-index="${fc.rowIndex}"][data-col-index="${fc.colIndex}"]`,
     )
     if (el instanceof HTMLElement) el.focus()
   }
 
+  /**
+   * The navigation half of the roving sequence, shared by cells and column
+   * headers. Returns whether the key was claimed, so each part can layer its own
+   * activation keys (Space/Enter) on top.
+   */
+  const handleNavKey = (e: KeyboardEvent): boolean => {
+    const origin = e.currentTarget as Element | null
+    const move = (msg: TableMsg): true => {
+      e.preventDefault()
+      send(msg)
+      focusFocusedCell(origin)
+      return true
+    }
+    switch (e.key) {
+      case 'ArrowRight':
+        return move({ type: 'moveCell', dRow: 0, dCol: 1 })
+      case 'ArrowLeft':
+        return move({ type: 'moveCell', dRow: 0, dCol: -1 })
+      case 'ArrowDown':
+        return move({ type: 'moveCell', dRow: 1, dCol: 0 })
+      case 'ArrowUp':
+        return move({ type: 'moveCell', dRow: -1, dCol: 0 })
+      case 'Home':
+        return move(e.ctrlKey || e.metaKey ? { type: 'gridStart' } : { type: 'rowStart' })
+      case 'End':
+        return move(e.ctrlKey || e.metaKey ? { type: 'gridEnd' } : { type: 'rowEnd' })
+      case 'PageDown':
+        return move({ type: 'pageDown' })
+      case 'PageUp':
+        return move({ type: 'pageUp' })
+      default:
+        return false
+    }
+  }
+
   const cellOnKeyDown = (rowIndex: number): ((e: KeyboardEvent) => void) =>
-    tagSend(
-      send,
-      [
-        'moveCell',
-        'rowStart',
-        'rowEnd',
-        'gridStart',
-        'gridEnd',
-        'pageDown',
-        'pageUp',
-        'toggleRow',
-        'activateRow',
-      ],
-      (e) => {
-        const s = state.peek()
-        const id = s.rows[rowIndex]
-        const origin = e.currentTarget as Element | null
-        switch (e.key) {
-          case 'ArrowRight':
-            e.preventDefault()
-            send({ type: 'moveCell', dRow: 0, dCol: 1 })
-            focusFocusedCell(origin)
-            return
-          case 'ArrowLeft':
-            e.preventDefault()
-            send({ type: 'moveCell', dRow: 0, dCol: -1 })
-            focusFocusedCell(origin)
-            return
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'moveCell', dRow: 1, dCol: 0 })
-            focusFocusedCell(origin)
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'moveCell', dRow: -1, dCol: 0 })
-            focusFocusedCell(origin)
-            return
-          case 'Home':
-            e.preventDefault()
-            send(e.ctrlKey || e.metaKey ? { type: 'gridStart' } : { type: 'rowStart' })
-            focusFocusedCell(origin)
-            return
-          case 'End':
-            e.preventDefault()
-            send(e.ctrlKey || e.metaKey ? { type: 'gridEnd' } : { type: 'rowEnd' })
-            focusFocusedCell(origin)
-            return
-          case 'PageDown':
-            e.preventDefault()
-            send({ type: 'pageDown' })
-            focusFocusedCell(origin)
-            return
-          case 'PageUp':
-            e.preventDefault()
-            send({ type: 'pageUp' })
-            focusFocusedCell(origin)
-            return
-          case ' ':
-            e.preventDefault()
-            if (id !== undefined) send({ type: 'toggleRow', id, index: rowIndex })
-            return
-          case 'Enter':
-            e.preventDefault()
-            if (id !== undefined) send({ type: 'activateRow', id, index: rowIndex })
-            return
-        }
-      },
-    )
+    tagSend(send, [...NAV_MSGS, 'toggleRow', 'activateRow'], (e) => {
+      if (handleNavKey(e)) return
+      const id = state.peek().rows[rowIndex]
+      switch (e.key) {
+        case ' ':
+          e.preventDefault()
+          if (id !== undefined) send({ type: 'toggleRow', id, index: rowIndex })
+          return
+        case 'Enter':
+          e.preventDefault()
+          if (id !== undefined) send({ type: 'activateRow', id, index: rowIndex })
+          return
+      }
+    })
+
+  /**
+   * Enter/Space on a focused header activates whatever that header hosts.
+   *
+   * Select-all takes priority where the header hosts one AND it can act: the
+   * checkbox has no gridcell of its own, so the header is a keyboard user's
+   * ONLY route to it, whereas a sortable column's sort is also reachable by
+   * pointer on the same element.
+   *
+   * Where it CANNOT act — outside `multiple` selection, or on a column absent
+   * from `columns` (which can never take the roving stop, so a header reached
+   * there was focused programmatically and must not toggle a selection the grid
+   * does not model) — the key FALLS THROUGH to the sort branch rather than
+   * ending the handler. Returning instead swallowed Enter/Space on a sortable
+   * select-all column, leaving its sort keyboard-dead: #122's own defect class,
+   * in a narrower config.
+   */
+  const headerOnKeyDown = (columnId: string): ((e: KeyboardEvent) => void) =>
+    tagSend(send, [...NAV_MSGS, 'toggleSort', 'toggleAll'], (e) => {
+      if (handleNavKey(e)) return
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      const s = state.peek()
+      if (
+        selectAllColumns.has(columnId) &&
+        colIndexOf(s, columnId) >= 0 &&
+        s.selectionMode === 'multiple'
+      ) {
+        e.preventDefault()
+        send({ type: 'toggleAll' })
+        return
+      }
+      if (!isSortable(s, columnId)) return
+      e.preventDefault()
+      send({ type: 'toggleSort', columnId })
+    })
 
   return {
     root: {
@@ -478,20 +616,43 @@ export function connect(
         if (dir === 'desc') return 'descending'
         return 'none'
       }),
+      tabindex: state.map((s) => {
+        const colIndex = colIndexOf(s, columnId)
+        if (colIndex < 0) return -1
+        if (s.focusedCell === null) {
+          // Nothing focused yet: cell(0,0) is the grid's entry tab stop. With no
+          // data rows there is no cell to carry it, and a grid with zero tab
+          // stops is unreachable — sort and select-all included — so the first
+          // header takes it instead.
+          return s.rows.length === 0 && colIndex === 0 ? 0 : -1
+        }
+        return s.focusedCell.rowIndex === HEADER_ROW_INDEX && s.focusedCell.colIndex === colIndex
+          ? 0
+          : -1
+      }),
       'data-scope': 'table',
       'data-part': 'column-header',
       'data-column': columnId,
+      'data-row-index': HEADER_ROW_INDEX,
+      'data-col-index': state.map((s) => colIndexOf(s, columnId)),
+      'data-focused': state.map((s) =>
+        s.focusedCell !== null &&
+        s.focusedCell.rowIndex === HEADER_ROW_INDEX &&
+        s.focusedCell.colIndex === colIndexOf(s, columnId)
+          ? ''
+          : undefined,
+      ),
       'data-sortable': state.map((s) => (isSortable(s, columnId) ? '' : undefined)),
       'data-sort': state.map((s) => sortDirectionFor(s, columnId) ?? undefined),
+      onFocus: tagSend(send, ['focusCell'], () => {
+        const colIndex = colIndexOf(state.peek(), columnId)
+        if (colIndex < 0) return
+        send({ type: 'focusCell', rowIndex: HEADER_ROW_INDEX, colIndex })
+      }),
       onClick: tagSend(send, ['toggleSort'], () => {
         if (isSortable(state.peek(), columnId)) send({ type: 'toggleSort', columnId })
       }),
-      onKeyDown: tagSend(send, ['toggleSort'], (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return
-        if (!isSortable(state.peek(), columnId)) return
-        e.preventDefault()
-        send({ type: 'toggleSort', columnId })
-      }),
+      onKeyDown: headerOnKeyDown(columnId),
     }),
     row: (id: string, index: number): TableRowParts => ({
       role: 'row',
@@ -531,26 +692,47 @@ export function connect(
       onFocus: tagSend(send, ['focusCell'], () => send({ type: 'focusCell', rowIndex, colIndex })),
       onKeyDown: cellOnKeyDown(rowIndex),
     }),
-    selectAllCheckbox: {
-      role: 'checkbox',
-      'aria-checked': state.map((s) => {
-        if (isAllSelected(s)) return 'true'
-        if (isSomeSelected(s)) return 'mixed'
-        return 'false'
-      }),
-      'data-scope': 'table',
-      'data-part': 'select-all',
-      'data-state': state.map((s) => {
-        if (isAllSelected(s)) return 'checked'
-        if (isSomeSelected(s)) return 'indeterminate'
-        return 'unchecked'
-      }),
-      // The checkbox is a self-contained control; stop the click from bubbling
-      // to an enclosing clickable header cell (which would also toggle sort).
-      onClick: tagSend(send, ['toggleAll'], (e) => {
-        e.stopPropagation()
-        send({ type: 'toggleAll' })
-      }),
+    selectAllCheckbox: (columnId: string): TableCheckboxParts => {
+      // Placing the checkbox is what wires its header's Enter/Space to
+      // `toggleAll` — see `selectAllColumns`.
+      selectAllColumns.add(columnId)
+      return {
+        role: 'checkbox',
+        'aria-checked': state.map((s) => {
+          if (isAllSelected(s)) return 'true'
+          if (isSomeSelected(s)) return 'mixed'
+          return 'false'
+        }),
+        'data-scope': 'table',
+        'data-part': 'select-all',
+        'data-state': state.map((s) => {
+          if (isAllSelected(s)) return 'checked'
+          if (isSomeSelected(s)) return 'indeterminate'
+          return 'unchecked'
+        }),
+        // Out of the tab sequence, like every part inside `role="grid"` except
+        // the one roving stop. The select-all has no cell of its own — it lives
+        // in a `columnheader` — so its keyboard route is the ROVING HEADER:
+        // Enter/Space on the focused header of `columnId` toggles it (#122).
+        // The Space handler below still applies when the checkbox itself is
+        // focused programmatically.
+        tabindex: -1,
+        // The checkbox is a self-contained control; stop the click from
+        // bubbling to an enclosing clickable header cell (which would also
+        // toggle sort).
+        onClick: tagSend(send, ['toggleAll'], (e) => {
+          e.stopPropagation()
+          send({ type: 'toggleAll' })
+        }),
+        // Same containment hazard on the keyboard: the enclosing column header
+        // also acts on Space (toggle sort), so claim the key here.
+        onKeyDown: tagSend(send, ['toggleAll'], (e) => {
+          if (e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          send({ type: 'toggleAll' })
+        }),
+      }
     },
     rowCheckbox: (id: string, index: number): TableCheckboxParts => ({
       role: 'checkbox',
@@ -558,6 +740,12 @@ export function connect(
       'data-scope': 'table',
       'data-part': 'row-checkbox',
       'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
+      // Out of the tab sequence. A tab stop per row would put N of them inside a
+      // `role="grid"`, which contradicts APG's single-tab-stop Grid pattern —
+      // and it is unnecessary: the enclosing gridcell's Space already toggles
+      // the row from the grid's one tab stop. The handler below stays for a
+      // programmatically-focused checkbox (#122).
+      tabindex: -1,
       // The checkbox lives INSIDE the clickable row, which also toggles the row
       // on click. Without stopping propagation the click would fire twice
       // (checkbox + row), cancelling out to a no-op. Stop it here so a click on
@@ -567,10 +755,29 @@ export function connect(
         if (e.shiftKey) send({ type: 'selectRange', index })
         else send({ type: 'toggleRow', id, index })
       }),
+      // The enclosing gridcell's own Space handler also toggles the row, so the
+      // same double-fire-cancels-out hazard applies to the keyboard.
+      onKeyDown: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+        if (e.key !== ' ') return
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.shiftKey) send({ type: 'selectRange', index })
+        else send({ type: 'toggleRow', id, index })
+      }),
     }),
   }
 }
 
+/**
+ * The namespace object. {@link HEADER_ROW_INDEX} is deliberately NOT a member:
+ * `site/src/generate-api.ts` collects every member of a components namespace as
+ * a bare name with no kind check and renders it with a hard-coded `()`, so a
+ * constant listed here would be documented as a function call. That generator
+ * defect is filed as #151 — it already ships wrong for `combobox`'s
+ * `CREATE_OPTION_VALUE()` — and when it is fixed this constant should join the
+ * object. Until then it is reached as a module-level export, re-exported from
+ * the barrel as `TABLE_HEADER_ROW_INDEX`.
+ */
 export const table = {
   init,
   update,

@@ -70,10 +70,11 @@ export interface PasswordInputParts {
     'aria-label': Signal<string>
     'aria-pressed': Signal<boolean>
     disabled: Signal<boolean>
-    tabindex: -1
+    tabindex: Signal<number>
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
     onClick: (e: MouseEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
 }
 
@@ -120,10 +121,20 @@ export function connect(
       ),
       'aria-pressed': state.map((st) => st.visible),
       disabled: state.map((st) => st.disabled),
-      tabindex: -1,
+      // Reveal is the only way to check what you typed; a hard-coded -1 took it
+      // out of the tab sequence entirely — WCAG 2.1.1 (#122).
+      tabindex: state.map((st) => (st.disabled ? -1 : 0)),
       'data-scope': 'password-input',
       'data-part': 'visibility-trigger',
       onClick: tagSend(send, ['toggleVisibility'], () => send({ type: 'toggleVisibility' })),
+      // Explicit activation keys so the bag works on any element, not just a
+      // native <button>. `preventDefault` is what keeps it single-fire on a
+      // real button: it suppresses the synthesized click.
+      onKeyDown: tagSend(send, ['toggleVisibility'], (e: KeyboardEvent) => {
+        if (e.key !== ' ' && e.key !== 'Enter') return
+        e.preventDefault()
+        send({ type: 'toggleVisibility' })
+      }),
     },
   }
 }

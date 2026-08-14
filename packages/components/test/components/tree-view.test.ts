@@ -592,3 +592,112 @@ describe('tree-view automatic indeterminate / cascade (checkbox mode)', () => {
     expect(isChecked(s2, 'a2')).toBe(false)
   })
 })
+
+describe('tree-view keyboard navigation and disabled nodes (#122)', () => {
+  // b and d are disabled; the reducer knows this from `nodes`, which is the
+  // same record the checkbox cascade already reads.
+  const tree = () =>
+    init({
+      visibleItems: ['a', 'b', 'c', 'd'],
+      visibleLabels: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+      ...nodesOf({ a: {}, b: { disabled: true }, c: {}, d: { disabled: true } }, [
+        'a',
+        'b',
+        'c',
+        'd',
+      ]),
+    })
+
+  it('focusNext skips a disabled node', () => {
+    const [s] = update({ ...tree(), focused: 'a' }, { type: 'focusNext' })
+    expect(s.focused).toBe('c')
+  })
+
+  it('focusPrev skips a disabled node', () => {
+    const [s] = update({ ...tree(), focused: 'c' }, { type: 'focusPrev' })
+    expect(s.focused).toBe('a')
+  })
+
+  it('focusNext stays put when every later node is disabled', () => {
+    const [s] = update({ ...tree(), focused: 'c' }, { type: 'focusNext' })
+    expect(s.focused).toBe('c')
+  })
+
+  it('focusFirst / focusLast land on enabled nodes', () => {
+    const t = init({
+      visibleItems: ['a', 'b', 'c'],
+      ...nodesOf({ a: { disabled: true }, b: {}, c: { disabled: true } }, ['a', 'b', 'c']),
+    })
+    expect(update(t, { type: 'focusFirst' })[0].focused).toBe('b')
+    expect(update(t, { type: 'focusLast' })[0].focused).toBe('b')
+  })
+
+  it('typeahead never lands on a disabled node', () => {
+    // 'Bravo' is the only label starting with b, and it is disabled.
+    const [s] = update({ ...tree(), focused: 'a' }, { type: 'typeahead', char: 'b', now: 1000 })
+    expect(s.focused).toBe('a')
+  })
+
+  it('typeahead still matches enabled nodes', () => {
+    const [s] = update({ ...tree(), focused: 'a' }, { type: 'typeahead', char: 'c', now: 1000 })
+    expect(s.focused).toBe('c')
+  })
+
+  it('ArrowRight on an expanded CHILDLESS node is a no-op', () => {
+    // WAI-ARIA APG: "Right arrow: When focus is on an open node, moves focus to
+    // the first child node." No child means nowhere to go — falling through to
+    // the next sibling is ArrowDown's job.
+    const s0 = init({
+      expanded: ['a'],
+      visibleItems: ['a', 'b'],
+      ...nodesOf({ a: {}, b: {} }, ['a', 'b']),
+    })
+    const [s] = update({ ...s0, focused: 'a' }, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a')
+  })
+
+  it('ArrowRight on an expanded branch focuses its first ENABLED child', () => {
+    const s0 = init({
+      expanded: ['a'],
+      visibleItems: ['a', 'a1', 'a2', 'b'],
+      ...nodesOf({ a: { children: ['a1', 'a2'] }, a1: { disabled: true }, a2: {}, b: {} }, [
+        'a',
+        'b',
+      ]),
+    })
+    const [s] = update({ ...s0, focused: 'a' }, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a2')
+  })
+
+  it('ArrowRight skips a disabled OPEN child and lands on the next enabled CHILD', () => {
+    // The disabled first child is itself expanded, so the next VISIBLE item
+    // after it is its own grandchild — not a child of `a` at all. Scanning
+    // visibleItems finds `a1x` and the containment guard then rejects it,
+    // turning the whole key into a no-op. APG says focus moves to `a2`.
+    const s0 = init({
+      expanded: ['a', 'a1'],
+      visibleItems: ['a', 'a1', 'a1x', 'a2'],
+      ...nodesOf(
+        {
+          a: { children: ['a1', 'a2'] },
+          a1: { children: ['a1x'], disabled: true },
+          a1x: {},
+          a2: {},
+        },
+        ['a'],
+      ),
+    })
+    const [s] = update({ ...s0, focused: 'a' }, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a2')
+  })
+
+  it('ArrowRight on an expanded branch whose children are all disabled is a no-op', () => {
+    const s0 = init({
+      expanded: ['a'],
+      visibleItems: ['a', 'a1', 'b'],
+      ...nodesOf({ a: { children: ['a1'] }, a1: { disabled: true }, b: {} }, ['a', 'b']),
+    })
+    const [s] = update({ ...s0, focused: 'a' }, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a')
+  })
+})

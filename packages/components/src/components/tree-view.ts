@@ -217,6 +217,29 @@ function childrenOf(nodes: Record<string, TreeNodeMeta>, id: string): string[] {
   return nodes[id]?.children ?? []
 }
 
+/**
+ * Whether keyboard navigation must skip `id`. The `nodes` record is the single
+ * source of truth for disabled-ness (the checkbox cascade already reads it); a
+ * node with no entry — the structure was never seeded — counts as enabled so
+ * consumers who only drive `visibleItems` keep working.
+ */
+function isNodeDisabled(state: TreeViewState, id: string): boolean {
+  return state.nodes[id]?.disabled === true
+}
+
+/**
+ * The first navigable visible id at or after index `from`, scanning by `delta`.
+ * `null` when the scan runs off the end without finding one — callers then hold
+ * focus where it is rather than parking it on a disabled node (#122).
+ */
+function enabledVisibleFrom(state: TreeViewState, from: number, delta: 1 | -1): string | null {
+  for (let i = from; i >= 0 && i < state.visibleItems.length; i += delta) {
+    const id = state.visibleItems[i]!
+    if (!isNodeDisabled(state, id)) return id
+  }
+  return null
+}
+
 /** All descendants of `id` in depth-first order (excluding `id`). */
 function descendantsOf(nodes: Record<string, TreeNodeMeta>, id: string): string[] {
   const out: string[] = []
@@ -364,7 +387,7 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     case 'focusNext': {
       if (state.visibleItems.length === 0) return [state, []]
       const idx = state.focused ? state.visibleItems.indexOf(state.focused) : -1
-      const next = state.visibleItems[Math.min(idx + 1, state.visibleItems.length - 1)]
+      const next = enabledVisibleFrom(state, idx + 1, 1)
       return [{ ...state, focused: next ?? state.focused }, []]
     }
     case 'focusPrev': {
@@ -372,13 +395,18 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       const idx = state.focused
         ? state.visibleItems.indexOf(state.focused)
         : state.visibleItems.length
-      const prev = state.visibleItems[Math.max(0, idx - 1)]
+      // Clamp so a `focused` id that is not currently visible (indexOf -1)
+      // still resolves from the top of the list rather than off the end.
+      const prev = enabledVisibleFrom(state, Math.max(0, idx - 1), -1)
       return [{ ...state, focused: prev ?? state.focused }, []]
     }
     case 'focusFirst':
-      return [{ ...state, focused: state.visibleItems[0] ?? null }, []]
+      return [{ ...state, focused: enabledVisibleFrom(state, 0, 1) }, []]
     case 'focusLast':
-      return [{ ...state, focused: state.visibleItems[state.visibleItems.length - 1] ?? null }, []]
+      return [
+        { ...state, focused: enabledVisibleFrom(state, state.visibleItems.length - 1, -1) },
+        [],
+      ]
     case 'setVisibleItems':
       return [
         { ...state, visibleItems: msg.ids, visibleLabels: msg.labels ?? state.visibleLabels },
@@ -397,14 +425,33 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     }
     case 'arrowRightFrom': {
       // If this branch is closed, expand it (triggering a lazy load when
-      // required); otherwise focus the first visible child (the next item in
-      // depth-first visibleItems order).
+      // required); otherwise move focus to its first enabled child.
       if (!state.expanded.includes(msg.id)) {
         return expandNode(state, msg.id)
       }
+      // WAI-ARIA APG: "Right arrow: When focus is on an open node, moves focus
+      // to the first child node."
+      const meta = state.nodes[msg.id]
+      if (meta !== undefined) {
+        // With the structure known the answer comes from the CHILDREN list, not
+        // from `visibleItems`. `visibleItems` is depth-first, so the item after
+        // a disabled child that is itself OPEN is that child's own descendant —
+        // scanning it walks straight out of the subtree and the target has to be
+        // thrown away, turning the key into a no-op when APG says focus moves to
+        // the next child. Returning `undefined` here covers BOTH terminal cases:
+        // an open node with no children at all (the next visible item is the
+        // next SIBLING, which is ArrowDown's job), and one whose every child is
+        // disabled (#122).
+        const first = meta.children.find((c) => !isNodeDisabled(state, c))
+        if (first === undefined) return [state, []]
+        return [{ ...state, focused: first }, []]
+      }
+      // Structure unknown (no `nodes` entry): the depth-first neighbour is the
+      // best available guess at "first child".
       const idx = state.visibleItems.indexOf(msg.id)
-      if (idx === -1 || idx === state.visibleItems.length - 1) return [state, []]
-      const next = state.visibleItems[idx + 1]!
+      if (idx === -1) return [state, []]
+      const next = enabledVisibleFrom(state, idx + 1, 1)
+      if (next === null) return [state, []]
       return [{ ...state, focused: next }, []]
     }
     case 'typeahead': {
@@ -412,7 +459,10 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       // Fall back to matching ids if labels weren't provided.
       const labels = state.visibleLabels.length > 0 ? state.visibleLabels : state.visibleItems
-      const disabledMask = new Array<boolean>(labels.length).fill(false)
+      // Parallel to `labels` by construction (visibleLabels mirrors
+      // visibleItems). An all-false mask let typeahead park focus on a disabled
+      // node (#122).
+      const disabledMask = state.visibleItems.map((id) => isNodeDisabled(state, id))
       const startIdx = state.focused ? state.visibleItems.indexOf(state.focused) : null
       const matchIdx = typeaheadMatch(labels, disabledMask, acc, startIdx)
       const focused =

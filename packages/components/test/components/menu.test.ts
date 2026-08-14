@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, isPresent, type MenuItem } from '../../src/components/menu'
 import { rootSignal, signalOf, read } from '../_signal'
 
@@ -709,5 +709,76 @@ describe('menu RTL', () => {
     send.mockClear()
     p.subContent('share').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightPrev', level: 'share' })
+  })
+})
+
+// The shared menu-tree machine backs menu, context-menu AND menubar, and its
+// hover-intent timers had no liveness guard at all: pointer-enter a submenu
+// trigger, navigate away, and 200 ms later `openSub` is dispatched into a
+// disposed handle (#123).
+describe('menu submenu hover timers are guarded against unmount', () => {
+  const nested: MenuItem[] = [
+    { value: 'a', kind: 'action' },
+    { value: 'share', kind: 'action', children: [{ value: 's1', kind: 'action' }] },
+  ]
+  const SUB_TRIGGER_ID = 'mn:sub:share:trigger'
+
+  /** The real subtrigger element, carrying the id the guard resolves — without
+   * it the guard cannot run and every assertion below would pass vacuously. */
+  function mountSubTrigger(): HTMLElement {
+    const el = document.createElement('div')
+    el.id = SUB_TRIGGER_ID
+    document.body.append(el)
+    return el
+  }
+
+  const openedSub = () =>
+    update(init({ items: nested, open: true }), { type: 'openSub', value: 'share' })[0]
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+  })
+
+  it('drops a pending openSub once the subtrigger detaches', () => {
+    const el = mountSubTrigger()
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: nested, open: true })), send, { id: 'mn' })
+    p.subTrigger('share').onPointerEnter({} as PointerEvent)
+    el.remove()
+    vi.advanceTimersByTime(400)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('still opens the submenu while the subtrigger is live', () => {
+    mountSubTrigger()
+    const send = vi.fn()
+    const p = connect(signalOf(init({ items: nested, open: true })), send, { id: 'mn' })
+    p.subTrigger('share').onPointerEnter({} as PointerEvent)
+    vi.advanceTimersByTime(400)
+    expect(send).toHaveBeenCalledWith({ type: 'openSub', value: 'share' })
+  })
+
+  it('drops a pending closeSub once the subtrigger detaches', () => {
+    const el = mountSubTrigger()
+    const send = vi.fn()
+    const p = connect(signalOf(openedSub()), send, { id: 'mn' })
+    p.subTrigger('share').onPointerLeave({} as PointerEvent)
+    el.remove()
+    vi.advanceTimersByTime(600)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('still closes the submenu while the subtrigger is live', () => {
+    mountSubTrigger()
+    const send = vi.fn()
+    const p = connect(signalOf(openedSub()), send, { id: 'mn' })
+    p.subTrigger('share').onPointerLeave({} as PointerEvent)
+    vi.advanceTimersByTime(600)
+    expect(send).toHaveBeenCalledWith({ type: 'closeSub' })
   })
 })

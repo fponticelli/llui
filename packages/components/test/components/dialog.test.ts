@@ -246,6 +246,23 @@ describe('dialog.overlay integration', () => {
     expect(sibling.hasAttribute('inert')).toBe(true)
   })
 
+  it('leaves a toast live region announceable while open', async () => {
+    // End-to-end for #123: the modal sweep used to inert the toast region's
+    // ancestor, so a toast raised while a dialog is open was never read out.
+    const toastRegion = document.createElement('div')
+    toastRegion.id = 'toaster'
+    toastRegion.setAttribute('role', 'region')
+    toastRegion.setAttribute('aria-live', 'polite')
+    document.body.appendChild(toastRegion)
+
+    makeApp(true)
+    await new Promise((r) => setTimeout(r, 0))
+    // Non-vacuous: the sweep really ran (a plain sibling IS hidden).
+    expect(document.getElementById('sibling')!.hasAttribute('inert')).toBe(true)
+    expect(toastRegion.hasAttribute('inert')).toBe(false)
+    expect(toastRegion.getAttribute('aria-hidden')).toBeNull()
+  })
+
   it('removes aria-hidden on close', async () => {
     const { send } = makeApp(true)
     await new Promise((r) => setTimeout(r, 0))
