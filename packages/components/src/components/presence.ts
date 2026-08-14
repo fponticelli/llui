@@ -113,6 +113,14 @@ export function presenceClose<S extends PresenceOverlay>(state: S, skipAnimation
  * Advance past the enter/exit animation. Only 'opening'/'closing' move; any
  * other status is returned unchanged, so a stray end event cannot reopen or
  * unmount anything.
+ *
+ * SEMANTIC ADDITION over the four private copies this collapsed (#126): the
+ * closing->closed transition also writes `open: false`. It is unreachable
+ * today — `'closing'` is only ever written together with `open: false`, by
+ * `presenceClose` — so it changes no behaviour, and it is kept because
+ * "finished closing" implying "not open" is the invariant a caller reducing
+ * through this function is entitled to, and a future writer of `'closing'`
+ * should not be able to leave the pair inconsistent.
  */
 export function presenceEnd<S extends PresenceOverlay>(state: S): S {
   if (state.status === 'opening') return { ...state, status: 'open' }
