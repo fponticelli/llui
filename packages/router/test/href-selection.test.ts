@@ -148,6 +148,84 @@ describe('#104 a competing def must never steal a route it cannot produce', () =
   })
 })
 
+describe('#104 an UNVERIFIABLE def must not lose its route to a competitor', () => {
+  // The round-trip answers "does this URL denote this route?" for the def it is
+  // run on. A def it CANNOT be run on — a builder that throws for these
+  // particular params, a hand-written `toPath` that bails — is an UNKNOWN, not
+  // a demerit: nothing has been learned about it. A rival that round-trips
+  // IMPERFECTLY is evidence about the rival, and a rival that DISAGREES with
+  // the route on a field they both carry has been proven to denote a different
+  // route. Letting that displace the shape-preferred candidate reproduces the
+  // headline defect — a plausible URL for the wrong route, silently — on the
+  // narrower input where one builder throws.
+  type R = { page: 't' | 's'; id: string; kind: string }
+  const fallback: R = { page: 't', id: '', kind: '' }
+  const tDef = route<R>(['t', param('id')], ({ id }) => {
+    if (id === 'boom') throw new Error('cannot build this id')
+    return { page: 't', id: id!, kind: 'k' }
+  })
+  const sDef = route<R>(['s', param('id')], ({ id }) => ({ page: 's', id: id!, kind: 'k' }))
+
+  it('keeps the route on the def whose builder throws, over a rival that disagrees', () => {
+    const router = createRouter<R>([tDef, sDef], { fallback })
+    // Was `#/s/boom` — /s/:id round-trips cleanly, disagrees on `page`, and
+    // still outscored the def that owns the route because that def could not be
+    // round-tripped at all.
+    expect(router.href({ page: 't', id: 'boom', kind: 'k' })).toBe('#/t/boom')
+    // The ids the builder does not throw on are unaffected.
+    expect(router.href({ page: 't', id: 'ok', kind: 'k' })).toBe('#/t/ok')
+    expect(router.href({ page: 's', id: 'boom', kind: 'k' })).toBe('#/s/boom')
+  })
+
+  it('still yields to a rival that reproduces the route EXACTLY', () => {
+    // The incumbent is only unproven, not privileged: a perfect round-trip is
+    // proof this URL denotes exactly this route, and proof beats an unknown.
+    // Asserted under BOTH registration orders — one of them makes the throwing
+    // def the shape-preferred candidate, and neither may change the answer.
+    type P = { page: 'p'; id: string; mode?: string }
+    const plain = route<P>(['p', param('id')], ({ id }) => {
+      if (id === 'boom') throw new Error('cannot build this id')
+      return { page: 'p', id: id! }
+    })
+    const edit = route<P>(['p', param('id'), 'edit'], ({ id }) => ({
+      page: 'p',
+      id: id!,
+      mode: 'edit',
+    }))
+    for (const defs of [
+      [plain, edit],
+      [edit, plain],
+    ]) {
+      const router = createRouter<P>([...defs], { fallback: { page: 'p', id: '' } })
+      expect(router.href({ page: 'p', id: 'boom', mode: 'edit' })).toBe('#/p/boom/edit')
+    }
+  })
+})
+
+describe('#104 a DISAGREEMENT outweighs any amount of agreement elsewhere', () => {
+  // The unverifiable case above is one half of "proven wrong must not beat
+  // merely imperfect"; this is the other, where BOTH defs round-trip. `/x/:id`
+  // owns the route but its URL cannot carry the three flags the route holds, so
+  // it scores −1. `/y/:id` reproduces all three — and denotes a different
+  // `page`. Counting a disagreement as just another −1 lets sheer volume of
+  // incidental agreement outvote the one field that PROVES the URL is wrong.
+  type R = { page: 'x' | 'y'; id: string; a?: string; b?: string; c?: string }
+  const fallback: R = { page: 'x', id: '' }
+  const xDef = route<R>(['x', param('id')], ({ id }) => ({ page: 'x' as const, id: id! }))
+  const yDef = route<R>(['y', param('id')], ({ id }) => ({
+    page: 'y' as const,
+    id: id!,
+    a: '1',
+    b: '2',
+    c: '3',
+  }))
+
+  it('keeps a route on the def that agrees on `page` but explains less', () => {
+    const router = createRouter<R>([xDef, yDef], { fallback })
+    expect(router.href({ page: 'x', id: '7', a: '1', b: '2', c: '3' })).toBe('#/x/7')
+  })
+})
+
 describe('#104 def registration order must not decide the URL', () => {
   // `long: id.length > 5` is false for BOTH samples, so it is misclassified as
   // a constant on both defs and every candidate scores a contradiction. The
@@ -293,5 +371,68 @@ describe('#104 the build()-call-count property from the perf fix survives', () =
     builds = 0
     expect(router.href({ page: 'p', id: 'x', kind: 'X' })).toBe('#/a/x')
     expect(builds).toBe(0)
+  })
+
+  it('verifies the SHORTER sibling first for a route that carries no extra field', () => {
+    // The shape order decides which candidate is round-tripped first, and
+    // "later-registered wins the tie" put `/u/:id/edit` ahead of `/u/:id` for a
+    // plain `{page:'u', id}` — the wrong first guess for by far the more common
+    // route, costing a second round-trip on every one of them. Ordering by
+    // fewest INVENTED defaults agrees with the extras penalty `fidelityOf`
+    // already applies, so the def that wins is the def verified first.
+    let builds = 0
+    const count = <T>(f: () => T) => {
+      builds++
+      return f()
+    }
+    type R = { page: 'u'; id: string; tab: string; mode?: string }
+    const router = createRouter<R>(
+      [
+        route(['u', param('id')], ({ id }) =>
+          count(() => ({ page: 'u' as const, id: id!, tab: 'profile' })),
+        ),
+        route(['u', param('id'), 'edit'], ({ id }) =>
+          count(() => ({ page: 'u' as const, id: id!, tab: 'profile', mode: 'edit' })),
+        ),
+      ],
+      { fallback: { page: 'u', id: '', tab: 'profile' } },
+    )
+
+    builds = 0
+    expect(router.href({ page: 'u', id: '7', tab: 'profile' })).toBe('#/u/7')
+    expect(builds).toBe(1)
+
+    // The longer sibling still costs one when the route is genuinely its own.
+    builds = 0
+    expect(router.href({ page: 'u', id: '8', tab: 'profile', mode: 'edit' })).toBe('#/u/8/edit')
+    expect(builds).toBe(1)
+  })
+
+  it('round-trips each candidate AT MOST once', () => {
+    // The preferred candidate was verified, then reached a second time through
+    // the candidate list. The dedupe guard compared it against the current
+    // best, which only matches while the preferred one IS best — so precisely
+    // when it lost, it was built again: 3 round-trips for 2 candidates.
+    let builds = 0
+    const count = <T>(f: () => T) => {
+      builds++
+      return f()
+    }
+    // `z` is a field no def can put in a URL, so no candidate round-trips
+    // perfectly and the search runs to the end of the list.
+    type R = { page: 'p'; id: string; z?: string; extra?: string }
+    const router = createRouter<R>(
+      [
+        route(['a', param('id')], ({ id }) => count(() => ({ page: 'p' as const, id: id! }))),
+        route(['b', param('id')], ({ id }) =>
+          count(() => ({ page: 'p' as const, id: id!, extra: 'e' })),
+        ),
+      ],
+      { fallback: { page: 'p', id: '' } },
+    )
+
+    builds = 0
+    expect(router.href({ page: 'p', id: '7', z: 'q' })).toBe('#/a/7')
+    expect(builds).toBe(2)
   })
 })

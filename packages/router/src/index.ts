@@ -131,10 +131,24 @@ function compareScore(a: readonly number[], b: readonly number[]): number {
 
 /** How well the route a URL actually denotes reproduces the route we formatted. */
 interface Fidelity {
+  /**
+   * Fields BOTH routes carry as primitives with DIFFERENT values. This is the
+   * only observation that PROVES the URL denotes a different route, which is
+   * why it is tracked apart from the merely unexplained and dominates the
+   * comparison. The legitimate `/p/:id` vs `/p/:id/edit` contest never produces
+   * one — it is decided entirely by what each def leaves unexplained.
+   */
+  disagreements: number
   /** +1 per agreeing primitive field, −1 per disagreement and per unexplained one. */
   score: number
   /** No disagreement and nothing unexplained — this URL denotes exactly this route. */
   perfect: boolean
+}
+
+/** Is `a` a better reproduction than `b`? Proven-wrong loses to merely-imperfect. */
+function isBetterFit(a: Fidelity, b: Fidelity): boolean {
+  if (a.disagreements !== b.disagreements) return a.disagreements < b.disagreements
+  return a.score > b.score
 }
 
 /**
@@ -147,9 +161,16 @@ interface Fidelity {
  * evidence than an exact reproduction, so it costs a point: between two defs
  * that agree on everything the route carries, the one that invents nothing is
  * the better fit. That is the whole of the `/p/:id` vs `/p/:id/edit` decision.
+ *
+ * A field the URL fails to reproduce at all is the same kind of gap in the
+ * other direction — the URL cannot carry it — and is likewise only UNEXPLAINED.
+ * A DISAGREEMENT is stronger: both routes name the field, both give it a
+ * primitive value, and the values differ. Only that proves the URL means a
+ * different route, so it is counted separately (see `isBetterFit`).
  */
 function fidelityOf(route: Record<string, unknown>, produced: Record<string, unknown>): Fidelity {
   let score = 0
+  let disagreements = 0
   let perfect = true
   for (const key of Object.keys(route)) {
     const a = route[key]
@@ -164,6 +185,7 @@ function fidelityOf(route: Record<string, unknown>, produced: Record<string, unk
       score += 1
     } else {
       score -= 1
+      disagreements += 1
       perfect = false
     }
   }
@@ -173,7 +195,7 @@ function fidelityOf(route: Record<string, unknown>, produced: Record<string, unk
     score -= 1
     perfect = false
   }
-  return { score, perfect }
+  return { disagreements, score, perfect }
 }
 
 /** Does a route contradict a def's EXACTLY known output on a field they share? */
@@ -387,18 +409,30 @@ export function createRouter<R>(
     for (const meta of candidates) {
       let matched = 0
       let mismatched = 0
+      let invented = 0
       if (meta.constants) {
         for (const key in meta.constants) {
-          if (ro[key] === undefined) continue
+          // A constant the route does not carry is a default this def would
+          // INVENT. It does not disqualify (#104), but it is exactly what
+          // `fidelityOf` charges a point for, so the ordering agrees with the
+          // verification it feeds and the right def is verified FIRST.
+          if (ro[key] === undefined) {
+            invented++
+            continue
+          }
           if (ro[key] === meta.constants[key]) matched++
           else mismatched++
         }
       }
 
       if (mismatched === 0) {
-        // Prefer the most specific def (most params); on a tie the
-        // later-registered one wins (the longer, more specific pattern).
-        const score = [meta.paramKeys.length]
+        // Prefer the most specific def (most params), then the one that invents
+        // the fewest defaults — "later-registered wins" put `/u/:id/edit` ahead
+        // of `/u/:id` for a plain `{page:'u', id}`, which is the wrong first
+        // guess for by far the more common route and cost a second round-trip
+        // on every one of them. On a full tie the later-registered def still
+        // wins (the longer, more specific pattern).
+        const score = [meta.paramKeys.length, -invented]
         if (strict === null || compareScore(score, strictScore) >= 0) {
           strict = meta
           strictScore = score
@@ -406,7 +440,7 @@ export function createRouter<R>(
         continue
       }
       if (matched === 0) continue
-      const score = [matched, -mismatched, meta.paramKeys.length]
+      const score = [matched, -mismatched, meta.paramKeys.length, -invented]
       if (relaxed === null || compareScore(score, relaxedScore) >= 0) {
         relaxed = meta
         relaxedScore = score
@@ -425,6 +459,21 @@ export function createRouter<R>(
    * user) would otherwise grow one entry per distinct route ever formatted.
    * Dropping the whole table on overflow costs a re-verification, never a wrong
    * answer — the cache is an optimization, and the verification is the truth.
+   *
+   * DO NOT re-key this on the route's SHAPE (its key-set, or the def "template"
+   * it looks like) to raise the hit rate. The param VALUES are what decide the
+   * answer, and that is #104's own headline: with a def whose builder reads a
+   * param (`kind: id === 'me' ? 'self' : 'other'`) competing against one that
+   * owns that value as a constant, `{page:'a', id:'me', kind:'self'}` formats
+   * to `#/a/me` while `{page:'a', id:'zzz', kind:'self'}` formats to `#/b/zzz`
+   * — same key-set, different def. A shape key would serve one of those
+   * answers for the other route: a plausible URL for the wrong route, silently,
+   * which is the exact defect this verification exists to remove.
+   *
+   * The cost of keying on values is bounded THRASH, not a cliff: past
+   * `VERIFIED_MAX` distinct routes the hit rate falls to zero and every
+   * `href()` pays the uncached price it would have paid anyway. Slower than a
+   * shape key, never wrong.
    */
   const verified = new Map<string, DefMeta<R> | null>()
   const VERIFIED_MAX = 512
@@ -489,26 +538,47 @@ export function createRouter<R>(
     }
 
     let best: DefMeta<R> | null = null
-    let bestScore = -Infinity
-    // The shape-preferred candidate goes first: when it round-trips exactly,
-    // no other candidate can beat it and no further builder runs.
-    const ordered = preferred === null ? candidates : [preferred, ...candidates]
-    for (const meta of ordered) {
-      if (meta === best) continue
+    let bestFit: Fidelity | null = null
+    let exact: DefMeta<R> | null = null
+    let preferredVerified = false
+
+    // The shape-preferred candidate is verified FIRST — when it round-trips
+    // exactly, no other candidate can beat it and no further builder runs — and
+    // exactly ONCE: reaching it again through `candidates` would round-trip
+    // (and therefore BUILD) it a second time on every contest it does not win.
+    // Index −1 IS that first slot, so the ordering costs no array.
+    for (let i = preferred === null ? 0 : -1; i < candidates.length; i++) {
+      const meta = i < 0 ? preferred! : candidates[i]!
+      if (i >= 0 && meta === preferred) continue
       const fit = roundTrip(meta, r, ro)
+      // Unverifiable — its builder threw on these params, or it has no
+      // formattable URL. That is an UNKNOWN, not a demerit: nothing has been
+      // learned about this def, so it is neither promoted nor eliminated.
       if (fit === null) continue
+      if (meta === preferred) preferredVerified = true
       if (fit.perfect) {
-        best = meta
+        exact = meta
         break
       }
-      // Strictly greater: an equal fit leaves the shape order in charge, so a
+      // Strictly better: an equal fit leaves the shape order in charge, so a
       // genuinely ambiguous route keeps the answer it has always had.
-      if (fit.score > bestScore) {
+      if (bestFit === null || isBetterFit(fit, bestFit)) {
         best = meta
-        bestScore = fit.score
+        bestFit = fit
       }
     }
-    const winner = best ?? preferred
+
+    // A PERFECT round-trip is proof this URL denotes exactly this route, and
+    // proof beats everything. Short of that, an UNVERIFIABLE shape-preferred
+    // candidate keeps the route: an imperfect rival's round-trip is evidence
+    // about the RIVAL, never about the incumbent — and a rival that disagrees
+    // on a field they both carry is in fact proven to denote a different route.
+    // Letting one displace an incumbent nothing has been learned about is how a
+    // builder that throws on a single id emitted a competing def's URL.
+    let winner: DefMeta<R> | null
+    if (exact !== null) winner = exact
+    else if (preferred !== null && !preferredVerified) winner = preferred
+    else winner = best ?? preferred
     if (key !== null) {
       if (verified.size >= VERIFIED_MAX) verified.clear()
       verified.set(key, winner)
