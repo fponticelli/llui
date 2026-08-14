@@ -76,13 +76,47 @@ touching the page's history:
 import { connectRouter, browserRouterEnv } from '@llui/router/connect'
 import type { RouterEnv } from '@llui/router/connect'
 
-const routing = connectRouter(router, { env: myEnv })
-```
+// The default, spelled out — identical to passing no `env` at all.
+const routing = connectRouter(router, { env: browserRouterEnv() })
 
-`RouterEnv` members: `hash` / `pathname` / `search` / `historyState` (reads),
-`setHash` / `replaceLocation` / `pushState` / `replaceState` / `back` /
-`forward` / `go` / `scrollTo` (mutations), and `onUrlChange(event, handler)`
-which returns its own unsubscribe.
+// Or drive an iframe's history instead of the page's. Implement the members
+// yourself; do NOT spread `browserRouterEnv()`, which would evaluate its getters
+// once and freeze `hash`/`pathname` at construction time.
+const frame = document.querySelector('iframe')!.contentWindow!
+const frameEnv: RouterEnv = {
+  get hash() {
+    return frame.location.hash
+  },
+  get pathname() {
+    return frame.location.pathname
+  },
+  get search() {
+    return frame.location.search
+  },
+  get historyState() {
+    return frame.history.state
+  },
+  setHash: (hash) => {
+    frame.location.hash = hash
+  },
+  replaceLocation: (url) => frame.location.replace(url),
+  pushState: (state, url) => frame.history.pushState(state, '', url),
+  // `url` is optional: omit it to replace the entry's STATE and leave the URL
+  // alone. Passing `''` is not the same thing — it resolves against the base
+  // and drops the fragment.
+  replaceState: (state, url) => frame.history.replaceState(state, '', url ?? null),
+  back: () => frame.history.back(),
+  forward: () => frame.history.forward(),
+  go: (delta) => frame.history.go(delta),
+  scrollTo: (x, y) => frame.scrollTo(x, y),
+  onUrlChange: (event, handler) => {
+    frame.addEventListener(event, handler)
+    return () => frame.removeEventListener(event, handler)
+  },
+}
+
+const framed = connectRouter(router, { env: frameEnv })
+```
 
 ## Guards
 
