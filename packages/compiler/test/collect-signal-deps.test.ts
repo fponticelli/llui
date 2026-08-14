@@ -369,6 +369,79 @@ describe('collectSignalDeps — rooting is scope-aware', () => {
     `
     expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['after.deep', 'rows'])
   })
+
+  // ── issue #153 — a function/class EXPRESSION rebinds its own name ────────
+  // The root prune goes through `scopeIntroduces`, the repo's ONE shadowing
+  // predicate, precisely so a case added there lands in every driver at once.
+  // A `function state(…)` expression binds `state` over its own body, so the
+  // reads inside it are NOT reads of the component's state signal — carrying
+  // the root in invented a top-level `phantom` that does not exist in State and
+  // flagged a whole-state read that never happened, which is the exact
+  // confident-wrong-answer class #92 exists to remove.
+  it('drops the root inside a NAMED FUNCTION EXPRESSION that rebinds its name', () => {
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { a: string }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: '' }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          text(state.at('a')),
+          div({}, [
+            (function state(n: number): unknown {
+              return n > 0 ? state(n - 1) : state.at('phantom')
+            })(1),
+          ]),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' })).toEqual({
+      paths: ['a'],
+      wholeState: false,
+      views: 1,
+    })
+  })
+
+  it('drops the root inside a NAMED CLASS EXPRESSION that rebinds its name', () => {
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { a: string }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: '' }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          text(state.at('a')),
+          div({}, [new (class state { m() { return state.at('phantom') } })() as unknown as never]),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' })).toEqual({
+      paths: ['a'],
+      wholeState: false,
+      views: 1,
+    })
+  })
+
+  it('keeps the root inside a function expression named something ELSE (control)', () => {
+    // The prune is keyed on the NAME. A helper named `render` rebinds nothing,
+    // so the reads inside it are still component-state reads.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { a: string; b: string }
+      export const C = component<State, { type: 'noop' }>({
+        name: 'C',
+        init: () => [{ a: '', b: '' }, []],
+        update: (s) => [s, []],
+        view: ({ state }) => [
+          text(state.at('a')),
+          div({}, [(function render(): unknown { return state.at('b') })()]),
+        ],
+      })
+    `
+    expect(collectSignalDeps(src, { fileName: 'in.ts' }).paths).toEqual(['a', 'b'])
+  })
 })
 
 describe('collectSignalDeps — ScriptKind', () => {

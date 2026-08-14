@@ -852,6 +852,36 @@ describe('import-binding recognition (framework calls gated by @llui/dom imports
     ].join('\n')
     expect(rules(src)).not.toContain('operator-on-signal')
   })
+
+  // ── issue #153, blast radius: the OTHER rules share the predicate ────────
+  // `scopeIntroduces` gates `HelperBindings.resolve`, so every rule that asks
+  // "is this callee the framework helper?" inherits the self-name fix. These
+  // pin it on `empty-props`, a NON-BYPASSABLE build error that used to fire on
+  // a recursive self-call: inside `function div(…)`, `div({}, [])` is the
+  // function expression, not the element helper.
+  it('does NOT run element lint inside a function expression that shadows the helper name', () => {
+    const src = [
+      "import { div } from '@llui/dom'",
+      'const row = function div() { return div({}, []) }',
+    ].join('\n')
+    expect(rules(src)).not.toContain('empty-props')
+  })
+
+  it('does NOT run element lint inside a class expression that shadows the helper name', () => {
+    const src = [
+      "import { div } from '@llui/dom'",
+      'const K = class div { m() { return div({}, []) } }',
+    ].join('\n')
+    expect(rules(src)).not.toContain('empty-props')
+  })
+
+  it('still runs element lint on the real helper beside such a function (control)', () => {
+    const src = [
+      "import { div } from '@llui/dom'",
+      'const row = function box() { return div({}, []) }',
+    ].join('\n')
+    expect(rules(src)).toContain('empty-props')
+  })
 })
 
 describe('module-scope `state` is a plain value, not a signal root', () => {
@@ -1711,6 +1741,270 @@ describe('tag-send-drift (issue #118)', () => {
       src("const p = tagSend(send, ['a'], ({ x = send({ type: 'boot' }) }) => {})"),
     ).filter((d) => d.rule === 'tag-send-drift')
     expect(msgs.some((m) => m.message.includes("dispatches `{ type: 'boot' }`"))).toBe(true)
+  })
+
+  // ── negative: the HANDLER'S OWN NAME is a binding too (issue #153) ───────
+  // A `function send(…)` expression binds `send` over its own body — that is
+  // how a self-recursive function expression calls itself — and a
+  // `class send { … }` expression does the same inside the class. Neither
+  // reached `scopeIntroduces`, which checked a function-like node's PARAMETERS
+  // only, so the dispatcher name stayed "live" inside a scope that had rebound
+  // it: the same class as `items.forEach(({ send }) => …)`, one binding form
+  // further in. Both directions fired on code that type-checks.
+  //
+  // Fixed in `helper-bindings.ts` — the repo's ONE shadowing predicate — and
+  // not here: re-deriving shadowing per walker is how the cases at the end of
+  // that list get forgotten. The predicate's own tests are in
+  // `helper-bindings.test.ts`; the shared consumers' are in
+  // `collect-signal-deps.test.ts` and `transform-component.test.ts`.
+  it('does NOT flag a handler that is a function EXPRESSION named like the dispatcher', () => {
+    // The issue's headline shape: 2 diagnostics before the fix — the
+    // direction-1 one (which the invariant calls unconditionally sound) and the
+    // direction-2 one. Inside `function send(…)` the identifier resolves to the
+    // function expression, so it is not this control's dispatcher at all.
+    expect(
+      rules(
+        src("const p = tagSend(send, ['open'], function send(m?) { send({ type: 'inner' }) })"),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a function-expression self-name shadow in a .tsx module', () => {
+    // ScriptKind must not change the answer — `.tsx` is where consumer view
+    // code lives, and the issue reproduced the FP in both parses.
+    const tsx = [
+      IMPORT,
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['open'], function send(m?) { send({ type: 'inner' }) })",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
+  it('does NOT flag a dispatch through a CLASS EXPRESSION named like the dispatcher', () => {
+    // The issue's third shape: inside `class send { … }` the identifier is the
+    // CLASS. Direction 1 must not attribute it; direction 2 cannot run anyway
+    // (the `new` forfeits completeness), so the two directions agree.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['open'], () => { new (class send { m() { send({ type: 'inner' }) } })() })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a class-expression self-name shadow in a .tsx module', () => {
+    const tsx = [
+      IMPORT,
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['open'], () => { new (class send { m() { send({ type: 'inner' }) } })() })",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
+  it('still flags real drift from a function expression named something ELSE', () => {
+    // The prune is keyed on the NAME: a handler named `handler` rebinds nothing,
+    // so its `send({type:'inner'})` is still this control's dispatch. Without
+    // this the fix could silently switch the rule off for every
+    // function-expression handler.
+    expect(
+      rules(
+        src("const p = tagSend(send, ['open'], function handler() { send({ type: 'inner' }) })"),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('still flags real drift after a self-named function expression in the same handler', () => {
+    // The shadow is scoped to the named function's own subtree and must not
+    // leak into the rest of the body.
+    const msgs = lint(
+      src(
+        [
+          "const p = tagSend(send, ['open'], () => {",
+          '  const f = function send(m) { send(m) }',
+          "  send({ type: 'inner' })",
+          '})',
+        ].join('\n'),
+      ),
+    ).filter((d) => d.rule === 'tag-send-drift')
+    expect(msgs.some((m) => m.message.includes("dispatches `{ type: 'inner' }`"))).toBe(true)
+  })
+
+  it('reports an EMPTY self-named handler exactly as it reports an empty anonymous one', () => {
+    // The issue lists `tagSend(send, ['open'], function send() {})` as a third
+    // false positive. It is not one, and this test records why: the identical
+    // anonymous handler reports the identical single direction-2 diagnostic, so
+    // the report is the over-declaration check doing its job on a handler that
+    // provably dispatches nothing — not the shadowing gap. The self-name fix
+    // must leave it exactly as it is; silencing it would switch direction 2 off
+    // for every empty handler.
+    const named = lint(src("const p = tagSend(send, ['open'], function send() {})")).filter(
+      (d) => d.rule === 'tag-send-drift',
+    )
+    const anon = lint(src("const p = tagSend(send, ['open'], () => {})")).filter(
+      (d) => d.rule === 'tag-send-drift',
+    )
+    expect(named.map((d) => d.message)).toEqual(anon.map((d) => d.message))
+    expect(named).toHaveLength(1)
+    expect(named[0]?.message).toContain("declares variant 'open'")
+  })
+
+  // ── negative: a closure returned INSIDE A CONTAINER (issue #157) ─────────
+  // `isReturnedFunction` matched a function in DIRECT return position only, so
+  // a closure returned inside an object or array literal was attributed to the
+  // handler. That is a direction-1 false positive against the doctrine's own
+  // words — "the code containing it must RUN when the handler runs" — and
+  // `tag-send-drift` is a non-bypassable compiler error, so it fails a valid
+  // build. The three shapes below are the issue's, verbatim.
+  it('does NOT flag a closure returned inside an OBJECT literal', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { h: () => send({type:'inner'}) } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a closure returned inside an ARRAY literal', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return [() => send({type:'inner'})] })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a closure in DIRECT return position (the issue’s clean control)', () => {
+    // Already handled before the fix — pinned so the generalization cannot
+    // regress the case it generalizes from.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return () => send({type:'inner'}) })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a closure returned through a nested container or an assertion', () => {
+    // `as const` / `satisfies` / parentheses are erased, and containers nest.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { rows: [() => send({type:'inner'})] } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { h: () => send({type:'inner'}) } as const })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a container returned as an arrow’s CONCISE body', () => {
+    // `() => ({ h: … })` is the same shape without the `return` keyword.
+    expect(
+      rules(src("const p = tagSend(send, ['a'], () => ({ h: () => send({type:'inner'}) }))")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a closure returned inside a container in a .tsx module', () => {
+    const tsx = [
+      IMPORT,
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['a'], () => { send({type:'a'}); return { h: () => send({type:'inner'}) } })",
+      "export const q = tagSend(send, ['a'], () => { send({type:'a'}); return [() => send({type:'inner'})] })",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
+  // The same defect ONE OPERATOR further out. `tag-send-drift`'s sibling
+  // walker (the parameter list) surfaced FOUR times because each round fixed
+  // exactly the position that had been reported; CLAUDE.md's invariant says the
+  // next one must mean the WHOLE of it. "Returned" here therefore means every
+  // position whose value can BECOME the returned value without a call in
+  // between — a conditional arm and a logical/comma operand are that, exactly
+  // as an object property is, and each of them is a build-breaking false
+  // positive on code that type-checks.
+  it('does NOT flag a closure returned from a CONDITIONAL arm', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return cond ? () => send({type:'inner'}) : null })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return cond ? null : () => send({type:'inner'}) })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a closure returned through `??` / `||` / a comma', () => {
+    for (const expr of [
+      'cached ?? (() => send({type:"inner"}))',
+      'cached || (() => send({type:"inner"}))',
+      '(log(), () => send({type:"inner"}))',
+    ]) {
+      expect(
+        rules(src(`const p = tagSend(send, ['a'], () => { send({type:'a'}); return ${expr} })`)),
+      ).not.toContain('tag-send-drift')
+    }
+  })
+
+  it('STILL flags a closure inside a container passed to a CALL', () => {
+    // The generalization is "reachable from the RETURN expression without
+    // passing through a call". A container handed to a call is not returned —
+    // `use({ h: … })` may invoke it immediately, exactly like the
+    // `setTimeout(() => send({type:'tick'}))` the rule has always attributed.
+    // Widening to every container would switch direction 1 off for the most
+    // common dispatch shape there is.
+    expect(
+      rules(
+        src("const p = tagSend(send, ['a'], () => { use({ h: () => send({type:'inner'}) }) })"),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(src("const p = tagSend(send, ['a'], () => { use([() => send({type:'inner'})]) })")),
+    ).toContain('tag-send-drift')
+  })
+
+  it('STILL flags a closure passed to a call that is ITSELF returned', () => {
+    // The boundary, stated where it bites: `return items.map(cb)` RUNS `cb`
+    // before the handler returns, so its dispatches are this control's. A
+    // walk that treated a call as just another container would lose the single
+    // most common attributed shape (`setTimeout`, `map`, `forEach`) the moment
+    // it appeared under a `return`.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return items.map(() => send({type:'inner'})) })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return use({ h: () => send({type:'inner'}) }) })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('STILL flags a dispatch made while BUILDING the returned container', () => {
+    // Only the nested FUNCTION is skipped; the container's other expressions
+    // run when the handler runs and are attributed as always.
+    expect(
+      rules(src("const p = tagSend(send, ['a'], () => { return { v: send({type:'inner'}) } })")),
+    ).toContain('tag-send-drift')
   })
 
   it('does NOT flag when the dispatcher is not the identifier being called', () => {

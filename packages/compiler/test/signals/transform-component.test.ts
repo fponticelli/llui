@@ -1189,6 +1189,69 @@ describe('transformSignalComponentSource', () => {
       // the shadowed `div([])` must NOT become el("div", ...)
       expect(out).not.toContain('el("div"')
     })
+
+    // ── issue #153: a function/class EXPRESSION binds its OWN name ─────────
+    // The fix lives in `scopeIntroduces` — the repo's ONE shadowing predicate —
+    // so it is shared with `HelperBindings.isShadowed`, i.e. with LOWERING.
+    // These two tests are that blast radius, stated as behaviour: before the
+    // fix both lowered a call that does not denote the framework helper at all.
+    it('leaves an element-helper name shadowed by a NAMED FUNCTION EXPRESSION alone', () => {
+      // A recursive row renderer: inside `function div(row) { … }` the name
+      // `div` is the function expression itself, so `div([])` is a self-call.
+      // It used to lower to a real `<div>` element — the user's recursion
+      // silently replaced by an element, with nothing to see in the output.
+      const src = [
+        "import { component, ul, each } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: function div(row) { return [div([])] } })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('createElement("div")')
+      expect(out).toContain('div([])')
+    })
+
+    it('does NOT treat a `component(` call inside a self-named factory as the framework helper', () => {
+      // `export const make = function component(…) { return component({…}) }`
+      // is a recursive factory: the inner `component` is the function
+      // expression. The transform used to recognize it and LOWER the object
+      // literal's `view` — compiling a call that never reaches `@llui/dom`.
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'const make = function component(): unknown {',
+        '  return component({',
+        '    init: () => ({ a: "" }),',
+        '    update: (s: { a: string }) => s,',
+        "    view: ({ state }) => [div({}, [text(state.at('a'))])],",
+        '  })',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).not.toContain('el("div"')
+      expect(out).not.toContain('signalText')
+      expect(out).toContain("div({}, [text(state.at('a'))])")
+    })
+
+    it('still lowers a component whose factory is named something ELSE (control)', () => {
+      const src = [
+        "import { component, div, text } from '@llui/dom'",
+        'const make = function build(): unknown {',
+        '  return component({',
+        '    init: () => ({ a: "" }),',
+        '    update: (s: { a: string }) => s,',
+        "    view: ({ state }) => [div({}, [text(state.at('a'))])],",
+        '  })',
+        '}',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain('el("div"')
+      expect(out).toContain('signalText')
+    })
   })
 
   // Issue #90: the injected `import { … } from '@llui/dom'` declares TOP-LEVEL

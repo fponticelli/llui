@@ -1602,21 +1602,91 @@ function scanHandlerDispatches(
   return { dispatches, complete }
 }
 
-/** True when `n` is a function expression sitting in RETURN position — the body
- * of a `return`, or the concise body of an enclosing arrow. Parentheses around
- * it are transparent. A function passed as an ARGUMENT is NOT this: a
- * `setTimeout(() => send({type:'tick'}))` really does dispatch. */
+/** True when `n` is a function expression the handler RETURNS — reachable from
+ * the return expression (a `return` statement's operand, or the concise body of
+ * an enclosing arrow) WITHOUT passing through a call.
+ *
+ * "Without passing through a call" is the whole boundary, and both sides of it
+ * are load-bearing:
+ *
+ *   • A returned closure does not run when the handler runs, so neither its
+ *     dispatches nor its silence describe this tag. Direct return position was
+ *     always handled; a closure returned inside an object or array literal
+ *     (`return { h: () => send({type:'inner'}) }`, `return [() => …]`) was NOT,
+ *     and got attributed to the handler — a direction-1 false positive against
+ *     the rule's own doctrine, in a NON-BYPASSABLE build error (#157).
+ *   • A function passed as an ARGUMENT stays attributed:
+ *     `setTimeout(() => send({type:'tick'}))` really does dispatch, and so may
+ *     `use({ h: () => … })` — the call can invoke it immediately. Treating every
+ *     container as transparent would switch direction 1 off for the single most
+ *     common dispatch shape there is.
+ *
+ * TRANSPARENT means every position whose value can BECOME the returned value
+ * with no call in between — and it must mean the WHOLE of that, not the shapes
+ * that happened to be reported. This rule's sibling walk (the handler's
+ * parameter list) surfaced FOUR times, each round fixing one position further
+ * in, which is why the invariant in CLAUDE.md now says the next walker has to
+ * mean all of it. So: the erased wrappers, object and array literals, a
+ * conditional's arms, and a logical/comma operand. Anything else — a call
+ * argument above all, but also a variable declaration, a template, a `new` —
+ * ends the walk with `false`, which merely keeps the pre-existing attribution.
+ *
+ * Both directions agree about the shapes this widens: skipping the subtree
+ * removes a direction-1 attribution AND forfeits completeness, so direction 2
+ * cannot start reporting because of it. */
 function isReturnedFunction(n: ts.Node): boolean {
   if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) return false
   let cur: ts.Node = n
   let parent: ts.Node | undefined = cur.parent
-  while (parent !== undefined && ts.isParenthesizedExpression(parent)) {
+  while (parent !== undefined) {
+    if (ts.isReturnStatement(parent)) return true
+    if (ts.isArrowFunction(parent) && parent.body === cur) return true
+    if (!isTransparentReturnContainer(cur, parent)) return false
     cur = parent
     parent = cur.parent
   }
-  if (parent === undefined) return false
-  if (ts.isReturnStatement(parent)) return true
-  return ts.isArrowFunction(parent) && parent.body === cur
+  return false
+}
+
+/** Is `parent` a node that a returned value can sit INSIDE without being called
+ * — i.e. does "`parent` is returned" imply "`cur` is returned"? See
+ * {@link isReturnedFunction} for why the list is exactly this short. */
+function isTransparentReturnContainer(cur: ts.Node, parent: ts.Node): boolean {
+  // Erased wrappers: the value that reaches the return IS `cur`.
+  if (
+    ts.isParenthesizedExpression(parent) ||
+    ts.isAsExpression(parent) ||
+    ts.isSatisfiesExpression(parent) ||
+    ts.isTypeAssertionExpression(parent) ||
+    ts.isNonNullExpression(parent)
+  ) {
+    return parent.expression === cur
+  }
+  // `return [() => …]` — every element of a returned array is returned with it.
+  if (ts.isArrayLiteralExpression(parent)) return true
+  // `return { h: () => … }` — via the property assignment that holds it.
+  if (ts.isPropertyAssignment(parent)) return parent.initializer === cur
+  if (ts.isObjectLiteralExpression(parent)) return true
+  // `return cond ? () => … : null` — either ARM can be the returned value; the
+  // CONDITION cannot (it is consumed, not returned).
+  if (ts.isConditionalExpression(parent)) {
+    return parent.whenTrue === cur || parent.whenFalse === cur
+  }
+  // `return cached ?? (() => …)`, `a || (() => …)`, `(log(), () => …)`. For the
+  // short-circuit operators either operand can be the value; for the comma the
+  // left one is discarded, so only the right is.
+  if (ts.isBinaryExpression(parent)) {
+    const op = parent.operatorToken.kind
+    if (
+      op === ts.SyntaxKind.QuestionQuestionToken ||
+      op === ts.SyntaxKind.BarBarToken ||
+      op === ts.SyntaxKind.AmpersandAmpersandToken
+    ) {
+      return true
+    }
+    return op === ts.SyntaxKind.CommaToken && parent.right === cur
+  }
+  return false
 }
 
 /** True when `id` occupies the callee position of its parent call. */
