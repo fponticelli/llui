@@ -181,7 +181,7 @@ describe('menubar.connect — root + triggers', () => {
 
   it('menuTrigger click opens its menu', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'mb' })
+    const p = connect(signalFrom(baseInit()), send, { id: 'mb' })
     p.menuTrigger('file').onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'openMenu', id: 'file' })
   })
@@ -205,7 +205,7 @@ describe('menubar.connect — root + triggers', () => {
 describe('menubar.connect — APG keyboard', () => {
   it('ArrowRight moves focus to the next trigger', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'mb' })
+    const p = connect(signalFrom(baseInit()), send, { id: 'mb' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.menuTrigger('file').onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -214,7 +214,7 @@ describe('menubar.connect — APG keyboard', () => {
 
   it('ArrowLeft moves focus to the previous trigger', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'mb' })
+    const p = connect(signalFrom(baseInit()), send, { id: 'mb' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
     p.menuTrigger('file').onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -256,7 +256,7 @@ describe('menubar.connect — APG keyboard', () => {
 
   it('closed mode: pointer entering a trigger does NOT open it', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'mb' }) // nothing open
+    const p = connect(signalFrom(baseInit()), send, { id: 'mb' }) // nothing open
     p.menuTrigger('edit').onPointerEnter({} as PointerEvent)
     expect(send).not.toHaveBeenCalled()
   })

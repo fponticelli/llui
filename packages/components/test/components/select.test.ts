@@ -73,7 +73,7 @@ describe('select.connect', () => {
 
   it('ArrowDown on trigger opens', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'open' })
   })

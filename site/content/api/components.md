@@ -384,7 +384,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `dragging`       | `CarouselDrag \| null`    |
 | `dir`            | `'ltr' \| 'rtl'`          |
 
-**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `autoplayTick`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
 
 **Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number, swipeThreshold?: number, dir?: 'ltr' | 'rtl'`
 
@@ -392,7 +392,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
 
-**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`
+**Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`, `isAutoplayRunning()`, `autoplayEffects()`
 
 ---
 
@@ -538,7 +538,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -550,20 +550,20 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DateInputState`):
 
-| Field      | Type           |
-| ---------- | -------------- |
-| `input`    | `string`       |
-| `value`    | `Date \| null` |
-| `min`      | `Date \| null` |
-| `max`      | `Date \| null` |
-| `error`    | `DateError`    |
-| `disabled` | `boolean`      |
-| `readonly` | `boolean`      |
-| `required` | `boolean`      |
+| Field      | Type              |
+| ---------- | ----------------- |
+| `input`    | `string`          |
+| `value`    | `IsoDate \| null` |
+| `min`      | `IsoDate \| null` |
+| `max`      | `IsoDate \| null` |
+| `error`    | `DateError`       |
+| `disabled` | `boolean`         |
+| `readonly` | `boolean`         |
+| `required` | `boolean`         |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
-**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readonly?: boolean, required?: boolean`
+**Init options:** `input?: string, value?: IsoDate | null, min?: IsoDate | null, max?: IsoDate | null, disabled?: boolean, readonly?: boolean, required?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -715,7 +715,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 | Field           | Type             |
 | --------------- | ---------------- |
-| `files`         | `File[]`         |
+| `files`         | `FileMeta[]`     |
 | `rejectedFiles` | `RejectedFile[]` |
 | `disabled`      | `boolean`        |
 | `multiple`      | `boolean`        |
@@ -727,10 +727,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `readonly`      | `boolean`        |
 | `invalid`       | `boolean`        |
 | `dragging`      | `boolean`        |
+| `dragDepth`     | `number`         |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
-**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
+**Init options:** `files?: FileMeta[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -910,7 +911,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `'ltr' \| 'rtl'`                 |
+| `dir`                | `TextDirection \| null`          |
 
 **Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
@@ -934,17 +935,17 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `'ltr' \| 'rtl'`                 |
+| `dir`                | `TextDirection \| null`          |
 
 **Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`
 
 ---
 
@@ -1102,7 +1103,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `disabled`     | `boolean`  |
 | `focusedIndex` | `number`   |
 
-**Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`
+**Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`, `setDisabled`
 
 **Init options:** `length?: number, type?: PinType, mask?: boolean, disabled?: boolean, values?: string[]`
 
@@ -1499,7 +1500,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `deselectable`  | `boolean`        |
 | `dir`           | `'ltr' \| 'rtl'` |
 
-**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
+**Messages:** `setValue`, `setItems`, `focusTab`, `activateTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
 
 **Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean, dir?: 'ltr' | 'rtl'`
 
@@ -1563,7 +1564,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `showSeconds` | `boolean`    |
 | `disabled`    | `boolean`    |
 
-**Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`
+**Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`, `setDisabled`
 
 **Init options:** `value?: TimeValue, format?: TimeFormat, minuteStep?: number, secondStep?: number, showSeconds?: boolean, disabled?: boolean`
 

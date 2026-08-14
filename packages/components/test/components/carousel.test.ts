@@ -6,6 +6,8 @@ import {
   canGoNext,
   canGoPrev,
   swipeDecision,
+  isAutoplayRunning,
+  autoplayEffects,
 } from '../../src/components/carousel'
 import { rootSignal, signalOf, read } from '../_signal'
 
@@ -319,5 +321,103 @@ describe('carousel.connect', () => {
     pc.slide(1).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'End' }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'goTo', index: 0 })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'goTo', index: 2 })
+  })
+})
+
+// `autoplay`/`interval`/`paused` used to be inert state: the reducer was typed
+// `never[]` and no `CarouselEffect` existed, so the `@intent` docs described
+// behaviour the component could not produce (#127).
+describe('carousel autoplay effects', () => {
+  const playing = init({ count: 3, autoplay: true, interval: 4000 })
+
+  it('isAutoplayRunning requires autoplay, slides, no pause and no drag', () => {
+    expect(isAutoplayRunning(playing)).toBe(true)
+    expect(isAutoplayRunning({ ...playing, autoplay: false })).toBe(false)
+    expect(isAutoplayRunning({ ...playing, paused: true })).toBe(false)
+    expect(isAutoplayRunning({ ...playing, count: 1 })).toBe(false)
+    expect(isAutoplayRunning({ ...playing, dragging: { startX: 0, deltaX: 0 } })).toBe(false)
+  })
+
+  it('autoplayEffects seeds the timer from init state', () => {
+    expect(autoplayEffects(playing)).toEqual([{ type: 'startAutoplay', interval: 4000 }])
+    expect(autoplayEffects(init({ count: 3 }))).toEqual([])
+  })
+
+  it('setAutoplay starts and stops the timer', () => {
+    const off = init({ count: 3, interval: 1000 })
+    const [on, startFx] = update(off, { type: 'setAutoplay', autoplay: true })
+    expect(startFx).toEqual([{ type: 'startAutoplay', interval: 1000 }])
+    const [, stopFx] = update(on, { type: 'setAutoplay', autoplay: false })
+    expect(stopFx).toEqual([{ type: 'stopAutoplay' }])
+  })
+
+  it('pause stops it and resume restarts it', () => {
+    const [paused, pauseFx] = update(playing, { type: 'pause' })
+    expect(pauseFx).toEqual([{ type: 'stopAutoplay' }])
+    const [, resumeFx] = update(paused, { type: 'resume' })
+    expect(resumeFx).toEqual([{ type: 'startAutoplay', interval: 4000 }])
+  })
+
+  it('emits nothing when the running state does not change', () => {
+    const [, fx] = update(playing, { type: 'setDir', dir: 'rtl' })
+    expect(fx).toEqual([])
+    const [notPlaying] = update(playing, { type: 'setAutoplay', autoplay: false })
+    const [, fx2] = update(notPlaying, { type: 'next' })
+    expect(fx2).toEqual([])
+  })
+
+  it('manual navigation restarts the timer', () => {
+    expect(update(playing, { type: 'next' })[1]).toEqual([
+      { type: 'startAutoplay', interval: 4000 },
+    ])
+    expect(update(playing, { type: 'prev' })[1]).toEqual([
+      { type: 'startAutoplay', interval: 4000 },
+    ])
+    expect(update(playing, { type: 'goTo', index: 2 })[1]).toEqual([
+      { type: 'startAutoplay', interval: 4000 },
+    ])
+  })
+
+  it('an autoplay tick advances WITHOUT restarting the timer', () => {
+    const [s, fx] = update(playing, { type: 'autoplayTick' })
+    expect(s.current).toBe(1)
+    expect(fx).toEqual([])
+  })
+
+  it('a swipe stops the timer while dragging and restarts it on release', () => {
+    const [dragging, startFx] = update(playing, { type: 'dragStart', x: 100 })
+    expect(startFx).toEqual([{ type: 'stopAutoplay' }])
+    const [moved] = update(dragging, { type: 'dragMove', x: 0 })
+    const [ended, endFx] = update(moved, { type: 'dragEnd' })
+    expect(ended.current).toBe(1)
+    expect(endFx).toEqual([{ type: 'startAutoplay', interval: 4000 }])
+  })
+
+  // A stray `pointerup` with no drag in flight is a reducer NO-OP, but
+  // `autoplayTransition` only asked whether the message was NAVIGATION — so it
+  // re-emitted `startAutoplay` and the user's period restarted for free
+  // (#138 review, item 7).
+  it('a dragEnd with no drag in flight emits nothing', () => {
+    expect(playing.dragging).toBeNull()
+    const [next, fx] = update(playing, { type: 'dragEnd' })
+    expect(next).toBe(playing)
+    expect(fx).toEqual([])
+  })
+
+  // `prev` at the first slide without loop does NOT move, but it does set
+  // `direction: 'backward'` — a real state change an entry animation reads, so
+  // it is not a no-op and the period legitimately restarts. `dragEnd` is the
+  // only navigation message with a same-reference early return.
+  it('a navigation that changes state still restarts, even if the index holds', () => {
+    const stuck = init({ count: 3, autoplay: true, interval: 4000, loop: false })
+    const [next, fx] = update(stuck, { type: 'prev' })
+    expect(next).not.toBe(stuck)
+    expect(fx).toEqual([{ type: 'startAutoplay', interval: 4000 }])
+  })
+
+  it('setCount that makes the carousel playable starts the timer', () => {
+    const empty = init({ autoplay: true, interval: 2000 })
+    const [, fx] = update(empty, { type: 'setCount', count: 3 })
+    expect(fx).toEqual([{ type: 'startAutoplay', interval: 2000 }])
   })
 })

@@ -121,11 +121,16 @@ export function connect(
   const activateOnFocus = opts.activateOnFocus === true
   const submitOnBlur = opts.submitOnBlur !== false
   const validate = opts.validate
-  let currentDraft = ''
 
+  /**
+   * The draft comes from STATE, never from a closure mirror of `onInput`: a
+   * draft set by any other path (an agent `send`, a host `setValue`) was
+   * validated as `''` instead of its real text, so the guard silently passed
+   * a value the app's own `validate` would have rejected (#120).
+   */
   const trySubmit = () => {
     if (validate) {
-      const errors = validate(currentDraft)
+      const errors = validate(state.peek().draft)
       if (errors && errors.length > 0) return
     }
     send({ type: 'submit' })
@@ -162,9 +167,7 @@ export function connect(
       value: state.map((s) => s.draft),
       disabled: state.map((s) => s.disabled),
       onInput: tagSend(send, ['setDraft'], (e) => {
-        const draft = (e.target as HTMLInputElement).value
-        currentDraft = draft
-        send({ type: 'setDraft', draft })
+        send({ type: 'setDraft', draft: (e.target as HTMLInputElement).value })
       }),
       onKeyDown: tagSend(send, ['cancel'], (e) => {
         if (e.key === 'Enter') {

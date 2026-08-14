@@ -39,6 +39,10 @@ export type TabsMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @humanOnly */
   | { type: 'focusTab'; value: string }
+  /**
+   * @intent("Activate the tab with the given value — the click/press action (deselects it when `deselectable` and it is already active)")
+   */
+  | { type: 'activateTab'; value: string }
   /** @humanOnly */
   | { type: 'focusNext'; from: string }
   /** @humanOnly */
@@ -93,6 +97,14 @@ function rovingTabValue(s: TabsState): string | null {
   return firstEnabled(s.items, s.disabledItems)
 }
 
+/**
+ * The value an explicit activation produces: the tab itself, or `''` when a
+ * `deselectable` tablist activates the tab that is already active.
+ */
+function deselectOrSelect(state: TabsState, value: string): string {
+  return state.deselectable && state.value === value ? '' : value
+}
+
 export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
   switch (msg.type) {
     case 'setValue':
@@ -110,11 +122,16 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
     case 'focusTab': {
       if (state.disabledItems.includes(msg.value)) return [state, []]
       const next: TabsState = { ...state, focused: msg.value }
-      if (state.activation === 'automatic') {
-        // Deselectable: clicking the already-active tab clears the value.
-        next.value = state.deselectable && state.value === msg.value ? '' : msg.value
-      }
+      // Focus NEVER deselects. A mouse press fires focus and then click, so a
+      // toggle here cancelled the one on the click and a single click on a
+      // deselectable tab was a net no-op (#128). The toggle lives on
+      // `activateTab`/`activateFocused`, which model the press itself.
+      if (state.activation === 'automatic') next.value = msg.value
       return [next, []]
+    }
+    case 'activateTab': {
+      if (state.disabledItems.includes(msg.value)) return [state, []]
+      return [{ ...state, focused: msg.value, value: deselectOrSelect(state, msg.value) }, []]
     }
     case 'focusNext': {
       const to = nextEnabled(state.items, state.disabledItems, msg.from, 1, state.loopFocus)
@@ -146,7 +163,7 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
     }
     case 'activateFocused': {
       if (state.focused === null) return [state, []]
-      return [{ ...state, value: state.focused }, []]
+      return [{ ...state, value: deselectOrSelect(state, state.focused) }, []]
     }
     case 'setDir':
       return [{ ...state, dir: msg.dir }, []]
@@ -262,8 +279,8 @@ export function connect(
         'data-part': 'trigger',
         'data-value': value,
         tabindex: state.map((s) => (rovingTabValue(s) === value ? 0 : -1)),
-        onClick: tagSend(send, ['focusTab'], () => {
-          send({ type: 'focusTab', value })
+        onClick: tagSend(send, ['activateTab'], () => {
+          send({ type: 'activateTab', value })
           opts.onNavigate?.(value)
         }),
         onFocus: tagSend(send, ['focusTab'], () => {

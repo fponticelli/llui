@@ -224,14 +224,14 @@ describe('context-menu.connect', () => {
 
   it('content ArrowDown sends highlightNext scoped to root', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: '' })
   })
 
   it('content Escape closes', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
@@ -280,9 +280,11 @@ describe('context-menu.connect', () => {
 })
 
 describe('context-menu RTL', () => {
-  it('init defaults dir to ltr; respects opts.dir', () => {
-    expect(init({ items: flat }).dir).toBe('ltr')
+  // `null` = "follow the page", matching menu (#138 review, blocking 4).
+  it('init leaves dir unset (follow the page); respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBeNull()
     expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+    expect(init({ items: flat, dir: 'ltr' }).dir).toBe('ltr')
   })
 
   it('setDir updates the reading direction', () => {

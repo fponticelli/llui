@@ -33,16 +33,18 @@ export type TimePickerMsg =
   | { type: 'setMinutes'; minutes: number }
   /** @intent("Set the seconds field directly") */
   | { type: 'setSeconds'; seconds: number }
-  /** @intent("Bump hours up by 1 (wraps at 24/12)") */
+  /** @intent("Bump hours up by 1 (wraps at 24/12). Ignored while disabled") */
   | { type: 'incrementHours' }
-  /** @intent("Bump hours down by 1") */
+  /** @intent("Bump hours down by 1. Ignored while disabled") */
   | { type: 'decrementHours' }
-  /** @intent("Bump minutes up by minuteStep") */
+  /** @intent("Bump minutes up by minuteStep. Ignored while disabled") */
   | { type: 'incrementMinutes' }
-  /** @intent("Bump minutes down by minuteStep") */
+  /** @intent("Bump minutes down by minuteStep. Ignored while disabled") */
   | { type: 'decrementMinutes' }
-  /** @intent("Flip between AM and PM (12-hour format only)") */
+  /** @intent("Flip between AM and PM (12-hour format only). Ignored while disabled") */
   | { type: 'toggleAmPm' }
+  /** @intent("Enable or disable the time-picker — a host/agent write, never gated") */
+  | { type: 'setDisabled'; disabled: boolean }
 
 export interface TimePickerInit {
   value?: TimeValue
@@ -68,8 +70,29 @@ function mod(n: number, m: number): number {
   return ((n % m) + m) % m
 }
 
+/**
+ * Messages a disabled time-picker still accepts. `disabled` gates HUMAN
+ * interaction — the stepper buttons and the AM/PM toggle — not the host's or an
+ * agent's programmatic writes. The gate used to swallow EVERYTHING, and with no
+ * `setDisabled` at all a disabled instance could never be re-enabled (#120). *
+ * This allow-list and the `@intent`/`@humanOnly` JSDoc on the Msg union answer
+ * DIFFERENT questions — "does this survive the gate" versus "may an agent
+ * dispatch it at all" — and they must not contradict each other: every message
+ * named here is agent-dispatchable, and every gated variant an agent may still
+ * send says so in its `@intent` text instead of promising a write the gate
+ * swallows. `test/disabled-gate-annotations.test.ts` fails the build if the two
+ * drift apart (#138 review).
+ */
+const PROGRAMMATIC: ReadonlySet<TimePickerMsg['type']> = new Set([
+  'setValue',
+  'setHours',
+  'setMinutes',
+  'setSeconds',
+  'setDisabled',
+])
+
 export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerState, never[]] {
-  if (state.disabled) return [state, []]
+  if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
@@ -106,6 +129,8 @@ export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerS
       const h = state.value.hours >= 12 ? state.value.hours - 12 : state.value.hours + 12
       return [{ ...state, value: { ...state.value, hours: h } }, []]
     }
+    case 'setDisabled':
+      return [{ ...state, disabled: msg.disabled }, []]
   }
 }
 

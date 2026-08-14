@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, focusTarget } from '../../src/components/accordion'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('accordion reducer', () => {
   it('initializes with defaults (single, collapsible)', () => {
@@ -128,7 +128,7 @@ describe('accordion.connect', () => {
 
   it('ArrowDown/Up dispatch focus messages and preventDefault', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     const down = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
     p.item('a').trigger.onKeyDown(down)
     expect(down.defaultPrevented).toBe(true)
@@ -140,7 +140,7 @@ describe('accordion.connect', () => {
 
   it('Home/End dispatch focusFirst/focusLast', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.item('a').trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.item('a').trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'focusFirst' })

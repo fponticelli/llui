@@ -142,6 +142,7 @@ export type {
   DateInputInit,
   DateInputParts,
   DateError,
+  IsoDate,
 } from './date-input.js'
 export type {
   AsyncListState,
@@ -379,6 +380,11 @@ export type {
   FileUploadInit,
   FileUploadParts,
   FileUploadItemParts,
+  FileMeta,
+  FileLike,
+  FileError,
+  RejectedFile,
+  AcceptValue,
 } from './file-upload.js'
 export type {
   TreeViewState,
@@ -435,6 +441,7 @@ export type {
   CarouselParts,
   CarouselSlideParts,
   CarouselDrag,
+  CarouselEffect,
 } from './carousel.js'
 export type {
   DatePickerState,

@@ -12,6 +12,31 @@ import { flipArrow } from '../utils/direction.js'
  * Swipe is pure: the viewport wires pointerdown/move/up and feeds raw client
  * X coordinates to the machine; `swipeDecision()` resolves commit-vs-snap and
  * `update` applies it on `dragEnd`. No event listeners live in the machine.
+ *
+ * Autoplay is effects-as-data, like every other timer in LLui: the machine
+ * owns WHEN the timer should run and emits `startAutoplay`/`stopAutoplay`; the
+ * consumer owns the timer itself. With `@llui/effects`:
+ *
+ * ```ts
+ * init: () => {
+ *   const c = carousel.init({ count: 3, autoplay: true, interval: 4000 })
+ *   return [{ c }, carousel.autoplayEffects(c)]
+ * },
+ * update: (s, m) => {
+ *   const [c, fx] = carousel.update(s.c, m)
+ *   return [{ c }, fx]
+ * },
+ * onEffect: asOnEffect(
+ *   handleEffects<CarouselEffect>().else((fx) =>
+ *     fx.type === 'startAutoplay'
+ *       ? interval('carousel', fx.interval, { type: 'autoplayTick' })
+ *       : cancel('carousel'),
+ *   ),
+ * )
+ * ```
+ *
+ * `interval` re-registers under the same key, so a restart replaces the timer
+ * in flight; `cancel` retires it, and the runner retires everything on unmount.
  */
 
 /**
@@ -59,6 +84,19 @@ export type CarouselMsg =
   | { type: 'resume' }
   /** @intent("Turn autoplay on or off") */
   | { type: 'setAutoplay'; autoplay: boolean }
+  /**
+   * The autoplay timer fired. Advances exactly like `next`, but does NOT
+   * restart the timer — it IS the timer. Manual navigation restarts it; a tick
+   * must not, or the period would be re-armed on every fire.
+   *
+   * `@humanOnly` because it is the TIMER's message, not a user intent: with no
+   * tag it defaulted to dispatchMode `'shared'` and an agent could fire the
+   * timer directly, advancing the carousel without re-arming the period
+   * (#138 review, item 8). An agent that wants the next slide sends `next`.
+   *
+   * @humanOnly
+   */
+  | { type: 'autoplayTick' }
   /** @humanOnly */
   | { type: 'dragStart'; x: number }
   /** @humanOnly */
@@ -67,6 +105,20 @@ export type CarouselMsg =
   | { type: 'dragEnd' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+
+/**
+ * Effects emitted by the carousel machine. Running the timer is the consumer's
+ * job — the machine only says when it should run (see the module header).
+ */
+export type CarouselEffect =
+  /**
+   * Run the autoplay timer: dispatch `autoplayTick` every `interval` ms.
+   * Re-emitted to RESTART a timer already running (manual navigation, an
+   * `interval` change), so the handler must replace rather than add.
+   */
+  | { type: 'startAutoplay'; interval: number }
+  /** Retire the autoplay timer. */
+  | { type: 'stopAutoplay' }
 
 export interface CarouselInit {
   current?: number
@@ -117,57 +169,105 @@ export function swipeDecision(state: CarouselState): 'prev' | 'next' | 'snap' {
   return canGoPrev(state) ? 'prev' : 'snap'
 }
 
-export function update(state: CarouselState, msg: CarouselMsg): [CarouselState, never[]] {
+function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
   switch (msg.type) {
     case 'goTo': {
       const next = clampIndex(state, msg.index)
-      return [
-        { ...state, current: next, direction: next >= state.current ? 'forward' : 'backward' },
-        [],
-      ]
+      return { ...state, current: next, direction: next >= state.current ? 'forward' : 'backward' }
     }
-    case 'next': {
+    case 'next':
+    case 'autoplayTick': {
       const next = clampIndex(state, state.current + 1)
-      return [{ ...state, current: next, direction: 'forward' }, []]
+      return { ...state, current: next, direction: 'forward' }
     }
     case 'prev': {
       const prev = clampIndex(state, state.current - 1)
-      return [{ ...state, current: prev, direction: 'backward' }, []]
+      return { ...state, current: prev, direction: 'backward' }
     }
     case 'setCount': {
       const current = Math.min(state.current, Math.max(0, msg.count - 1))
-      return [{ ...state, count: msg.count, current }, []]
+      return { ...state, count: msg.count, current }
     }
     case 'pause':
-      return [{ ...state, paused: true }, []]
+      return { ...state, paused: true }
     case 'resume':
-      return [{ ...state, paused: false }, []]
+      return { ...state, paused: false }
     case 'setAutoplay':
-      return [{ ...state, autoplay: msg.autoplay }, []]
+      return { ...state, autoplay: msg.autoplay }
     case 'dragStart':
-      return [{ ...state, dragging: { startX: msg.x, deltaX: 0 } }, []]
+      return { ...state, dragging: { startX: msg.x, deltaX: 0 } }
     case 'dragMove': {
-      if (!state.dragging) return [state, []]
+      if (!state.dragging) return state
       const deltaX = msg.x - state.dragging.startX
-      if (deltaX === state.dragging.deltaX) return [state, []]
-      return [{ ...state, dragging: { ...state.dragging, deltaX } }, []]
+      if (deltaX === state.dragging.deltaX) return state
+      return { ...state, dragging: { ...state.dragging, deltaX } }
     }
     case 'dragEnd': {
-      if (!state.dragging) return [state, []]
+      if (!state.dragging) return state
       const decision = swipeDecision(state)
       if (decision === 'next') {
         const next = clampIndex(state, state.current + 1)
-        return [{ ...state, current: next, direction: 'forward', dragging: null }, []]
+        return { ...state, current: next, direction: 'forward', dragging: null }
       }
       if (decision === 'prev') {
         const prev = clampIndex(state, state.current - 1)
-        return [{ ...state, current: prev, direction: 'backward', dragging: null }, []]
+        return { ...state, current: prev, direction: 'backward', dragging: null }
       }
-      return [{ ...state, dragging: null }, []]
+      return { ...state, dragging: null }
     }
     case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
+      return { ...state, dir: msg.dir }
   }
+}
+
+/**
+ * Whether the autoplay timer should be running. A single slide has nowhere to
+ * advance to, and a swipe in flight suspends autoplay so the slide doesn't move
+ * out from under the user's finger — the same condition `data-paused` exposes.
+ */
+export function isAutoplayRunning(state: CarouselState): boolean {
+  return state.autoplay && !state.paused && state.dragging === null && state.count > 1
+}
+
+/**
+ * The effects that bring the timer in line with `state` from a cold start.
+ * `init()` returns state only, so a consumer seeds the timer with this from
+ * its own `init()`.
+ */
+export function autoplayEffects(state: CarouselState): CarouselEffect[] {
+  return isAutoplayRunning(state) ? [{ type: 'startAutoplay', interval: state.interval }] : []
+}
+
+/**
+ * Messages that count as NAVIGATION: they restart a running timer, so the user
+ * gets a full period on the slide they just chose instead of the remainder of
+ * the previous one. `autoplayTick` is deliberately absent — it IS the timer.
+ */
+const NAVIGATION: ReadonlySet<CarouselMsg['type']> = new Set(['goTo', 'next', 'prev', 'dragEnd'])
+
+function autoplayTransition(
+  prev: CarouselState,
+  next: CarouselState,
+  msg: CarouselMsg,
+): CarouselEffect[] {
+  const wasRunning = isAutoplayRunning(prev)
+  const isRunning = isAutoplayRunning(next)
+  if (!isRunning) return wasRunning ? [{ type: 'stopAutoplay' }] : []
+  // `next !== prev` matters: `dragEnd` with no drag in flight returns the state
+  // unchanged, and restarting the period off a stray `pointerup` gave the user
+  // a fresh interval for free (#138 review, item 7). A navigation that holds
+  // the index but moves `direction` IS a change and does restart.
+  //
+  // No message changes `interval`, so there is nothing to compare there; if one
+  // is ever added it must join NAVIGATION, or a live timer will keep the old
+  // period.
+  const restart = !wasRunning || (next !== prev && NAVIGATION.has(msg.type))
+  return restart ? [{ type: 'startAutoplay', interval: next.interval }] : []
+}
+
+export function update(state: CarouselState, msg: CarouselMsg): [CarouselState, CarouselEffect[]] {
+  const next = reduce(state, msg)
+  return [next, autoplayTransition(state, next, msg)]
 }
 
 export function canGoNext(state: CarouselState): boolean {
@@ -415,4 +515,13 @@ export function connect(
   }
 }
 
-export const carousel = { init, update, connect, canGoNext, canGoPrev, swipeDecision }
+export const carousel = {
+  init,
+  update,
+  connect,
+  canGoNext,
+  canGoPrev,
+  swipeDecision,
+  isAutoplayRunning,
+  autoplayEffects,
+}

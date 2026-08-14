@@ -137,3 +137,23 @@ describe('cascade-select.connect', () => {
     expect(read(p.root['data-complete'], init({ levels, values: ['US', 'CA', 'SF'] }))).toBe('')
   })
 })
+
+// The gate was inverted: it let `clear` through and blocked `setLevels`, so a
+// disabled instance accepted the one user action and refused the host's data
+// write — the opposite of every sibling machine (#128).
+describe('cascade-select disabled gate', () => {
+  it('rejects user actions while disabled', () => {
+    const s0 = init({ levels, values: ['US', 'CA', 'SF'], disabled: true })
+    const [cleared] = update(s0, { type: 'clear' })
+    expect(cleared.values).toEqual(['US', 'CA', 'SF'])
+    const [set] = update(s0, { type: 'setValue', levelIndex: 0, value: 'IT' })
+    expect(set.values).toEqual(['US', 'CA', 'SF'])
+  })
+
+  it('still accepts setLevels while disabled', () => {
+    const s0 = init({ levels, values: ['US', 'CA', 'SF'], disabled: true })
+    const [s] = update(s0, { type: 'setLevels', levels: levels.slice(0, 2) })
+    expect(s.levels).toHaveLength(2)
+    expect(s.values).toEqual([null, null])
+  })
+})

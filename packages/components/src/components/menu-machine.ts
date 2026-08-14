@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
-import { flipArrow } from '../utils/direction.js'
+import { flipArrow, type TextDirection } from '../utils/direction.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
@@ -63,7 +63,14 @@ export interface MenuTreeState {
   closeOnSelect: boolean
   typeahead: string
   typeaheadExpiresAt: number
-  dir: 'ltr' | 'rtl'
+  /**
+   * Reading direction, or `null` for "the host never said — let the page
+   * decide". `null` is not a stylistic default: a menu portals into `<body>`,
+   * and the direction it is given is AUTHORITATIVE over the direction the
+   * floating element computes to, so a concrete default here SUPPRESSES
+   * `<html dir="rtl">` (#138 review, blocking 4).
+   */
+  dir: TextDirection | null
 }
 
 /** The messages shared by every menu-tree component. Component-specific opens
@@ -81,7 +88,7 @@ export type MenuTreeMsg =
   | { type: 'closeSub' }
   | { type: 'setItems'; items: MenuNode[] }
   | { type: 'typeahead'; level: string; char: string; now: number }
-  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  | { type: 'setDir'; dir: TextDirection | null }
   | { type: 'animationEnd' }
 
 // ---- presence lifecycle (composes presence.update; never reinvents it) ----

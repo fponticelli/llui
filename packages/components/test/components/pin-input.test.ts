@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isComplete, getValue } from '../../src/components/pin-input'
 import type { PinInputMsg } from '../../src/components/pin-input'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('pin-input reducer', () => {
   it('initializes empty values of given length', () => {
@@ -74,6 +74,39 @@ describe('pin-input reducer', () => {
   })
 })
 
+// The gate used to swallow EVERY message and there was no `setDisabled`, so a
+// disabled instance could never be written to or re-enabled by anything (#120).
+describe('pin-input disabled gate', () => {
+  const disabled = () => ({
+    ...init({ length: 3, disabled: true }),
+    values: ['1', '2', '3'],
+    focusedIndex: 2,
+  })
+
+  it('blocks human-only messages', () => {
+    const [s] = update(disabled(), { type: 'backspace', index: 2 })
+    expect(s.values).toEqual(['1', '2', '3'])
+    const [s2] = update(disabled(), { type: 'focus', index: 0 })
+    expect(s2.focusedIndex).toBe(2)
+  })
+
+  it('accepts programmatic writes', () => {
+    const [s] = update(disabled(), { type: 'setValue', index: 0, value: '9' })
+    expect(s.values).toEqual(['9', '2', '3'])
+    const [s2] = update(disabled(), { type: 'setAll', values: ['4', '5', '6'] })
+    expect(s2.values).toEqual(['4', '5', '6'])
+    const [s3] = update(disabled(), { type: 'clear' })
+    expect(s3.values).toEqual(['', '', ''])
+  })
+
+  it('can be re-enabled through setDisabled', () => {
+    const [s] = update(disabled(), { type: 'setDisabled', disabled: false })
+    expect(s.disabled).toBe(false)
+    const [s2] = update(s, { type: 'backspace', index: 2 })
+    expect(s2.values).toEqual(['1', '2', ''])
+  })
+})
+
 describe('pin-input helpers', () => {
   it('isComplete returns true when all filled', () => {
     expect(isComplete({ ...init({ length: 3 }), values: ['1', '2', '3'] })).toBe(true)
@@ -105,7 +138,7 @@ describe('pin-input.connect', () => {
 
   it('onInput sends setValue', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     const target = document.createElement('input')
     target.value = '5'
     const ev = new Event('input')
@@ -116,14 +149,14 @@ describe('pin-input.connect', () => {
 
   it('backspace sends backspace msg', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.input(1).onKeyDown(new KeyboardEvent('keydown', { key: 'Backspace' }))
     expect(send).toHaveBeenCalledWith({ type: 'backspace', index: 1 })
   })
 
   it('validate blocks setValue when returning errors', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, {
+    const pc = connect(signalOf(init()), send, {
       id: 'x',
       validate: (v) => (v === '0' ? ['zero not allowed'] : null),
     })

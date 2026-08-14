@@ -112,6 +112,19 @@ describe('number-input reducer', () => {
     expect(update(s0, { type: 'increment', multiplier: 10 })[0].value).toBe(4)
   })
 
+  // `disabled` gates HUMAN interaction. A programmatic write from the host or an
+  // agent is not an interaction, and dropping it left machines unwritable (#120).
+  it('disabled still accepts a programmatic setValue', () => {
+    const [s] = update(init({ value: 5, disabled: true, max: 10 }), { type: 'setValue', value: 8 })
+    expect(s.value).toBe(8)
+    expect(s.rawText).toBe('8')
+  })
+
+  it('readonly still accepts a programmatic setValue', () => {
+    const [s] = update(init({ value: 5, readonly: true }), { type: 'setValue', value: 8 })
+    expect(s.value).toBe(8)
+  })
+
   it('handles fractional step without drift', () => {
     const s0 = init({ value: 0, step: 0.1 })
     const [s1] = update(s0, { type: 'increment' })

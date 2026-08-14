@@ -12,7 +12,7 @@ import {
   isIndeterminate,
 } from '../../src/components/tree-view'
 import type { TreeNodeMeta } from '../../src/components/tree-view'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('tree-view reducer', () => {
   it('initializes empty', () => {
@@ -119,7 +119,7 @@ describe('tree-view.connect', () => {
 
   it('ArrowRight sends arrowRightFrom for branch', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.item('a', 0, true).item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -137,7 +137,7 @@ describe('tree-view.connect', () => {
 
   it('ArrowLeft sends arrowLeftFrom with parentId', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.item('a', 1, false, 'root').item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
     )

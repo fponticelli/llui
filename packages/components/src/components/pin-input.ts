@@ -32,6 +32,8 @@ export type PinInputMsg =
   | { type: 'clear' }
   /** @humanOnly */
   | { type: 'backspace'; index: number }
+  /** @intent("Enable or disable the pin-input — a host/agent write, never gated") */
+  | { type: 'setDisabled'; disabled: boolean }
 
 export interface PinInputInit {
   length?: number
@@ -83,8 +85,29 @@ export function acceptedChars(values: readonly string[], type: PinType): string[
   return accepted
 }
 
+/**
+ * Messages a disabled pin-input still accepts. `disabled` gates HUMAN
+ * interaction — moving focus, backspacing — not the host's or an agent's
+ * programmatic writes. The gate used to swallow EVERYTHING, and with no
+ * `setDisabled` at all a disabled instance could never be re-enabled or
+ * cleared (#120). *
+ * This allow-list and the `@intent`/`@humanOnly` JSDoc on the Msg union answer
+ * DIFFERENT questions — "does this survive the gate" versus "may an agent
+ * dispatch it at all" — and they must not contradict each other: every message
+ * named here is agent-dispatchable, and every gated variant an agent may still
+ * send says so in its `@intent` text instead of promising a write the gate
+ * swallows. `test/disabled-gate-annotations.test.ts` fails the build if the two
+ * drift apart (#138 review).
+ */
+const PROGRAMMATIC: ReadonlySet<PinInputMsg['type']> = new Set([
+  'setValue',
+  'setAll',
+  'clear',
+  'setDisabled',
+])
+
 export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, never[]] {
-  if (state.disabled) return [state, []]
+  if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue': {
       const char = sanitize(msg.value.slice(-1), state.type)
@@ -120,6 +143,8 @@ export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, 
       values[prev] = ''
       return [{ ...state, values, focusedIndex: prev }, []]
     }
+    case 'setDisabled':
+      return [{ ...state, disabled: msg.disabled }, []]
   }
 }
 

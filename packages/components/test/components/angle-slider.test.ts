@@ -108,7 +108,7 @@ describe('angle-slider.connect', () => {
 
   it('keyboard ArrowRight/Up increments', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.root.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'increment' })
@@ -116,7 +116,7 @@ describe('angle-slider.connect', () => {
 
   it('ltr (default): ArrowLeft decrements', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'decrement' })
   })
@@ -141,14 +141,14 @@ describe('angle-slider.connect', () => {
 
   it('PageUp increments by 10 steps', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'increment', steps: 10 })
   })
 
   it('Home/End jump to extremes', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'setValue', value: -Infinity })
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))

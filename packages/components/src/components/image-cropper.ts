@@ -67,19 +67,59 @@ export interface ImageCropperInit {
   disabled?: boolean
 }
 
-function clampCrop(crop: CropRect, image: { width: number; height: number }): CropRect {
-  const width = clamp(crop.width, 0, image.width)
-  const height = clamp(crop.height, 0, image.height)
-  const x = clamp(crop.x, 0, image.width - width)
-  const y = clamp(crop.y, 0, image.height - height)
-  return { x, y, width, height }
-}
-
-function enforceAspectRatio(crop: CropRect, ratio: number | null): CropRect {
-  if (ratio === null) return crop
-  // Keep width; compute height from ratio.
-  const height = crop.width / ratio
-  return { ...crop, height }
+/**
+ * Fit a crop inside the image while HONOURING the aspect-ratio lock.
+ *
+ * With a ratio set the rectangle may only be scaled UNIFORMLY: clamping each
+ * axis on its own is what broke the lock — deriving the height from the ratio
+ * and then squashing it back to the image's bounds returned the image's own
+ * ratio, not the requested one (#128). Free-form crops (`ratio === null`) keep
+ * the per-axis clamp, since there is no shape to preserve.
+ *
+ * When the image is too small to hold `minSize` on a locked ratio, fitting
+ * inside the image wins: an on-ratio crop that overflows the image would be
+ * unusable, a sub-minimum one is merely small.
+ */
+function fitCrop(
+  crop: CropRect,
+  image: { width: number; height: number },
+  ratio: number | null,
+  minSize: number,
+): CropRect {
+  if (ratio === null) {
+    // The floor can never push a crop outside the image, hence the Math.min.
+    const width = clamp(crop.width, Math.min(minSize, image.width), image.width)
+    const height = clamp(crop.height, Math.min(minSize, image.height), image.height)
+    return {
+      x: clamp(crop.x, 0, image.width - width),
+      y: clamp(crop.y, 0, image.height - height),
+      width,
+      height,
+    }
+  }
+  // Re-derive the height so the rectangle is exactly on ratio before scaling.
+  let width = Math.max(0, crop.width)
+  let height = width / ratio
+  if (width <= 0 || height <= 0) {
+    // Collapsed: no scale factor lifts a zero, so seed the smallest on-ratio
+    // rectangle whose SHORTER side is `minSize`.
+    width = ratio >= 1 ? minSize * ratio : minSize
+    height = width / ratio
+  }
+  // Grow to the minimum first, then shrink to fit — shrinking last is what
+  // guarantees the result is inside the image.
+  const grow = Math.max(1, minSize / width, minSize / height)
+  width *= grow
+  height *= grow
+  const shrink = Math.min(1, image.width / width, image.height / height)
+  width *= shrink
+  height *= shrink
+  return {
+    x: clamp(crop.x, 0, image.width - width),
+    y: clamp(crop.y, 0, image.height - height),
+    width,
+    height,
+  }
 }
 
 /**
@@ -114,11 +154,12 @@ export function init(opts: ImageCropperInit = {}): ImageCropperState {
   const image = opts.image ?? { width: 0, height: 0 }
   const aspectRatio = opts.aspectRatio ?? null
   const crop = opts.crop ?? centerFill(image, aspectRatio)
+  const minSize = opts.minSize ?? 20
   return {
     image,
-    crop: clampCrop(crop, image),
+    crop: fitCrop(crop, image, aspectRatio, minSize),
     aspectRatio,
-    minSize: opts.minSize ?? 20,
+    minSize,
     dragging: false,
     resizing: null,
     disabled: opts.disabled ?? false,
@@ -175,10 +216,12 @@ function applyResize(
       }
     }
   }
-  // Enforce min size + clamp to image.
-  if (width < state.minSize) width = state.minSize
-  if (height < state.minSize) height = state.minSize
-  return { ...state, crop: clampCrop({ x, y, width, height }, state.image) }
+  // Min size + fit to image, both ratio-aware: two independent minSize clamps
+  // squashed a locked crop back to 1:1 the moment either axis hit the floor.
+  return {
+    ...state,
+    crop: fitCrop({ x, y, width, height }, state.image, state.aspectRatio, state.minSize),
+  }
 }
 
 export function update(
@@ -195,11 +238,19 @@ export function update(
       return [{ ...state, image, crop }, []]
     }
     case 'setCrop':
-      return [{ ...state, crop: clampCrop(msg.crop, state.image) }, []]
-    case 'setAspectRatio': {
-      const next = enforceAspectRatio(state.crop, msg.ratio)
-      return [{ ...state, aspectRatio: msg.ratio, crop: clampCrop(next, state.image) }, []]
-    }
+      return [
+        { ...state, crop: fitCrop(msg.crop, state.image, state.aspectRatio, state.minSize) },
+        [],
+      ]
+    case 'setAspectRatio':
+      return [
+        {
+          ...state,
+          aspectRatio: msg.ratio,
+          crop: fitCrop(state.crop, state.image, msg.ratio, state.minSize),
+        },
+        [],
+      ]
     case 'dragStart':
       return [{ ...state, dragging: true }, []]
     case 'dragMove': {
@@ -209,7 +260,7 @@ export function update(
         x: state.crop.x + msg.dx,
         y: state.crop.y + msg.dy,
       }
-      return [{ ...state, crop: clampCrop(crop, state.image) }, []]
+      return [{ ...state, crop: fitCrop(crop, state.image, state.aspectRatio, state.minSize) }, []]
     }
     case 'dragEnd':
       return [{ ...state, dragging: false }, []]
