@@ -319,19 +319,20 @@ describe('transition() end filtering', () => {
 })
 
 describe('slide() / scale() end filtering', () => {
-  // NOT every shipped preset lines up with the property filter. `slide()` and
-  // `scale()` install `transition: transform, opacity 250ms ease-out`, which the
-  // CSS shorthand grammar reads as TWO single-transitions — the first, `transform`,
-  // taking the initial `transition-duration` of 0s. A 0s transition fires no
-  // `transitionend`, so `transform` never leaves the pending set and both presets
-  // ALWAYS resolve on the fallback timer instead of on a real end. That costs the
-  // 16ms buffer and can never hang, but it does make #105's discrimination inert
-  // for two of the three shipped presets.
+  // Every shipped preset now lines up with the property filter. It did not
+  // always: `slide()` and `scale()` installed `transition: transform, opacity
+  // 250ms ease-out`, which the CSS shorthand grammar reads as TWO
+  // single-transitions — the first, `transform`, taking the initial
+  // `transition-duration` of 0s. A 0s transition fires no `transitionend`, so
+  // `transform` never left the pending set and both presets ALWAYS resolved on
+  // the fallback timer instead of on a real end (#142), which made #105's
+  // discrimination inert for two of the three shipped presets.
   //
-  // The underlying preset bug — neither actually animates its transform in a
-  // browser — is issue #142; fixing it should flip these tests to resolving on
-  // the `transform` end. jsdom cannot see any of this: its `cssstyle` does not
-  // expand the `transition` shorthand at all.
+  // With the per-property shorthand both properties really transition, so the
+  // real `transform` end arrives and releases the node ahead of the timer. jsdom
+  // fires no transition events of its own — its `cssstyle` does not even expand
+  // the shorthand — so the ends below are dispatched by hand; the emitted string
+  // itself is pinned in `presets.test.ts`.
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -348,23 +349,45 @@ describe('slide() / scale() end filtering', () => {
     ['scale', () => scale({ duration: 100 })],
   ] as const
 
-  it.each(presets)('%s(): the opacity end alone does not release the node', async (_name, make) => {
-    const el = document.createElement('div')
-    document.body.appendChild(el)
-    let resolved = false
-    void (make().leave!([el]) as Promise<void>).then(() => {
-      resolved = true
-    })
+  it.each(presets)(
+    '%s(): resolves on the real transform end, not the fallback timer',
+    async (_name, make) => {
+      const el = document.createElement('div')
+      document.body.appendChild(el)
+      let resolved = false
+      void (make().leave!([el]) as Promise<void>).then(() => {
+        resolved = true
+      })
 
-    el.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'opacity' }))
-    await drain()
-    expect(resolved).toBe(false)
+      // The fast half alone must not release the node mid-animation.
+      el.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'opacity' }))
+      await drain()
+      expect(resolved).toBe(false)
 
-    // …and with no `transform` end ever coming, the fallback timer is what
-    // resolves it — 100ms + the 16ms buffer.
-    await vi.advanceTimersByTimeAsync(116)
-    expect(resolved).toBe(true)
-  })
+      // `transform` carries its own duration now, so its end really comes —
+      // well before the 116ms fallback.
+      await vi.advanceTimersByTimeAsync(50)
+      el.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'transform' }))
+      await drain()
+      expect(resolved).toBe(true)
+    },
+  )
+
+  it.each(presets)(
+    '%s(): names transform in the transition it emits, so that end can arrive',
+    (_name, make) => {
+      const el = document.createElement('div')
+      document.body.appendChild(el)
+      void make().leave!([el])
+      // The half of the contract jsdom CAN see: a `transitionend` for
+      // `transform` is only ever dispatched by a browser if `transform` has a
+      // non-zero duration of its own in the emitted shorthand.
+      for (const single of el.style.transition.split(',')) {
+        expect(single.trim()).toMatch(/^[a-z-]+ \d+ms/)
+      }
+      expect(el.style.transition).toContain('transform 100ms')
+    },
+  )
 })
 
 describe('collapse() end filtering', () => {

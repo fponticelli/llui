@@ -1,7 +1,7 @@
 import type { TransitionOptions } from '@llui/dom'
 import type { Styles } from './types.js'
 import { transition } from './transition.js'
-import { asElements, forceReflow } from './style-utils.js'
+import { asElements, forceReflow, transitionShorthand } from './style-utils.js'
 import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
 
 export interface FadeOptions {
@@ -15,7 +15,7 @@ export interface FadeOptions {
 export function fade(opts: FadeOptions = {}): TransitionOptions {
   const duration = opts.duration ?? 200
   const easing = opts.easing ?? 'ease-out'
-  const active: Styles = { transition: `opacity ${duration}ms ${easing}` }
+  const active: Styles = { transition: transitionShorthand(['opacity'], duration, easing) }
   return transition({
     appear: opts.appear,
     respectReducedMotion: opts.respectReducedMotion,
@@ -48,16 +48,12 @@ export interface SlideOptions {
 /**
  * Slide an element in/out along one axis, optionally fading with it.
  *
- * > **Known defect (#142).** The active value is built as
- * > `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
- * > grammar reads as TWO single-transitions — the first, `transform`, taking the
- * > initial `transition-duration` of **0s**. In a real browser the transform
- * > therefore SNAPS and only the opacity animates. A 0s transition also fires no
- * > `transitionend`, so `transform` never leaves the set of properties the phase
- * > waits on (see {@link waitForEnd}) and the phase always resolves on the
- * > fallback timer rather than on a real end — 16ms late, never a hang. Do not
- * > read the property filter as "every shipped preset lines up with it": `fade()`
- * > does, `slide()` and `scale()` do not until #142 lands.
+ * Both animated properties carry their own duration and easing in the emitted
+ * shorthand (see {@link transitionShorthand}) — `transform 250ms ease-out,
+ * opacity 250ms ease-out`. Writing the properties as one list with a single
+ * trailing timing (`transform, opacity 250ms ease-out`) gives `transform` the
+ * initial duration of 0s, so it snaps and reports no `transitionend`; that was
+ * #142, and it is invisible to jsdom.
  */
 export function slide(opts: SlideOptions = {}): TransitionOptions {
   const direction = opts.direction ?? 'down'
@@ -67,8 +63,8 @@ export function slide(opts: SlideOptions = {}): TransitionOptions {
   const withFade = opts.fade !== false
 
   const offset = slideOffset(direction, distance)
-  const props = withFade ? 'transform, opacity' : 'transform'
-  const active: Styles = { transition: `${props} ${duration}ms ${easing}` }
+  const properties = withFade ? ['transform', 'opacity'] : ['transform']
+  const active: Styles = { transition: transitionShorthand(properties, duration, easing) }
 
   const hidden: Styles = { transform: offset }
   const visible: Styles = { transform: 'translate(0, 0)' }
@@ -120,10 +116,10 @@ export interface ScaleOptions {
 /**
  * Scale an element in/out from `from` to 1, optionally fading with it.
  *
- * > **Known defect (#142).** Carries the same malformed `transition` shorthand
- * > as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
- * > duration, so it snaps rather than scaling and never reports a
- * > `transitionend` — the phase resolves on the fallback timer instead.
+ * Emits the same per-property shorthand as {@link slide} — `transform 200ms
+ * ease-out, opacity 200ms ease-out` — for the reason spelled out there (#142).
+ * `transform-origin` rides along in the active value but never transitions, so
+ * it is not one of the properties the phase waits on.
  */
 export function scale(opts: ScaleOptions = {}): TransitionOptions {
   const from = opts.from ?? 0.95
@@ -132,9 +128,9 @@ export function scale(opts: ScaleOptions = {}): TransitionOptions {
   const withFade = opts.fade !== false
   const origin = opts.origin ?? 'center'
 
-  const props = withFade ? 'transform, opacity' : 'transform'
+  const properties = withFade ? ['transform', 'opacity'] : ['transform']
   const active: Styles = {
-    transition: `${props} ${duration}ms ${easing}`,
+    transition: transitionShorthand(properties, duration, easing),
     transformOrigin: origin,
   }
 
@@ -241,7 +237,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
 
     style.overflow = 'hidden'
     style[sizeProp] = `${startSize}px`
-    style.transition = `${sizeProp} ${duration}ms ${easing}`
+    style.transition = transitionShorthand([sizeProp], duration, easing)
     forceReflow(el)
     style[sizeProp] = `${naturalSize}px`
 
@@ -275,7 +271,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const style = el.style
     style.overflow = 'hidden'
     style[sizeProp] = `${naturalSize}px`
-    style.transition = `${sizeProp} ${duration}ms ${easing}`
+    style.transition = transitionShorthand([sizeProp], duration, easing)
     forceReflow(el)
     style[sizeProp] = '0px'
 

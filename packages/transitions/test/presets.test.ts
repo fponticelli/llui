@@ -116,6 +116,85 @@ describe('scale()', () => {
   })
 })
 
+// ── Issue #142 — the emitted `transition` SHORTHAND ──────────────────────────
+//
+// The CSS Transitions shorthand is a comma-separated list of single-transitions,
+// not a property list with one trailing timing. `transform, opacity 250ms
+// ease-out` therefore declares TWO transitions, and the first one omits every
+// component — so `transform` takes the initial `transition-duration` of 0s,
+// snaps instead of animating, and never fires a `transitionend`. Measured in
+// Chromium 143 against the real preset: the value expanded to
+// `transition-duration: 0s, 0.4s`, only `transitionstart:opacity` fired, and the
+// computed transform sat at `matrix(1, 0, 0, 1, 0, 0)` for the whole run.
+//
+// jsdom sees NONE of that — `cssstyle` stores the shorthand verbatim and never
+// expands it (`style.transitionDuration` reads back `''`), which is exactly why
+// the package suite missed it for as long as it did. So these tests assert the
+// emitted STRING, and a "a transition exists" assertion is worth nothing here.
+describe('the emitted transition shorthand (#142)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  /** The value each preset installs on the element for its leave phase. */
+  const emitted = (t: { leave?: (nodes: Node[]) => unknown }): string => {
+    const el = makeEl()
+    void t.leave!([el])
+    return el.style.transition
+  }
+
+  it('slide() gives BOTH animated properties a duration and an easing', () => {
+    expect(emitted(slide({ duration: 250, easing: 'ease-out' }))).toBe(
+      'transform 250ms ease-out, opacity 250ms ease-out',
+    )
+  })
+
+  it('scale() gives BOTH animated properties a duration and an easing', () => {
+    expect(emitted(scale({ duration: 200, easing: 'ease-out' }))).toBe(
+      'transform 200ms ease-out, opacity 200ms ease-out',
+    )
+  })
+
+  it('slide({ fade: false }) still emits the single-property form', () => {
+    expect(emitted(slide({ duration: 250, easing: 'ease-out', fade: false }))).toBe(
+      'transform 250ms ease-out',
+    )
+  })
+
+  it('scale({ fade: false }) still emits the single-property form', () => {
+    expect(emitted(scale({ duration: 200, easing: 'linear', fade: false }))).toBe(
+      'transform 200ms linear',
+    )
+  })
+
+  it('fade() and collapse() emit the same per-property form', () => {
+    expect(emitted(fade({ duration: 150, easing: 'ease-in' }))).toBe('opacity 150ms ease-in')
+    expect(emitted(collapse({ duration: 250, easing: 'ease-out' }))).toBe('height 250ms ease-out')
+    expect(emitted(collapse({ duration: 250, easing: 'ease-out', axis: 'x' }))).toBe(
+      'width 250ms ease-out',
+    )
+  })
+
+  // The generic form of the defect: whatever a preset animates, EVERY
+  // single-transition in the list it emits must carry its own duration. A
+  // property listed without one silently takes 0s.
+  it.each([
+    ['fade', () => fade({ duration: 120 })],
+    ['slide', () => slide({ duration: 120 })],
+    ['slide({fade:false})', () => slide({ duration: 120, fade: false })],
+    ['scale', () => scale({ duration: 120 })],
+    ['scale({fade:false})', () => scale({ duration: 120, fade: false })],
+    ['collapse', () => collapse({ duration: 120 })],
+  ] as const)('%s: every property in the list carries its own duration', (_name, make) => {
+    const value = emitted(make())
+    const singles = value.split(',').map((s) => s.trim())
+    expect(singles.length).toBeGreaterThan(0)
+    for (const single of singles) {
+      // `<property> <duration> <easing>` — a bare property name means 0s.
+      expect(single).toMatch(/^[a-z-]+ \d+ms \S+$/)
+    }
+  })
+})
+
 describe('collapse()', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
