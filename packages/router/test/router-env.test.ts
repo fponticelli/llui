@@ -65,9 +65,11 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
       pathname = url
     },
     replaceState(state, url) {
-      calls.push(`replaceState:${url}`)
+      calls.push(`replaceState:${url ?? '<no url>'}`)
       historyState = state
-      pathname = url
+      // An omitted url means "replace the entry's STATE, leave the URL alone" —
+      // the same thing `history.replaceState(state, '')` means.
+      if (url !== undefined) pathname = url
     },
     back() {
       calls.push('back')
@@ -238,6 +240,30 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(rec.calls).toEqual(['go:1'])
     app.dispose()
     document.body.removeChild(container)
+  })
+})
+
+describe('RouterEnv.replaceState with the url omitted', () => {
+  // Re-stamping the CURRENT entry's state — scroll position, a merged foreign
+  // key — must not touch the URL. `replaceState(state, '')` is NOT that: an
+  // empty url resolves against the document base and drops the fragment, which
+  // silently breaks hash mode. So the url is optional, and omitting it means
+  // "leave the URL alone", exactly as `history.replaceState` defines it.
+  it('an env sees `undefined`, not an empty string', () => {
+    const rec = recordingEnv({ pathname: '/article/keep' })
+    rec.env.replaceState({ marker: 1 }, undefined)
+    expect(rec.calls).toEqual(['replaceState:<no url>'])
+    expect(rec.env.pathname).toBe('/article/keep')
+    expect(rec.env.historyState).toEqual({ marker: 1 })
+  })
+
+  it('browserRouterEnv leaves the real URL untouched', () => {
+    history.replaceState(null, '', '/article/untouched#frag')
+    const before = location.href
+    browserRouterEnv().replaceState({ marker: 2 })
+    expect(location.href).toBe(before)
+    expect(history.state).toEqual({ marker: 2 })
+    history.replaceState(null, '', '/')
   })
 })
 

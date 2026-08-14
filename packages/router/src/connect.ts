@@ -52,7 +52,17 @@ export interface RouterEnv {
   replaceLocation(url: string): void
 
   pushState(state: unknown, url: string): void
-  replaceState(state: unknown, url: string): void
+  /**
+   * `history.replaceState(state, '', url)` — swap the current entry's state,
+   * and its URL when one is given.
+   *
+   * `url` is OPTIONAL because "re-stamp this entry's state and leave the URL
+   * alone" is a distinct operation (merging a foreign key into `history.state`,
+   * recording a scroll offset), and `''` does not express it: an empty url
+   * resolves against the document base and drops the fragment, which silently
+   * breaks hash mode. An implementation must forward an absent `url` as absent.
+   */
+  replaceState(state: unknown, url?: string): void
   back(): void
   forward(): void
   /** `history.go(delta)` — used to REWIND a blocked pop, never a fresh push. */
@@ -96,7 +106,9 @@ export function browserRouterEnv(): RouterEnv {
     },
     replaceLocation: (url) => location.replace(url),
     pushState: (state, url) => history.pushState(state, '', url),
-    replaceState: (state, url) => history.replaceState(state, '', url),
+    // `null` rather than a forwarded `undefined`: both mean "leave the URL
+    // alone" to `history.replaceState`, but only one says so on purpose.
+    replaceState: (state, url) => history.replaceState(state, '', url ?? null),
     back: () => history.back(),
     forward: () => history.forward(),
     go: (delta) => history.go(delta),
