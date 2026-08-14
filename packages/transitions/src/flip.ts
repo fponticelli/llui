@@ -121,9 +121,21 @@ function endRunOnFinish(
  * glide had already applied — so an interrupted reorder continues rather than
  * jumping. `getBoundingClientRect` reports the transformed box, so the stored
  * position is the rect with that translation subtracted back out. The run ENDS
- * when the glide completes: only while one is live is the computed transform
- * ours to read, and a run left registered makes every later pass measure a
- * row's own author transform as if it were a glide.
+ * when the glide completes (or is cancelled by anyone, including someone other
+ * than us): only while one is live is the computed transform ours to read, and
+ * a run left registered makes every later pass measure a row's own author
+ * transform as if it were a glide.
+ *
+ * Known defect (#144): the keyframes below set `transform` to a translation
+ * alone, so they REPLACE the row's own `transform` rather than composing with
+ * it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
+ * CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
+ * that amount when a glide starts and jumps back when it ends. The DELTA is
+ * unaffected — the author transform is folded into both the stored position and
+ * the new rect and cancels out — so this is bounded, cosmetic and
+ * self-correcting. The fix is to compose the author transform into both
+ * keyframes; see the issue for why that trades against the single-read rule
+ * above.
  *
  * Element retention is deliberately weak: the tracked positions live in a
  * `WeakMap` and the working set is derived from `parent`'s live children
