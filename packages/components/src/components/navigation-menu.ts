@@ -184,9 +184,13 @@ export interface NavMenuParts {
    * `ancestorIds` is the open-path this item lives under, root-first. It drives
    * sibling-closing in `openBranch` AND the roving tab stop: an item whose
    * ancestors are not all open is inside a `hidden` panel and is skipped when
-   * the stop is resolved. Pass it on every NESTED item, leaf ones included —
-   * omitting it reads as "top level", which puts the tab stop inside a closed
-   * submenu (#145).
+   * the stop is resolved.
+   *
+   * REQUIRED on every NESTED item, leaf ones included. It used to be read only
+   * inside `isBranch` guards, so passing it on a leaf was optional in practice;
+   * since #145 it is what makes a leaf's tabbability knowable. Omitting it
+   * reads as "top level", which lets the tab stop sit inside a closed submenu
+   * where no Tab press can reach it.
    */
   item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }) => NavItemParts
 }
@@ -255,9 +259,6 @@ export function connect(
   // WCAG 2.1.1 (#122). The siblings that solve this (radio-group, tabs,
   // menubar) fall back to the first enabled item in their `items` list, but
   // this machine deliberately does not index the tree: the consumer owns it.
-  // So the fallback comes from `state.items` when the consumer maintains it —
-  // the current top-level order, so a list rendered through `each` re-seats the
-  // tab stop as rows come and go.
   //
   // `state.items` is the membership list wherever the consumer maintains it —
   // the current top-level order, so a list rendered through `each` re-seats the
@@ -279,19 +280,44 @@ export function connect(
   // A full list is never worse than the latch — its first entry IS the latch —
   // and it prunes a stale `focused` the latch could not.
   //
+  // `rendered` ACCUMULATES AND NEVER PRUNES, and only the FIRST of those two
+  // latch defects is therefore fixed. A row that unmounts — an `each` row
+  // removed, a `show`-gated trigger switched off — stays in the map with its
+  // ancestors, so with an EMPTY `items` the fallback can still name an id that
+  // is no longer in the DOM and the nav ends up with zero stops, exactly as the
+  // latch could. Nothing here can fix that: `item()` is the only signal this
+  // code gets and it is build-only, so an unmount is invisible. It is not a
+  // regression (identical on the pre-#145 code and on this one) and the answer
+  // is the documented one — a menu whose triggers come and go is a DYNAMIC list
+  // and owes `state.items`, which is pruned by the consumer and wins here. Keep
+  // the accumulation: a build-time deregistration hook would have to fire on
+  // arm teardown, which `connect()` cannot observe.
+  //
   // MEMBERSHIP IS NOT ENOUGH: the tab stop must sit on something TABBABLE, and
   // a submenu entry is only tabbable while every branch above it is open (its
   // `content` carries `hidden: !isOpen`). Focus a submenu entry, then let the
   // pointer leave and `closeAll` fire, and a membership-only stop stayed on an
   // id inside a `hidden` container — the nav had NO tabbable element at all,
   // WCAG 2.1.1 again, reachable through the machine's own messages with no
-  // consumer error. So `ancestorIds` — which `item()` already takes, and which
-  // `openBranch` already relies on — is recorded per id and the candidate list
-  // is filtered to the ids whose ancestors are all open. An id `item()` never
+  // consumer error. So `ancestorIds` is recorded per id and the candidate list
+  // is filtered to the ids whose ancestors are all open. THIS IS NEW WEIGHT ON
+  // AN EXISTING PARAMETER, not a free ride on one: `item()` has always taken
+  // `ancestorIds`, but every prior read of it was inside an `isBranch` guard,
+  // so on a nested LEAF it was genuinely dead and omitting it cost nothing.
+  // Now it decides tabbability, and a consumer who omits it on a nested leaf
+  // gets the old Repro B back (stop present, nothing tabbable). Not a
+  // regression — that is the behaviour they already had — but the requirement
+  // is real and is stated on `NavMenuParts.item`. An id `item()` never
   // saw (a member of `state.items` not yet built) is taken as visible: unknown
   // is not the same as hidden. If the filter empties the list the UNFILTERED
   // candidates answer, so hiding everything degrades to the old behaviour
-  // rather than to no stop at all.
+  // rather than to no stop at all. THAT DEGRADE HAS ONE VISIBLE COST: it looks
+  // at the candidate list, not at the DOM, so `items: ['a', 'b']` with both
+  // inside a shut branch seats the stop on the hidden `a` even though the
+  // branch's own trigger is rendered and tabbable — it was simply not declared
+  // a candidate. Defensible for that input (the consumer named exactly two
+  // eligible ids and both are away), but the candidates are only ever as good
+  // as what `items` declares, which is the same limit as the paragraph above.
   //
   // The memo is keyed on the STATE inputs only and reads `rendered` from the
   // closure, which is load-bearing rather than an oversight: `item()` runs
