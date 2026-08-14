@@ -192,7 +192,7 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
     process.on('uncaughtException', uncaughtHandler)
 
     h = await setupHarness()
-  }, 60_000)
+  })
 
   afterAll(async () => {
     if (h) await teardownHarness(h)
@@ -200,7 +200,7 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
       process.off('uncaughtException', uncaughtHandler)
       uncaughtHandler = null
     }
-  }, 10_000)
+  })
 
   it('installs __lluiDebug, __lluiConnect, and registers the component', async () => {
     const info = await h.page.evaluate(() => ({
@@ -278,11 +278,11 @@ describe.skipIf(!playwright)('CDP tools via Playwright harness', { retry: 2 }, (
   beforeAll(async () => {
     h = await setupHarness()
     h.mcp.setDevUrl(h.viteUrl)
-  }, 60_000)
+  })
 
   afterAll(async () => {
     if (h) await teardownHarness(h)
-  }, 10_000)
+  })
 
   it('llui_screenshot returns base64 PNG', async () => {
     const result = (await h.mcp.handleToolCall('llui_screenshot', {})) as {
@@ -291,24 +291,32 @@ describe.skipIf(!playwright)('CDP tools via Playwright harness', { retry: 2 }, (
     }
     expect(result.format).toBe('png')
     expect(result.data.length).toBeGreaterThan(100)
-  }, 15_000)
+  })
 
   it('llui_a11y_tree returns a truthy tree', async () => {
     const result = await h.mcp.handleToolCall('llui_a11y_tree', {})
     expect(result).toBeTruthy()
-  }, 10_000)
+  })
 
   it('llui_console_tail returns array', async () => {
     const result = (await h.mcp.handleToolCall('llui_console_tail', {})) as {
       entries: unknown[]
     }
     expect(Array.isArray(result.entries)).toBe(true)
-  }, 10_000)
+  })
 
+  // The only test in the workspace that needs more than the shared 30 s
+  // testTimeout, and for a reason no cheaper test can dodge: its whole body is
+  // one `browser.close()`, and on a saturated machine that is a flat 30 s —
+  // Chromium never finishes a graceful shutdown, so playwright waits out its
+  // non-configurable `DEFAULT_PLAYWRIGHT_TIMEOUT` and SIGKILLs the process
+  // group (measured 30.01 s, reproducible on a bare launch/close with no LLui
+  // code in it). The shared budget is exactly at that floor, so state this one
+  // explicitly rather than leave it sitting on the line.
   it('llui_browser_close tears down playwright browser', async () => {
     const result = (await h.mcp.handleToolCall('llui_browser_close', {})) as {
       closed: boolean
     }
     expect(result.closed).toBe(true)
-  }, 10_000)
+  }, 45_000)
 })
