@@ -125,7 +125,16 @@ The same contract holds in **both** `history` and `hash` mode:
   navigate message is dispatched and `state.route` and the URL stay in agreement.
   Use **`navigate()`** when you want the push _and_ the dispatch unconditionally.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
-  stack, its length and every forward entry are left exactly as they were.
+  stack, its length and every forward entry are left exactly as they were —
+  **when the router knows where the popped entry sits**. It knows that for every
+  entry it created itself. It does **not** know it for an entry that existed
+  before `connectRouter` ran (a deep link the user then navigated away from and
+  came back to), because no browser API reports a position. Blocking a
+  navigation onto such an entry is **guard-honouring but not undoable**: nothing
+  is dispatched, `state.route` keeps the route you never left, and the URL is
+  left showing the blocked one until the next navigation — a visible
+  disagreement, deliberately preferred over a guessed `history.go(delta)`, which
+  traverses to the wrong entry and dispatches a route the user never asked for.
 
 `link()` never intercepts a click carrying a modifier key, a non-`_self`
 `target`, a `download` attribute, or a `defaultPrevented` set by an earlier
