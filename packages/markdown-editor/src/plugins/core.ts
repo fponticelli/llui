@@ -25,6 +25,8 @@ import {
 import type { CommandContext, CommandItem, MarkdownPlugin } from './types.js'
 import { inlineItems } from './inline.js'
 import { GFM_NODES, GFM_TRANSFORMERS } from '../transformers/gfm.js'
+import { registerTaskMarkerShortcut } from '../list-shortcuts.js'
+import { registerListNodeUpgrade } from '../nodes/list.js'
 
 const NOOP_CTX: CommandContext = { send: () => {} }
 
@@ -164,9 +166,20 @@ export function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin {
     transformers: GFM_TRANSFORMERS,
     items,
     // registerList wires list commands/indentation; registerCheckList adds the
-    // click-to-toggle on task items. (Linking is handled by the editor's link
-    // dialog via $toggleLink — see commitLink in editor.ts.)
-    register: (editor) => mergeRegister(registerList(editor), registerCheckList(editor)),
+    // click-to-toggle on task items. registerTaskMarkerShortcut makes `- [ ] `
+    // reachable by typing at all — see list-shortcuts.ts for why the markdown
+    // shortcut set cannot do it. registerListNodeUpgrade retires a stock
+    // `ListNode` that came out of pre-`md-list` JSON, which Lexical's parse path
+    // builds with no replacement applied — see nodes/list.ts. (Linking is
+    // handled by the editor's link dialog via $toggleLink — see commitLink in
+    // editor.ts.)
+    register: (editor) =>
+      mergeRegister(
+        registerList(editor),
+        registerCheckList(editor),
+        registerTaskMarkerShortcut(editor),
+        registerListNodeUpgrade(editor),
+      ),
     shortcuts: [
       { combo: 'Mod-Alt-1', run: shortcut('h1') },
       { combo: 'Mod-Alt-2', run: shortcut('h2') },

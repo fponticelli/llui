@@ -155,6 +155,12 @@ paste behaviour instead of silently swallowing the event.
 function $insertMarkdownAtSelection(markdown: string, transformers: Array<Transformer>): boolean
 ```
 
+### `$isMarkdownListNode()`
+
+```typescript
+function $isMarkdownListNode(node: LexicalNode | null | undefined): node is MarkdownListNode
+```
+
 ### `$isWikiLinkNode()`
 
 ```typescript
@@ -498,6 +504,45 @@ Deliberate choices, each load-bearing for exact round-tripping:
 function parseWikiLinkInner(inner: string): WikiLink | null
 ```
 
+### `registerListNodeUpgrade()`
+
+Replace a stock `ListNode` with a `MarkdownListNode` the first time the
+document touches it, so a list that never went through `$createListNode`
+cannot keep the merging transform.
+The registration IS the back-compat half's other end. `MARKDOWN_LIST_NODES`
+keeps stock `ListNode` registered so JSON written before this node existed
+still loads — but `$parseSerializedNodeImpl` (`LexicalUpdates.ts:433`) calls
+`nodeClass.importJSON` with NO replacement resolution, so that JSON, and any
+CRDT document created by an older build, yields a GENUINE stock `ListNode`
+carrying `ListNode.$config().$transform`. Without this the #129 guarantee
+held only for documents created after the fix — the opposite of the ones the
+issue was reported from.
+The upgrade is on TOUCH, and the window that leaves open is ONE MICROTASK —
+not "until the user edits". `registerNodeTransform` itself calls
+`markNodesWithTypesAsDirty` (`LexicalEditor.ts:1545`), which dirties every
+already-loaded node of the registered types in an `editor.update` of its own,
+so both registration orders converge: `setEditorState` THEN register gives
+`list` synchronously and `md-list` after one microtask; register THEN
+`setEditorState` gives `md-list` immediately. That holds for a non-editable
+editor and for a list nobody ever edits, too.
+What it CANNOT do is pre-empt a stock node's OWN merging transform inside the
+update that first dirties it. A stock `ListNode` arriving BETWEEN two settled
+`md-list`s in a live update — exactly what `@lexical/yjs` produces, since
+`Utils.ts:409` builds from `registeredNodes.get(type)` with the same absent
+replacement resolution, so an older build feeds stock nodes into LIVE updates
+and not only at load — runs `mergeNextSiblingListIfSameType` first:
+`md-list/mk=-(a)` + stock `b` + `md-list/mk=*(c)` settles as one
+`md-list/mk=-(a|b|c)` and the `-`/`*` boundary is gone. That is identical to
+pre-#129 behaviour (stock merges all three as well), so it is not a
+regression — but the #129 guarantee does NOT extend to a live collab document
+mixing old and new builds. It is not closable from userland; #154 tracks the
+two upstream levers that would close it.
+Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
+
+```typescript
+function registerListNodeUpgrade(editor: LexicalEditor): () => void
+```
+
 ### `registerMarkdownPaste()`
 
 Register the markdown-on-paste handler on `editor`. Returns a disposer.
@@ -723,6 +768,16 @@ Which surfaces a command item appears in (default: all).
 
 ```typescript
 export type ItemSurface = 'toolbar' | 'floating' | 'slash' | 'context'
+```
+
+### `ListMarker`
+
+The character a list was authored with: a bullet (`-`/`*`/`+`) or an ordered
+delimiter (`.`/`)`). Both are "the marker" for CommonMark's purposes — §5.3
+gives them the same rule.
+
+```typescript
+export type ListMarker = '-' | '*' | '+' | '.' | ')'
 ```
 
 ### `OverlayKind`
@@ -1445,6 +1500,18 @@ export interface WikiLinkPluginOptions {
 
 ## Classes
 
+### `MarkdownListNode`
+
+A list that remembers the character it was authored with.
+
+```typescript
+class MarkdownListNode extends ListNode {
+  $config()
+  getMarker(): ListMarker | null
+  setMarker(marker: ListMarker | null): this
+}
+```
+
 ### `WikiLinkNode`
 
 An atomic inline wikilink. Extends `TextNode` so the caret, selection and
@@ -1504,9 +1571,14 @@ const FRONTMATTER_BRIDGE_TYPE
 ### `GFM_NODES`
 
 Node classes required to render the GFM superset.
+`LexicalNodeConfig`, not `Klass<LexicalNode>`: lists are registered as a
+`{ replace, with, withKlass }` redirect onto `MarkdownListNode`, which is the
+only way to take a node's own `$config` transform out of play. See
+`nodes/list.ts` — without it two adjacent lists with different markers cannot
+exist in the tree at all, whoever built them.
 
 ```typescript
-const GFM_NODES: ReadonlyArray<Klass<LexicalNode>>
+const GFM_NODES: ReadonlyArray<LexicalNodeConfig>
 ```
 
 ### `GFM_TRANSFORMERS`
@@ -1538,6 +1610,19 @@ the rendering itself must change — mapping the URL is what
 
 ```typescript
 const IMAGE_BRIDGE_TYPE
+```
+
+### `MARKDOWN_LIST_NODES`
+
+The node registrations a marker-aware editor needs: the stock `ListNode`
+(which the replacement is keyed on and which still deserializes any document
+saved before this existed — see `registerListNodeUpgrade` above for what has
+to happen to such a node next), this subclass, and the redirect that makes
+`$createListNode` — and therefore every list command, transformer and DOM
+conversion in `@lexical/list` — produce the subclass.
+
+```typescript
+const MARKDOWN_LIST_NODES: readonly LexicalNodeConfig[]
 ```
 
 ### `STRIKETHROUGH_CLASS`

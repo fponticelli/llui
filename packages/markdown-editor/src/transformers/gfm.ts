@@ -1,9 +1,9 @@
 // The built-in GFM superset: node classes + the explicit transformer set that
 // maps exactly to those nodes (no surprise nodes — HR/tables are opt-in plugins).
 
-import type { Klass, LexicalNode } from 'lexical'
+import type { LexicalNodeConfig } from 'lexical'
 import { HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { ListNode, ListItemNode } from '@lexical/list'
+import { ListItemNode } from '@lexical/list'
 import { LinkNode } from '@lexical/link'
 // `@lexical/code-core` (not `@lexical/code`) keeps Prism out of the bundle — we
 // never register syntax highlighting, so plain CodeNode is all we need.
@@ -12,9 +12,6 @@ import {
   type Transformer,
   HEADING,
   QUOTE,
-  UNORDERED_LIST,
-  ORDERED_LIST,
-  CHECK_LIST,
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
   BOLD_STAR,
@@ -27,12 +24,24 @@ import {
   LINK,
 } from '@lexical/markdown'
 import { CODE_INFO_TRANSFORMER } from './code.js'
+import {
+  CHECK_LIST_TRANSFORMER,
+  ORDERED_LIST_TRANSFORMER,
+  UNORDERED_LIST_TRANSFORMER,
+} from './list.js'
+import { MARKDOWN_LIST_NODES } from '../nodes/list.js'
 
-/** Node classes required to render the GFM superset. */
-export const GFM_NODES: ReadonlyArray<Klass<LexicalNode>> = [
+/** Node classes required to render the GFM superset.
+ *
+ * `LexicalNodeConfig`, not `Klass<LexicalNode>`: lists are registered as a
+ * `{ replace, with, withKlass }` redirect onto `MarkdownListNode`, which is the
+ * only way to take a node's own `$config` transform out of play. See
+ * `nodes/list.ts` — without it two adjacent lists with different markers cannot
+ * exist in the tree at all, whoever built them. */
+export const GFM_NODES: ReadonlyArray<LexicalNodeConfig> = [
   HeadingNode,
   QuoteNode,
-  ListNode,
+  ...MARKDOWN_LIST_NODES,
   ListItemNode,
   CodeNode,
   CodeHighlightNode,
@@ -66,11 +75,18 @@ export const INLINE_TEXT_TRANSFORMERS: readonly Transformer[] = [
 export const GFM_TRANSFORMERS: readonly Transformer[] = [
   HEADING,
   QUOTE,
-  // CHECK_LIST must precede the plain list transformers: `- [ ]`/`- [x]` also
-  // match `- `, so UNORDERED_LIST would otherwise swallow it as bullet text.
-  CHECK_LIST,
-  UNORDERED_LIST,
-  ORDERED_LIST,
+  // The check-list transformer must precede the plain list transformers:
+  // `- [ ]`/`- [x]` also match `- `, so UNORDERED_LIST would otherwise swallow
+  // it as bullet text.
+  //
+  // NOT `@lexical/markdown`'s list transformers: those decide whether to join a
+  // neighbouring list on `listType` alone, so a CommonMark marker change
+  // (`- a` then `* b`) collapsed two lists into one; and they read the task tick
+  // case-sensitively, so `- [X] done` imported UNCHECKED. See
+  // `transformers/list.ts` and `nodes/list.ts`.
+  CHECK_LIST_TRANSFORMER,
+  UNORDERED_LIST_TRANSFORMER,
+  ORDERED_LIST_TRANSFORMER,
   // NOT `@lexical/markdown`'s `CODE`: that one captures the info string as a
   // single `[\w-]+` token and pushes the remainder of the fence line into the
   // code body, silently corrupting ```c++ and ```lance table. See
