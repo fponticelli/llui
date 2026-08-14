@@ -44,6 +44,7 @@ import {
   $setState,
   createState,
   ElementNode,
+  type LexicalEditor,
   type LexicalNode,
   type LexicalNodeConfig,
 } from 'lexical'
@@ -190,9 +191,43 @@ function $reconcileMarkdownList(node: MarkdownListNode): void {
 }
 
 /**
+ * Replace a stock `ListNode` with a `MarkdownListNode` the first time the
+ * document touches it, so a list that never went through `$createListNode`
+ * cannot keep the merging transform.
+ *
+ * The registration IS the back-compat half's other end. `MARKDOWN_LIST_NODES`
+ * keeps stock `ListNode` registered so JSON written before this node existed
+ * still loads — but `$parseSerializedNodeImpl` (`LexicalUpdates.ts:433`) calls
+ * `nodeClass.importJSON` with NO replacement resolution, so that JSON, and any
+ * CRDT document created by an older build, yields a GENUINE stock `ListNode`
+ * carrying `ListNode.$config().$transform`. Without this the #129 guarantee
+ * held only for documents created after the fix — the opposite of the ones the
+ * issue was reported from.
+ *
+ * Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
+ */
+export function registerListNodeUpgrade(editor: LexicalEditor): () => void {
+  return editor.registerNodeTransform(ListNode, (node: ListNode): void => {
+    // `registerNodeTransform` also binds the listener to `replaceWithKlass`
+    // (`LexicalEditor.ts:1533-1543`), so this same function runs for every
+    // `MarkdownListNode` as well. Without the no-op it would replace its own
+    // output on every pass and trip Lexical's infinite-transform invariant.
+    if ($isMarkdownListNode(node)) return
+    const upgraded = new MarkdownListNode(node.getListType(), node.getStart())
+    // `exportJSON`/`updateFromJSON` rather than a hand-written property list:
+    // it carries format, indent, direction, text format/style and node state
+    // as one unit, and cannot fall behind a future `ListNode` field. Children
+    // are `[]` in the export and move across via `replace(…, true)`.
+    upgraded.updateFromJSON(node.exportJSON())
+    node.replace(upgraded, true)
+  })
+}
+
+/**
  * The node registrations a marker-aware editor needs: the stock `ListNode`
  * (which the replacement is keyed on and which still deserializes any document
- * saved before this existed), this subclass, and the redirect that makes
+ * saved before this existed — see {@link registerListNodeUpgrade} for what has
+ * to happen to such a node next), this subclass, and the redirect that makes
  * `$createListNode` — and therefore every list command, transformer and DOM
  * conversion in `@lexical/list` — produce the subclass.
  */

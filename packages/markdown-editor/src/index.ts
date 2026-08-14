@@ -147,15 +147,18 @@ export {
   CHECK_LIST_TRANSFORMER,
   ORDERED_LIST_TRANSFORMER,
   UNORDERED_LIST_TRANSFORMER,
-  isCheckedMarker,
 } from './transformers/list.js'
+// `registerListNodeUpgrade` belongs with them: Lexical's JSON parse path applies
+// no node replacement, so a document written before `md-list` existed produces a
+// stock `ListNode` that still carries the unconditional merge. A consumer
+// registering `MARKDOWN_LIST_NODES` by hand must register this too (`corePlugin`
+// already does).
 export {
   MARKDOWN_LIST_NODES,
   MarkdownListNode,
   $isMarkdownListNode,
-  asListMarker,
+  registerListNodeUpgrade,
   type ListMarker,
-  type AnyListNode,
 } from './nodes/list.js'
 // `setTransformerPrecedence` breaks ties between SAME-rank transformers, so a
 // collision (e.g. wikilink vs upstream LINK, which both match at the same index)
