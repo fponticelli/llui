@@ -11,6 +11,7 @@ import {
 import { extractStateSchema } from './state-schema.js'
 import { extractMsgAnnotations, parseAnnotations } from './msg-annotations.js'
 import type { ModuleCache, ParsedModule } from './parse.js'
+import { unwrapParenthesizedType } from './union-peel.js'
 
 /**
  * Resolved external type sources for the file under analysis: the declaring
@@ -370,17 +371,22 @@ async function collectMsgVariants(
 
   // Single-variant alias: `type Foo = { type: 'a', ... }`. Treat as a
   // one-element union so a Msg variant can be its own type alias.
-  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(alias.type)
-    ? [...alias.type.types]
-    : [alias.type]
+  // Parentheses are legal anywhere a type is and match neither shape test
+  // below (#96), so `type Msg = ( … )` is unwrapped whole. Each MEMBER keeps
+  // its original node here — `readLeadingJSDocForMember` works off these
+  // positions, and a member's comment sits BEFORE its own `(`.
+  const aliasBody = unwrapParenthesizedType(alias.type)
+  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(aliasBody)
+    ? [...aliasBody.types]
+    : [aliasBody]
 
   for (let i = 0; i < memberNodes.length; i++) {
-    const member = memberNodes[i]!
+    const member = unwrapParenthesizedType(memberNodes[i]!)
 
     if (ts.isTypeLiteralNode(member)) {
       const variant = readDiscriminantLiteral(member)
       if (!variant) continue
-      const comment = readLeadingJSDocForMember(sf.text, alias, memberNodes, i)
+      const comment = readLeadingJSDocForMember(sf.text, aliasBody, memberNodes, i)
       if (out[variant] === undefined) {
         out[variant] = parseAnnotations(comment)
       }
@@ -414,32 +420,34 @@ function readDiscriminantLiteral(lit: ts.TypeLiteralNode): string | null {
 /**
  * Read leading JSDoc for a union member at index `i` of `members`.
  * The JSDoc lives between the previous element's end and the current
- * element's start (or between the type alias start and the first
+ * element's start (or between the union body's start and the first
  * element for `i === 0`). Mirrors the logic in
  * `extractMsgAnnotations` so the cross-file path produces the same
  * output for the same input.
+ *
+ * `aliasBody` is the alias type with parentheses already peeled (#96), and
+ * that is load-bearing for `i === 0`: in `type Msg = ( /** doc *\/ | {…} )`
+ * the first member's comment sits INSIDE the `(`, so scanning from the
+ * ParenthesizedTypeNode's `pos` — which is just after the `=` — finds nothing
+ * and the first variant silently loses its annotations while every later one
+ * keeps theirs. `extractMsgAnnotations` scans from the unwrapped node for
+ * exactly this reason; the two must not disagree.
  */
 function readLeadingJSDocForMember(
   source: string,
-  alias: ts.TypeAliasDeclaration,
+  aliasBody: ts.TypeNode,
   members: ts.TypeNode[],
   i: number,
 ): string {
   const prev = members[i - 1]
-  const member = members[i]!
-  // For non-union (single-variant) aliases the union pos is the alias
-  // body's pos.
-  const unionPos = ts.isUnionTypeNode(alias.type) ? alias.type.pos : alias.type.pos
-  const scanPos = i === 0 || prev === undefined ? unionPos : prev.end
+  // For non-union (single-variant) aliases this is the alias body itself.
+  const scanPos = i === 0 || prev === undefined ? aliasBody.pos : prev.end
   const ranges = ts.getLeadingCommentRanges(source, scanPos) ?? []
-  const docs = ranges
+  return ranges
     .filter((r) => r.kind === ts.SyntaxKind.MultiLineCommentTrivia)
     .map((r) => source.slice(r.pos, r.end))
     .filter((txt) => txt.startsWith('/**'))
-  // Cut off comments that appear AFTER the member starts (rare but
-  // possible with weird formatting).
-  const _end = member.pos
-  return docs.join('\n')
+    .join('\n')
 }
 
 /**
@@ -483,9 +491,11 @@ async function collectSchemaVariants(
   const alias = aliases.find((a) => a.name.text === located.localName)
   if (!alias) return false
 
-  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(alias.type)
-    ? [...alias.type.types]
-    : [alias.type]
+  // Same parenthesis unwrap as `collectMsgVariants` above (#96).
+  const aliasBody = unwrapParenthesizedType(alias.type)
+  const memberNodes: ts.TypeNode[] = ts.isUnionTypeNode(aliasBody)
+    ? [...aliasBody.types]
+    : [aliasBody]
 
   // Build a typeIndex that combines this file's local types with any
   // *imported* type aliases referenced inside the variant payloads.
@@ -496,7 +506,8 @@ async function collectSchemaVariants(
   // permissible literal-union values.
   const typeIndex = await buildEnrichedTypeIndex(located.module, ctx)
 
-  for (const member of memberNodes) {
+  for (const raw of memberNodes) {
+    const member = unwrapParenthesizedType(raw)
     if (ts.isTypeLiteralNode(member)) {
       collectOneVariant(member, variants, sf.text, typeIndex)
       continue

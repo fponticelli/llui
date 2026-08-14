@@ -17,6 +17,7 @@ import {
   transformSignalComponentSourceWithMap,
   lintSignalSource,
   lintAnnotationSyntaxSource,
+  lintTagSendSource,
   applyLintFixes,
   createModuleCache,
   type CrossFileResolution,
@@ -1638,7 +1639,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // annotation call never pays for a parse.
       // Lazy: the module is parsed only if the pre-check finds an annotation
       // call in its text, so the many modules that carry none pay a regex.
-      const annotationMsgs = lintAnnotationSyntaxSource(modules.get(cleanId, code))
+      //
+      // `tag-send-drift` rides the same path for the same reason (issue #118):
+      // `tagSend` is a LIBRARY-author helper, so its canonical call site is a
+      // plain `connect()` module with no `component(` call. Both entry points
+      // pre-check the raw text, so a module carrying neither pays a regex and a
+      // substring search.
+      const mod = modules.get(cleanId, code)
+      const annotationMsgs = [...lintAnnotationSyntaxSource(mod), ...lintTagSendSource(mod)].sort(
+        (a, b) => a.start - b.start,
+      )
       if (annotationMsgs.length > 0) {
         const rel = relative(crossFileRoot ?? process.cwd(), id)
         const display = rel.length > 0 && !rel.startsWith('..') ? rel : id

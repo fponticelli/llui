@@ -320,4 +320,52 @@ describe('vite-plugin — signal component routing', () => {
     await expect(transform.call(ctx, good, '/tmp/msg.ts')).resolves.toBeUndefined()
     expect(error).not.toHaveBeenCalled()
   })
+
+  // ── tag-send-drift on NON-component modules (issue #118) ────────────────
+  // Same shape, same reason as the block above: `tagSend` is a LIBRARY-author
+  // helper, so its canonical call site is a plain `connect()` module with no
+  // `component(` call in it — which `lintSignalSource` never reaches. Without
+  // this wiring the rule would cover only the rarest call sites, and dropping
+  // `...lintTagSendSource(mod)` from the transform broke nothing.
+  const DRIFTED_CONNECT = [
+    "import { tagSend } from '@llui/dom'",
+    'export const connect = (send) => ({',
+    "  onClick: tagSend(send, ['touch'], () => send({ type: 'touched' })),",
+    '})',
+  ].join('\n')
+
+  it('halts the build for a drifted tagSend in a module with no component()', async () => {
+    const errorMessages: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errorMessages.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, DRIFTED_CONNECT, '/tmp/connect.ts')).rejects.toThrow(
+      'this.error',
+    )
+    const msg = (errorMessages[0] as { message: string }).message
+    expect(msg).toContain('tag-send-drift')
+    expect(msg).toContain('touched')
+  })
+
+  it('leaves a MATCHING tagSend module alone (no error, no rewrite)', async () => {
+    const good = DRIFTED_CONNECT.replace("type: 'touched'", "type: 'touch'")
+    const error = vi.fn(() => {
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, good, '/tmp/connect.ts')).resolves.toBeUndefined()
+    expect(error).not.toHaveBeenCalled()
+  })
 })

@@ -17,12 +17,16 @@
 // THE GRAMMAR
 //
 //   @tag ( <string> [, <string>]* )
+//   @example ( <json> )                     ← the ONE tag taking a bare literal
 //
 //   - The `(` must follow the tag on the SAME line (only spaces/tabs between).
 //     Anything else is not a call — notably standard block-form JSDoc
 //     (`@example` followed by a code block), which is left alone.
 //   - A string is `"…"` or `“…”`. A curly opener must be closed by a curly
 //     closer; the pairs do not mix.
+//   - A <json> is a `{…}` object or `[…]` array literal, scanned to its
+//     BALANCED closer (braces inside JSON strings do not count) and captured
+//     VERBATIM, then required to parse as JSON. See `allowsJsonArgument`.
 //   - ESCAPES: `\"`, `\“`, `\”` and `\\` produce that character. EVERY OTHER
 //     backslash sequence is preserved VERBATIM (`\d` stays `\d`), so a regex
 //     predicate survives the trip. Escaping is therefore the supported way to
@@ -40,21 +44,41 @@
 export interface AnnotationTagSpec {
   min: number
   max: number | null
+  /**
+   * Whether an argument may be written as a bare JSON object/array literal
+   * instead of a quoted string (issue #98).
+   *
+   * `@example` ONLY, and deliberately so. An example IS a payload — a JSON
+   * object is what the tag's value already spells, just with every inner quote
+   * escaped, and thirteen files' worth of authors independently reached for
+   * the unescaped form before #89 made it an error. Every other tag takes
+   * something a JSON literal cannot be: `@routeGated`/`@validates` take a
+   * JavaScript predicate, `@intent`/`@warning`/`@should` take prose, `@emits`
+   * takes effect kinds. Accepting a brace there would invent a second spelling
+   * for a concept that has exactly one — so a brace after any other tag stays
+   * a build error.
+   */
+  json?: true
 }
 
 /**
- * Every tag that takes a parenthesized string-argument list. Keyed by tag name
+ * Every tag that takes a parenthesized argument list. Keyed by tag name
  * WITHOUT the `@`. Flag-style tags (`@requiresConfirm`, `@humanOnly`, …) take
  * no arguments and are not part of this grammar.
  */
 export const ANNOTATION_TAGS: Readonly<Record<string, AnnotationTagSpec>> = {
   intent: { min: 1, max: 1 },
-  example: { min: 1, max: 1 },
+  example: { min: 1, max: 1, json: true },
   warning: { min: 1, max: 1 },
   emits: { min: 1, max: null },
   routeGated: { min: 1, max: 2 },
   should: { min: 1, max: 1 },
   validates: { min: 1, max: 1 },
+}
+
+/** True when `tag` accepts the bare JSON-literal argument form. */
+function allowsJsonArgument(tag: string): boolean {
+  return ANNOTATION_TAGS[tag]?.json === true
 }
 
 /** A well-formed `@tag(…)` call and its parsed arguments. */
@@ -160,6 +184,89 @@ function readQuoted(text: string, from: number): { value: string; end: number } 
   return null
 }
 
+/**
+ * Read a bare JSON object/array literal starting at `from` (which must be `{`
+ * or `[`), scanning to its BALANCED closer. Returns the captured text verbatim
+ * — this grammar does not re-serialize; the author's spelling is what reaches
+ * the agent, exactly as the quoted form's does.
+ *
+ * String-awareness is the whole trick and the reason this can live on top of
+ * the existing tokenizer rather than beside it: a `}` inside a JSON string
+ * (`{"a":"}"}`) must not end the scan, and neither must one behind a JSON
+ * escape (`{"a":"\"}"}`). Only `"` opens a string — JSON has no other quote —
+ * so `{'a':'}'}` scans "wrong", ends early, and is reported as malformed by
+ * the arg-list loop or by the JSON check. That is the correct outcome: it is
+ * not JSON either way, and this grammar never guesses.
+ *
+ * Returns null when the literal is never balanced before the end of the
+ * comment, or when a closer meets the wrong opener.
+ *
+ * Like {@link readQuoted}, a literal MAY wrap across JSDoc lines: the
+ * continuation's `\n   * ` decoration is not content and collapses to one
+ * space, so a multi-line example object reads as written.
+ */
+function readJsonLiteral(text: string, from: number): { value: string; end: number } | null {
+  const stack: string[] = []
+  let out = ''
+  let k = from
+  let inString = false
+  while (k < text.length) {
+    const ch = text[k]
+    if (ch === undefined) break
+    if (ch === '\n') {
+      let j = k + 1
+      while (text[j] === ' ' || text[j] === '\t' || text[j] === '\r') j++
+      if (text[j] === '*' && text[j + 1] === '/') return null
+      if (text[j] === '*') {
+        j++
+        while (text[j] === ' ' || text[j] === '\t') j++
+      }
+      out = `${out.replace(/[ \t]+$/, '')} `
+      k = j
+      continue
+    }
+    if (inString) {
+      if (ch === '\\') {
+        // A JSON escape is two characters and NEITHER of them closes the
+        // string — `"\""` is one string containing a quote.
+        out += ch + (text[k + 1] ?? '')
+        k += 2
+        continue
+      }
+      if (ch === '"') inString = false
+      out += ch
+      k++
+      continue
+    }
+    // A literal never runs past the end of the comment.
+    if (ch === '*' && text[k + 1] === '/') return null
+    if (ch === '"') {
+      inString = true
+      out += ch
+      k++
+      continue
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch)
+      out += ch
+      k++
+      continue
+    }
+    if (ch === '}' || ch === ']') {
+      const open = stack.pop()
+      if (open === undefined) return null
+      if ((ch === '}') !== (open === '{')) return null
+      out += ch
+      k++
+      if (stack.length === 0) return { value: out, end: k }
+      continue
+    }
+    out += ch
+    k++
+  }
+  return null
+}
+
 /** A compact, single-line excerpt for quoting the offending call in a message. */
 function excerpt(text: string, start: number, end: number): string {
   const raw = text
@@ -170,10 +277,14 @@ function excerpt(text: string, start: number, end: number): string {
 }
 
 function malformed(tag: string, detail: string, offending: string): string {
+  const form = allowsJsonArgument(tag)
+    ? 'The argument must be a quoted string or a JSON object/array literal ' +
+      `(e.g. \`@${tag}({"type":"inc"})\`). `
+    : 'Arguments must be quoted strings; escape an embedded quote as `\\"` ' +
+      `(e.g. \`@${tag}("v === \\"admin\\"")\`) or use single quotes inside the string. `
   return (
     `Malformed \`@${tag}(…)\` annotation — ${detail}: \`${offending}\`. ` +
-    'Arguments must be quoted strings; escape an embedded quote as `\\"` ' +
-    `(e.g. \`@${tag}("v === \\"admin\\"")\`) or use single quotes inside the string. ` +
+    form +
     'The compiler refuses to guess: a half-read predicate opens a `@routeGated` ' +
     'gate and makes `@validates` accept everything.'
   )
@@ -278,6 +389,51 @@ function parseArgList(
     }
     if (ch === ')') return { args, end: k + 1 }
     if (wantArg) {
+      // The JSON-literal form (#98), for `@example` alone. Scanned to the
+      // balanced closer, captured verbatim, then REQUIRED to parse as JSON:
+      // a malformed literal must be a build error, never the silent drop that
+      // hid this whole form for a year.
+      if (allowsJsonArgument(tag) && (ch === '{' || ch === '[')) {
+        const json = readJsonLiteral(text, k)
+        if (!json) {
+          const end = endOfCall(text, k)
+          return {
+            args,
+            end,
+            error: {
+              tag,
+              message: malformed(
+                tag,
+                `the \`${ch}\` is never balanced before the end of the comment`,
+                excerpt(text, tagStart, end),
+              ),
+              start: tagStart,
+              length: end - tagStart,
+            },
+          }
+        }
+        const invalid = jsonSyntaxError(json.value)
+        if (invalid !== null) {
+          return {
+            args,
+            end: json.end,
+            error: {
+              tag,
+              message: malformed(
+                tag,
+                `the object literal is not valid JSON (${invalid})`,
+                excerpt(text, tagStart, json.end),
+              ),
+              start: tagStart,
+              length: json.end - tagStart,
+            },
+          }
+        }
+        args.push(json.value)
+        k = json.end
+        wantArg = false
+        continue
+      }
       if (ch !== '"' && ch !== CURLY_OPEN) {
         const end = endOfCall(text, k)
         return {
@@ -338,6 +494,25 @@ function parseArgList(
         length: end - tagStart,
       },
     }
+  }
+}
+
+/**
+ * `null` when `text` parses as JSON, otherwise the parser's complaint (first
+ * line only — `JSON.parse` messages are long and position-relative).
+ *
+ * This is the second half of the #98 contract, and the reason the form is safe
+ * to offer at all: the grammar can read `{not json}` as a balanced literal, so
+ * without this check the tag would sail through, reach `$ma`, and hand an LLM
+ * a payload it cannot use.
+ */
+function jsonSyntaxError(text: string): string | null {
+  try {
+    JSON.parse(text)
+    return null
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return message.split('\n')[0] ?? 'invalid JSON'
   }
 }
 

@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { peelOptionalUnion } from './union-peel.js'
+import { peelOptionalUnion, unwrapParenthesizedType } from './union-peel.js'
 import { firstAnnotationArgs } from './annotation-args.js'
 import type { ParsedModule } from './parse.js'
 
@@ -276,11 +276,15 @@ function buildTypeIndex(sf: ts.SourceFile): TypeIndex {
 }
 
 function collectVariants(
-  type: ts.TypeNode,
+  rawType: ts.TypeNode,
   variants: MsgSchema['variants'],
   source: string,
   typeIndex: TypeIndex,
 ): void {
+  // `type Msg = ({type:'a'} | …)` and `| ({type:'a'})` are both legal spellings
+  // that match neither test below, so the variants vanish silently (#96).
+  const type = unwrapParenthesizedType(rawType)
+
   if (ts.isUnionTypeNode(type)) {
     for (const member of type.types) {
       collectVariants(member, variants, source, typeIndex)
@@ -531,7 +535,13 @@ function tryExtractDiscriminatedUnion(
  * needs a depth budget to terminate, and discriminated-union detection
  * is bounded by the outer caller's budget already.
  */
-function resolveToMembers(t: ts.TypeNode, typeIndex: TypeIndex): readonly ts.TypeElement[] | null {
+function resolveToMembers(
+  raw: ts.TypeNode,
+  typeIndex: TypeIndex,
+): readonly ts.TypeElement[] | null {
+  // A parenthesized branch (`({kind:'a'}) | {kind:'b'}`) or a parenthesized
+  // alias body must still reach the member list, or the whole DU bails (#96).
+  const t = unwrapParenthesizedType(raw)
   if (ts.isTypeLiteralNode(t)) return t.members
   if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
     const target = typeIndex.get(t.typeName.text)
@@ -634,10 +644,17 @@ function literalDiscriminantValue(members: readonly ts.TypeElement[], name: stri
 }
 
 export function resolveFieldType(
-  type: ts.TypeNode,
+  rawType: ts.TypeNode,
   typeIndex: TypeIndex = new Map(),
   depth = MAX_FIELD_DEPTH,
 ): MsgFieldType {
+  // A parenthesized type matches none of the tests below and would fall
+  // through to `'unknown'`. Parentheses are the only way to write a union as
+  // an array element type, so `('a'|'b')[]` was `{kind:'array',
+  // element:'unknown'}` for every consumer (#96); the state-schema resolver
+  // had the identical omission, which is why the unwrap is shared.
+  const type = unwrapParenthesizedType(rawType)
+
   // Primitive keywords
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'

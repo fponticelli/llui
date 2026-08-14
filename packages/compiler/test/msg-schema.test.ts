@@ -818,3 +818,68 @@ describe('extractMsgSchema', () => {
     })
   })
 })
+
+// Issue #96. The state-schema resolver dropped every parenthesized type to
+// `unknown`; `resolveFieldType` had the identical omission, and the two
+// extractors have diverged over exactly this kind of shared type-node
+// pre-processing before (#88 moved the optional peel into `union-peel.ts` for
+// that reason). The unwrap lives there too, and both resolvers call it.
+describe('extractMsgSchema — parenthesized types (#96)', () => {
+  const field = (src: string) =>
+    extractMsgSchema(`type Msg = { type: 'set'; value: ${src} }`)?.variants.set?.value
+
+  it('resolves an array of a string-literal union', () => {
+    expect(field(`('a' | 'b')[]`)).toEqual({ kind: 'array', element: { enum: ['a', 'b'] } })
+  })
+
+  it('unwraps nested parentheses', () => {
+    expect(field(`(('a' | 'b'))[]`)).toEqual({ kind: 'array', element: { enum: ['a', 'b'] } })
+  })
+
+  it('unwraps outside an array position', () => {
+    expect(field(`('a' | 'b')`)).toEqual({ enum: ['a', 'b'] })
+    expect(field('(string)')).toBe('string')
+    expect(field('({ a: number })')).toEqual({ kind: 'object', shape: { a: 'number' } })
+  })
+
+  // The optional peel runs on the DECLARED node, so a union wrapped whole in
+  // parentheses loses its optionality outright unless the peel unwraps first.
+  it('peels optionality out of a wholly parenthesized union', () => {
+    expect(field(`('a' | 'b' | undefined)`)).toEqual({
+      type: { enum: ['a', 'b'] },
+      optional: true,
+    })
+  })
+
+  // `collectVariants` walks the Msg union itself; a parenthesized variant (or a
+  // parenthesized whole union) must not swallow the variants.
+  it('collects variants through parentheses in the Msg union', () => {
+    const src = `
+      type Msg =
+        | ({ type: 'inc' })
+        | { type: 'dec' }
+    `
+    expect(extractMsgSchema(src)).toEqual({
+      discriminant: 'type',
+      variants: { inc: {}, dec: {} },
+    })
+    expect(extractMsgSchema(`type Msg = ({ type: 'inc' } | { type: 'dec' })`)).toEqual({
+      discriminant: 'type',
+      variants: { inc: {}, dec: {} },
+    })
+  })
+
+  // Discriminated-union detection resolves each branch to its member list; a
+  // parenthesized branch or a parenthesized alias body must still reach it.
+  it('detects a discriminated union through parentheses', () => {
+    const src = `
+      type Shape = ({ kind: 'circle'; r: number }) | { kind: 'square'; side: number }
+      type Msg = { type: 'set'; shape: Shape }
+    `
+    expect(extractMsgSchema(src)?.variants.set?.shape).toEqual({
+      kind: 'discriminated-union',
+      discriminant: 'kind',
+      variants: { circle: { r: 'number' }, square: { side: 'number' } },
+    })
+  })
+})

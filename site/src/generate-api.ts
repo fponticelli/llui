@@ -46,7 +46,21 @@ function getJSDoc(node: ts.Node, sf: ts.SourceFile): string | undefined {
     const cleaned = raw
       .replace(/^\/\*\*\s*/, '')
       .replace(/\s*\*\/$/, '')
+      // BUG (issue #148): `\s` matches newlines, so the trailing `\s?` eats the
+      // newline of a blank comment line and every JSDoc PARAGRAPH BREAK is
+      // erased here — a following paragraph gets swallowed into the preceding
+      // bullet. The fix is `/^[ \t]*\*[ \t]?/gm`; it is not applied yet because
+      // it regenerates every `api/*.md` and `llms-full.txt`. Until then, source
+      // comments work around it by writing prose as list items (see
+      // `tagSend` in `packages/dom/src/binding-descriptors.ts`).
       .replace(/^\s*\*\s?/gm, '')
+      // A lone `@example` tag line is JSDoc syntax, not prose: rendered as-is
+      // it either sits on the page as a stray `@example` (router.md) or — when
+      // the preceding block is a list — gets swallowed into the last bullet
+      // (`…equally valid M['type'].  @example`, dom.md). The fenced code block
+      // that follows already reads as an example, so drop the tag and keep a
+      // paragraph break in its place.
+      .replace(/^[ \t]*@example[ \t]*$/gm, '')
       .trim()
     if (/^[─—]/.test(cleaned)) return undefined
     return cleaned

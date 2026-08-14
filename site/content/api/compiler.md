@@ -482,6 +482,22 @@ and fires a spurious `operator-on-signal` error.
 function lintSignalSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
+### `lintTagSendSource()`
+
+Run ONLY `tag-send-drift` over a module that is not a signal component — the
+companion to {@link lintAnnotationSyntaxSource}, and needed for the same
+reason: `tagSend` is a LIBRARY-author helper, so the canonical call site is a
+plain `connect()` module with no `component(` call in it, which
+`lintSignalSource` never sees. Without this the rule would cover only the
+rarest call sites.
+Same pre-check discipline: the name is looked for in `mod.text` BEFORE the
+module is parsed, so a module that never mentions `tagSend` costs one
+substring search.
+
+```typescript
+function lintTagSendSource(mod: ParsedModule): SignalLintMessage[]
+```
+
 ### `lookupHelperFromSymbol()`
 
 Resolve the manifest helper entry for a call-site callee symbol.
@@ -583,7 +599,7 @@ function relativizeFile(absoluteFile: string, root: string): string
 
 ```typescript
 function resolveFieldType(
-  type: ts.TypeNode,
+  rawType: ts.TypeNode,
   typeIndex: TypeIndex = new Map(),
   depth = MAX_FIELD_DEPTH,
 ): MsgFieldType
@@ -1140,6 +1156,21 @@ Arity of one annotation tag. `max: null` means variadic.
 export interface AnnotationTagSpec {
   min: number
   max: number | null
+  /**
+   * Whether an argument may be written as a bare JSON object/array literal
+   * instead of a quoted string (issue #98).
+   *
+   * `@example` ONLY, and deliberately so. An example IS a payload — a JSON
+   * object is what the tag's value already spells, just with every inner quote
+   * escaped, and thirteen files' worth of authors independently reached for
+   * the unescaped form before #89 made it an error. Every other tag takes
+   * something a JSON literal cannot be: `@routeGated`/`@validates` take a
+   * JavaScript predicate, `@intent`/`@warning`/`@should` take prose, `@emits`
+   * takes effect kinds. Accepting a brace there would invent a second spelling
+   * for a concept that has exactly one — so a brace after any other tag stays
+   * a build error.
+   */
+  json?: true
 }
 ```
 
