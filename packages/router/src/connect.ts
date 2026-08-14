@@ -275,15 +275,17 @@ export function connectRouter<R>(
   }
 
   /**
-   * Set location.hash, optionally suppressing the echo hashchange dispatch.
-   * Returns whether the URL actually changed — a same-hash write is a no-op the
-   * browser reports nothing for, so nothing may be armed or counted for it.
+   * Set location.hash, arming the echo `hashchange` it is about to produce —
+   * every one of our own writes is echoed, and every caller suppressed it, so
+   * there is no second behaviour to select. Returns whether the URL actually
+   * changed: a same-hash write is a no-op the browser reports nothing for, so
+   * nothing may be armed or counted for it.
    */
-  function setHash(newHash: string, suppress: boolean): boolean {
+  function setHash(newHash: string): boolean {
     if (sameHash(location.hash, newHash)) return false
     // Read the index of the entry we are LEAVING before the write replaces it.
     const from = landedIndex()
-    if (suppress) armEcho(newHash)
+    armEcho(newHash)
     location.hash = newHash
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
     // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
@@ -438,7 +440,7 @@ export function connectRouter<R>(
         const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
           if (effect.action === 'push') {
-            setHash(finalPath, true)
+            setHash(finalPath)
           } else if (!sameHash(location.hash, finalPath)) {
             armEcho(finalPath)
             location.replace(finalPath)
@@ -478,7 +480,7 @@ export function connectRouter<R>(
         if (outcome.blocked) return
         const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
-          setHash(finalPath, true)
+          setHash(finalPath)
         } else {
           pushUrl(finalPath)
         }
@@ -604,7 +606,7 @@ export function connectRouter<R>(
             const outcome = runGuards(route)
             if (outcome.blocked) return
             const finalPath = router.href(outcome.route)
-            if (router.mode === 'hash') setHash(finalPath, true)
+            if (router.mode === 'hash') setHash(finalPath)
             else pushUrl(finalPath)
             currentRoute = outcome.route
             send(factory(outcome.route))
