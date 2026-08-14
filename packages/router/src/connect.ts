@@ -212,6 +212,16 @@ export function connectRouter<R>(
     }
   }
 
+  // `history.length` as of the last time we looked. The browser exposes no way
+  // to ask whether a `hashchange` came from a NEW fragment navigation or from a
+  // traversal, and the two need opposite handling — but a push grows the stack
+  // and a traversal never does, so the length answers it. Kept in sync at every
+  // point we observe or change history.
+  let knownLength = typeof history !== 'undefined' ? history.length : 0
+  function noteLength(): void {
+    if (typeof history !== 'undefined') knownLength = history.length
+  }
+
   // The hashes our own writes are about to echo back as `hashchange`, in write
   // order, so each navigation dispatches exactly once. A BOOLEAN cannot express
   // this: hashchange events QUEUE, so two navigations in one tick echo twice
@@ -229,10 +239,12 @@ export function connectRouter<R>(
   function pushUrl(path: string): void {
     currentIndex = (currentIndex ?? 0) + 1
     history.pushState({ [STATE_KEY]: currentIndex }, '', path)
+    noteLength()
   }
 
   function replaceUrl(path: string): void {
     history.replaceState(stampCurrent(currentIndex ?? 0), '', path)
+    noteLength()
   }
 
   /**
@@ -250,6 +262,7 @@ export function connectRouter<R>(
     // every entry to compute a `history.go` delta from.
     currentIndex = (currentIndex ?? 0) + 1
     history.replaceState({ [STATE_KEY]: currentIndex }, '')
+    noteLength()
     return true
   }
   /**
@@ -319,11 +332,26 @@ export function connectRouter<R>(
     }
     if (router.mode === 'hash') {
       // `hashchange` fires for a NEW fragment navigation (the user editing the
-      // address bar) as well as for a traversal, and only a new one can land on
-      // an entry we never stamped — so this is a push on top of where we were.
-      // Stamp it, or a later blocked back has no delta to work from.
-      currentIndex = (currentIndex ?? 0) + 1
-      history.replaceState({ [STATE_KEY]: currentIndex }, '')
+      // address bar) as well as for a TRAVERSAL, and an unstamped entry does
+      // not tell them apart: every entry that pre-dates `connectRouter` is
+      // unstamped too. Assuming a push stamped such an entry ABOVE the one it
+      // sits below, which inverts the delta and sends the next blocked back
+      // FURTHER backwards. `history.length` is the discriminator — a push grows
+      // the stack, a traversal never does.
+      if (history.length > knownLength) {
+        currentIndex = (currentIndex ?? 0) + 1
+        history.replaceState(stampCurrent(currentIndex), '')
+        noteLength()
+        return
+      }
+      // A traversal onto an entry we never stamped: its position is UNKNOWN and
+      // the browser will not tell us. Record that rather than guess — a guessed
+      // index is exactly what turns a blocked back into a wrong-direction
+      // `history.go` (#103). (A push whose entry did not grow the stack, i.e.
+      // one that truncated forward entries, lands here too: also unknown, which
+      // is the safe answer either way.)
+      currentIndex = null
+      noteLength()
       return
     }
     // History mode: popstate is always a TRAVERSAL, so an unstamped entry is
@@ -386,6 +414,7 @@ export function connectRouter<R>(
             // `location.replace` swaps the current entry and DROPS its state,
             // so restamp it. The index is unchanged — nothing was pushed.
             history.replaceState({ [STATE_KEY]: currentIndex ?? 0 }, '')
+            noteLength()
           }
         } else if (effect.action === 'push') {
           pushUrl(finalPath)

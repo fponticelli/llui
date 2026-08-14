@@ -213,6 +213,68 @@ describe('#103 blocked back — hash mode', () => {
     dispose()
   })
 
+  it('never guesses the position of an entry that pre-dates the router', async () => {
+    // A `hashchange` onto an entry we never stamped is NOT necessarily a new
+    // fragment navigation: every entry created before `connectRouter` ran is
+    // unstamped too. Treating a traversal onto one as a push stamped it ABOVE
+    // the entry it sits below, and the next blocked back then computed a
+    // NEGATIVE delta and traversed further BACKWARDS — landing two entries
+    // away and dispatching a navigate the user never asked for.
+    location.hash = '#/'
+    await settle()
+    location.hash = '#/other'
+    await settle()
+
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    // Back onto the pre-existing (unstamped) entry, then forward again: the
+    // router must not conclude anything about where that entry sits.
+    history.back()
+    expect(await waitForUrl(hash, '#/')).toBe('#/')
+    history.forward()
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    send.mockClear()
+
+    blockHome = true
+    history.back()
+    expect(await waitForUrl(hash, '#/')).toBe('#/')
+
+    // The blocked entry's position is UNKNOWN, so nothing is restored — but
+    // nothing may be guessed either. Waiting for the corrupted outcome (a
+    // traversal PAST the blocked entry, onto the pre-hash entry) and never
+    // seeing it is the assertion; it cannot pass early on a slow machine.
+    expect(await waitForUrl(hash, '')).toBe('#/')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+
+  it('still tracks a genuine new fragment navigation (an address-bar edit)', async () => {
+    // The other half of the discriminator: a hash the USER typed is a real
+    // push, it grows the stack, and the entry it creates must be stamped — or
+    // a blocked back from it has no delta and restores nothing.
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { dispose } = mountListener(routing)
+
+    location.hash = '#/other' // not through the router — a user navigation
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+
+    blockHome = true
+    history.back() // → the entry the router loaded on (bare '', i.e. `#/`)
+    expect(await waitForUrl(hash, '')).toBe('')
+    // Known position on both sides → the block is undone by a traversal.
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+
+    dispose()
+  })
+
   it('does not dispatch for the blocked pop or for its restore', async () => {
     let blockAdmin = false
     const routing = connectRouter(hashRouter(), {
