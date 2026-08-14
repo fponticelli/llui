@@ -3,6 +3,7 @@ import { createRouter, route, param } from '../src/index'
 import { connectRouter, browserRouterEnv } from '../src/connect'
 import type { RouterEnv } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
+import connectSource from '../src/connect.ts?raw'
 
 // Issue #111 (residual 2) — `connectRouter` reached for `location` / `history` /
 // `window` directly, guarded in two places and unguarded in seven. Verified not
@@ -264,6 +265,92 @@ describe('RouterEnv.replaceState with the url omitted', () => {
     expect(location.href).toBe(before)
     expect(history.state).toEqual({ marker: 2 })
     history.replaceState(null, '', '/')
+  })
+})
+
+// The drift gate for the transitions half of #111 catches a helper hand-rolling
+// its own cancellation; this is its counterpart for the router half. Nothing but
+// `browserRouterEnv` may name a browser global in `connect.ts` — the point of the
+// refactor is that there is exactly ONE place to swap. `browserRouterEnv`'s own
+// body is the adapter and is therefore exempt by construction, not by list.
+describe('connect.ts names a browser global in exactly one place', () => {
+  /**
+   * The source with comments removed — a prose mention of `location.hash` is not
+   * a dereference of it. Coarse (it does not know about `//` inside a string
+   * literal), which can only ever hide a use, never invent one; `connect.ts`
+   * contains no such literal.
+   */
+  function codeLines(source: string): Array<{ line: number; text: string }> {
+    const out: Array<{ line: number; text: string }> = []
+    let inBlock = false
+    source.split('\n').forEach((raw, index) => {
+      let text = raw
+      if (inBlock) {
+        const end = text.indexOf('*/')
+        if (end === -1) return
+        text = text.slice(end + 2)
+        inBlock = false
+      }
+      const block = text.indexOf('/*')
+      if (block !== -1) {
+        const end = text.indexOf('*/', block)
+        if (end === -1) {
+          inBlock = true
+          text = text.slice(0, block)
+        } else {
+          text = text.slice(0, block) + text.slice(end + 2)
+        }
+      }
+      const line = text.indexOf('//')
+      if (line !== -1) text = text.slice(0, line)
+      if (text.trim() !== '') out.push({ line: index + 1, text })
+    })
+    return out
+  }
+
+  /** The `browserRouterEnv` function body, by brace depth from its declaration. */
+  function adapterRange(lines: Array<{ line: number; text: string }>): [number, number] {
+    const start = lines.findIndex((l) => l.text.includes('function browserRouterEnv'))
+    expect(start, 'browserRouterEnv must still be the adapter').toBeGreaterThanOrEqual(0)
+    let depth = 0
+    for (let i = start; i < lines.length; i++) {
+      for (const ch of lines[i]!.text) {
+        if (ch === '{') depth++
+        else if (ch === '}') depth--
+      }
+      if (depth === 0 && i > start) return [lines[start]!.line, lines[i]!.line]
+    }
+    throw new Error('browserRouterEnv never closes')
+  }
+
+  // A dereference of the global, not a mention of the word: `env.historyState`
+  // and `router.mode === 'history'` are excluded by the lookbehind and the
+  // required `.`/`[`.
+  const GLOBAL_USE = /(?<![\w$.'"`])(?:location|history|window)\s*[.[]/
+
+  it('every location/history/window dereference is inside browserRouterEnv', () => {
+    const lines = codeLines(connectSource)
+    const [from, to] = adapterRange(lines)
+    const outside = lines
+      .filter((l) => (l.line < from || l.line > to) && GLOBAL_USE.test(l.text))
+      .map((l) => `connect.ts:${l.line}  ${l.text.trim()}`)
+    expect(
+      outside,
+      'Route it through the injected RouterEnv (#111) — add a member if the ' +
+        'surface is missing one. browserRouterEnv is the one place that touches ' +
+        'a global, so it is the one place a host has to replace.',
+    ).toEqual([])
+  })
+
+  it('the gate sees the uses that ARE there, so it is not vacuous', () => {
+    const lines = codeLines(connectSource)
+    const [from, to] = adapterRange(lines)
+    const inside = lines.filter(
+      (l) => l.line >= from && l.line <= to && GLOBAL_USE.test(l.text),
+    ).length
+    // pushState/replaceState/back/forward/go/replace/scrollTo/hash + the four
+    // getters + the two listener calls — a double-digit count, all in one place.
+    expect(inside).toBeGreaterThan(10)
   })
 })
 
