@@ -214,6 +214,28 @@ function $reconcileMarkdownList(node: MarkdownListNode): void {
  * held only for documents created after the fix — the opposite of the ones the
  * issue was reported from.
  *
+ * The upgrade is on TOUCH, and the window that leaves open is ONE MICROTASK —
+ * not "until the user edits". `registerNodeTransform` itself calls
+ * `markNodesWithTypesAsDirty` (`LexicalEditor.ts:1545`), which dirties every
+ * already-loaded node of the registered types in an `editor.update` of its own,
+ * so both registration orders converge: `setEditorState` THEN register gives
+ * `list` synchronously and `md-list` after one microtask; register THEN
+ * `setEditorState` gives `md-list` immediately. That holds for a non-editable
+ * editor and for a list nobody ever edits, too.
+ *
+ * What it CANNOT do is pre-empt a stock node's OWN merging transform inside the
+ * update that first dirties it. A stock `ListNode` arriving BETWEEN two settled
+ * `md-list`s in a live update — exactly what `@lexical/yjs` produces, since
+ * `Utils.ts:409` builds from `registeredNodes.get(type)` with the same absent
+ * replacement resolution, so an older build feeds stock nodes into LIVE updates
+ * and not only at load — runs `mergeNextSiblingListIfSameType` first:
+ * `md-list/mk=-(a)` + stock `b` + `md-list/mk=*(c)` settles as one
+ * `md-list/mk=-(a|b|c)` and the `-`/`*` boundary is gone. That is identical to
+ * pre-#129 behaviour (stock merges all three as well), so it is not a
+ * regression — but the #129 guarantee does NOT extend to a live collab document
+ * mixing old and new builds. It is not closable from userland; #154 tracks the
+ * two upstream levers that would close it.
+ *
  * Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
  */
 export function registerListNodeUpgrade(editor: LexicalEditor): () => void {
@@ -236,7 +258,7 @@ export function registerListNodeUpgrade(editor: LexicalEditor): () => void {
 /**
  * The node registrations a marker-aware editor needs: the stock `ListNode`
  * (which the replacement is keyed on and which still deserializes any document
- * saved before this existed — see `registerListNodeUpgrade` below for what has
+ * saved before this existed — see `registerListNodeUpgrade` above for what has
  * to happen to such a node next), this subclass, and the redirect that makes
  * `$createListNode` — and therefore every list command, transformer and DOM
  * conversion in `@lexical/list` — produce the subclass.
