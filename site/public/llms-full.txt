@@ -18808,6 +18808,16 @@ editor — the same predicate the importer uses, so the two never disagree.
 function splitFrontmatter(markdown: string): [source: string, rest: string] | null
 ```
 
+### `surfaceGate()`
+
+The gate a plugin's `register` half reads: "is MY surface up?". Resolved at
+call time, so it is correct however late the host publishes and however the
+surface was closed (Escape, a chosen row, the caret leaving the trigger).
+
+```typescript
+function surfaceGate(editor: LexicalEditor, plugin: string): () => boolean
+```
+
 ### `toolbar()`
 
 A ready-made grouped toolbar. Items not surfaced to `'toolbar'` are dropped.
@@ -19001,6 +19011,14 @@ export type SerializedWikiLinkNode = Spread<
   { target: string; alias: string | null },
   SerializedTextNode
 >
+```
+
+### `SurfaceReaders`
+
+`plugin name` → "is that plugin's surface up right now?".
+
+```typescript
+export type SurfaceReaders = ReadonlyMap<string, () => boolean>
 ```
 
 ## Interfaces
@@ -19550,6 +19568,8 @@ The type-erased form stored on a plugin and consumed by the host.
 export interface PluginUI {
   init: () => unknown
   update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
+  /** See {@link PluginUISpec.isOpen}. */
+  isOpen?: (state: unknown) => boolean
   view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
   onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
 }
@@ -19565,6 +19585,18 @@ export interface PluginUISpec<S, M, E = never> {
   init: () => S
   /** Pure reducer over the slice; may return effects. */
   update?: (state: S, msg: M) => S | [S, E[]]
+  /**
+   * Is this plugin's floating surface UP right now? Declare it whenever the
+   * plugin's `register` half claims keys for that surface (a typeahead answering
+   * `true` to KEY_ESCAPE / KEY_ENTER / the arrows at COMMAND_PRIORITY_HIGH).
+   *
+   * The host publishes it per editor so `register` can gate on it — see
+   * `surfaceGate` in `./surface-open.js`, and issue #130 for what claiming a key
+   * on any other basis costs the host handler sitting below.
+   *
+   * Pure and cheap: it is called on the keystroke path, from live state.
+   */
+  isOpen?: (state: S) => boolean
   /** View contribution (overlays/panels), rendered by the host. */
   view?: (args: PluginViewArgs<S, M>) => Renderable
   /** Effect handler with live-editor access + host dispatch. */
