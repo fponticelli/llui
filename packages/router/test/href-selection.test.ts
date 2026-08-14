@@ -109,6 +109,115 @@ describe('#104 a serialized route formats identically to a matched one', () => {
   })
 })
 
+// The shape heuristic alone is not SOUND: two sample builds cannot tell a
+// param-derived field from a constant when its value happens to coincide across
+// them, and a def that genuinely owns that constant then wins the route. The
+// URL that comes out is plausible, points at a DIFFERENT route, and is what
+// `link()` puts in its href AND pushes — worse than the visible `#/` fallback
+// #104 started from. The selection is therefore VERIFIED by round-tripping the
+// formatted path back through `match()` whenever more than one def competes.
+
+describe('#104 a competing def must never steal a route it cannot produce', () => {
+  type Kind = 'self' | 'other'
+  type R = { page: 'a' | 'b'; id: string; kind: Kind }
+  const fallback: R = { page: 'a', id: '', kind: 'other' }
+
+  // `kind` is param-DERIVED on /a/:id but reads as a constant `'other'` from
+  // any sample that is not literally 'me' — while /b/:id owns `'self'` for
+  // real. Sampling cannot separate these; a round-trip can.
+  const aDef = route<R>(['a', param('id')], ({ id }) => ({
+    page: 'a',
+    id: id!,
+    kind: id === 'me' ? 'self' : 'other',
+  }))
+  const bDef = route<R>(['b', param('id')], ({ id }) => ({ page: 'b', id: id!, kind: 'self' }))
+
+  it('formats a param-derived field whose value coincides across the samples', () => {
+    const router = createRouter<R>([aDef, bDef], { fallback })
+    const matched = router.match('#/a/me')
+    expect(matched).toEqual({ page: 'a', id: 'me', kind: 'self' })
+    // Was `#/b/me`: a plausible, shareable URL for a route the user never asked
+    // for, which `link()` would also navigate to on click.
+    expect(router.href(matched)).toBe('#/a/me')
+  })
+
+  it('gives the same answer whichever order the defs are registered in', () => {
+    const r: R = { page: 'a', id: 'me', kind: 'self' }
+    expect(createRouter<R>([aDef, bDef], { fallback }).href(r)).toBe('#/a/me')
+    expect(createRouter<R>([bDef, aDef], { fallback }).href(r)).toBe('#/a/me')
+  })
+})
+
+describe('#104 def registration order must not decide the URL', () => {
+  // `long: id.length > 5` is false for BOTH samples, so it is misclassified as
+  // a constant on both defs and every candidate scores a contradiction. The
+  // shape tiers then produced no winner at all and the last-resort loop
+  // formatted with the FIRST structurally-formattable def — correct only by
+  // accident of ordering.
+  type R = { page: 'u'; id: string; long: boolean; mode?: 'edit' }
+  const fallback: R = { page: 'u', id: '', long: false }
+  const listDef = route<R>(['u', param('id')], ({ id }) => ({
+    page: 'u',
+    id: id!,
+    long: id!.length > 5,
+  }))
+  const editDef = route<R>(['u', param('id'), 'edit'], ({ id }) => ({
+    page: 'u',
+    id: id!,
+    long: id!.length > 5,
+    mode: 'edit',
+  }))
+
+  for (const [label, defs] of [
+    ['list first', [listDef, editDef]],
+    ['edit first', [editDef, listDef]],
+  ] as const) {
+    it(`formats both routes correctly with the defs registered ${label}`, () => {
+      const router = createRouter<R>([...defs], { fallback })
+      expect(router.href({ page: 'u', id: 'averylongid', long: true })).toBe('#/u/averylongid')
+      expect(router.href({ page: 'u', id: 'averylongid', long: true, mode: 'edit' })).toBe(
+        '#/u/averylongid/edit',
+      )
+      // …and the short-id shape, where the misclassification does not bite.
+      expect(router.href({ page: 'u', id: 'ab', long: false })).toBe('#/u/ab')
+    })
+  }
+})
+
+describe('#104 the verification is load-bearing, not a fallback tier', () => {
+  // These are the shapes a simpler implementation — single-sample
+  // classification, or "an omitted constant disqualifies the def" — gets wrong
+  // and no earlier test caught, because the relaxed tier rescued every one.
+  type R = { page: 'p'; id: string; tab?: string; mode?: string }
+  const fallback: R = { page: 'p', id: '', tab: 'read' }
+  const plain = route<R>(['p', param('id')], ({ id }) => ({ page: 'p', id: id!, tab: 'read' }))
+  const edit = route<R>(['p', param('id'), 'edit'], ({ id }) => ({
+    page: 'p',
+    id: id!,
+    tab: 'read',
+    mode: 'edit',
+  }))
+  const router = createRouter<R>([plain, edit], { fallback })
+
+  it('prefers the def that leaves nothing unexplained when the route omits a default', () => {
+    // Both defs agree on every constant the route carries (`page`), and the
+    // scores tie — the later-registered def used to win, emitting the /edit
+    // URL for a route that carries no `mode` at all.
+    expect(router.href({ page: 'p', id: '7' })).toBe('#/p/7')
+    expect(router.href({ page: 'p', id: '7', tab: 'read' })).toBe('#/p/7')
+  })
+
+  it('still reaches the more specific def when the route carries its field', () => {
+    expect(router.href({ page: 'p', id: '7', mode: 'edit' })).toBe('#/p/7/edit')
+  })
+
+  it('round-trips every matched route back to its own URL', () => {
+    for (const input of ['#/p/7', '#/p/7/edit']) {
+      expect(router.href(router.match(input))).toBe(input)
+    }
+  })
+})
+
 describe('#104 the build()-call-count property from the perf fix survives', () => {
   it('never calls a route builder while formatting', () => {
     let builds = 0
