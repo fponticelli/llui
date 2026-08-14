@@ -72,6 +72,13 @@ interface StoredTransition extends StatusTransition {
 }
 
 const DB_VERSION = 1
+/**
+ * How many screenshot object URLs the store keeps alive at once. Each one
+ * pins a decoded PNG Blob, and only the open detail view displays a
+ * screenshot at a time — the cache exists so revisiting a recently browsed
+ * note is instant, not so the whole notebook stays decoded in memory.
+ */
+export const SCREENSHOT_URL_CACHE_LIMIT = 16
 const META_CURRENT_SESSION = 'currentSession'
 /** Per-session monotonic id counter meta key. Holds the last-allocated
  *  numeric id for the session so `createNote` can allocate the next id
@@ -155,12 +162,35 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
   const db = (): Promise<IDBDatabase> => (dbPromise ??= openDb(dbName))
 
   // Object URLs are created lazily on read and cached by note id so the
-  // synchronous `screenshotUrl` binding can return one. Revoked on replace.
+  // synchronous `screenshotUrl` binding can return one. Each entry pins a
+  // decoded PNG Blob, so the cache is an LRU (Map insertion order = LRU
+  // order): revoked on replace, on eviction, and wholesale on `dispose()`.
   const urlCache = new Map<string, string>()
+  const revoke = (url: string): void => {
+    if (typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(url)
+  }
+  const evictOverflow = (): void => {
+    // Map iteration is insertion order, so the head is the least recently
+    // used; deleting the current key mid-iteration is well defined.
+    for (const [id, url] of urlCache) {
+      if (urlCache.size <= SCREENSHOT_URL_CACHE_LIMIT) break
+      urlCache.delete(id)
+      revoke(url)
+    }
+  }
+  /** Cache (or drop) `id`'s screenshot URL. Delete-then-set, so a re-read
+   *  lands at the MRU end — which is the ONLY thing that moves an entry there.
+   *  A URL only ever exists because `readNote`/import put it here, so the note
+   *  a browse row is displaying is at the MRU end as of the read that opened
+   *  it; it is not, however, immune from eviction — read 16 other notes and it
+   *  goes, and the `<img src>` bound to it goes blank. That is the bound
+   *  working as intended, and why `screenshotUrl` does NOT re-touch: it is
+   *  called from a reactive derive body, where a mutation is a smell (and one
+   *  gated out by the reconciler exactly when it would have mattered). */
   const cacheScreenshot = (id: string, bytes: Uint8Array | null): void => {
     const prev = urlCache.get(id)
     if (prev) {
-      if (typeof URL !== 'undefined' && URL.revokeObjectURL) URL.revokeObjectURL(prev)
+      revoke(prev)
       urlCache.delete(id)
     }
     if (bytes && typeof URL !== 'undefined' && URL.createObjectURL) {
@@ -170,6 +200,7 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
         id,
         URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/png' })),
       )
+      evictOverflow()
     }
   }
 
@@ -445,6 +476,8 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
     },
 
     screenshotUrl(id: string): string {
+      // Pure lookup — see `cacheScreenshot` for why this does not touch the
+      // LRU. It runs inside a reactive derive.
       return urlCache.get(id) ?? ''
     },
 
@@ -453,6 +486,11 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
       return () => {
         subscribers.delete(sub.onEvent)
       }
+    },
+
+    dispose(): void {
+      for (const url of urlCache.values()) revoke(url)
+      urlCache.clear()
     },
   }
 }

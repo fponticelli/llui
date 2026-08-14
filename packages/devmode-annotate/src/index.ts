@@ -102,7 +102,7 @@ import {
   type Toast,
   type ToastAction,
 } from './hud-core.js'
-import { createDisposerRegistry } from './hud-lifecycle.js'
+import { createDisposerRegistry, type DisposerRegistry } from './hud-lifecycle.js'
 import { createPersistence } from './persistence.js'
 import { applySavedPosition, createDragController, readSavedPosition } from './drag-controller.js'
 import { installAutoCapture } from './auto-capture.js'
@@ -189,7 +189,11 @@ export interface MountAnnotateOptions {
   origin?: string
   /** The notes transport. Defaults to `devServerStore(origin)` — the Vite
    *  dev-server endpoints. Inject a different adapter (IndexedDB, HTTP,
-   *  export bundle) to run the HUD without a dev server. */
+   *  export bundle) to run the HUD without a dev server.
+   *
+   *  `destroy()` calls `store.dispose()` on whatever it is given, so the HUD
+   *  takes over the instance's out-of-heap resources: give it its OWN store
+   *  rather than one the host also drives (see `NotesStore.dispose`). */
   store?: NotesStore
   /** Mount in a production build. By default the HUD only mounts under the
    *  dev server (`import.meta.env.DEV`); set this when a live app deliberately
@@ -491,6 +495,35 @@ function lineageText(tasks: TaskState): string {
   return `↻ chained from #${entry.lastTaskId} — ${trimmed}`
 }
 
+/** A mount that is running RIGHT NOW on this stack. `_lluiHandle` (the
+ *  mounted-HUD guard) can only be published once the mount finishes, so this
+ *  covers the window before it: a store whose `subscribeEvents` re-enters
+ *  `mountAnnotateHud`, an `onMount` handler that does, a host retrying after
+ *  a partial mount. Non-null for exactly the duration of `buildHud`. */
+let activeMount: { handle: AnnotateHudHandle | null } | null = null
+
+/**
+ * The handle a RE-ENTRANT `mountAnnotateHud` gets. There is only ever one HUD;
+ * the outer mount is still building it, so every call forwards to that one
+ * handle as soon as it exists. A call made while the outer mount is still on
+ * the stack has nothing to drive yet and degrades like the not-mounted handle.
+ */
+function deferredHandle(inFlight: { handle: AnnotateHudHandle | null }): AnnotateHudHandle {
+  const target = (): AnnotateHudHandle => inFlight.handle ?? noopHandle()
+  return {
+    open: () => target().open(),
+    close: () => target().close(),
+    destroy: () => target().destroy(),
+    setProse: (text) => target().setProse(text),
+    submit: (prose, submitOpts) => target().submit(prose, submitOpts),
+    drawRect: () => target().drawRect(),
+    handleCaptureRequest: (requestId, payload) => target().handleCaptureRequest(requestId, payload),
+    setIntent: (intent) => target().setIntent(intent),
+    replayRepro: (events, replayOpts) => target().replayRepro(events, replayOpts),
+    exportBundle: () => target().exportBundle(),
+  }
+}
+
 export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle {
   if (
     !shouldMountHud({ dev: import.meta.env?.DEV ?? false, allowProduction: opts.allowProduction })
@@ -502,7 +535,30 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     | (HTMLElement & { _lluiHandle?: AnnotateHudHandle })
     | null
   if (existing?._lluiHandle) return existing._lluiHandle
+  // A second mount entered from inside the first one must NOT build a second
+  // HUD: both would carry the same element id and the outer `destroy()` would
+  // leave the inner one running. The sentinel is claimed synchronously here —
+  // before any DOM is appended and before anything the mount calls out to.
+  if (activeMount) return deferredHandle(activeMount)
 
+  const inFlight: { handle: AnnotateHudHandle | null } = { handle: null }
+  activeMount = inFlight
+  // Created here so a mount that throws partway can unwind whatever it had
+  // already registered (the component + its DOM) instead of orphaning it.
+  const disposers = createDisposerRegistry()
+  try {
+    const handle = buildHud(opts, disposers)
+    inFlight.handle = handle
+    return handle
+  } catch (err) {
+    disposers.dispose()
+    throw err
+  } finally {
+    activeMount = null
+  }
+}
+
+function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): AnnotateHudHandle {
   const origin = opts.origin ?? (typeof location !== 'undefined' ? location.origin : '')
   const store = opts.store ?? devServerStore(origin, opts.taskCapabilityToken)
   const llui = opts.llui ?? {
@@ -522,7 +578,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // Continuously mirror the console into a ring buffer so a verbose capture can
   // attach the recent console log. Gated by the same privacy channel as the
   // rest of the telemetry (prod stays off), and torn down in destroy().
+  // Registered right here rather than in the teardown block below: it PATCHES
+  // the global console, so a mount that throws later must still restore it.
   const consoleCapture = captureChannels.debug ? createConsoleCapture() : null
+  if (consoleCapture) disposers.add(() => consoleCapture.dispose())
   // Build the note body honoring the debug-capture default + the host's
   // per-channel state redaction. The single place every capture routes
   // through, so the seam can't be bypassed. `level` (standard/verbose) drives
@@ -555,10 +614,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   let mdApp: ReturnType<typeof mountSignalComponent> | null = null
   let editorApi: LexicalEditor | null = null
   let modalEl: HTMLElement | null = null
-
-  // Every timer, listener, subscription, nested app, and DOM node registers its
-  // teardown here; `destroy()` folds over the registry (see ./hud-lifecycle).
-  const disposers = createDisposerRegistry()
 
   const reproRecorder = createReproRecorder()
 
@@ -648,6 +703,19 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
     idEl = root
   }
+  // The HUD's nodes are the foundation everything else mounts into, so their
+  // removal is a CORE teardown: it runs after every peripheral disposer and
+  // after the component that lives in them. Registered here, at append time,
+  // so a mount that throws below can't orphan them (#115).
+  disposers.addCore(() => {
+    if (shadowHost) {
+      // Removing the host tears down its shadow root (root + toasts).
+      shadowHost.remove()
+    } else {
+      root.remove()
+      toastContainer.remove()
+    }
+  })
   if (opts.hidden) root.style.display = 'none'
 
   // ── Imperative bridge fns (declared before the view so handlers close over them) ──
@@ -1583,6 +1651,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     { devtools: false },
   )
   ;(idEl as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = undefined
+  // Core teardown, registered at mount time: it runs after every peripheral
+  // disposer and BEFORE the DOM removal registered above (core teardowns
+  // unwind in reverse), which is the order destroy() has always used.
+  disposers.addCore(() => handle.dispose())
 
   // Now that the editor foreign has mounted, query the modal ref.
   modalEl = root.querySelector<HTMLElement>('[data-llui-modal]')
@@ -1751,6 +1823,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
   }
   document.addEventListener('keydown', onKey)
+  // Registered HERE, not in the teardown block below: a throw between the two
+  // points would orphan a document-level listener with no handle to remove it,
+  // leaving the host eating Escape and Cmd+Shift+A forever.
+  disposers.add(() => document.removeEventListener('keydown', onKey))
 
   const onResize = (): void => {
     if (getState().modalOpen) {
@@ -1760,7 +1836,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const current = readSavedPosition()
     if (current) applySavedPosition(root, current)
   }
-  if (typeof window !== 'undefined') window.addEventListener('resize', onResize)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', onResize)
+    disposers.add(() => window.removeEventListener('resize', onResize))
+  }
 
   // ── Auto-capture on uncaught error ────────────────────────────────────
   const autoCapture = installAutoCapture({
@@ -1769,16 +1848,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     setProse: (value) => handle.send({ type: 'setProse', value }),
     open,
   })
+  disposers.add(() => autoCapture.dispose())
 
   // ── Teardown registry ──────────────────────────────────────────────────
   // Every timer/listener/subscription/nested-app/DOM node registers its
   // teardown here, in the order the original destroy() ran them (the component
-  // + DOM removal last). `destroy()` folds over the registry.
-  disposers.add(() => document.removeEventListener('keydown', onKey))
-  disposers.add(() => {
-    if (typeof window !== 'undefined') window.removeEventListener('resize', onResize)
-  })
-  disposers.add(() => autoCapture.dispose())
+  // + DOM removal last). `destroy()` folds over the registry. Anything that
+  // grabs a resource the moment it is CREATED registers there instead (the
+  // console patch above, the three global listeners above, the component and
+  // its DOM); what is left below holds nothing until it is started.
   disposers.add(() => ticker.stop())
   disposers.add(() => persistence.dispose())
   disposers.add(() => {
@@ -1786,8 +1864,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     toastTimeouts.clear()
   })
   disposers.add(() => unsubscribeEvents?.())
+  // After the subscription is gone: the store releases its out-of-heap
+  // resources (the IndexedDB adapter's screenshot object URLs, an SSE
+  // connection). This runs on an INJECTED store too, and has to: an inline
+  // `installAnnotateHud({ store: indexedDbStore() })` leaves the host no
+  // reference to dispose, and object URLs are not garbage-collected, so
+  // skipping it would re-open #114 in the documented production wiring. The
+  // cost is on the port doc (`notes-store.ts`): a host that ALSO drives the
+  // same instance from its own code should give the HUD a second one.
+  disposers.add(() => store.dispose())
   disposers.add(() => reproRecorder.stop())
-  disposers.add(() => consoleCapture?.dispose())
   disposers.add(() => dismissActiveOverlay())
   disposers.add(() => {
     // The element picker installs capture-phase document listeners; leaking
@@ -1795,16 +1881,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     activeElementPickDismiss?.()
     activeElementPickDismiss = null
   })
-  disposers.add(() => handle.dispose())
-  disposers.add(() => {
-    if (shadowHost) {
-      // Removing the host tears down its shadow root (root + toasts).
-      shadowHost.remove()
-    } else {
-      root.remove()
-      toastContainer.remove()
-    }
-  })
+  // The component + DOM teardown are registered as CORE disposers where they
+  // are created (above); they still run last, and in that order.
 
   // ── Handle ────────────────────────────────────────────────────────────
   const destroy = (): void => disposers.dispose()

@@ -6,13 +6,13 @@ The other documents in this directory describe the original proposal (`01` … `
 
 ## Wiring
 
-`@llui/devmode-annotate` ships transitively with `@llui/vite-plugin`. Consumers do **not** add it to their own package.json and do **not** call `mountAnnotateHud()` in their app entry. The plugin auto-injects a virtual ES module via `transformIndexHtml` in dev mode:
+`@llui/devmode-annotate` is an OPTIONAL, consumer-provided package: `@llui/vite-plugin` no longer depends on it (that would drag the HUD's editor stack into every app installing the plugin), and `resolveDevmodeAnnotateEntry` walks the consumer's `node_modules` for it, skipping injection when it isn't there. Consumers add it to their own devDependencies but do **not** call `mountAnnotateHud()` in their app entry. The plugin auto-injects a virtual ES module via `transformIndexHtml` in dev mode:
 
 ```html
 <script type="module" src="/@id/__x00__virtual:llui-devmode-annotate-init"></script>
 ```
 
-Production builds never run `transformIndexHtml(serve)`, so the HUD is fully tree-shaken.
+Production builds never run `transformIndexHtml(serve)`, so nothing in the build graph references the HUD — there is no import to tree-shake. That holds for the INJECTED path only: an app that imports `mountAnnotateHud` in its own entry ships the whole HUD (Lexical included) because the `import.meta.env.DEV` gate is a runtime call inside a module that statically imports the editor. Deliberate live-app usage goes through `@llui/devmode-annotate/install`, whose dynamic import splits the HUD into a chunk fetched on activation (#116).
 
 The notebook wire-protocol types now live in `@llui/devmode-annotate/note-types` (moved here to break a package cycle). `@llui/vite-plugin` re-exports them from its own entry for back-compat; `@llui/mcp` consumes them through that re-export.
 

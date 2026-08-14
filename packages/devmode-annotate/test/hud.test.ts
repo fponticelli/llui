@@ -148,6 +148,7 @@ describe('mountAnnotateHud', () => {
       postStatus: async () => {},
       screenshotUrl: () => '',
       subscribeEvents: () => noop,
+      dispose: noop,
     }
 
     const handle = mountAnnotateHud({ store, subscribeEvents: false })
@@ -177,6 +178,7 @@ describe('mountAnnotateHud', () => {
       postStatus: async () => {},
       screenshotUrl: () => '',
       subscribeEvents: () => noop,
+      dispose: noop,
     }
 
     const handle = mountAnnotateHud({
