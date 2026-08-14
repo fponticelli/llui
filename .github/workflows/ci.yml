@@ -43,6 +43,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Only this job runs inside a `container:`, and there the checkout is owned
+      # by a different uid than the steps run as. actions/checkout papers over
+      # that by writing `safe.directory` into a TEMPORARY HOME which is gone by
+      # the time the tests run, so anything shelling out to git dies with
+      # "fatal: detected dubious ownership" — which took
+      # scripts/test/source-encoding.test.ts (`git ls-files`) down on EVERY run,
+      # failing CI on main independently of any change. Re-add it to the real
+      # HOME so git works for the whole job. The `drift` job needs no equivalent:
+      # it runs directly on the runner, where the uids already match.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
