@@ -117,6 +117,31 @@ describe('date-input reducer', () => {
     expect(s.value).toBeNull()
     expect(s.error).toBe('invalid')
   })
+
+  // `value` used to be a `Date`, which made an invalid one UNREPRESENTABLE.
+  // As an ISO string it is representable, and `init` swallowed it: a US-format
+  // value came back `{ value: null, input: '', error: null }`, indistinguishable
+  // from an empty field. `setValue` already surfaces it; `init` now matches
+  // (#138 review, item 12).
+  it('init with an unparseable value reports invalid instead of swallowing it', () => {
+    const s = init({ value: '03/15/2024' })
+    expect(s.value).toBeNull()
+    expect(s.error).toBe('invalid')
+    // The rejected text is kept so the field shows what the host asked for.
+    expect(s.input).toBe('03/15/2024')
+  })
+
+  it('an explicit init input still wins over the rejected value text', () => {
+    const s = init({ value: 'nope', input: 'typing…' })
+    expect(s.input).toBe('typing…')
+    expect(s.error).toBe('invalid')
+  })
+
+  it('init with a value out of bounds still reports the bound, not invalid', () => {
+    const s = init({ value: '2023-01-01', min: '2024-01-01' })
+    expect(s.value).toBe('2023-01-01')
+    expect(s.error).toBe('before-min')
+  })
 })
 
 // State must be JSON-serializable (CLAUDE.md): devtools time-travel, replayTrace,

@@ -11,7 +11,8 @@ import { LocaleContext } from '../locale.js'
  * `YYYY-MM-DD` string (null until a complete/valid value is entered) —
  * never a `Date`, so the state stays JSON-serializable like date-picker's
  * (#119). Min/max bounds are validated on every change, populating `error`
- * when out of range.
+ * when out of range, and an unparseable `value` — from `init` or `setValue`
+ * alike — sets `error: 'invalid'` rather than vanishing.
  */
 
 export type DateError = 'invalid' | 'before-min' | 'after-max' | null
@@ -117,8 +118,16 @@ function validate(value: IsoDate | null, min: IsoDate | null, max: IsoDate | nul
 }
 
 export function init(opts: DateInputInit = {}): DateInputState {
-  const value = opts.value != null ? toIsoDate(opts.value) : null
-  const input = opts.input ?? value ?? ''
+  const requested = opts.value ?? null
+  const value = requested === null ? null : toIsoDate(requested)
+  // An unparseable init value used to vanish silently — `{ value: null,
+  // input: '', error: null }`, indistinguishable from an empty field. That was
+  // unrepresentable while `value` was a `Date`; as an ISO string it is
+  // representable, so it is REPORTED, exactly as `setValue` reports it
+  // (#138 review, item 12). The rejected text is kept as the displayed input so
+  // the field shows what the host asked for.
+  const invalidValue = requested !== null && value === null
+  const input = opts.input ?? (invalidValue ? requested : (value ?? ''))
   const min = opts.min != null ? toIsoDate(opts.min) : null
   const max = opts.max != null ? toIsoDate(opts.max) : null
   return {
@@ -126,7 +135,7 @@ export function init(opts: DateInputInit = {}): DateInputState {
     value,
     min,
     max,
-    error: validate(value, min, max),
+    error: invalidValue ? 'invalid' : validate(value, min, max),
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,
     required: opts.required ?? false,
