@@ -2729,13 +2729,18 @@ statements of ONE fact, and they used to be unchecked against each
 other — a drifted tag lies to the agent about what a control does,
 silently (issue #118). Two guards now cover it, and neither is
 sufficient alone:
-  - the TYPE `readonly M['type'][]` (this signature) rejects a name
-    that is not a Msg variant at all, including where the handler is
-    a named function the compiler cannot read; and
-  - the compiler's `tag-send-drift` rule reads the handler and
-    rejects a tag that names the WRONG variant — which type-checks,
-    since `'touch'` and `'blur'` are equally valid `M['type']`.
-@example
+- the TYPE `readonly M['type'][]` (this signature) rejects a name
+  that is not a Msg variant at all, including where the handler is
+  a named function the compiler cannot read; and
+- the compiler's `tag-send-drift` rule reads the handler and
+  rejects a tag that names the WRONG variant — which type-checks,
+  since `'touch'` and `'blur'` are equally valid `M['type']`.
+- that rule BAILS rather than guess, so it is a backstop and not a
+  proof: it recognizes `tagSend` only when imported from the
+  `@llui/dom` specifier, reads only a literal variant list with an
+  inline handler, and reports an over-declaration only when nothing
+  in the handler body could dispatch unseen.
+
 ```ts
 import { tagSend } from '@llui/dom'
 export function connect<S>(get, send, opts) {
@@ -10330,7 +10335,7 @@ function rest(name: string): RestSegment
 ### `route()`
 
 Define a route with structured path segments.
-@example
+
 route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
 route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
 
@@ -15247,22 +15252,6 @@ directly, then delegate to the shared connect prefetch.
 
 ```typescript
 function createBridgeServer(deps: BridgeDeps): McpServer
-```
-
-### `detectSchemaChange()`
-
-Compare a freshly-fetched app description against the cached one and
-decide whether the cached schema is now stale. A changed `schemaHash`
-means the app's Msg/State schema was recompiled — cached
-affordances/examples/payload shapes may no longer be valid, so the
-caller is told to re-read before dispatching. Exported so the
-invalidation policy is unit-testable in isolation.
-
-```typescript
-export declare function detectSchemaChange(prev: LapDescribeResponse | null, next: Pick<LapDescribeResponse, 'schemaHash'>): {
-    changed: boolean;
-    note: string | null;
-};
 ```
 
 ## Types

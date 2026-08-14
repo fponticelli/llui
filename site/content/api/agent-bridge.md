@@ -100,25 +100,6 @@ directly, then delegate to the shared connect prefetch.
 function createBridgeServer(deps: BridgeDeps): McpServer
 ```
 
-### `detectSchemaChange()`
-
-Compare a freshly-fetched app description against the cached one and
-decide whether the cached schema is now stale. A changed `schemaHash`
-means the app's Msg/State schema was recompiled — cached
-affordances/examples/payload shapes may no longer be valid, so the
-caller is told to re-read before dispatching. Exported so the
-invalidation policy is unit-testable in isolation.
-
-```typescript
-export declare function detectSchemaChange(
-  prev: LapDescribeResponse | null,
-  next: Pick<LapDescribeResponse, 'schemaHash'>,
-): {
-  changed: boolean
-  note: string | null
-}
-```
-
 ## Types
 
 ### `Binding`

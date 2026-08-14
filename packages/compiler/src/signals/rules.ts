@@ -1160,7 +1160,11 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // signal) is linted as a signal.
   visit(sf, STATE_ROOTS, false)
   diags.push(...annotationSyntaxDiagnostics(sf))
-  diags.push(...tagSendDriftDiagnostics(sf, bindings))
+  // Same cost discipline as `lintTagSendSource` (#93): `tagSend` is a
+  // LIBRARY-author helper, so almost no component file contains one, and the
+  // drift walk is a full extra pass over the tree on every keystroke-save.
+  // `sf.text` is already in hand here — no parse, one substring search.
+  if (sf.text.includes('tagSend')) diags.push(...tagSendDriftDiagnostics(sf, bindings))
   return diags
 }
 

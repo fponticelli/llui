@@ -136,7 +136,7 @@ function rest(name: string): RestSegment
 ### `route()`
 
 Define a route with structured path segments.
-@example
+
 route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
 route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
 

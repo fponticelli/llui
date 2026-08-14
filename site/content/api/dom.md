@@ -958,7 +958,11 @@ Resolution rules — choose whichever is defined and non-empty:
 - the compiler's `tag-send-drift` rule reads the handler and
   rejects a tag that names the WRONG variant — which type-checks,
   since `'touch'` and `'blur'` are equally valid `M['type']`.
-  @example
+- that rule BAILS rather than guess, so it is a backstop and not a
+  proof: it recognizes `tagSend` only when imported from the
+  `@llui/dom` specifier, reads only a literal variant list with an
+  inline handler, and reports an over-declaration only when nothing
+  in the handler body could dispatch unseen.
 
 ```ts
 import { tagSend } from '@llui/dom'

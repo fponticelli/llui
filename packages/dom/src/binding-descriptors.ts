@@ -67,12 +67,17 @@ export type VariantTaggable<M> = ((msg: M) => void) & {
  * silently (issue #118). Two guards now cover it, and neither is
  * sufficient alone:
  *
- *   - the TYPE `readonly M['type'][]` (this signature) rejects a name
- *     that is not a Msg variant at all, including where the handler is
- *     a named function the compiler cannot read; and
- *   - the compiler's `tag-send-drift` rule reads the handler and
- *     rejects a tag that names the WRONG variant — which type-checks,
- *     since `'touch'` and `'blur'` are equally valid `M['type']`.
+ * - the TYPE `readonly M['type'][]` (this signature) rejects a name
+ *   that is not a Msg variant at all, including where the handler is
+ *   a named function the compiler cannot read; and
+ * - the compiler's `tag-send-drift` rule reads the handler and
+ *   rejects a tag that names the WRONG variant — which type-checks,
+ *   since `'touch'` and `'blur'` are equally valid `M['type']`.
+ * - that rule BAILS rather than guess, so it is a backstop and not a
+ *   proof: it recognizes `tagSend` only when imported from the
+ *   `@llui/dom` specifier, reads only a literal variant list with an
+ *   inline handler, and reports an over-declaration only when nothing
+ *   in the handler body could dispatch unseen.
  *
  * @example
  * ```ts
