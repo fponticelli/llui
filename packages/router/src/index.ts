@@ -167,6 +167,14 @@ function isBetterFit(a: Fidelity, b: Fidelity): boolean {
  * A DISAGREEMENT is stronger: both routes name the field, both give it a
  * primitive value, and the values differ. Only that proves the URL means a
  * different route, so it is counted separately (see `isBetterFit`).
+ *
+ * That boundary is load-bearing because counting an unreproduced field as a
+ * disagreement INVERTS the ranking whenever one def reproduces a field the
+ * correct def cannot — `/x/:id` owns the route but cannot put its three flags
+ * in a URL (0 disagreements → 3), so it loses to `/y/:id`, which reproduces
+ * all three and denotes a different `page` (1). Note it does not DISQUALIFY
+ * anything: `isBetterFit` compares disagreements relatively, so a field every
+ * candidate equally fails to reproduce cancels out.
  */
 function fidelityOf(route: Record<string, unknown>, produced: Record<string, unknown>): Fidelity {
   let score = 0
@@ -590,6 +598,13 @@ export function createRouter<R>(
    * Pick the def whose URL template a route belongs to: narrow to the defs that
    * can format it, order them by shape, and — only when more than one competes
    * — verify the winner by round-tripping its URL back through `match()`.
+   *
+   * This composes EIGHT ranked inference rules, each justified by a measured
+   * wrong URL a cheaper design shipped. #156 records the whole set, the three
+   * disproved simplifications, the trigger for replacing the lot with a real
+   * ranked-candidate structure (a sixth comparison rule), and the root-cause
+   * fix that would delete all of it (a serializable route tag). Read it before
+   * "simplifying" anything here.
    */
   function selectDef(r: R): DefMeta<R> | null {
     const ro = r as Record<string, unknown>

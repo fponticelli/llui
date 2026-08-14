@@ -408,11 +408,13 @@ describe('#104 the build()-call-count property from the perf fix survives', () =
     expect(builds).toBe(1)
   })
 
-  it('round-trips each candidate AT MOST once', () => {
-    // The preferred candidate was verified, then reached a second time through
-    // the candidate list. The dedupe guard compared it against the current
-    // best, which only matches while the preferred one IS best — so precisely
-    // when it lost, it was built again: 3 round-trips for 2 candidates.
+  it('round-trips each candidate AT MOST once when the preferred one WINS', () => {
+    // The cheap half of the property: the preferred candidate is verified in
+    // the leading slot and must not be reached a second time through the
+    // candidate list. Here the preferred def is `candidates[0]` and stays the
+    // best throughout, so the identity skip and the older "skip the current
+    // BEST" guard agree — this fixture holds the count at 2 but does NOT pin
+    // the guard. The next test is the one that does.
     let builds = 0
     const count = <T>(f: () => T) => {
       builds++
@@ -426,6 +428,43 @@ describe('#104 the build()-call-count property from the perf fix survives', () =
         route(['a', param('id')], ({ id }) => count(() => ({ page: 'p' as const, id: id! }))),
         route(['b', param('id')], ({ id }) =>
           count(() => ({ page: 'p' as const, id: id!, extra: 'e' })),
+        ),
+      ],
+      { fallback: { page: 'p', id: '' } },
+    )
+
+    builds = 0
+    expect(router.href({ page: 'p', id: '7', z: 'q' })).toBe('#/a/7')
+    expect(builds).toBe(2)
+  })
+
+  it('round-trips the preferred candidate at most once when it LOSES', () => {
+    // The case the dedupe actually turns on, and the shape the previous
+    // fixture cannot reach. The guard used to compare each candidate against
+    // the current BEST, which only matches while the preferred one IS best —
+    // so precisely when it lost, it was reached again and BUILT a second time:
+    // 3 round-trips for 2 candidates.
+    //
+    // Reproducing that needs the preferred candidate to be LAST in the list
+    // AND to lose. `extra` is param-DERIVED here, so the two-sample
+    // classification keeps it out of `/b`'s constants: neither def invents a
+    // default, the strict tier ties on `[params, -invented]`, and the
+    // later-registered `/b` is preferred. It then loses the round-trip,
+    // because the `extra` its URL denotes is a field the route does not carry.
+    //
+    // The URL is `#/a/7` under either guard — this is a pure COST regression,
+    // which is exactly why no other assertion in the suite catches it.
+    let builds = 0
+    const count = <T>(f: () => T) => {
+      builds++
+      return f()
+    }
+    type R = { page: 'p'; id: string; z?: string; extra?: string }
+    const router = createRouter<R>(
+      [
+        route(['a', param('id')], ({ id }) => count(() => ({ page: 'p' as const, id: id! }))),
+        route(['b', param('id')], ({ id }) =>
+          count(() => ({ page: 'p' as const, id: id!, extra: id! })),
         ),
       ],
       { fallback: { page: 'p', id: '' } },
