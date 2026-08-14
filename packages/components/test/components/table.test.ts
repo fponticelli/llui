@@ -157,7 +157,7 @@ describe('table reducer — tri-state select-all', () => {
 
   it('selectAll checkbox aria-checked tri-state', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 't' })
-    const cb = p.selectAllCheckbox
+    const cb = p.selectAllCheckbox('note')
     const none = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple', selection: [] })
     const some = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple', selection: ['r1'] })
     const all = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple', selection: ROWS })
@@ -260,6 +260,21 @@ describe('table reducer — focus / keyboard grid nav', () => {
     expect(start.focusedCell).toEqual({ rowIndex: 0, colIndex: 0 })
     const [end] = update(s0, { type: 'gridEnd' })
     expect(end.focusedCell).toEqual({ rowIndex: 3, colIndex: 2 })
+  })
+
+  // gridStart/gridEnd address the DATA corners, and a zero-row grid has none —
+  // but the header row is still focusable and still carries the grid's only tab
+  // stop. Clearing focusedCell there takes away both the ring and the tab stop
+  // while DOM focus sits on a header that just became `tabindex="-1"`.
+  it('gridStart / gridEnd leave the focused header alone on a zero-row grid', () => {
+    const s0 = {
+      ...init({ columns: COLS, rows: [] }),
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 1 },
+    }
+    const [start] = update(s0, { type: 'gridStart' })
+    expect(start.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 1 })
+    const [end] = update(s0, { type: 'gridEnd' })
+    expect(end.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 1 })
   })
 
   it('pageDown / pageUp move by page size clamped', () => {
@@ -514,7 +529,7 @@ describe('table.connect — parts', () => {
     )
     const e = clickEvent(false)
     const stop = vi.spyOn(e, 'stopPropagation')
-    pc.selectAllCheckbox.onClick(e)
+    pc.selectAllCheckbox('note').onClick(e)
     expect(stop).toHaveBeenCalled()
   })
 
@@ -536,7 +551,7 @@ describe('table.connect — parts', () => {
       send,
       { id: 't' },
     )
-    pc.selectAllCheckbox.onClick(new MouseEvent('click'))
+    pc.selectAllCheckbox('note').onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
   })
 
@@ -550,10 +565,10 @@ describe('table.connect — parts', () => {
     const base = init({ columns: COLS, rows: ROWS, selectionMode: 'multiple' })
     const pc = connect(rootSignal(), vi.fn(), { id: 't' })
     expect(read(pc.rowCheckbox('r2', 1).tabindex, base)).toBe(-1)
-    expect(read(pc.selectAllCheckbox.tabindex, base)).toBe(-1)
+    expect(read(pc.selectAllCheckbox('note').tabindex, base)).toBe(-1)
     const disabled = { ...base, disabled: true }
     expect(read(pc.rowCheckbox('r2', 1).tabindex, disabled)).toBe(-1)
-    expect(read(pc.selectAllCheckbox.tabindex, disabled)).toBe(-1)
+    expect(read(pc.selectAllCheckbox('note').tabindex, disabled)).toBe(-1)
   })
 
   it('rowCheckbox toggles the row on Space', () => {
@@ -582,7 +597,7 @@ describe('table.connect — parts', () => {
     )
     const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
     const stop = vi.spyOn(e, 'stopPropagation')
-    pc.selectAllCheckbox.onKeyDown(e)
+    pc.selectAllCheckbox('note').onKeyDown(e)
     expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
     expect(e.defaultPrevented).toBe(true)
     // The select-all sits inside a sortable column header whose Space toggles
@@ -598,7 +613,7 @@ describe('table.connect — parts', () => {
       { id: 't' },
     )
     pc.rowCheckbox('r2', 1).onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
-    pc.selectAllCheckbox.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    pc.selectAllCheckbox('note').onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     expect(send).not.toHaveBeenCalled()
   })
 })
@@ -692,7 +707,7 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
         }
         if (isTabStop(p.rowCheckbox(s.rows[r]!, r))) zeroCount++
       }
-      if (isTabStop(p.selectAllCheckbox)) zeroCount++
+      if (isTabStop(p.selectAllCheckbox('note'))) zeroCount++
       return zeroCount
     }
     const base = { columns: COLS, rows: ROWS, selectionMode: 'multiple' as const }
@@ -776,7 +791,8 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
       focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
     })
     const send = vi.fn()
-    const pc = connect(signalState(s), send, { id: 't', selectAllColumnId: 'sel' })
+    const pc = connect(signalState(s), send, { id: 't' })
+    pc.selectAllCheckbox('sel')
     expect(read<number>(pc.columnHeader('sel').tabindex, s)).toBe(0)
 
     const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
@@ -800,9 +816,99 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
       focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
     })
     const send = vi.fn()
-    const pc = connect(signalState(s), send, { id: 't', selectAllColumnId: 'sel' })
+    const pc = connect(signalState(s), send, { id: 't' })
+    pc.selectAllCheckbox('sel')
     const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
     pc.columnHeader('sel').onKeyDown(e)
+    expect(send).not.toHaveBeenCalled()
+    expect(e.defaultPrevented).toBe(false)
+  })
+
+  // The case above uses a NON-sortable select-all column, so it cannot see the
+  // swallow: declining select-all must FALL THROUGH to the header's other duty,
+  // not end the handler. A sortable column named as the select-all host loses
+  // its keyboard sort in every mode but `multiple` otherwise — keyboard-dead
+  // sort, the exact #122 defect class, reintroduced in a narrow config.
+  it('a SORTABLE select-all column still sorts on Enter/Space outside multiple-selection mode', () => {
+    const cols = [{ id: 'sel', sortable: true }, ...COLS]
+    for (const selectionMode of ['single', 'none'] as const) {
+      const s = init({
+        columns: cols,
+        rows: ROWS,
+        selectionMode,
+        focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+      })
+      const send = vi.fn()
+      const pc = connect(signalState(s), send, { id: 't' })
+      pc.selectAllCheckbox('sel')
+
+      const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+      pc.columnHeader('sel').onKeyDown(space)
+      expect(send).toHaveBeenCalledWith({ type: 'toggleSort', columnId: 'sel' })
+      expect(space.defaultPrevented).toBe(true)
+
+      send.mockClear()
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+      pc.columnHeader('sel').onKeyDown(enter)
+      expect(send).toHaveBeenCalledWith({ type: 'toggleSort', columnId: 'sel' })
+      expect(enter.defaultPrevented).toBe(true)
+
+      // …and select-all is NOT sent, since the mode does not support it.
+      expect(send).not.toHaveBeenCalledWith({ type: 'toggleAll' })
+    }
+  })
+
+  // The column id is a PARAMETER of `selectAllCheckbox`, not a `connect()`
+  // option, so a rendered checkbox is what wires its header's Enter/Space. This
+  // pins the contract in both directions: no checkbox placed → the header does
+  // not toggle a selection nothing on screen represents.
+  it('a header toggles select-all only where the checkbox was actually placed', () => {
+    const cols = [{ id: 'sel' }, ...COLS]
+    const s = init({
+      columns: cols,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const send = vi.fn()
+    const pc = connect(signalState(s), send, { id: 't' })
+
+    // Nothing placed yet: the header claims nothing.
+    const before = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('sel').onKeyDown(before)
+    expect(send).not.toHaveBeenCalled()
+    expect(before.defaultPrevented).toBe(false)
+
+    // Placing it wires the header — and only THAT header.
+    pc.selectAllCheckbox('sel')
+    pc.columnHeader('sel').onKeyDown(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+
+    send.mockClear()
+    const other = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('note').onKeyDown(other)
+    expect(send).not.toHaveBeenCalledWith({ type: 'toggleAll' })
+  })
+
+  // A column absent from `columns` has colIndex -1, so its header can never take
+  // the roving stop and `onFocus` returns early — but something CAN still focus
+  // it programmatically. It must not then toggle a selection over a column the
+  // grid does not model: half-wired silently is worse than not wired.
+  it('a select-all column absent from columns claims nothing', () => {
+    const s = init({
+      columns: COLS,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const send = vi.fn()
+    const pc = connect(signalState(s), send, { id: 't' })
+    pc.selectAllCheckbox('ghost')
+    // Never reachable by roving…
+    expect(read<number>(pc.columnHeader('ghost').tabindex, s)).toBe(-1)
+    // …and inert if reached anyway.
+    const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('ghost').onKeyDown(e)
     expect(send).not.toHaveBeenCalled()
     expect(e.defaultPrevented).toBe(false)
   })

@@ -77,7 +77,13 @@ const providers = new Set<Provider>()
 /**
  * A consumer of the registry. A registration participates only in the aspects it
  * names, because a single global "is this nested?" answer is wrong for at least
- * one consumer in the dialog-with-an-inner-select case (see the module comment).
+ * one consumer: `outside` in the SIBLING case — two popovers open at once, and a
+ * click inside the lower one must still dismiss the upper one, which a flat
+ * "inside a nested layer" answer suppresses (see the module comment).
+ *
+ * The dialog-with-an-inner-`select` case is NOT what the aspect list protects.
+ * That one is covered by a modal never registering AT ALL, whatever aspects it
+ * would have named.
  *
  * - `outside` — {@link watchInteractOutside} does not treat interactions inside
  *   the layer as outside interactions.

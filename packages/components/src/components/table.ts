@@ -279,19 +279,25 @@ export function update(state: TableState, msg: TableMsg): [TableState, never[]] 
     // gridStart/gridEnd keep the DATA corners: Ctrl+Home/Ctrl+End are documented
     // as "first/last cell of the grid body", and the header is reached by
     // arrowing up rather than by a corner jump.
-    case 'gridStart':
-      return [{ ...state, focusedCell: clampCell(state, { rowIndex: 0, colIndex: 0 }) }, []]
-    case 'gridEnd':
-      return [
-        {
-          ...state,
-          focusedCell: clampCell(state, {
-            rowIndex: state.rows.length - 1,
-            colIndex: state.columns.length - 1,
-          }),
-        },
-        [],
-      ]
+    //
+    // A grid with no data rows has no such corner, so `clampCell` returns null.
+    // Focus must then be LEFT ALONE rather than cleared: on an empty grid the
+    // focused cell is the header, and wiping it takes away both the focus ring
+    // and the tab stop while DOM focus sits on a header that just became
+    // `tabindex="-1"`. "Nowhere to jump to" is a no-op, not a reset.
+    case 'gridStart': {
+      const clamped = clampCell(state, { rowIndex: 0, colIndex: 0 })
+      if (clamped === null) return [state, []]
+      return [{ ...state, focusedCell: clamped }, []]
+    }
+    case 'gridEnd': {
+      const clamped = clampCell(state, {
+        rowIndex: state.rows.length - 1,
+        colIndex: state.columns.length - 1,
+      })
+      if (clamped === null) return [state, []]
+      return [{ ...state, focusedCell: clamped }, []]
+    }
     // Page moves rove, so they share the arrow keys' row space: APG's "if focus
     // is in the first row of the grid, focus does not move" — and with a
     // focusable header the header IS the first row.
@@ -421,25 +427,29 @@ export interface TableParts {
   columnHeader: (columnId: string) => TableColumnHeaderParts
   row: (id: string, index: number) => TableRowParts
   cell: (rowIndex: number, colIndex: number) => TableCellParts
-  selectAllCheckbox: TableCheckboxParts
+  /**
+   * The select-all checkbox, for the `columnheader` of `columnId`.
+   *
+   * The column id is a PARAMETER rather than a `connect()` option because the
+   * checkbox is unreachable by keyboard without it: it has no gridcell of its
+   * own, and every part inside a `role="grid"` except the one roving stop is
+   * `tabindex="-1"`, so its only keyboard route is Enter/Space on the roving
+   * header that hosts it — and the machine can only route that key if it knows
+   * which header. As an option it was forgettable, and forgetting it failed
+   * SILENTLY (no warning, no error; the key sorted the column or did nothing).
+   * As a required argument you cannot render the checkbox without answering the
+   * question, so the failure mode is gone at compile time.
+   *
+   * `columnId` must be a column in `state.columns` — that is what gives the
+   * header a colIndex to rove to. A column not in the list can never take the
+   * roving stop, and its header will not send `toggleAll` either.
+   */
+  selectAllCheckbox: (columnId: string) => TableCheckboxParts
   rowCheckbox: (id: string, index: number) => TableCheckboxParts
 }
 
 export interface ConnectOptions {
   id: string
-  /**
-   * Id of the column whose `columnheader` hosts the select-all checkbox.
-   *
-   * The select-all has no gridcell of its own, and every part inside a
-   * `role="grid"` other than the one roving stop is `tabindex="-1"` — so naming
-   * the column is what makes it operable: Enter/Space on that header sends
-   * `toggleAll`. Leave it unset and the select-all stays mouse-only.
-   *
-   * The column must be present in `columns` (that is what gives it a colIndex to
-   * rove to). If it is also `sortable`, select-all wins on Enter/Space — put the
-   * checkbox in a column of its own.
-   */
-  selectAllColumnId?: string
 }
 
 export function connect(
@@ -451,6 +461,20 @@ export function connect(
   const headerId = (columnId: string): string => `${opts.id}:colheader:${columnId}`
   const colIndexOf = (s: TableState, columnId: string): number =>
     s.columns.findIndex((c) => c.id === columnId)
+
+  /**
+   * The columns whose header hosts a select-all checkbox — filled in by
+   * `selectAllCheckbox(columnId)` as the consumer renders it.
+   *
+   * The header's key handler cannot know this when it is BUILT — the consumer
+   * places `columnHeader` and `selectAllCheckbox` in whatever order its view
+   * happens to use — and it does not need to. Views are built ONCE, and a key
+   * event can only arrive after the build has finished, so the handler reads
+   * this set at EVENT time and sees every checkbox that was actually placed.
+   * Reading what was RENDERED, rather than trusting a declaration made up
+   * front, is also what keeps the two halves from drifting apart.
+   */
+  const selectAllColumns = new Set<string>()
 
   /** The messages every roving part may send. */
   const NAV_MSGS = [
@@ -532,17 +556,32 @@ export function connect(
       }
     })
 
-  // Enter/Space on a focused header activates whatever that header hosts. The
-  // select-all wins where the consumer named its column: it has no gridcell of
-  // its own, so the header is a keyboard user's ONLY route to it, whereas a
-  // sortable column's sort is also reachable by pointer on the same element.
+  /**
+   * Enter/Space on a focused header activates whatever that header hosts.
+   *
+   * Select-all takes priority where the header hosts one AND it can act: the
+   * checkbox has no gridcell of its own, so the header is a keyboard user's
+   * ONLY route to it, whereas a sortable column's sort is also reachable by
+   * pointer on the same element.
+   *
+   * Where it CANNOT act — outside `multiple` selection, or on a column absent
+   * from `columns` (which can never take the roving stop, so a header reached
+   * there was focused programmatically and must not toggle a selection the grid
+   * does not model) — the key FALLS THROUGH to the sort branch rather than
+   * ending the handler. Returning instead swallowed Enter/Space on a sortable
+   * select-all column, leaving its sort keyboard-dead: #122's own defect class,
+   * in a narrower config.
+   */
   const headerOnKeyDown = (columnId: string): ((e: KeyboardEvent) => void) =>
     tagSend(send, [...NAV_MSGS, 'toggleSort', 'toggleAll'], (e) => {
       if (handleNavKey(e)) return
       if (e.key !== 'Enter' && e.key !== ' ') return
       const s = state.peek()
-      if (opts.selectAllColumnId !== undefined && opts.selectAllColumnId === columnId) {
-        if (s.selectionMode !== 'multiple') return
+      if (
+        selectAllColumns.has(columnId) &&
+        colIndexOf(s, columnId) >= 0 &&
+        s.selectionMode === 'multiple'
+      ) {
         e.preventDefault()
         send({ type: 'toggleAll' })
         return
@@ -653,41 +692,47 @@ export function connect(
       onFocus: tagSend(send, ['focusCell'], () => send({ type: 'focusCell', rowIndex, colIndex })),
       onKeyDown: cellOnKeyDown(rowIndex),
     }),
-    selectAllCheckbox: {
-      role: 'checkbox',
-      'aria-checked': state.map((s) => {
-        if (isAllSelected(s)) return 'true'
-        if (isSomeSelected(s)) return 'mixed'
-        return 'false'
-      }),
-      'data-scope': 'table',
-      'data-part': 'select-all',
-      'data-state': state.map((s) => {
-        if (isAllSelected(s)) return 'checked'
-        if (isSomeSelected(s)) return 'indeterminate'
-        return 'unchecked'
-      }),
-      // Out of the tab sequence, like every part inside `role="grid"` except the
-      // one roving stop. The select-all has no cell of its own — it lives in a
-      // `columnheader` — so its keyboard route is the ROVING HEADER: name its
-      // column via `ConnectOptions.selectAllColumnId` and Enter/Space on the
-      // focused header toggles it (#122). The Space handler below still applies
-      // when the checkbox itself is focused programmatically.
-      tabindex: -1,
-      // The checkbox is a self-contained control; stop the click from bubbling
-      // to an enclosing clickable header cell (which would also toggle sort).
-      onClick: tagSend(send, ['toggleAll'], (e) => {
-        e.stopPropagation()
-        send({ type: 'toggleAll' })
-      }),
-      // Same containment hazard on the keyboard: the enclosing column header
-      // also acts on Space (toggle sort), so claim the key here.
-      onKeyDown: tagSend(send, ['toggleAll'], (e) => {
-        if (e.key !== ' ') return
-        e.preventDefault()
-        e.stopPropagation()
-        send({ type: 'toggleAll' })
-      }),
+    selectAllCheckbox: (columnId: string): TableCheckboxParts => {
+      // Placing the checkbox is what wires its header's Enter/Space to
+      // `toggleAll` — see `selectAllColumns`.
+      selectAllColumns.add(columnId)
+      return {
+        role: 'checkbox',
+        'aria-checked': state.map((s) => {
+          if (isAllSelected(s)) return 'true'
+          if (isSomeSelected(s)) return 'mixed'
+          return 'false'
+        }),
+        'data-scope': 'table',
+        'data-part': 'select-all',
+        'data-state': state.map((s) => {
+          if (isAllSelected(s)) return 'checked'
+          if (isSomeSelected(s)) return 'indeterminate'
+          return 'unchecked'
+        }),
+        // Out of the tab sequence, like every part inside `role="grid"` except
+        // the one roving stop. The select-all has no cell of its own — it lives
+        // in a `columnheader` — so its keyboard route is the ROVING HEADER:
+        // Enter/Space on the focused header of `columnId` toggles it (#122).
+        // The Space handler below still applies when the checkbox itself is
+        // focused programmatically.
+        tabindex: -1,
+        // The checkbox is a self-contained control; stop the click from
+        // bubbling to an enclosing clickable header cell (which would also
+        // toggle sort).
+        onClick: tagSend(send, ['toggleAll'], (e) => {
+          e.stopPropagation()
+          send({ type: 'toggleAll' })
+        }),
+        // Same containment hazard on the keyboard: the enclosing column header
+        // also acts on Space (toggle sort), so claim the key here.
+        onKeyDown: tagSend(send, ['toggleAll'], (e) => {
+          if (e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          send({ type: 'toggleAll' })
+        }),
+      }
     },
     rowCheckbox: (id: string, index: number): TableCheckboxParts => ({
       role: 'checkbox',
@@ -723,6 +768,16 @@ export function connect(
   }
 }
 
+/**
+ * The namespace object. {@link HEADER_ROW_INDEX} is deliberately NOT a member:
+ * `site/src/generate-api.ts` collects every member of a components namespace as
+ * a bare name with no kind check and renders it with a hard-coded `()`, so a
+ * constant listed here would be documented as a function call. That generator
+ * defect is filed as #151 — it already ships wrong for `combobox`'s
+ * `CREATE_OPTION_VALUE()` — and when it is fixed this constant should join the
+ * object. Until then it is reached as a module-level export, re-exported from
+ * the barrel as `TABLE_HEADER_ROW_INDEX`.
+ */
 export const table = {
   init,
   update,

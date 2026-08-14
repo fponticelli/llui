@@ -136,9 +136,12 @@ export interface OverlayEngineOptions<S> {
    * dialog's focus trap and its `inert` sweep. Registering makes Tab reach it and
    * keeps it out of the sweep. A MODAL surface must NOT register: it is the layer
    * everything else is nested in, and registering it would let a trap on the
-   * layer beneath Tab into it and would make its own background read as "inside
-   * a nested layer" for an overlay open on top of it — which is exactly how a
-   * click on the dialog background stops dismissing an inner `select`.
+   * layer beneath Tab into it and would make its own CONTENT read as "inside a
+   * nested layer" for an overlay open on top of it — so a click anywhere in the
+   * dialog's panel would stop dismissing an inner `select`. (`content` is the
+   * element registered below, and it is only the panel: `dialog` renders
+   * `backdrop`, `positioner` and `content` as three separate parts, so a click
+   * on the dialog's BACKGROUND is outside the registered element either way.)
    *
    * The aspects are narrowed further (see below): outside-click cooperation
    * between engine overlays comes from the dismissable STACK, not the registry.

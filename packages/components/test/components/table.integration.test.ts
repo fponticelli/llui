@@ -134,14 +134,14 @@ describe('table integration — the header row is reachable by keyboard', () => 
       ],
       update: (s, m) => [{ t: table.update(s.t, m)[0] }, []],
       view: ({ state, send }) => {
-        const parts = table.connect(state.at('t'), send, { id: 'tbl', selectAllColumnId: 'sel' })
+        const parts = table.connect(state.at('t'), send, { id: 'tbl' })
         return [
           div({ ...parts.root }, [
             div(
               { role: 'row' },
               HCOLS.map((c) =>
                 div({ ...parts.columnHeader(c.id) }, [
-                  c.id === 'sel' ? div({ ...parts.selectAllCheckbox }, []) : text(c.id),
+                  c.id === 'sel' ? div({ ...parts.selectAllCheckbox(c.id) }, []) : text(c.id),
                 ]),
               ),
             ),
