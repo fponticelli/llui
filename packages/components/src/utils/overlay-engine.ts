@@ -181,9 +181,17 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   //
   // `outside` ONLY when this overlay pushes no dismissable layer. With a layer,
   // `shouldDispatch` already limits outside-clicks to the topmost one, which is
-  // ORDERED and therefore strictly better than the registry's global answer —
-  // and adding `outside` on top of it would break the reverse direction (a
-  // dialog's background could no longer dismiss a `select` open inside it).
+  // ORDERED and therefore strictly better than the registry's flat, global
+  // answer. Adding `outside` on top of it breaks SIBLING layers: two popovers
+  // open at once, a click inside the lower one is an outside interaction for the
+  // upper one and must dismiss it — but the registry has no notion of which
+  // layer asked, so the upper one would read the click as "inside a nested
+  // layer" and stay open. (Pinned by `overlay-nested-layer.integration.test.ts`
+  // — "a pointerdown inside the lower sibling popover dismisses the upper one".)
+  // The dialog-with-an-inner-`select` case is NOT what this narrowing protects:
+  // that one is covered by `isModal` above, since a modal never registers at all
+  // whatever aspects it would have named.
+  //
   // Without a layer — a `tooltip` with `closeOnEscape: false` — nothing speaks
   // for the overlay at all, so a click inside it would dismiss the layer beneath.
   const nestedLayerAspects: NestedLayerAspect[] = opts.dismiss

@@ -28,11 +28,14 @@ import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
  * ## Why registration is per-ASPECT
  *
  * A lookup is GLOBAL — it has no notion of which layer asked — so a registration
- * that is right for one consumer can be wrong for another. Concretely: a `select`
- * open inside a dialog must still dismiss when the user clicks the dialog's own
- * background, but it must also stay Tab-reachable from the dialog's focus trap.
- * Registering the select's content for every consumer at once gets the second and
- * loses the first (the dialog background reads as "inside a nested layer").
+ * that is right for one consumer can be wrong for another. Concretely, for the
+ * `outside` consumer: two sibling popovers open at once, and a click inside the
+ * lower one is an outside interaction for the upper one, which must dismiss. If
+ * the lower one were registered for `outside`, the upper one's watcher would read
+ * that click as "inside a nested layer" and stay open — a flat answer cannot
+ * distinguish "nested inside the layer that is asking" from "inside some other
+ * open layer". Both popovers still need `focus` + `hide`, where the flat answer
+ * IS what is wanted.
  *
  * So a registration names the {@link NestedLayerAspect}s it participates in.
  * `@llui/components`' own portaled overlays register for `focus` + `hide` only:
@@ -44,6 +47,30 @@ import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
  * `outside` too. A surface that pushes no layer AND is not driven by the overlay
  * engine — the `@llui/markdown-editor` floating toolbar, the registry's original
  * caller — wants all three, which is why omitting `aspects` means all three.
+ *
+ * ## Two limits of a flat registry, both deliberate
+ *
+ * **An `outside` registration leaks page-wide.** Because the lookup carries no
+ * nesting information, ANY live `outside` registration makes an interaction
+ * inside it invisible to EVERY open layer, not just to the one it is nested in.
+ * Reachable today: an unrelated `tooltip({ closeOnEscape: false })` — the one
+ * engine config that reaches the `outside` aspect — open anywhere on the page
+ * suppresses an open `select`'s outside-dismissal for clicks inside that
+ * tooltip, even though the two have nothing to do with each other. That is the
+ * accepted price of covering the layerless overlay at all (without it a click
+ * inside such a tooltip dismisses the layer beneath it). It is narrow — it needs
+ * a non-default config AND a simultaneously-open layer — but it is real. A
+ * per-layer registry, where a layer asks "is this nested inside ME?", is the
+ * shape that removes it.
+ *
+ * **`hide` is weaker than `focus`.** {@link setAriaHiddenOutside} snapshots the
+ * exempt set ONCE, when the sweep runs, and there is no `MutationObserver`
+ * re-running it. So a registration only reaches the sweep if it is live BEFORE
+ * the modal opens — in the common ordering (dialog opens, THEN a select inside
+ * it) the select's portal content does not exist yet and the sweep never sees
+ * it. {@link pushFocusTrap} has no such limit: it re-reads the registry on every
+ * Tab, which is why `focus` is the load-bearing half of a non-modal overlay's
+ * registration.
  */
 const providers = new Set<Provider>()
 

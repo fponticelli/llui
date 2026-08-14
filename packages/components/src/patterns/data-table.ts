@@ -361,6 +361,12 @@ export interface ConnectOptions {
   id: string
   /** Accessible label for the pagination nav. */
   paginationLabel?: string
+  /**
+   * Id of the column whose `columnheader` hosts the select-all checkbox —
+   * forwarded to the table machine, where it is what puts select-all on the
+   * roving header's Enter/Space. Without it the select-all is mouse-only.
+   */
+  selectAllColumnId?: string
 }
 
 export function connect(
@@ -401,7 +407,7 @@ export function connect(
           send({ type: 'tableKey', msg: m })
       }
     },
-    { id: opts.id },
+    { id: opts.id, selectAllColumnId: opts.selectAllColumnId },
   )
 
   const paginationParts = paginationConnect(

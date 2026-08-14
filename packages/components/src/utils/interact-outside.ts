@@ -39,8 +39,9 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
     // markdown-editor floating toolbar opened inside this dialog) counts as
     // inside — see registerNestedLayer. Only registrations that opted into the
     // `outside` aspect count: a layer with a dismissable of its own is ordered
-    // by the stack instead, and answering "inside" for it here would stop the
-    // dialog's own background from dismissing an inner select.
+    // by the stack instead, and this lookup is FLAT — it cannot tell which layer
+    // asked, so answering "inside" for one would make an interaction inside it
+    // invisible to every OTHER open layer, including its own siblings.
     if (isInNestedLayer(target, 'outside')) return
     opts.onInteractOutside(event)
   }

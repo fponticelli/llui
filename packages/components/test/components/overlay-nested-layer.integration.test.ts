@@ -188,6 +188,126 @@ describe('non-modal overlays register as nested layers of an open dialog', () =>
   })
 })
 
+/**
+ * The `outside` NARROWING — why an engine overlay registers `['focus','hide']`
+ * and not all three.
+ *
+ * Two SIBLING popovers, both open. The dismissable stack is ordered, so a
+ * pointerdown inside the lower one is an outside interaction for the upper one
+ * and must dismiss it. The registry's answer is GLOBAL — it has no notion of
+ * which layer asked — so if the lower popover registered for `outside` too, the
+ * upper one's watcher would read the click as "inside a nested layer" and the
+ * upper popover would never dismiss.
+ *
+ * This is the case the aspect list actually protects. (The dialog-with-an-inner-
+ * select case is protected by `isModal`: a modal never registers at all, whatever
+ * aspects it would have named.)
+ */
+describe('the outside aspect is narrowed so sibling layers still dismiss each other', () => {
+  let currentApp: ReturnType<typeof mountApp> | null = null
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    if (currentApp) {
+      currentApp.dispose()
+      currentApp = null
+    }
+    document.body.innerHTML = ''
+    expect(_nestedLayerCount()).toBe(0)
+    expect(_dismissableStackSize()).toBe(0)
+  })
+
+  type SibCtx = { lower: popover.PopoverState; upper: popover.PopoverState }
+  type SibMsg =
+    | { type: 'lower'; msg: popover.PopoverMsg }
+    | { type: 'upper'; msg: popover.PopoverMsg }
+
+  function makeSiblings(): { send: (m: SibMsg) => void } {
+    let sendRef!: (m: SibMsg) => void
+    const def = component<SibCtx, SibMsg, never>({
+      name: 'SiblingPopovers',
+      init: () => [
+        { lower: popover.init({ open: true }), upper: popover.init({ open: true }) },
+        [],
+      ],
+      update: (state, msg) =>
+        msg.type === 'lower'
+          ? [{ ...state, lower: popover.update(state.lower, msg.msg)[0] }, []]
+          : [{ ...state, upper: popover.update(state.upper, msg.msg)[0] }, []],
+      view: ({ state, send }) => {
+        sendRef = send
+        const lowerSend = (m: popover.PopoverMsg): void => send({ type: 'lower', msg: m })
+        const upperSend = (m: popover.PopoverMsg): void => send({ type: 'upper', msg: m })
+        const lowerParts = popover.connect(state.at('lower'), lowerSend, { id: 'lower' })
+        const upperParts = popover.connect(state.at('upper'), upperSend, { id: 'upper' })
+        return [
+          // Mount order fixes the stack order: `upper` pushes last and is topmost.
+          button({ ...lowerParts.trigger }, [text('Lower')]),
+          popover.overlay({
+            state: state.at('lower'),
+            send: lowerSend,
+            parts: lowerParts,
+            // Focus restore is off on BOTH so the assertion isolates the
+            // outside-CLICK path: dismissing a popover otherwise focuses its
+            // trigger, and that focus move is itself an outside interaction for
+            // the sibling — a second, unrelated cascade.
+            restoreFocus: false,
+            content: () => [
+              div({ ...lowerParts.content }, [button({ id: 'lower-action' }, [text('Lower')])]),
+            ],
+          }),
+          button({ ...upperParts.trigger }, [text('Upper')]),
+          popover.overlay({
+            state: state.at('upper'),
+            send: upperSend,
+            parts: upperParts,
+            restoreFocus: false,
+            content: () => [
+              div({ ...upperParts.content }, [button({ id: 'upper-action' }, [text('Upper')])]),
+            ],
+          }),
+        ]
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    currentApp = mountApp(container, def)
+    return { send: (m) => sendRef(m) }
+  }
+
+  it('a pointerdown inside the lower sibling popover dismisses the upper one', async () => {
+    const { send } = makeSiblings()
+    await tick()
+
+    const lowerAction = document.getElementById('lower-action') as HTMLElement
+    expect(lowerAction).not.toBeNull()
+    expect(document.getElementById('upper:content')).not.toBeNull()
+    // Non-vacuous: both popovers really are registered (so the registry IS
+    // consulted) and both really are on the dismissable stack.
+    expect(_nestedLayerCount()).toBe(2)
+    expect(_dismissableStackSize()).toBe(2)
+    // …and they really are body-level SIBLINGS, not one inside the other.
+    const lowerContent = document.getElementById('lower:content') as HTMLElement
+    const upperContent = document.getElementById('upper:content') as HTMLElement
+    expect(lowerContent.contains(upperContent)).toBe(false)
+    expect(upperContent.contains(lowerContent)).toBe(false)
+
+    lowerAction.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await tick()
+
+    // The topmost layer dismissed …
+    expect(document.getElementById('upper:content')).toBeNull()
+    // … and the one the click landed in survived.
+    expect(document.getElementById('lower:content')).not.toBeNull()
+
+    send({ type: 'lower', msg: { type: 'close' } })
+    await tick()
+  })
+})
+
 describe('an overlay that pushes NO dismissable layer is still covered', () => {
   let currentApp: ReturnType<typeof mountApp> | null = null
 

@@ -69,7 +69,13 @@ export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
 export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
 export { visibleItems } from './breadcrumbs.js'
-export { isRowSelected, isAllSelected, isSomeSelected, sortDirectionFor } from './table.js'
+export {
+  isRowSelected,
+  isAllSelected,
+  isSomeSelected,
+  sortDirectionFor,
+  HEADER_ROW_INDEX as TABLE_HEADER_ROW_INDEX,
+} from './table.js'
 export {
   init as menubarInit,
   update as menubarUpdate,

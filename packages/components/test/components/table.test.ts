@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, isRowSelected, isAllSelected } from '../../src/components/table'
+import {
+  init,
+  update,
+  connect,
+  isRowSelected,
+  isAllSelected,
+  HEADER_ROW_INDEX,
+} from '../../src/components/table'
 import { rootSignal, read } from '../_signal'
 
 const COLS = [{ id: 'name', sortable: true }, { id: 'age', sortable: true }, { id: 'note' }]
@@ -184,18 +191,54 @@ describe('table reducer — focus / keyboard grid nav', () => {
     expect(r2.focusedCell).toEqual({ rowIndex: 0, colIndex: 2 })
   })
 
-  it('moveCell down/up clamps to row bounds', () => {
+  // The clamp property is unchanged; the TOP boundary moved. The header row is
+  // `rowIndex: -1` and is part of the roving sequence (#122), so ArrowUp from
+  // the first data row reaches it and ArrowUp from it stays put.
+  it('moveCell down/up clamps to row bounds, with the header row as the top', () => {
     const s0 = { ...init({ columns: COLS, rows: ROWS }), focusedCell: { rowIndex: 0, colIndex: 1 } }
     const [d] = update(s0, { type: 'moveCell', dRow: 1, dCol: 0 })
     expect(d.focusedCell).toEqual({ rowIndex: 1, colIndex: 1 })
     const [u] = update(s0, { type: 'moveCell', dRow: -1, dCol: 0 })
-    expect(u.focusedCell).toEqual({ rowIndex: 0, colIndex: 1 })
+    expect(u.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 1 })
+    const header = {
+      ...init({ columns: COLS, rows: ROWS }),
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 1 },
+    }
+    const [u2] = update(header, { type: 'moveCell', dRow: -1, dCol: 0 })
+    expect(u2.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 1 })
+    const [back] = update(header, { type: 'moveCell', dRow: 1, dCol: 0 })
+    expect(back.focusedCell).toEqual({ rowIndex: 0, colIndex: 1 })
     const last = {
       ...init({ columns: COLS, rows: ROWS }),
       focusedCell: { rowIndex: 3, colIndex: 1 },
     }
     const [d2] = update(last, { type: 'moveCell', dRow: 1, dCol: 0 })
     expect(d2.focusedCell).toEqual({ rowIndex: 3, colIndex: 1 })
+  })
+
+  it('the header row is addressable even with no data rows', () => {
+    const empty = init({ columns: COLS, rows: [] })
+    const [s] = update(empty, { type: 'moveCell', dRow: -1, dCol: 0 })
+    expect(s.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 0 })
+    // …but a grid with no COLUMNS has nothing to address at all.
+    const [none] = update(init({ columns: [], rows: [] }), { type: 'moveCell', dRow: -1, dCol: 0 })
+    expect(none.focusedCell).toBeNull()
+  })
+
+  it('focusCell accepts the header row (DOM focus drives the roving state)', () => {
+    const [s] = update(init({ columns: COLS, rows: ROWS }), {
+      type: 'focusCell',
+      rowIndex: HEADER_ROW_INDEX,
+      colIndex: 2,
+    })
+    expect(s.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 2 })
+    // Still clamped: nothing above the header row exists.
+    const [above] = update(init({ columns: COLS, rows: ROWS }), {
+      type: 'focusCell',
+      rowIndex: -9,
+      colIndex: 0,
+    })
+    expect(above.focusedCell).toEqual({ rowIndex: HEADER_ROW_INDEX, colIndex: 0 })
   })
 
   it('moveCell from null seeds at (0,0)', () => {
@@ -373,6 +416,69 @@ describe('table.connect — parts', () => {
     const none = init({ columns: COLS, rows: ROWS, focusedCell: null })
     expect(read(c00.tabindex, none)).toBe(0)
     expect(read(c01.tabindex, none)).toBe(-1)
+  })
+
+  // #122 — the column header carries the grid's sort control (Enter/Space) but
+  // shipped NO tabindex, so it was keyboard-dead: nothing could ever focus it.
+  // It now takes the roving tab stop when the header row holds the focused cell.
+  it('columnHeader tabindex is 0 only when the header row holds the focused cell', () => {
+    const h0 = p.columnHeader('name')
+    const h1 = p.columnHeader('age')
+    const onHeader = init({
+      columns: COLS,
+      rows: ROWS,
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    expect(read(h0.tabindex, onHeader)).toBe(0)
+    expect(read(h1.tabindex, onHeader)).toBe(-1)
+    // …and never while a data cell holds it.
+    const onCell = init({ columns: COLS, rows: ROWS, focusedCell: { rowIndex: 1, colIndex: 0 } })
+    expect(read(h0.tabindex, onCell)).toBe(-1)
+    expect(read(h1.tabindex, onCell)).toBe(-1)
+  })
+
+  it('columnHeader stays out of the tab sequence while cell(0,0) is the entry stop', () => {
+    const none = init({ columns: COLS, rows: ROWS, focusedCell: null })
+    for (const c of COLS) expect(read(p.columnHeader(c.id).tabindex, none)).toBe(-1)
+    expect(read(p.cell(0, 0).tabindex, none)).toBe(0)
+  })
+
+  // With zero rows there is no cell to rove to, so the grid used to have NO tab
+  // stop at all and was unreachable — sort included. The first header takes it.
+  it('with no rows the first column header takes the grid entry tab stop', () => {
+    const empty = init({ columns: COLS, rows: [], focusedCell: null })
+    expect(read(p.columnHeader('name').tabindex, empty)).toBe(0)
+    expect(read(p.columnHeader('age').tabindex, empty)).toBe(-1)
+    expect(read(p.columnHeader('note').tabindex, empty)).toBe(-1)
+  })
+
+  it('columnHeader reports its grid coordinates for roving DOM focus', () => {
+    const s = init({ columns: COLS, rows: ROWS })
+    const h = p.columnHeader('age')
+    expect(h['data-row-index']).toBe(HEADER_ROW_INDEX)
+    expect(read(h['data-col-index'], s)).toBe(1)
+    expect(
+      read(
+        h['data-focused'],
+        init({
+          columns: COLS,
+          rows: ROWS,
+          focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 1 },
+        }),
+      ),
+    ).toBe('')
+    expect(read(h['data-focused'], s)).toBeUndefined()
+  })
+
+  it('columnHeader onFocus sends focusCell on the header row', () => {
+    const send = vi.fn()
+    const pc = connect(signalState(init({ columns: COLS, rows: ROWS })), send, { id: 't' })
+    pc.columnHeader('note').onFocus(new FocusEvent('focus'))
+    expect(send).toHaveBeenCalledWith({
+      type: 'focusCell',
+      rowIndex: HEADER_ROW_INDEX,
+      colIndex: 2,
+    })
   })
 
   it('rowCheckbox onClick sends toggleRow', () => {
@@ -565,36 +671,148 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
 
   // The name says "the grid", so the count must cover EVERY part that carries a
   // tabindex — not just the cells. Counting cells alone let N focusable row
-  // checkboxes be added inside the grid with this test still green.
+  // checkboxes be added inside the grid with this test still green; counting
+  // the checkboxes but not the COLUMN HEADERS would let the roving header
+  // introduce a second one just as quietly.
   it('exactly one tab stop across the whole grid, counting every part', () => {
-    const s = init({
-      columns: COLS,
-      rows: ROWS,
-      selectionMode: 'multiple',
-      focusedCell: { rowIndex: 2, colIndex: 1 },
-    })
     const p = connect(rootSignal(), vi.fn(), { id: 't' })
     // Widened to `number` on purpose: the checkbox parts are TYPED as the
     // literal `-1`, and comparing that to 0 directly is a compile error rather
     // than a runtime count.
-    const isTabStop = (part: { tabindex: Signal<number> | number }): boolean =>
-      read<number>(part.tabindex, s) === 0
-    let zeroCount = 0
-    for (let r = 0; r < ROWS.length; r++) {
-      for (let c = 0; c < COLS.length; c++) {
-        if (isTabStop(p.cell(r, c))) zeroCount++
+    const countTabStops = (s: ReturnType<typeof init>): number => {
+      const isTabStop = (part: { tabindex: Signal<number> | number }): boolean =>
+        read<number>(part.tabindex, s) === 0
+      let zeroCount = 0
+      for (const c of s.columns) {
+        if (isTabStop(p.columnHeader(c.id))) zeroCount++
       }
-      if (isTabStop(p.rowCheckbox(ROWS[r]!, r))) zeroCount++
+      for (let r = 0; r < s.rows.length; r++) {
+        for (let c = 0; c < s.columns.length; c++) {
+          if (isTabStop(p.cell(r, c))) zeroCount++
+        }
+        if (isTabStop(p.rowCheckbox(s.rows[r]!, r))) zeroCount++
+      }
+      if (isTabStop(p.selectAllCheckbox)) zeroCount++
+      return zeroCount
     }
-    if (isTabStop(p.selectAllCheckbox)) zeroCount++
-    expect(zeroCount).toBe(1)
+    const base = { columns: COLS, rows: ROWS, selectionMode: 'multiple' as const }
+    // …with a data cell focused,
+    expect(countTabStops(init({ ...base, focusedCell: { rowIndex: 2, colIndex: 1 } }))).toBe(1)
+    // …with the HEADER row focused (the roving header must not ADD a stop),
+    expect(
+      countTabStops(init({ ...base, focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 } })),
+    ).toBe(1)
+    // …with nothing focused,
+    expect(countTabStops(init({ ...base, focusedCell: null }))).toBe(1)
+    // …and with no rows at all, where there is no cell to carry it.
+    expect(countTabStops(init({ ...base, rows: [], focusedCell: null }))).toBe(1)
   })
 
-  // The select-all is the one selection control with no cell of its own — it
-  // lives in a `columnheader`, which carries no tabindex and is not in the
-  // roving sequence. APG's Grid pattern gives it Ctrl+A from any cell, which
-  // keeps the single tab stop intact.
-  it('Ctrl/Cmd+A from a cell toggles every row', () => {
+  // The header row joins the roving sequence, so the grid's two header-hosted
+  // controls — sort and select-all — are reachable from the single tab stop.
+  it('arrows move into, along, and back out of the header row', () => {
+    const s = init({
+      columns: COLS,
+      rows: ROWS,
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const { send, pc } = make(s)
+    const header = pc.columnHeader('name')
+    press(header, 'ArrowRight')
+    expect(send).toHaveBeenCalledWith({ type: 'moveCell', dRow: 0, dCol: 1 })
+    press(header, 'ArrowLeft')
+    expect(send).toHaveBeenCalledWith({ type: 'moveCell', dRow: 0, dCol: -1 })
+    press(header, 'ArrowDown')
+    expect(send).toHaveBeenCalledWith({ type: 'moveCell', dRow: 1, dCol: 0 })
+    press(header, 'ArrowUp')
+    expect(send).toHaveBeenCalledWith({ type: 'moveCell', dRow: -1, dCol: 0 })
+    press(header, 'Home')
+    expect(send).toHaveBeenCalledWith({ type: 'rowStart' })
+    press(header, 'End', { ctrlKey: true })
+    expect(send).toHaveBeenCalledWith({ type: 'gridEnd' })
+  })
+
+  // The sort handler predates this PR and was UNREACHABLE: `columnHeader`
+  // carried no tabindex, so nothing could focus it and Enter/Space could never
+  // arrive. The roving header is what makes this test meaningful.
+  it('the roving header sorts on Enter and Space', () => {
+    const s = init({
+      columns: COLS,
+      rows: ROWS,
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const { send, pc } = make(s)
+    // Reachability is half the property: the header holds the tab stop here.
+    expect(read<number>(pc.columnHeader('name').tabindex, s)).toBe(0)
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    pc.columnHeader('name').onKeyDown(enter)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleSort', columnId: 'name' })
+    expect(enter.defaultPrevented).toBe(true)
+
+    send.mockClear()
+    const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('age').onKeyDown(space)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleSort', columnId: 'age' })
+    expect(space.defaultPrevented).toBe(true)
+
+    // A non-sortable header claims nothing.
+    send.mockClear()
+    const inert = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    pc.columnHeader('note').onKeyDown(inert)
+    expect(send).not.toHaveBeenCalled()
+    expect(inert.defaultPrevented).toBe(false)
+  })
+
+  // The select-all checkbox has no cell of its own — it lives in a
+  // `columnheader`. Naming that column puts it on the roving header's
+  // Enter/Space, which is a keyboard user's ONLY route to it (#122).
+  it('the select-all column header toggles every row on Space and Enter', () => {
+    const cols = [{ id: 'sel' }, ...COLS]
+    const s = init({
+      columns: cols,
+      rows: ROWS,
+      selectionMode: 'multiple',
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const send = vi.fn()
+    const pc = connect(signalState(s), send, { id: 't', selectAllColumnId: 'sel' })
+    expect(read<number>(pc.columnHeader('sel').tabindex, s)).toBe(0)
+
+    const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('sel').onKeyDown(space)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+    expect(space.defaultPrevented).toBe(true)
+
+    send.mockClear()
+    pc.columnHeader('sel').onKeyDown(
+      new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+    )
+    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
+  })
+
+  it('the select-all column header claims nothing outside multiple-selection mode', () => {
+    const cols = [{ id: 'sel' }, ...COLS]
+    const s = init({
+      columns: cols,
+      rows: ROWS,
+      selectionMode: 'single',
+      focusedCell: { rowIndex: HEADER_ROW_INDEX, colIndex: 0 },
+    })
+    const send = vi.fn()
+    const pc = connect(signalState(s), send, { id: 't', selectAllColumnId: 'sel' })
+    const e = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    pc.columnHeader('sel').onKeyDown(e)
+    expect(send).not.toHaveBeenCalled()
+    expect(e.defaultPrevented).toBe(false)
+  })
+
+  // Ctrl/Cmd+A is deliberately NOT bound. APG's "Control + A: selects all
+  // cells" is a CELL-selection idiom; this grid selects ROWS and `toggleAll`
+  // toggles rather than selects, so binding it would hijack the browser's
+  // universal select-all for different semantics. The select-all is reached
+  // through the roving header instead.
+  it('letters — bare or with Ctrl/Cmd — are left to typeahead and the browser', () => {
     const s = init({
       columns: COLS,
       rows: ROWS,
@@ -602,34 +820,12 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
       focusedCell: { rowIndex: 1, colIndex: 1 },
     })
     const { send, pc } = make(s)
-    press(pc.cell(1, 1), 'a', { ctrlKey: true })
-    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
-    send.mockClear()
-    press(pc.cell(1, 1), 'A', { metaKey: true })
-    expect(send).toHaveBeenCalledWith({ type: 'toggleAll' })
-  })
-
-  it('a bare "a" is left to typeahead / the consumer, and single-select ignores Ctrl+A', () => {
-    const multi = init({
-      columns: COLS,
-      rows: ROWS,
-      selectionMode: 'multiple',
-      focusedCell: { rowIndex: 1, colIndex: 1 },
-    })
-    const bare = make(multi)
-    press(bare.pc.cell(1, 1), 'a')
-    expect(bare.send).not.toHaveBeenCalled()
-
-    const single = make(
-      init({
-        columns: COLS,
-        rows: ROWS,
-        selectionMode: 'single',
-        focusedCell: { rowIndex: 1, colIndex: 1 },
-      }),
-    )
-    press(single.pc.cell(1, 1), 'a', { ctrlKey: true })
-    expect(single.send).not.toHaveBeenCalled()
+    for (const mods of [{}, { ctrlKey: true }, { metaKey: true }]) {
+      const e = new KeyboardEvent('keydown', { key: 'a', cancelable: true, ...mods })
+      pc.cell(1, 1).onKeyDown(e)
+      expect(e.defaultPrevented).toBe(false)
+    }
+    expect(send).not.toHaveBeenCalled()
   })
 })
 
