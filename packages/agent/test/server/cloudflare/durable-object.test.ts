@@ -1,7 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AgentPairingDurableObject } from '../../../src/server/cloudflare/durable-object.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { seedToken } from '../_token-helper.js'
+
+/**
+ * The MCP-bound cases below allocate 200 real `McpServer`s each, which
+ * is the point of them. That costs ~100 ms idle but stretches past the
+ * 5 s default under a loaded `turbo test`, so the ceiling is stated
+ * explicitly rather than left to flake.
+ */
+vi.setConfig({ testTimeout: 30_000 })
 
 function resolveReq(token?: string, method = 'POST'): Request {
   return new Request('http://internal/__resolve', {

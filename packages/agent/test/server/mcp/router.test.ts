@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createMcpRouter, type McpRouter } from '../../../src/server/mcp/router.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { defaultRateLimiter, type RateLimiter } from '../../../src/server/rate-limit.js'
@@ -111,6 +111,20 @@ async function callTool(
     .trim()
   return { status: res.status, result: line ? (JSON.parse(line) as unknown) : null }
 }
+
+/**
+ * Every test here allocates real `McpServer`s — 16 tools with their Zod
+ * schemas each — because that allocation IS what the bound is about; a
+ * stubbed transport would assert nothing. The counts are already the
+ * smallest that demonstrate the property (200 sequential initializes at
+ * 50x the anonymous quota, 500 overlapping ones), and cost ~1.5 s on an
+ * idle machine. Under `turbo test` on a loaded box that stretches past
+ * the 5 s default and the file goes red for reasons unrelated to what it
+ * checks, so the ceiling is stated explicitly. It is a flake guard, not
+ * a budget: if any test here approaches it, the fix is a smaller count,
+ * not a larger number.
+ */
+vi.setConfig({ testTimeout: 30_000 })
 
 function mkRouter(over: Partial<Parameters<typeof createMcpRouter>[1]> = {}, deps = {}): McpRouter {
   return createMcpRouter(
