@@ -551,8 +551,14 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
 
   // One walk of the item tree per `items` identity, answering the two questions
   // the per-item props ask. Both used to be asked PER ITEM: `isDisabled` walked
-  // the whole tree for every item (~N²/2 node visits for a 200-item menu) and
-  // the level lookup did the same for every pointer tick (#124).
+  // the whole tree for every item, and the level lookup did the same for every
+  // pointer tick (#124) — a per-item walk over N items, i.e. quadratic in the
+  // menu size. The exact figure depends on what you count, so the test
+  // (`per-item-lookup.test.ts`) counts the one thing that is unambiguous:
+  // `disabled` PROPERTY READS, measured at 200 before and 100 after on a
+  // 100-item menu. That 2N is two per-item bindings (`aria-disabled` and
+  // `data-disabled`) each calling `isDisabled` once per item, NOT the node
+  // visits the walk itself makes.
   const levelIndex = deriveOnce((items: MenuNode[]): ReadonlyMap<string, string> => {
     const levels = new Map<string, string>()
     const walk = (list: MenuNode[], level: string): void => {

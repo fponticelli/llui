@@ -244,12 +244,18 @@ describe('per-item lookups are O(1) in the list length (#124)', () => {
 describe('menu isDisabled does not re-walk the item tree per item (#124)', () => {
   it('reads the disabled flag from one derivation', () => {
     // `isDisabled` used `findItem`, which walks the tree per item. The probe
-    // below counts `disabled` PROPERTY READS, not tree-node visits — `findItem`
-    // reads `disabled` only on the node it matched, so the numbers this
-    // discriminates between are 2N reads before (the walk's own read plus the
-    // caller's) and N after, NOT the ~N²/2 nodes the walk touches. It still
-    // pins the property that matters: one derivation for the whole list rather
-    // than one lookup per item.
+    // below counts `disabled` PROPERTY READS, not tree-node visits, so it does
+    // NOT measure the ~N²/2 nodes a per-item walk touches — `findItem` never
+    // reads `.disabled` at all; it matches on `.value` and returns the node,
+    // and `isDisabled` reads the flag once on the node it got back.
+    //
+    // The 2N before / N after is therefore a count of BINDINGS, not of walk
+    // steps: two per-item props (`aria-disabled` and `data-disabled`) each
+    // called `isDisabled` once per item, so each item's flag was read twice.
+    // After the fix a single memoized walk reads each node's flag exactly once
+    // and both bindings hit the derived set. It still pins the property that
+    // matters: one derivation for the whole list rather than one lookup per
+    // item.
     let visits = 0
     const items: menu.MenuItem[] = ids(100).map((value) => {
       const node = { value, kind: 'action' as const }

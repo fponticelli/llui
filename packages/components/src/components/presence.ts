@@ -116,11 +116,16 @@ export function presenceClose<S extends PresenceOverlay>(state: S, skipAnimation
  *
  * SEMANTIC ADDITION over the four private copies this collapsed (#126): the
  * closing->closed transition also writes `open: false`. It is unreachable
- * today — `'closing'` is only ever written together with `open: false`, by
- * `presenceClose` — so it changes no behaviour, and it is kept because
- * "finished closing" implying "not open" is the invariant a caller reducing
- * through this function is entitled to, and a future writer of `'closing'`
- * should not be able to leave the pair inconsistent.
+ * today, but the reason is narrower than "nothing else writes 'closing'":
+ * other code does — `update`'s own `'close'` case above and `toast.ts`'s
+ * dismiss both write it — and neither carries an `open` field or reduces
+ * through this function. The claim is scoped to {@link PresenceOverlay}: among
+ * the states that DO reach here, `'closing'` is only ever written together
+ * with `open: false`, by {@link presenceClose}. So it changes no behaviour,
+ * and it is kept because "finished closing" implying "not open" is the
+ * invariant a caller reducing through this function is entitled to, and a
+ * future writer of `'closing'` on an overlay should not be able to leave the
+ * pair inconsistent.
  */
 export function presenceEnd<S extends PresenceOverlay>(state: S): S {
   if (state.status === 'opening') return { ...state, status: 'open' }
