@@ -326,7 +326,14 @@ describe('connect.ts names a browser global in exactly one place', () => {
   // A dereference of the global, not a mention of the word: `env.historyState`
   // and `router.mode === 'history'` are excluded by the lookbehind and the
   // required `.`/`[`.
-  const GLOBAL_USE = /(?<![\w$.'"`])(?:location|history|window)\s*[.[]/
+  //
+  // `globalThis` is named too, and not for completeness: the lookbehind that
+  // keeps `env.history` out also let `globalThis.location.hash` through, and
+  // `globalThis.x` is the common SSR-safe spelling — a plausible way to write
+  // the very edit this gate exists to stop. Naming the container catches it
+  // whatever is read off it, and `globalThis` has no non-global meaning to
+  // over-match.
+  const GLOBAL_USE = /(?<![\w$.'"`])(?:globalThis|location|history|window)\s*[.[]/
 
   it('every location/history/window dereference is inside browserRouterEnv', () => {
     const lines = codeLines(connectSource)
@@ -340,6 +347,24 @@ describe('connect.ts names a browser global in exactly one place', () => {
         'surface is missing one. browserRouterEnv is the one place that touches ' +
         'a global, so it is the one place a host has to replace.',
     ).toEqual([])
+  })
+
+  it('the pattern reads a dereference, and does not miss the globalThis spelling', () => {
+    // `globalThis.location.hash` used to walk straight through: the lookbehind
+    // excludes a `location` preceded by a dot, and nothing named the object it
+    // was reached through. It is not an exotic evasion either — `globalThis.x`
+    // is the common SSR-safe spelling, so it is a plausible way to write the
+    // exact edit this gate exists to stop.
+    expect(GLOBAL_USE.test('globalThis.location.hash')).toBe(true)
+    expect(GLOBAL_USE.test("globalThis.history.replaceState(state, '')")).toBe(true)
+    expect(GLOBAL_USE.test("globalThis['location'].hash")).toBe(true)
+    expect(GLOBAL_USE.test('window.location.hash')).toBe(true)
+    expect(GLOBAL_USE.test('location.hash')).toBe(true)
+
+    // …and still reads a DEREFERENCE of the global, not a mention of the word.
+    expect(GLOBAL_USE.test('env.historyState')).toBe(false)
+    expect(GLOBAL_USE.test("router.mode === 'history'")).toBe(false)
+    expect(GLOBAL_USE.test('const globalThisIsNotIt = 1')).toBe(false)
   })
 
   it('the gate sees the uses that ARE there, so it is not vacuous', () => {
