@@ -28,9 +28,15 @@
 // A `ListItemNode` transform would also fire on import, on HTML paste and on
 // remote collab edits, silently rewriting a bullet item that legitimately reads
 // `[ ] …` (a document can spell one with escapes). This is a TYPING affordance,
-// so it hooks the same place `registerMarkdownShortcuts` does and inherits the
-// same guards: not collaboration, not undo/redo, not composition, and only when
-// the caret just moved over the character that completed the marker.
+// so it hooks the same place `registerMarkdownShortcuts` does and RESTATES its
+// guards: not collaboration, not undo/redo, not mid-composition, an
+// IME-committed marker (`COMPOSITION_END_TAG`) still allowed through, no
+// code-formatted text (`canContainTransformableMarkdown`), and only when the
+// caret just moved over the character that completed the marker.
+//
+// "Restates", not "inherits": none of these reach an element transformer for
+// free. Each guard below is here because it was written out, and one that is
+// deleted is simply gone.
 
 import {
   $addUpdateTag,
@@ -39,6 +45,7 @@ import {
   $isRangeSelection,
   $isTextNode,
   COLLABORATION_TAG,
+  COMPOSITION_END_TAG,
   HISTORIC_TAG,
   HISTORY_PUSH_TAG,
   type LexicalEditor,
@@ -99,15 +106,20 @@ export function registerTaskMarkerShortcut(editor: LexicalEditor): () => void {
     if (tags.has(COLLABORATION_TAG) || tags.has(HISTORIC_TAG)) return
     if (editor.isComposing()) return
 
+    // An IME commit lands the whole marker in ONE update and leaves the
+    // selection where it already was, so upstream lets a `COMPOSITION_END_TAG`
+    // update through the "the caret moved" test rather than bailing on it.
+    const isCompositionEnd = tags.has(COMPOSITION_END_TAG)
+
     const selection = editorState.read($getSelection)
     const prevSelection = prevEditorState.read($getSelection)
-    // Only as the user types: a collapsed caret that actually moved, sitting in
-    // a text node this update changed.
+    // Only as the user types: a collapsed caret that actually moved (or an IME
+    // that just committed), sitting in a text node this update changed.
     if (
       !$isRangeSelection(selection) ||
       !$isRangeSelection(prevSelection) ||
       !selection.isCollapsed() ||
-      selection.is(prevSelection)
+      (selection.is(prevSelection) && !isCompositionEnd)
     ) {
       return
     }
@@ -118,7 +130,11 @@ export function registerTaskMarkerShortcut(editor: LexicalEditor): () => void {
 
     editor.update(() => {
       const anchorNode = $getNodeByKey(anchorKey)
-      if (!$isTextNode(anchorNode)) return
+      // `canContainTransformableMarkdown` (`importTextTransformers.ts:29`): a
+      // code-formatted run is literal text, so a `[ ] ` inside one is not a
+      // marker. Upstream applies this to every text transformer; nothing
+      // inherits it for an element one, so it is stated here.
+      if (!$isTextNode(anchorNode) || anchorNode.hasFormat('code')) return
 
       const item = anchorNode.getParent()
       // The marker has to open the item, so the caret's text node must be its
