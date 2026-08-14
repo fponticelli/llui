@@ -230,7 +230,12 @@ describe('connectRouter routes history/location through an injectable env', () =
     rec.calls.length = 0
     rec.handlers[0]!.handler()
 
-    expect(rec.calls.some((c) => c.startsWith('go:'))).toBe(true)
+    // The exact delta, not merely "a go happened": our own push took the index
+    // to 1, the popped-to entry carries 0, so the rewind is exactly +1. What the
+    // index arithmetic computes is the whole point of rewinding with `go` rather
+    // than pushing (#111 residual 2 / finding 2c), and it is what the concurrent
+    // #103 work changes — a `some(startsWith('go:'))` would not notice.
+    expect(rec.calls).toEqual(['go:1'])
     app.dispose()
     document.body.removeChild(container)
   })
