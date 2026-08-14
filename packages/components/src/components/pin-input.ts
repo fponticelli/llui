@@ -62,6 +62,27 @@ function sanitize(char: string, type: PinType): string {
   return char
 }
 
+/**
+ * Accepted characters of a pasted sequence, in order and WITHOUT the holes a
+ * rejected character used to leave. Sanitizing per SLOT dropped '123-456' into
+ * ['1','2','3','','4','5'] — the separator ate a slot and the last digit fell
+ * off the end (#125). Entries may hold more than one character — the paste
+ * handler passes the clipboard text WHOLE, which is what makes the code-point
+ * iteration below reachable: a surrogate pair is judged (and rejected) as ONE
+ * character rather than as two lone halves. Splitting by UTF-16 code unit
+ * before the call throws that away, which is what the caller used to do.
+ */
+export function acceptedChars(values: readonly string[], type: PinType): string[] {
+  const accepted: string[] = []
+  for (const entry of values) {
+    for (const char of entry) {
+      const sanitized = sanitize(char, type)
+      if (sanitized) accepted.push(sanitized)
+    }
+  }
+  return accepted
+}
+
 export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, never[]] {
   if (state.disabled) return [state, []]
   switch (msg.type) {
@@ -75,12 +96,13 @@ export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, 
       return [{ ...state, values, focusedIndex: nextIndex }, []]
     }
     case 'setAll': {
+      const accepted = acceptedChars(msg.values, state.type)
       const values = new Array<string>(state.length).fill('')
-      for (let i = 0; i < Math.min(msg.values.length, state.length); i++) {
-        values[i] = sanitize(msg.values[i]!, state.type)
+      for (let i = 0; i < Math.min(accepted.length, state.length); i++) {
+        values[i] = accepted[i]!
       }
-      const lastFilled = values.findIndex((v) => v === '')
-      const focusedIndex = lastFilled === -1 ? state.length - 1 : lastFilled
+      const firstEmpty = values.findIndex((v) => v === '')
+      const focusedIndex = firstEmpty === -1 ? state.length - 1 : firstEmpty
       return [{ ...state, values, focusedIndex }, []]
     }
     case 'focus':
@@ -235,10 +257,14 @@ export function connect(
       onPaste: tagSend(send, ['setAll'], (e) => {
         e.preventDefault()
         const text = e.clipboardData?.getData('text') ?? ''
-        send({ type: 'setAll', values: text.split('') })
+        // Hand the clipboard text over WHOLE. `acceptedChars` iterates an entry
+        // by CODE POINT; `text.split('')` splits by UTF-16 code UNIT, so a
+        // pasted surrogate pair arrived as two lone halves and the code-point
+        // guarantee never reached the only caller that needed it.
+        send({ type: 'setAll', values: [text] })
       }),
     }),
   }
 }
 
-export const pinInput = { init, update, connect, isComplete, getValue }
+export const pinInput = { init, update, connect, isComplete, getValue, acceptedChars }

@@ -2,6 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { clamp } from '../utils/number.js'
 
 /**
  * Rating group — a sequence of clickable items (stars) representing a
@@ -57,10 +58,6 @@ export function init(opts: RatingGroupInit = {}): RatingGroupState {
     hoveredValue: null,
     dir: opts.dir ?? 'ltr',
   }
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
 }
 
 export function update(state: RatingGroupState, msg: RatingGroupMsg): [RatingGroupState, never[]] {

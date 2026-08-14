@@ -4,6 +4,8 @@ import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import type { PresenceStatus } from './presence.js'
+import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
  * Hover card — richer tooltip-like popup triggered by hover or focus.
@@ -43,15 +45,12 @@ export function init(opts: HoverCardInit = {}): HoverCardState {
   }
 }
 
-function showTo(state: HoverCardState): HoverCardState {
-  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
-  return { ...state, open: true, status: state.skipAnimations ? 'open' : 'opening' }
-}
-
-function hideTo(state: HoverCardState): HoverCardState {
-  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
-  return { ...state, open: false, status: state.skipAnimations ? 'closed' : 'closing' }
-}
+// The open/close/end triple is the SHARED presence machine (`presence.ts`) —
+// five overlays used to carry a byte-identical private copy (#126).
+const showTo = (state: HoverCardState): HoverCardState =>
+  presenceOpen(state, state.skipAnimations === true)
+const hideTo = (state: HoverCardState): HoverCardState =>
+  presenceClose(state, state.skipAnimations === true)
 
 export function update(state: HoverCardState, msg: HoverCardMsg): [HoverCardState, never[]] {
   switch (msg.type) {
@@ -63,9 +62,7 @@ export function update(state: HoverCardState, msg: HoverCardMsg): [HoverCardStat
       return [msg.open ? showTo(state) : hideTo(state), []]
     case 'animationEnd':
     case 'transitionEnd':
-      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
-      if (state.status === 'closing') return [{ ...state, status: 'closed' }, []]
-      return [state, []]
+      return [presenceEnd(state), []]
   }
 }
 
@@ -214,8 +211,7 @@ export function connect(
         }
       },
       onPointerLeave: scheduleClose,
-      onAnimationEnd: () => send({ type: 'animationEnd' }),
-      onTransitionEnd: () => send({ type: 'transitionEnd' }),
+      ...presenceEndProps(send, { type: 'animationEnd' }, { type: 'transitionEnd' }),
     },
     arrow: {
       'data-scope': 'hover-card',

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isComplete, getValue } from '../../src/components/pin-input'
+import type { PinInputMsg } from '../../src/components/pin-input'
 import { rootSignal, read } from '../_signal'
 
 describe('pin-input reducer', () => {
@@ -34,6 +35,22 @@ describe('pin-input reducer', () => {
     const [s] = update(s0, { type: 'setAll', values: '1234abc'.split('') })
     expect(s.values.slice(0, 4)).toEqual(['1', '2', '3', '4'])
     expect(s.values[4]).toBe('')
+  })
+
+  it('setAll distributes across every slot, skipping separators (#125 defect 6)', () => {
+    const s0 = init({ length: 6, type: 'numeric' })
+    const [s] = update(s0, { type: 'setAll', values: '123-456'.split('') })
+    // Sanitizing per SLOT left a hole where the separator fell.
+    expect(s.values).toEqual(['1', '2', '3', '4', '5', '6'])
+    expect(s.focusedIndex).toBe(5)
+  })
+
+  it('setAll accepts multi-character entries', () => {
+    const [s] = update(init({ length: 4, type: 'numeric' }), {
+      type: 'setAll',
+      values: ['12 34'],
+    })
+    expect(s.values).toEqual(['1', '2', '3', '4'])
   })
 
   it('clear resets everything', () => {
@@ -123,5 +140,58 @@ describe('pin-input.connect', () => {
     Object.defineProperty(ev2, 'target', { value: target })
     pc.input(0).onInput(ev2)
     expect(send).toHaveBeenCalledWith({ type: 'setValue', index: 0, value: '5' })
+  })
+})
+
+describe('pin-input paste (connect)', () => {
+  /** Minimal stand-in for the `DataTransfer` jsdom does not implement: the
+   * paste handler touches `getData` only. */
+  class DataTransferStub {
+    constructor(private readonly text: string) {}
+    getData(type: string): string {
+      return type === 'text' ? this.text : ''
+    }
+  }
+
+  /** Minimal stand-in for `ClipboardEvent`. A real `Event` — so `dispatchEvent`
+   * and `preventDefault` behave — carrying a `clipboardData`. No cast is needed
+   * anywhere: `addEventListener('paste', …)` is typed through
+   * `HTMLElementEventMap` and `dispatchEvent` takes an `Event`. */
+  const ClipboardEventStub = class ClipboardEvent extends Event {
+    readonly clipboardData: DataTransferStub
+    constructor(type: string, init: { clipboardData: DataTransferStub }) {
+      super(type, { bubbles: true, cancelable: true })
+      this.clipboardData = init.clipboardData
+    }
+  }
+
+  const paste = (text: string): { sent: PinInputMsg[]; event: Event } => {
+    const sent: PinInputMsg[] = []
+    const pc = connect(rootSignal(), (msg) => sent.push(msg), { id: 'x' })
+    const field = document.createElement('input')
+    field.addEventListener('paste', pc.input(0).onPaste)
+    const event = new ClipboardEventStub('paste', { clipboardData: new DataTransferStub(text) })
+    field.dispatchEvent(event)
+    return { sent, event }
+  }
+
+  it('distributes a separator-carrying paste across every slot (#125 defect 6)', () => {
+    const { sent, event } = paste('123-456')
+    expect(event.defaultPrevented).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(update(init({ length: 6 }), sent[0]!)[0].values).toEqual(['1', '2', '3', '4', '5', '6'])
+  })
+
+  it('sends an empty sequence when the clipboard holds nothing', () => {
+    const { sent } = paste('')
+    expect(update(init({ length: 4 }), sent[0]!)[0].values).toEqual(['', '', '', ''])
+  })
+
+  it('hands the clipboard text over WHOLE, so acceptedChars splits it by code point', () => {
+    // `acceptedChars` judges a surrogate pair as one character, but only if it
+    // arrives as one entry: `text.split('')` splits by UTF-16 code UNIT and
+    // delivered two lone halves, which made the documented claim false.
+    const { sent } = paste('1\u{1F600}2')
+    expect(sent[0]).toEqual({ type: 'setAll', values: ['1\u{1F600}2'] })
   })
 })

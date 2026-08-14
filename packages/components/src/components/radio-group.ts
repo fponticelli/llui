@@ -2,6 +2,14 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
+import {
+  firstEnabled,
+  lastEnabled,
+  nextEnabled,
+  pruneToEnabled,
+  rovingTabStop,
+} from '../utils/list-navigation.js'
 
 /**
  * Radio group — a set of mutually-exclusive options. Users select one value
@@ -16,6 +24,10 @@ export interface RadioGroupState {
   disabledItems: string[]
   disabled: boolean
   orientation: Orientation
+  /** Whether arrow navigation wraps at the ends. Default true (WAI-ARIA radio
+   * groups wrap). Present on every roving widget in the package — its absence
+   * here was pure drift between the copies of the navigation code (#126). */
+  loopFocus: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
 }
@@ -42,6 +54,7 @@ export interface RadioGroupInit {
   disabledItems?: string[]
   disabled?: boolean
   orientation?: Orientation
+  loopFocus?: boolean
   dir?: 'ltr' | 'rtl'
 }
 
@@ -52,38 +65,9 @@ export function init(opts: RadioGroupInit = {}): RadioGroupState {
     disabledItems: opts.disabledItems ?? [],
     disabled: opts.disabled ?? false,
     orientation: opts.orientation ?? 'vertical',
+    loopFocus: opts.loopFocus ?? true,
     dir: opts.dir ?? 'ltr',
   }
-}
-
-function nextEnabled(
-  items: string[],
-  disabled: string[],
-  from: string,
-  delta: 1 | -1,
-): string | null {
-  if (items.length === 0) return null
-  const idx = items.indexOf(from)
-  if (idx === -1) return null
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const next = items[(idx + delta * i + n * n) % n]!
-    if (!disabled.includes(next)) return next
-  }
-  return null
-}
-
-function firstEnabled(items: string[], disabled: string[]): string | null {
-  for (const v of items) if (!disabled.includes(v)) return v
-  return null
-}
-
-function lastEnabled(items: string[], disabled: string[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (!disabled.includes(v)) return v
-  }
-  return null
 }
 
 export function update(state: RadioGroupState, msg: RadioGroupMsg): [RadioGroupState, never[]] {
@@ -95,18 +79,15 @@ export function update(state: RadioGroupState, msg: RadioGroupMsg): [RadioGroupS
       return [{ ...state, value: msg.value }, []]
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
-      const value =
-        state.value && msg.items.includes(state.value) && !disabled.includes(state.value)
-          ? state.value
-          : null
+      const value = pruneToEnabled(msg.items, disabled, state.value)
       return [{ ...state, items: msg.items, disabledItems: disabled, value }, []]
     }
     case 'selectNext': {
-      const to = nextEnabled(state.items, state.disabledItems, msg.from, 1)
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, 1, state.loopFocus)
       return to === null ? [state, []] : [{ ...state, value: to }, []]
     }
     case 'selectPrev': {
-      const to = nextEnabled(state.items, state.disabledItems, msg.from, -1)
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, -1, state.loopFocus)
       return to === null ? [state, []] : [{ ...state, value: to }, []]
     }
     case 'selectFirst': {
@@ -172,6 +153,17 @@ export function connect(
 ): RadioGroupParts {
   const itemId = (v: string): string => `${opts.id}:item:${v}`
 
+  // Derived once per update and shared by every item (#124). The roving tab
+  // stop is a whole-list question, so it is answered ONCE and each item only
+  // compares itself against the answer.
+  const disabled = membershipSet<string>()
+  // WAI-ARIA: the CHECKED radio is the group's tab stop; with none checked (or
+  // a checked value the list no longer holds) it falls to the first enabled
+  // one, so the group always has exactly one.
+  const tabStop = deriveOnceN((items: string[], disabledItems: string[], value: string | null) =>
+    rovingTabStop(items, disabledItems, value),
+  )
+
   return {
     root: {
       role: 'radiogroup',
@@ -188,24 +180,19 @@ export function connect(
         id: itemId(value),
         'aria-checked': state.map((s) => s.value === value),
         'aria-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? 'true' : undefined,
+          disabled(s.disabledItems).has(value) || s.disabled ? 'true' : undefined,
         ),
         'data-state': state.map((s) => (s.value === value ? 'checked' : 'unchecked')),
         'data-disabled': state.map((s) =>
-          s.disabledItems.includes(value) || s.disabled ? '' : undefined,
+          disabled(s.disabledItems).has(value) || s.disabled ? '' : undefined,
         ),
         'data-scope': 'radio-group',
         'data-part': 'item',
         'data-value': value,
         // Only currently-selected (or first if none selected) is tab-stop
         tabindex: state.map((st) => {
-          if (st.disabled || st.disabledItems.includes(value)) return -1
-          if (st.value === value) return 0
-          if (st.value === null) {
-            const first = firstEnabled(st.items, st.disabledItems)
-            return first === value ? 0 : -1
-          }
-          return -1
+          if (st.disabled || disabled(st.disabledItems).has(value)) return -1
+          return tabStop(st.items, st.disabledItems, st.value) === value ? 0 : -1
         }),
         onClick: tagSend(send, ['setValue'], () => send({ type: 'setValue', value })),
         onKeyDown: tagSend(

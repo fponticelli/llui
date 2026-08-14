@@ -8,6 +8,11 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
+import { pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
+
+/** A tree row is never "disabled" — the whole visible list is navigable. */
+const NO_DISABLED: readonly string[] = []
 
 /**
  * Tree view — hierarchical list with expand/collapse. Items are identified
@@ -409,7 +414,15 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       ]
     case 'setVisibleItems':
       return [
-        { ...state, visibleItems: msg.ids, visibleLabels: msg.labels ?? state.visibleLabels },
+        {
+          ...state,
+          visibleItems: msg.ids,
+          visibleLabels: msg.labels ?? state.visibleLabels,
+          // Collapsing a branch (or filtering) can drop the focused row. The
+          // roving tabindex is keyed off `focused`, so a dangling one left
+          // EVERY row at -1 and the tree unreachable by Tab (#126).
+          focused: pruneToEnabled(msg.ids, NO_DISABLED, state.focused),
+        },
         [],
       ]
     case 'arrowLeftFrom': {
@@ -688,6 +701,22 @@ export function connect(
   const itemId = (v: string): string => `${opts.id}:item:${v}`
   const expandOnClick = opts.expandOnClick === true
 
+  // Per-item props run for EVERY row on EVERY update, so each flag list is
+  // turned into a set ONCE per update and shared (#124). The exported
+  // `isExpanded`/`isSelected`/… predicates keep their array form — they are a
+  // one-off consumer API, not the per-row path.
+  const expanded = membershipSet<string>()
+  const selected = membershipSet<string>()
+  const checked = membershipSet<string>()
+  const indeterminate = membershipSet<string>()
+  const loading = membershipSet<string>()
+  const loadFailed = membershipSet<string>()
+  // The tree's single tab stop: the focused row, or the first visible one when
+  // nothing is focused (or what was focused is gone). Answered once per update.
+  const tabStop = deriveOnceN((visibleItems: string[], focused: string | null) =>
+    rovingTabStop(visibleItems, NO_DISABLED, focused),
+  )
+
   return {
     root: {
       role: 'tree',
@@ -711,24 +740,24 @@ export function connect(
       item: {
         role: 'treeitem',
         id: itemId(id),
-        'aria-expanded': state.map((s) => (isBranch ? isExpanded(s, id) : undefined)),
+        'aria-expanded': state.map((s) => (isBranch ? expanded(s.expanded).has(id) : undefined)),
         // Selection is announced for single AND multiple selection. In
         // checkbox mode the checked state is carried by the checkbox part's
         // aria-checked, so aria-selected is omitted to avoid a double signal.
         'aria-selected': state.map((s) =>
-          s.selectionMode === 'checkbox' ? undefined : isSelected(s, id),
+          s.selectionMode === 'checkbox' ? undefined : selected(s.selected).has(id),
         ),
         'aria-level': depth + 1,
-        'aria-busy': state.map((s) => (isLoading(s, id) ? 'true' : undefined)),
-        tabindex: state.map((s) => (s.focused === id ? 0 : -1)),
+        'aria-busy': state.map((s) => (loading(s.loading).has(id) ? 'true' : undefined)),
+        tabindex: state.map((s) => (tabStop(s.visibleItems, s.focused) === id ? 0 : -1)),
         'data-scope': 'tree-view',
         'data-part': 'item',
         'data-value': id,
         'data-depth': String(depth),
-        'data-selected': state.map((s) => (isSelected(s, id) ? '' : undefined)),
+        'data-selected': state.map((s) => (selected(s.selected).has(id) ? '' : undefined)),
         'data-focused': state.map((s) => (s.focused === id ? '' : undefined)),
-        'data-loading': state.map((s) => (isLoading(s, id) ? '' : undefined)),
-        'data-load-failed': state.map((s) => (isLoadFailed(s, id) ? '' : undefined)),
+        'data-loading': state.map((s) => (loading(s.loading).has(id) ? '' : undefined)),
+        'data-load-failed': state.map((s) => (loadFailed(s.loadFailed).has(id) ? '' : undefined)),
         onClick: tagSend(send, ['select', 'toggleBranch'], (e) => {
           send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
           if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
@@ -811,7 +840,7 @@ export function connect(
       branchTrigger: {
         'data-scope': 'tree-view',
         'data-part': 'branch-trigger',
-        'data-state': state.map((s) => (isExpanded(s, id) ? 'open' : 'closed')),
+        'data-state': state.map((s) => (expanded(s.expanded).has(id) ? 'open' : 'closed')),
         onClick: tagSend(send, ['toggleBranch'], (e) => {
           e.stopPropagation()
           send({ type: 'toggleBranch', id })
@@ -820,14 +849,14 @@ export function connect(
       checkbox: {
         role: 'checkbox',
         'aria-checked': state.map((s) => {
-          if (isIndeterminate(s, id)) return 'mixed'
-          return isChecked(s, id) ? 'true' : 'false'
+          if (indeterminate(s.indeterminate).has(id)) return 'mixed'
+          return checked(s.checked).has(id) ? 'true' : 'false'
         }),
         'data-scope': 'tree-view',
         'data-part': 'checkbox',
         'data-state': state.map((s) => {
-          if (isIndeterminate(s, id)) return 'indeterminate'
-          return isChecked(s, id) ? 'checked' : 'unchecked'
+          if (indeterminate(s.indeterminate).has(id)) return 'indeterminate'
+          return checked(s.checked).has(id) ? 'checked' : 'unchecked'
         }),
       },
     }),

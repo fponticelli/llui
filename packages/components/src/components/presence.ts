@@ -1,4 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
+import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
  * Presence — track mount/unmount lifecycle with exit-delay support.
@@ -75,6 +76,63 @@ export function update(state: PresenceState, msg: PresenceMsg): [PresenceState, 
   }
 }
 
+/**
+ * The presence slice an OVERLAY carries alongside its own state: the logical
+ * `open` flag plus the animation phase layered over it.
+ *
+ * Dialog, drawer, popover, hover-card and tooltip each had a byte-identical
+ * private copy of the three transitions below (#126). The machines agreed —
+ * their HANDLERS did not — but five copies is five chances to drift, so the
+ * transitions live here and every overlay reduces through them.
+ */
+export interface PresenceOverlay {
+  open: boolean
+  /** Optional because a partial `{ open }` bridge slice may omit it; an absent
+   * status is neither opening nor closing, so it only ever gets WRITTEN. */
+  status?: PresenceStatus
+}
+
+/**
+ * Move toward open. `skipAnimations` lands on 'open' immediately; otherwise the
+ * overlay sits in 'opening' until an end event calls {@link presenceEnd}.
+ * Already-open state comes back by REFERENCE so a redundant open is a no-op for
+ * the reference-equality reconciler.
+ */
+export function presenceOpen<S extends PresenceOverlay>(state: S, skipAnimations: boolean): S {
+  if (state.open && (state.status === 'open' || state.status === 'opening')) return state
+  return { ...state, open: true, status: skipAnimations ? 'open' : 'opening' }
+}
+
+/** Move toward closed — the mirror of {@link presenceOpen}. */
+export function presenceClose<S extends PresenceOverlay>(state: S, skipAnimations: boolean): S {
+  if (!state.open && (state.status === 'closed' || state.status === 'closing')) return state
+  return { ...state, open: false, status: skipAnimations ? 'closed' : 'closing' }
+}
+
+/**
+ * Advance past the enter/exit animation. Only 'opening'/'closing' move; any
+ * other status is returned unchanged, so a stray end event cannot reopen or
+ * unmount anything.
+ *
+ * SEMANTIC ADDITION over the four private copies this collapsed (#126): the
+ * closing->closed transition also writes `open: false`. It is unreachable
+ * today, but the reason is narrower than "nothing else writes 'closing'":
+ * other code does — `update`'s own `'close'` case above and `toast.ts`'s
+ * dismiss both write it — and neither carries an `open` field or reduces
+ * through this function. The claim is scoped to {@link PresenceOverlay}: among
+ * the states that DO reach here, `'closing'` is only ever written together
+ * with `open: false`, by {@link presenceClose}. So it changes no behaviour,
+ * and it is kept because "finished closing" implying "not open" is the
+ * invariant a caller reducing through this function is entitled to, and a
+ * future writer of `'closing'` on an overlay should not be able to leave the
+ * pair inconsistent.
+ */
+export function presenceEnd<S extends PresenceOverlay>(state: S): S {
+  if (state.status === 'opening') return { ...state, status: 'open' }
+  if (state.status === 'closing') return { ...state, status: 'closed', open: false }
+  return state
+}
+
 /** Whether the element should be in the DOM (mounted). */
 export function isMounted(state: PresenceState): boolean {
   if (!state.unmountOnExit) return true
@@ -104,15 +162,13 @@ export interface PresenceParts {
 /** Signal-surface connect: takes the component's `presence` state slice as a
  * Signal and returns reactive (handle-based) props for spreading into a view. */
 export function connect(state: Signal<PresenceState>, send: Send<PresenceMsg>): PresenceParts {
-  const onEnd = (): void => send({ type: 'animationEnd' })
   return {
     root: {
       'data-scope': 'presence',
       'data-part': 'root',
       'data-state': state.map((s) => s.status),
       hidden: state.map((s) => s.status === 'closed' && !s.unmountOnExit),
-      onAnimationEnd: onEnd,
-      onTransitionEnd: onEnd,
+      ...presenceEndProps(send, { type: 'animationEnd' }),
     },
   }
 }

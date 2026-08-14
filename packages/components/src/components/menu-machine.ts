@@ -9,6 +9,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { deriveOnce, membershipSet } from '../utils/derive.js'
 
 /**
  * Shared menu item-tree machine — the single source of truth behind `menu`,
@@ -574,29 +575,57 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
     }, hoverCloseDelay)
   }
 
-  // Resolve which level an item lives at. Used by pointer highlight (per mouse
-  // tick), memoized per items-array reference: an O(n) tree walk becomes an
-  // O(1) lookup, rebuilt only when `items` changes.
-  let levelCacheItems: MenuNode[] | null = null
-  let levelCache = new Map<string, string>()
-  const levelOf = (value: string): string => {
-    const items = state.peek()?.items ?? []
-    if (items !== levelCacheItems) {
-      levelCacheItems = items
-      levelCache = new Map()
-      const walk = (list: MenuNode[], level: string): void => {
-        for (const it of list) {
-          levelCache.set(it.value, level)
-          if (it.children) walk(it.children, it.value)
-        }
+  // One walk of the item tree per `items` identity, answering the two questions
+  // the per-item props ask. Both used to be asked PER ITEM: `isDisabled` walked
+  // the whole tree for every item, and the level lookup did the same for every
+  // pointer tick (#124) — a per-item walk over N items, i.e. quadratic in the
+  // menu size. The exact figure depends on what you count, so the test
+  // (`per-item-lookup.test.ts`) counts the one thing that is unambiguous:
+  // `disabled` PROPERTY READS, measured at 200 before and 100 after on a
+  // 100-item menu. That 2N is two per-item bindings (`aria-disabled` and
+  // `data-disabled`) each calling `isDisabled` once per item, NOT the node
+  // visits the walk itself makes.
+  const levelIndex = deriveOnce((items: MenuNode[]): ReadonlyMap<string, string> => {
+    const levels = new Map<string, string>()
+    const walk = (list: MenuNode[], level: string): void => {
+      for (const it of list) {
+        levels.set(it.value, level)
+        if (it.children) walk(it.children, it.value)
       }
-      walk(items, '')
     }
-    return levelCache.get(value) ?? ''
+    walk(items, '')
+    return levels
+  })
+  const disabledValues = deriveOnce((items: MenuNode[]): ReadonlySet<string> => {
+    const out = new Set<string>()
+    const walk = (list: MenuNode[]): void => {
+      for (const it of list) {
+        if (it.disabled) out.add(it.value)
+        if (it.children) walk(it.children)
+      }
+    }
+    walk(items)
+    return out
+  })
+  const checkedValues = membershipSet<string>()
+  const openValues = membershipSet<string>()
+  // `highlights` is one entry per open level, so the VALUES are the highlighted
+  // items — derived once instead of `Object.values(...)` allocating per item.
+  const highlightedValues = deriveOnce(
+    (highlights: Record<string, string | null>): ReadonlySet<string | null> =>
+      new Set(Object.values(highlights)),
+  )
+
+  // Resolve which level an item lives at. Used by pointer highlight (per mouse
+  // tick): an O(n) tree walk becomes an O(1) lookup.
+  const levelOf = (value: string): string => {
+    const items = state.peek()?.items
+    if (items === undefined) return ''
+    return levelIndex(items).get(value) ?? ''
   }
 
   const highlightedState = (value: string): Signal<'highlighted' | undefined> =>
-    state.map((s) => (Object.values(s.highlights).includes(value) ? 'highlighted' : undefined))
+    state.map((s) => (highlightedValues(s.highlights).has(value) ? 'highlighted' : undefined))
 
   const itemAttrs = (
     value: string,
@@ -604,16 +633,16 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
   ): MenuItemAttrs<Scope> => ({
     role,
     id: ids.itemId(value),
-    'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
+    'aria-disabled': state.map((s) => (disabledValues(s.items).has(value) ? 'true' : undefined)),
     ...(role === 'menuitem'
       ? {}
       : {
           'aria-checked': state.map((s): 'true' | 'false' =>
-            s.checked.includes(value) ? 'true' : 'false',
+            checkedValues(s.checked).has(value) ? 'true' : 'false',
           ),
         }),
     'data-state': highlightedState(value),
-    'data-disabled': state.map((s) => (isDisabled(s.items, value) ? '' : undefined)),
+    'data-disabled': state.map((s) => (disabledValues(s.items).has(value) ? '' : undefined)),
     'data-scope': scope,
     'data-part': 'item',
     'data-value': value,
@@ -748,9 +777,9 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       role: 'menuitem',
       id: ids.subTriggerId(value),
       'aria-haspopup': 'menu',
-      'aria-expanded': state.map((s) => s.openPath.includes(value)),
+      'aria-expanded': state.map((s) => openValues(s.openPath).has(value)),
       'aria-controls': ids.subContentId(value),
-      'aria-disabled': state.map((s) => (isDisabled(s.items, value) ? 'true' : undefined)),
+      'aria-disabled': state.map((s) => (disabledValues(s.items).has(value) ? 'true' : undefined)),
       'data-state': highlightedState(value),
       'data-scope': scope,
       'data-part': 'subtrigger',
@@ -797,7 +826,7 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
         return v == null ? undefined : ids.itemId(v)
       }),
       tabindex: -1,
-      'data-state': state.map((s) => (s.openPath.includes(value) ? 'open' : 'closed')),
+      'data-state': state.map((s) => (openValues(s.openPath).has(value) ? 'open' : 'closed')),
       'data-scope': scope,
       'data-part': 'subcontent',
       onPointerEnter: () => clearCloseTimer(value),

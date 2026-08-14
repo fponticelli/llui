@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { clamp } from '../utils/number.js'
 
 /**
  * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
@@ -73,10 +74,6 @@ export function init(opts: ColorPickerInit = {}): ColorPickerState {
 /** Derive the HSL projection of the current state (for hex output + HSL sliders). */
 export function stateHsl(state: ColorPickerState): Hsl {
   return hsvToHsl(state.hsv)
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n))
 }
 
 export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPickerState, never[]] {

@@ -1,13 +1,9 @@
 import { cached, cacheKey } from './cache.js'
 import { defaultLocale } from './defaults.js'
+import { parseDateValue } from '../utils/date.js'
+import type { DateValue } from '../utils/date.js'
 
-export type DateValue = Date | string | number
-
-function toDate(value: DateValue): Date {
-  if (value instanceof Date) return value
-  if (typeof value === 'string') return new Date(value)
-  return new Date(value)
-}
+export type { DateValue }
 
 type DateStyle = 'full' | 'long' | 'medium' | 'short'
 
@@ -67,31 +63,47 @@ function fmt(
   return cached(key, () => new Intl.DateTimeFormat(locale, intlOpts))
 }
 
+/**
+ * Zone override for a date-only value. A bare '2026-01-15' is a CALENDAR date:
+ * it names no instant, so it carries no zone and `timeZone` does not apply to
+ * it. `parseDateValue` anchors it at UTC midnight, so rendering it in UTC is
+ * what keeps the printed day equal to the written one everywhere — reading it
+ * in the ambient zone printed 14 January west of UTC (#125).
+ */
+function zoneFor(dateOnly: boolean, opts: object): object {
+  return dateOnly ? { ...opts, timeZone: 'UTC' } : opts
+}
+
 export function formatDate(value: DateValue, opts: FormatDateOptions = {}): string {
   const locale = opts.locale ?? defaultLocale()
+  const { date, dateOnly } = parseDateValue(value)
+  const base = zoneFor(dateOnly, opts)
   const hasFineGrained = opts.weekday || opts.year || opts.month || opts.day || opts.era
   const intlOpts = hasFineGrained
-    ? buildIntlOpts(opts)
-    : buildIntlOpts({ ...opts, dateStyle: opts.dateStyle ?? 'medium' })
-  return fmt('date', locale, intlOpts).format(toDate(value))
+    ? buildIntlOpts(base)
+    : buildIntlOpts({ ...base, dateStyle: opts.dateStyle ?? 'medium' })
+  return fmt('date', locale, intlOpts).format(date)
 }
 
 export function formatTime(value: DateValue, opts: FormatTimeOptions = {}): string {
   const locale = opts.locale ?? defaultLocale()
+  const { date, dateOnly } = parseDateValue(value)
+  const base = zoneFor(dateOnly, opts)
   const hasFineGrained =
     opts.hour || opts.minute || opts.second || opts.fractionalSecondDigits || opts.dayPeriod
   const intlOpts = hasFineGrained
-    ? buildIntlOpts(opts)
-    : buildIntlOpts({ ...opts, timeStyle: opts.timeStyle ?? 'medium' })
-  return fmt('time', locale, intlOpts).format(toDate(value))
+    ? buildIntlOpts(base)
+    : buildIntlOpts({ ...base, timeStyle: opts.timeStyle ?? 'medium' })
+  return fmt('time', locale, intlOpts).format(date)
 }
 
 export function formatDateTime(value: DateValue, opts: FormatDateTimeOptions = {}): string {
   const locale = opts.locale ?? defaultLocale()
+  const { date, dateOnly } = parseDateValue(value)
   const intlOpts = buildIntlOpts({
-    ...opts,
+    ...zoneFor(dateOnly, opts),
     dateStyle: opts.dateStyle ?? 'medium',
     timeStyle: opts.timeStyle ?? 'short',
   })
-  return fmt('dt', locale, intlOpts).format(toDate(value))
+  return fmt('dt', locale, intlOpts).format(date)
 }

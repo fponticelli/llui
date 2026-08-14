@@ -6,6 +6,8 @@ import { createOverlay } from '../utils/overlay-engine.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import type { PresenceStatus } from './presence.js'
 import { isMounted as presenceIsMounted } from './presence.js'
+import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
  * Tooltip — hover / focus-triggered, positioned. Opens after a short delay
@@ -66,24 +68,13 @@ export function init(opts: TooltipInit = {}): TooltipState {
   return { open, status: open ? 'open' : 'closed', animated: opts.animated ?? false }
 }
 
-/** Move `status` toward visible, mirroring presence's open transition. */
-function toOpen(state: TooltipState): TooltipState {
-  if (state.status === 'open' || state.status === 'opening') {
-    return { ...state, open: true }
-  }
-  return { ...state, open: true, status: state.animated ? 'opening' : 'open' }
-}
-
-/**
- * Move `status` toward hidden. When animated, enter `closing` and wait for
- * `animationEnd`; otherwise land on `closed` synchronously (no-hang rule).
- */
-function toClose(state: TooltipState): TooltipState {
-  if (state.status === 'closed' || state.status === 'closing') {
-    return { ...state, open: false }
-  }
-  return { ...state, open: false, status: state.animated ? 'closing' : 'closed' }
-}
+// The open/close/end triple is the SHARED presence machine (`presence.ts`) —
+// five overlays used to carry a byte-identical private copy (#126). Tooltip
+// spells the flag the other way round (`animated`), which is the whole of the
+// difference: when animated, a close enters `closing` and waits for
+// `animationEnd`; otherwise it lands on `closed` synchronously (no-hang rule).
+const toOpen = (state: TooltipState): TooltipState => presenceOpen(state, !state.animated)
+const toClose = (state: TooltipState): TooltipState => presenceClose(state, !state.animated)
 
 export function update(state: TooltipState, msg: TooltipMsg): [TooltipState, never[]] {
   switch (msg.type) {
@@ -96,9 +87,7 @@ export function update(state: TooltipState, msg: TooltipMsg): [TooltipState, nev
     case 'setOpen':
       return [msg.open ? toOpen(state) : toClose(state), []]
     case 'animationEnd':
-      if (state.status === 'opening') return [{ ...state, status: 'open' }, []]
-      if (state.status === 'closing') return [{ ...state, status: 'closed', open: false }, []]
-      return [state, []]
+      return [presenceEnd(state), []]
   }
 }
 
@@ -191,8 +180,6 @@ export function connect(
     }
   }
 
-  const onEnd = (): void => send({ type: 'animationEnd' })
-
   // A pending hover timer must not act once the component unmounts (its trigger
   // leaves the DOM), or it dispatches to a disposed handle. Capture the trigger
   // at schedule time; drop the message if it was live then but is detached when
@@ -275,8 +262,7 @@ export function connect(
       onKeyDown: tagSend(send, ['hide'], dismissOnEscape),
       // Drive the presence lifecycle past `closing`/`opening` once the exit /
       // enter animation finishes, so an animated tooltip stays mounted until done.
-      onAnimationEnd: onEnd,
-      onTransitionEnd: onEnd,
+      ...presenceEndProps(send, { type: 'animationEnd' }),
     },
     arrow: {
       'data-scope': 'tooltip',

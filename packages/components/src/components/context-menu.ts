@@ -3,6 +3,7 @@ import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { presence, type PresenceStatus } from './presence.js'
+import { presenceEndProps } from '../utils/presence-end.js'
 import {
   type MenuNode,
   type MenuNodeKind,
@@ -261,8 +262,7 @@ export function connect(
       'data-state': state.map((s) => (s.status === 'closed' && s.open ? 'open' : s.status)),
       'data-scope': 'context-menu',
       'data-part': 'content',
-      onAnimationEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
-      onTransitionEnd: tagSend(send, ['animationEnd'], () => send({ type: 'animationEnd' })),
+      ...presenceEndProps(send, { type: 'animationEnd' }),
       onKeyDown: parts.rootKeyNav,
     },
     item: parts.item,

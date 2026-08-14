@@ -249,6 +249,23 @@ describe('combobox creatable', () => {
     expect(s.filteredItems).not.toContain(CREATE_OPTION_VALUE)
   })
 
+  it('navigation never treats the create sentinel as disabled (#126)', () => {
+    // The sentinel is a synthetic row, never a real item, so a consumer's
+    // `disabledItems` can never legitimately name it — and the shared
+    // navigation walk must not skip it if one does. This carve-out is the only
+    // difference between combobox's navigation and select's/listbox's.
+    const s0 = {
+      ...init({ items: ['apple'], allowCreate: true }),
+      inputValue: 'cherry',
+      filteredItems: [CREATE_OPTION_VALUE],
+      disabledItems: [CREATE_OPTION_VALUE],
+      open: true,
+    }
+    expect(update(s0, { type: 'highlightNext' })[0].highlightedValue).toBe(CREATE_OPTION_VALUE)
+    expect(update(s0, { type: 'highlightFirst' })[0].highlightedValue).toBe(CREATE_OPTION_VALUE)
+    expect(update(s0, { type: 'highlightLast' })[0].highlightedValue).toBe(CREATE_OPTION_VALUE)
+  })
+
   it('selectOption on the create sentinel emits createOption with the input text', () => {
     const s0 = {
       ...init({ items: ['apple'], allowCreate: true }),

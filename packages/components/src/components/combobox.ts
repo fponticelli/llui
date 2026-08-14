@@ -4,6 +4,13 @@ import { LocaleContext } from '../locale.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { type Placement } from '../utils/floating.js'
+import { indexMap, membershipSet } from '../utils/derive.js'
+import {
+  applySelection,
+  firstEnabledIndex,
+  lastEnabledIndex,
+  nextEnabledIndex,
+} from '../utils/list-navigation.js'
 
 /**
  * Combobox — text input paired with a filtered listbox dropdown. User
@@ -182,44 +189,17 @@ export function isCreateOption(value: string): boolean {
   return value === CREATE_OPTION_VALUE
 }
 
-function nextEnabledIndex(
-  items: string[],
-  disabled: string[],
-  from: number | null,
-  delta: 1 | -1,
-): number | null {
-  if (items.length === 0) return null
-  const start = from === null ? (delta === 1 ? -1 : items.length) : from
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const idx = (start + delta * i + n * n) % n
-    const v = items[idx]!
-    if (v === CREATE_OPTION_VALUE || !disabled.includes(v)) return idx
-  }
-  return null
-}
-
-function firstEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = 0; i < items.length; i++) {
-    const v = items[i]!
-    if (v === CREATE_OPTION_VALUE || !disabled.includes(v)) return i
-  }
-  return null
-}
-
-function lastEnabledIndex(items: string[], disabled: string[]): number | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (v === CREATE_OPTION_VALUE || !disabled.includes(v)) return i
-  }
-  return null
-}
-
-function applySelection(state: ComboboxState, value: string): string[] {
-  if (state.disabledItems.includes(value)) return state.value
-  if (state.selectionMode === 'single') return [value]
-  const isActive = state.value.includes(value)
-  return isActive ? state.value.filter((v) => v !== value) : [...state.value, value]
+/**
+ * The disabled list as the shared navigation helpers see it. The "create new"
+ * row is a synthetic option, never a real item, so it can never be disabled —
+ * that carve-out is the only thing separating combobox's navigation from
+ * select's and listbox's, and it belongs here rather than in a third copy of
+ * the walk (#126).
+ */
+function navigableDisabled(disabled: string[]): string[] {
+  return disabled.includes(CREATE_OPTION_VALUE)
+    ? disabled.filter((v) => v !== CREATE_OPTION_VALUE)
+    : disabled
 }
 
 /** The value at `idx` in `items`, or null when `idx` is null/out of bounds. */
@@ -236,12 +216,15 @@ function indexOfValue(items: string[], value: string | null): number | null {
 
 /** The first-enabled option's VALUE in `items`, or null. */
 function firstEnabledValue(items: string[], disabled: string[]): string | null {
-  return valueAt(items, firstEnabledIndex(items, disabled))
+  return valueAt(items, firstEnabledIndex(items, navigableDisabled(disabled)))
 }
 
 /** Commit a normal (non-create) option pick. */
 function commitSelection(state: ComboboxState, picked: string): [ComboboxState, ComboboxEffect[]] {
-  const value = applySelection(state, picked)
+  const value = applySelection(state.value, picked, {
+    mode: state.selectionMode,
+    disabled: state.disabledItems,
+  })
   const inputValue = state.selectionMode === 'single' ? picked : ''
   const filteredItems = computeFiltered(state.items, inputValue, state.allowCreate)
   const open = state.selectionMode === 'single' ? false : state.open
@@ -330,7 +313,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
             state.filteredItems,
             nextEnabledIndex(
               state.filteredItems,
-              state.disabledItems,
+              navigableDisabled(state.disabledItems),
               indexOfValue(state.filteredItems, state.highlightedValue),
               1,
             ),
@@ -346,7 +329,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
             state.filteredItems,
             nextEnabledIndex(
               state.filteredItems,
-              state.disabledItems,
+              navigableDisabled(state.disabledItems),
               indexOfValue(state.filteredItems, state.highlightedValue),
               -1,
             ),
@@ -368,7 +351,7 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
           ...state,
           highlightedValue: valueAt(
             state.filteredItems,
-            lastEnabledIndex(state.filteredItems, state.disabledItems),
+            lastEnabledIndex(state.filteredItems, navigableDisabled(state.disabledItems)),
           ),
         },
         [],
@@ -559,6 +542,12 @@ export function connect(
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
   const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
 
+  // Derived once per update and shared by every item, instead of a full array
+  // scan inside each item's props on every update (#124).
+  const selected = membershipSet<string>()
+  const disabled = membershipSet<string>()
+  const filteredIndex = indexMap<string>()
+
   return {
     root: {
       // The ARIA combobox lives on the INPUT (see `input` below). The root is a
@@ -664,20 +653,20 @@ export function connect(
         item: {
           role: 'option',
           id: itemId(value),
-          'aria-selected': state.map((s) => s.value.includes(value)),
+          'aria-selected': state.map((s) => selected(s.value).has(value)),
           'aria-disabled': state.map((s) =>
-            !isCreate && s.disabledItems.includes(value) ? 'true' : undefined,
+            !isCreate && disabled(s.disabledItems).has(value) ? 'true' : undefined,
           ),
-          'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+          'data-state': state.map((s) => (selected(s.value).has(value) ? 'selected' : undefined)),
           'data-highlighted': state.map((s) => (s.highlightedValue === value ? '' : undefined)),
           'data-disabled': state.map((s) =>
-            !isCreate && s.disabledItems.includes(value) ? '' : undefined,
+            !isCreate && disabled(s.disabledItems).has(value) ? '' : undefined,
           ),
           'data-create': isCreate ? '' : undefined,
           'data-scope': 'combobox',
           'data-part': 'item',
           'data-value': value,
-          'data-index': state.map((s) => String(s.filteredItems.indexOf(value))),
+          'data-index': state.map((s) => String(filteredIndex(s.filteredItems).get(value) ?? -1)),
           onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
           onPointerMove: tagSend(send, ['highlight'], () => {
             // Guard the send too: skip dispatching entirely when the row is

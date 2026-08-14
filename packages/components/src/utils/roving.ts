@@ -1,4 +1,9 @@
 import { flipArrow } from './direction.js'
+import { firstEnabled, lastEnabled, nextEnabled } from './list-navigation.js'
+
+// Re-exported for the callers (and tests) that reach the list walk through this
+// module. There is still exactly ONE implementation — see `list-navigation.ts`.
+export { firstEnabled, lastEnabled, nextEnabled }
 
 /**
  * Headless roving-tablist navigation — the keyboard logic of a WAI-ARIA
@@ -15,6 +20,9 @@ import { flipArrow } from './direction.js'
  * shared DOM assumption lives in `focusRovingTab`, and it is the minimal
  * one both surfaces already satisfy: triggers carry `role="tab"` and
  * `data-value="<value>"`.
+ *
+ * The list walk itself lives in `list-navigation.ts` — this module is the
+ * keyboard + DOM-focus surface over it, nothing more.
  */
 
 export type RovingOrientation = 'horizontal' | 'vertical'
@@ -44,39 +52,6 @@ export type RovingMove =
   | { type: 'focus'; value: string }
   /** Enter or Space — activate the currently focused tab (manual mode). */
   | { type: 'activate' }
-
-export function firstEnabled(items: readonly string[], disabled: readonly string[]): string | null {
-  for (const v of items) if (!disabled.includes(v)) return v
-  return null
-}
-
-export function lastEnabled(items: readonly string[], disabled: readonly string[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (!disabled.includes(v)) return v
-  }
-  return null
-}
-
-export function nextEnabled(
-  items: readonly string[],
-  disabled: readonly string[],
-  from: string,
-  delta: 1 | -1,
-  loop: boolean,
-): string | null {
-  if (items.length === 0) return null
-  const idx = items.indexOf(from)
-  if (idx === -1) return firstEnabled(items, disabled)
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const rawIdx = idx + delta * i
-    if (!loop && (rawIdx < 0 || rawIdx >= n)) return null
-    const next = items[(rawIdx + n * n) % n]!
-    if (!disabled.includes(next)) return next
-  }
-  return null
-}
 
 /**
  * Map a keyboard key + the current tab value to a roving-tablist move,

@@ -9,6 +9,18 @@ describe('number-input reducer', () => {
     expect(s.rawText).toBe('')
   })
 
+  it('init clamps and snaps the seed value, like every other mutation path (#125)', () => {
+    // init WAS the one way left to seed an off-grid / out-of-range value:
+    // `value: opts.value ?? null` stored whatever it was handed.
+    expect(init({ value: 5, step: 2 }).value).toBe(6)
+    expect(init({ value: 5, step: 2 }).rawText).toBe('6')
+    expect(init({ value: 15, min: 0, max: 10, step: 2 }).value).toBe(10)
+    expect(init({ value: -5, min: 0, max: 10, step: 2 }).value).toBe(0)
+    // The grid is min-anchored, so 5 is ON the grid when min is 1.
+    expect(init({ value: 5, min: 1, step: 2 }).value).toBe(5)
+    expect(init({ value: null }).value).toBeNull()
+  })
+
   it('setValue clamps and snaps', () => {
     const s0 = init({ min: 0, max: 10, step: 2 })
     const [s1] = update(s0, { type: 'setValue', value: 15 })
@@ -18,9 +30,19 @@ describe('number-input reducer', () => {
   })
 
   it('increment adds step', () => {
-    const s0 = init({ value: 5, step: 2 })
+    const s0 = init({ value: 4, step: 2 })
     const [s] = update(s0, { type: 'increment' })
-    expect(s.value).toBe(7)
+    expect(s.value).toBe(6)
+    // Same press from the off-grid 5 (the grid is anchored at 0 here, since min
+    // is unbounded) lands ON the grid instead of adding a step — it used to
+    // answer 7 and keep the value off-grid forever. The rationale is SPEC
+    // CONFORMANCE, not unreachability: HTML's value-stepping algorithm uses the
+    // magnitude of n only on the on-grid branch, so `stepUp()` from an off-grid
+    // value moves to the next grid position and stops. 5 IS reachable — a
+    // rehydrated/hand-built state can hold it (below), and `setValue(5)` with
+    // `{min: 1, step: 2}` returns it, because the grid is min-anchored.
+    const offGrid = { ...init({ step: 2 }), value: 5, rawText: '5' }
+    expect(update(offGrid, { type: 'increment' })[0].value).toBe(6)
   })
 
   it('increment from null treats as 0', () => {
@@ -70,6 +92,24 @@ describe('number-input reducer', () => {
     const s0 = init({ value: 5, disabled: true })
     const [s] = update(s0, { type: 'increment' })
     expect(s.value).toBe(5)
+  })
+
+  it('snaps an exponential-notation step (#125 defect 1)', () => {
+    const s0 = init({ min: 0, max: 1, step: 1e-7 })
+    const [s1] = update(s0, { type: 'setValue', value: 3e-7 })
+    expect(s1.value).toBe(3e-7)
+    const [s2] = update({ ...s0, rawText: '0.0000003' }, { type: 'commit' })
+    expect(s2.value).toBe(3e-7)
+  })
+
+  it('increment/decrement land on the grid from an off-grid start (#125 defect 2)', () => {
+    // init snaps now, so the off-grid start is built directly — the shape a
+    // rehydrated state can still hold.
+    const s0 = { ...init({ min: 0, max: 100, step: 2 }), value: 3, rawText: '3' }
+    expect(update(s0, { type: 'increment' })[0].value).toBe(4)
+    expect(update(s0, { type: 'decrement' })[0].value).toBe(2)
+    // A multiplier does not skip past the grid on the first press.
+    expect(update(s0, { type: 'increment', multiplier: 10 })[0].value).toBe(4)
   })
 
   it('handles fractional step without drift', () => {

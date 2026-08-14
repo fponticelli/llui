@@ -1,7 +1,8 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { firstEnabled, lastEnabled, nextEnabled, focusRovingItem } from '../utils/roving.js'
+import { focusRovingItem } from '../utils/roving.js'
+import { firstEnabled, lastEnabled, nextEnabled } from '../utils/list-navigation.js'
 
 /**
  * Tabs — tabbed interface with keyboard navigation. Each tab has a value

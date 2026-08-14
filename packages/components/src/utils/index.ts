@@ -40,14 +40,32 @@ export {
 export { TreeCollection } from './tree-collection.js'
 export type { TreeNode } from './tree-collection.js'
 
+export { deriveOnce, deriveOnceN, indexMap, membershipSet } from './derive.js'
+
+export { clamp, clampToStep, decimalPlaces, snapToStep, stepBy } from './number.js'
+export type { NumericGrid } from './number.js'
+
+export { isDateOnly, parseDateValue } from './date.js'
+export type { DateValue, ParsedDateValue } from './date.js'
+
 export { resolveDir, flipArrow, resolveTextDirection } from './direction.js'
 export type { TextDirection } from './direction.js'
 
-export {
-  firstEnabled,
-  lastEnabled,
-  nextEnabled,
-  resolveRovingMove,
-  focusRovingTab,
-} from './roving.js'
+export { resolveRovingMove, focusRovingTab, focusRovingItem } from './roving.js'
 export type { RovingItem, RovingMove, RovingOptions, RovingOrientation } from './roving.js'
+
+export {
+  applySelection,
+  firstEnabled,
+  firstEnabledIndex,
+  isEnabledItem,
+  lastEnabled,
+  lastEnabledIndex,
+  nextEnabled,
+  nextEnabledIndex,
+  pruneToEnabled,
+  rovingTabStop,
+} from './list-navigation.js'
+// `SelectionMode` is deliberately NOT re-exported here: `select` already
+// exports that name through the components barrel, and `export *` from both
+// would make it ambiguous.

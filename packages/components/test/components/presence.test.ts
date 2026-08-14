@@ -6,6 +6,9 @@ import {
   isMounted,
   isVisible,
   isAnimating,
+  presenceOpen,
+  presenceClose,
+  presenceEnd,
 } from '../../src/components/presence'
 import { rootSignal, read } from '../_signal'
 
@@ -103,5 +106,51 @@ describe('presence.connect', () => {
     expect(read(p.root.hidden, { status: 'closed', unmountOnExit: false })).toBe(true)
     expect(read(p.root.hidden, { status: 'closed', unmountOnExit: true })).toBe(false)
     expect(read(p.root.hidden, { status: 'open', unmountOnExit: false })).toBe(false)
+  })
+})
+
+describe('the shared overlay presence transitions (#126)', () => {
+  it('a redundant open/close comes back by REFERENCE, so it is a true no-op', () => {
+    // The reconciler detects change by reference equality per path. A new
+    // object with identical fields would mark the slice dirty and re-commit
+    // every binding under it, so these guards are load-bearing, not a
+    // micro-optimisation.
+    const open = { open: true, status: 'open' as const, label: 'x' }
+    expect(presenceOpen(open, false)).toBe(open)
+    expect(presenceOpen(open, true)).toBe(open)
+    const opening = { open: true, status: 'opening' as const }
+    expect(presenceOpen(opening, false)).toBe(opening)
+
+    const closed = { open: false, status: 'closed' as const }
+    expect(presenceClose(closed, false)).toBe(closed)
+    const closing = { open: false, status: 'closing' as const }
+    expect(presenceClose(closing, true)).toBe(closing)
+
+    // A status that is neither opening nor closing is likewise untouched.
+    expect(presenceEnd(open)).toBe(open)
+    expect(presenceEnd(closed)).toBe(closed)
+  })
+
+  it('a state that is open but NOT yet settled still transitions', () => {
+    // The guard is on the PAIR: `open` alone is not enough, or an overlay
+    // opened while its exit animation runs would never leave 'closing'.
+    expect(presenceOpen({ open: true, status: 'closing' }, false)).toEqual({
+      open: true,
+      status: 'opening',
+    })
+    expect(presenceClose({ open: false, status: 'opening' }, false)).toEqual({
+      open: false,
+      status: 'closing',
+    })
+  })
+
+  it('finishing the exit leaves open and status consistent', () => {
+    expect(presenceEnd({ open: true, status: 'opening' })).toEqual({ open: true, status: 'open' })
+    // `open: false` here is unreachable in practice — 'closing' is only ever
+    // written with `open: false` — but the pair is kept consistent anyway.
+    expect(presenceEnd({ open: true, status: 'closing' })).toEqual({
+      open: false,
+      status: 'closed',
+    })
   })
 })
