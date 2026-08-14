@@ -60,7 +60,9 @@ function endedProperty(e: Event): string | undefined {
  * 500ms` pair — removes the node mid-animation (issue #105). Every listed
  * property must end before the wait resolves; a property that never fires falls
  * through to the timer, so being over-inclusive can only cost the early resolve,
- * never a hang.
+ * never a hang. That is not hypothetical: `slide()` and `scale()` name
+ * `transform` but give it a 0s duration in their `transition` shorthand (#142),
+ * so both currently resolve on the timer every time.
  *
  * Two deliberate escape hatches:
  *  - An EMPTY `properties` means "nothing to discriminate on" — a class-driven

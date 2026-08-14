@@ -45,6 +45,20 @@ export interface SlideOptions {
   respectReducedMotion?: boolean
 }
 
+/**
+ * Slide an element in/out along one axis, optionally fading with it.
+ *
+ * > **Known defect (#142).** The active value is built as
+ * > `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
+ * > grammar reads as TWO single-transitions — the first, `transform`, taking the
+ * > initial `transition-duration` of **0s**. In a real browser the transform
+ * > therefore SNAPS and only the opacity animates. A 0s transition also fires no
+ * > `transitionend`, so `transform` never leaves the set of properties the phase
+ * > waits on (see {@link waitForEnd}) and the phase always resolves on the
+ * > fallback timer rather than on a real end — 16ms late, never a hang. Do not
+ * > read the property filter as "every shipped preset lines up with it": `fade()`
+ * > does, `slide()` and `scale()` do not until #142 lands.
+ */
 export function slide(opts: SlideOptions = {}): TransitionOptions {
   const direction = opts.direction ?? 'down'
   const distance = opts.distance ?? 20
@@ -103,6 +117,14 @@ export interface ScaleOptions {
   respectReducedMotion?: boolean
 }
 
+/**
+ * Scale an element in/out from `from` to 1, optionally fading with it.
+ *
+ * > **Known defect (#142).** Carries the same malformed `transition` shorthand
+ * > as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
+ * > duration, so it snaps rather than scaling and never reports a
+ * > `transitionend` — the phase resolves on the fallback timer instead.
+ */
 export function scale(opts: ScaleOptions = {}): TransitionOptions {
   const from = opts.from ?? 0.95
   const duration = opts.duration ?? 200
