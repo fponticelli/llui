@@ -65,6 +65,19 @@ describe('membershipSet', () => {
     expect(lookup(undefined).has('a')).toBe(false)
     expect(lookup(undefined).size).toBe(0)
   })
+
+  // The common case at most of the ~16 call sites is an empty `disabled` list.
+  // Two DIFFERENT empty arrays must share one set, and share it with the absent
+  // collection: that is the allocation this shortcut exists to skip.
+  it('shares one empty set across every empty input, without allocating', () => {
+    const lookup = membershipSet<string>()
+    const shared = lookup([])
+    expect(shared.size).toBe(0)
+    expect(shared.has('a')).toBe(false)
+    expect(lookup([])).toBe(shared)
+    expect(lookup(undefined)).toBe(shared)
+    expect(lookup(null)).toBe(shared)
+  })
 })
 
 describe('indexMap', () => {
@@ -80,5 +93,14 @@ describe('indexMap', () => {
     const lookup = indexMap<string>()
     const values = ['a']
     expect(lookup(values)).toBe(lookup(values))
+  })
+
+  it('shares one empty map across every empty input, without allocating', () => {
+    const lookup = indexMap<string>()
+    const shared = lookup([])
+    expect(shared.size).toBe(0)
+    expect(shared.get('a')).toBeUndefined()
+    expect(lookup([])).toBe(shared)
+    expect(lookup(undefined)).toBe(shared)
   })
 })

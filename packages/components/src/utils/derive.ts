@@ -29,6 +29,18 @@
  * N items x 4 bindings, 0.00056 -> 0.00041 ms at N=20, 0.00467 -> 0.00337 at
  * N=200 and 0.05680 -> 0.03823 at N=2000 (~25-33%). Reach for `deriveOnceN`
  * only where the derivation genuinely takes several inputs.
+ *
+ * NO RUNTIME ARITY GUARD, deliberately. Calling the returned function with a
+ * second argument silently ignores it — `g(1,'x')` and `g(1,'y')` both return
+ * the `g(1)` result from one computation — so a JS consumer, or a TS consumer
+ * who casts, can get a wrong answer with no error. That is accepted because
+ * the only ways to observe arity at runtime are an `arguments` object (absent
+ * in an arrow) or a rest parameter, and a rest parameter re-materialises the
+ * per-row-per-binding array whose removal is this function's entire reason to
+ * exist — paying the 25-33% back on the hottest path in the package, on every
+ * hit, to catch a call TypeScript already rejects (TS2554). Do NOT "fix" this
+ * by widening the signature. If a derivation needs more than one input, that
+ * is what `deriveOnceN` is for.
  */
 export function deriveOnce<A, R>(compute: (arg: A) => R): (arg: A) => R {
   // One cell per RECOMPUTATION (once per update), never per call: a fixed
@@ -72,11 +84,16 @@ const EMPTY_MAP: ReadonlyMap<never, never> = new Map<never, never>()
 /**
  * A membership lookup over a state array: `set(s.value).has(item)` in place of
  * `s.value.includes(item)`. An absent collection reads as empty.
+ *
+ * An EMPTY array shares `EMPTY_SET` rather than allocating: most of the ~16
+ * call sites are a `disabled`/`disabledItems` list that is empty in the common
+ * case, and an empty `Set` is the one input where the memo would otherwise pay
+ * an allocation to answer `false` to everything.
  */
 export function membershipSet<T>(): (values: readonly T[] | null | undefined) => ReadonlySet<T> {
   const derive = deriveOnce(
     (values: readonly T[] | null | undefined): ReadonlySet<T> =>
-      values == null ? EMPTY_SET : new Set(values),
+      values == null || values.length === 0 ? EMPTY_SET : new Set(values),
   )
   return derive
 }
@@ -87,7 +104,7 @@ export function membershipSet<T>(): (values: readonly T[] | null | undefined) =>
  */
 export function indexMap<T>(): (values: readonly T[] | null | undefined) => ReadonlyMap<T, number> {
   return deriveOnce((values: readonly T[] | null | undefined): ReadonlyMap<T, number> => {
-    if (values == null) return EMPTY_MAP
+    if (values == null || values.length === 0) return EMPTY_MAP
     const positions = new Map<T, number>()
     for (let i = 0; i < values.length; i++) {
       const value = values[i]!
