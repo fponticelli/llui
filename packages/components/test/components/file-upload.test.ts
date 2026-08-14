@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   init,
   update,
@@ -15,7 +15,7 @@ import {
   trackedFileCount,
 } from '../../src/components/file-upload'
 import type { FileMeta, FileUploadMsg, FileUploadState } from '../../src/components/file-upload'
-import { pathHandle } from '@llui/dom'
+import { pathHandle, component, mountApp, div } from '@llui/dom'
 import { rootSignal, signalOf, read } from '../_signal'
 
 function makeFile(name: string, size: number): File {
@@ -532,6 +532,69 @@ describe('connect releases handles a gate swallowed', () => {
     expect(read().files).toHaveLength(1)
     expect(read().rejectedFiles).toHaveLength(1)
     expect(trackedFileCount()).toBe(before + 2)
+  })
+})
+
+// Nothing released at unmount: `connect` had no teardown, so every handle the
+// State still referenced outlived the component. An SPA that mounts and
+// unmounts an uploader grew without bound, holding the blobs alive
+// (#138 review, blocking 2).
+describe('connect releases its handles at unmount', () => {
+  let container: HTMLElement
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  type S = { up: FileUploadState }
+
+  function mountUploader(files: FileMeta[]): ReturnType<typeof mountApp> {
+    const def = component<S, FileUploadMsg, never>({
+      name: 'Up',
+      init: () => [{ up: init({ multiple: true, files }) }, []],
+      update: (s, m) => [{ up: update(s.up, m)[0] }, []],
+      view: ({ state, send }) => {
+        const parts = connect(state.at('up'), send, { id: 'u' })
+        return [div({ ...parts.root }, [div({ ...parts.dropzone })])]
+      },
+    })
+    return mountApp(container, def)
+  }
+
+  it('disposing the mount frees every handle its State referenced', () => {
+    const a = makeMeta('a.txt', 1)
+    const b = makeMeta('b.txt', 1)
+    const before = trackedFileCount()
+    const app = mountUploader([a, b])
+    expect(getFile(a)).toBeDefined()
+    app.dispose()
+    expect(getFile(a)).toBeUndefined()
+    expect(getFile(b)).toBeUndefined()
+    expect(trackedFileCount()).toBe(before - 2)
+  })
+
+  it('releases what State holds AT unmount, not what it held at mount', () => {
+    const a = makeMeta('a.txt', 1)
+    const b = makeMeta('b.txt', 1)
+    const app = mountUploader([a, b])
+    const added = makeMeta('c.txt', 1)
+    app.send({ type: 'addFiles', files: [added] })
+    const before = trackedFileCount()
+    app.dispose()
+    expect(trackedFileCount()).toBe(before - 3)
+    expect(getFile(added)).toBeUndefined()
+  })
+
+  it('connect outside a build context registers no teardown and does not throw', () => {
+    const meta = makeMeta('solo.txt', 1)
+    const state = init({ files: [meta] })
+    expect(() => connect(signalOf(state), vi.fn(), { id: 'x' })).not.toThrow()
+    expect(getFile(meta)).toBeDefined()
   })
 })
 

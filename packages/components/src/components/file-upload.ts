@@ -1,5 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import { useContext, tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 
 /**
@@ -134,10 +134,12 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
  * cannot hold them (see the file header) and because a host's upload effect
  * needs to reach a handle far from the view that produced it.
  *
- * Entries are dropped by `releaseFile`/`releaseDropped`/`releaseUnlanded`.
- * `connect` calls the latter two after every message it sends, so the handles a
- * transition made unreachable are freed without the host doing anything; a host
- * driving the reducer itself owes BOTH per message.
+ * Entries are dropped by `releaseFile`/`releaseDropped`/`releaseUnlanded`, and
+ * by `releaseAllFiles` when the component unmounts. `connect` owns all of it:
+ * it releases after every message it sends and again on scope teardown, so a
+ * host that renders through `connect` never has to think about it. A host
+ * driving the reducer itself owes `releaseDropped` AND `releaseUnlanded` per
+ * message, plus `releaseAllFiles` when its view goes away.
  */
 const fileRegistry = new Map<string, File>()
 let fileSeq = 0
@@ -172,6 +174,11 @@ export function releaseFile(ref: FileMeta | string): void {
 
 export function releaseFiles(refs: readonly (FileMeta | string)[]): void {
   for (const ref of refs) releaseFile(ref)
+}
+
+/** Release every handle `state` references. What a component owes at unmount. */
+export function releaseAllFiles(state: FileUploadState): void {
+  for (const id of referencedIds(state, new Set<string>())) fileRegistry.delete(id)
 }
 
 /**
@@ -531,6 +538,17 @@ export function connect(
 ): FileUploadParts {
   const locale = useContext(LocaleContext)
   const inputId = `${opts.id}:input`
+
+  // The component owns the lifetime of the handles its State references: once
+  // this scope is disposed nothing can reach them again, so keeping them pins
+  // every selected blob for the life of the page. Documenting a host obligation
+  // would be the wrong shape — it stays invisible until a profiler finds it
+  // (#138 review, blocking 2). `onTeardown` needs a live build context; a unit
+  // test calling connect() outside one has no scope to tear down and nothing
+  // mounted to leak, so the registration is simply skipped there.
+  if (__currentBuildInfo() !== null) {
+    onTeardown(() => releaseAllFiles(state.peek()))
+  }
   const removeLabel = opts.removeLabel ?? locale.fileUpload.remove
   const clearLabel = opts.clearLabel ?? locale.fileUpload.clear
 
