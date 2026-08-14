@@ -1,5 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { attachFloating } from '../../src/utils/floating'
+import {
+  init as menuInit,
+  update as menuUpdate,
+  floatingDir as menuFloatingDir,
+} from '../../src/components/menu'
 
 /**
  * RTL alignment is negated by `@floating-ui/core` itself whenever
@@ -110,5 +115,58 @@ describe('attachFloating placement under rtl', () => {
     const rtl = await placeX({ placement: 'right-start', dir: 'rtl' })
     expect(rtl.y).toBe(ltr.y)
     expect(rtl.y).toBe(ANCHOR.y)
+  })
+})
+
+/**
+ * `menu.overlay` is `attachFloating`'s only in-repo caller that passes `dir`,
+ * and it passed `state.dir` unconditionally while `init` defaulted it to
+ * `'ltr'`. Once `dir` became AUTHORITATIVE that default started SUPPRESSING an
+ * RTL page: measured in Chromium, a menu on `<html dir="rtl">` moved from
+ * x=20 (RTL-correct) to x=100 (LTR) — the headline fix regressing its only
+ * live caller (#138 review, blocking 4).
+ *
+ * `MenuState.dir` is now `TextDirection | null`, `null` meaning "the host never
+ * said — let the page decide", and `menuFloatingDir` is the one place that
+ * decision is made.
+ */
+describe('menu never overrides the page direction it was not given', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('an unset dir reaches attachFloating as undefined', () => {
+    expect(menuInit().dir).toBeNull()
+    expect(menuFloatingDir(menuInit())).toBeUndefined()
+  })
+
+  it('an explicit dir is still authoritative', () => {
+    expect(menuFloatingDir(menuInit({ dir: 'rtl' }))).toBe('rtl')
+    expect(menuFloatingDir(menuInit({ dir: 'ltr' }))).toBe('ltr')
+  })
+
+  it('unset dir on an RTL page keeps the RTL coordinate', async () => {
+    const state = menuInit()
+    const placed = await placeX({
+      placement: 'bottom-start',
+      dir: menuFloatingDir(state),
+      computedRtl: true,
+    })
+    expect(placed.x).toBe(RIGHT_EDGE)
+  })
+
+  it('unset dir on an LTR page keeps the LTR coordinate', async () => {
+    const placed = await placeX({
+      placement: 'bottom-start',
+      dir: menuFloatingDir(menuInit()),
+    })
+    expect(placed.x).toBe(LEFT_EDGE)
+  })
+
+  it('setDir clears back to "let the page decide"', () => {
+    const [s1] = menuUpdate(menuInit(), { type: 'setDir', dir: 'rtl' })
+    expect(menuFloatingDir(s1)).toBe('rtl')
+    const [s2] = menuUpdate(s1, { type: 'setDir', dir: null })
+    expect(menuFloatingDir(s2)).toBeUndefined()
   })
 })

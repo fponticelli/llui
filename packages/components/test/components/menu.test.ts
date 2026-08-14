@@ -653,9 +653,13 @@ describe('menu.connect submenu nav via root content (virtual focus)', () => {
 })
 
 describe('menu RTL', () => {
-  it('init defaults dir to ltr; respects opts.dir', () => {
-    expect(init({ items: flat }).dir).toBe('ltr')
+  // The default is `null`, not `'ltr'`: `dir` is authoritative once it reaches
+  // `attachFloating`, so a concrete default overrode `<html dir="rtl">` and laid
+  // the overlay out LTR (#138 review, blocking 4).
+  it('init leaves dir unset (follow the page); respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBeNull()
     expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+    expect(init({ items: flat, dir: 'ltr' }).dir).toBe('ltr')
   })
 
   it('setDir updates the reading direction', () => {

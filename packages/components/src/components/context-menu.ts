@@ -2,6 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { type TextDirection } from '../utils/direction.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   type MenuNode,
@@ -72,8 +73,8 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction (ltr/rtl)") */
-  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
+  | { type: 'setDir'; dir: TextDirection | null }
   /** @humanOnly */
   | { type: 'animationEnd' }
 
@@ -81,7 +82,8 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  dir?: 'ltr' | 'rtl'
+  /** Omit to follow the page's own direction (see `MenuState.dir`). */
+  dir?: TextDirection | null
   /** When false, closing the menu plays an exit animation and the content stays
    * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
   skipAnimations?: boolean
@@ -101,7 +103,7 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
-    dir: opts.dir ?? 'ltr',
+    dir: opts.dir ?? null,
   }
 }
 
