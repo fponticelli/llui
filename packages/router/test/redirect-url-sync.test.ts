@@ -1,0 +1,507 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createRouter, route, param } from '../src/index'
+import { connectRouter } from '../src/connect'
+import type { RouterEnv } from '../src/connect'
+import { mountApp, component, text } from '@llui/dom'
+
+// Issue #143 — the popstate/hashchange listener honoured a guard REDIRECT in the
+// message it dispatched but never wrote the redirected URL, so `state.route` said
+// `/login` while `location` still said `/admin`: a reload, a share or a bookmark
+// went straight back to the guarded route. Same desync class as #110.3 (there the
+// URL was right and the message missing; here the message was right and the URL
+// missing).
+//
+// The fix REPLACES the entry the browser landed on — see `rewriteLandedUrl` in
+// `connect.ts` for the full rationale. These tests pin the three halves that can
+// silently regress: the URL actually moves, the stack is not disturbed (length,
+// forward entries, no echo dispatch), and the index on the resulting entry keeps
+// a LATER blocked back reachable.
+
+type Route =
+  | { page: 'home' }
+  | { page: 'admin' }
+  | { page: 'login' }
+  | { page: 'other' }
+  | { page: 'article'; slug: string }
+
+const defs = () => [
+  route<Route>([], () => ({ page: 'home' })),
+  route<Route>(['admin'], () => ({ page: 'admin' })),
+  route<Route>(['login'], () => ({ page: 'login' })),
+  route<Route>(['other'], () => ({ page: 'other' })),
+  route<Route>(['article', param('slug')], ({ slug }) => ({ page: 'article', slug: slug! })),
+]
+
+/** The redirect target, as a Route — an inline literal widens to `{page: string}`. */
+const LOGIN: Route = { page: 'login' }
+
+const hashRouter = () => createRouter<Route>(defs())
+const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
+
+/** Let jsdom deliver the events queued by a synchronous URL write. */
+const settle = () => new Promise((r) => setTimeout(r, 10))
+
+/**
+ * Wait for a TRAVERSAL to land (see `history-integrity.test.ts` — a traversal is
+ * delivered on a later task than a fixed sleep can guarantee, so poll).
+ */
+async function waitForUrl(read: () => string, expected: string): Promise<string> {
+  const deadline = Date.now() + 2000
+  while (read() !== expected && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2))
+  }
+  return read()
+}
+
+const path = () => location.pathname
+const hash = () => location.hash
+
+function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
+  const send = vi.fn()
+  const container = document.createElement('div')
+  const App = component({
+    name: 'RedirectUrlSyncHost',
+    init: (): [null, never[]] => [null, []],
+    update: (s: null): [null, never[]] => [s, []],
+    view: () => [...routing.listener(send), text('')],
+  })
+  const handle = mountApp(container, App)
+  return { send, dispose: () => handle.dispose() }
+}
+
+/** Drive a `navigate()` effect with its own send, so the listener's stays clean. */
+function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
+  routing.handleEffect({
+    effect: routing.navigate(to),
+    send: vi.fn(),
+    signal: new AbortController().signal,
+  })
+}
+
+describe('#143 a guard redirect on a browser-driven navigation — history mode', () => {
+  beforeEach(async () => {
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('leaves location on the redirect target after a back onto a guarded route', async () => {
+    // AC 1. Without the fix the address bar keeps showing /admin for a
+    // `state.route` of /login — the whole defect.
+    let guardOn = false
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (guardOn && to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'other' })
+    guardOn = true
+    send.mockClear()
+
+    history.back() // → /admin, redirected to /login
+    expect(await waitForUrl(path, '/login')).toBe('/login')
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+
+    dispose()
+  })
+
+  it('replaces rather than pushes: history.length and the forward entry survive', async () => {
+    // AC 3. A `go` + push would have truncated /other and grown the stack.
+    let guardOn = false
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (guardOn && to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'other' })
+    const lengthBefore = history.length
+    guardOn = true
+
+    history.back()
+    expect(await waitForUrl(path, '/login')).toBe('/login')
+    expect(history.length).toBe(lengthBefore)
+
+    // The entry ABOVE the redirected one is still reachable — a push would have
+    // thrown it away.
+    history.forward()
+    expect(await waitForUrl(path, '/other')).toBe('/other')
+
+    dispose()
+  })
+
+  it('keeps a LATER blocked back reachable from the redirected entry', async () => {
+    // AC 4. The two-step sequence, not the redirect in isolation: the redirect
+    // must leave `currentIndex` on the entry it rewrote, or the next blocked
+    // back computes its `history.go` delta from a position it is not standing
+    // on and overshoots (#103's failure, re-reached through #143's write).
+    let guardOn = false
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => {
+        if (!guardOn) return undefined
+        if (to.page === 'admin') return LOGIN
+        if (to.page === 'other') return false
+        return undefined
+      },
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' }) // idx 1
+    navigate(routing, { page: 'admin' }) // idx 2
+    navigate(routing, { page: 'article', slug: 'x' }) // idx 3
+    guardOn = true
+    send.mockClear()
+
+    history.back() // → idx 2 (/admin) → redirected to /login IN PLACE
+    expect(await waitForUrl(path, '/login')).toBe('/login')
+
+    history.back() // → idx 1 (/other) → BLOCKED → restored to idx 2
+    expect(await waitForUrl(path, '/other')).toBe('/other')
+    expect(await waitForUrl(path, '/login')).toBe('/login')
+
+    // The restore is OUR OWN traversal, so it is recognised and swallowed. It is
+    // recognised by the index stamped on the entry it lands on — the one the
+    // redirect rewrote — so a stamp that drifted by one turns the rewind into an
+    // apparent user navigation: an extra dispatch here, and a `currentIndex`
+    // adopted from the drifted stamp.
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+
+    // …which the SECOND blocked back would then measure its delta from. Repeating
+    // it is the actual acceptance criterion: the delta must still be reachable,
+    // and must not overshoot forward onto /article/x.
+    history.back()
+    expect(await waitForUrl(path, '/other')).toBe('/other')
+    expect(await waitForUrl(path, '/login')).toBe('/login')
+    expect(send).toHaveBeenCalledTimes(1)
+
+    dispose()
+  })
+
+  it('writes nothing when the guard allows the navigation unchanged', async () => {
+    // The URL write is scoped to a REDIRECT: an allowed pop must stay a pure
+    // read, or every back/forward would re-stamp an entry it had no business
+    // touching.
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), { env: rec.env })
+    const { send, dispose } = mountListener(routing)
+
+    rec.land({ __llui_idx: 3 }, '/other')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual([])
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
+
+    dispose()
+  })
+})
+
+describe('#143 a guard redirect on a browser-driven navigation — hash mode', () => {
+  beforeEach(async () => {
+    location.hash = ''
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('leaves location on the redirect target, dispatching EXACTLY once', async () => {
+    // AC 2. The echo case is the real hazard here: a URL write in hash mode can
+    // itself produce a `hashchange`, which the listener would run guards on and
+    // dispatch a SECOND time (#108's failure shape). `replaceState` fires no
+    // event at all, so nothing is armed and nothing is swallowed — asserted by
+    // the count AFTER a settle, which is when a queued echo would have landed.
+    let guardOn = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (guardOn && to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'other' })
+    await settle()
+    guardOn = true
+    send.mockClear()
+    const lengthBefore = history.length
+
+    history.back() // → #/admin, redirected to #/login
+    expect(await waitForUrl(hash, '#/login')).toBe('#/login')
+    await settle() // let any echo the write could have queued arrive
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+    expect(history.length).toBe(lengthBefore)
+
+    dispose()
+  })
+
+  it('keeps the forward entry and a later blocked back reachable', async () => {
+    // AC 3 + AC 4 in hash mode, where a blocked back is undone by a suppressed
+    // traversal rather than by `pendingRestoreIndex`.
+    let guardOn = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => {
+        if (!guardOn) return undefined
+        if (to.page === 'admin') return LOGIN
+        if (to.page === 'other') return false
+        return undefined
+      },
+    })
+    const { dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'article', slug: 'x' })
+    await settle()
+    guardOn = true
+
+    history.back() // → #/admin → redirected to #/login in place
+    expect(await waitForUrl(hash, '#/login')).toBe('#/login')
+
+    history.back() // → #/other → BLOCKED → restored to the redirected entry
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    expect(await waitForUrl(hash, '#/login')).toBe('#/login')
+
+    // …and the entry above it is still there.
+    history.forward()
+    expect(await waitForUrl(hash, '#/article/x')).toBe('#/article/x')
+
+    dispose()
+  })
+})
+
+// ── The mechanism, at the env seam ───────────────────────────────
+//
+// jsdom agrees with the spec about `replaceState` (it changes the URL in place
+// and fires no event), but "the URL ended up right" cannot tell a replace from a
+// `go` + push that happened to settle on the same address. These assert the
+// EXACT env calls, so the mechanism is pinned rather than its outcome.
+
+interface Recorded {
+  env: RouterEnv
+  calls: string[]
+  /** Move the synthetic browser onto another entry, invisibly to the recorder. */
+  land(state: unknown, url: string): void
+  /** Deliver the browser-driven URL change to the mounted listener. */
+  fire(): void
+}
+
+function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded {
+  const calls: string[] = []
+  const handlers: Array<() => void> = []
+  let hash = initial?.hash ?? ''
+  let pathname = initial?.pathname ?? '/'
+  let historyState: unknown = null
+  let historyLength = 1
+
+  /** A fragment-only url addresses the hash; anything else the path. */
+  const applyUrl = (url: string) => {
+    if (url.startsWith('#')) hash = url
+    else pathname = url
+  }
+
+  const env: RouterEnv = {
+    get hash() {
+      return hash
+    },
+    get pathname() {
+      return pathname
+    },
+    get search() {
+      return ''
+    },
+    get historyState() {
+      return historyState
+    },
+    get historyLength() {
+      return historyLength
+    },
+    setHash(next) {
+      calls.push(`setHash:${next}`)
+      hash = next
+      historyLength++
+    },
+    replaceLocation(url) {
+      calls.push(`replaceLocation:${url}`)
+      applyUrl(url)
+      historyState = null
+    },
+    pushState(state, url) {
+      calls.push(`pushState:${url}`)
+      historyState = state
+      applyUrl(url)
+      historyLength++
+    },
+    replaceState(state, url) {
+      calls.push(`replaceState:${url ?? '<no url>'}`)
+      historyState = state
+      if (url !== undefined) applyUrl(url)
+    },
+    back() {
+      calls.push('back')
+    },
+    forward() {
+      calls.push('forward')
+    },
+    go(delta) {
+      calls.push(`go:${delta}`)
+    },
+    scrollTo(x, y) {
+      calls.push(`scrollTo:${x},${y}`)
+    },
+    onUrlChange(_event, handler) {
+      handlers.push(handler)
+      return () => {
+        handlers.splice(handlers.indexOf(handler), 1)
+      }
+    },
+  }
+
+  return {
+    env,
+    calls,
+    land(state, url) {
+      historyState = state
+      applyUrl(url)
+    },
+    fire() {
+      handlers.forEach((h) => h())
+    },
+  }
+}
+
+describe('#143 the redirect writes ONE replace, carrying the landed index', () => {
+  it('history mode: replaceState with the path, index and length untouched', () => {
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+    const lengthBefore = rec.env.historyLength
+
+    rec.land({ __llui_idx: 3, host: 'keep' }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    // ONE call, and it is a REPLACE carrying the url — not a pushState, not a
+    // `go`, not a `setHash`.
+    expect(rec.calls).toEqual(['replaceState:/login'])
+    expect(rec.env.pathname).toBe('/login')
+    // The entry did not move, so it keeps its index — and the host's own key on
+    // that entry survives, like every other stamp in this file.
+    expect(rec.env.historyState).toEqual({ __llui_idx: 3, host: 'keep' })
+    expect(rec.env.historyLength).toBe(lengthBefore)
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+
+    dispose()
+  })
+
+  it('hash mode: replaceState with the fragment — never setHash (which pushes)', () => {
+    const rec = recordingEnv({ hash: '#/' })
+    const routing = connectRouter(hashRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+    const lengthBefore = rec.env.historyLength
+
+    rec.land({ __llui_idx: 3 }, '#/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual(['replaceState:#/login'])
+    expect(rec.env.hash).toBe('#/login')
+    expect(rec.env.historyState).toEqual({ __llui_idx: 3 })
+    expect(rec.env.historyLength).toBe(lengthBefore)
+    expect(send).toHaveBeenCalledTimes(1)
+
+    dispose()
+  })
+
+  it('arms no echo suppression, so the next genuine hashchange still dispatches', () => {
+    // The other half of the hash-mode decision. `replaceState` fires no event,
+    // so there is nothing to suppress — and suppressing DEFENSIVELY would not be
+    // free: a pending echo is only discarded when the URL moves off the hash it
+    // was armed for, so a genuine navigation onto ANOTHER entry showing the same
+    // hash (a second `#/login` entry — ordinary once a redirect can produce one)
+    // would be swallowed instead of dispatched.
+    const rec = recordingEnv({ hash: '#/' })
+    const routing = connectRouter(hashRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? LOGIN : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    rec.land({ __llui_idx: 3 }, '#/admin')
+    rec.fire() // redirected to #/login
+    expect(send).toHaveBeenCalledTimes(1)
+
+    rec.land({ __llui_idx: 4 }, '#/login')
+    rec.fire()
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'login' } })
+
+    dispose()
+  })
+
+  it('writes the URL but INVENTS NO INDEX for an entry of unknown position', () => {
+    // The #103 constraint the write must not break: a traversal onto an entry
+    // nobody stamped has no knowable position. The redirect still has to reach
+    // the address bar, but stamping a guessed index there would make the NEXT
+    // blocked back compute a delta from a fiction and traverse the wrong way.
+    const rec = recordingEnv({ pathname: '/' })
+    let redirect = true
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => {
+        if (redirect) return to.page === 'admin' ? LOGIN : undefined
+        return to.page === 'article' ? false : undefined
+      },
+    })
+    const { dispose } = mountListener(routing)
+
+    rec.land(null, '/admin') // unstamped: position UNKNOWN
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual(['replaceState:/login'])
+    expect(rec.env.pathname).toBe('/login')
+    expect(rec.env.historyState).toBeNull()
+
+    // A later blocked pop must therefore still refuse to guess a delta.
+    redirect = false
+    rec.land({ __llui_idx: 5 }, '/article/x')
+    rec.calls.length = 0
+    rec.fire()
+    expect(rec.calls).toEqual([])
+
+    dispose()
+  })
+
+  it('leaves the BLOCKED path exactly as it was — a rewind, no URL write', () => {
+    // AC 5, asserted at the seam as well as through `history-integrity.test.ts`:
+    // a block still undoes itself with a traversal and writes no URL.
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    routing.handleEffect({
+      effect: routing.push({ page: 'other' }),
+      send: vi.fn(),
+      signal: new AbortController().signal,
+    })
+    rec.land({ __llui_idx: 0 }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls.filter((c) => c.startsWith('replaceState'))).toEqual([])
+    expect(rec.calls.some((c) => c.startsWith('go:'))).toBe(true)
+    expect(rec.env.pathname).toBe('/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+})
