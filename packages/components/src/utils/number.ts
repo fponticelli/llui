@@ -116,6 +116,13 @@ export function clampToStep(value: number, grid: NumericGrid): number {
  * large `count` is. This is HTML's `stepUp`/`stepDown` (step 3 of the
  * value-stepping algorithm) and it is what makes `increment` land on the grid
  * instead of dragging an off-grid value along forever.
+ *
+ * ONE DELIBERATE DIVERGENCE from the spec: HTML's step base falls back min ->
+ * the `value` CONTENT ATTRIBUTE -> 0; `gridOrigin` goes min -> 0. A headless
+ * machine has no content attributes — the seed value is just the initial state,
+ * and anchoring the grid on it would make two components with the same
+ * min/max/step disagree about which values are legal depending on where they
+ * happened to start.
  */
 export function stepBy(value: number, count: number, grid: NumericGrid): number {
   const step = grid.step ?? 0

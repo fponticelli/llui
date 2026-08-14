@@ -243,9 +243,13 @@ describe('per-item lookups are O(1) in the list length (#124)', () => {
 
 describe('menu isDisabled does not re-walk the item tree per item (#124)', () => {
   it('reads the disabled flag from one derivation', () => {
-    // `isDisabled` walked the whole tree per item (~N²/2 node visits for a
-    // 200-item menu). Counting visits needs a probe the tree walk must touch:
-    // a getter on each node's `disabled`.
+    // `isDisabled` used `findItem`, which walks the tree per item. The probe
+    // below counts `disabled` PROPERTY READS, not tree-node visits — `findItem`
+    // reads `disabled` only on the node it matched, so the numbers this
+    // discriminates between are 2N reads before (the walk's own read plus the
+    // caller's) and N after, NOT the ~N²/2 nodes the walk touches. It still
+    // pins the property that matters: one derivation for the whole list rather
+    // than one lookup per item.
     let visits = 0
     const items: menu.MenuItem[] = ids(100).map((value) => {
       const node = { value, kind: 'action' as const }
