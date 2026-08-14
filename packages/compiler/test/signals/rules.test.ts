@@ -2007,6 +2007,166 @@ describe('tag-send-drift (issue #118)', () => {
     ).toContain('tag-send-drift')
   })
 
+  // ── the OTHER half of "the whole of the position" (issue #182) ───────────
+  // #157 widened what a returned value can sit INSIDE while leaving untouched
+  // what can sit there: the start-kind guard still read
+  // arrow-or-function-expression only. So whether an identical closure was
+  // attributed came down to the SPELLING — `{ h: function () { … } }` was
+  // skipped, `{ h() { … } }` was flagged — and the flagged one is the more
+  // idiomatic. A method, an accessor, a constructor and a class-field arrow
+  // defer exactly as an arrow does; none of their bodies run when the literal
+  // that holds them is built.
+  it('does NOT flag a METHOD SHORTHAND in a returned object literal', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { h() { send({type:'inner'}) } } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a GETTER or SETTER in a returned object literal', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { get h() { send({type:'inner'}); return 1 } } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { set h(v) { send({type:'inner'}) } } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a method / constructor / field arrow of a returned CLASS expression', () => {
+    for (const member of [
+      'h() { send({type:"inner"}) }',
+      'static h() { send({type:"inner"}) }',
+      'constructor() { send({type:"inner"}) }',
+      'h = () => send({type:"inner"})',
+    ]) {
+      expect(
+        rules(
+          src(
+            `const p = tagSend(send, ['a'], () => { send({type:'a'}); return class { ${member} } })`,
+          ),
+        ),
+      ).not.toContain('tag-send-drift')
+    }
+  })
+
+  it('does NOT flag a method shorthand NESTED in a returned container', () => {
+    // The container walk and the start-kind guard compose: `[{ h() {} }]` is an
+    // array element that is an object property that is a method.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return [{ h() { send({type:'inner'}) } }] })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('STILL flags a class STATIC BLOCK of a returned class expression', () => {
+    // The counter-case that keeps a class expression a transparent CONTAINER
+    // rather than a skipped subtree: a static block RUNS when the class
+    // expression is evaluated, i.e. inside the handler. So does a static field
+    // initializer's own code.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return class { static { send({type:'inner'}) } } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return class { static h = send({type:'inner'}) } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return class extends mix(() => send({type:'inner'})) {} })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('STILL flags a method shorthand handed to a CALL, or not returned at all', () => {
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return use({ h() { send({type:'inner'}) } }) })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); const o = { h() { send({type:'inner'}) } } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('STILL reads a COMPUTED member name of a skipped member', () => {
+    // The name is not part of the deferred body — `{ [k()]() {} }` evaluates
+    // `k()` when the literal is built. Skipping the whole member would have made
+    // a method the one position where a computed key stops being read, an
+    // asymmetry an arrow in a `PropertyAssignment` never had (its sibling
+    // `ComputedPropertyName` hangs off the property, which the walk keeps
+    // visiting).
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { [send({type:'inner'})]() {} } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('a skipped member forfeits completeness, exactly as a skipped arrow does', () => {
+    // Direction 2 cannot start reporting because of this widening: skipping the
+    // subtree removes the attribution AND drops `complete`. Pinned so a later
+    // narrowing of one half without the other is visible.
+    for (const container of [
+      '{ h() { send({type:"b"}) } }',
+      '{ get h() { send({type:"b"}); return 1 } }',
+      'class { h() { send({type:"b"}) } }',
+      '{ h: () => send({type:"b"}) }',
+    ]) {
+      expect(
+        rules(
+          src(
+            `const p = tagSend(send, ['a', 'b'], () => { send({type:'a'}); return ${container} })`,
+          ),
+        ),
+      ).not.toContain('tag-send-drift')
+    }
+    // …and the same over-declaration with nothing skipped IS reported.
+    expect(rules(src("const p = tagSend(send, ['a', 'b'], () => { send({type:'a'}) })"))).toContain(
+      'tag-send-drift',
+    )
+  })
+
+  it('does NOT flag a method shorthand in a returned container in a .tsx module', () => {
+    const tsx = [
+      IMPORT,
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['a'], () => { send({type:'a'}); return { h() { send({type:'inner'}) } } })",
+      "export const q = tagSend(send, ['a'], () => { send({type:'a'}); return class { h() { send({type:'inner'}) } } })",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
   it('does NOT flag when the dispatcher is not the identifier being called', () => {
     // Only calls to the tagged dispatcher count. `send` here is a different
     // binding from the `dispatch` that was tagged, so nothing is correlated.

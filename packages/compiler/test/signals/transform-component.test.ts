@@ -1198,8 +1198,18 @@ describe('transformSignalComponentSource', () => {
     it('leaves an element-helper name shadowed by a NAMED FUNCTION EXPRESSION alone', () => {
       // A recursive row renderer: inside `function div(row) { … }` the name
       // `div` is the function expression itself, so `div([])` is a self-call.
-      // It used to lower to a real `<div>` element — the user's recursion
-      // silently replaced by an element, with nothing to see in the output.
+      // It used to lower to a real `<div>` element — a call that never denotes
+      // the framework helper compiled as one, with nothing to see in the output.
+      //
+      // This asserts the `scopeIntroduces` half ONLY: the shadowed name is no
+      // longer treated as the `@llui/dom` helper. It does NOT assert that the
+      // recursion works. It does not — a SEPARATE, pre-existing codegen defect
+      // (#181) rewrites the `render` function into an ANONYMOUS arrow, dropping
+      // the function expression's own name, so the surviving `div([])` is an
+      // UNBOUND identifier and throws at row-render time. That pass is
+      // independent of this one: it drops the name identically on `main` and for
+      // a name that collides with no helper (`render: function renderRow(row) {
+      // return [div([renderRow(row)])] }` emits an equally unbound `renderRow`).
       const src = [
         "import { component, ul, each } from '@llui/dom'",
         'const C = component({',
