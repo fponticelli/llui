@@ -27,14 +27,15 @@
 // whoever built them. Read that module's header before changing anything here.
 //
 // This is a fork of ~110 lines of `@lexical/markdown` internals, joining the
-// fenced-code and image forks. It is a different KIND of fork from those two:
-// they exist because upstream's line PARSING is not CommonMark-correct, which
-// is the class of problem an mdast-driven importer would retire wholesale. This
-// one is a node-MODEL disagreement that no importer can reach — parse `- a` /
-// `* b` with any CommonMark parser you like and Lexical still merges the two
-// lists it produces. So routing lists through `@llui/markdown/commonmark` the
-// way `transformers/image.ts` does would not have fixed #129, and mdast carries
-// no bullet character to fix the round-trip with either.
+// fenced-code and image forks. `listReplace` belongs to the SAME class as those
+// two — regex-driven line import — and an mdast importer WOULD retire it. Do
+// not read this module as licence to skip lists when that importer is built.
+// What survives it is the other half: `nodes/list.ts` (a node-MODEL
+// disagreement no importer can reach — parse `- a` / `* b` with any CommonMark
+// parser you like and Lexical still merges the two lists it produces) and
+// `$listExport`, which has no importer to be retired by and must keep emitting
+// the authored marker. mdast also carries no bullet character, so an importer
+// would need `position` and the source text to feed `setMarker`.
 //
 // ## What upstream's flat model can and cannot express
 //
@@ -42,6 +43,20 @@
 // rather than building a real subtree, so "the marker of a list" can only mean
 // its TOP-LEVEL marker. An indented item therefore neither records a marker nor
 // tests one — otherwise a nested marker change would tear the outer list in two.
+//
+// Two consequences of that flatness, both deliberate and both observable:
+//
+//  - "Indented" means `getIndent`, which counts TABS and floors spaces at four.
+//    So `- a\n    * b` is one list with a nested item (the `*` is ignored), but
+//    `- a\n  * b` — a 1-to-3-space indent — is not indented at all as far as
+//    this importer is concerned, and the marker change splits it into TWO
+//    lists where stock produced one. CommonMark would call the second a
+//    sublist; matching that needs the real subtree the flat model does not
+//    build, so it is left as a known divergence rather than special-cased.
+//  - A nested marker is LOST on export. `$listExport` reads the marker of the
+//    list it is rendering, and an indented item never recorded one, so
+//    `- a\n    * b` comes back as `- a\n    - b`. The round-trip guarantee
+//    "`* a` round-trips as `* a`" is therefore TOP-LEVEL ONLY.
 
 import {
   $createListItemNode,
@@ -247,10 +262,10 @@ export const UNORDERED_LIST_TRANSFORMER: ElementTransformer = {
  *
  * Upstream only reads `.`; CommonMark gives `)` equal standing and §5.3 treats a
  * delimiter change exactly like a bullet change, which is the third case in
- * #129's acceptance criteria. (Upstream's line sanitiser still does not know
- * `)` starts a block, so `1. a` immediately followed by `1) b` with no blank
- * line between them is merged into one paragraph before any transformer sees
- * it — that pre-pass is not ours.)
+ * #129's acceptance criteria. No blank line is needed between them:
+ * `$convertFromMarkdownString`'s `shouldMergeAdjacentLines` defaults to `false`
+ * and no call site in this package overrides it, so `1. a\n1) b` imports as two
+ * ordered lists. (Stock swallows `1) b` as text, so this is strictly better.)
  */
 export const ORDERED_LIST_TRANSFORMER: ElementTransformer = {
   dependencies: LIST_DEPENDENCIES,
