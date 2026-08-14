@@ -236,14 +236,28 @@ export function connectRouter<R>(
   // stays armed and swallows the next genuine popstate (#103).
   let pendingRestoreIndex: number | null = null
 
+  /**
+   * The index of the entry we are physically STANDING on — which is not always
+   * the last one we wrote. `history.go` is asynchronous, so an app that
+   * navigates in the same tick as a blocked pop pushes from the BLOCKED entry,
+   * truncating everything above it. Numbering from `currentIndex` there claims
+   * a depth the stack no longer has, and the next blocked back computes an
+   * unreachable delta — #103's original symptom, re-reachable (#139 review).
+   */
+  function landedIndex(): number {
+    return readIndex(history.state) ?? currentIndex ?? 0
+  }
+
   function pushUrl(path: string): void {
-    currentIndex = (currentIndex ?? 0) + 1
+    currentIndex = landedIndex() + 1
     history.pushState({ [STATE_KEY]: currentIndex }, '', path)
     noteLength()
   }
 
   function replaceUrl(path: string): void {
-    history.replaceState(stampCurrent(currentIndex ?? 0), '', path)
+    // A replace swaps the entry in place, so it keeps THAT entry's index.
+    currentIndex = landedIndex()
+    history.replaceState(stampCurrent(currentIndex), '', path)
     noteLength()
   }
 
@@ -254,13 +268,15 @@ export function connectRouter<R>(
    */
   function setHash(newHash: string, suppress: boolean): boolean {
     if (sameHash(location.hash, newHash)) return false
+    // Read the index of the entry we are LEAVING before the write replaces it.
+    const from = landedIndex()
     if (suppress) pendingEchoes.push(normHash(newHash))
     location.hash = newHash
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
     // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
     // cannot carry state itself, and the blocked-back restore needs an index on
     // every entry to compute a `history.go` delta from.
-    currentIndex = (currentIndex ?? 0) + 1
+    currentIndex = from + 1
     history.replaceState({ [STATE_KEY]: currentIndex }, '')
     noteLength()
     return true

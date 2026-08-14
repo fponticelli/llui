@@ -175,6 +175,40 @@ describe('#103 blocked back — history mode', () => {
     dispose()
   })
 
+  it('does not inflate the index when the app pushes while a restore is pending', async () => {
+    // `history.go` is asynchronous, so an app that navigates in the same tick as
+    // a blocked pop pushes from the BLOCKED entry — which truncates everything
+    // above it. Numbering the new entry from the index we held before the block
+    // claims a depth the stack no longer has, and the next blocked back then
+    // computes an unreachable delta and leaves the URL sitting on the route it
+    // just blocked: #103's original symptom, re-reachable.
+    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+    })
+    const { dispose } = mountListener(routing)
+    const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
+
+    // Blocked pop onto the entry stamped 1; its restore is armed but in flight.
+    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    expect(goSpy).toHaveBeenCalledWith(1)
+
+    // The app navigates before the restore lands: the new entry sits directly
+    // above the one we are STANDING on, so it is 2 — never 3.
+    navigate(routing, { page: 'admin' })
+    expect(history.state).toMatchObject({ __llui_idx: 2 })
+
+    // …and a later blocked back is reachable: delta 1, not an overshoot of 2.
+    goSpy.mockClear()
+    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    expect(goSpy).toHaveBeenCalledWith(1)
+
+    goSpy.mockRestore()
+    dispose()
+  })
+
   it('keeps history.length and the forward entries across a blocked back', async () => {
     let blockAdmin = false
     const options: ConnectOptions<Route> = {
