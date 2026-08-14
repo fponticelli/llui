@@ -15,9 +15,11 @@ import { _dismissableStackSize } from '../../src/utils/dismissable'
  * engine's own bookkeeping as an outside interaction and dismiss as well —
  * which meant a click on a control INSIDE a popover could close that popover.
  *
- * The fix suppresses only the FOCUS path, and only for the synchronous duration
- * of the engine's `.focus()` call (`utils/engine-focus.ts`). Three focus-moving
- * sites are covered here, one app each: the engine's own teardown restore (menu),
+ * The fix suppresses only the FOCUS path, and only for one synchronous turn —
+ * the whole transitive closure of the engine's `.focus()` call, consumer
+ * `focusin` listeners included (`utils/engine-focus.ts` spells the window out).
+ * Three focus-moving sites are covered here, one app each: the engine's own
+ * teardown restore (menu),
  * `popover`'s `dismiss.extra` restore (sibling popovers), and the focus trap's
  * activate/release pair (dialog).
  *
@@ -310,7 +312,32 @@ describe('#155 — a dismissal’s focus restore is invisible to sibling layers'
     return { send: (m) => sendRef(m) }
   }
 
-  it('a focus trap activating and releasing does not dismiss the popover beneath it', async () => {
+  // ACCEPTED A11Y CONSEQUENCE, asserted deliberately below — read before
+  // "fixing" this test. Because the popover is no longer dismissed when the
+  // dialog's trap activates, a fully interactive NON-MODAL layer coexists with
+  // a modal: the popover's positioner is not `aria-hidden`, not `inert`, and is
+  // Tab-reachable from inside the dialog (via the `focus` nested-layer aspect,
+  // `focus-trap.ts`). A modal that does not exclude the layer beneath it is not
+  // really modal.
+  //
+  // It is kept because the alternative is worse and the cause is elsewhere.
+  // The exemption comes from the FLAT `nested-layer.ts` registry — a lookup has
+  // no notion of which layer asked, so a modal's `hide`/`focus` sweep exempts
+  // EVERY registered layer, nested inside it or not. What #155's guard removed
+  // was only an ACCIDENTAL mitigation (the trap's own focusin misread as a user
+  // interaction — the very defect being fixed), and an unreliable one: on
+  // `main`, a modal whose content has no focusable element moves no focus, so
+  // the popover survives there too, in exactly this state. Measured both ways.
+  //
+  // It also needs a PROGRAMMATIC modal open: a pointerdown on the dialog's
+  // trigger goes through the un-gated pointer path and dismisses the popover
+  // first.
+  //
+  // The real fix is a per-layer registry ("is this nested inside ME?"), tracked
+  // as #171. Do not patch it by having `pushFocusTrap` dismiss the layers below
+  // it — that regresses nested dialogs, whose inner trap pushes before the
+  // inner dialog's own dismissable layer.
+  it('a focus trap activating and releasing does not dismiss the popover beneath it — which leaves that popover interactive behind the modal (accepted, #171)', async () => {
     const { send } = makePopoverWithDialog()
     await tick()
 
@@ -333,6 +360,16 @@ describe('#155 — a dismissal’s focus restore is invisible to sibling layers'
     expect(document.activeElement).toBe(dlgAction)
     expect(document.getElementById('pop:content')).not.toBeNull()
     expect(_dismissableStackSize()).toBe(2)
+
+    // The accepted a11y cost, stated as an assertion rather than left implicit
+    // (see the comment above the test, and #171): the surviving popover is NOT
+    // excluded by the modal — its positioner carries neither `aria-hidden` nor
+    // `inert`, so it stays interactive and Tab-reachable beside a modal dialog.
+    // If a future change makes the modal exclude it, this is the assertion to
+    // flip — deliberately, not by deleting it.
+    const popPositioner = document.getElementById('pop:content')!.parentElement!
+    expect(popPositioner.getAttribute('aria-hidden')).toBeNull()
+    expect(popPositioner.hasAttribute('inert')).toBe(false)
 
     // Now a click inside the POPOVER. It is outside the dialog, so the dialog
     // dismisses — and releasing its trap hands focus back to where it was before

@@ -19,11 +19,24 @@
  * consulted by `watchInteractOutside`'s `focusin` path (only that path — see
  * below). Three properties make it safe rather than a blunt mute:
  *
- * 1. **The window is exactly the engine's own call stack.** `HTMLElement.focus()`
- *    dispatches `focus`/`focusin` synchronously, so the counter is raised and
- *    lowered inside one turn with no `await`, timer or microtask in between. A
- *    genuine user interaction cannot be delivered into that window: the event
- *    loop is not free to run.
+ * 1. **The window is one synchronous turn, and no user event can be delivered
+ *    into it.** `HTMLElement.focus()` dispatches `focus`/`focusin`
+ *    synchronously, so the counter is raised and lowered with no `await`, timer
+ *    or microtask in between; the event loop is never free to run, so a genuine
+ *    user interaction cannot land inside it.
+ *
+ *    Be precise about what that window CONTAINS, though: it is the whole
+ *    synchronous TRANSITIVE CLOSURE of the `.focus()` call, not just the call
+ *    itself. Every `focusin` listener the move triggers runs inside it —
+ *    including arbitrary CONSUMER code and the full TEA `send`/reduce/commit
+ *    cycles it drives. The consequence is real and accepted: an app `focusin`
+ *    listener that itself moves focus somewhere else during an engine restore
+ *    has its OWN (non-engine) move swallowed too, so a popover can be left open
+ *    with focus resting outside it. The state is recoverable — the guard is
+ *    released the moment the outermost engine call returns, and the next
+ *    genuine focus move dismisses as usual — and no user event was suppressed,
+ *    because none could be delivered. Narrowing the window to literally the
+ *    `.focus()` call is not available: `focusin` is dispatched from inside it.
  * 2. **Only the FOCUS path is suppressed.** `pointerdown` dispatch is untouched,
  *    so a real click that lands during a teardown still dismisses every layer it
  *    is outside of. Suppressing outside-interaction dispatch wholesale would
@@ -41,8 +54,11 @@
 let depth = 0
 
 /**
- * Run `body` with engine-focus suppression active. Any `focusin` raised by focus
- * moves inside it is invisible to `watchInteractOutside`.
+ * Run `body` with engine-focus suppression active. Any `focusin` raised inside
+ * it is invisible to `watchInteractOutside` — including one raised by a focus
+ * move that re-entrant consumer code makes from a `focusin` listener (see the
+ * module comment: the window is the synchronous transitive closure, not just
+ * the `.focus()` call).
  *
  * Synchronous by contract: the suppression is released when `body` RETURNS, so
  * a body that schedules a focus move for later gets no protection (and must not

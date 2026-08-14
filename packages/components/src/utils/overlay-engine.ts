@@ -289,14 +289,25 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         if (target) {
           // Engine-initiated like the restore below, and routed through the same
           // guard for the same reason (#155) — but note this one is DEFENSIVE:
-          // no configuration of this engine can observe it today. With a
-          // `dismiss` the layer was pushed a few lines above and is therefore
-          // topmost, so every OTHER watcher is gated off by `shouldDispatch`;
-          // without one the overlay registers the `outside` aspect, so its
-          // content reads as "inside a nested layer" to every watcher. Narrow
-          // either of those and this line is what keeps opening a layer from
-          // dismissing the one beneath it. Consequently it has no mutation
-          // coverage — there is no shipped shape that fails without it.
+          // no configuration of this engine can observe it today. The reason is
+          // the dismissable stack, and ONLY that: every shipped caller of
+          // `focusOnOpenId` (`select`, `searchable-select`, `menu`,
+          // `context-menu`, `menubar`) also passes `dismiss`, so the layer was
+          // pushed a few lines above and is topmost — every OTHER watcher is
+          // gated off by `shouldDispatch` before it ever looks at the target.
+          //
+          // Do NOT extend that argument to the layerless case via the `outside`
+          // nested-layer aspect. A `dismiss`-less overlay does register
+          // `els.content` for `outside`, but `focusOnOpenId` is free to name an
+          // element that is not inside `els.content` — `select` passes
+          // `parts.trigger.id`, which is the ANCHOR — and then the registration
+          // says nothing about the focus target. That branch is simply not
+          // exercised: no shipped overlay combines "no dismissable layer" with
+          // `focusOnOpenId`.
+          //
+          // Narrow the stack argument and this line is what keeps opening a
+          // layer from dismissing the one beneath it. Consequently it has no
+          // mutation coverage — there is no shipped shape that fails without it.
           engineFocus(target, { preventScroll: true })
           if (opts.focusOnOpenSelect && target instanceof HTMLInputElement) {
             const seed = target.value
