@@ -35,6 +35,21 @@ describe('clamp', () => {
     expect(clamp(-Infinity, 0, 50)).toBe(0)
   })
 
+  it('sends NaN to zero-clamped-into-the-range, NOT to the grid origin', () => {
+    // The two rules coincide for every range at or above zero and part company
+    // for one that straddles or sits below it. #152's Option A is worded "min
+    // when finite, else the grid origin, else 0", which would read -50 / -100
+    // here; `finiteInRange` deliberately answers the neutral point of the range
+    // instead, and its doc comment records the divergence. Pinned so the prose
+    // and the code cannot drift apart again.
+    expect(clamp(NaN, -50, 50)).toBe(0)
+    expect(clamp(NaN, -100, -10)).toBe(-10)
+    expect(clamp(NaN, 10, 50)).toBe(10)
+    expect(clamp(NaN, -Infinity, -10)).toBe(-10)
+    // Degenerate range: the surviving bound is infinite too, so 0 answers.
+    expect(clamp(NaN, Infinity, -Infinity)).toBe(0)
+  })
+
   it('maps ±Infinity to a finite value when the bound it points at is infinite', () => {
     expect(clamp(Infinity, 0, Infinity)).toBe(0)
     expect(clamp(-Infinity, -Infinity, 50)).toBe(0)

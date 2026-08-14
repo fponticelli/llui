@@ -38,8 +38,23 @@ const MAX_FIXED_DIGITS = 100
 
 /**
  * A finite value inside `[min, max]` for an input that names no position on it.
- * `min` when it is finite (the range's own origin, matching `gridOrigin`), else
- * 0 when the range holds it, else the finite bound that is left.
+ * It is ZERO CLAMPED INTO THE RANGE — 0 whenever the range holds 0, else the
+ * bound nearest to it (`min` for a range entirely above 0, `max` for one
+ * entirely below) — and 0 again if that bound is itself infinite, which only a
+ * degenerate range (`min: Infinity`, `max: -Infinity`) produces.
+ *
+ * Worked: `[0, 50]` -> 0, `[10, 50]` -> 10, `[-100, -10]` -> -10,
+ * `[-50, 50]` -> 0, `[-Infinity, -10]` -> -10, `[10, Infinity]` -> 10.
+ *
+ * DELIBERATE DIVERGENCE from the wording of #152's Option A ("`min` when
+ * finite, else the grid origin, else 0") and therefore from `gridOrigin`, which
+ * IS `min`-when-finite-else-0: the two agree for every range at or above zero
+ * and differ for one that straddles or sits below it, where Option A's reading
+ * would answer `min` (`[-50, 50]` -> -50) and this answers 0. Zero is the
+ * neutral point of the range, and a `NaN` has no direction that could justify
+ * jumping to the bottom of a range the user is sitting in the middle of.
+ * On-gridness does not depend on the choice — `clampToStep` clamps first and
+ * SNAPS afterwards, so the snap fixes whatever this returns.
  */
 function finiteInRange(min: number, max: number): number {
   const candidate = 0 < min ? min : 0 > max ? max : 0
@@ -51,7 +66,8 @@ function finiteInRange(min: number, max: number): number {
  * already gave it whenever the bound it points at is finite — `clamp(Infinity,
  * 0, 50)` is still 50, which is what `angle-slider`'s Home/End rely on — so
  * this only decides the cases where that bound is itself infinite. `NaN` has no
- * direction at all, so it takes the range's origin.
+ * direction at all, so it takes `finiteInRange` — zero clamped into the range,
+ * NOT the grid origin; see that function for why they differ.
  */
 function nonFiniteFallback(n: number, min: number, max: number): number {
   if (n === Infinity && isFinite(max)) return max

@@ -237,6 +237,19 @@ export function connect(
   // other focusable element, became keyboard-unreachable (WCAG 2.1.1, #145).
   // The fallback belongs in the shared helper, not in a remembered id.
   // Answered ONCE per update and shared by every trigger (#124).
+  //
+  // ONE DISCLOSED REGRESSION, 1 -> 0 stops: with EVERY menu disabled the old
+  // inline form still gave the focused trigger a 0, and `rovingTabStop` returns
+  // null when nothing is enabled, so no trigger carries one. Triggers are
+  // disabled with `aria-disabled` only, so they stay focusable and a stop there
+  // was reachable. Kept as-is on three grounds: it is `rovingTabStop`'s
+  // documented contract and `radio-group` has behaved this way since #126, so
+  // fixing it here alone would re-split the rule the helper exists to unify;
+  // an all-disabled composite has nothing to operate and WAI-ARIA's "at least
+  // one tab stop" presumes an operable widget; and no message mutates `menus`
+  // or `disabledMenus`, so reaching the state needs an explicit
+  // `init({ focused })` over an all-disabled bar. A fix belongs in the shared
+  // helper, for every caller at once.
   const stopId = deriveOnceN((menus: string[], disabled: string[], focused: string | null) =>
     rovingTabStop(menus, disabled, focused),
   )

@@ -102,8 +102,18 @@ export function nextEnabled(
  *
  * `tags-input` is index-keyed and passes `String(i)` as the item identity (its
  * `data-index`, and the only identity that survives duplicate tag values);
- * `navigation-menu` routes through it only where the consumer maintains the
- * membership list it deliberately does not index itself.
+ * `navigation-menu` passes either the membership list its consumer maintains or
+ * the ids handed to its own `item()`, filtered first to the ones not sealed
+ * inside a closed submenu — membership alone would seat the stop on an element
+ * inside a `hidden` panel, which is present, unique and untabbable.
+ *
+ * Null when nothing is enabled is deliberate and is a caller's problem to
+ * notice: a widget whose items are ALL disabled ends up with no tab stop at
+ * all. That is right for `radio-group`/`toggle-group`/`toolbar`/`tree-view`,
+ * whose items are genuinely `disabled` and therefore unfocusable anyway, and it
+ * is a 1 -> 0 change for `menubar`, whose triggers carry only `aria-disabled`
+ * and stay focusable. Any revision belongs here, applying to every caller at
+ * once — not in one component.
  */
 export function rovingTabStop(
   items: readonly string[],

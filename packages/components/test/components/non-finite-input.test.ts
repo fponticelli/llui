@@ -6,7 +6,7 @@ import * as ratingGroup from '../../src/components/rating-group'
 import * as splitter from '../../src/components/splitter'
 
 /**
- * A non-finite input must never reach state (#152).
+ * A non-finite input must never reach a VALUE field (#152).
  *
  * `clamp` compared with `<`/`>` only, and every comparison against `NaN` is
  * false, so `NaN` fell through to `return n` and was stored verbatim by every
@@ -18,6 +18,17 @@ import * as splitter from '../../src/components/splitter'
  * `JSON.stringify(Infinity)` are both `null`, so a non-finite value breaks the
  * State-is-JSON-serializable invariant and with it devtools time-travel,
  * `@llui/test` replay, agent state snapshots and SSR rehydration.
+ *
+ * SCOPE, stated precisely: the guarantee covers the paths that route a number
+ * THROUGH the grid — `value`, `thumbs`, and the increment/decrement/step
+ * family. It does NOT cover the BOUNDS themselves. A bound is the grid rather
+ * than a position on it, so nothing clamps it: `angleSlider.update(s,
+ * { type: 'setMin', min: NaN })` stores `min: NaN` (and `JSON.stringify` then
+ * yields `"min": null`), exactly as an unbounded `number-input` stores
+ * `min: -Infinity` / `max: Infinity` in state by design. Both are the same
+ * State-is-JSON-serializable break one field over from this fix, and both are
+ * out of #152's scope — see the "bounds are not covered" block at the end,
+ * which pins the current behaviour so a later fix has to notice it.
  */
 
 const NON_FINITE = [NaN, Infinity, -Infinity]
@@ -192,5 +203,37 @@ describe('the other components that route through the same clamp (#152)', () => 
       expect(Number.isFinite(s.position), `setPosition(${bad})`).toBe(true)
       expectJsonRoundTrip(s, `splitter setPosition(${bad})`)
     }
+  })
+})
+
+describe('bounds are NOT covered by #152 — pinned, not endorsed', () => {
+  // A bound defines the grid rather than naming a position on it, so nothing
+  // clamps it. These are the same State-is-JSON-serializable break one field
+  // over from the fix above, deliberately left in place so the scope of #152 is
+  // exactly one boundary check in `clamp`. The header states the limit; these
+  // pin it, so whoever closes it has to delete a test rather than discover the
+  // gap by accident.
+
+  it('angle-slider.setMin/setMax store a non-finite BOUND verbatim', () => {
+    const [s] = angleSlider.update(angleSlider.init({ value: 45 }), {
+      type: 'setMin',
+      min: NaN,
+    })
+    expect(Number.isNaN(s.min)).toBe(true)
+    // …and the state therefore does NOT survive a JSON round-trip.
+    expect(JSON.parse(JSON.stringify(s)).min).toBeNull()
+    // The VALUE is still legal, which is the half #152 does guarantee.
+    expect(Number.isFinite(s.value)).toBe(true)
+  })
+
+  it('an unbounded number-input stores ±Infinity bounds in state', () => {
+    const s = numberInput.init({ value: 5 })
+    expect(s.min).toBe(-Infinity)
+    expect(s.max).toBe(Infinity)
+    const round = JSON.parse(JSON.stringify(s))
+    expect(round.min).toBeNull()
+    expect(round.max).toBeNull()
+    // Independent of `value`, which is finite here — filed as its own issue.
+    expect(Number.isFinite(s.value!)).toBe(true)
   })
 })

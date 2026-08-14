@@ -345,4 +345,61 @@ describe('navigation-menu.connect — tab sequence (WCAG 2.1.1)', () => {
     expect(read(first.tabindex, s)).toBe(-1)
     expect(read(second.tabindex, s)).toBe(0)
   })
+
+  it('a focused id naming nothing rendered does NOT take the stop with it', () => {
+    // The `focused === x ? 0 : -1` failure one level up: with an empty `items`
+    // list a `focused` id was honoured on trust, so an id that no `item()` ever
+    // saw left EVERY trigger at -1 and the nav out of the Tab order entirely.
+    // The ids handed to `item()` are the membership list a static menu prunes
+    // against.
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const a = p.item('a', { isBranch: false }).trigger
+    const b = p.item('b', { isBranch: false }).trigger
+    const s = { ...init({ items: [] }), focused: 'gone' }
+    expect([read(a.tabindex, s), read(b.tabindex, s)]).toEqual([0, -1])
+  })
+
+  it('a focused submenu item loses the stop once its branch closes', () => {
+    // Reached through the machine's own messages on a static menu: hover a
+    // branch (openBranch), let its submenu trigger focus itself (onFocus →
+    // focus), then let the pointer leave (scheduleClose → closeAll). The
+    // submenu panel is `hidden` at that point, so a stop seated on an item
+    // inside it is one no Tab press can reach — WCAG 2.1.1, with the stop
+    // technically present and unique. Membership alone cannot see this; the
+    // candidate list is filtered to ids whose `ancestorIds` are all open.
+    let s = init({ items: [] })
+    ;[s] = update(s, { type: 'openBranch', id: 'file', ancestorIds: [] })
+    ;[s] = update(s, { type: 'focus', id: 'file-open' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const file = p.item('file', { isBranch: true })
+    const fileOpen = p.item('file-open', { isBranch: false, ancestorIds: ['file'] }).trigger
+
+    // While the branch is open the submenu item is tabbable and owns the stop.
+    expect([read(file.trigger.tabindex, s), read(fileOpen.tabindex, s)]).toEqual([-1, 0])
+    ;[s] = update(s, { type: 'closeAll' })
+    expect(read(file.content.hidden, s)).toBe(true)
+    expect([read(file.trigger.tabindex, s), read(fileOpen.tabindex, s)]).toEqual([0, -1])
+  })
+
+  it('a `state.items` entry inside a closed branch does not hold the stop', () => {
+    // Same rule on the DYNAMIC path: `items` is documented as accepting deeper
+    // ids, and a deep id whose branch is shut is no more tabbable there.
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const file = p.item('file', { isBranch: true }).trigger
+    const fileOpen = p.item('file-open', { isBranch: false, ancestorIds: ['file'] }).trigger
+    const s = init({ items: ['file', 'file-open'], focused: 'file-open' })
+    expect([read(file.tabindex, s), read(fileOpen.tabindex, s)]).toEqual([0, -1])
+  })
+
+  it('falls back to the unfiltered candidates when nothing is tabbable', () => {
+    // Every rendered id is inside a closed branch — a shape only a consumer
+    // that calls `item()` for submenu entries alone can produce. One stop that
+    // cannot be tabbed to is still strictly better than none, so the filter
+    // degrades to the old answer instead of returning null.
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
+    const x = p.item('x', { isBranch: false, ancestorIds: ['shut'] }).trigger
+    const y = p.item('y', { isBranch: false, ancestorIds: ['shut'] }).trigger
+    const s = init({ items: [] })
+    expect([read(x.tabindex, s), read(y.tabindex, s)]).toEqual([0, -1])
+  })
 })

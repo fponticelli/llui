@@ -147,7 +147,14 @@ describe('tags-input keeps the stop on a real tag across setValue (#145)', () =>
       { ...tagsInput.init({ value: ['a', 'b', 'c'] }), focusedIndex: 1 },
       { type: 'setValue', value: [] },
     )
-    expect(stops(state)).toEqual([])
+    // `focusedIndex` survives `setValue` untouched — that dangling reference IS
+    // the defect. Filtering `state.value` here would assert nothing at all (it
+    // is empty, so ANY implementation answers `[]`), so probe the indices the
+    // OLD list held, the stale index 1 among them: it is exactly the one the
+    // inline `s.focusedIndex === index ? 0 : -1` handed a `tabindex="0"` to.
+    expect(state.focusedIndex).toBe(1)
+    const p = parts()
+    expect([0, 1, 2].map((i) => read(p.tag('a', i).root.tabindex, state))).toEqual([-1, -1, -1])
   })
 
   it('a REORDERED list of the same length keeps the stop on a real member', () => {

@@ -45,10 +45,14 @@ export interface NavMenuState {
    * not one of these entries has been removed, so the stop falls back rather
    * than vanishing (#145).
    *
-   * Leave it empty for a static menu — `connect` then trusts `focused` and
-   * falls back to the first id handed to `item()`, which is document order for
-   * any depth-first view. Same escape hatch as `radio-group`/`tabs`, which keep
-   * their `items` list in state for exactly this reason.
+   * Leave it empty for a static menu — `connect` then uses the ids handed to
+   * `item()`, in call order, as the membership list instead, which is document
+   * order for any depth-first view. Same escape hatch as `radio-group`/`tabs`,
+   * which keep their `items` list in state for exactly this reason.
+   *
+   * Either way the candidates are filtered to the ones currently TABBABLE: an
+   * id whose `ancestorIds` are not all in `open` sits inside a `hidden`
+   * submenu panel and cannot carry the stop.
    */
   items: string[]
   disabled: boolean
@@ -174,6 +178,16 @@ export interface NavMenuParts {
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
   }
+  /**
+   * Parts for one trigger (+ its panel when it is a branch).
+   *
+   * `ancestorIds` is the open-path this item lives under, root-first. It drives
+   * sibling-closing in `openBranch` AND the roving tab stop: an item whose
+   * ancestors are not all open is inside a `hidden` panel and is skipped when
+   * the stop is resolved. Pass it on every NESTED item, leaf ones included —
+   * omitting it reads as "top level", which puts the tab stop inside a closed
+   * submenu (#145).
+   */
   item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }) => NavItemParts
 }
 
@@ -245,38 +259,64 @@ export function connect(
   // the current top-level order, so a list rendered through `each` re-seats the
   // tab stop as rows come and go.
   //
-  // `firstItemId` is the STATIC-MENU fallback only: the first id handed to
-  // `item()`, which for any depth-first view is the first trigger in document
-  // order. It is a LATCH, and a latch is wrong for a dynamic list — `item()`
-  // runs once per row build, so removing the row that happened to build first
-  // leaves the latch pointing at an id that no longer exists and the nav loses
-  // its tab stop entirely. `state.items` therefore WINS wherever it is
-  // populated; the latch only answers when it is empty.
+  // `state.items` is the membership list wherever the consumer maintains it —
+  // the current top-level order, so a list rendered through `each` re-seats the
+  // tab stop as rows come and go — and the stop goes through the shared
+  // `rovingTabStop` (#145): `focused` is honoured only while it still names one
+  // of the current items, and the first item answers otherwise. Without that
+  // pruning, removing the focused item — or `setItems` dropping it — left every
+  // trigger at -1 all over again, since nothing ever clears `focused`.
   //
-  // Where `state.items` IS populated it is also the MEMBERSHIP list, so the
-  // stop goes through the shared `rovingTabStop` (#145): `focused` is honoured
-  // only while it still names one of the current items, and the first item
-  // answers otherwise. Without that pruning, removing the focused item — or
-  // `setItems` dropping it — left every trigger at -1 all over again, since
-  // nothing ever clears `focused`.
+  // With an EMPTY `items` — the documented STATIC-menu configuration — the
+  // machine indexes no tree of its own, so the membership list is the one
+  // `connect` builds for itself: `rendered`, every id handed to `item()`, in
+  // call order (document order for any depth-first view). It replaces the
+  // single-id LATCH this used to carry, which was wrong in BOTH directions: it
+  // answered only while nothing was focused, so a `focused` id naming nothing
+  // rendered still owned the stop and every trigger read -1 (#145's own
+  // `focused === x ? 0 : -1` failure, one level up), and as a fallback it
+  // pinned whichever row happened to build first even after that row was gone.
+  // A full list is never worse than the latch — its first entry IS the latch —
+  // and it prunes a stale `focused` the latch could not.
   //
-  // With an EMPTY `items` the machine knows no membership at all (it
-  // deliberately does not index the tree), so `focused` is taken on trust and
-  // the latch answers only while nothing is focused. That is the case a static
-  // menu is in, and it is why the routing is conditional: pruning `focused`
-  // against a list of one latched id would strip the stop from every trigger
-  // but the first.
-  let firstItemId: string | null = null
+  // MEMBERSHIP IS NOT ENOUGH: the tab stop must sit on something TABBABLE, and
+  // a submenu entry is only tabbable while every branch above it is open (its
+  // `content` carries `hidden: !isOpen`). Focus a submenu entry, then let the
+  // pointer leave and `closeAll` fire, and a membership-only stop stayed on an
+  // id inside a `hidden` container — the nav had NO tabbable element at all,
+  // WCAG 2.1.1 again, reachable through the machine's own messages with no
+  // consumer error. So `ancestorIds` — which `item()` already takes, and which
+  // `openBranch` already relies on — is recorded per id and the candidate list
+  // is filtered to the ids whose ancestors are all open. An id `item()` never
+  // saw (a member of `state.items` not yet built) is taken as visible: unknown
+  // is not the same as hidden. If the filter empties the list the UNFILTERED
+  // candidates answer, so hiding everything degrades to the old behaviour
+  // rather than to no stop at all.
+  //
+  // The memo is keyed on the STATE inputs only and reads `rendered` from the
+  // closure, which is load-bearing rather than an oversight: `item()` runs
+  // during view construction while the tabindex bindings produce during
+  // materialisation, and every authoring helper is a lazy `Mountable`, so the
+  // registry is complete before the first binding evaluates. Where it is not
+  // (a test that interleaves `item()` with reads, an `each` row built after
+  // mount), every trigger in the pass still compares against ONE memoized
+  // answer, so "exactly one tab stop" holds even against a half-built registry.
+  // Adding a registry revision to the key would trade that invariant for a
+  // freshness nothing needs — the next state change recomputes anyway.
+  const rendered = new Map<string, readonly string[]>()
   const stopId = deriveOnceN(
-    (items: string[], focused: string | null, latched: string | null): string | null =>
-      items.length > 0
-        ? rovingTabStop(items, NO_DISABLED, focused)
-        : focused !== null
-          ? focused
-          : latched,
+    (items: string[], focused: string | null, open: string[]): string | null => {
+      const candidates = items.length > 0 ? items : [...rendered.keys()]
+      const openSet = new Set(open)
+      const visible = candidates.filter((cid) => {
+        const ancestors = rendered.get(cid)
+        return ancestors === undefined || ancestors.every((a) => openSet.has(a))
+      })
+      return rovingTabStop(visible.length > 0 ? visible : candidates, NO_DISABLED, focused)
+    },
   )
   const tabStop = (id: string) => (st: NavMenuState) =>
-    stopId(st.items, st.focused, firstItemId) === id ? 0 : -1
+    stopId(st.items, st.focused, st.open) === id ? 0 : -1
 
   return {
     root: {
@@ -289,7 +329,11 @@ export function connect(
     },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
-      if (firstItemId === null) firstItemId = id
+      // First call wins the position, so re-mounting a row keeps document
+      // order; the ancestors are refreshed because a moved item can change
+      // depth. Keying by id also bounds the registry to the DISTINCT ids ever
+      // rendered rather than to the number of row builds.
+      rendered.set(id, ancestorIds)
       return {
         trigger: {
           type: 'button',
