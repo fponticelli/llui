@@ -138,6 +138,43 @@ describe('#103 blocked back — history mode', () => {
     dispose()
   })
 
+  it('consumes the pending restore even when the traversal lands elsewhere', async () => {
+    // The arm is keyed on the index being restored TO, and is consumed
+    // UNCONDITIONALLY: `history.go` is asynchronous and may land somewhere else
+    // entirely (the user pressing back again while it is in flight). An arm
+    // that survives a non-matching landing swallows a LATER genuine popstate —
+    // the same stuck-flag failure the boolean had (#103).
+    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+    const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
+
+    // A blocked pop onto a stamped entry arms the restore back to index 2.
+    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    expect(goSpy).toHaveBeenCalledWith(1)
+    expect(send).not.toHaveBeenCalled()
+
+    // The next popstate lands on a DIFFERENT index than the restore expected:
+    // it is a genuine navigation and must NOT be swallowed.
+    history.replaceState({ __llui_idx: 0 }, '', '/other')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 0 } }))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'other' } })
+
+    // ...and the arm must be gone, or this one — which DOES carry the index the
+    // restore was waiting for — is swallowed instead of dispatching.
+    history.replaceState({ __llui_idx: 2 }, '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 2 } }))
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'admin' } })
+
+    goSpy.mockRestore()
+    dispose()
+  })
+
   it('keeps history.length and the forward entries across a blocked back', async () => {
     let blockAdmin = false
     const options: ConnectOptions<Route> = {
