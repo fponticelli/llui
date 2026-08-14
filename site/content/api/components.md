@@ -1005,12 +1005,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | ---------- | ---------------- |
 | `open`     | `string[]`       |
 | `focused`  | `string \| null` |
+| `items`    | `string[]`       |
 | `disabled` | `boolean`        |
 | `dir`      | `'ltr' \| 'rtl'` |
 
-**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`, `setItems`
 
-**Init options:** `open?: string[], focused?: string | null, disabled?: boolean, dir?: 'ltr' | 'rtl'`
+**Init options:** `open?: string[], focused?: string | null, items?: string[], disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 

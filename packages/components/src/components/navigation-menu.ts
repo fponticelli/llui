@@ -2,6 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { flipArrow } from '../utils/direction.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -215,6 +216,12 @@ export function connect(
       closeTimer = null
     }
   }
+
+  // Cancel a still-pending close when the nav unmounts. The guard above already
+  // makes a late timer HARMLESS; this makes it not exist. Best-effort:
+  // `connect()` is also called from unit tests with no build context, where
+  // there is no scope to hook and the guard is the whole story (#123).
+  onScopeTeardown(cancelClose)
 
   // Roving-tabindex fallback. `focused` starts null and only a trigger's own
   // onFocus ever sets it, so with a bare `focused === id ? 0 : -1` EVERY trigger

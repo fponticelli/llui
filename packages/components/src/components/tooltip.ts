@@ -3,6 +3,7 @@ import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
 import type { PresenceStatus } from './presence.js'
 import { isMounted as presenceIsMounted } from './presence.js'
 
@@ -199,6 +200,12 @@ export function connect(
   const detached = (el: Element | null): boolean => el !== null && !el.isConnected
   const getTrigger = (): Element | null =>
     typeof document === 'undefined' ? null : document.getElementById(triggerId)
+
+  // Cancel anything still pending when the component unmounts. The guard above
+  // already makes a late timer HARMLESS; this makes it not exist. Best-effort:
+  // `connect()` is also called from unit tests with no build context, where
+  // there is no scope to hook and the guard is the whole story (#123).
+  onScopeTeardown(clearTimers)
 
   const scheduleShow = (delay: number): void => {
     clearTimers()
