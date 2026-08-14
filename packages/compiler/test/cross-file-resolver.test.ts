@@ -566,3 +566,145 @@ describe('extractDiscriminatedUnionSchemaCrossFile — composition', () => {
     expect(result?.variants.X?.id).toBe('string')
   })
 })
+
+// Issue #96 — a PARENTHESIZED type alias, resolved across files.
+//
+// `type Msg = ( A | B )` and `type Msg = (A) | (B)` are legal TypeScript and
+// mean exactly what the unparenthesized forms mean, but a ParenthesizedTypeNode
+// matches neither `isUnionTypeNode` nor `isTypeLiteralNode`, so the union walk
+// used to see one opaque member and drop every variant behind it. The damage is
+// the #118/#89 class — silent: the build succeeds and the agent is handed a
+// SHORTER Msg schema than the app really has, with nothing indicating loss.
+//
+// These live in the CROSS-FILE suite on purpose. `cross-file-resolver.ts`
+// re-implements the member walk twice, in `collectMsgVariants` and
+// `collectSchemaVariants`, over modules it resolved itself — so removing either
+// unwrap THERE is invisible to every single-file extractor test in the repo.
+describe('parenthesized type aliases across files (issue #96)', () => {
+  it('walks a wholly-parenthesized IMPORTED union (annotations)', async () => {
+    const files = {
+      '/proj/msg.ts': `
+        export type CounterMsg = (
+          /** @intent("Increment") */
+          | { type: 'inc' }
+          /** @intent("Decrement") */
+          | { type: 'dec' }
+        )
+      `,
+      '/proj/app.ts': `
+        import { CounterMsg } from './msg'
+        type Msg =
+          | CounterMsg
+          /** @intent("Reset") */
+          | { type: 'reset' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractMsgAnnotationsCrossFile(
+      files['/proj/app.ts']!,
+      'Msg',
+      '/proj/app.ts',
+      ctx,
+    )
+    expect(Object.keys(result ?? {}).sort()).toEqual(['dec', 'inc', 'reset'])
+    // The FIRST member's JSDoc sits INSIDE the `(`, so the comment scan has to
+    // start from the unwrapped union — scanning from the parenthesized node
+    // finds nothing and `inc` alone comes back unannotated.
+    expect(result!.inc?.intent).toBe('Increment')
+    expect(result!.dec?.intent).toBe('Decrement')
+    expect(result!.reset?.intent).toBe('Reset')
+  })
+
+  it('walks PER-MEMBER parentheses in an imported union (annotations)', async () => {
+    const files = {
+      '/proj/msg.ts': `
+        export type CounterMsg =
+          /** @intent("Increment") */
+          | ({ type: 'inc' })
+          /** @intent("Decrement") */
+          | ({ type: 'dec' })
+      `,
+      '/proj/app.ts': `
+        import { CounterMsg } from './msg'
+        type Msg = CounterMsg
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractMsgAnnotationsCrossFile(
+      files['/proj/app.ts']!,
+      'Msg',
+      '/proj/app.ts',
+      ctx,
+    )
+    expect(Object.keys(result ?? {}).sort()).toEqual(['dec', 'inc'])
+    // A member's JSDoc sits BEFORE its own `(`, so the unwrap must not move the
+    // position `readLeadingJSDocForMember` reads the comment from.
+    expect(result!.inc?.intent).toBe('Increment')
+    expect(result!.dec?.intent).toBe('Decrement')
+  })
+
+  it('walks a parenthesized imported union (schema)', async () => {
+    const files = {
+      '/proj/msg.ts': `
+        export type CounterMsg = ({ type: 'inc' } | { type: 'dec'; by: number })
+      `,
+      '/proj/app.ts': `
+        import { CounterMsg } from './msg'
+        type Msg = CounterMsg | { type: 'reset' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/app.ts']!,
+      'Msg',
+      '/proj/app.ts',
+      ctx,
+    )
+    expect(Object.keys(result?.variants ?? {}).sort()).toEqual(['dec', 'inc', 'reset'])
+    expect(result?.variants.dec).toEqual({ by: 'number' })
+  })
+
+  it('walks PER-MEMBER parentheses in an imported union (schema)', async () => {
+    const files = {
+      '/proj/msg.ts': `
+        export type CounterMsg = ({ type: 'inc' }) | ({ type: 'dec'; by: number })
+      `,
+      '/proj/app.ts': `
+        import { CounterMsg } from './msg'
+        type Msg = CounterMsg
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/app.ts']!,
+      'Msg',
+      '/proj/app.ts',
+      ctx,
+    )
+    expect(Object.keys(result?.variants ?? {}).sort()).toEqual(['dec', 'inc'])
+    expect(result?.variants.dec).toEqual({ by: 'number' })
+  })
+
+  it('walks a parenthesized SINGLE-variant imported alias', async () => {
+    // The other shape the alias-level unwrap covers: not a union at all, just
+    // wrapped.
+    const files = {
+      '/proj/msg.ts': `
+        export type Leaf = ({ type: 'bottom'; id: string })
+      `,
+      '/proj/app.ts': `
+        import { Leaf } from './msg'
+        type Msg = Leaf | { type: 'top' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/app.ts']!,
+      'Msg',
+      '/proj/app.ts',
+      ctx,
+    )
+    expect(Object.keys(result?.variants ?? {}).sort()).toEqual(['bottom', 'top'])
+    expect(result?.variants.bottom).toEqual({ id: 'string' })
+  })
+})

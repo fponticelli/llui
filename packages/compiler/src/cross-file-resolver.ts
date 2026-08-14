@@ -386,7 +386,7 @@ async function collectMsgVariants(
     if (ts.isTypeLiteralNode(member)) {
       const variant = readDiscriminantLiteral(member)
       if (!variant) continue
-      const comment = readLeadingJSDocForMember(sf.text, alias, memberNodes, i)
+      const comment = readLeadingJSDocForMember(sf.text, aliasBody, memberNodes, i)
       if (out[variant] === undefined) {
         out[variant] = parseAnnotations(comment)
       }
@@ -420,32 +420,34 @@ function readDiscriminantLiteral(lit: ts.TypeLiteralNode): string | null {
 /**
  * Read leading JSDoc for a union member at index `i` of `members`.
  * The JSDoc lives between the previous element's end and the current
- * element's start (or between the type alias start and the first
+ * element's start (or between the union body's start and the first
  * element for `i === 0`). Mirrors the logic in
  * `extractMsgAnnotations` so the cross-file path produces the same
  * output for the same input.
+ *
+ * `aliasBody` is the alias type with parentheses already peeled (#96), and
+ * that is load-bearing for `i === 0`: in `type Msg = ( /** doc *\/ | {…} )`
+ * the first member's comment sits INSIDE the `(`, so scanning from the
+ * ParenthesizedTypeNode's `pos` — which is just after the `=` — finds nothing
+ * and the first variant silently loses its annotations while every later one
+ * keeps theirs. `extractMsgAnnotations` scans from the unwrapped node for
+ * exactly this reason; the two must not disagree.
  */
 function readLeadingJSDocForMember(
   source: string,
-  alias: ts.TypeAliasDeclaration,
+  aliasBody: ts.TypeNode,
   members: ts.TypeNode[],
   i: number,
 ): string {
   const prev = members[i - 1]
-  const member = members[i]!
-  // For non-union (single-variant) aliases the union pos is the alias
-  // body's pos.
-  const unionPos = ts.isUnionTypeNode(alias.type) ? alias.type.pos : alias.type.pos
-  const scanPos = i === 0 || prev === undefined ? unionPos : prev.end
+  // For non-union (single-variant) aliases this is the alias body itself.
+  const scanPos = i === 0 || prev === undefined ? aliasBody.pos : prev.end
   const ranges = ts.getLeadingCommentRanges(source, scanPos) ?? []
-  const docs = ranges
+  return ranges
     .filter((r) => r.kind === ts.SyntaxKind.MultiLineCommentTrivia)
     .map((r) => source.slice(r.pos, r.end))
     .filter((txt) => txt.startsWith('/**'))
-  // Cut off comments that appear AFTER the member starts (rare but
-  // possible with weird formatting).
-  const _end = member.pos
-  return docs.join('\n')
+    .join('\n')
 }
 
 /**
