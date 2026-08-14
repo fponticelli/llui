@@ -83,7 +83,9 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
    */
   function reserve(runs: RunScope, nodes: Node[], resolve: () => void) {
     const entry: ScheduledPhase = {
+      // run-scope-exempt: batch membership; the scope below owns liveness
       nodes: new Set(nodes),
+      // run-scope-exempt: holds the scope's OWN tokens, one per node
       tokens: new Map(),
       cancelled: false,
       resolve,

@@ -146,7 +146,10 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
   const duration = opts.duration ?? 300
   const easing = opts.easing ?? 'ease-out'
   const respectReduced = opts.respectReducedMotion !== false
-  // Weak: entries vanish with their elements. No strong retention of rows.
+  // Weak: entries vanish with their elements. No strong retention of rows. The
+  // last-known LAYOUT box must outlive by far the glide that read it, which is
+  // exactly why it cannot live on the run scope.
+  // run-scope-exempt: geometry, not liveness
   const positions = new WeakMap<Element, Point>()
   // The live glide per element, held on the package's shared run registry (#111):
   // the run's rollback IS `animation.cancel()`, so superseding a row's run is
@@ -180,7 +183,9 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
     onTransition: (ctx) => {
       const parent = ctx.parent as Element | null | undefined
       if (!parent) return
+      // run-scope-exempt: per-pass locals, dead when this pass returns
       const leaving = new Set<Element>(asElements(ctx.leaving))
+      // run-scope-exempt: per-pass locals, dead when this pass returns
       const entering = new Set<Element>(asElements(ctx.entering))
       // Hoisted: the setting is the same for every row, and a `matchMedia` call
       // per row would sit in the middle of the read phase for no gain.

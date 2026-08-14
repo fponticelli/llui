@@ -27,29 +27,120 @@ const HELPERS: ReadonlyArray<readonly [string, string]> = [
   ['flip.ts', flipSource],
 ]
 
-// A hand-rolled `WeakMap` keyed on the animated node IS the shape all four
-// bespoke implementations took. A helper may still own one for pure DATA, but
-// anything tracking whether a phase is LIVE belongs to a `RunScope` — so every
-// `WeakMap` in a helper has to be named here, with its reason.
-const ALLOWED_WEAKMAPS: Record<string, readonly string[]> = {
-  // Last-known LAYOUT position per row. Geometry, not liveness: it must survive
-  // long past the glide that read it, which is exactly why it cannot live on the
-  // run scope.
-  'flip.ts': ['new WeakMap<Element, Point>()'],
+// A collection keyed on the animated node IS the shape all four bespoke
+// implementations took. A helper may still own one for pure DATA — geometry, a
+// per-pass local, a batch whose liveness a `RunScope` already owns — but
+// anything tracking whether a phase is LIVE belongs on the scope.
+//
+// This gate is deliberately SHAPE-based and the exemption lives at the POINT OF
+// EDIT. Its predecessor matched `/new WeakMap[^\n]*/g` and compared the result
+// for exact equality against an allow-list of FULL SOURCE LINES kept in this
+// file: it failed the build on a rename or on a prettier rewrap, said nothing to
+// a contributor at the place they were editing, and banned a spelling rather
+// than a property — `new Map`, a `WeakRef` or a closure `Set` walked straight
+// past it.
+//
+// Textual matching still cannot see an expando or a plain closure variable. What
+// it CAN do is put a signpost where a cache is written, so the rule is stated to
+// the person adding one rather than discovered by a red build.
+const CACHE_CONSTRUCTION = /\bnew\s+(?:Weak)?(?:Map|Set|Ref)\b/
+/** `// run-scope-exempt: <reason>` — a bare marker with no reason does not count. */
+const EXEMPTION = /\/\/\s*run-scope-exempt:\s*\S/
+
+interface UnmarkedCache {
+  file: string
+  line: number
+  text: string
 }
+
+/**
+ * Every cache construction in `source` that carries no exemption marker.
+ *
+ * The marker counts on the line above, on the construction's own line, or
+ * anywhere up to the line that closes the construction call — so a declaration
+ * prettier has wrapped across several lines keeps its trailing marker.
+ */
+export function unmarkedCaches(file: string, source: string): UnmarkedCache[] {
+  const lines = source.split('\n')
+  const found: UnmarkedCache[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i]!
+    if (!CACHE_CONSTRUCTION.test(text)) continue
+    const window = [lines[i - 1] ?? '']
+    for (let j = i; j < Math.min(lines.length, i + 5); j++) {
+      const line = lines[j]!
+      window.push(line)
+      if (line.includes(')')) break // the construction call closes here
+    }
+    if (window.some((line) => EXEMPTION.test(line))) continue
+    found.push({ file, line: i + 1, text: text.trim() })
+  }
+  return found
+}
+
+const RULE =
+  'Per-node LIVENESS state belongs on a RunScope (createRunScope), not on a ' +
+  'hand-rolled cache — that is how the #40 interrupt fix landed in half the ' +
+  'helpers (#111). If this one is NOT liveness, say why where you wrote it: ' +
+  'add a `// run-scope-exempt: <reason>` comment on the line.'
 
 describe('one shared cancellation path', () => {
   it.each(HELPERS)('%s routes cancellation through createRunScope', (_file, source) => {
     expect(source).toContain('createRunScope')
   })
 
-  it.each(HELPERS)('%s declares no bespoke run registry', (file, source) => {
-    const declared = source.match(/new WeakMap[^\n]*/g) ?? []
-    expect(declared).toEqual(ALLOWED_WEAKMAPS[file] ?? [])
+  it.each(HELPERS)('%s marks every per-node cache it owns', (file, source) => {
+    const unmarked = unmarkedCaches(file, source).map((c) => `${c.file}:${c.line}  ${c.text}`)
+    expect(unmarked, RULE).toEqual([])
   })
 
   it('anim.ts owns the one run registry', () => {
     expect(animSource).toContain('new WeakMap<Node, RunEntry>()')
+  })
+})
+
+// The gate is only worth its place if it FIRES. These pin what it catches and
+// what it lets through, against synthetic sources rather than the real ones — so
+// a legitimate new cache in a helper never has to be added to a list in here.
+describe('the run-scope drift gate itself', () => {
+  const at = (source: string): number[] => unmarkedCaches('x.ts', source).map((c) => c.line)
+
+  it('catches a cache however it is spelled', () => {
+    expect(at('const runs = new WeakMap<Node, Run>()')).toEqual([1])
+    expect(at('const runs = new Map<Node, Run>()')).toEqual([1])
+    expect(at('const live = new WeakSet<Element>()')).toEqual([1])
+    expect(at('const live = new Set<Element>()')).toEqual([1])
+    expect(at('const held = new WeakRef(el)')).toEqual([1])
+  })
+
+  it('survives a rename — it matches the constructor, not the declaration text', () => {
+    expect(at('const cancelledPhasesByRow = new WeakMap<Element, PhaseState>()')).toEqual([1])
+  })
+
+  it('accepts a marker on the line, or on the line above', () => {
+    expect(at('const runs = new Map() // run-scope-exempt: per-pass local')).toEqual([])
+    expect(at('// run-scope-exempt: geometry\nconst runs = new Map()')).toEqual([])
+  })
+
+  it('accepts a marker after a prettier rewrap of the declaration', () => {
+    expect(
+      at(
+        'const positionsKeyedByRowElement = new WeakMap<\n' +
+          '  Element,\n' +
+          '  Point\n' +
+          '>() // run-scope-exempt: geometry, not liveness\n',
+      ),
+    ).toEqual([])
+  })
+
+  it('does not accept a marker with no reason', () => {
+    expect(at('const runs = new Map() // run-scope-exempt:')).toEqual([1])
+  })
+
+  it('does not let a marker leak past the construction it explains', () => {
+    // The window closes at the line that closes the call, so the marker on a
+    // LATER statement cannot cover this one.
+    expect(at('const a = new Map()\nconst b = new Map() // run-scope-exempt: reason')).toEqual([1])
   })
 })
 
