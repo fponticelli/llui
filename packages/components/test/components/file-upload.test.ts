@@ -15,7 +15,7 @@ import {
 } from '../../src/components/file-upload'
 import type { FileMeta, FileUploadState } from '../../src/components/file-upload'
 import { pathHandle } from '@llui/dom'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 function makeFile(name: string, size: number): File {
   return new File(['x'.repeat(size)], name, { type: 'text/plain' })
@@ -97,7 +97,7 @@ describe('file-upload.connect', () => {
 
   it('onDrop sends drop + addFiles', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     const ev = {
       preventDefault: vi.fn(),
       dataTransfer: { files: [] as File[] },
@@ -109,7 +109,7 @@ describe('file-upload.connect', () => {
 
   it('clearTrigger sends clear', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.clearTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'clear' })
   })
@@ -260,7 +260,7 @@ describe('connect: new parts + attrs', () => {
 
   it('custom validate adds to rejectedFiles via the pipeline', async () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, {
+    const pc = connect(signalOf(init()), send, {
       id: 'x',
       validate: (file) =>
         file.name.endsWith('.bad') ? [{ code: 'CUSTOM', message: 'banned name' }] : null,
@@ -293,7 +293,7 @@ describe('connect: new parts + attrs', () => {
 
   it('transformFiles runs before validation', async () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, {
+    const pc = connect(signalOf(init()), send, {
       id: 'x',
       transformFiles: (files) =>
         files.map((f) => new File([f], f.name.toUpperCase(), { type: f.type })),
@@ -309,7 +309,7 @@ describe('connect: new parts + attrs', () => {
 
   it('no validate/transform: dispatches addFiles synchronously without customRejected', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     const input = document.createElement('input')
     Object.defineProperty(input, 'files', { value: [makeFile('a.txt', 5)] })
     pc.hiddenInput.onChange({ target: input } as unknown as Event)
@@ -323,7 +323,7 @@ describe('connect: new parts + attrs', () => {
 
   it('itemDeleteTrigger is a zag-aligned alias for removeTrigger', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.item(2).itemDeleteTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'removeFile', index: 2 })
   })

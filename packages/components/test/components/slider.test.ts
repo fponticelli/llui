@@ -134,7 +134,7 @@ describe('slider.connect', () => {
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.thumb(0).thumb.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -143,14 +143,14 @@ describe('slider.connect', () => {
 
   it('PageUp sends increment with multiplier 10', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.thumb(1).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'increment', index: 1, multiplier: 10 })
   })
 
   it('Home/End jump to min/max', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'toMin', index: 0 })
@@ -159,7 +159,7 @@ describe('slider.connect', () => {
 
   it('ltr (default): ArrowLeft sends decrement', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(signalOf(init()), send)
     const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
     p.thumb(0).thumb.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)

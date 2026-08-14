@@ -186,7 +186,7 @@ export function connect(
    * `validate` never ran and the tag was added anyway (#120).
    */
   const tryAddTag = () => {
-    const candidate = (state.peek()?.inputValue ?? '').trim()
+    const candidate = state.peek().inputValue.trim()
     if (validate && candidate !== '') {
       const errors = validate(candidate)
       if (errors && errors.length > 0) return

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/tags-input'
 import type { TagsInputState, TagsInputMsg } from '../../src/components/tags-input'
 import { pathHandle } from '@llui/dom'
-import { rootSignal } from '../_signal'
+import { rootSignal, signalOf } from '../_signal'
 
 describe('tags-input reducer', () => {
   it('initializes empty', () => {
@@ -80,7 +80,7 @@ describe('tags-input.connect', () => {
 
   it('input onKeyDown Enter adds tag', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init()), send)
     const ev = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
     pc.input.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -89,7 +89,7 @@ describe('tags-input.connect', () => {
 
   it('comma delimiter adds tag', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init()), send)
     const ev = new KeyboardEvent('keydown', { key: ',', cancelable: true })
     pc.input.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'addTag' })

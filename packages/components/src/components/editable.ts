@@ -130,7 +130,7 @@ export function connect(
    */
   const trySubmit = () => {
     if (validate) {
-      const errors = validate(state.peek()?.draft ?? '')
+      const errors = validate(state.peek().draft)
       if (errors && errors.length > 0) return
     }
     send({ type: 'submit' })

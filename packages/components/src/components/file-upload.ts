@@ -499,15 +499,12 @@ export function connect(
   /**
    * Send, then free the handles the transition dropped. `send` is synchronous
    * (CLAUDE.md), so the post-send peek is the state the message produced — no
-   * handler has to know which messages remove a file, or whether a gate
-   * swallowed one. `peek()` is undefined only outside a live mount (unit tests
-   * over `rootSignal()`), where there is nothing to release either.
+   * handler has to know which messages remove a file.
    */
   const sendTracked = (msg: FileUploadMsg): void => {
     const before = state.peek()
     send(msg)
-    const after = state.peek()
-    if (before && after) releaseDropped(before, after)
+    releaseDropped(before, state.peek())
   }
 
   const runPipeline = async (

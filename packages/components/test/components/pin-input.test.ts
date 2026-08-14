@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isComplete, getValue } from '../../src/components/pin-input'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('pin-input reducer', () => {
   it('initializes empty values of given length', () => {
@@ -121,7 +121,7 @@ describe('pin-input.connect', () => {
 
   it('onInput sends setValue', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     const target = document.createElement('input')
     target.value = '5'
     const ev = new Event('input')
@@ -132,14 +132,14 @@ describe('pin-input.connect', () => {
 
   it('backspace sends backspace msg', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { id: 'x' })
+    const pc = connect(signalOf(init()), send, { id: 'x' })
     pc.input(1).onKeyDown(new KeyboardEvent('keydown', { key: 'Backspace' }))
     expect(send).toHaveBeenCalledWith({ type: 'backspace', index: 1 })
   })
 
   it('validate blocks setValue when returning errors', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, {
+    const pc = connect(signalOf(init()), send, {
       id: 'x',
       validate: (v) => (v === '0' ? ['zero not allowed'] : null),
     })

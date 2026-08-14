@@ -72,7 +72,7 @@ describe('splitter.connect', () => {
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init()), send)
     pc.resizeTrigger.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -81,7 +81,7 @@ describe('splitter.connect', () => {
 
   it('ltr (default): ArrowLeft sends decrement', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const pc = connect(signalOf(init()), send)
     pc.resizeTrigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'decrement' })
   })

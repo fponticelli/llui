@@ -414,28 +414,28 @@ describe('menu.connect', () => {
 
   it('content ArrowDown highlights next at root level', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext', level: '' })
   })
 
   it('content Enter selects highlighted at root level', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'selectHighlighted', level: '' })
   })
 
   it('content Escape closes when no submenu open', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
 
   it('content single-char sends typeahead scoped to root', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'x' })
+    const p = connect(signalOf(init()), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'typeahead', char: 'a', level: '' }),

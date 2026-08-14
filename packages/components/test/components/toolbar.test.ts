@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/toolbar'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, signalOf, read } from '../_signal'
 
 describe('toolbar reducer', () => {
   it('initializes horizontal, looping, no focus', () => {
@@ -119,7 +119,7 @@ describe('toolbar.connect', () => {
 
   it('ArrowRight/Left rove in a horizontal toolbar', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'tb' })
+    const p = connect(signalOf(init()), send, { id: 'tb' })
     const div = document.createElement('div')
     div.setAttribute('data-orientation', 'horizontal')
     const item = document.createElement('button')
@@ -137,7 +137,7 @@ describe('toolbar.connect', () => {
 
   it('ArrowDown/Up rove in a vertical toolbar', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'tb' })
+    const p = connect(signalOf(init()), send, { id: 'tb' })
     const div = document.createElement('div')
     div.setAttribute('data-orientation', 'vertical')
     const item = document.createElement('button')
@@ -155,7 +155,7 @@ describe('toolbar.connect', () => {
 
   it('Home/End send focusFirst/focusLast', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send, { id: 'tb' })
+    const p = connect(signalOf(init()), send, { id: 'tb' })
     p.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'focusFirst' })
