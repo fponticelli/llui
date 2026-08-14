@@ -398,6 +398,7 @@ See [`@llui/agent-bridge`](/api/agent-bridge) for the full MCP tool list and CLI
 Compute the diff. Order of operations: removes first, then adds,
 then replaces. This is RFC 6902's recommended order — the receiver
 can apply ops sequentially without ambiguity.
+
 The implementation is a simple recursive walk; collection diffs
 are positional (index-based for arrays, key-based for objects)
 rather than structural (no LCS). Apps that pass identity-stable
@@ -436,6 +437,7 @@ Node adapter. Wraps the runtime-neutral core with a Node-specific
 eagerly, so this module only works where `ws` is available — use
 `@llui/agent/server/web` for Cloudflare Workers, Deno, or other
 WHATWG runtimes.
+
 Spec §10.1, §10.4.
 
 ```typescript
@@ -449,6 +451,7 @@ common denominator across Cloudflare Workers (`WebSocketPair`
 server half), Deno (`Deno.upgradeWebSocket().socket`), Bun's
 upgraded socket, and any other runtime that exposes a
 standards-compliant WebSocket object.
+
 The input type is intentionally the browser/global `WebSocket`
 interface — _not_ the Node `ws` library's variant, which uses an
 EventEmitter API (`on('message', ...)`) rather than
@@ -490,8 +493,9 @@ Per-op short verb + readable path. Useful for a flat detail view:
 - `{ op: 'add',     path: '/items/3' }` → `'added items.3'`
 - `{ op: 'remove',  path: '/items/3' }` → `'removed items.3'`
 - `{ op: 'replace', path: '/' }` → `'replaced state'`
-  The path is converted from JSON-Pointer to dotted form (with
-  `~0`/`~1` un-escaping) so it reads as a plain field accessor.
+
+The path is converted from JSON-Pointer to dotted form (with
+`~0`/`~1` un-escaping) so it reads as a plain field accessor.
 
 ```typescript
 function describeOp(op: JsonPatchOp): string
@@ -518,6 +522,7 @@ function detectSchemaChange(
 Recursively walk `value`. For any node a codec claims via
 `matchesRuntime`, replace it with `{ __codec, wire }`. Returns a
 fresh structure — never mutates the input.
+
 The codec match takes precedence over object/array recursion: a
 `Date` is technically `typeof === 'object'`, but the iso-date codec
 should claim it before the generic walker tries to enumerate keys.
@@ -588,6 +593,7 @@ function groupDiff(diff: StateDiff | undefined | null): DiffGroup[]
 Cloudflare Workers handler. Accepts a WebSocket upgrade using
 `WebSocketPair`, validates the token via
 `agent.acceptConnection`, and returns the 101 upgrade Response.
+
 Usage:
 
 ```ts
@@ -609,6 +615,7 @@ function handleCloudflareUpgrade(req: Request, agent: AgentCoreHandle): Promise<
 
 Deno handler. Uses `Deno.upgradeWebSocket(req)` to produce the
 response + socket pair, then plugs the socket into the registry.
+
 Usage:
 
 ```ts
@@ -636,10 +643,12 @@ stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
 bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
 The prefix is intentionally generic so LLM clients don't mistake the
 token format for a hint about which MCP tool namespace to use.
+
 The token itself never persists; only the hash does. A leaked store
 therefore does not compromise live tokens, since the bearer secret
 isn't recoverable from the hash. This matches the standard "session
 cookie / API key" pattern.
+
 The opaque form is the only token format the server understands as
 of 0.0.35. The previous HMAC-signed JWT format is gone; clients
 carrying old tokens will fail with `unknown` on first call and need
@@ -683,6 +692,7 @@ function parseServerFrame(value: unknown): ServerFrame | null
 
 Route an incoming Worker `fetch` request to the Durable Object
 that owns its `tid`.
+
 The token travels in three places depending on the route:
 
 - LAP HTTP calls: `Authorization: Bearer <token>` header
@@ -690,20 +700,23 @@ The token travels in three places depending on the route:
   inside the DO via the LAP router; we route by origin or a
   special `/agent/mint` path — see below)
 - WebSocket upgrade: `?token=<token>` in the URL
-  Requests that don't carry a tid (mint, resume-list, sessions) are
-  routed to a "root" DO named `__root`, which handles identity /
-  token store operations centrally. LAP and WS calls route to the
-  per-tid DO so the pairing state stays local.
-  This is the recommended entry for Cloudflare Workers deployments;
-  users who need custom routing can write their own and call the
-  underlying primitives directly.
-  As of 0.0.35 the token format is opaque (random, not signed), so we
-  can't recover `tid` from the token alone. The caller passes a
-  `resolveTid` callback — typically `(token) => stub.fetch(...)` to
-  the root DO's token-resolution endpoint — that turns a bearer into
-  its tid via the shared token store. Callers that don't shard by
-  tid can pass `() => Promise.resolve(rootName)` to route everything
-  through the root DO.
+
+Requests that don't carry a tid (mint, resume-list, sessions) are
+routed to a "root" DO named `__root`, which handles identity /
+token store operations centrally. LAP and WS calls route to the
+per-tid DO so the pairing state stays local.
+
+This is the recommended entry for Cloudflare Workers deployments;
+users who need custom routing can write their own and call the
+underlying primitives directly.
+
+As of 0.0.35 the token format is opaque (random, not signed), so we
+can't recover `tid` from the token alone. The caller passes a
+`resolveTid` callback — typically `(token) => stub.fetch(...)` to
+the root DO's token-resolution endpoint — that turns a bearer into
+its tid via the shared token store. Callers that don't shard by
+tid can pass `() => Promise.resolve(rootName)` to route everything
+through the root DO.
 
 ```typescript
 function routeToAgentDO(
@@ -721,6 +734,7 @@ matching `rpc-reply` / `rpc-error`. Runs its own one-shot frame
 subscription against the registry — no state stored on the
 registry itself, which keeps the registry small enough to
 implement in a Durable Object or other stateful primitive.
+
 Rejects with `{code: 'paused'}` when the pairing is absent,
 `{code: 'timeout'}` when the browser doesn't reply in time,
 or whatever the browser sent in its `rpc-error` frame otherwise.
@@ -754,11 +768,12 @@ One-line summary of the entire diff. Examples:
   → "2 items added"
 - mixed adds/removes/replaces across multiple regions
   → "5 changes across 3 regions"
-  The summary collapses multiple ops on the same logical path
-  (e.g. updating multiple fields on the same item) into a single
-  "change" — counting raw op entries would surface implementation
-  detail (which JSON-Patch ops the differ emitted), not user-relevant
-  counts.
+
+The summary collapses multiple ops on the same logical path
+(e.g. updating multiple fields on the same item) into a single
+"change" — counting raw op entries would surface implementation
+detail (which JSON-Patch ops the differ emitted), not user-relevant
+counts.
 
 ```typescript
 function summarizeDiff(diff: StateDiff | undefined | null): string
@@ -781,6 +796,7 @@ function tokenHashOf(token: string): Promise<string | null>
 Long-poll for a state change under `path` (a JSON pointer; `undefined`
 watches the whole state). Used by `/lap/v1/wait` for external state
 pushes (WebSocket messages, timers) arriving while the LLM is idle.
+
 Subscription-driven: the server ARMS a `watch { id, path }` on the
 browser, which then emits a `state-update` carrying that `id` only
 when the pointer's resolved value actually changes — so an idle
@@ -807,21 +823,23 @@ Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
 - `user-cancelled` — the user explicitly rejected.
 - `timeout` — no resolution arrived in `timeoutMs`, or the
   pairing dropped before one did.
-  Timeout is reported HONESTLY as `timeout` (not as a fake
-  `user-cancelled`): the confirm is still live in the browser and a
-  later approval may still fire, so callers must surface
-  `pending-confirmation` / `still-pending` rather than lie about a
-  rejection. Pairing drop maps to `timeout` for the same reason — the
-  user wasn't present to cancel, they simply weren't reachable.
-  LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
-  `/message` and `/confirm-result` long-poll in series: each tears its
-  subscriber down on timeout, and the next re-arms a fresh one. If the
-  user approves in that inter-poll gap, an edge-triggered subscriber
-  would miss the frame forever (the action ran but the agent polls
-  `still-pending` indefinitely). To close that gap, the registry buffers
-  every `confirm-resolved` outcome keyed by `confirmId` with a TTL, and
-  this helper checks that buffer BEFORE subscribing — returning
-  immediately when the resolution already arrived.
+
+Timeout is reported HONESTLY as `timeout` (not as a fake
+`user-cancelled`): the confirm is still live in the browser and a
+later approval may still fire, so callers must surface
+`pending-confirmation` / `still-pending` rather than lie about a
+rejection. Pairing drop maps to `timeout` for the same reason — the
+user wasn't present to cancel, they simply weren't reachable.
+
+LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
+`/message` and `/confirm-result` long-poll in series: each tears its
+subscriber down on timeout, and the next re-arms a fresh one. If the
+user approves in that inter-poll gap, an edge-triggered subscriber
+would miss the frame forever (the action ran but the agent polls
+`still-pending` indefinitely). To close that gap, the registry buffers
+every `confirm-resolved` outcome keyed by `confirmId` with a TTL, and
+this helper checks that buffer BEFORE subscribing — returning
+immediately when the resolution already arrived.
 
 ```typescript
 function waitForConfirm(
@@ -1338,6 +1356,7 @@ Per-top-level-path breakdown. Returns an array (stable order) where
 each entry describes the changes affecting one top-level region.
 Useful for a sidecar that wants to render a row per region with the
 affected fields beneath it.
+
 The returned `paths` are the FULL JSON-Pointer paths of the ops, so
 a consumer can render "/items/3/name" verbatim or further humanize
 it. The renderer doesn't make policy choices about how deeply to
@@ -1367,9 +1386,10 @@ Who can dispatch a Msg variant.
 - `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
   like batch operations or "explain this state" introspection variants.
   Lint warns if a view references one via `send({ type: 'X' })`.
-  JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
-  Absence of either tag → `'shared'`. The two tags are mutually exclusive
-  (enforced by `llui/agent-exclusive-annotations` ESLint rule).
+
+JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
+Absence of either tag → `'shared'`. The two tags are mutually exclusive
+(enforced by `llui/agent-exclusive-annotations` ESLint rule).
 
 ```typescript
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
@@ -1425,19 +1445,23 @@ export type IdentityResolver = (req: Request) => Promise<string | null>
 Compute a structural diff between two state snapshots and return it
 in JSON-Patch-shaped form (RFC 6902 subset: `add`, `remove`,
 `replace`).
+
 Why JSON Patch shape: LLMs see this exact format in their training
 data — it's the standard for describing object mutations on the
 wire. The agent learns the schema implicitly and can answer "what
 changed?" in a sentence by reading the ops.
+
 Why not unified-diff or per-binding dirty masks: the dirty mask
 tracks what bindings need re-rendering, which is a layout concern.
 The agent wants to know what _values_ changed, which is a state
 concern. Dirty masks miss field-level resolution; per-path JSON
 Patch gives it.
+
 Cost is O(state size) per dispatch. For typical app states (a few
 KB) that's microseconds. Apps with very large states (collections
 of thousands of items) should subscribe to specific slices via
 `query_state` / `wait_for_change` instead of reading full diffs.
+
 Path escaping follows JSON Pointer (RFC 6901): `/` becomes `~1`,
 `~` becomes `~0`. The escape happens per-segment.
 
@@ -1616,6 +1640,7 @@ it's a proxy for "how much activity happened during the drain window."
 `errors` surfaces sync throws from `onEffect` and unhandled rejections
 from effect handlers that fired during the drain window, so the LLM
 can see when an HTTP handler crashed silently.
+
 `warnings` surfaces non-blocking observations from the schema
 validator — typically `untyped-field` flags raised in strict mode
 when the agent provided a value for an `'unknown'`-typed field. The
@@ -1797,6 +1822,7 @@ Push narration prose into the activity feed without dispatching a
 Msg. The agent uses this for "I'm thinking…" / "About to do X
 because…" / "I noticed Y, going to investigate" — running commentary
 the user can read inline with agent actions.
+
 The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
 appends it to the per-tid recent-log buffer (visible to subsequent
 `describe_recent_actions` calls), AND pushes a `log-push` frame to
@@ -2153,6 +2179,7 @@ export type ServerFrame = z.infer<typeof serverFrameSchema>
 
 Options accepted by `createLluiAgentServer`. All values are
 optional and fall back to in-memory defaults.
+
 Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
 The new opaque-token scheme (token.ts) doesn't sign anything — the
 server stores the SHA-256 hash and looks tokens up. The option is
@@ -2480,14 +2507,16 @@ export interface PairingConnection {
 Registry of live browser pairings. Pure routing + hello cache —
 request-lifecycle state (in-flight RPC promises, confirm waits,
 long-polls) lives in the LAP handlers that need it, not here.
+
 Two implementations ship today:
 
 - `InMemoryPairingRegistry` for long-lived server processes
   (Node, Bun, Deno, Deno Deploy).
 - A Cloudflare Durable Object implementation (see
   `server/cloudflare`) for stateless Worker runtimes.
-  Other runtimes can implement this interface the same way; the
-  contract is intentionally small.
+
+Other runtimes can implement this interface the same way; the
+contract is intentionally small.
 
 ```typescript
 export interface PairingRegistry {
@@ -2580,6 +2609,7 @@ export interface RateLimiter {
 ### `TokenStore`
 
 Append-only, read-friendly storage for token records.
+
 Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
 value) on every authenticated request. The `tid` index is kept for
 the resume / revoke / sessions surfaces — those operate on session
@@ -2629,11 +2659,13 @@ Agent server instance scoped to a single Durable Object. All
 pairing state lives in the DO's in-process memory — which is safe
 here because the DO is a persistent addressable entity, not a
 one-shot Worker isolate.
+
 Users instantiate one of these inside their DO class's constructor
 and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
 WebSocket upgrades, the optional MCP endpoint, and the internal
 `/__resolve` token-resolution endpoint all flow through this single
 entry.
+
 ── SHARDED-DEPLOYMENT REQUIREMENT ────────────────────────────────
 `routeToAgentDO` shards by `tid`: the root DO (`__root`) owns
 `/agent/mint` and friends, while LAP/WS calls route to a per-tid DO.
@@ -2773,6 +2805,7 @@ LAP wire-protocol version. Bumped on a breaking change to frame
 shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
 and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
 ends can detect a mismatch.
+
 v2: every wire timestamp (`MintResponse.expiresAt`,
 `ResumeClaimResponse.expiresAt`) is MILLISECONDS-since-epoch, matching
 the server-side `TokenRecord` (`createdAt` / `lastSeenAt` / `expiresAt`).
@@ -2808,15 +2841,19 @@ const serverFrameSchema
 
 Wire-format codecs for non-JSON-safe values flowing across the LAP
 boundary.
+
 JSON natively supports `string | number | boolean | null | array |
 object`. Component messages and state often carry values that don't
 round-trip through JSON: `Date`, `Blob`, `File`, `Map`, `Set`,
 `BigInt`, `ArrayBuffer`. A codec is the convention that lets these
 cross the wire without forcing every component author to invent
 their own envelope.
+
 **Wire convention.** A non-JSON-safe runtime value travels as a
 tagged object:
+
 { \_\_codec: '<name>', wire: <encoded form> }
+
 The runtime walks every value crossing the LAP boundary and applies
 the codec registry symmetrically:
 
@@ -2826,33 +2863,40 @@ the codec registry symmetrically:
 - **Incoming** (agent → component, e.g. dispatched `msg`): the
   decoder detects the tagged shape, calls the codec's `decode`,
   and substitutes the runtime value before `update()` runs.
-  Component code never observes the tagged form. By the time a
-  reducer sees `msg.value`, a real `Date` (or whatever) is in place;
-  by the time the agent reads `stateAfter`, every `Date` has been
-  encoded.
-  **Authoring.** When a Msg variant carries a non-JSON-safe field,
-  tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
-  For example, a message carrying a `Date`:
-  @intent("Set the parsed date")
-  @codec("iso-date")
-  | { type: 'setValue'; value: Date | null }
-  (`@llui/components`' date-input does NOT need this — it keeps ISO
-  strings in both State and Msg, per the JSON-serializable-State rule.)
-  The `@codec` tag is documentation for human readers and the
-  eventual schema generator that publishes the message catalogue to
-  the agent client. The runtime encode/decode is registry-driven and
-  doesn't need per-field metadata.
-  **Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
-  ISO 8601 string) and `epoch-millis` (Date ↔ number). The
-  `epoch-millis` codec is registered but its `matchesRuntime` returns
-  `false` by default — it's available for explicit decode but doesn't
-  shadow `iso-date` on the encode side. Consumers who prefer epoch
-  millis can construct a registry that lists `epoch-millis` first.
-  **File / Blob.** Not in the default registry. File/Blob handling is
-  environment-specific (browser File API vs. Node Buffer vs. workers)
-  and the encoded form is large enough that consumers should opt in
-  deliberately. Provide your own codec via `registry.register({...})`
-  when a component needs it.
+
+Component code never observes the tagged form. By the time a
+reducer sees `msg.value`, a real `Date` (or whatever) is in place;
+by the time the agent reads `stateAfter`, every `Date` has been
+encoded.
+
+**Authoring.** When a Msg variant carries a non-JSON-safe field,
+tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
+For example, a message carrying a `Date`:
+
+    @intent("Set the parsed date")
+    @codec("iso-date")
+    | { type: 'setValue'; value: Date | null }
+
+(`@llui/components`' date-input does NOT need this — it keeps ISO
+strings in both State and Msg, per the JSON-serializable-State rule.)
+
+The `@codec` tag is documentation for human readers and the
+eventual schema generator that publishes the message catalogue to
+the agent client. The runtime encode/decode is registry-driven and
+doesn't need per-field metadata.
+
+**Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
+ISO 8601 string) and `epoch-millis` (Date ↔ number). The
+`epoch-millis` codec is registered but its `matchesRuntime` returns
+`false` by default — it's available for explicit decode but doesn't
+shadow `iso-date` on the encode side. Consumers who prefer epoch
+millis can construct a registry that lists `epoch-millis` first.
+
+**File / Blob.** Not in the default registry. File/Blob handling is
+environment-specific (browser File API vs. Node Buffer vs. workers)
+and the encoded form is large enough that consumers should opt in
+deliberately. Provide your own codec via `registry.register({...})`
+when a component needs it.
 
 ```typescript
 const WIRE_TAG

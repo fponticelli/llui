@@ -135,6 +135,7 @@ function defineTestComponent<S, M extends { type: string }, E extends { type: st
 ### `emulateBlurOnRemoval()`
 
 Browser-faithful blur emulation for jsdom.
+
 The HTML standard's node-removing steps run a "focus fixup": when the
 currently-focused element (or an ancestor of it) is removed from the
 document, the user agent resets focus to the viewport and fires `blur` then
@@ -142,13 +143,16 @@ document, the user agent resets focus to the viewport and fires `blur` then
 Real apps depend on this: an inline-edit `<input>` whose `onBlur` commits,
 sitting in a structural arm that the commit itself swaps out, fires that blur
 mid-reconcile and re-enters the reducer.
+
 jsdom resets `document.activeElement` to `<body>` on removal but fires NO
 events, so that reentrancy is invisible in tests — the single most important
 inline-edit interaction can't be exercised. `emulateBlurOnRemoval` closes the
 gap by patching the removal-causing mutation methods to dispatch the missing
 events synchronously, in browser order (`blur`, then the bubbling `focusout`).
+
 Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
 or use {@link withBlurOnRemoval} for automatic scoping.
+
 @param doc - document whose `activeElement` is consulted (defaults to the
 ambient `document`). The patch is applied to the shared `Node`/`Element`
 prototypes, matching the single jsdom document under test.
@@ -172,6 +176,7 @@ function propertyTest<S, M, E>(
 Begin recording an agent session. Returns a recorder whose `send`
 forwards to the handle and captures the message; `stop()` finalizes
 the trace into a JSON-serializable fixture.
+
 Typical usage:
 
 ```ts
@@ -204,6 +209,7 @@ Builds a view-less `ComponentDef` from an init + update pair so reducer
 suites can drop a component definition into `testComponent()` without
 padding a no-op `view`. Use when a test only exercises pure state
 transitions (no DOM, no accessors).
+
 The default name `'__reducer__'` is intentionally unergonomic — it
 shows up in devtools/HMR registries if one ever leaks into a real
 mount, flagging the mistake. Override via `name` when you want the
@@ -229,9 +235,11 @@ function replayAgentSession(
 
 Replay a recorded message trace against a component definition, asserting the
 state and effects at every step.
+
 The trace's version and recording component are validated FIRST — before
 `init()` and the first `update()` — so a mismatched trace fails with a
 version/identity error instead of a state diff that blames the reducer.
+
 An absent `component` field is accepted with a warning rather than rejected:
 traces predate the field and hand-written ones legitimately omit it, so
 rejecting would break working traces to buy nothing. The warning is what
@@ -286,6 +294,7 @@ function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
 Mount options `testView` forwards verbatim to `mountApp` — the whole bag, so a
 consumer can exercise the mode their app really runs in (notably
 `scheduler: 'raf'`, where `handle.flush()` forces the coalesced commit).
+
 The one exclusion rule: an option that competes with what `testView` itself
 owns is dropped. `mountSignalComponent` resolves the seed as
 `hydrate.serverState` → `initialState` → `init()`, and `testView` seeds
@@ -427,12 +436,13 @@ and compares to `fixture.finalState`. Returns:
   paths that diverged in the same JSON-Patch shape as
   `send_message`'s `stateDiff`. Use it in test assertions:
   `expect(result.diff).toEqual([])`.
-  The harness deliberately ignores the `initialState` half of the
-  fixture by default — replay starts from whatever the new handle's
-  `init()` produced, so apps with deterministic init don't need to
-  carry their initial state around in source control. Pass
-  `assertInitial: true` to also enforce that the initial states
-  match; useful when a test wants to catch init-effect drift.
+
+The harness deliberately ignores the `initialState` half of the
+fixture by default — replay starts from whatever the new handle's
+`init()` produced, so apps with deterministic init don't need to
+carry their initial state around in source control. Pass
+`assertInitial: true` to also enforce that the initial states
+match; useful when a test wants to catch init-effect drift.
 
 ```typescript
 export interface ReplayResult {

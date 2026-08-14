@@ -76,6 +76,7 @@ function allAnnotationArgs(text: string, tag: string): string[][]
 
 Analyze a signal-accessor function. Each parameter is treated as a tainted
 root; the returned `deps[i]` is the set of paths read from parameter `i`.
+
 A parameter whose value ESCAPES (passed to a call, spread, returned whole)
 yields the empty path `''` — "the whole parameter" — which is what a caller
 must read as "cannot narrow this one".
@@ -127,6 +128,7 @@ Build a single field descriptor from a property signature: type,
 optionality, and any `@should("…")` JSDoc hint. Emits the compact
 bare form when there's nothing extra to communicate; otherwise the
 rich `{type, optional?, priority?, hint?}` shape.
+
 Exported so the cross-file resolver (which walks the same property
 signatures when the Msg type lives in a different file from the
 `component()` call) can produce identical descriptors. Without
@@ -172,11 +174,13 @@ function clearManifestCache(): void
 ### `collectSignalDeps()`
 
 Collect the dependency paths every signal component view in `mod` reads.
+
 Paths are reported at full authored depth: `state.at('user').at('profile')
 .at('address').at('city')` is `user.profile.address.city`, not a two-segment
 prefix of it. Truncating to a prefix stays SOUND for gating (a dep on a prefix
 covers every descendant, because an immutable update replaces the prefix
 reference) but it misreports what the code actually reads.
+
 Takes a {@link ParsedModule} — which carries the real filename, and with it the
 parse ScriptKind. That is not merely for reporting: a `.ts` file parsed as TSX
 misparses the generic arrow form (`const id = <T>(x: T): T => x`), and here
@@ -191,6 +195,7 @@ function collectSignalDeps(mod: ParsedModule): SignalDepsResult
 The EFFECTIVE State/Msg/Effect type names for a `component<…>()` call: its own
 type arguments where they are plain identifiers, else the
 {@link CONVENTION_TYPE_NAMES} the file-local extractors fall back to.
+
 The adapter (pre-resolution) and the transform (metadata emission + lookup)
 MUST both derive names through this function: they meet on the
 {@link crossFileKey} built from the result, and any divergence would make the
@@ -209,6 +214,7 @@ function componentTypeNames(call: ts.CallExpression): {
 Stable hex SHA-256 (first 32 chars) over a normalized JSON serialization
 of msgSchema + stateSchema + msgAnnotations. Object key order is
 normalized so equivalent inputs always produce equal hashes.
+
 Used by the runtime to detect when the browser-to-server `hello` frame
 needs to re-send its schema payload (dev hot-reload).
 
@@ -237,6 +243,7 @@ function createModuleCache(): ModuleCache
 
 The {@link CrossFileResolutions} key for a tuple of effective type names — both
 the transform's metadata cache key and the adapter's lookup key.
+
 The key is the NAME tuple, not the resolved declaration, so two calls that name
 the same types share one entry. That is exact for the TOP-LEVEL declarations and
 module imports this resolver walks. Two known cases where a name is NOT a unique
@@ -250,8 +257,9 @@ key off names the same way:
   or a qualified name (`A.Msg`) is not a plain identifier, so
   {@link componentTypeNames} falls back to the convention name — and two calls
   with DIFFERENT qualified types collide on that one key.
-  Both produce the same wrongly-shared or file-local schema they produced before
-  per-call keying; the fix is name resolution through a checker, not a wider key.
+
+Both produce the same wrongly-shared or file-local schema they produced before
+per-call keying; the fix is name resolution through a checker, not a wider key.
 
 ```typescript
 function crossFileKey(names: { state: string; msg: string; effect: string }): string
@@ -260,6 +268,7 @@ function crossFileKey(names: { state: string; msg: string; effect: string }): st
 ### `extractDiscriminatedUnionSchemaCrossFile()`
 
 Cross-file companion to `extractMsgSchema` / `extractEffectSchema`.
+
 Discriminated-union schema extractor that follows composed
 TypeReferences through the resolver. Same recursion shape as
 `extractMsgAnnotationsCrossFile`, just collecting field shapes
@@ -287,12 +296,14 @@ function extractEffectSchema(mod: ParsedModule, typeName: string = 'Effect'): Ms
 Walk a Msg-like discriminated-union type alias and extract JSDoc
 annotations attached to each union member. Returns null if no
 recognizable union is found so callers can skip emission cleanly.
+
 Expected JSDoc grammar (order-independent):
 @intent("human readable")
 @alwaysAffordable
 @requiresConfirm
 @humanOnly — sugar for dispatchMode: 'human-only'
 @agentOnly — sugar for dispatchMode: 'agent-only'
+
 Unknown tags are ignored; malformed @intent (no quoted string) is
 treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
 exclusive — if both are present (which the ESLint rule
@@ -310,15 +321,18 @@ function extractMsgAnnotations(
 ### `extractMsgAnnotationsCrossFile()`
 
 Annotation extractor that walks composed Msg unions across files.
+
 Given a Msg type that may be a union of inline `{ type: 'literal' }`
 objects AND TypeReferences (e.g.
 `type Msg = ImportedFoo | { type: 'extra' }`), recursively follow
 each TypeReference via `findTypeSource` and merge its variants into
 the returned map.
+
 Composition + cross-file is the union of two failure modes the
 file-local sync extractor silently mishandles. This function
 produces the same map the runtime expects regardless of how the
 developer organized the type declarations.
+
 Conflict policy: if two composed branches contribute the same
 discriminant string (e.g. both halves declare `{ type: 'inc' }`),
 the first one walked wins — silently. Nothing in the toolchain flags
@@ -350,7 +364,9 @@ a JSON-serializable shape descriptor. Supports primitives, string-literal
 unions, arrays, nested objects, `T | undefined` optional fields and
 `T | null` nullable ones (optionality and nullability are distinct — see
 {@link StateType}).
+
 Returns null if the named type isn't found or isn't a type literal.
+
 Takes a {@link ParsedModule}, not a source string: the tree is shared with
 lint, the transform and the cross-file resolver (one parse per pass, #93), and
 the module carries the real filename — this used to parse every source as
@@ -459,6 +475,7 @@ component. A Msg union commonly lives in a plain `msg.ts` sibling that
 carries no `component(` call, so `lintSignalSource` never sees it — yet that
 is exactly where `@routeGated`/`@validates` are authored. The adapter calls
 this for every other TS module it transforms.
+
 The cheap string pre-check runs against `mod.text` BEFORE the module is parsed,
 so a file with no agent annotation costs a regex and nothing else — which is
 what keeps this affordable on every module in the project.
@@ -472,6 +489,7 @@ function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[]
 Run the signal lint rules over an already-parsed module, returning diagnostics
 with resolved line/column. The adapter (vite plugin) surfaces these as build
 errors. Call only on confirmed signal components.
+
 Takes a {@link ParsedModule} so the tree it lints is the SAME one the transform
 and the cross-file resolver use — one parse per dev transform (#93). The
 module also fixes the ScriptKind from the real filename: a `.ts` file using the
@@ -490,6 +508,7 @@ reason: `tagSend` is a LIBRARY-author helper, so the canonical call site is a
 plain `connect()` module with no `component(` call in it, which
 `lintSignalSource` never sees. Without this the rule would cover only the
 rarest call sites.
+
 Same pre-check discipline: the name is looked for in `mod.text` BEFORE the
 module is parsed, so a module that never mentions `tagSend` costs one
 substring search.
@@ -501,6 +520,7 @@ function lintTagSendSource(mod: ParsedModule): SignalLintMessage[]
 ### `lookupHelperFromSymbol()`
 
 Resolve the manifest helper entry for a call-site callee symbol.
+
 @param sym the (possibly aliased) symbol of the call target
 @param checker the program's type checker
 
@@ -548,6 +568,7 @@ function parseManifest(json: string): ParseManifestResult
 Pair `text` with the `fileName` it came from. The parse happens on the first
 {@link ParsedModule.sourceFile} call and is reused thereafter, so passing the
 SAME instance to lint, cross-file resolution and the transform costs one parse.
+
 Two calls with the same arguments produce two INDEPENDENT modules (and so two
 parses) — hold the instance, or go through a {@link ModuleCache}.
 
@@ -573,6 +594,7 @@ positions whose type argument isn't a plain identifier (e.g.
 inline literal types, generic instantiations, namespace-qualified
 names). Identifiers are what the resolver can chase; everything else
 we leave to the local extractor's existing behavior.
+
 Order: `[State, Msg, Effect]` matching `component<State, Msg, Effect>`.
 
 ```typescript
@@ -664,6 +686,7 @@ runtime-readable literal. The emission shape mirrors the StateType
 tagged union — `string`/`number`/`boolean`/`null`/`unknown` become string
 literals; the structural kinds become object literals with a `kind`
 field plus the appropriate payload (`of`/`fields`/`values`).
+
 Used by the transform for state-schema emission. The shape
 is the runtime/agent contract; downstream tools (MCP introspection,
 agent's "what type is this field?") consume it.
@@ -675,9 +698,11 @@ function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression
 ### `substituteHelperCall()`
 
 Substitute a manifest helper call against its call-site arguments.
+
 Given a helper's manifest entry and the argument expressions at one call
 site, returns the set of host-state paths the call contributes to the
 consumer's \_\_prefixes table.
+
 §4.4 substitution rules:
 
 1. For each ViaParams entry, resolve the call-site argument.
@@ -711,12 +736,14 @@ function substituteHelperCall(
 Walks every `ArrowFunction` and `FunctionExpression` in the source
 and wraps any whose body contains literal `<id>({type:'X', …})`
 dispatches with `Object.assign(fn, {__lluiVariants: ['X', …]})`.
+
 The runtime (in `@llui/dom` `elements.ts` / `el-split.ts`) reads
 `__lluiVariants` from event-handler bindings only — so tags placed
 on functions in non-handler positions (a const declared but never
 bound, an arrow passed to `Array.filter`, a view function whose
 body has nested handlers with dispatches) are runtime-inert. The
 compiler tags generously; the runtime registers selectively.
+
 Universal scope means three concrete patterns all surface their
 variants without the app author having to think about it:
 
@@ -734,19 +761,22 @@ variants without the app author having to think about it:
    eventually binds the function as an event listener. The arrow
    is still tagged at its declaration site, and the runtime reads
    the tag when the wrapper binds it.
-   False positives are deliberate. The alternative — proving that a
-   tagged arrow actually reaches an event-handler binding — would
-   require cross-function, cross-file flow analysis the compiler
-   doesn't do. In practice the cost of an over-tagged arrow is bytes,
-   not behavior: the runtime never reads the tag from non-handler
-   bindings.
-   Pass 2's `collectLocalFns` resolves identifiers to their original
-   arrow/function initializers; this pass replaces those initializers
-   with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
-   so the resolver still sees raw arrows.
-   Already-wrapped functions (CallExpressions, including user-applied
-   `tagSend(...)` or this pass's own prior output) are skipped — the
-   pass only fires on bare arrow/function expressions.
+
+False positives are deliberate. The alternative — proving that a
+tagged arrow actually reaches an event-handler binding — would
+require cross-function, cross-file flow analysis the compiler
+doesn't do. In practice the cost of an over-tagged arrow is bytes,
+not behavior: the runtime never reads the tag from non-handler
+bindings.
+
+Pass 2's `collectLocalFns` resolves identifiers to their original
+arrow/function initializers; this pass replaces those initializers
+with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
+so the resolver still sees raw arrows.
+
+Already-wrapped functions (CallExpressions, including user-applied
+`tagSend(...)` or this pass's own prior output) are skipped — the
+pass only fires on bare arrow/function expressions.
 
 ```typescript
 function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile
@@ -756,6 +786,7 @@ function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceF
 
 Rewrite signal `view`s in a source file and inject the runtime import.
 Returns the source unchanged if it contains no signal components.
+
 Code-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
 — kept for the many callers (mcp, dom codegen tests) that need no source map.
 
@@ -818,6 +849,7 @@ export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
 
 Per-file cross-file resolutions, keyed by {@link crossFileKey} of a
 `component()` call's effective type-argument names.
+
 Keyed PER CALL, not per file (issue #91): a file may declare component A with
 an imported `Msg` and component B with a local one, and B must not be handed
 A's schema/annotations. A wrong schema on the agent/devtools ABI is worse than
@@ -999,10 +1031,11 @@ The "bare type" of a field. Covers five cases:
   Emitted when every member of a union is an object literal sharing one
   literal-string property name with distinct values. Symmetric with
   how the top-level Msg union itself is encoded — same shape, recursed.
-  The synthesizer in `@llui/agent`'s `list_actions` walks these to build
-  copy-paste-ready payload examples; the validator in `send_message`
-  walks them too (treating object/array as "any" since deep validation
-  is the reducer's job).
+
+The synthesizer in `@llui/agent`'s `list_actions` walks these to build
+copy-paste-ready payload examples; the validator in `send_message`
+walks them too (treating object/array as "any" since deep validation
+is the reducer's job).
 
 ```typescript
 export type MsgFieldType =
@@ -1068,6 +1101,7 @@ export type SchemaHashInput = {
 ### `StateType`
 
 Descriptor for one state field's type, as consumed by agents/devtools.
+
 `'null'` describes a field whose declared type includes `null`. It is a
 VALUE, not an absence: `null` survives JSON (state must be
 JSON-serializable) and TypeScript keeps `field: T | null` required, so a
@@ -1100,6 +1134,7 @@ Index of type aliases and interfaces visible from a source file,
 keyed by name. Lets the field-type resolver follow `Criterion[]` →
 `interface Criterion { … }` and emit a nested object shape rather
 than `'unknown'`.
+
 The cross-file resolver pipeline (`cross-file-resolver.ts`) builds
 an enriched index that includes types imported from sibling files —
 follow `GridSorting` → `'rank' | 'crit-X' | 'crit-Y'` → `{enum: […]}`
@@ -1427,6 +1462,7 @@ Per-pass memo of {@link ParsedModule}s by path. The cross-file resolver looks
 the same sibling up once per type argument, per composed union member and
 again while enriching the type index — eight lookups of one `msg.ts` in a
 single pre-resolution pass was typical, each its own parse.
+
 Keyed by `fileName` and validated against the TEXT: a cached entry is reused
 only while the text is identical, so a file edited between passes (or a
 module the lint autofix rewrote mid-transform) re-parses instead of serving a
@@ -1553,6 +1589,7 @@ export interface Range {
 ### `ResolveContext`
 
 Cross-file type resolver.
+
 The schema/annotation extractors (`extractMsgAnnotations`,
 `extractMsgSchema`, `extractStateSchema`, `extractEffectSchema`) only
 see the source string for the file currently being transformed. When
@@ -1561,11 +1598,13 @@ separate file and imports it where `component()` is called, those
 extractors silently return `null` — the plugin emits no annotations,
 runtime LAP validation is disabled, and Claude can dispatch arbitrary
 `type` strings that fall through to `assertNever`.
+
 This module follows imports and re-exports to find the source file
 that declares the requested type alias, returning that file's source
 string + the local name of the alias there. Extractors then run
 against that source and produce the same output they would have for
 a co-located declaration.
+
 Limitations of `findTypeSource` itself (all of them SILENT — nothing
 warns, and the affected metadata is simply absent):
 
@@ -1578,10 +1617,11 @@ warns, and the affected metadata is simply absent):
   (`export *` re-export barrels ARE followed — step 4.)
 - Generic types: not parameterized resolution; the type argument
   must resolve to a concrete type alias.
-  NOTE for future readers: this file used to attribute these gaps to a lint
-  rule named `agent-msg-resolvable`. That rule belonged to the DELETED
-  `@llui/eslint-plugin` and was never reimplemented as a compiler rule — there
-  is no guard. Do not re-add the claim without the rule (issue #91).
+
+NOTE for future readers: this file used to attribute these gaps to a lint
+rule named `agent-msg-resolvable`. That rule belonged to the DELETED
+`@llui/eslint-plugin` and was never reimplemented as a compiler rule — there
+is no guard. Do not re-add the claim without the rule (issue #91).
 
 ```typescript
 export interface ResolveContext {
@@ -1818,6 +1858,7 @@ const COMPILER_META_KEYS
 
 The @llui/compiler version stamped on every emitted ComponentDef.
 Stamped so the runtime can check compiler/runtime compatibility.
+
 Keep this in sync with `package.json` — the publish script (Phase 7
 `scripts/publish.sh`) reads from package.json so a drift is caught at
 release time.
@@ -1881,6 +1922,7 @@ const MANIFEST_SCHEMA_VERSION
 ### `SVG_ELEMENT_HELPERS`
 
 SVG element-helper callee names (the `svgHelper(...)` exports of `@llui/dom`).
+
 These are EXPORT names, not tags — the SVG `<text>` helper is exported as
 `svgText` so it doesn't collide with the `text()` node helper. Kept out of
 {@link ELEMENT_HELPERS} because the view transform must NOT lower them

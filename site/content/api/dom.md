@@ -213,10 +213,12 @@ export function branch<K extends string | number>(
 
 Wrap the browser globals as a `DomEnv`. Used as the default env for
 `mountApp` / `hydrateSignalApp` on the client.
+
 The returned object delegates to `globalThis.document` / `globalThis.X`
 lazily — evaluating `browserEnv()` on a server process before a DOM
 exists is safe because the delegation only dereferences the globals
 when a method is actually called.
+
 Never mutates `globalThis`. A process with no browser globals that
 invokes one of the factory methods gets a `TypeError` / `ReferenceError`
 at the call site — which is correct: you're trying to build DOM on a
@@ -236,6 +238,7 @@ function collectHeadSink(): CollectHeadSink
 
 Define a signal component. Identity at runtime — the view has been lowered by
 the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>).
+
 The three type parameters:
 
 - **`S` — State.** The component's state shape. Must be JSON-serializable
@@ -250,8 +253,9 @@ The three type parameters:
 - **`E` — Effect.** The effect union returned from `init`/`update`, also a
   **discriminated union with a `type` field**. Defaults to `never` (a pure
   component with no effects). Handled in `onEffect` (or by `@llui/effects`).
-  Spelling these out (and the `{ type: string }` constraint) catches a malformed
-  Msg/Effect union at the call site instead of at the first failed dispatch.
+
+Spelling these out (and the `{ type: string }` constraint) catches a malformed
+Msg/Effect union at the call site instead of at the first failed dispatch.
 
 ```typescript
 function component<S, M extends { type: string }, E extends { type: string } = never>(
@@ -281,9 +285,12 @@ function currentDoc(): SignalDoc
 Combine N independent signals into one derived signal. Use when the inputs have
 no shared parent signal (cross-tree, or a per-row item signal + a component-state
 signal); for a single source, prefer {@link Signal.map}.
+
 Two call forms — pick whichever reads cleaner:
-derived(a, b, (va, vb) => …) // variadic: 2–4 sources, positional values
-derived([a, b, …c], (…vals) => …) // array: any N, tuple-typed values
+
+    derived(a, b, (va, vb) => …)   // variadic: 2–4 sources, positional values
+    derived([a, b, …c], (…vals) => …)  // array: any N, tuple-typed values
+
 The compiler lowers `derived(...)` inside a DIRECT view to an inline call. This
 is the equivalent RUNTIME handle for view-helper composition (where there is no
 statically-known path): `produce`/`peek` apply `fn` over the resolved sources and
@@ -540,10 +547,12 @@ function mountApp<S, M, E = never>(
 
 Mount a signal view: build the nodes (collecting bindings), attach them at the
 target, and wire a chunked-mask reconciler over the collected bindings.
+
 For a `container` target, 'append' (fresh mount) leaves existing children and
 'replace' swaps server HTML out atomically (hydration). For an `anchor` target,
 the nodes are inserted immediately after the anchor comment and bracketed by a
 synthesized end sentinel — `dispose()` removes that bracketed region.
+
 `seedContexts` seeds the build's root context values (see `runBuild`); used by
 adapters mounting a nested build whose providers live in a different pass.
 
@@ -581,8 +590,10 @@ bare `state` (the convenience return) — to a `[state, effects]` pair. This is
 the ONE place the `[S, E[]] | S` heuristic lives; component, SSR, and (later)
 `@llui/test` / `@llui/vike` all route through it so the shape decision never
 diverges.
+
 The heuristic: a 2-element array whose SECOND element is itself an array is
 read as `[state, effects]`; anything else is a bare state with no effects.
+
 KNOWN AMBIGUITY (deliberately unchanged — dropping the bare-`S` convenience is
 a repo-wide breaking ripple, out of scope here): a state that is ITSELF a
 2-tuple whose second element is an array (e.g. the whole state is
@@ -682,6 +693,7 @@ function registerBinding(
 Build a signal component's DOM tree on the server, returning the (detached)
 nodes plus a `dispose` that runs the build's teardowns. The caller composes /
 serializes the nodes; effects are NOT dispatched (server render is pure).
+
 For persistent layouts, compose multiple `renderNodes` results before
 `serializeNodes` so the layout/page trees are stitched at the slot position.
 
@@ -774,6 +786,7 @@ signal scope mounted on a combined `{ item, state }` context — so a row reacts
 to its item AND to component state, with per-row, per-binding gating (a shared
 state change fans out only to the row bindings that read it; item changes hit
 only that row). Kept rows are mutated in place, never recreated.
+
 Reorder is move-minimizing via a longest-increasing-subsequence pass over the
 rows' previous DOM positions: only `n − |LIS|` rows move, so a 2-row swap is 2
 DOM moves and a single removal is 0 — not the O(n) re-insert the naive cursor
@@ -830,6 +843,7 @@ loaded component is mounted via `mountSignalComponent({ anchor, mode:'append' })
 — reusing the anchor-mount infra (nodes inserted after the anchor, bracketed by
 an `llui-mount-end` sentinel; its handle owns that region's update loop and
 dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
+
 If the surrounding build is torn down before the loader settles, a cancelled
 flag skips the deferred mount; any already-mounted child handle is disposed.
 The flag is re-checked AFTER the deferred mount too, so a teardown raised from
@@ -896,11 +910,13 @@ Virtualized keyed list — only the rows in the scroll viewport (+overscan) exis
 in the DOM. A scroll container (fixed `containerHeight`, `data-virtual-container`)
 holds an inner spacer (`data-virtual-spacer`) sized to the total height; each
 visible row is absolutely positioned (`translateY`) at its cumulative offset.
+
 On scroll the visible window is recomputed and rows are reconciled BY KEY using
 the same per-row machinery as `signalEach` (per-row sub-build via `runBuild`
 with `inherit`, a row scope mounted on a `{ item, state, index }` ctx, teardowns
 on removal). Rows scrolled out are disposed; rows scrolled in are built. The
 window also recomputes when `items` changes (a spec gated on `items.deps`).
+
 `itemHeight` is a uniform `number` (O(1) windowing) or a per-item function
 `(item, index) => number` for variable-height rows (cumulative offsets via a
 prefix sum, rebuilt when `items` changes). Heights come from the data —
@@ -931,6 +947,7 @@ function style(css: HeadValue<string>, attrs: StyleAttrs = {}): Mountable
 Library helper for `*.connect` implementations: tags an event
 handler with the variants it dispatches at runtime, so the binding
 registers them when the user spreads the bag onto an element.
+
 Resolution rules — choose whichever is defined and non-empty:
 
 1. **`send.__lluiVariants`** (translator pattern). When the user
@@ -939,18 +956,21 @@ Resolution rules — choose whichever is defined and non-empty:
    carries the user-side variants the translator forwards. We
    surface those — the agent should see what `update()` actually
    receives, not the library's internal Msg shape.
+
 2. **`libraryVariants`** fallback. When `send` is the user's raw
    component send (no translator), the library's internal Msgs flow
    directly into `update()`, so the library's own variants ARE the
    user variants. Library author hand-lists them once per handler.
-   Returns `fn` mutated (via `Object.assign`) so the same reference
-   remains identity-equal — important for downstream code that diffs
-   handlers across re-bindings.
-   `libraryVariants` and the `type` the handler dispatches are two
-   statements of ONE fact, and they used to be unchecked against each
-   other — a drifted tag lies to the agent about what a control does,
-   silently (issue #118). Two guards now cover it, and neither is
-   sufficient alone:
+
+Returns `fn` mutated (via `Object.assign`) so the same reference
+remains identity-equal — important for downstream code that diffs
+handlers across re-bindings.
+
+`libraryVariants` and the `type` the handler dispatches are two
+statements of ONE fact, and they used to be unchecked against each
+other — a drifted tag lies to the agent about what a control does,
+silently (issue #118). Two guards now cover it, and neither is
+sufficient alone:
 
 - the TYPE `readonly M['type'][]` (this signature) rejects a name
   that is not a Msg variant at all, including where the handler is
@@ -958,40 +978,38 @@ Resolution rules — choose whichever is defined and non-empty:
 - the compiler's `tag-send-drift` rule reads the handler and
   rejects a tag that names the WRONG variant — which type-checks,
   since `'touch'` and `'blur'` are equally valid `M['type']`.
-- that rule BAILS rather than guess, so it is a backstop and not a
-  proof: it recognizes `tagSend` only when imported from the
-  `@llui/dom` specifier (a barrel re-export or a relative import is
-  invisible — issue #146), reads only a literal variant list
-  (`as const` and `satisfies` are read through; a hoisted
-  `VARIANTS` identifier is not) with an inline handler, and reports
-  an over-declaration only when nothing in the handler body could
-  dispatch unseen.
-- **Library authors, one quiet consequence of that last bail.**
-  The over-declaration half survives exactly one kind of call on a
-  handler parameter: a zero-argument `preventDefault` /
-  `stopPropagation` / `stopImmediatePropagation`. Any OTHER event
-  method — `e.persist()`, `e.composedPath()`,
-  `e.dataTransfer.setData(…)` — is a call this analysis cannot see
-  into, so it forfeits completeness and silently switches the
-  "declares a variant it never dispatches" check off for that call
-  site. The failure is SILENCE, not a broken build: the
-  dispatched-but-undeclared direction still runs and nothing stops
-  working. But do not read a clean build of such a handler as
-  confirmation that its variant list is exhaustive.
-- `send` is REQUIRED and non-nullable. Before #118 it was typed
-  `unknown` and read through `?.`, so a nullish first argument
-  returned a tagged `fn`; it now throws a `TypeError`. That is
-  deliberate — the `?.` existed only to satisfy the cast the
-  `unknown` parameter forced, and it disappeared with the cast. A
-  nullish dispatcher is now a type error, so only untyped or
-  casting callers can reach the throw, and failing at BIND time is
-  earlier and closer to the mistake than failing on the first
-  click. (It is NOT an argument about the published variants: the
-  first parameter is only a tag SOURCE, and a handler need not
-  dispatch through it.)
+
+That rule BAILS rather than guess, so it is a backstop and not a proof: it
+recognizes `tagSend` only when imported from the `@llui/dom` specifier (a
+barrel re-export or a relative import is invisible — issue #146), reads only a
+literal variant list (`as const` and `satisfies` are read through; a hoisted
+`VARIANTS` identifier is not) with an inline handler, and reports an
+over-declaration only when nothing in the handler body could dispatch unseen.
+
+**Library authors, one quiet consequence of that last bail.** The
+over-declaration half survives exactly one kind of call on a handler
+parameter: a zero-argument `preventDefault` / `stopPropagation` /
+`stopImmediatePropagation`. Any OTHER event method — `e.persist()`,
+`e.composedPath()`, `e.dataTransfer.setData(…)` — is a call this analysis
+cannot see into, so it forfeits completeness and silently switches the
+"declares a variant it never dispatches" check off for that call site. The
+failure is SILENCE, not a broken build: the dispatched-but-undeclared
+direction still runs and nothing stops working. But do not read a clean build
+of such a handler as confirmation that its variant list is exhaustive.
+
+`send` is REQUIRED and non-nullable. Before #118 it was typed `unknown` and
+read through `?.`, so a nullish first argument returned a tagged `fn`; it now
+throws a `TypeError`. That is deliberate — the `?.` existed only to satisfy
+the cast the `unknown` parameter forced, and it disappeared with the cast. A
+nullish dispatcher is now a type error, so only untyped or casting callers can
+reach the throw, and failing at BIND time is earlier and closer to the mistake
+than failing on the first click. (It is NOT an argument about the published
+variants: the first parameter is only a tag SOURCE, and a handler need not
+dispatch through it.)
 
 ```ts
 import { tagSend } from '@llui/dom'
+
 export function connect<S>(get, send, opts) {
   return {
     trigger: {
@@ -1122,6 +1140,7 @@ get their precise DOM event type, so `onClick: (e) => e.clientX` infers
 `aria-*`, signals, and less-common events — is an {@link AttrValue} or a
 loosely-typed handler via the index signature, which also lets `connect()`
 part bags (with their own pre-typed handlers) spread in cleanly.
+
 The handler index falls back to `any` ON PURPOSE: a stricter index type would
 be a supertype of the precise `on*` handlers and reject them (function params
 are contravariant), so the precise types live in the mapped half and the
@@ -1362,6 +1381,7 @@ export interface BindingLocation {
 A reactive binding: the dependency paths it reads + an accessor (`produce`)
 and a `commit` that applies the value. This is the compiler transform's output
 target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
+
 A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
 stores specs as-is (see `scopeFromSpecs`), so it EXTENDS the runtime contract
 rather than restating it; `produce`/`commit`/`structural` have exactly one
@@ -1416,6 +1436,7 @@ export interface CollectHeadSink extends HeadSink {
 The compiler-injected introspection metadata carried by a compiled
 `component({...})` literal. Every field is optional: a production build
 without `agent: true` emits none of them, and `componentMeta` is dev-only.
+
 Spelled with computed keys so the declared shape and the runtime read path
 cannot drift from {@link COMPILER_META_KEYS} — there is exactly one place a
 key name is written.
@@ -1505,11 +1526,13 @@ export interface Context<T> {
 ### `CoverageSnapshot`
 
 Per-variant Msg coverage tracker — dev-only.
+
 Records each dispatched message's discriminant (or `<non-discriminant>`
 for objects missing a `type` field) along with the message index it
 fired at. Consumed by the `llui_coverage` MCP tool to surface untested
 Msg variants: any variant declared in the compiled msg schema that
 never fired in the current session shows up in `neverFired`.
+
 Zero cost in production: `installSignalDebug` is the only caller, and it
 never runs in prod builds. Hot path is one optional-chain read per
 dispatched message (`ci._coverage?.record(...)`).
@@ -1616,10 +1639,12 @@ export interface DirectRow {
 Dev-only disposer log entry, emitted once per `disposeLifetime` call
 when the owning component instance has an `_disposerLog` ring buffer
 installed by `installSignalDebug`.
+
 `cause` is set by the structural primitive (each / branch / child)
 immediately before calling `disposeLifetime`. When no cause was
 explicitly set, `disposeLifetime` falls back to `'component-unmount'`.
 `'app-unmount'` is reserved for the top-level `mountApp` teardown.
+
 Used by the `llui_disposer_log` MCP tool to diagnose leaks on
 structural transitions (e.g., branch swap that fails to release a
 subscription registered in the old arm).
@@ -1644,6 +1669,7 @@ export interface DisposerEvent {
 Minimal DOM surface that `@llui/dom`'s internals depend on. Passed to
 `mountApp` / `hydrateSignalApp` / `renderToString` as a context object so
 the runtime never reaches for `globalThis.document` directly.
+
 Why an injected shape instead of a global shim:
 
 1. **Bundler-friendly.** A Cloudflare Worker that imports
@@ -1654,10 +1680,11 @@ Why an injected shape instead of a global shim:
    different envs; no process-level singleton to collide on.
 3. **Strict-isolate safe.** No `globalThis[key] = ...` mutation —
    Cloudflare workerd and Deno strict modes forbid it.
-   The surface is deliberately narrow: exactly the methods and
-   constructors the runtime touches. Grep `document\.` /
-   `instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
-   the exhaustive set.
+
+The surface is deliberately narrow: exactly the methods and
+constructors the runtime touches. Grep `document\.` /
+`instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
+the exhaustive set.
 
 ```typescript
 export interface DomEnv {
@@ -1730,6 +1757,7 @@ export interface DomEnv {
 Per-each-block reconciliation diff, recorded once per update that
 mutates an each() block's key set. Dev-only — populated when
 `installSignalDebug` has initialized an `_eachDiffLog` on the instance.
+
 `updateIndex` correlates with the message-history index recorded by
 `devtools.ts` so tools can join diffs back to the message that caused
 them. `eachSiteId` identifies the each() call site stably across
@@ -1817,8 +1845,9 @@ match for the mock to fire:
   `'body.key'`). When present without `payloadEquals`, presence of
   the path is sufficient.
 - `payloadEquals`: strict (`===`) equality check at `payloadPath`.
-  An empty match (no fields) matches every effect — callers should
-  set at least `type` to avoid accidental catch-all.
+
+An empty match (no fields) matches every effect — callers should
+set at least `type` to avoid accidental catch-all.
 
 ```typescript
 export interface EffectMatch {
@@ -1966,8 +1995,9 @@ declaration, so this is a read+subscribe handle only.
 - `peek()` — one-shot, non-reactive read (same verb as {@link Signal}).
 - `bind(cb)` — fires `cb` synchronously with the current value, then on every
   change; returns an unsubscribe. Mount-time `bind`s auto-dispose on unmount.
-  Deliberately no `on` (event-listener vocabulary trains a redundant
-  peek-then-subscribe), no change-only mode, and no `at`/`map`/`derived`.
+
+Deliberately no `on` (event-listener vocabulary trains a redundant
+peek-then-subscribe), no change-only mode, and no `at`/`map`/`derived`.
 
 ```typescript
 export interface LiveSignal<T> {
@@ -1979,6 +2009,7 @@ export interface LiveSignal<T> {
 ### `LluiDebugAPI`
 
 The relay-callable debug surface of a mounted LLui component.
+
 Required methods are implemented by every runtime (and by
 `installSignalDebug`). Optional methods are binding/scope/effect
 introspection that only the legacy runtime provides — callers must

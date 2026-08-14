@@ -866,6 +866,7 @@ export interface WebSocketTransportOptions {
 
 A2UI protocol v0.9 — type definitions for the server→client message stream
 and the value/binding primitives shared across catalogs.
+
 Reference: https://a2ui.org/specification/v0.9-a2ui/
 
 ```typescript

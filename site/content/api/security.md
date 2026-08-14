@@ -68,6 +68,7 @@ browser page (CSWSH / drive-by hijack) presents a non-loopback Origin and is
 rejected. A literal `Origin: null` (sandboxed / `file:` / `data:` context)
 fails `new URL` and is likewise rejected — it is NOT the same as an absent
 header.
+
 IPv6 loopback origins arrive bracketed (`http://[::1]`), and WHATWG
 `URL.hostname` keeps the brackets (`[::1]`); {@link isLoopbackHost} strips them
 before the comparison so bracketed IPv6 loopback is recognised.
@@ -80,10 +81,12 @@ function isLoopbackOrigin(origin: string | undefined): boolean
 
 Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
 relative/anchor/query URL — always safe), otherwise `null`.
+
 Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
 precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
 chars ignored first, the way a browser does — so `java\tscript:` or a leading
 control char cannot hide a dangerous scheme.
+
 `allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript

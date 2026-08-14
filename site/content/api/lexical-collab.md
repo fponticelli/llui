@@ -56,6 +56,7 @@ export type CollabProvider = Provider
 
 The complete set of `lexicalForeign` options a Yjs session requires, as ONE
 object to spread — `lexicalForeign({ …, ...collab.foreign })`.
+
 Both members are preconditions the host used to have to remember, and both
 fail SILENTLY when forgotten: a surviving `@lexical/history` stack
 double-applies undo across peers, and a boot-time seed duplicates content on

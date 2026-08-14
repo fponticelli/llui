@@ -769,14 +769,11 @@ export function connect(
 }
 
 /**
- * The namespace object. {@link HEADER_ROW_INDEX} is deliberately NOT a member:
- * `site/src/generate-api.ts` collects every member of a components namespace as
- * a bare name with no kind check and renders it with a hard-coded `()`, so a
- * constant listed here would be documented as a function call. That generator
- * defect is filed as #151 — it already ships wrong for `combobox`'s
- * `CREATE_OPTION_VALUE()` — and when it is fixed this constant should join the
- * object. Until then it is reached as a module-level export, re-exported from
- * the barrel as `TABLE_HEADER_ROW_INDEX`.
+ * The namespace object. {@link HEADER_ROW_INDEX} is a member again now that
+ * issue #151 is fixed — `site/src/generate-api.ts` classifies namespace members
+ * by kind instead of rendering every one with a hard-coded `()`. It remains a
+ * module-level export too, re-exported from the barrel as
+ * `TABLE_HEADER_ROW_INDEX`.
  */
 export const table = {
   init,
@@ -786,4 +783,5 @@ export const table = {
   isAllSelected,
   isSomeSelected,
   sortDirectionFor,
+  HEADER_ROW_INDEX,
 }

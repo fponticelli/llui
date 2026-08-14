@@ -281,6 +281,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Connect options:** `AlertDialogConnectOptions`
 
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
+
 ---
 
 ### Angle Slider
@@ -305,6 +307,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `control`, `thumb`, `valueText`, `hiddenInput`
 
+**Utilities:** `angleFromPoint()`, `pointFromAngle()`
+
 ---
 
 ### Async List
@@ -324,6 +328,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Init options:** `items?: T[], page?: number, hasMore?: boolean`
 
 **Parts:** `root`, `sentinel`, `loadMoreTrigger`, `retryTrigger`, `errorText`
+
+**Utilities:** `isLoading()`, `isError()`, `isEmpty()`, `watchSentinel()`
 
 ---
 
@@ -414,6 +420,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `clearTrigger`, `level`
 
+**Utilities:** `isLevelReady()`, `isComplete()`, `completeValues()`
+
 ---
 
 ### Checkbox
@@ -492,6 +500,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `preview`, `area`, `areaThumb`, `alphaSlider`, `swatchGroup`, `swatch`
 
+**Utilities:** `stateHsl()`, `toHex()`, `toHex8()`, `hexToHsl()`, `hslToRgb()`, `hslToHsv()`, `hsvToHsl()`, `colorFromPoint()`, `parseColor()`
+
 ---
 
 ### Combobox
@@ -523,7 +533,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`, `isCreateOption()`, `CREATE_OPTION_VALUE()`
+**Utilities:** `overlay()`, `isCreateOption()`
+
+**Constants:** `CREATE_OPTION_VALUE`
 
 ---
 
@@ -543,6 +555,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -568,6 +582,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `input`, `clearTrigger`, `errorText`
+
+**Utilities:** `parseDate()`, `formatDate()`, `toIsoDate()`
 
 ---
 
@@ -598,6 +614,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`, `preset`
+
+**Utilities:** `monthGrid()`, `weekRows()`, `monthLabel()`, `weekdayLabels()`
 
 ---
 
@@ -737,6 +755,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `dropzone`, `trigger`, `hiddenInput`, `label`, `clearTrigger`, `itemGroup`, `item`
 
+**Utilities:** `totalSize()`, `acceptToString()`, `fileMatchesAccept()`, `validateFiles()`, `preventDocumentDrop()`, `trackFile()`, `trackFiles()`, `getFile()`, `releaseFile()`, `releaseFiles()`, `releaseAllFiles()`, `trackedFileCount()`, `releaseDropped()`, `releaseUnlanded()`, `effectiveMaxFiles()`
+
 ---
 
 ### Floating Panel
@@ -805,6 +825,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `arrow`
 
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
+
 ---
 
 ### Image Cropper
@@ -829,6 +851,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `image`, `cropBox`, `resizeHandle`, `resetTrigger`
 
+**Utilities:** `centerFill()`
+
 ---
 
 ### In View
@@ -844,6 +868,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`
+
+**Utilities:** `createObserver()`
 
 ---
 
@@ -916,6 +942,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
 **Parts:** `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `rootKeyNav`
+
+**Utilities:** `statusOnOpen()`, `statusOnClose()`, `findItem()`, `levelItems()`, `navigable()`, `firstNav()`, `lastNav()`, `nextNav()`, `isDisabled()`, `setHighlight()`, `closedPatch()`, `deepestMenuLevel()`, `activeMenuHighlight()`, `reduceMenuTree()`, `createMenuTreeParts()`
 
 ---
 
@@ -1018,6 +1046,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `item`
 
+**Utilities:** `isOpen()`
+
 ---
 
 ### Number Input
@@ -1111,6 +1141,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `label`, `input`
 
+**Utilities:** `isComplete()`, `getValue()`, `acceptedChars()`
+
 ---
 
 ### Popover
@@ -1150,7 +1182,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`
 
-**Utilities:** `isMounted()`, `isVisible()`, `isAnimating()`
+**Utilities:** `isMounted()`, `isVisible()`, `isAnimating()`, `presenceOpen()`, `presenceClose()`, `presenceEnd()`
 
 ---
 
@@ -1194,6 +1226,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `svg`, `background`, `foreground`, `downloadTrigger`
+
+**Utilities:** `size()`, `toSvgPath()`, `toDataUrl()`
 
 ---
 
@@ -1243,6 +1277,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `item`
 
+**Utilities:** `itemFill()`
+
 ---
 
 ### Scroll Area
@@ -1262,6 +1298,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Init options:** `visibility?: ScrollbarVisibility`
 
 **Parts:** `root`, `viewport`, `content`, `scrollbarX`, `scrollbarY`, `thumbX`, `thumbY`, `corner`
+
+**Utilities:** `showScrollbars()`, `thumbPosition()`, `thumbSize()`
 
 ---
 
@@ -1333,6 +1371,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `control`, `clearTrigger`, `undoTrigger`, `guide`, `hiddenInput`
+
+**Utilities:** `isEmpty()`, `pointCount()`, `getBounds()`
 
 ---
 
@@ -1482,6 +1522,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Utilities:** `isRowSelected()`, `isAllSelected()`, `isSomeSelected()`, `sortDirectionFor()`
 
+**Constants:** `HEADER_ROW_INDEX`
+
 ---
 
 ### Tabs
@@ -1549,6 +1591,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Parts:** `root`, `option`, `toggle`
 
+**Utilities:** `resolveTheme()`, `applyTheme()`, `watchSystemTheme()`
+
 ---
 
 ### Time Picker
@@ -1571,6 +1615,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `hoursInput`, `minutesInput`, `periodTrigger`
+
+**Utilities:** `displayHours()`, `hoursFromDisplay()`, `period()`, `formatTime()`
 
 ---
 
@@ -1785,6 +1831,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `item`
+
+**Utilities:** `isExpanded()`, `isSelected()`, `isChecked()`, `isIndeterminate()`, `isRenaming()`, `isLoading()`, `isLoaded()`, `isLoadFailed()`
 
 ---
 

@@ -64,6 +64,7 @@ Normalize the user's `router` setting into the public `LlmRouterConfig`
 shape (or null when disabled). Accepts `false`, a preset string, or
 a full config object. Used in `configResolved` so the rest of the
 plugin (router startup + HUD bootstrap) sees one canonical shape.
+
 OPT-IN by default: an unset `router` resolves to `null` (disabled). The
 attention router auto-spawns an LLM CLI (with tool access) in the project
 root, so it must never turn on implicitly — a forgeable same-origin/loopback

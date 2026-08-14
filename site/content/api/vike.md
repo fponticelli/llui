@@ -100,6 +100,7 @@ function createNavigationProgress(options?: NavigationProgressOptions): Navigati
 
 Factory to create a customized onRenderClient hook. See
 `RenderClientOptions` for the full option surface.
+
 **Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
 prefix for its own framework config conventions. Name the file
 `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` that Vike
@@ -114,6 +115,7 @@ function createOnRenderClient(
 ### `createOnRenderHtml()`
 
 Factory to create a customized onRenderHtml hook.
+
 **Do not name your layout file `+Layout.ts`.** Vike reserves `+Layout`
 for its own framework-adapter config (`vike-react` / `vike-vue` /
 `vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
@@ -124,6 +126,7 @@ Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
 import { AppLayout } from './Layout.js' // ← NOT './+Layout'
+
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
   document: ({ html, state, head }) => `<!DOCTYPE html>
@@ -147,6 +150,7 @@ expected by `createOnRenderClient`.
 ```ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
+
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
   ...fromTransition(routeTransition({ duration: 200 })),
@@ -156,6 +160,7 @@ export const onRenderClient = createOnRenderClient({
 The transition operates on the slot element — in a no-layout setup,
 the root container; in a layout setup, the innermost surviving layer's
 `pageSlot()` element.
+
 Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
 transition brackets the DOM _swap_, which runs after Vike has fetched the new
 page's `+data` — it does not animate over the network wait. For a
@@ -189,6 +194,7 @@ Default onRenderHtml hook — no layout, minimal document template,
 jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
 a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
 with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
+
 The lazy import below keeps jsdom out of the client bundle —
 Rollup's graph walker only pulls it when this server hook executes.
 
@@ -202,10 +208,12 @@ Declare where a persistent layout renders its nested content — either
 a nested layout or the route's page component. The vike adapter's
 client and server render paths walk the layout chain, and each layer's
 `pageSlot()` call records the position where the next layer mounts.
+
 Emits a single `<!-- llui-page-slot -->` comment as an insertion
 anchor. The nested layer's DOM lives as siblings of this comment
 within the layout's own parent element; a synthesized end sentinel
 (`<!-- llui-mount-end -->`) brackets the owned region.
+
 **You may place your own siblings next to `pageSlot()`** — before it, or
 after it — in the same parent element (e.g. a navigation-loading bar beside
 the page inside `<main>`). The slot owns only the region between its anchor
@@ -228,6 +236,7 @@ in-scope context values and the adapter replays them into the nested
 layer's build. That's how patterns like a layout-owned toast
 dispatcher work — the page does `useContext(ToastContext)` and reads
 the value the layout provided above the slot.
+
 Do NOT name the file `+Layout.ts` — Vike reserves the `+` prefix for
 its own framework config conventions. Use `Layout.ts`, `app-layout.ts`,
 or anywhere outside `/pages` that Vike won't scan.
@@ -236,6 +245,7 @@ or anywhere outside `/pages` that Vike won't scan.
 // pages/Layout.ts    ← not +Layout.ts
 import { component, div, main, header } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
+
 export const AppLayout = component<LayoutState, LayoutMsg>({
   name: 'AppLayout',
   init: () => ({  ...  }),
@@ -251,6 +261,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 
 Returns a `Mountable` (the slot's anchor comment) — drop it straight into
 a children array (`main([pageSlot()])`); no spread needed.
+
 Call exactly once per layout. Calling more than once in a single
 view throws (when both are placed).
 
@@ -315,6 +326,7 @@ export type ServerLayoutResolverContext = PageContext &
 A type-erased signal component as the adapter handles it. Layouts and pages are
 `SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter treats them
 uniformly with the type params erased — the runtime doesn't use them.
+
 Declared with METHOD syntax and a single `unknown` view-bag param so a concrete
 `SignalComponentDef<S,M,E>` assigns in for ANY S/M/E — `SignalComponentDef<
 unknown,unknown,unknown>` can't be that erasure, because `view(bag:
@@ -353,13 +365,16 @@ export interface AnyLayer {
 Page context shape as seen by `@llui/vike`'s client-side hooks. The
 `Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
 Vike resolved for the current route.
+
 `data` is derived from the global `Vike.PageContext` namespace — the
 convention users already know from Vike. Consumer augmentations flow
 through to every callback here without a cast; unaugmented projects
 fall back to `unknown`.
+
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
+
 `lluiLayoutData` is optional and carries per-layer data for the layout
 chain configured via `createOnRenderClient({ Layout })`. It's indexed
 outermost-to-innermost, one entry per layout layer.
@@ -418,6 +433,7 @@ export interface DocumentContext {
 
 A navigation-progress handle: the first-class answer to "show a loader while a
 client navigation is in flight."
+
 **Why this exists.** None of `createOnRenderClient`'s lifecycle hooks fire
 during the latency window a user perceives as lag. `onLeave`/`onEnter` bracket
 the DOM _swap_, and Vike only invokes `onRenderClient` _after_ it has already
@@ -429,10 +445,11 @@ boolean the layout binds, removing the module-singleton + layout-handle capture
 
 - hand-rolled `nav/pending` message + reducer case every app would otherwise
   re-derive.
-  **Wiring (three small files, no per-app glue logic).** `@llui/vike` cannot
-  register Vike's `+onPageTransition*` hooks for you — Vike discovers them by the
-  `+` filename convention — so create the handle once in your own module and
-  re-export its hook functions from the convention files:
+
+**Wiring (three small files, no per-app glue logic).** `@llui/vike` cannot
+register Vike's `+onPageTransition*` hooks for you — Vike discovers them by the
+`+` filename convention — so create the handle once in your own module and
+re-export its hook functions from the convention files:
 
 ```ts
 // nav-progress.ts — your module, created once
@@ -455,6 +472,7 @@ unsubscribe, which doubles as the `onMount` cleanup, so it auto-disposes:
 ```ts
 import { onMount, div } from '@llui/dom'
 import { navProgress } from '../nav-progress'
+
 view: () => [
   div({ class: 'app-shell' }, [
     onMount((root) => navProgress.pending.bind((p) => root.classList.toggle('nav-pending', p))),
@@ -513,10 +531,12 @@ Page context shape as seen by `@llui/vike`'s server hook. `Page` and
 `data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
 current route; `lluiLayoutData` is an optional array of per-layer
 layout data matching the chain configured on `createOnRenderHtml`.
+
 `data` is derived from the global `Vike.PageContext` namespace so that
 consumer-side augmentations (the Vike convention for typing data) flow
 into this hook's callbacks without any cast. When the consumer hasn't
 augmented the namespace, `data` falls back to `unknown`.
+
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
@@ -554,6 +574,7 @@ Page-lifecycle hooks that fire around the dispose → mount cycle on
 client navigation. With persistent layouts in play the cycle only
 tears down the _divergent_ suffix of the layout chain — any layers
 shared between the old and new routes stay mounted.
+
 On the initial hydration render, `onLeave` and `onEnter` are NOT
 called — there's no outgoing page to leave and no animation to enter.
 Use `onMount` for code that should run on every render including the

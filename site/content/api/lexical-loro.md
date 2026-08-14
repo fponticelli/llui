@@ -192,6 +192,7 @@ as the recorded rationale for the ordering model, not as live limitations.
 ### `adoptLoroDocument()`
 
 Reconcile the ENTIRE shared document into the editor, with no dirty gate.
+
 Used at boot by a peer adopting a document it has no event history for (see
 `seed.ts`), and as the fallback whenever an event's container ancestry cannot
 be resolved. Full-fidelity and identity-preserving: adopting a document the
@@ -204,10 +205,12 @@ function adoptLoroDocument(target: InboundTarget): boolean
 ### `allocate()`
 
 `count` strictly increasing keys inside the open interval `(before, after)`.
+
 With `count === 1` the jitter is deliberately ignored (constraint 2). With
 `count > 1` the whole batch hangs off ONE anchor carrying the jitter digit, so
 two peers' concurrent batches occupy disjoint sub-intervals and cannot
 interleave (constraint 1).
+
 The anchor is a strict extension of a key already strictly below `after`, and
 every subsequent key extends the anchor further, so the whole batch stays
 inside the interval and in order.
@@ -226,6 +229,7 @@ function allocate(
 `count` keys placing new children at rendered index `index` among siblings
 whose positions are `positions` (ASCENDING — the order the projection
 renders).
+
 This is the only allocation entry point callers should use, because it is the
 only one that can see, and therefore honour, constraint 4. When the left
 neighbour's position EQUALS the right neighbour's — reachable whenever two
@@ -233,6 +237,7 @@ peers insert at the same slot concurrently — there is no key strictly between
 them. Rather than emit one that breaks the sort invariant, the right bound is
 widened to the first position STRICTLY greater than the left neighbour's, so
 the new children land after the whole equal-position group.
+
 That is a real, if narrow, loss of fidelity: the block lands one slot later
 than the user pointed at. It is chosen over the alternatives deliberately —
 repositioning the neighbour would be a localized rebalance (constraint 3), and
@@ -250,6 +255,7 @@ function allocateAt(
 ### `applyLoroToLexical()`
 
 Apply one Loro event batch to the editor.
+
 @returns whether anything was applied. `false` means the batch was an echo of
 our own write, or described no change the editor could see.
 
@@ -280,6 +286,7 @@ function applyTextDiff(text: LoroText, diff: TextDiff): void
 ### `between()`
 
 A key strictly between `a` and `b`, where `null` means unbounded.
+
 REQUIRES `a < b`. It does not check, and on equal or inverted bounds it
 returns a key OUTSIDE the interval rather than failing — see constraint 4.
 Prefer {@link allocateAt}, which cannot be called with a degenerate interval.
@@ -291,6 +298,7 @@ function between(a: string | null, b: string | null): string
 ### `bitmaskFromAttributes()`
 
 Read a Loro delta's attribute bag as a Lexical bitmask.
+
 Only `true` counts as set: Loro represents an unmark as an explicit `null`
 attribute in the delta, which must read as OFF, not as "present".
 
@@ -309,6 +317,7 @@ function bitmaskFromFormats(formats: Iterable<LoroTextFormat>): number
 ### `bootstrapDocument()`
 
 Bring the editor and the shared document into agreement at boot.
+
 Idempotent: calling it again on a populated document adopts (writing nothing
 and churning no NodeKeys), so a binding may safely call it on every sync
 event without tracking whether it already ran.
@@ -328,6 +337,7 @@ function childCount(element: ElementContainer): number
 ### `comparePositions()`
 
 The rendered order of two children: by `pos`, then by `uuid`.
+
 The uuid tiebreak is what makes this a TOTAL order even when two peers mint
 the same `pos`, which is exactly what keeps every peer rendering the same
 sequence. It resolves rendering only — it does not make the interval between
@@ -350,10 +360,12 @@ function containerId(container: Container): ContainerID
 ### `containerIsLive()`
 
 Whether a container still exists in the document.
+
 `getContainerById` keeps returning a usable handle for a DELETED container, so
 `isDeleted()` is the real test. The kind narrowing is not defensive padding:
 `Container` includes `LoroCounter`, `LoroList` and `LoroTree`, which this
 schema never uses, and only its two kinds may enter the registry.
+
 This is a LOCAL liveness question — "is the registry entry stale?" — not a
 projection question. See {@link orderedChildren}.
 
@@ -364,6 +376,7 @@ function containerIsLive(doc: LoroDoc, id: ContainerID): boolean
 ### `createElementChild()`
 
 Create an element child inside `children` and return its ATTACHED container.
+
 The carrier IS the element container: an element needs a `pos` anyway, so
 wrapping it in a second map would cost an extra container and an extra
 dereference for nothing. Only the attached handle has a stable `ContainerID`,
@@ -381,6 +394,7 @@ function createElementChild(
 ### `createTextChild()`
 
 Create a text child inside `children` and return its ATTACHED `LoroText`.
+
 The `LoroText` is created once, inside its carrier, and never moved or
 recreated — which is precisely what makes its `ContainerID` invariant across
 every reorder, and therefore what lets a peer's concurrent insertion into it
@@ -402,10 +416,12 @@ function deleteChild(children: ChildrenContainer, uuid: string): void
 
 Diff two run lists into the minimal explicit `mark`/`unmark` ops that turn
 `current` into `target`.
+
 `current` is what Loro holds after the text edit landed (so `expand` has
 already had its say); `target` is the runs Lexical actually produced. Both
 MUST describe the same character count — call this only after the text
 content has been reconciled.
+
 Each format is diffed INDEPENDENTLY (that is the whole point of decomposing
 the bitmask) and differing characters are coalesced into maximal ranges, so a
 whole-paragraph bolding is one op, not one per character.
@@ -417,6 +433,7 @@ function diffRunFormats(current: readonly TextRun[], target: readonly TextRun[])
 ### `diffText()`
 
 Cursor-free variant: the change is placed as far LEFT as possible.
+
 Equivalent to lib0's `simpleDiffString`. Use it only where no caret is known
 (a programmatic document change); prefer {@link diffTextWithCursor} on any
 user-typing path, where the leftmost placement is exactly the wrong guess.
@@ -428,18 +445,22 @@ function diffText(a: string, b: string): TextDiff
 ### `diffTextWithCursor()`
 
 Diff `a` → `b`, biased to place the change at `cursor`.
+
 A plain "common prefix / common suffix" diff is ambiguous whenever the edit
 sits next to repeated characters: typing `o` in `foo` could be described as an
 insert at index 1, 2 or 3, and the plain diff always picks the leftmost. Every
 peer then sees the character inserted at the wrong place, which drags remote
 carets and (through Loro's `expand`) can even attach the wrong formatting.
+
 Biasing the prefix scan to stop AT the cursor resolves the ambiguity in favour
 of where the user actually typed. `@lexical/yjs` uses `simpleDiffWithCursor`
 for exactly this reason; this is that algorithm (lib0's
 `simpleDiffStringWithCursor`), including its surrogate-pair rollbacks, ported
 so the package carries no lib0 dependency.
+
 Surrogate handling: the scans never stop between the halves of a surrogate
 pair, so an astral character is always inserted or deleted whole.
+
 @param cursor UTF-16 offset of the caret in `b` (the new string).
 
 ```typescript
@@ -490,6 +511,7 @@ function formatsFromBitmask(bitmask: number): LoroTextFormat[]
 
 Configure a `LoroDoc` for this schema and return its root element container,
 creating the root's schema keys if they are missing.
+
 Every peer MUST call this. Two reasons, both load-bearing:
 
 1. `configTextStyle` is LOCAL configuration, not replicated state. A peer that
@@ -542,6 +564,7 @@ function isTextContainer(child: unknown): child is LoroText
 ### `jitterFor()`
 
 A stable jitter digit for a peer.
+
 Takes Loro's own `peerId`, so peers need no coordination to pick distinct
 digits. Collisions across the {@link JITTER_DIGITS} alphabet only degrade to
 the un-jittered behaviour for the colliding pair; they are not a correctness
@@ -554,6 +577,7 @@ function jitterFor(peerId: bigint): string
 ### `longestIncreasingSubsequence()`
 
 The indices of a longest strictly-increasing subsequence of `values`.
+
 Patience sorting with a predecessor chain: O(n log n). Exported because it is
 the part of the reorder planner worth testing in isolation — the number of
 `pos` writes a drag-reorder costs is exactly `matched.length - lis.length`.
@@ -565,6 +589,7 @@ function longestIncreasingSubsequence(values: readonly number[]): number[]
 ### `loroCollab()`
 
 Build a collaborative-editing binding over a Loro document.
+
 The document is configured for this package's schema (`initDoc`) immediately,
 not at `register` time, so a transport may be attached to `collab.doc` before
 any editor exists.
@@ -576,6 +601,7 @@ function loroCollab(config: LoroCollabConfig = {}): LoroCollab
 ### `newUuid()`
 
 A fresh child identity.
+
 MUST be random. Two peers minting the same uuid would collide on one slot of
 the `children` map, whose last-writer-wins would silently discard a whole
 block — the same class of data loss `initDoc`'s `ensureMergeable*` exists to
@@ -589,6 +615,7 @@ function newUuid(): string
 
 Coalesce adjacent equal-format runs and drop empty ones, so two run lists
 describing the same content compare structurally equal.
+
 Necessary because Lexical's node boundaries are a rendering detail: `ab`+`c`
 and `abc` at the same format are the same document.
 
@@ -599,10 +626,12 @@ function normalizeRuns(runs: readonly TextRun[]): TextRun[]
 ### `orderedChildren()`
 
 An element's children in RENDERED order: sorted by `(pos, uuid)`.
+
 Malformed carriers are SKIPPED rather than thrown on. That is not defensive
 padding: a remote update can be applied while a carrier's keys are still
 arriving, and a partially-materialized child must not crash a render — it will
 appear on the next event, once its `pos` and `kind` have landed.
+
 Nothing here consults `isDeleted()`, and nothing may. Projection must depend
 ONLY on replicated state; a deleted carrier is simply absent from `keys()` on
 every peer, which is what makes this a pure function of the document.
@@ -614,6 +643,7 @@ function orderedChildren(element: ElementContainer): ChildEntry[]
 ### `projectTarget()`
 
 Project one Lexical element (or element-mirrored leaf) to a {@link TargetElement}.
+
 MUST be called inside a Lexical read (`editorState.read(() => …)`), because it
 reads node content. Uses only `lexical` (a peer dependency) — never
 `@lexical/markdown`. See {@link targetFromEditorState} for the common wrapper.
@@ -626,9 +656,11 @@ function projectTarget(node: LexicalNode): TargetElement
 
 Reconcile a parsed target tree into an existing Loro document, preserving the
 `ContainerID`s of unchanged and text-edited blocks, and commit under `origin`.
+
 A SIBLING to `syncLexicalToLoro` — it writes Loro directly rather than mirroring
 a Lexical update, matches by CONTENT rather than by `NodeKey`, and does NOT
 consult the `ContainerNodeMap` (which self-heals on the inbound bounce).
+
 @param doc the shared document.
 @param root its root element container, as returned by `initDoc`.
 @param target the desired tree, from {@link targetFromEditorState} /
@@ -651,9 +683,11 @@ function reconcileTargetIntoLoro(
 ### `registerLoroUndo()`
 
 Register Loro-backed undo/redo on an editor.
+
 Hand this to `lexicalForeign({ externalUndo })` — which forces the built-in
 `@lexical/history` stack off, so the two can never both be live. The returned
 disposer unregisters the commands and frees the manager.
+
 The manager is constructed HERE rather than at `loroCollab()` time on purpose:
 `lexicalForeign` calls `register` (which bootstraps the document) before
 `externalUndo`, so the boot-time seed is already committed and is NOT on the
@@ -692,6 +726,7 @@ function runsText(runs: readonly TextRun[]): string
 
 Fill the Loro document from an editor state with no previous state to diff
 against — the bootstrapping peer's initial seed.
+
 Structurally a full-fidelity diff, so it is also idempotent: seeding a
 document that already matches emits nothing and returns `0`.
 
@@ -710,6 +745,7 @@ function setChildPosition(carrier: ChildCarrier, pos: string): void
 ### `syncLexicalToLoro()`
 
 Mirror one Lexical update into the Loro document and commit it.
+
 @returns the number of Loro write operations emitted. `0` means the update
 was a genuine no-op for the shared document — nothing was committed, so no
 peer sees an event. Tests assert on this to catch pruning regressions.
@@ -722,6 +758,7 @@ function syncLexicalToLoro(target: OutboundTarget, update: OutboundUpdate): numb
 
 Project the root of an `EditorState` to a {@link TargetElement}, doing the read
 for you.
+
 The caller owns the markdown → editor-state parse (its own headless editor and
 `@lexical/markdown` transformer set); this projects the parsed tree into the
 plain, serializable shape {@link reconcileTargetIntoLoro} consumes. Uses only
@@ -759,6 +796,7 @@ export type ChildCarrier = LoroMap<CarrierShape>
 
 The container a child's IDENTITY is registered under in `mapping.ts`: the
 `LoroText` for a text run, the element map itself for an element.
+
 Both are invariant across every reorder, which is what lets the registry stay
 ignorant of the ordering model entirely.
 
@@ -787,6 +825,7 @@ export type ChildrenContainer = LoroMap<Record<string, ChildCarrier>>
 
 The map mirroring one Lexical `ElementNode` (or a `DecoratorNode` /
 `LineBreakNode`, which simply carry an empty `children` map).
+
 Every element except the ROOT is also a child carrier, so it additionally
 holds `uuid`, `pos` and `kind`. The root is reached through `doc.getMap` and
 has no siblings to be ordered among, so those keys are optional.
@@ -813,6 +852,7 @@ export type LoroTextFormat = (typeof LORO_TEXT_FORMATS)[number]
 
 The slice of `UpdateListenerPayload` this direction consumes. Declared as a
 `Pick` so an update listener can pass its payload straight through.
+
 Register it with a BLOCK body, never an expression body:
 
 ```ts
@@ -845,12 +885,14 @@ export type PropsContainer = LoroMap<Record<string, PropValue>>
 ### `PropValue`
 
 A value storable in an element's `props` map: any JSON value.
+
 Most Lexical node props are scalars (`tag`, `format`, `indent`, …), but not
 all — `LLuiDecoratorNode.exportJSON()` emits `data: unknown`, an arbitrary
 JSON payload, and that payload is precisely what makes a decorator's mounted
 LLui sub-app reproducible on a peer. Loro stores a JSON value in a map slot as
 ONE last-writer-wins register, which is the same granularity a scalar gets, so
 widening the type costs nothing structurally.
+
 The LWW granularity is per KEY, not per nested field: two peers editing
 different fields of the same `data` object do not merge, the later write wins
 whole. Decorator payloads are small, opaque-to-us blobs, so that is the right
@@ -912,6 +954,7 @@ export interface BootstrapTarget {
 ### `CarrierShape`
 
 The keys EVERY child carrier holds, whatever it wraps.
+
 Typed as its own shape rather than as `ElementContainer | TextCarrier` so that
 the ordering keys can be written without narrowing: a union of two generic
 `LoroMap` signatures is not callable, and the position write is the one
@@ -1239,6 +1282,7 @@ class ContainerNodeMap {
 ### `AGENT_WRITE_ORIGIN`
 
 Commit origin stamped on the single agent-write commit.
+
 Distinct from `to-loro.ts`'s `OUTBOUND_ORIGIN` so the inbound path can tell an
 agent write apart from an echo of its own outbound write: `binding.ts` lists
 this origin among the LOCAL batches the inbound path must still APPLY, which is
@@ -1279,6 +1323,7 @@ const DEFAULT_MERGE_INTERVAL
 ### `DIGITS`
 
 The key alphabet, in ascending code-unit order.
+
 Base 62 buys ~5.9 binary subdivisions per character, which is what keeps
 growth at roughly one character per five same-spot inserts. Every character
 here must be ASCII and strictly ascending, because the comparator is plain
@@ -1292,6 +1337,7 @@ const DIGITS
 ### `FORMAT_BITS`
 
 Mark name → bit value, derived from Lexical rather than hardcoded.
+
 Built eagerly so a format this package names but Lexical does not define
 fails at module load — a loud boot error instead of a format that silently
 never round-trips.
@@ -1303,10 +1349,12 @@ const FORMAT_BITS: Readonly<Record<LoroTextFormat, number>>
 ### `INBOUND_TAGS`
 
 Tags stamped on every inbound writeback.
+
 `COLLABORATION_TAG` is echo layer (b): `to-loro.ts` skips updates carrying it,
 so our own writeback cannot bounce back into the shared document.
 `SKIP_SCROLL_INTO_VIEW_TAG` stops a peer's edit from yanking the local
 viewport.
+
 `PROGRAMMATIC_TAG` is deliberately ABSENT and must stay that way — echo layer
 (c). `packages/lexical/src/foreign.ts` treats that tag as "the host pushed new
 content: cancel pending outbound work and rebase", so a remote writeback
@@ -1344,6 +1392,7 @@ const KEY_DATA
 ### `KEY_KIND`
 
 Key on a child carrier discriminating an element from a text run.
+
 Explicit rather than inferred from which other keys are present: a remote
 update can be applied partially, and a carrier whose `type` has not landed yet
 must be SKIPPED by the projection, not mistaken for a text run.
@@ -1387,6 +1436,7 @@ const KEY_TYPE
 ### `KEY_UUID`
 
 Key on a child carrier holding its own uuid.
+
 Duplicated from the `children` map key so a carrier read in isolation still
 knows its identity, and so the ordering tiebreak needs no parent lookup.
 
@@ -1432,6 +1482,7 @@ const OUTBOUND_ORIGIN
 
 Update tags that mean "this update did not originate with the local user, do
 not mirror it".
+
 `COLLABORATION_TAG` is our own inbound writeback (echo layer b);
 `SKIP_COLLAB_TAG` is Lexical's standard opt-out, which hosts use for local-only
 decoration. `HISTORIC_TAG` is NOT here — see the file header.
@@ -1459,6 +1510,7 @@ const ROOT_TYPE
 ### `TEXT_MARK_EXPAND`
 
 The `expand` rule applied UNIFORMLY to every text format.
+
 Read `test/expand-semantics.test.ts` before changing this. `expand` is NOT
 the mechanism that reproduces Lexical's boundary behaviour — a 51-test spike
 proved no uniform table can, and that no per-format table can either (the
@@ -1467,6 +1519,7 @@ per-format inclusivity: its caret is uniformly left-biased). The Lexical→Loro
 direction replays RESULTING NODE STATE via explicit mark/unmark ops instead
 (see `diffRunFormats` in `text.ts`), which makes the local result correct
 regardless of `expand`.
+
 `expand` therefore governs exactly one thing: what happens to text a REMOTE
 peer inserts CONCURRENTLY at a mark boundary. `'after'` is the closest fit to
 Lexical's left-biased caret.

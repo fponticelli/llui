@@ -42,9 +42,11 @@ Walk the tree and collect every link/image reference definition, keyed by
 lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
 The result is the WHOLE-document table — a definition anywhere, including one
 that arrives late in a streamed tail, resolves for a reference anywhere.
+
 Collection is incremental: blocks reused from the previous parse contribute
 their already-collected definitions instead of being re-walked, so a streamed
 append costs O(tail) rather than O(document).
+
 BREAKING (behaviour, not just the type): this used to build and hand back a
 FRESH, safely-mutable `Map` on every call. It now returns the LIVE memoized
 table for that tree. The `ReadonlyMap` type says so, but a cast defeats it —
@@ -189,10 +191,12 @@ function resolveUrl(
 
 Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
 relative/anchor/query URL — always safe), otherwise `null`.
+
 Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
 precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
 chars ignored first, the way a browser does — so `java\tscript:` or a leading
 control char cannot hide a dangerous scheme.
+
 `allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript
@@ -241,6 +245,7 @@ export type ParseFn = (src: string, opts?: MarkdownOptions) => Root
 
 Per-node-type render overrides, merged OVER the built-in {@link defaultRenderers}.
 Known mdast types are precisely typed; the string index admits custom node types.
+
 The index value is typed `NodeRenderer<never>` on purpose: a `(node: Heading) => …`
 renderer is assignable to `(node: never) => …` (parameters are contravariant, and
 `never` is a subtype of every type), so the precise per-type renderers and custom
