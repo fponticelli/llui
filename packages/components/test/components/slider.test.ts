@@ -161,6 +161,40 @@ describe('slider setValue never stores an out-of-range or off-grid value (#125 d
     const [s] = update(s0, { type: 'setValue', value: [-1000, 7] })
     expect(s.value).toEqual([0, 10])
   })
+
+  // The fix has TWO halves and the sweeps above pin only one. Legality
+  // (in-range + on-grid) is restored by `withThumb`'s bound normalisation
+  // ALONE, so deleting the `values.map(clampToStep)` that normalises the array
+  // FIRST leaves every assertion above green — while the gap silently breaks:
+  // an out-of-range neighbour snaps to `max` only after it has already been
+  // used as a bound, so both thumbs land on `max` with no gap between them.
+  // These two assertions are the only thing standing on that half.
+  it('respects the gap when an out-of-range input snaps onto an occupied value', () => {
+    const s0 = init({ min: 0, max: 50, step: 1, value: [10, 20], minStepsBetweenThumbs: 1 })
+    const [s] = update(s0, { type: 'setValue', value: [50, 51] })
+    // Normalise-first: 51 becomes 50, so thumb 0 is bounded by 50 and lands on
+    // 49. Bound-first: thumb 0 is bounded by the raw 51 and keeps 50, then
+    // thumb 1 snaps down onto 50 too -> [50,50], a gap of 0 where 1 is required.
+    expect(s.value).toEqual([49, 50])
+  })
+
+  for (const gap of [1, 2]) {
+    it(`sweeps the gap invariant with minStepsBetweenThumbs: ${gap}`, () => {
+      const grid = { min: 0, max: 50, step: 1 }
+      const s0 = init({ ...grid, value: [10, 20], minStepsBetweenThumbs: gap })
+      const bad: string[] = []
+      for (const a of CANDIDATES) {
+        for (const b of CANDIDATES) {
+          const [s] = update(s0, { type: 'setValue', value: [a, b] })
+          const [lo, hi] = [s.value[0]!, s.value[1]!]
+          if (hi - lo < gap * grid.step) {
+            bad.push(`setValue([${a},${b}]) -> [${s.value.join(',')}] (gap ${hi - lo})`)
+          }
+        }
+      }
+      expect(bad).toEqual([])
+    })
+  }
 })
 
 describe('valueFromPoint', () => {
