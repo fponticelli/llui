@@ -222,14 +222,27 @@ export function connectRouter<R>(
     if (typeof history !== 'undefined') knownLength = history.length
   }
 
-  // The hashes our own writes are about to echo back as `hashchange`, in write
-  // order, so each navigation dispatches exactly once. A BOOLEAN cannot express
-  // this: hashchange events QUEUE, so two navigations in one tick echo twice
-  // and one flag swallows only the first — the second navigation's message is
-  // then dispatched a SECOND time, running the reducer and its effects twice
-  // (#108). `batch()` makes multi-send bursts an explicitly supported pattern,
-  // so a batched navigation is not an exotic case.
-  const pendingEchoes: string[] = []
+  // How many `hashchange` events our own writes are about to echo back, and
+  // where the last of those writes left the URL. A BOOLEAN cannot express this:
+  // hashchange events QUEUE, so two navigations in one tick echo twice and one
+  // flag swallows only the first — the second navigation's message is then
+  // dispatched a SECOND time, running the reducer and its effects twice (#108).
+  // `batch()` makes multi-send bursts an explicitly supported pattern, so a
+  // batched navigation is not an exotic case.
+  //
+  // A COUNT plus the newest hash, not a queue of them: only those two are ever
+  // read, and #110.2 made a mounted `listener()` optional — a hash app can
+  // navigate for its whole lifetime with nothing subscribed, which grew a queue
+  // by one string per navigation for events nobody would ever consume. As a
+  // pair of scalars that leak is unrepresentable rather than merely capped.
+  let pendingEchoCount = 0
+  let pendingEchoHash: string | null = null
+
+  /** Arm the echo `hashchange` one of our own URL writes is about to produce. */
+  function armEcho(newHash: string): void {
+    pendingEchoCount++
+    pendingEchoHash = normHash(newHash)
+  }
   // The index a blocked navigation's `history.go` is restoring to, or `null`.
   // Keyed on the destination rather than a bare flag: `history.go` is
   // asynchronous and a delta it cannot reach fires nothing at all, so a flag
@@ -270,7 +283,7 @@ export function connectRouter<R>(
     if (sameHash(location.hash, newHash)) return false
     // Read the index of the entry we are LEAVING before the write replaces it.
     const from = landedIndex()
-    if (suppress) pendingEchoes.push(normHash(newHash))
+    if (suppress) armEcho(newHash)
     location.hash = newHash
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
     // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
@@ -315,12 +328,14 @@ export function connectRouter<R>(
    * mode the old boolean had (#103/#108).
    */
   function consumeHashEcho(): boolean {
-    if (pendingEchoes.length === 0) return false
-    if (!sameHash(location.hash, pendingEchoes[pendingEchoes.length - 1]!)) {
-      pendingEchoes.length = 0
+    if (pendingEchoCount === 0) return false
+    if (pendingEchoHash === null || !sameHash(location.hash, pendingEchoHash)) {
+      pendingEchoCount = 0
+      pendingEchoHash = null
       return false
     }
-    pendingEchoes.shift()
+    pendingEchoCount--
+    if (pendingEchoCount === 0) pendingEchoHash = null
     return true
   }
 
@@ -395,7 +410,7 @@ export function connectRouter<R>(
       // PUSHES, which grows history.length on every block and truncates every
       // forward entry above the blocked one (#103). The traversal echoes a
       // hashchange, which is suppressed like any of our own writes.
-      pendingEchoes.push(normHash(router.href(currentRoute)))
+      armEcho(router.href(currentRoute))
       history.go(delta)
       return
     }
@@ -425,7 +440,7 @@ export function connectRouter<R>(
           if (effect.action === 'push') {
             setHash(finalPath, true)
           } else if (!sameHash(location.hash, finalPath)) {
-            pendingEchoes.push(normHash(finalPath))
+            armEcho(finalPath)
             location.replace(finalPath)
             // `location.replace` swaps the current entry and DROPS its state,
             // so restamp it. The index is unchanged — nothing was pushed.

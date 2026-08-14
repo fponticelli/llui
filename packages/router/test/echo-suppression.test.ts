@@ -104,6 +104,32 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     dispose()
   })
 
+  it('survives a long run of navigations with no listener mounted', async () => {
+    // #110.2 made a mounted `listener()` optional, so a hash app can navigate
+    // for its whole lifetime with nothing subscribed and no echo will ever be
+    // consumed. The suppression is a COUNT plus the newest hash — never a queue
+    // that grows one entry per navigation — and the arming of 200 unconsumed
+    // echoes must not change what a later listener sees.
+    const routing = connectRouter(hashRouter())
+    const send = vi.fn()
+
+    for (let i = 0; i < 200; i++) {
+      run(routing, routing.navigate({ page: 'article', slug: String(i) }), send)
+    }
+    await settle()
+    expect(send).toHaveBeenCalledTimes(200) // one per navigation, none from an echo
+
+    const dispose = mountListener(routing, send)
+    send.mockClear()
+    location.hash = '#/admin'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
+
+    dispose()
+  })
+
   it('a genuine hashchange arriving while suppression is armed still dispatches', async () => {
     const routing = connectRouter(hashRouter())
     const send = vi.fn()
