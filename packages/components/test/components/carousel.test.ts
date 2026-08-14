@@ -393,6 +393,28 @@ describe('carousel autoplay effects', () => {
     expect(endFx).toEqual([{ type: 'startAutoplay', interval: 4000 }])
   })
 
+  // A stray `pointerup` with no drag in flight is a reducer NO-OP, but
+  // `autoplayTransition` only asked whether the message was NAVIGATION — so it
+  // re-emitted `startAutoplay` and the user's period restarted for free
+  // (#138 review, item 7).
+  it('a dragEnd with no drag in flight emits nothing', () => {
+    expect(playing.dragging).toBeNull()
+    const [next, fx] = update(playing, { type: 'dragEnd' })
+    expect(next).toBe(playing)
+    expect(fx).toEqual([])
+  })
+
+  // `prev` at the first slide without loop does NOT move, but it does set
+  // `direction: 'backward'` — a real state change an entry animation reads, so
+  // it is not a no-op and the period legitimately restarts. `dragEnd` is the
+  // only navigation message with a same-reference early return.
+  it('a navigation that changes state still restarts, even if the index holds', () => {
+    const stuck = init({ count: 3, autoplay: true, interval: 4000, loop: false })
+    const [next, fx] = update(stuck, { type: 'prev' })
+    expect(next).not.toBe(stuck)
+    expect(fx).toEqual([{ type: 'startAutoplay', interval: 4000 }])
+  })
+
   it('setCount that makes the carousel playable starts the timer', () => {
     const empty = init({ autoplay: true, interval: 2000 })
     const [, fx] = update(empty, { type: 'setCount', count: 3 })

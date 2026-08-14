@@ -88,6 +88,13 @@ export type CarouselMsg =
    * The autoplay timer fired. Advances exactly like `next`, but does NOT
    * restart the timer — it IS the timer. Manual navigation restarts it; a tick
    * must not, or the period would be re-armed on every fire.
+   *
+   * `@humanOnly` because it is the TIMER's message, not a user intent: with no
+   * tag it defaulted to dispatchMode `'shared'` and an agent could fire the
+   * timer directly, advancing the carousel without re-arming the period
+   * (#138 review, item 8). An agent that wants the next slide sends `next`.
+   *
+   * @humanOnly
    */
   | { type: 'autoplayTick' }
   /** @humanOnly */
@@ -246,7 +253,15 @@ function autoplayTransition(
   const wasRunning = isAutoplayRunning(prev)
   const isRunning = isAutoplayRunning(next)
   if (!isRunning) return wasRunning ? [{ type: 'stopAutoplay' }] : []
-  const restart = !wasRunning || prev.interval !== next.interval || NAVIGATION.has(msg.type)
+  // `next !== prev` matters: `dragEnd` with no drag in flight returns the state
+  // unchanged, and restarting the period off a stray `pointerup` gave the user
+  // a fresh interval for free (#138 review, item 7). A navigation that holds
+  // the index but moves `direction` IS a change and does restart.
+  //
+  // No message changes `interval`, so there is nothing to compare there; if one
+  // is ever added it must join NAVIGATION, or a live timer will keep the old
+  // period.
+  const restart = !wasRunning || (next !== prev && NAVIGATION.has(msg.type))
   return restart ? [{ type: 'startAutoplay', interval: next.interval }] : []
 }
 
