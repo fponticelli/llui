@@ -6,6 +6,7 @@ import {
   valueFromPoint,
   closestThumbIndex,
 } from '../../src/components/slider'
+import { clampToStep } from '../../src/utils/number'
 import { rootSignal, signalOf, read } from '../_signal'
 
 describe('slider reducer', () => {
@@ -100,6 +101,51 @@ describe('slider reducer', () => {
   it('avoids floating-point drift with fractional steps', () => {
     const [s] = update(init({ step: 0.1 }), { type: 'setThumb', index: 0, value: 0.3 })
     expect(s.value[0]).toBe(0.3)
+  })
+})
+
+describe('slider setValue never stores an out-of-range or off-grid value (#125 defect 3)', () => {
+  // A value is legal iff clamping+snapping it is a no-op: that is exactly
+  // "inside [min,max] AND on the min-anchored grid".
+  const isLegal = (v: number, grid: { min: number; max: number; step: number }): boolean =>
+    clampToStep(v, grid) === v
+
+  const CANDIDATES = [-1000, -100, -20, -7, -1, 0, 1, 7, 23, 50, 99, 500, 1000]
+
+  for (const gap of [0, 2]) {
+    it(`sweeps every candidate pair with minStepsBetweenThumbs: ${gap}`, () => {
+      const grid = { min: 0, max: 50, step: 5 }
+      const s0 = init({ ...grid, value: [10, 20], minStepsBetweenThumbs: gap })
+      const bad: string[] = []
+      for (const a of CANDIDATES) {
+        for (const b of CANDIDATES) {
+          const [s] = update(s0, { type: 'setValue', value: [a, b] })
+          for (const v of s.value) {
+            if (!isLegal(v, grid)) bad.push(`setValue([${a},${b}]) -> [${s.value.join(',')}]`)
+          }
+        }
+      }
+      expect(bad).toEqual([])
+    })
+  }
+
+  it('normalises a descending input', () => {
+    const s0 = init({ min: 0, max: 50, step: 1, value: [10, 20] })
+    const [s] = update(s0, { type: 'setValue', value: [500, -20] })
+    expect(s.value.every((v) => v >= 0 && v <= 50)).toBe(true)
+    expect(s.value[0]).toBeLessThanOrEqual(s.value[1]!)
+  })
+
+  it('normalises an all-negative input', () => {
+    const s0 = init({ min: 0, max: 100, step: 5, value: [0, 50] })
+    const [s] = update(s0, { type: 'setValue', value: [-1000, -1000] })
+    expect(s.value).toEqual([0, 0])
+  })
+
+  it('keeps a bounded thumb on the grid when the gap crowds it', () => {
+    const s0 = init({ min: 0, max: 100, step: 5, value: [0, 50], minStepsBetweenThumbs: 2 })
+    const [s] = update(s0, { type: 'setValue', value: [-1000, 7] })
+    expect(s.value).toEqual([0, 10])
   })
 })
 

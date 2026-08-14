@@ -70,8 +70,19 @@ export function init(opts: SliderInit = {}): SliderState {
 /**
  * Place one thumb: clamp+snap through the shared grid, then bound it by its
  * neighbours. `values` is the array being built (not necessarily `state.value`)
- * so `setValue` can fold this over every index and get exactly what a sequence
- * of `setThumb`s would produce.
+ * so `setValue` can fold this over every index.
+ *
+ * The neighbour bounds go through `clampToStep` too. Two reasons, both of them
+ * defects that shipped (#125): a bound derived from a raw or out-of-range
+ * neighbour dragged the thumb outside `[min,max]`, and `clamp(n, lower, upper)`
+ * with `upper < lower` returns `upper` — so a crowded thumb took whatever the
+ * unnormalised neighbour happened to be, off grid and out of range. Bounds are
+ * normalised into the range and onto the grid, then ORDERED, so the final
+ * clamp can only ever return a legal value. Folding is still order-dependent —
+ * it is NOT identical to a sequence of `setThumb`s: from `[10,20,30]`,
+ * `setValue([90,10,50])` gives `[10,10,50]` where the setThumb sequence gives
+ * `[20,20,50]` — but every value either can produce is one a drag could
+ * produce, which is the property that matters.
  */
 function withThumb(
   state: SliderState,
@@ -84,9 +95,10 @@ function withThumb(
   const snapped = clampToStep(rawValue, state)
   // Enforce gap with neighbors
   const gap = minStepsBetweenThumbs * step
-  const lowerBound = index > 0 ? (next[index - 1] ?? min) + gap : min
-  const upperBound = index < next.length - 1 ? (next[index + 1] ?? max) - gap : max
-  next[index] = clamp(snapped, lowerBound, upperBound)
+  const lowerBound = index > 0 ? clampToStep((next[index - 1] ?? min) + gap, state) : min
+  const upperBound =
+    index < next.length - 1 ? clampToStep((next[index + 1] ?? max) - gap, state) : max
+  next[index] = clamp(snapped, Math.min(lowerBound, upperBound), Math.max(lowerBound, upperBound))
   return next
 }
 
@@ -101,7 +113,10 @@ export function update(state: SliderState, msg: SliderMsg): [SliderState, never[
       // Every thumb goes through the SAME clamp+snap+gap path `setThumb` uses.
       // It used to store the array raw, so a programmatic set could hold values
       // no drag could ever produce — off-grid, or outside [min,max] (#125).
-      let value: number[] = [...msg.value]
+      // NORMALISE FIRST, bound second: folding over the raw array bounds each
+      // thumb by its still-unnormalised neighbour, which is how the raw input
+      // leaked back into state through the gap clamp.
+      let value: number[] = msg.value.map((v) => clampToStep(v, state))
       for (let i = 0; i < value.length; i++) value = withThumb(state, value, i, value[i]!)
       return [{ ...state, value }, []]
     }
