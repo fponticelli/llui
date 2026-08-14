@@ -10417,6 +10417,16 @@ The same contract holds in **both** `history` and `hash` mode:
   **redirect** — the URL then points somewhere the caller never asked for, so the
   navigate message is dispatched and `state.route` and the URL stay in agreement.
   Use **`navigate()`** when you want the push _and_ the dispatch unconditionally.
+- A **redirected** browser navigation (back/forward or the address bar landing on
+  a route whose `beforeEnter` returns a different one) **replaces the entry it
+  landed on** with the redirect target, then dispatches it. `state.route` and the
+  URL agree, so a reload, a share or a bookmark goes to the redirect target
+  rather than back to the guarded route. The entry is _replaced_, never pushed:
+  `history.length` is unchanged, back still reaches the entry below and forward
+  still reaches every entry above. What stops being reachable at that slot is the
+  guarded route itself — returning to it would only redirect again. When the
+  landed entry's position is unknown (see the blocked case below) the URL is
+  still written, but no index is invented for it.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
   **when the router knows where the popped entry sits**. It knows that for every

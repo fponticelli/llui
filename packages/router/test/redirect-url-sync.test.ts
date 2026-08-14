@@ -281,6 +281,13 @@ interface Recorded {
   calls: string[]
   /** Move the synthetic browser onto another entry, invisibly to the recorder. */
   land(state: unknown, url: string): void
+  /**
+   * Grow the session history by one entry WITHOUT the router observing it — a
+   * foreign `pushState` or an iframe navigation, the #150 shape. Leaves
+   * `knownLength` stale-LOW, which is what makes the `history.length` re-read
+   * after a redirect write load-bearing.
+   */
+  grow(): void
   /** Deliver the browser-driven URL change to the mounted listener. */
   fire(): void
 }
@@ -362,6 +369,9 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
     land(state, url) {
       historyState = state
       applyUrl(url)
+    },
+    grow() {
+      historyLength++
     },
     fire() {
       handlers.forEach((h) => h())
@@ -471,6 +481,79 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     // A later blocked pop must therefore still refuse to guess a delta.
     redirect = false
     rec.land({ __llui_idx: 5 }, '/article/x')
+    rec.calls.length = 0
+    rec.fire()
+    expect(rec.calls).toEqual([])
+
+    dispose()
+  })
+
+  it('re-reads history.length, so a LATER unstamped hashchange is not misread as a push', () => {
+    // `rewriteLandedUrl` ends with `noteLength()`. It looks like bookkeeping for
+    // a write that cannot change `history.length` — and it is, but the length it
+    // records is not only its OWN. `adoptLandedEntry` refreshes `knownLength` on
+    // every branch EXCEPT the one a redirect always takes: landing on a STAMPED
+    // entry returns early. So on the redirect path this is the only re-read, and
+    // dropping it leaves `knownLength` frozen at whatever it was before any
+    // history growth the router never saw (#150 — a foreign `pushState`, an
+    // iframe navigation).
+    //
+    // Stale-LOW is the dangerous direction. In hash mode `historyLength >
+    // knownLength` is the ONLY discriminator between a NEW fragment navigation
+    // (the user editing the address bar — a push) and a TRAVERSAL, and the two
+    // need opposite index handling. Stale-low makes the next unstamped
+    // `hashchange` read as a push: the router stamps an INVENTED index on an
+    // entry whose position it does not know, and every later blocked back
+    // computes its `history.go` delta from that fiction (#103's failure).
+    const rec = recordingEnv({ hash: '#/' })
+    let guardOn = false
+    const routing = connectRouter(hashRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => {
+        if (!guardOn) return undefined
+        if (to.page === 'admin') return LOGIN
+        if (to.page === 'article') return false
+        return undefined
+      },
+    })
+    const { dispose } = mountListener(routing)
+
+    // #/ (idx 0, seeded) → #/admin (idx 1) → #/other (idx 2), each write's echo
+    // consumed. `knownLength` is now 3 and correct.
+    navigate(routing, { page: 'admin' })
+    rec.fire()
+    navigate(routing, { page: 'other' })
+    rec.fire()
+
+    // …then the stack grows behind the router's back.
+    rec.grow()
+    guardOn = true
+
+    // A traversal back onto the STAMPED #/admin entry, redirected to #/login.
+    // `adoptLandedEntry` takes its early return here, so the re-read inside
+    // `rewriteLandedUrl` is the one that resyncs `knownLength` to the grown
+    // stack.
+    rec.land({ __llui_idx: 1 }, '#/admin')
+    rec.calls.length = 0
+    rec.fire()
+    expect(rec.calls).toEqual(['replaceState:#/login'])
+
+    // Now a traversal onto an entry NOBODY stamped. Its position is genuinely
+    // unknown, and the router must say so: no stamp, no state written.
+    rec.land(null, '#/other')
+    rec.calls.length = 0
+    rec.fire()
+
+    // Without the re-read this is `['replaceState:<no url>']` with the entry
+    // stamped `{ __llui_idx: 2 }` — an index invented for an entry the router
+    // has never seen.
+    expect(rec.calls).toEqual([])
+    expect(rec.env.historyState).toBeNull()
+
+    // …and the consequence that makes it matter: a later blocked navigation must
+    // still refuse to guess a delta. With the invented stamp it issues a
+    // `history.go` measured from a position it is not standing on.
+    rec.land({ __llui_idx: 0 }, '#/article/x')
     rec.calls.length = 0
     rec.fire()
     expect(rec.calls).toEqual([])
