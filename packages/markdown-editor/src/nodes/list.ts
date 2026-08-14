@@ -24,10 +24,16 @@
 // subclass whose own `$config()` declares `extends: ElementNode` skips
 // `ListNode`'s config entirely — `iterStaticNodeConfigChain` follows the
 // declared `extends` in preference to the prototype chain — which is what takes
-// the unconditional merge out of the picture. That also drops the two other
-// things `ListNode`'s config carries, so both are restored here: `importDOM` is
-// re-declared from `super.$config()` (HTML paste of `<ul>`/`<ol>` must keep
-// working) and the ordered-value bookkeeping is re-implemented below.
+// the unconditional merge out of the picture. That also drops everything else
+// that config carried. Only ONE of those needs restoring: the ordered-value
+// bookkeeping, re-implemented below. Its `importDOM` does NOT — see `$config()`.
+//
+// The alternative worth recording, because it is the one a fresh reader
+// re-derives: store the marker PER ITEM and split at export instead of keeping
+// two lists in the tree. It fails #129's first two acceptance criteria
+// literally — both are stated over the node tree ("`- a` then `* b` imports as
+// TWO lists"), and one list carrying two markers is one list however it
+// serializes.
 //
 // `$createListNode` is redirected onto this class by the `{replace, with,
 // withKlass}` entry in {@link MARKDOWN_LIST_NODES}, so every list in the editor
@@ -102,12 +108,16 @@ export class MarkdownListNode extends ListNode {
   // honouring a declared `extends` the #129 cases in
   // `test/list-import.test.ts` fail loudly rather than silently.
   // @ts-expect-error — deliberate config-chain divergence; see above.
+  // No `importDOM` here. Skipping `ListNode`'s config does skip its `ul`/`ol`
+  // conversions, but re-declaring them is DEAD CODE: `initializeConversionCache`
+  // (`LexicalEditor.ts:830-860`) harvests `importDOM` from EVERY registered
+  // klass, and `MARKDOWN_LIST_NODES` registers the stock `ListNode` too — so the
+  // conversions are cached either way, and `$convertListNode` calls
+  // `$createListNode`, which the replacement redirects to `md-list`. Deleting a
+  // re-declaration changed nothing in an HTML `<ul>`/`<ol>` paste; the property
+  // that actually matters is pinned by `test/list-internals.test.ts`.
   $config() {
-    const inherited = super.$config().list
     return this.config('md-list', {
-      // Restored explicitly, because skipping `ListNode`'s config also skips
-      // the DOM conversions that make HTML paste of `<ul>`/`<ol>` work.
-      ...(inherited?.importDOM === undefined ? {} : { importDOM: inherited.importDOM }),
       $transform: $reconcileMarkdownList,
       extends: ElementNode,
     })
@@ -226,7 +236,7 @@ export function registerListNodeUpgrade(editor: LexicalEditor): () => void {
 /**
  * The node registrations a marker-aware editor needs: the stock `ListNode`
  * (which the replacement is keyed on and which still deserializes any document
- * saved before this existed — see {@link registerListNodeUpgrade} for what has
+ * saved before this existed — see `registerListNodeUpgrade` below for what has
  * to happen to such a node next), this subclass, and the redirect that makes
  * `$createListNode` — and therefore every list command, transformer and DOM
  * conversion in `@lexical/list` — produce the subclass.
