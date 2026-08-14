@@ -96,9 +96,9 @@ const frameEnv: RouterEnv = {
   get historyState() {
     return frame.history.state
   },
-  // Load-bearing: it is what tells a NEW hash navigation apart from a
-  // traversal. A constant here makes every unstamped hash entry read as a
-  // traversal.
+  // A capability test, not a position: `0` means "no history here" and is the
+  // only value the connector distinguishes (it gates the construction-time
+  // seed). Any positive number will do for a surface that has a history.
   get historyLength() {
     return frame.history.length
   },
@@ -201,18 +201,56 @@ The same contract holds in **both** `history` and `hash` mode:
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
   **when the router knows where the popped entry sits**. It knows that for every
-  entry it created itself. It does **not** know it for an entry that existed
-  before `connectRouter` ran (a deep link the user then navigated away from and
-  came back to), because no browser API reports a position. Blocking a
-  navigation onto such an entry is **guard-honouring but not undoable**: nothing
-  is dispatched, `state.route` keeps the route you never left, and the URL is
-  left showing the blocked one until the next navigation — a visible
-  disagreement, deliberately preferred over a guessed `history.go(delta)`, which
-  traverses to the wrong entry and dispatches a route the user never asked for.
+  entry it created itself. It does **not** know it for an entry it never stamped,
+  because no browser API reports a position. Blocking a navigation onto such an
+  entry is **guard-honouring but not undoable**: nothing is dispatched,
+  `state.route` keeps the route you never left, and the URL is left showing the
+  blocked one until the next navigation — a visible disagreement, deliberately
+  preferred over a guessed `history.go(delta)`, which traverses to the wrong
+  entry and dispatches a route the user never asked for.
 
 `link()` never intercepts a click carrying a modifier key, a non-`_self`
 `target`, a `download` attribute, or a `defaultPrevented` set by an earlier
 handler — those are the browser's to handle.
+
+### Which entries the router can place
+
+Every entry `connectRouter` creates is stamped with its position in
+`history.state` (under `__llui_idx`, merged into whatever your app already keeps
+there), starting with the entry the app loaded on. Those are the entries a
+blocked navigation can be undone against.
+
+An entry it did **not** create is treated as **unknown**, in both modes, and no
+position is invented for one. That covers:
+
+- entries that existed before `connectRouter` ran (a deep link the user
+  navigated away from and came back to), and
+- in **hash mode**, an entry created by the user **editing the fragment in the
+  address bar**.
+
+The address-bar edit itself works normally — guards run, the message is
+dispatched, `state.route` follows. What is given up is only the _undo_: a
+guard-blocked back **off** a hand-edited entry is not reversed, so the URL is
+left showing the route the guard refused.
+
+That is an accepted trade, decided in [#150]. The alternative was to classify an
+unstamped `hashchange` by watching `history.length` grow — a push grows the
+session history, a traversal does not. It works only while the router has seen
+every change to the stack, and it cannot: a **foreign `history.pushState`**
+(analytics, an embedded widget, another framework on the page) or an **iframe
+navigation** grows the joint session history without firing anything the router
+listens to. The cached length then reads a traversal as a push and stamps an
+**inverted** index — the entry below numbered above the one it sits under — and
+the next blocked back computes its delta from that and traverses **two** entries
+backwards, landing somewhere the user never asked for. Refusing to guess costs
+one undo; guessing corrupts the stack.
+
+(The `popstate`-vs-`hashchange` distinction is not an alternative: assigning
+`location.hash` fires both events, in the same order as `history.back()`.
+`navigation.currentEntry.index` from the Navigation API is an authoritative
+position and is the real fix once it can be relied on.)
+
+[#150]: https://github.com/fponticelli/llui/issues/150
 
 <!-- auto-api:start -->
 

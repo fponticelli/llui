@@ -283,9 +283,10 @@ interface Recorded {
   land(state: unknown, url: string): void
   /**
    * Grow the session history by one entry WITHOUT the router observing it — a
-   * foreign `pushState` or an iframe navigation, the #150 shape. Leaves
-   * `knownLength` stale-LOW, which is what makes the `history.length` re-read
-   * after a redirect write load-bearing.
+   * foreign `pushState` or an iframe navigation, the #150 shape. It is what made
+   * any cached `history.length` stale-LOW; since #150 nothing reads the length
+   * except the seed's "is there a history here" test, so this must now change
+   * NOTHING about how a landing is classified.
    */
   grow(): void
   /** Deliver the browser-driven URL change to the mounted listener. */
@@ -488,23 +489,22 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     dispose()
   })
 
-  it('re-reads history.length, so a LATER unstamped hashchange is not misread as a push', () => {
-    // `rewriteLandedUrl` ends with `noteLength()`. It looks like bookkeeping for
-    // a write that cannot change `history.length` — and it is, but the length it
-    // records is not only its OWN. `adoptLandedEntry` refreshes `knownLength` on
-    // every branch EXCEPT the one a redirect always takes: landing on a STAMPED
-    // entry returns early. So on the redirect path this is the only re-read, and
-    // dropping it leaves `knownLength` frozen at whatever it was before any
-    // history growth the router never saw (#150 — a foreign `pushState`, an
-    // iframe navigation).
+  it('leaves a LATER unstamped hashchange unstamped, however the stack grew (#150)', () => {
+    // The redirect path is where the deleted `history.length` discriminator was
+    // at its most stale. `adoptLandedEntry` returned early on a STAMPED entry —
+    // which is the entry every redirect lands on — so a traversal through the
+    // router's own entries never refreshed the cached length, and growth the
+    // router never saw (a foreign `pushState`, an iframe navigation) stayed
+    // invisible indefinitely. #143 patched that one hole with a re-read here;
+    // #150 removed the cache instead.
     //
-    // Stale-LOW is the dangerous direction. In hash mode `historyLength >
-    // knownLength` is the ONLY discriminator between a NEW fragment navigation
-    // (the user editing the address bar — a push) and a TRAVERSAL, and the two
-    // need opposite index handling. Stale-low makes the next unstamped
-    // `hashchange` read as a push: the router stamps an INVENTED index on an
-    // entry whose position it does not know, and every later blocked back
-    // computes its `history.go` delta from that fiction (#103's failure).
+    // Stale-LOW was the dangerous direction: it made the next unstamped
+    // `hashchange` read as a PUSH, stamping an INVENTED index onto an entry
+    // whose position the router does not know, and every later blocked back then
+    // computed its `history.go` delta from that fiction (#103's failure). This
+    // is the same trace at the injected-env seam that `history-integrity.test.ts`
+    // drives through real jsdom traversals: whatever the length says, an
+    // unstamped entry is UNKNOWN and nothing is written onto it.
     const rec = recordingEnv({ hash: '#/' })
     let guardOn = false
     const routing = connectRouter(hashRouter(), {
@@ -519,7 +519,7 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     const { dispose } = mountListener(routing)
 
     // #/ (idx 0, seeded) → #/admin (idx 1) → #/other (idx 2), each write's echo
-    // consumed. `knownLength` is now 3 and correct.
+    // consumed.
     navigate(routing, { page: 'admin' })
     rec.fire()
     navigate(routing, { page: 'other' })
@@ -529,10 +529,9 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     rec.grow()
     guardOn = true
 
-    // A traversal back onto the STAMPED #/admin entry, redirected to #/login.
-    // `adoptLandedEntry` takes its early return here, so the re-read inside
-    // `rewriteLandedUrl` is the one that resyncs `knownLength` to the grown
-    // stack.
+    // A traversal back onto the STAMPED #/admin entry, redirected to #/login —
+    // the landing `adoptLandedEntry` adopts and returns from, and the one a
+    // length cache could never learn anything from.
     rec.land({ __llui_idx: 1 }, '#/admin')
     rec.calls.length = 0
     rec.fire()
@@ -544,7 +543,7 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     rec.calls.length = 0
     rec.fire()
 
-    // Without the re-read this is `['replaceState:<no url>']` with the entry
+    // Under a push classifier this is `['replaceState:<no url>']` with the entry
     // stamped `{ __llui_idx: 2 }` — an index invented for an entry the router
     // has never seen.
     expect(rec.calls).toEqual([])

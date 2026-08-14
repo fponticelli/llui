@@ -49,15 +49,17 @@ export interface RouterEnv {
    * `history.length` — the session-history entry count (`0` where there is no
    * history).
    *
-   * Load-bearing, not diagnostic: it is the only signal that tells a `hashchange`
-   * caused by a NEW fragment navigation apart from one caused by a TRAVERSAL,
-   * which need opposite index handling (a push grows the stack, a traversal
-   * never does). An implementation that returns a constant makes every unstamped
-   * hash entry read as a traversal.
+   * A CAPABILITY TEST, not a position. `0` means "this surface has no history at
+   * all" — every real session history contains at least the entry you are
+   * standing on — and that is the only question asked of it: the
+   * construction-time seed checks it before writing a stamp, which is what keeps
+   * an SSR import (where `connectRouter` runs at module scope) a no-op instead
+   * of a throw.
    *
-   * `0` doubles as the "this surface has no history at all" answer — every real
-   * session history contains at least the entry you are standing on — which is
-   * what the seed checks before it writes.
+   * It is NO LONGER the hash-mode push-vs-traversal discriminator. That use was
+   * deleted in #150 — see `adoptLandedEntry` for why — so an implementation is
+   * free to report any positive constant for a surface that has a history, and
+   * reporting an exact count buys nothing.
    */
   readonly historyLength: number
 
@@ -280,6 +282,33 @@ function sameHash(a: string, b: string): boolean {
   return normHash(a) === normHash(b)
 }
 
+/**
+ * Bind a {@link Router} to a History/Location surface: the effect handler, the
+ * browser-driven URL listener, and the `link()` helper, all running the same
+ * guard pipeline.
+ *
+ * POSITION MODEL (what a blocked navigation is undone with). The browser
+ * exposes no counter for "where in the stack am I", so every entry this
+ * connector creates is stamped with a monotonic index in `history.state` (under
+ * `__llui_idx`, merged into whatever the host already owns there), starting with
+ * the entry the app loaded on. A guard-blocked browser navigation is undone by
+ * `history.go(delta)` computed from two such stamps — a TRAVERSAL, so the stack,
+ * its length and every forward entry survive exactly as they were (#103).
+ *
+ * An entry NOBODY stamped therefore has no knowable position, and no position is
+ * invented for one — in either mode (#150; the reasoning, the alternatives that
+ * were measured and rejected, and the one behaviour this costs are all recorded
+ * on `adoptLandedEntry`). Blocking a navigation onto such an entry is
+ * guard-honouring but NOT undoable: nothing is dispatched and `state.route`
+ * keeps the route you never left, but the URL is left showing the blocked one
+ * until the next navigation. That visible disagreement is deliberately preferred
+ * over a guessed `history.go(delta)`, which traverses to the wrong entry and
+ * dispatches a route the user never asked for.
+ *
+ * Every history/location touch goes through {@link RouterEnv} (default
+ * {@link browserRouterEnv}); nothing in this file reaches for `location`,
+ * `history` or `window` directly (#111).
+ */
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
@@ -358,24 +387,6 @@ export function connectRouter<R>(
     }
   }
 
-  // `history.length` as of the last time we looked. The browser exposes no way
-  // to ask whether a `hashchange` came from a NEW fragment navigation or from a
-  // traversal, and the two need opposite handling — but a push grows the stack
-  // and a traversal never does, so the length answers it. Kept in sync at every
-  // point we observe or change history.
-  //
-  // KNOWN GAP (#150): only points the ROUTER sees refresh this. History growth
-  // it never sees — a foreign `pushState`, or an IFRAME navigation, which does
-  // grow the joint session history — leaves it stale-LOW, and a traversal onto
-  // an unstamped entry then reads as a push and is stamped with an inverted
-  // index. The only fully sound alternative is to treat every unstamped hash
-  // entry as UNKNOWN (what history mode does), which costs the address-bar-edit
-  // case this deliberately keeps. That trade is #150, not a patch.
-  let knownLength = env.historyLength
-  function noteLength(): void {
-    knownLength = env.historyLength
-  }
-
   // How many `hashchange` events our own writes are about to echo back, and
   // where the last of those writes left the URL. A BOOLEAN cannot express this:
   // hashchange events QUEUE, so two navigations in one tick echo twice and one
@@ -418,7 +429,6 @@ export function connectRouter<R>(
   function pushUrl(path: string): void {
     currentIndex = landedIndex() + 1
     env.pushState({ [STATE_KEY]: currentIndex }, path)
-    noteLength()
   }
 
   function replaceUrl(path: string): void {
@@ -427,7 +437,6 @@ export function connectRouter<R>(
     // The one re-stamp that legitimately carries a path: this navigation is
     // changing the URL as well as the entry's state.
     env.replaceState(stampCurrent(currentIndex), path)
-    noteLength()
   }
 
   /**
@@ -456,7 +465,6 @@ export function connectRouter<R>(
     // would resolve against the document base and throw the fragment away —
     // i.e. undo the navigation on the line above.
     env.replaceState(stampCurrent(currentIndex))
-    noteLength()
     return true
   }
   /**
@@ -519,43 +527,61 @@ export function connectRouter<R>(
     return true
   }
 
-  /** Resync `currentIndex` to the entry a browser-driven navigation landed on. */
+  /**
+   * Resync `currentIndex` to the entry a browser-driven navigation landed on.
+   *
+   * An entry WE stamped carries its own position, so adopt it. An entry nobody
+   * stamped has NO knowable position, in EITHER mode, and none is guessed: a
+   * guessed index is exactly what turns the next blocked back into a
+   * wrong-direction `history.go` (#103).
+   *
+   * DESIGN DECISION (#150): every unstamped entry is UNKNOWN — one rule, both
+   * modes.
+   *
+   * History mode never had a choice: `popstate` is always a traversal. Hash mode
+   * looks like it does, because `hashchange` also fires for a NEW fragment
+   * navigation (the user editing the address bar), which the router COULD number
+   * — but nothing in the platform distinguishes the two events, and every
+   * candidate discriminator this file tried is unsound:
+   *
+   * - `history.length > knownLength` (the previous implementation, #139): a push
+   *   grows the session history and a traversal does not, so a cached length
+   *   answers it — but ONLY while the cache is fresh, and it is refreshed solely
+   *   where the ROUTER observes or changes history. Growth it never sees — a
+   *   foreign `history.pushState` from analytics, an embedded widget or another
+   *   framework, or an IFRAME navigation, which does grow the joint session
+   *   history — leaves it stale-LOW, so a later traversal onto an unstamped
+   *   entry reads as a PUSH and is stamped with an INVERTED index (the entry
+   *   BELOW gets a HIGHER number). The staleness is sticky, because a traversal
+   *   passing through stamped entries returns early here and never repairs it.
+   *   The next guard-blocked back then computes its delta from that fiction and
+   *   traverses TWO entries backwards — #103's exact failure, reintroduced.
+   * - `popstate` fires only on a traversal while `hashchange` fires on both.
+   *   MEASURED IN REAL CHROMIUM and reproduced in jsdom: assigning
+   *   `location.hash` fires `["popstate", "hashchange"]` — byte-identical to
+   *   `history.back()` — and `pushState` fires neither. This is the obvious
+   *   alternative and it does not work; do not propose it again.
+   *
+   * THE COST, stated plainly: a guard-blocked traversal OFF a hand-edited hash
+   * entry is no longer undone, so the URL is left showing the route the guard
+   * refused (nothing is dispatched, `state.route` keeps the route you never
+   * left). That is the ONLY behaviour given up, it is the same
+   * guard-honouring-but-not-undoable outcome an entry pre-dating `connectRouter`
+   * already had, and it is documented in `site/content/api/router.md`. The hand
+   * edit ITSELF was already unaffected: this runs only when the guard PASSES.
+   * Numbering simply restarts from the next stamped entry — every browser-driven
+   * delta in this file is ±1, so `landedIndex()`'s `?? 0` floor is benign.
+   *
+   * FUTURE WORK, not implemented here: the Navigation API's
+   * `navigation.currentEntry.index` is an authoritative position and was
+   * measured in real Chromium to track fragment navigations, traversals AND a
+   * foreign `pushState` correctly while `history.length` drifted. It is
+   * unavailable in jsdom, so neither branch of a classifier built on it could be
+   * mutation-pinned in this package's test environment — which is why this
+   * closes as a policy change rather than a new discriminator.
+   */
   function adoptLandedEntry(): void {
-    const landed = readIndex(env.historyState)
-    if (landed !== null) {
-      currentIndex = landed
-      return
-    }
-    if (router.mode === 'hash') {
-      // `hashchange` fires for a NEW fragment navigation (the user editing the
-      // address bar) as well as for a TRAVERSAL, and an unstamped entry does
-      // not tell them apart: every entry that pre-dates `connectRouter` is
-      // unstamped too. Assuming a push stamped such an entry ABOVE the one it
-      // sits below, which inverts the delta and sends the next blocked back
-      // FURTHER backwards. `history.length` is the discriminator — a push grows
-      // the stack, a traversal never does.
-      if (env.historyLength > knownLength) {
-        currentIndex = (currentIndex ?? 0) + 1
-        // No path: stamping the entry the browser just navigated to.
-        env.replaceState(stampCurrent(currentIndex))
-        noteLength()
-        return
-      }
-      // A traversal onto an entry we never stamped: its position is UNKNOWN and
-      // the browser will not tell us. Record that rather than guess — a guessed
-      // index is exactly what turns a blocked back into a wrong-direction
-      // `history.go` (#103). (A push whose entry did not grow the stack, i.e.
-      // one that truncated forward entries, lands here too: also unknown, which
-      // is the safe answer either way.)
-      currentIndex = null
-      noteLength()
-      return
-    }
-    // History mode: popstate is always a TRAVERSAL, so an unstamped entry is
-    // one we have genuinely never seen and whose position the browser will not
-    // tell us. Record that instead of guessing — a guessed index is exactly
-    // what turns a blocked back into an unreachable `history.go` (#103).
-    currentIndex = null
+    currentIndex = readIndex(env.historyState)
   }
 
   /**
@@ -597,9 +623,6 @@ export function connectRouter<R>(
    */
   function rewriteLandedUrl(path: string): void {
     env.replaceState(currentIndex === null ? env.historyState : stampCurrent(currentIndex), path)
-    // A replace cannot change `history.length`; re-reading it keeps the
-    // push-vs-traversal baseline honest rather than assuming it.
-    noteLength()
   }
 
   /**
@@ -663,7 +686,6 @@ export function connectRouter<R>(
             // already where `replaceLocation` just put it, and a `''` here
             // would resolve it away.
             env.replaceState(carried)
-            noteLength()
           }
         } else if (effect.action === 'push') {
           pushUrl(finalPath)

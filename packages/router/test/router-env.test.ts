@@ -40,10 +40,11 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
   let historyState: unknown = null
   // A synthetic session history still HAS the entry you are standing on, so it
   // starts at 1 — `0` is reserved for "there is no history here" (what
-  // `browserRouterEnv` reports off-browser, and what the seed checks). It grows
-  // on the two operations that create an entry, because the push-vs-traversal
-  // discriminator reads it; pinning it to a constant would make every unstamped
-  // hash entry read as a traversal.
+  // `browserRouterEnv` reports off-browser, and what the seed checks). It still
+  // grows on the two operations that create an entry, so the fake stays an
+  // honest model of the real surface, but nothing in `connect.ts` reads the
+  // count any more: #150 deleted the push-vs-traversal discriminator, so a
+  // constant here would change no classification.
   let historyLength = 1
 
   const env: RouterEnv = {

@@ -47,6 +47,26 @@ async function waitForUrl(read: () => string, expected: string): Promise<string>
   return read()
 }
 
+/**
+ * Poll for a condition a URL comparison cannot express — notably a traversal
+ * onto an entry showing the SAME url (a foreign `pushState` to `location.href`),
+ * which moves `history.state` and nothing else.
+ */
+async function waitUntil(pred: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 2000
+  while (!pred() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2))
+  }
+  if (!pred()) throw new Error(`timed out waiting for ${what}`)
+}
+
+/** The router's stamp on a history entry, or `undefined` when it never wrote one. */
+function stampedIndex(state: unknown): unknown {
+  return state !== null && typeof state === 'object'
+    ? (state as Record<string, unknown>).__llui_idx
+    : undefined
+}
+
 const path = () => location.pathname
 const hash = () => location.hash
 
@@ -324,24 +344,70 @@ describe('#103 blocked back — hash mode', () => {
     dispose()
   })
 
-  it('still tracks a genuine new fragment navigation (an address-bar edit)', async () => {
-    // The other half of the discriminator: a hash the USER typed is a real
-    // push, it grows the stack, and the entry it creates must be stamped — or
-    // a blocked back from it has no delta and restores nothing.
+  it('leaves the URL on the blocked route when the popped entry was hand-edited (#150)', async () => {
+    // THE ONE COST of #150, asserted rather than merely written down: a hash the
+    // USER typed lands on an entry the router never stamped, and #150 treats
+    // every unstamped entry as UNKNOWN. So a guard-blocked traversal OFF such an
+    // entry cannot be undone — the URL is left showing the route the guard
+    // refused, until the next navigation.
+    //
+    // This test is the exact INVERSE of the one it replaces ("still tracks a
+    // genuine new fragment navigation"), which asserted the restore this gives
+    // up. The trade is deliberate: the `history.length` discriminator that
+    // bought it is stale-by-construction (a foreign `pushState` or an iframe
+    // navigation grows the stack behind the router's back), and reading a
+    // traversal as a push stamps an INVERTED index that sends the NEXT blocked
+    // back two entries the wrong way — #103's failure, from a guess.
+    //
+    // The second half pins what SURVIVES: an entry the router created itself
+    // still carries its position, so a block there is still undone. Without it
+    // "treat everything as unknown, always" would pass this file.
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
       beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
     })
-    const { dispose } = mountListener(routing)
+    const { send, dispose } = mountListener(routing)
 
     location.hash = '#/other' // not through the router — a user navigation
     expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    // jsdom moves the URL synchronously and queues the event, so the listener
+    // has NOT run yet at this point — settle before reading what it did.
+    await settle()
+    // Nothing was written onto the entry the edit created: its position is
+    // unknown, and #150 refuses to invent one.
+    expect(stampedIndex(history.state)).toBeUndefined()
+    send.mockClear()
 
     blockHome = true
     history.back() // → the entry the router loaded on (bare '', i.e. `#/`)
     expect(await waitForUrl(hash, '')).toBe('')
-    // Known position on both sides → the block is undone by a traversal.
+
+    // Nothing is restored. Waiting for the pre-#150 outcome — a traversal back
+    // onto `#/other` — and never seeing it is the assertion; a fixed sleep could
+    // pass early on a loaded machine.
+    expect(await waitForUrl(hash, '#/other')).toBe('')
+    expect(send).not.toHaveBeenCalled()
+
+    // …and the capability that is NOT given up: two entries the ROUTER created
+    // carry their positions, so a block between them is still undone by a
+    // traversal. Push a pair of them and block the back onto the seeded root.
+    blockHome = false
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'admin' })
+    await settle()
+
+    blockHome = true
+    send.mockClear()
+    history.back() // → `#/other` (allowed — the guard only blocks `home`)
     expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    expect(send).toHaveBeenCalledTimes(1)
+
+    send.mockClear()
+    history.back() // → the seeded root, i.e. `home` — BLOCKED
+    expect(await waitForUrl(hash, '')).toBe('')
+    // Known index on both sides → the block IS undone, by a traversal.
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    expect(send).not.toHaveBeenCalled()
 
     dispose()
   })
@@ -386,6 +452,100 @@ describe('#103 blocked back — hash mode', () => {
 
     expect(send).not.toHaveBeenCalled()
 
+    dispose()
+  })
+})
+
+describe('#150 history that grew behind the router — hash mode', () => {
+  // #139 classified an unstamped `hashchange` landing with `history.length >
+  // knownLength`: a push grows the session history, a traversal does not. But
+  // `knownLength` was only refreshed where the ROUTER observed or changed
+  // history, so growth it never saw left it stale-LOW — and stale-low reads a
+  // TRAVERSAL as a push, stamping an INVERTED index (the entry BELOW numbered
+  // ABOVE the one it sits under). #150 deletes the discriminator: every
+  // unstamped entry is UNKNOWN, in both modes.
+  //
+  // The growth here is a foreign `history.pushState` onto `location.href` —
+  // analytics, an embedded widget, another framework on the page. Same URL, so
+  // it fires no `hashchange`, and neither does the traversal back off it: the
+  // router sees NEITHER, which is exactly how the cached length goes stale. (An
+  // iframe navigation grows the joint session history the same way; jsdom cannot
+  // drive one, and the defect needs no iframe.)
+
+  beforeEach(async () => {
+    location.hash = ''
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  /**
+   * `#/ | #/other | #/admin` — three entries that pre-date the router — with
+   * `connectRouter` seeding the one it loads on (`#/admin`, index 0), then one
+   * entry of foreign growth above it and a traversal back down onto it.
+   */
+  async function grownBehindTheRouter(options?: ConnectOptions<Route>) {
+    location.hash = '#/'
+    await settle()
+    location.hash = '#/other'
+    await settle()
+    location.hash = '#/admin'
+    await settle()
+
+    const routing = connectRouter(hashRouter(), options)
+    const mounted = mountListener(routing)
+    expect(stampedIndex(history.state)).toBe(0)
+
+    history.pushState({ foreign: 'analytics' }, '', location.href)
+    history.back() // back onto our seeded entry — same url, so NO hashchange
+    await waitUntil(() => stampedIndex(history.state) === 0, 'the traversal onto #/admin')
+    expect(location.hash).toBe('#/admin')
+
+    return { routing, ...mounted }
+  }
+
+  it('stamps NOTHING on an entry it traverses onto, however stale a length would be', async () => {
+    const { send, dispose } = await grownBehindTheRouter()
+
+    history.back() // → the unstamped `#/other`, and this one DOES fire
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+
+    // With the discriminator this read as a push and wrote `{ __llui_idx: 1 }`
+    // onto an entry sitting BELOW the one stamped `0`. Its position is unknown
+    // and unknowable, so nothing at all is written.
+    expect(stampedIndex(history.state)).toBeUndefined()
+    // The navigation itself is unaffected — only the bookkeeping is refused.
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
+
+    dispose()
+  })
+
+  it('a later blocked back stays put instead of traversing past the blocked entry', async () => {
+    let blockOther = false
+    const { send, dispose } = await grownBehindTheRouter({
+      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+    })
+
+    history.back() // → `#/other` (unstamped → UNKNOWN)
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    history.forward() // → back onto `#/admin`, which IS stamped (0)
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+    send.mockClear()
+
+    const goSpy = vi.spyOn(history, 'go')
+    blockOther = true
+    history.back() // → `#/other`, blocked
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+
+    // The fabricated stamp made this the worst case rather than a no-op: `1`
+    // against the landed `0` is a NEGATIVE delta, so `history.go(-1)` traversed
+    // FURTHER BACK onto `#/`, two entries from where the user pressed back once.
+    // Waiting for that landing and never seeing it is the assertion.
+    expect(await waitForUrl(hash, '#/')).toBe('#/other')
+    expect(goSpy).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
     dispose()
   })
 })
