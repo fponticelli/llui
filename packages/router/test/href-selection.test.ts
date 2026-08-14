@@ -216,6 +216,22 @@ describe('#104 the verification is load-bearing, not a fallback tier', () => {
       expect(router.href(router.match(input))).toBe(input)
     }
   })
+
+  it('an omitted default never eliminates the def that supplies it', () => {
+    // The one elimination that runs without a builder call — a def that reads
+    // no params has exactly one possible output, so a route CONTRADICTING it
+    // provably came from elsewhere. A route that merely OMITS one of its fields
+    // did not contradict anything (#104): treating that as a contradiction
+    // drops the only def that can format the route, and the last-resort loop
+    // then formats with whatever def happens to come first.
+    type Settings = { page: 'home' } | { page: 'settings'; tab?: string }
+    const router = createRouter<Settings>([
+      route([], () => ({ page: 'home' as const })),
+      route(['settings'], () => ({ page: 'settings' as const, tab: 'general' })),
+    ])
+    expect(router.href({ page: 'settings' })).toBe('#/settings')
+    expect(router.href({ page: 'settings', tab: 'general' })).toBe('#/settings')
+  })
 })
 
 describe('#104 the build()-call-count property from the perf fix survives', () => {
@@ -241,6 +257,41 @@ describe('#104 the build()-call-count property from the perf fix survives', () =
     for (let i = 0; i < 50; i++) {
       expect(router.href({ page: 'user', id: String(i), tab: 'profile' })).toBe(`#/user/${i}`)
     }
+    expect(builds).toBe(0)
+  })
+
+  it('costs ONE round-trip when two defs compete and the shape order is informative', () => {
+    // What the two-sample classification actually buys, now that the round-trip
+    // decides the winner: it keeps a param-DERIVED field out of the constants
+    // map, so the def that owns the route is the FIRST one verified and its
+    // exact reproduction ends the search. Classifying from a single sample
+    // turns that derived field into a spurious contradiction, demotes the right
+    // def out of the strict tier, and every competing def gets built.
+    let builds = 0
+    const count = <T>(f: () => T) => {
+      builds++
+      return f()
+    }
+    type R = { page: 'p'; id: string; kind: string }
+    const router = createRouter<R>(
+      [
+        route(['a', param('id')], ({ id }) =>
+          count(() => ({ page: 'p' as const, id: id!, kind: id!.toUpperCase() })),
+        ),
+        route(['b', param('id')], ({ id }) =>
+          count(() => ({ page: 'p' as const, id: id!, kind: 'FIXED' })),
+        ),
+      ],
+      { fallback: { page: 'p', id: '', kind: '' } },
+    )
+
+    builds = 0
+    expect(router.href({ page: 'p', id: 'x', kind: 'X' })).toBe('#/a/x')
+    expect(builds).toBe(1)
+
+    // …and the second time the same route shape is formatted, none at all.
+    builds = 0
+    expect(router.href({ page: 'p', id: 'x', kind: 'X' })).toBe('#/a/x')
     expect(builds).toBe(0)
   })
 })
