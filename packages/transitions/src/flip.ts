@@ -76,10 +76,19 @@ function numberAt(parts: readonly string[], index: number): number {
  * only feature-detected as a function here: a shim (or a test double) may
  * return nothing at all, or an object without `finished`. There the run simply
  * stays registered until the next pass supersedes it, which is the pre-fix
- * behaviour and no worse. A CANCELLED animation REJECTS `finished` — that is the
- * superseding pass's own doing, so it is swallowed rather than left to surface
- * as an unhandled rejection (the token guard makes the resolve path a no-op
- * for a superseded run anyway).
+ * behaviour and no worse.
+ *
+ * A CANCELLED animation REJECTS `finished`, and BOTH outcomes end the run. No
+ * error is lost by not rethrowing — cancellation is the only thing `finished`
+ * ever rejects with — but the cleanup obligation is identical, and only ONE of
+ * the two cancel sources is covered elsewhere: our own supersede, which has
+ * already replaced the entry by the time the rejection lands. Anything else
+ * that cancels the glide (author code, devtools, an
+ * `el.getAnimations().forEach(a => a.cancel())`) would otherwise leave the run
+ * registered forever and put the row straight back into the defect above.
+ * Ending on both paths is safe precisely because `end` is token-guarded: on the
+ * supersede path the entry is either gone or already `token2`'s, so the call is
+ * a no-op.
  */
 function endRunOnFinish(
   glides: RunScope,
@@ -89,10 +98,8 @@ function endRunOnFinish(
 ): void {
   const finished: Promise<unknown> | undefined = animation?.finished
   if (finished === undefined || typeof finished.then !== 'function') return
-  void finished.then(
-    () => glides.end(child, token),
-    () => {},
-  )
+  const done = (): void => glides.end(child, token)
+  void finished.then(done, done)
 }
 
 /**

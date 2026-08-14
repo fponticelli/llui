@@ -240,6 +240,47 @@ describe('flip() read/write batching', () => {
     ])
   })
 
+  it('ends the glide run when the animation is cancelled from OUTSIDE', async () => {
+    // `Animation.finished` rejects only on cancel, so a swallowed rejection
+    // loses no ERROR — but it loses the run-cleanup obligation, and the only
+    // cancel that is safely covered elsewhere is our OWN supersede (where the
+    // next `register` has already replaced the entry). Anything else that
+    // cancels the glide — author code, a devtools "cancel all animations",
+    // `el.getAnimations().forEach(a => a.cancel())` — leaves the run registered
+    // forever, and from there the read phase attributes the row's CONSTANT
+    // author transform to us. That is #107's blocking defect reproducing
+    // verbatim: the next clean reorder computes dx = 0 and does not animate.
+    const { parent, children, layout, transform, animations } = makeList(1)
+    const child = children[0]!
+    transform.set(child, 'matrix(1, 0, 0, 1, 50, 0)')
+
+    const f = flip()
+    f.enter!([child])
+
+    layout.set(child, { left: 100, top: 0 })
+    f.onTransition!({ entering: [], leaving: [], parent })
+    expect(animations[0]!.keyframes).toEqual([
+      { transform: 'translate(-100px, 0px)' },
+      { transform: 'translate(0, 0)' },
+    ])
+
+    // Cancelled mid-glide by someone who is not us. The element goes straight
+    // back to its own transform, exactly as a completion would leave it.
+    animations[0]!.cancel()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // A clean 100px reorder afterwards must glide the whole 100px.
+    layout.set(child, { left: 200, top: 0 })
+    f.onTransition!({ entering: [], leaving: [], parent })
+
+    expect(animations).toHaveLength(2)
+    expect(animations[1]!.keyframes).toEqual([
+      { transform: 'translate(-100px, 0px)' },
+      { transform: 'translate(0, 0)' },
+    ])
+  })
+
   it('stops reading the computed transform once the glide has finished', async () => {
     // The direct consequence of the run never ending: `getComputedStyle` was
     // called for every surviving row on every structural reconcile, forever.
