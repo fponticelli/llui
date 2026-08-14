@@ -66,6 +66,23 @@ function stopFixture(f: Fixture): Promise<void> {
   return new Promise((resolve) => f.server.close(() => resolve()))
 }
 
+/** Resolve once `predicate` holds, polling on a short interval.
+ *
+ *  A fixed `setTimeout` in front of an assertion is a race by construction:
+ *  the duration is calibrated on one machine and nothing ties it to the
+ *  event it stands in for, so a slower box or a loaded CI runner fails it
+ *  nondeterministically (#95). Waiting on the condition itself removes the
+ *  calibration. The budget is deliberately under vitest's 5s default so a
+ *  genuine hang reports THIS message instead of an anonymous test timeout.
+ */
+async function waitUntil(what: string, predicate: () => boolean, budgetMs = 2000): Promise<void> {
+  const deadline = Date.now() + budgetMs
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`timed out after ${budgetMs}ms waiting for ${what}`)
+    await new Promise((r) => setTimeout(r, 2))
+  }
+}
+
 let f: Fixture
 
 beforeEach(async () => {
@@ -248,8 +265,9 @@ describe('GET /_llui/events (SSE)', () => {
       }
       return text
     })()
-    // Give the SSE connection a tick to register a subscriber before we post.
-    await new Promise((r) => setTimeout(r, 50))
+    // The post only reaches the stream once the SSE handler has subscribed;
+    // wait for that subscription, not for a duration.
+    await waitUntil('the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
     await fetch(`${f.base}/_llui/notes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -283,8 +301,10 @@ describe('POST /_llui/capture-request', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ route: '/x' }),
     })
-    // Wait briefly for the event to enqueue
-    await new Promise((r) => setTimeout(r, 30))
+    // Wait for the event the middleware broadcasts, not for a duration.
+    await waitUntil('the capture-request broadcast', () =>
+      events.some((e) => e.type === 'capture-request'),
+    )
     const requestEvent = events.find((e) => e.type === 'capture-request')
     expect(requestEvent).toBeDefined()
     if (requestEvent?.type !== 'capture-request') throw new Error('unreachable')
