@@ -1592,6 +1592,127 @@ describe('tag-send-drift (issue #118)', () => {
     expect(msgs.some((m) => m.includes("dispatches `{ type: 'boot' }`"))).toBe(true)
   })
 
+  // ── negative: a default INSIDE a binding pattern is still a default ──────
+  // `p.initializer` is only the default of a whole parameter (`(e = compute())`).
+  // A default written inside the parameter's binding PATTERN
+  // (`({ x = compute() })`, `([x = compute()])`) hangs off a `BindingElement`
+  // under `p.name`, so walking initializers alone reached none of them — the
+  // same defect as the unwalked parameter list, one position further in, with
+  // the same two costs: a call there is unreadable code that runs on every call
+  // (completeness), and a dispatcher mention there escapes or dispatches.
+  // Walking `p.name` also makes the parameter list treat a binding pattern
+  // exactly as the body walk already treats `const { … } = x`.
+  it('forfeits completeness for a call in an OBJECT-PATTERN default', () => {
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], ({ x = compute() }) => {",
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('forfeits completeness when the dispatcher ESCAPES in an OBJECT-PATTERN default', () => {
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], ({ x = register(send) }) => {",
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a correct list whose only dispatch is in an OBJECT-PATTERN default', () => {
+    // The dispatch of `'inner'` is real and the list names it. Unwalked, the
+    // scan saw an empty body, called it complete, and reported the declared
+    // variant as never dispatched — a false positive on a list that is right.
+    expect(
+      rules(src("const p = tagSend(send, ['inner'], ({ x = send({ type: 'inner' }) }) => {})")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a correct list whose only dispatch is in an ARRAY-PATTERN default', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['inner'], ([x = send({ type: 'inner' })]) => {})")),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('forfeits completeness for a call in a NESTED binding-pattern default', () => {
+    // The walk has to recurse: the default sits two patterns deep.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], ({ o: { x = compute() } }) => {",
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('forfeits completeness for a pattern default on a FUNCTION-EXPRESSION handler', () => {
+    // Both handler shapes reach the same scan; neither may keep a completeness
+    // it has not earned.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], function ({ x = compute() }) {",
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag the realistic event-destructuring default', () => {
+    // The shape a consumer actually writes: destructure the event and default
+    // one field. `compute()` may dispatch, so the absent `'close'` proves
+    // nothing.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['open', 'close'], ({ currentTarget = compute() }) =>",
+            "  send({ type: 'open' }))",
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a binding-pattern default in a .tsx module', () => {
+    // Same ScriptKind guard as the handler-parameter shadow above: `.tsx` is
+    // where consumer view code lives, and a TSX parse must reach the same walk.
+    const tsx = [
+      IMPORT,
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['a', 'b'], ({ x = compute() }) => { send({ type: 'a' }) })",
+      "export const q = tagSend(send, ['inner'], ({ x = send({ type: 'inner' }) }) => {})",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
+  it('still flags real drift dispatched from a binding-pattern default', () => {
+    // Walking the pattern is not a blanket amnesty: a readable dispatch there
+    // is attributed like any other, so an undeclared one is still reported.
+    const msgs = lint(
+      src("const p = tagSend(send, ['a'], ({ x = send({ type: 'boot' }) }) => {})"),
+    ).filter((d) => d.rule === 'tag-send-drift')
+    expect(msgs.some((m) => m.message.includes("dispatches `{ type: 'boot' }`"))).toBe(true)
+  })
+
   it('does NOT flag when the dispatcher is not the identifier being called', () => {
     // Only calls to the tagged dispatcher count. `send` here is a different
     // binding from the `dispatch` that was tagged, so nothing is correlated.

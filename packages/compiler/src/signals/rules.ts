@@ -1504,7 +1504,9 @@ function readVariantList(expr: ts.Expression): { value: string; node: ts.Node }[
  * so the shadowing prune has to start at the handler node itself or it misses
  * the case it exists for — and a parameter DEFAULT is ordinary code that runs
  * on every call, so a call there costs completeness and a dispatcher mention
- * there escapes.
+ * there escapes. "Default" means every position one can be written in,
+ * INCLUDING inside a binding pattern (`({ x = compute() })`), which lives under
+ * `p.name` rather than `p.initializer`.
  *
  * A nested `tagSend` is likewise not this call's business: the inner call is
  * checked on its own, so its handler is skipped rather than folded into the
@@ -1576,8 +1578,26 @@ function scanHandlerDispatches(
   //     handler had not earned.
   // Defaults are evaluated in the PARAMETER scope, where the parameter names
   // are already bound, so they take the same liveness as the body.
+  //
+  // BOTH places a default can hide are walked. `p.initializer` is only the
+  // default of a WHOLE parameter (`(e = compute())`); a default written inside
+  // the parameter's binding PATTERN — `({ x = compute() })`, `([x = compute()])`,
+  // `({ o: { x = compute() } })` — hangs off a `BindingElement` under `p.name`
+  // and is reached only by walking the pattern. That is the same defect one
+  // position further in, and it cost the same two things: a call there runs on
+  // every call (completeness) and a dispatcher mention there escapes or
+  // dispatches. Walking the pattern also makes a parameter behave exactly like
+  // the `const { … } = x` the body walk already handles.
+  //
+  // The `isIdentifier` guard is not an optimization: a plain parameter name IS
+  // the binding, so if it spells the dispatcher then `scopeIntroduces` has
+  // already made `live` false — walking it could only re-read the name in
+  // DECLARATION position, which is never a read.
   const live = !scopeIntroduces(handler, dispatcherName)
-  for (const p of handler.parameters) if (p.initializer !== undefined) walk(p.initializer, live)
+  for (const p of handler.parameters) {
+    if (!ts.isIdentifier(p.name)) walk(p.name, live)
+    if (p.initializer !== undefined) walk(p.initializer, live)
+  }
   walk(handler.body, live)
   return { dispatches, complete }
 }

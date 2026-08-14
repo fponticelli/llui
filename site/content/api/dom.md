@@ -982,10 +982,13 @@ Resolution rules — choose whichever is defined and non-empty:
   `unknown` and read through `?.`, so a nullish first argument
   returned a tagged `fn`; it now throws a `TypeError`. That is
   deliberate — the `?.` existed only to satisfy the cast the
-  `unknown` parameter forced, and tagging a handler whose
-  dispatcher is nullish publishes `__lluiVariants` advertising
-  variants the control cannot emit, which is the exact lie #118
-  exists to remove. Failing at bind time beats failing on the click.
+  `unknown` parameter forced, and it disappeared with the cast. A
+  nullish dispatcher is now a type error, so only untyped or
+  casting callers can reach the throw, and failing at BIND time is
+  earlier and closer to the mistake than failing on the first
+  click. (It is NOT an argument about the published variants: the
+  first parameter is only a tag SOURCE, and a handler need not
+  dispatch through it.)
 
 ```ts
 import { tagSend } from '@llui/dom'

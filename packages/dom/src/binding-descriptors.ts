@@ -38,6 +38,12 @@ export type VariantTaggable<M> = ((msg: M) => void) & {
   readonly __lluiVariants?: readonly string[]
 }
 
+// Formatting note for maintainers, kept OUT of the JSDoc below so it does not
+// ship onto the generated API page: several notes in that comment are prose
+// written as LIST ITEMS. That is a workaround for issue #148 —
+// `site/src/generate-api.ts` erases JSDoc paragraph breaks on the way into
+// `site/content/api/dom.md`, so a paragraph following a list gets swallowed
+// into the last bullet. When #148 lands, they can go back to plain paragraphs.
 /**
  * Library helper for `*.connect` implementations: tags an event
  * handler with the variants it dispatches at runtime, so the binding
@@ -97,10 +103,13 @@ export type VariantTaggable<M> = ((msg: M) => void) & {
  *   `unknown` and read through `?.`, so a nullish first argument
  *   returned a tagged `fn`; it now throws a `TypeError`. That is
  *   deliberate — the `?.` existed only to satisfy the cast the
- *   `unknown` parameter forced, and tagging a handler whose
- *   dispatcher is nullish publishes `__lluiVariants` advertising
- *   variants the control cannot emit, which is the exact lie #118
- *   exists to remove. Failing at bind time beats failing on the click.
+ *   `unknown` parameter forced, and it disappeared with the cast. A
+ *   nullish dispatcher is now a type error, so only untyped or
+ *   casting callers can reach the throw, and failing at BIND time is
+ *   earlier and closer to the mistake than failing on the first
+ *   click. (It is NOT an argument about the published variants: the
+ *   first parameter is only a tag SOURCE, and a handler need not
+ *   dispatch through it.)
  *
  * @example
  * ```ts
