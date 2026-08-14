@@ -3,6 +3,7 @@ import type { IdentityResolver } from '../identity.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { mintToken } from '../token.js'
+import { clientIpOf } from '../client-ip.js'
 import { LAP_VERSION, type MintResponse, type TokenRecord } from '../../protocol.js'
 
 /**
@@ -25,6 +26,16 @@ export type MintDeps = {
    * unthrottled (the core always wires one).
    */
   rateLimiter?: RateLimiter
+  /**
+   * Bucket key for an anonymous caller (one the identity resolver
+   * returns nothing for). Defaults to {@link clientIpOf} with NO proxy
+   * trust, which puts every such caller in one shared bucket — see that
+   * module for why a forwarding header is not a default identity. Hosts
+   * behind a proxy, or with the socket address in hand, pass a resolver
+   * built by `createClientIpResolver`; `createLluiAgentCore` builds one
+   * from its `trustProxy`/`clientAddress` options and wires it here.
+   */
+  clientIp?: (req: Request) => string
   lapBasePath: string
   /**
    * Permit minting a remote-control token for an UNAUTHENTICATED caller
@@ -84,7 +95,7 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   // client IP for anonymous callers) — otherwise a caller who can reach
   // the endpoint could spam token records into the store unbounded.
   if (deps.rateLimiter) {
-    const rlKey = uid ?? clientIpOf(req)
+    const rlKey = uid ?? (deps.clientIp ?? clientIpOf)(req)
     const rl = await deps.rateLimiter.check(rlKey, 'identity')
     if (!rl.allowed) {
       await deps.auditSink.write({
@@ -160,24 +171,6 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
-}
-
-/**
- * Best-effort client IP for anonymous rate-limiting. Prefers the first
- * `X-Forwarded-For` hop (the original client behind proxies), then
- * `X-Real-IP`. Falls back to a shared constant so anonymous callers
- * without any forwarding header still share ONE throttle bucket rather
- * than each getting an unlimited allowance.
- */
-function clientIpOf(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for')
-  if (xff) {
-    const first = xff.split(',')[0]?.trim()
-    if (first) return first
-  }
-  const real = req.headers.get('x-real-ip')
-  if (real) return real.trim()
-  return 'anon'
 }
 
 function toWsUrl(httpOrigin: string): string {

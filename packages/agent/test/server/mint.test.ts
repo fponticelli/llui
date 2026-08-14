@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { handleMint } from '../../src/server/http/mint.js'
 import { InMemoryTokenStore } from '../../src/server/token-store.js'
 import { tokenHashOf } from '../../src/server/token.js'
+import { createClientIpResolver } from '../../src/server/client-ip.js'
 import type { MintResponse } from '../../src/protocol.js'
 
 let store: InMemoryTokenStore
@@ -155,7 +156,7 @@ describe('handleMint', () => {
     expect(await store.findByTid('t-rl')).toBeNull()
   })
 
-  it('rate-limits anonymous callers by client IP (X-Forwarded-For)', async () => {
+  it('rate-limits anonymous callers by forwarded client IP when a proxy is trusted', async () => {
     const seen: string[] = []
     const denyLimiter = {
       check: async (key: string) => {
@@ -174,10 +175,43 @@ describe('handleMint', () => {
       rateLimiter: denyLimiter,
       allowAnonymous: true,
       lapBasePath: '/agent/lap/v1',
+      // One reverse proxy in front: it appended `10.0.0.1` (the peer it
+      // saw), so that is the hop this deployment can trust.
+      clientIp: createClientIpResolver({ trustProxy: 1 }),
       now: () => clock * 1000,
       uuid: () => 't-ip',
     })
-    expect(seen).toEqual(['203.0.113.7'])
+    expect(seen).toEqual(['10.0.0.1'])
+  })
+
+  it('does NOT key anonymous callers on a forwarding header by default', async () => {
+    // Direct-to-origin is the default deployment, and there every hop in
+    // the header is written by the caller — one per request would hand a
+    // caller an unlimited supply of throttle buckets.
+    const seen: string[] = []
+    const denyLimiter = {
+      check: async (key: string) => {
+        seen.push(key)
+        return { allowed: false as const, retryAfterMs: 1 }
+      },
+    }
+    for (const spoof of ['203.0.113.7', '203.0.113.8', '203.0.113.9']) {
+      const req = new Request('https://app.example/agent/mint', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': spoof, 'x-real-ip': spoof },
+      })
+      await handleMint(req, {
+        tokenStore: store,
+        identityResolver: async () => null,
+        auditSink: audit,
+        rateLimiter: denyLimiter,
+        allowAnonymous: true,
+        lapBasePath: '/agent/lap/v1',
+        now: () => clock * 1000,
+        uuid: () => 't-ip',
+      })
+    }
+    expect(new Set(seen).size).toBe(1)
   })
 
   it('lazily sweeps records past expiry + retention on mint', async () => {

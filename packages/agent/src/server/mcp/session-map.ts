@@ -23,8 +23,22 @@ export type McpSession = {
 export class McpSessionMap {
   private map = new Map<string, McpSession>()
 
+  /**
+   * @param onBind Called when a session BINDS a token (`connect_session`),
+   *   i.e. the moment an MCP session acquires an identity. The router
+   *   uses it to apply its per-identity session cap at exactly that
+   *   instant: the binding happens inside a tool handler, whose result
+   *   is written to the response stream after `handleRequest` has already
+   *   returned, so nothing on the request path can observe it in time.
+   *   Not fired by `setDescribe`, which refreshes a cache, not a binding.
+   */
+  constructor(
+    private readonly onBind: ((mcpSessionId: string, session: McpSession) => void) | null = null,
+  ) {}
+
   set(mcpSessionId: string, session: McpSession): void {
     this.map.set(mcpSessionId, session)
+    this.onBind?.(mcpSessionId, session)
   }
 
   get(mcpSessionId: string): McpSession | null {

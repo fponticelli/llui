@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
-import type { ClientFrame, ServerFrame, HelloFrame } from '../../../src/protocol.js'
+import type { ClientFrame, ServerFrame, HelloFrame, LogEntry } from '../../../src/protocol.js'
 
 type Fake = {
   send: ReturnType<typeof vi.fn>
@@ -334,5 +334,178 @@ describe('WsPairingRegistry', () => {
 
     expect(onLogAppend).toHaveBeenCalledOnce()
     expect(onLogAppend).toHaveBeenCalledWith('t2', entry)
+  })
+})
+
+describe('WsPairingRegistry closed-session retention (#101)', () => {
+  /** Injectable clock so the retention window is exercised without waiting. */
+  function clock(start = 1_000_000) {
+    let t = start
+    return { now: () => t, advance: (ms: number) => void (t += ms) }
+  }
+
+  const logFrame = (id: string): ClientFrame => ({
+    t: 'log-append',
+    entry: { id, at: 1, kind: 'read' },
+  })
+
+  it('reclaims a normally-closed session buffer once the retention window lapses', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    expect(reg.retainedBufferCount()).toBe(1)
+
+    // A plain WS close — tab reload, laptop lid, flaky network. No
+    // `unregister`, which is what used to be required to free this.
+    a.emitClose()
+    expect(reg.retainedBufferCount()).toBe(1)
+
+    c.advance(60_001)
+    // Any later registry event drives the sweep.
+    const b = mkFake()
+    reg.register('t2', getConn(b))
+
+    expect(reg.getRecentLog('t1', 10)).toEqual([])
+    expect(reg.retainedBufferCount()).toBe(0)
+  })
+
+  it('keeps a closed session readable INSIDE the window, so a grace reconnect keeps history', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emitClose()
+
+    c.advance(59_000)
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+    expect(reg.getRecentLog('t1', 10)).toHaveLength(1)
+  })
+
+  it('a read past the window does not resurrect a lapsed buffer', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emitClose()
+
+    c.advance(60_001)
+    expect(reg.getRecentLog('t1', 10)).toEqual([])
+    expect(reg.retainedBufferCount()).toBe(0)
+  })
+
+  it('bounds retained buffers across many sessions closed inside one window', () => {
+    // The TTL alone is not a bound: 2000 tabs closing within the same
+    // window would all still be retained. The count cap is what makes
+    // the memory claim hold regardless of the clock.
+    const c = clock()
+    const reg = new WsPairingRegistry({
+      closedRetentionMs: 60_000,
+      maxClosedSessions: 16,
+      now: c.now,
+    })
+    for (let i = 0; i < 2000; i++) {
+      const f = mkFake()
+      reg.register(`t${i}`, getConn(f))
+      f.emit(logFrame(`e${i}`))
+      f.emitClose()
+    }
+    expect(reg.retainedBufferCount()).toBeLessThanOrEqual(16)
+  })
+
+  it('reclaims confirm-outcome outer entries on the same schedule', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit({ t: 'confirm-resolved', confirmId: 'c1', outcome: 'confirmed', stateAfter: {} })
+    a.emitClose()
+    expect(reg.retainedBufferCount()).toBe(1)
+
+    c.advance(60_001)
+    const b = mkFake()
+    reg.register('t2', getConn(b))
+    expect(reg.getConfirmOutcome('t1', 'c1')).toBeNull()
+    expect(reg.retainedBufferCount()).toBe(0)
+  })
+
+  it('unregister still drops both buffers immediately', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emit({ t: 'confirm-resolved', confirmId: 'c1', outcome: 'confirmed', stateAfter: {} })
+
+    reg.unregister('t1')
+
+    expect(reg.getRecentLog('t1', 10)).toEqual([])
+    expect(reg.getConfirmOutcome('t1', 'c1')).toBeNull()
+    expect(reg.retainedBufferCount()).toBe(0)
+  })
+
+  /**
+   * The retention window is the WHOLE contract: whether a re-pair gets
+   * its history back must depend on elapsed time and nothing else. The
+   * sweep therefore runs BEFORE `register` clears the closed marker — the
+   * reverse order revives a lapsed buffer, and only when no unrelated
+   * registry traffic (a read, a close, another register) happened to
+   * sweep it first, which makes the outcome nondeterministic.
+   */
+  it('does not revive a buffer whose retention window already lapsed', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emitClose()
+
+    // Past the window, with NO intervening registry traffic to sweep it.
+    c.advance(60_001)
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+
+    expect(reg.getRecentLog('t1', 10)).toEqual([])
+  })
+
+  it('gives a lapsed re-pair the same empty history whether or not a sweep ran first', () => {
+    const build = (sweepFirst: boolean): LogEntry[] => {
+      const c = clock()
+      const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+      const a = mkFake()
+      reg.register('t1', getConn(a))
+      a.emit(logFrame('e1'))
+      a.emitClose()
+      c.advance(60_001)
+      // Unrelated registry traffic that happens to drive the sweep.
+      if (sweepFirst) reg.getRecentLog('t-other', 1)
+      const b = mkFake()
+      reg.register('t1', getConn(b))
+      return reg.getRecentLog('t1', 10)
+    }
+
+    expect(build(true)).toEqual(build(false))
+    expect(build(false)).toEqual([])
+  })
+
+  it('a re-registered session is no longer counted as closed', () => {
+    const c = clock()
+    const reg = new WsPairingRegistry({ closedRetentionMs: 60_000, now: c.now })
+    const a = mkFake()
+    reg.register('t1', getConn(a))
+    a.emit(logFrame('e1'))
+    a.emitClose()
+    const b = mkFake()
+    reg.register('t1', getConn(b))
+
+    // Back on a live socket: the retention clock no longer applies.
+    c.advance(10 * 60_000)
+    const c2 = mkFake()
+    reg.register('t2', getConn(c2))
+    expect(reg.getRecentLog('t1', 10)).toHaveLength(1)
   })
 })

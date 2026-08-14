@@ -55,7 +55,7 @@
 import type { CoreOptions, AgentCoreHandle } from '../core.js'
 import { createLluiAgentCore } from '../core.js'
 import { handleCloudflareUpgrade } from '../web/upgrade.js'
-import type { McpRouterOptions } from '../mcp/router.js'
+import type { McpRouter, McpRouterOptions } from '../mcp/router.js'
 import { createMcpRouter } from '../mcp/router.js'
 import { tokenHashOf } from '../token.js'
 
@@ -103,7 +103,14 @@ export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
  */
 export class AgentPairingDurableObject {
   readonly agent: AgentCoreHandle
-  private readonly mcpRouter: ((req: Request) => Promise<Response | null>) | null
+  /**
+   * The MCP router when `mcp` is enabled, else `null`. Public because a
+   * DO's 128 MB ceiling makes its session bound operationally
+   * interesting — `mcpRouter.liveSessionCount()` is how a deployment (or
+   * a test) reads it. This is the SAME `createMcpRouter` the Node
+   * factory builds, so both surfaces are bounded by one implementation.
+   */
+  readonly mcpRouter: McpRouter | null
 
   constructor(opts: DurableObjectOptions) {
     const { mcp, ...coreOpts } = opts
@@ -116,6 +123,13 @@ export class AgentPairingDurableObject {
           coreRouter: this.agent.router,
           tokenStore: this.agent.tokenStore,
           lapBasePath,
+          // Runs BEFORE `agent.router`, so it consults the limiter
+          // itself; sharing the core's instance keeps one set of buckets.
+          rateLimiter: this.agent.rateLimiter,
+          // …and the same bucket key, so the MCP surface and `/agent/mint`
+          // agree on which hop this deployment can trust.
+          clientIp: this.agent.clientIp,
+          auditSink: this.agent.auditSink,
           slidingTtlMs: this.agent.slidingTtlMs,
         },
         mcpOpts,

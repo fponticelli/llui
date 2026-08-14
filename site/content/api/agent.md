@@ -882,6 +882,21 @@ export type AgentCoreHandle = {
   tokenStore: TokenStore
   auditSink: AuditSink
   /**
+   * The active rate limiter. Exposed so surfaces composed AROUND the
+   * core — notably the MCP router, which runs BEFORE `router` and would
+   * otherwise never consult one — share the same buckets instead of
+   * running unthrottled or building a second limiter with its own state.
+   */
+  rateLimiter: RateLimiter
+  /**
+   * The bucket key this deployment uses for a caller with no resolved
+   * identity. Exposed for the same reason as `rateLimiter`: the MCP
+   * router runs BEFORE `router` and has to key its own limiter, and
+   * two surfaces disagreeing about which hop is trustworthy is how one
+   * of them ends up trusting an attacker-supplied header.
+   */
+  clientIp: (req: Request) => string
+  /**
    * Origin allowlist for WebSocket upgrades (CSWSH defense), mirroring
    * the `corsOrigins` core option. `undefined`/empty means same-origin
    * only. Runtime upgrade adapters (`web/upgrade.ts`, the Node
@@ -1141,6 +1156,29 @@ export type CoreOptions = {
    */
   allowAnonymous?: boolean
   /**
+   * Number of TRUSTED reverse proxies in front of this server, for
+   * deriving the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint`, the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no forwarding header is read, because
+   * on a direct-to-origin deployment those are written by the caller
+   * and one bucket per caller-chosen value is not a limit. Set it only
+   * when proxies you control are guaranteed to be in the path AND to
+   * APPEND to `X-Forwarded-For`; `X-Real-IP` is never read. See
+   * `client-ip.ts`.
+   */
+  trustProxy?: boolean | number
+  /**
+   * Peer (socket) address of the request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header: Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip`. It is
+   * also how a deployment declares a proxy header `trustProxy` will not
+   * trust on its own, e.g. `(req) => req.headers.get('x-real-ip')`.
+   * Without it (and without `trustProxy`) they share one bucket.
+   */
+  clientAddress?: ClientAddressResolver
+  /**
    * Sliding (inactivity) TTL in ms. When set, a token unused for longer
    * than this is rejected on every verify (LAP/MCP and WS upgrade) even
    * before its hard expiry. Undefined / `0` disables the check.
@@ -1175,6 +1213,18 @@ export type CoreOptions = {
    * Default: 60 seconds — long enough for laptop sleep, brief Wi-Fi
    * flicker, and a server restart; short enough that a deliberately-
    * closed tab doesn't keep the record alive forever.
+   *
+   * Doubles as the retention window for a closed session's registry
+   * buffers (`describe_recent_actions` ring + buffered confirm
+   * outcomes): they survive a drop for exactly this long, then are
+   * swept — a memory bound, since holding them leaked one buffer per
+   * browser-tab lifecycle (#101).
+   *
+   * Note what that costs: `/resume/claim` rotates the bearer but keeps
+   * the SAME tid, and the registry is keyed by tid, so a resume later
+   * than this window reattaches to a session whose recent-action history
+   * has been dropped. `describe_recent_actions` starts empty there. With
+   * `0`, it starts empty after any close at all.
    */
   pendingResumeGraceMs?: number
 }
@@ -2138,6 +2188,35 @@ export type ServerOptions = {
   /** Rate limiter. Defaults to `defaultRateLimiter` with 30/minute. */
   rateLimiter?: RateLimiter
 
+  /**
+   * Number of TRUSTED reverse proxies in front of this server, used to
+   * derive the rate-limit bucket key of a caller with no resolved
+   * identity (`/agent/mint` and the MCP `initialize` path).
+   *
+   * SECURITY: defaults to `0` — no forwarding header is read at all.
+   * Those are ordinary request headers, so on a direct-to-origin
+   * deployment the caller picks their value, and a limiter keyed on a
+   * caller-chosen string is not a limiter. Set this only when proxies
+   * you control are guaranteed to be in the path AND to APPEND to
+   * `X-Forwarded-For`; the hop `n` from the END of the chain is then
+   * the one they wrote, and a chain shorter than `n` is refused.
+   * `X-Real-IP` is never read — a proxy that writes only that one is
+   * declared through `clientAddress` instead.
+   */
+  trustProxy?: boolean | number
+
+  /**
+   * Peer (socket) address of a request, which a WHATWG `Request` does
+   * not carry. Supply it to give unidentified callers per-connection
+   * throttle buckets without trusting any header — Node from
+   * `socket.remoteAddress`, Cloudflare from `cf-connecting-ip` (the edge
+   * overwrites that one, unlike `X-Forwarded-For`). It is also how a
+   * deployment names a proxy header `trustProxy` will not trust on its
+   * own, e.g. `(req) => req.headers.get('x-real-ip')`. Without it, and
+   * without `trustProxy`, all such callers share ONE bucket.
+   */
+  clientAddress?: ClientAddressResolver
+
   /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
   lapBasePath?: string
 
@@ -2147,6 +2226,14 @@ export type ServerOptions = {
    * (`/resume/claim`) path. Wired to the core's pending-resume grace.
    * Default 60 s; `0` opts out (a WS close immediately requires a
    * rotated token to reconnect).
+   *
+   * Also the retention window for a closed session's registry buffers —
+   * its `describe_recent_actions` ring and buffered confirm outcomes
+   * survive a drop for exactly this long, then are reclaimed. That is a
+   * memory bound, not a lifetime: `/resume/claim` rotates the bearer but
+   * keeps the same `tid`, and the registry is keyed by `tid`, so a
+   * resume LATER than this window reattaches to the same session with an
+   * empty recent-action history. `0` drops the buffers on close.
    */
   pairingGraceMs?: number
 
@@ -2570,7 +2657,7 @@ single-DO bottleneck.
 ```typescript
 class AgentPairingDurableObject {
   agent: AgentCoreHandle
-  mcpRouter: ((req: Request) => Promise<Response | null>) | null
+  mcpRouter: McpRouter | null
   constructor(opts: DurableObjectOptions)
   fetch(req: Request): Promise<Response>
   resolveToken(req: Request): Promise<Response>
@@ -2597,13 +2684,32 @@ class InMemoryPairingRegistry implements PairingRegistry {
   recentLogCap
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  closedRetentionMs: number
+  maxClosedSessions: number
+  now: () => number
+  closedAt
   recentLog
   confirmOutcomes
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
+      /**
+       * How long a closed session's buffers stay readable, in ms.
+       * Default {@link CLOSED_RETENTION_MS}. `0` drops them the moment
+       * the socket closes: a reconnect then has to rotate its bearer
+       * through `/resume/claim`, and while that reattaches to the SAME
+       * tid, this registry has already let its history go.
+       */
+      closedRetentionMs?: number
+      /** Ceiling on concurrently-retained closed sessions. Default 128. */
+      maxClosedSessions?: number
+      /** Wall clock in ms; injectable for tests. */
+      now?: () => number
     } = {},
   )
+  retainedBufferCount(): number
+  dropBuffers(tid: string): void
+  sweepClosed(nowMs: number): void
   getRecentLog(tid: string, n: number): LogEntry[]
   getConfirmOutcome(tid: string, confirmId: string): ConfirmResolvedFrame | null
   recordConfirmOutcome(tid: string, frame: ConfirmResolvedFrame): void
