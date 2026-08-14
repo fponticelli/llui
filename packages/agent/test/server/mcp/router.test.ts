@@ -267,6 +267,54 @@ describe('MCP router session bounding (#102)', () => {
     expect(router.liveSessionCount()).toBeLessThanOrEqual(3)
   })
 
+  /**
+   * The dual of the test above, and the property the 30-minute
+   * provisional lifetime rests on: an authenticated session must survive
+   * anonymous churn, but a PROVISIONAL one must yield to it. The bound
+   * tests cannot see this — a bound holds just as well by refusing
+   * everyone, so making provisional sessions counted-but-never-evictable
+   * (never setting `lruId` in `reserveSlot`) keeps every one of them
+   * green while turning a full anonymous quota into a 30-minute denial
+   * window for every later caller. Measured under exactly that mutation:
+   * this test goes red at the `fresh` assertion (503), and it is the only
+   * one that does.
+   *
+   * It is also what makes the raised lifetime safe: with the LRU as the
+   * valve, a squatter holding the whole quota cannot lock out the next
+   * honest `initialize` for the 30 minutes its sessions are entitled to.
+   */
+  it('admits a fresh anonymous initialize while provisional sessions hold the whole quota', async () => {
+    const c = clock()
+    const router = mkRouter({ maxSessions: 8, maxUnauthenticatedSessions: 2 }, { now: c.now })
+
+    // Fill the anonymous quota, and stagger the two so the LRU victim is
+    // unambiguous. Both stay far inside the provisional lifetime, so
+    // nothing here is freed by a clock — only by the eviction.
+    const squatters: string[] = []
+    for (let i = 0; i < 2; i++) {
+      const held = await initialize(router)
+      expect(held.status).toBe(200)
+      squatters.push(held.sessionId as string)
+      c.advance(60_000)
+    }
+    expect(router.liveSessionCount()).toBe(2)
+
+    const fresh = await initialize(router)
+    expect(fresh.status).toBe(200)
+    expect(fresh.sessionId).toBeTruthy()
+
+    // And it is a working session, not an accounting artefact: the quota
+    // still holds, and what made room is the STALEST squatter.
+    expect(router.liveSessionCount()).toBe(2)
+    const evicted = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: { 'mcp-session-id': squatters[0] as string },
+      }),
+    )
+    expect(evicted?.status).toBe(404)
+  })
+
   it('answers 503 without allocating when every slot is held by a connected session', async () => {
     const store = new InMemoryTokenStore()
     const a = await seedToken(store, { tid: 't1' })
