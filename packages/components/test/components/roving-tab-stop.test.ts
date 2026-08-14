@@ -14,6 +14,11 @@ import { rootSignal, read } from '../_signal'
  * item at `tabindex="-1"` — the widget disappeared from the Tab order
  * entirely. `toolbar` pruned correctly; the divergence is traceable to the
  * three private copies of the same navigation code.
+ *
+ * SCOPE: the four widgets below are the ones that route through
+ * `rovingTabStop`. `menubar`, `navigation-menu` and `tags-input` still compute
+ * the stop inline with no fallback and have the same defect — outside #126's
+ * criteria, tracked in #145. Add them here when they are routed.
  */
 
 const items = ['a', 'b', 'c']

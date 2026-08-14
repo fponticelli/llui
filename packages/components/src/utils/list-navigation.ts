@@ -93,6 +93,13 @@ export function nextEnabled(
  * keyboard-unreachable. So a `preferred` candidate (the focused item, the
  * checked radio, …) is honoured only while it is still an enabled member, and
  * the first enabled item answers otherwise. Null only when nothing is enabled.
+ *
+ * SCOPE: this guarantee holds for the widgets that ROUTE THROUGH here —
+ * radio-group, toggle-group, tree-view and toolbar. It is not yet a
+ * package-wide property: `menubar`, `navigation-menu` and `tags-input` still
+ * compute `focused === x ? 0 : -1` inline, with no fallback, so shrinking the
+ * list past the focused item drops them out of the Tab order — the same WCAG
+ * failure, outside #126's named criteria. Tracked in #145.
  */
 export function rovingTabStop(
   items: readonly string[],
