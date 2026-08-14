@@ -10195,10 +10195,11 @@ const routing = connectRouter(router)
 
 ### Router
 
-| Function                       | Description                                             |
-| ------------------------------ | ------------------------------------------------------- |
-| `createRouter(routes, config)` | Create router instance (`history` or `hash` mode)       |
-| `connectRouter(router)`        | Connect router to LLui effects, returns routing helpers |
+| Function                       | Description                                                 |
+| ------------------------------ | ----------------------------------------------------------- |
+| `createRouter(routes, config)` | Create router instance (`history` or `hash` mode)           |
+| `connectRouter(router)`        | Connect router to LLui effects, returns routing helpers     |
+| `browserRouterEnv()`           | The default History/Location adapter `connectRouter` drives |
 
 ### Routing Helpers (from connectRouter)
 
@@ -10212,6 +10213,63 @@ const routing = connectRouter(router)
 | `.back()`                             | Navigate back effect                                          |
 | `.forward()`                          | Navigate forward effect                                       |
 | `.scroll()`                           | Scroll restoration effect                                     |
+
+## History / Location adapter
+
+`connectRouter` never reaches for `location`, `history` or `window` directly —
+every URL read and mutation goes through an injectable `RouterEnv`, the same
+pattern `@llui/dom` uses for `DomEnv`. The default is `browserRouterEnv()`,
+whose reads fall back to `''`/`null` where the global is absent, so building the
+connector at module scope on a server is safe.
+
+Pass your own to drive a test, an SSR host, or an embedded frame without
+touching the page's history:
+
+```ts
+import { connectRouter, browserRouterEnv } from '@llui/router/connect'
+import type { RouterEnv } from '@llui/router/connect'
+
+// The default, spelled out — identical to passing no `env` at all.
+const routing = connectRouter(router, { env: browserRouterEnv() })
+
+// Or drive an iframe's history instead of the page's. Implement the members
+// yourself; do NOT spread `browserRouterEnv()`, which would evaluate its getters
+// once and freeze `hash`/`pathname` at construction time.
+const frame = document.querySelector('iframe')!.contentWindow!
+const frameEnv: RouterEnv = {
+  get hash() {
+    return frame.location.hash
+  },
+  get pathname() {
+    return frame.location.pathname
+  },
+  get search() {
+    return frame.location.search
+  },
+  get historyState() {
+    return frame.history.state
+  },
+  setHash: (hash) => {
+    frame.location.hash = hash
+  },
+  replaceLocation: (url) => frame.location.replace(url),
+  pushState: (state, url) => frame.history.pushState(state, '', url),
+  // `url` is optional: omit it to replace the entry's STATE and leave the URL
+  // alone. Passing `''` is not the same thing — it resolves against the base
+  // and drops the fragment.
+  replaceState: (state, url) => frame.history.replaceState(state, '', url ?? null),
+  back: () => frame.history.back(),
+  forward: () => frame.history.forward(),
+  go: (delta) => frame.history.go(delta),
+  scrollTo: (x, y) => frame.scrollTo(x, y),
+  onUrlChange: (event, handler) => {
+    frame.addEventListener(event, handler)
+    return () => frame.removeEventListener(event, handler)
+  },
+}
+
+const framed = connectRouter(router, { env: frameEnv })
+```
 
 ## Guards
 
@@ -10555,7 +10613,10 @@ before the next one starts, and the new delta is measured from where the row
 VISUALLY is — its previous layout box plus whatever translation the running
 glide had already applied — so an interrupted reorder continues rather than
 jumping. `getBoundingClientRect` reports the transformed box, so the stored
-position is the rect with that translation subtracted back out.
+position is the rect with that translation subtracted back out. The run ENDS
+when the glide completes: only while one is live is the computed transform
+ours to read, and a run left registered makes every later pass measure a
+row's own author transform as if it were a glide.
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
@@ -10631,11 +10692,29 @@ function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): Tra
 
 ### `scale()`
 
+Scale an element in/out from `from` to 1, optionally fading with it.
+> **Known defect (#142).** Carries the same malformed `transition` shorthand
+> as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
+> duration, so it snaps rather than scaling and never reports a
+> `transitionend` — the phase resolves on the fallback timer instead.
+
 ```typescript
 function scale(opts: ScaleOptions = {}): TransitionOptions
 ```
 
 ### `slide()`
+
+Slide an element in/out along one axis, optionally fading with it.
+> **Known defect (#142).** The active value is built as
+> `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
+> grammar reads as TWO single-transitions — the first, `transform`, taking the
+> initial `transition-duration` of **0s**. In a real browser the transform
+> therefore SNAPS and only the opacity animates. A 0s transition also fires no
+> `transitionend`, so `transform` never leaves the set of properties the phase
+> waits on (see {@link waitForEnd}) and the phase always resolves on the
+> fallback timer rather than on a real end — 16ms late, never a hang. Do not
+> read the property filter as "every shipped preset lines up with it": `fade()`
+> does, `slide()` and `scale()` do not until #142 lands.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions
@@ -10702,10 +10781,13 @@ be detached) but stays registered, so if the element is instead reused — the
 route seam calls `enter` on the very element it just left — the enter clears
 that residue before snapshotting its own baseline.
 Interrupting a phase mid-flight resumes from the element's CURRENT rendered
-values in BOTH directions: a leave skips `leaveFrom` rather than snapping to
-fully-shown, and an enter freezes the animated properties at what the element
-is showing rather than applying `enterFrom` and re-animating from the far end.
-A phase that has already settled counts as resting, not as an interrupt.
+values in BOTH directions, by the same mechanism: the animated properties are
+frozen at what the element is showing and applied in place of the phase's
+`from` value, so neither direction re-animates from the far end. Freezing is
+what makes it work — merely SKIPPING the `from` value is not enough, because
+superseding the interrupted phase fires its rollback, which restores the
+pre-phase inline value (for a fade, `''` — fully visible). A phase that has
+already settled counts as resting, not as an interrupt.
 Completion: a phase resolves only once EVERY property it animates (the style
 keys of its `from`/`to` values) has reported a `transitionend` on the element
 itself — an unrelated `transitionend` (a hover `background-color`, or the fast
