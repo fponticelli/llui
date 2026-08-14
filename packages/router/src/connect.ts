@@ -217,6 +217,14 @@ export function connectRouter<R>(
   // traversal, and the two need opposite handling — but a push grows the stack
   // and a traversal never does, so the length answers it. Kept in sync at every
   // point we observe or change history.
+  //
+  // KNOWN GAP (#150): only points the ROUTER sees refresh this. History growth
+  // it never sees — a foreign `pushState`, or an IFRAME navigation, which does
+  // grow the joint session history — leaves it stale-LOW, and a traversal onto
+  // an unstamped entry then reads as a push and is stamped with an inverted
+  // index. The only fully sound alternative is to treat every unstamped hash
+  // entry as UNKNOWN (what history mode does), which costs the address-bar-edit
+  // case this deliberately keeps. That trade is #150, not a patch.
   let knownLength = typeof history !== 'undefined' ? history.length : 0
   function noteLength(): void {
     if (typeof history !== 'undefined') knownLength = history.length
