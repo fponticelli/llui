@@ -442,11 +442,17 @@ export function connectRouter<R>(
           if (effect.action === 'push') {
             setHash(finalPath)
           } else if (!sameHash(location.hash, finalPath)) {
+            // `location.replace` swaps the current entry and DROPS its state —
+            // INCLUDING whatever the host app or another library owns on it, so
+            // snapshot it here and put it back with the stamp. This is the one
+            // re-stamp that cannot use `stampCurrent`: by the time it runs the
+            // state it should have merged is already gone.
+            currentIndex = landedIndex()
+            const carried = stampCurrent(currentIndex)
             armEcho(finalPath)
             location.replace(finalPath)
-            // `location.replace` swaps the current entry and DROPS its state,
-            // so restamp it. The index is unchanged — nothing was pushed.
-            history.replaceState({ [STATE_KEY]: currentIndex ?? 0 }, '')
+            // The index is unchanged — nothing was pushed.
+            history.replaceState(carried, '')
             noteLength()
           }
         } else if (effect.action === 'push') {

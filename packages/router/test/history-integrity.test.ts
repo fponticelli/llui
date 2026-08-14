@@ -346,6 +346,26 @@ describe('#103 blocked back — hash mode', () => {
     dispose()
   })
 
+  it('preserves foreign history.state across a hash-mode replace', async () => {
+    // `stampCurrent`/`replaceUrl` deliberately merge into whatever the host app
+    // (or another library) already put on the entry. The hash `replace` branch
+    // re-stamps an entry too — `location.replace` drops its state — so it must
+    // put back what was there instead of writing our index alone.
+    location.hash = '#/other'
+    await settle()
+    history.replaceState({ ...(history.state as object), host: 'keep' }, '')
+
+    const routing = connectRouter(hashRouter())
+    routing.handleEffect({
+      effect: routing.replace({ page: 'admin' }),
+      send: vi.fn(),
+      signal: new AbortController().signal,
+    })
+
+    expect(location.hash).toBe('#/admin')
+    expect(history.state).toMatchObject({ host: 'keep', __llui_idx: expect.any(Number) })
+  })
+
   it('does not dispatch for the blocked pop or for its restore', async () => {
     let blockAdmin = false
     const routing = connectRouter(hashRouter(), {
