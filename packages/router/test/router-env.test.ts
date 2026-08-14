@@ -114,6 +114,21 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
 const signal = new AbortController().signal
 
 /**
+ * A stamp of the kind the router writes ITSELF: an index plus the RUN it is
+ * currently numbering in, read off the entry it last stamped.
+ *
+ * A bare `{ __llui_idx: n }` is not the same thing. An index only means a
+ * position within its run, so one fabricated outside the router's run is
+ * (correctly) refused as a delta endpoint — the guard that makes a blocked
+ * traversal across an entry the router could not number leave the URL alone
+ * instead of traversing to the wrong entry (#150 review).
+ */
+function ownStamp(state: unknown, index: number): Record<string, unknown> {
+  const run = state !== null && typeof state === 'object' ? (state as never)['__llui_run'] : null
+  return typeof run === 'string' ? { __llui_idx: index, __llui_run: run } : { __llui_idx: index }
+}
+
+/**
  * Construct against a recording env and drop the construction-time calls, so a
  * test that is about an EFFECT asserts only what the effect did.
  *
@@ -136,7 +151,11 @@ describe('connectRouter seeds the loaded entry through the env', () => {
     const rec = recordingEnv({ pathname: '/article/loaded' })
     connectRouter(makeRouter('history'), { env: rec.env })
     expect(rec.calls).toEqual(['replaceState:<no url>'])
-    expect(rec.env.historyState).toEqual({ __llui_idx: 0 })
+    // Index AND run: the seed numbers an entry whose position it does not know,
+    // so it opens a run of its own rather than joining whatever numbering an
+    // earlier lifetime of the router may have left on the entries below (#150
+    // review). Both halves travel together or a later delta is meaningless.
+    expect(rec.env.historyState).toEqual({ __llui_idx: 0, __llui_run: expect.any(String) })
     // The seed must not have moved the URL — the whole point of the omitted url.
     expect(rec.env.pathname).toBe('/article/loaded')
   })
@@ -306,7 +325,7 @@ describe('connectRouter routes history/location through an injectable env', () =
 
     // Two of our own pushes, then a pop back to the first.
     routing.handleEffect({ effect: routing.push({ page: 'home' }), send: vi.fn(), signal })
-    rec.env.pushState({ __llui_idx: 0 }, '/article/blocked')
+    rec.env.pushState(ownStamp(rec.env.historyState, 0), '/article/blocked')
     rec.calls.length = 0
     rec.handlers[0]!.handler()
 

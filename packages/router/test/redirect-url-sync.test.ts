@@ -69,6 +69,17 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   return { send, dispose: () => handle.dispose() }
 }
 
+/**
+ * A stamp of the kind the router writes ITSELF: an index plus the RUN it is
+ * currently numbering in, read off the entry it last stamped. An index is only a
+ * position WITHIN its run, so one fabricated outside the router's run is
+ * correctly refused as a delta endpoint (#150 review).
+ */
+function ownStamp(state: unknown, index: number): Record<string, unknown> {
+  const run = state !== null && typeof state === 'object' ? (state as never)['__llui_run'] : null
+  return typeof run === 'string' ? { __llui_idx: index, __llui_run: run } : { __llui_idx: index }
+}
+
 /** Drive a `navigate()` effect with its own send, so the listener's stays clean. */
 function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
   routing.handleEffect({
@@ -575,12 +586,51 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
       send: vi.fn(),
       signal: new AbortController().signal,
     })
-    rec.land({ __llui_idx: 0 }, '/admin')
+    // Stamped in the run the router is numbering in — the entry below one of
+    // its own pushes. An index alone is not a position: it only means something
+    // against another index from the SAME run, so a bare `{ __llui_idx: 0 }`
+    // here is an entry the router could not have created and the rewind is
+    // (correctly) refused (#150 review).
+    rec.land(ownStamp(rec.env.historyState, 0), '/admin')
     rec.calls.length = 0
     rec.fire()
 
     expect(rec.calls.filter((c) => c.startsWith('replaceState'))).toEqual([])
     expect(rec.calls.some((c) => c.startsWith('go:'))).toBe(true)
+    expect(rec.env.pathname).toBe('/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+
+  it('rewinds NOTHING onto an entry numbered outside its run (#150)', async () => {
+    // The inverse of the test above, and why the construction-time seed opens a
+    // RUN of its own rather than joining whatever numbering is already on the
+    // stack. `connectRouter` here loads on an unstamped entry and numbers it `0`
+    // — a number with no relation to an index some earlier lifetime of the
+    // router (or an older build, which stamped an index and no run) may have
+    // left on the entries BELOW it.
+    //
+    // Subtracting the two anyway is #103's failure from a guess: `1 - 0 = 1`
+    // here, against a physical distance nobody knows.
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    routing.handleEffect({
+      effect: routing.push({ page: 'other' }),
+      send: vi.fn(),
+      signal: new AbortController().signal,
+    })
+    // A bare index, with no run: not an entry this router numbered.
+    rec.land({ __llui_idx: 0 }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual([])
     expect(rec.env.pathname).toBe('/admin')
     expect(send).not.toHaveBeenCalled()
 

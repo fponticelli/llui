@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
 import type { ConnectOptions } from '../src/connect'
@@ -70,6 +70,22 @@ function stampedIndex(state: unknown): unknown {
 const path = () => location.pathname
 const hash = () => location.hash
 
+/**
+ * Every listener this file mounts, torn down after the test that mounted it
+ * WHETHER OR NOT it reached its own `dispose()`.
+ *
+ * A failing assertion throws before the trailing `dispose()`, leaking a mounted
+ * `hashchange` listener into every later test in the file — which then stamps
+ * the `location.hash` writes those tests use to build their fixtures, and they
+ * fail at their SETUP instead of on their own merits. That turns a mutation
+ * run's output into noise: the count is still "failures", but not of the thing
+ * the mutation broke (#150 review, finding N1).
+ */
+const mountedListeners: Array<() => void> = []
+afterEach(() => {
+  while (mountedListeners.length > 0) mountedListeners.pop()!()
+})
+
 function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   const send = vi.fn()
   const container = document.createElement('div')
@@ -80,7 +96,16 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
     view: () => [...routing.listener(send), text('')],
   })
   const handle = mountApp(container, App)
-  return { send, dispose: () => handle.dispose() }
+  let disposed = false
+  // Idempotent, so the explicit `dispose()` each test ends with stays the
+  // documentation of its own lifecycle and the sweep above is pure insurance.
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    handle.dispose()
+  }
+  mountedListeners.push(dispose)
+  return { send, dispose }
 }
 
 function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
@@ -546,6 +571,142 @@ describe('#150 history that grew behind the router — hash mode', () => {
     expect(send).not.toHaveBeenCalled()
 
     goSpy.mockRestore()
+    dispose()
+  })
+})
+
+describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
+  // Browsers deliver traversals of any magnitude: a back-button long-press menu,
+  // a `history.go(-n)`, a gesture. `restoreBlocked` computes `delta =
+  // currentIndex - landed` and hands it to `history.go`, so the index space has
+  // to measure PHYSICAL distance for every magnitude, not just ±1.
+  //
+  // An entry the router cannot number breaks that. `#150` leaves a hand-edited
+  // hash entry unstamped (correct — its position is unknowable), and the next
+  // push then numbered from a `?? 0` floor, so `root(0) | hand-edited | admin(1)`
+  // read as an index distance of 1 across a PHYSICAL distance of 2: a blocked
+  // `history.go(-2)` computed `go(1)` and deposited the user on the hand-edited
+  // route, dispatching a navigate they never asked for (#150 review, finding B1).
+  //
+  // The fix is not to number that entry — nothing knows where it sits — but to
+  // stop pretending the numbering is continuous across it: each stamp carries the
+  // RUN it was numbered in, and a delta is computed only within one run.
+
+  beforeEach(async () => {
+    location.hash = ''
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('refuses a blocked go(-2) that spans a hand-edited entry, rather than landing on it', async () => {
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    // `#/` (seeded) | `#/other` (HAND-EDITED, unstamped) | `#/admin` (pushed).
+    location.hash = '#/other'
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+    expect(stampedIndex(history.state)).toBeUndefined()
+
+    navigate(routing, { page: 'admin' })
+    await settle()
+    expect(hash()).toBe('#/admin')
+    send.mockClear()
+
+    // The spy calls through — the traversal below has to actually happen — so it
+    // counts exactly the router's OWN `go`, of which there must be none.
+    const goSpy = vi.spyOn(history, 'go')
+    blockHome = true
+    history.go(-2) // straight past the hand-edited entry, onto the seeded root
+    expect(await waitForUrl(hash, '')).toBe('')
+
+    // The block is honoured and NOTHING is traversed: the two positions are
+    // known but belong to different runs, so their difference is not a distance.
+    // Before the fix this issued `go(1)` and landed on `#/other` — a route the
+    // user never asked for — and, because the armed echo was for `#/admin`, the
+    // mismatch let the landing DISPATCH as a genuine navigation.
+    expect(await waitForUrl(hash, '#/other')).toBe('')
+    expect(goSpy).toHaveBeenCalledTimes(1) // ours, above — none of the router's
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
+    dispose()
+  })
+
+  it('does not conflate two runs opened by two separate hand edits', async () => {
+    // Why the run id is MINTED rather than being a constant "everything after a
+    // gap" marker. Each hand edit opens a run, and both runs number from their
+    // own origin — so a single shared marker would make `admin(0)` and the
+    // seventh entry's `1` look like neighbours across FOUR physical entries.
+    //
+    // `#/`(0,A) | hand | `#/admin`(0,B) | `#/article/x`(1,B) | hand |
+    // `#/other`(0,C) | `#/`(1,C)
+    let blockAdmin = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    location.hash = '#/other'
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'article', slug: 'x' })
+    await settle()
+
+    location.hash = '#/article/y'
+    expect(await waitForUrl(hash, '#/article/y')).toBe('#/article/y')
+    await settle()
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'home' })
+    await settle()
+    expect(hash()).toBe('#/')
+    send.mockClear()
+
+    blockAdmin = true
+    history.go(-4) // → `#/admin`, four entries down and in ANOTHER run — BLOCKED
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+
+    // Two known indices, `1` and `0`, whose difference is not a distance: the
+    // correct rewind is four entries, and a shared run id would have computed
+    // one and deposited the user on `#/article/x`.
+    expect(await waitForUrl(hash, '#/article/x')).toBe('#/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+
+  it('still rewinds a blocked go(-2) when every entry between is its own', async () => {
+    // The other half: refusing across a run boundary must not become refusing
+    // always. A multi-entry traversal inside ONE run is exactly as computable as
+    // a single-entry one, and is undone the same way.
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'admin' })
+    await settle()
+    expect(hash()).toBe('#/admin')
+    send.mockClear()
+
+    blockHome = true
+    history.go(-2) // → the seeded root, i.e. `home` — BLOCKED
+    expect(await waitForUrl(hash, '')).toBe('')
+    // Same run on both sides, so the delta IS the distance: back where we were,
+    // two entries forward, with nothing dispatched.
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    // …and the stack is intact: `#/other` is still between them.
+    history.back()
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+
     dispose()
   })
 })

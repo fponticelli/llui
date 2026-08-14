@@ -10429,10 +10429,12 @@ The same contract holds in **both** `history` and `hash` mode:
   still written, but no index is invented for it.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
-  **when the router knows where the popped entry sits**. It knows that for every
-  entry it created itself. It does **not** know it for an entry it never stamped,
-  because no browser API reports a position. Blocking a navigation onto such an
-  entry is **guard-honouring but not undoable**: nothing is dispatched,
+  **when the router knows the distance back to the entry it was on**. It knows
+  that between two entries it created in one numbering run. It does **not** know
+  it for an entry it never stamped, nor across one, because no browser API
+  reports a position (see _Which entries the router can place_). Blocking a
+  navigation onto or across such an entry is **guard-honouring but not
+  undoable**: nothing is dispatched,
   `state.route` keeps the route you never left, and the URL is left showing the
   blocked one until the next navigation — a visible disagreement, deliberately
   preferred over a guessed `history.go(delta)`, which traverses to the wrong
@@ -10445,8 +10447,9 @@ handler — those are the browser's to handle.
 ### Which entries the router can place
 
 Every entry `connectRouter` creates is stamped with its position in
-`history.state` (under `__llui_idx`, merged into whatever your app already keeps
-there), starting with the entry the app loaded on. Those are the entries a
+`history.state` — an index under `__llui_idx` plus the numbering **run** it
+belongs to under `__llui_run`, both merged into whatever your app already keeps
+there — starting with the entry the app loaded on. Those are the entries a
 blocked navigation can be undone against.
 
 An entry it did **not** create is treated as **unknown**, in both modes, and no
@@ -10457,10 +10460,27 @@ position is invented for one. That covers:
 - in **hash mode**, an entry created by the user **editing the fragment in the
   address bar**.
 
+Such an entry also **ends a run**. Indices count physical entries, so they only
+subtract to a distance while every entry between two of them was numbered in one
+pass; the entries the router numbers after an unknown one start a new run and
+count from their own origin. A delta is computed only within a single run.
+
 The address-bar edit itself works normally — guards run, the message is
-dispatched, `state.route` follows. What is given up is only the _undo_: a
-guard-blocked back **off** a hand-edited entry is not reversed, so the URL is
-left showing the route the guard refused.
+dispatched, `state.route` follows. What is given up is the _undo_, in two
+shapes — both of which leave the stack exactly as it was:
+
+- a guard-blocked traversal **onto** an entry the router never stamped;
+- a guard-blocked traversal **across** one — a `history.go(-3)` from a
+  back-button long-press menu, say, that spans a hand-edited entry.
+
+In both, the URL is left showing the route the guard refused until the next
+navigation, nothing is dispatched, and `state.route` keeps the route you never
+left.
+
+There is one gap no `history.state` scheme can close: an **iframe navigation**
+grows the _joint_ session history without moving the top-level document, so the
+entry it adds is invisible to the stamps above and below it, and even a
+single-step delta can under-count. That needs the Navigation API (below).
 
 That is an accepted trade, decided in [#150]. The alternative was to classify an
 unstamped `hashchange` by watching `history.length` grow — a push grows the
@@ -10472,12 +10492,14 @@ listens to. The cached length then reads a traversal as a push and stamps an
 **inverted** index — the entry below numbered above the one it sits under — and
 the next blocked back computes its delta from that and traverses **two** entries
 backwards, landing somewhere the user never asked for. Refusing to guess costs
-one undo; guessing corrupts the stack.
+an undo; guessing corrupts the stack.
 
 (The `popstate`-vs-`hashchange` distinction is not an alternative: assigning
-`location.hash` fires both events, in the same order as `history.back()`.
-`navigation.currentEntry.index` from the Navigation API is an authoritative
-position and is the real fix once it can be relied on.)
+`location.hash` fires both events, in the same order as `history.back()` —
+measured in Chromium 143, with the `location.hash` half reproduced in this
+package's jsdom tests. `navigation.currentEntry.index` from the Navigation API
+is an authoritative position, immune to foreign `pushState` and iframes alike,
+and is the real fix once it can be relied on.)
 
 [#150]: https://github.com/fponticelli/llui/issues/150
 
