@@ -70,9 +70,21 @@ function endedProperty(e: Event): string | undefined {
  *    ignoring what may be the genuine completion signal risks a stall. Every
  *    real browser populates the field, so this only affects synthetic events.
  *
+ * A `transitioncancel` consumes its property exactly as an end does: the browser
+ * giving up IS this phase finishing, and without it a cancelled leave holds the
+ * node in the DOM for its whole declared duration instead of resolving when the
+ * animation stopped. It counts only for a transition this wait saw START,
+ * though — superseding a mid-flight phase cancels ITS transitions, and those
+ * cancel events are dispatched to the listener the NEXT phase attaches
+ * microseconds later, in the same task. Consuming one of those would resolve a
+ * phase that has not run for a single frame, and the runtime detaches a leaving
+ * node on exactly this promise. (A cancel carrying no `propertyName` cannot be
+ * attributed either way and takes the property-less path above.)
+ *
  * `animationend` stays target-filtered only. It reports an `animationName` (a
  * `@keyframes` identifier), which carries no relation to a CSS property, so
- * there is nothing here to match it against.
+ * there is nothing here to match it against — and for the same reason there is
+ * no safe `animationcancel` handling to mirror the transition side with.
  */
 export function waitForEnd(
   el: Element,
@@ -86,10 +98,15 @@ export function waitForEnd(
     // here rather than trusted from the caller: a camelCase name would match no
     // event and silently downgrade every wait to its fallback timer.
     const pending = new Set((properties ?? []).map(camelToKebab))
+    // The properties whose transition THIS wait saw start, so a `transitioncancel`
+    // can be told from the cancel of the phase this one superseded.
+    const started = new Set<string>()
     const finish = (): void => {
       if (done) return
       done = true
+      el.removeEventListener('transitionstart', onTransitionStart)
       el.removeEventListener('transitionend', onTransitionEnd)
+      el.removeEventListener('transitioncancel', onTransitionCancel)
       el.removeEventListener('animationend', onAnimationEnd)
       clearTimeout(timer)
       resolve()
@@ -106,10 +123,25 @@ export function waitForEnd(
       if (!pending.delete(property)) return
       if (pending.size === 0) finish()
     }
+    const onTransitionStart = (e: Event): void => {
+      if (e.target !== el) return
+      const property = endedProperty(e)
+      if (property !== undefined && property !== '') started.add(property)
+    }
+    const onTransitionCancel = (e: Event): void => {
+      if (e.target !== el) return
+      const property = endedProperty(e)
+      // Attributable to a transition that was already running when this wait
+      // began — not ours to consume.
+      if (property !== undefined && property !== '' && !started.has(property)) return
+      onTransitionEnd(e)
+    }
     const onAnimationEnd = (e: Event): void => {
       if (e.target === el) finish()
     }
+    el.addEventListener('transitionstart', onTransitionStart)
     el.addEventListener('transitionend', onTransitionEnd)
+    el.addEventListener('transitioncancel', onTransitionCancel)
     el.addEventListener('animationend', onAnimationEnd)
     const timer = setTimeout(finish, durationMs + TIMING_BUFFER_MS)
   })

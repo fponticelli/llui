@@ -124,6 +124,83 @@ describe('waitForEnd() property discrimination', () => {
     expect(resolved).toBe(false)
   })
 
+  it('consumes a transitioncancel for a property OUR transition started', async () => {
+    // The browser giving up on a transition is a completion signal too: without
+    // it a cancelled leave holds the node in the DOM for the whole declared
+    // duration instead of resolving when the animation stopped.
+    const el = makeEl()
+    let resolved = false
+    void waitForEnd(el, 100_000, ['opacity', 'transform']).then(() => {
+      resolved = true
+    })
+    el.dispatchEvent(new TransitionEvent('transitionstart', { propertyName: 'opacity' }))
+    el.dispatchEvent(new TransitionEvent('transitionstart', { propertyName: 'transform' }))
+
+    // An unrelated property being cancelled says nothing about this phase.
+    el.dispatchEvent(new TransitionEvent('transitioncancel', { propertyName: 'background-color' }))
+    await drain()
+    expect(resolved).toBe(false)
+
+    // A cancel counts exactly as that property's end does — one of two here.
+    el.dispatchEvent(new TransitionEvent('transitioncancel', { propertyName: 'opacity' }))
+    await drain()
+    expect(resolved).toBe(false)
+
+    el.dispatchEvent(endOf('transform'))
+    await drain()
+    expect(resolved).toBe(true)
+  })
+
+  it('ignores the cancel of a transition that was already running when the wait began', async () => {
+    // DOCUMENTED DECISION — superseding a mid-flight phase CANCELS its
+    // transitions, and those cancel events reach the listener the next phase
+    // attaches microseconds later, in the same task. Consuming one would resolve
+    // a phase that has not run for a single frame, and the runtime detaches a
+    // leaving node on exactly this promise. So a cancel is only terminal for a
+    // transition this wait saw START.
+    const el = makeEl()
+    let resolved = false
+    void waitForEnd(el, 100_000, ['opacity']).then(() => {
+      resolved = true
+    })
+    el.dispatchEvent(new TransitionEvent('transitioncancel', { propertyName: 'opacity' }))
+    await drain()
+    expect(resolved).toBe(false)
+
+    // Once ours has started, its cancel resolves the wait.
+    el.dispatchEvent(new TransitionEvent('transitionstart', { propertyName: 'opacity' }))
+    el.dispatchEvent(new TransitionEvent('transitioncancel', { propertyName: 'opacity' }))
+    await drain()
+    expect(resolved).toBe(true)
+  })
+
+  it('ignores a transitioncancel bubbled from a descendant', async () => {
+    const el = makeEl()
+    const child = document.createElement('span')
+    el.appendChild(child)
+    let resolved = false
+    void waitForEnd(el, 100_000, ['opacity']).then(() => {
+      resolved = true
+    })
+    el.dispatchEvent(new TransitionEvent('transitionstart', { propertyName: 'opacity' }))
+    child.dispatchEvent(
+      new TransitionEvent('transitioncancel', { propertyName: 'opacity', bubbles: true }),
+    )
+    await drain()
+    expect(resolved).toBe(false)
+  })
+
+  it('resolves a property-less transitioncancel, as it does a property-less end', async () => {
+    const el = makeEl()
+    let resolved = false
+    void waitForEnd(el, 100_000, ['opacity']).then(() => {
+      resolved = true
+    })
+    el.dispatchEvent(new Event('transitioncancel'))
+    await drain()
+    expect(resolved).toBe(true)
+  })
+
   it('still resolves on the fallback timer when the property never ends', async () => {
     const el = makeEl()
     let resolved = false
