@@ -94,12 +94,16 @@ export function nextEnabled(
  * checked radio, …) is honoured only while it is still an enabled member, and
  * the first enabled item answers otherwise. Null only when nothing is enabled.
  *
- * SCOPE: this guarantee holds for the widgets that ROUTE THROUGH here —
- * radio-group, toggle-group, tree-view and toolbar. It is not yet a
- * package-wide property: `menubar`, `navigation-menu` and `tags-input` still
- * compute `focused === x ? 0 : -1` inline, with no fallback, so shrinking the
- * list past the focused item drops them out of the Tab order — the same WCAG
- * failure, outside #126's named criteria. Tracked in #145.
+ * Every roving-tabindex widget in the package routes through here (#145 closed
+ * the last three: menubar, navigation-menu and tags-input). Keep it that way —
+ * an inline `focused === x ? 0 : -1` has no fallback, and since nothing prunes
+ * `focused` against the current list, removing or disabling the focused item
+ * leaves EVERY item at -1 and the widget disappears from the Tab order.
+ *
+ * `tags-input` is index-keyed and passes `String(i)` as the item identity (its
+ * `data-index`, and the only identity that survives duplicate tag values);
+ * `navigation-menu` routes through it only where the consumer maintains the
+ * membership list it deliberately does not index itself.
  */
 export function rovingTabStop(
   items: readonly string[],

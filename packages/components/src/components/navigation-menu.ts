@@ -3,6 +3,11 @@ import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { flipArrow } from '../utils/direction.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
+import { rovingTabStop } from '../utils/list-navigation.js'
+import { deriveOnceN } from '../utils/derive.js'
+
+/** No navigation-menu item is individually disabled; the whole nav is or isn't. */
+const NO_DISABLED: readonly string[] = []
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -31,13 +36,19 @@ export interface NavMenuState {
   open: string[]
   focused: string | null
   /**
-   * Ids of the top-level items in document order, when the consumer renders a
-   * DYNAMIC list. Purely the roving-tabindex fallback: while nothing is focused
-   * the first entry owns the nav's single tab stop. Leave it empty for a static
-   * menu — `connect` then falls back to the first id handed to `item()`, which
-   * is document order for any depth-first view. Same escape hatch as
-   * `radio-group`/`tabs`, which keep their `items` list in state for exactly
-   * this reason.
+   * Ids of the items ELIGIBLE for the roving tab stop, in document order, when
+   * the consumer renders a DYNAMIC list — the top-level items in the usual
+   * case; add deeper ids if a submenu item should be able to own the stop.
+   *
+   * It is both the fallback and the membership list: while nothing is focused
+   * the first entry owns the nav's single tab stop, and a `focused` id that is
+   * not one of these entries has been removed, so the stop falls back rather
+   * than vanishing (#145).
+   *
+   * Leave it empty for a static menu — `connect` then trusts `focused` and
+   * falls back to the first id handed to `item()`, which is document order for
+   * any depth-first view. Same escape hatch as `radio-group`/`tabs`, which keep
+   * their `items` list in state for exactly this reason.
    */
   items: string[]
   disabled: boolean
@@ -58,13 +69,14 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
-  /** @intent("Replace the top-level item order used for the roving tab stop") */
+  /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 
 export interface NavMenuInit {
   open?: string[]
   focused?: string | null
-  /** Top-level item ids in document order — see `NavMenuState.items`. */
+  /** Ids eligible for the roving tab stop, in document order — see
+   *  `NavMenuState.items`. */
   items?: string[]
   disabled?: boolean
   dir?: 'ltr' | 'rtl'
@@ -240,12 +252,31 @@ export function connect(
   // leaves the latch pointing at an id that no longer exists and the nav loses
   // its tab stop entirely. `state.items` therefore WINS wherever it is
   // populated; the latch only answers when it is empty.
+  //
+  // Where `state.items` IS populated it is also the MEMBERSHIP list, so the
+  // stop goes through the shared `rovingTabStop` (#145): `focused` is honoured
+  // only while it still names one of the current items, and the first item
+  // answers otherwise. Without that pruning, removing the focused item — or
+  // `setItems` dropping it — left every trigger at -1 all over again, since
+  // nothing ever clears `focused`.
+  //
+  // With an EMPTY `items` the machine knows no membership at all (it
+  // deliberately does not index the tree), so `focused` is taken on trust and
+  // the latch answers only while nothing is focused. That is the case a static
+  // menu is in, and it is why the routing is conditional: pruning `focused`
+  // against a list of one latched id would strip the stop from every trigger
+  // but the first.
   let firstItemId: string | null = null
-  const tabStop = (id: string) => (st: NavMenuState) => {
-    if (st.focused !== null) return st.focused === id ? 0 : -1
-    const first = st.items.length > 0 ? st.items[0] : firstItemId
-    return first === id ? 0 : -1
-  }
+  const stopId = deriveOnceN(
+    (items: string[], focused: string | null, latched: string | null): string | null =>
+      items.length > 0
+        ? rovingTabStop(items, NO_DISABLED, focused)
+        : focused !== null
+          ? focused
+          : latched,
+  )
+  const tabStop = (id: string) => (st: NavMenuState) =>
+    stopId(st.items, st.focused, firstItemId) === id ? 0 : -1
 
   return {
     root: {

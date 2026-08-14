@@ -2,7 +2,12 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { rovingTabStop } from '../utils/list-navigation.js'
+import { deriveOnce, deriveOnceN } from '../utils/derive.js'
 import { LocaleContext } from '../locale.js'
+
+/** No individual chip is disabled; the whole widget is or isn't. */
+const NO_DISABLED: readonly string[] = []
 
 /**
  * Tags input — text input that creates chips (tags) on commit keys
@@ -215,6 +220,38 @@ export function connect(
   const tagRoot = (origin: Element): ParentNode | null =>
     origin.closest('[data-scope="tags-input"][data-part="root"]')
 
+  /**
+   * Which chip carries the tag list's single tab stop, or null when the stop is
+   * not in the list at all.
+   *
+   * `focusedIndex` is an INDEX into `value` and nothing prunes it: `setValue`
+   * replaces the list wholesale and leaves it untouched, so a shorter list left
+   * it dangling and the inline `s.focusedIndex === index ? 0 : -1` this
+   * replaces put EVERY chip at -1 — the chips became unreachable by Tab and a
+   * keyboard user could no longer reach one to delete it (#145). The text input
+   * is a plain `<input>` with no tabindex override, so the component as a whole
+   * stayed reachable; the tag list did not. `rovingTabStop` supplies the same
+   * structural fallback the four `#126` widgets get.
+   *
+   * Identity is the INDEX, not the value: `unique: false` allows two chips with
+   * the same text, and resolving by value would then hand BOTH of them the
+   * stop. The index string is already this widget's DOM identity — `data-index`
+   * is what `focusRovingItem` looks a chip up by.
+   *
+   * A NULL `focusedIndex` stays null: it is the state `removeTag`/`clearAll`
+   * deliberately return to, meaning "the roving focus is on the text input".
+   * Seating the stop on a chip there would put a chip ahead of the input in the
+   * Tab order, which is a different widget.
+   */
+  const indexKeys = deriveOnce((values: readonly string[]): string[] =>
+    values.map((_, i) => String(i)),
+  )
+  const stopIndex = deriveOnceN((values: string[], focusedIndex: number | null): number | null => {
+    if (focusedIndex === null) return null
+    const stop = rovingTabStop(indexKeys(values), NO_DISABLED, String(focusedIndex))
+    return stop === null ? null : Number(stop)
+  })
+
   return {
     root: {
       role: 'group',
@@ -264,7 +301,7 @@ export function connect(
     },
     tag: (value: string, index: number): TagItemParts => ({
       root: {
-        tabindex: state.map((s) => (s.focusedIndex === index ? 0 : -1)),
+        tabindex: state.map((s) => (stopIndex(s.value, s.focusedIndex) === index ? 0 : -1)),
         'data-scope': 'tags-input',
         'data-part': 'tag',
         'data-value': value,
