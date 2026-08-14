@@ -809,6 +809,37 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     }
   }
 
+  /**
+   * Hand a request to a LIVE session's transport, recording termination
+   * intent for the duration when it is a DELETE.
+   *
+   * There is more than ONE door to this call — the ordinary
+   * live-session branch and the `resurrecting` waiter branch, which is
+   * reached when a DELETE overlaps a resurrect of the same id (a
+   * standalone GET stream beside POSTs makes overlapping requests on one
+   * id ordinary in MCP). The marking therefore lives HERE, with the
+   * dispatch, rather than at each door: a door that forgot it let the
+   * SDK's teardown reach `dropSession` with no intent recorded, which
+   * re-tombstoned an id the client had just terminated and let a third
+   * party replay it back to life.
+   *
+   * An explicit termination has to be DURABLE. The SDK's own
+   * `terminateSession()` clears its `_sessionId` and never sends it
+   * again, so a tombstone here could only ever be redeemed by someone
+   * ELSE — and would contradict the client's request either way. The
+   * flag is dropped in a `finally` because the teardown it marks happens
+   * INSIDE `handleRequest`.
+   */
+  const dispatch = async (id: string, entry: McpSessionEntry, req: Request): Promise<Response> => {
+    if (req.method !== 'DELETE') return entry.transport.handleRequest(req)
+    terminating.add(id)
+    try {
+      return await entry.transport.handleRequest(req)
+    } finally {
+      terminating.delete(id)
+    }
+  }
+
   const route = async (req: Request): Promise<Response | null> => {
     const url = new URL(req.url)
     if (!url.pathname.startsWith(mcpPath)) return null
@@ -824,21 +855,7 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       if (entry) {
         // Traffic on a session is what keeps it out of the sweep.
         entry.lastSeenAt = nowMs
-        if (req.method === 'DELETE') {
-          // An explicit termination has to be DURABLE. The SDK's own
-          // `terminateSession()` clears its `_sessionId` and never sends
-          // it again, so a tombstone here would only ever be replayable
-          // by someone ELSE — and would contradict the client's request.
-          // The flag is dropped in a `finally` because the teardown it
-          // marks happens INSIDE `handleRequest`.
-          terminating.add(sessionHeader)
-          try {
-            return await entry.transport.handleRequest(req)
-          } finally {
-            terminating.delete(sessionHeader)
-          }
-        }
-        return entry.transport.handleRequest(req)
+        return dispatch(sessionHeader, entry, req)
       }
 
       // Someone is already rebuilding this id: wait for them rather
@@ -849,7 +866,7 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
         const revived = sessions.get(sessionHeader)
         if (!revived) return jsonResponse({ error: 'session not found' }, 404)
         revived.lastSeenAt = now()
-        return revived.transport.handleRequest(req)
+        return dispatch(sessionHeader, revived, req)
       }
 
       const tomb = resurrectable(sessionHeader, nowMs)

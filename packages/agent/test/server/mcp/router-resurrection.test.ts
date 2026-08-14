@@ -583,6 +583,53 @@ describe('MCP session resurrection — tombstone bounds (#149)', () => {
     expect(router.hasLiveSession(sessionId as string)).toBe(false)
     expect(router.liveSessionCount()).toBe(0)
   })
+
+  /**
+   * …including when the DELETE arrives while a resurrect of the same id
+   * is still in flight.
+   *
+   * That request does not take the live-session branch — there is no
+   * session yet — it takes the `resurrecting` WAITER branch, which is a
+   * SECOND door to the same transport. Marking the termination at only
+   * the first door left the SDK's teardown reaching `dropSession` with
+   * no intent recorded, so the id was re-tombstoned and came back to
+   * life on the next replay. Overlapping requests on one id are ordinary
+   * in MCP (a standalone GET stream beside POSTs), so "a DELETE is
+   * durable" has to hold here or it is not a property, just a common
+   * case.
+   *
+   * The race is deterministic, not timing-dependent: `startResurrect`
+   * installs its gate SYNCHRONOUSLY, before the resurrect's first
+   * `await`, so a request issued in the same tick as an unawaited replay
+   * is guaranteed to find the gate and take the waiter path.
+   */
+  it('forgets a terminated id when the DELETE lands on the resurrect waiter path', async () => {
+    const router = mkRouter({ maxSessions: 4, maxUnauthenticatedSessions: 1 })
+    const first = await initialize(router)
+    await initialize(router) // evicts `first`, leaving a tombstone
+
+    const id = first.sessionId as string
+    // Not awaited: the resurrect is now in flight with its gate set.
+    const replay = router(
+      new Request('http://local/agent/mcp', { method: 'POST', headers: { 'mcp-session-id': id } }),
+    )
+    // Same tick — this one queues behind the resurrect.
+    const terminate = router(
+      new Request('http://local/agent/mcp', {
+        method: 'DELETE',
+        headers: { 'mcp-session-id': id },
+      }),
+    )
+    const [replayed, deleted] = await Promise.all([replay, terminate])
+
+    expect(replayed?.status).not.toBe(404)
+    expect(deleted?.status).toBe(200)
+    expect(router.hasLiveSession(id)).toBe(false)
+
+    // The termination must be as durable as the uncontended one.
+    expect(await ping(router, id)).toBe(404)
+    expect(router.hasLiveSession(id)).toBe(false)
+  })
 })
 
 describe('MCP session resurrection — concurrency (#149)', () => {
