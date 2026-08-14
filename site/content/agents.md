@@ -218,13 +218,14 @@ where this protocol authenticates, and a client has to get far enough to
 call it. Each `initialize` allocates a transport plus a fully-registered
 MCP server, so that open path is bounded on several axes:
 
-| Option                         | Default   | What it bounds                                                                                                                                                                                      |
-| ------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                       |
-| `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session. |
-| `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.  |
-| `unauthenticatedMaxLifetimeMs` | `1800000` | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. The only clock such a session runs on — nothing refreshes it, so traffic cannot hold a quota slot open.            |
-| `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                              |
+| Option                         | Default   | What it bounds                                                                                                                                                                                               |
+| ------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                                |
+| `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session.          |
+| `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.           |
+| `unauthenticatedMaxLifetimeMs` | `1800000` | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. The only clock such a session runs on — nothing refreshes it, so traffic cannot hold a quota slot open.                     |
+| `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                                       |
+| `maxResurrectableSessions`     | `256`     | How many dropped session IDs stay **resurrectable** (see below). A bounded FIFO on the same clock as `unauthenticatedMaxLifetimeMs`; past the bound the oldest IDs are forgotten. Default `maxSessions * 4`. |
 
 The quota counts sessions that are still being built, not just
 registered ones — a burst of concurrent `initialize`s is exactly the case
@@ -258,11 +259,47 @@ not re-initialize when a session goes missing, so a reclaim mid-pairing
 surfaces as an error rather than a reconnect. What bounds the memory is
 `maxUnauthenticatedSessions`, so an idle provisional session is only
 evicted when that quota is actually contended, least-recently-seen
-first. One consequence to know: a burst of anonymous `initialize`s while
-a person is mid-pairing can evict that pairing's session, because an
-idle session is by definition the least recently seen. It is the LRU
-quota working as designed, and the cost of leaving the endpoint
-reachable without a bearer.
+first.
+
+That still puts a mid-pairing session first in line, and it is worth
+being precise about why. The LRU key is `lastSeenAt`, and **any request
+refreshes it** — so a caller holding sessions of its own can keep all of
+them newer than yours simply by pinging them. A pairing session is idle
+by construction (a person is reading the panel), which makes it not
+merely a likely eviction victim but a **selectable** one: whoever fills
+the anonymous quota decides who gets evicted, and it is whoever is
+mid-pairing.
+
+**Being evicted is no longer fatal to the pairing.** The MCP SDK cannot
+recover from a session going missing — it has no re-initialize path on a
+`404`, and clears its session id only on an explicit
+`terminateSession()` — so instead of the eviction being prevented, it is
+made survivable: a session ID this server **issued** and has since
+dropped is remembered, and the next request carrying it **rebuilds** the
+session under the same ID and replays the request. The client never
+learns anything happened, and the paste succeeds.
+
+Three things about that are load-bearing:
+
+- Only IDs the server issued resurrect. The list is a bounded FIFO
+  (`maxResurrectableSessions`) on the same clock as
+  `unauthenticatedMaxLifetimeMs`, so an arbitrary ID is still a plain
+  `404` and the free, unthrottled with-session-ID path does not become a
+  second allocation door.
+- A resurrect **is** an allocation, and passes the same gates as a fresh
+  `initialize`: the rate limiter, then the quota. It is refused `429` or
+  `503` on the same terms.
+- What comes back is **provisional**. The bearer binding went with the
+  old session, so a resurrected session sits inside the anonymous quota
+  and every tool refuses until `connect_session` runs again. It also
+  inherits the original `createdAt`, so resurrection cannot renew
+  `unauthenticatedMaxLifetimeMs`.
+
+The trade: the bound on how many sessions may **exist** is unchanged,
+but allocation **churn** is now softer — replaying N remembered IDs
+forces N rate-limited, quota-bounded re-allocations. And under a
+_sustained_ full quota a resurrect fails like anything else; this
+recovers a burst, not a siege.
 
 ### Client IP, proxies, and the rate-limit bucket
 
@@ -321,6 +358,16 @@ new AgentPairingDurableObject({
   clientAddress: (req) => req.headers.get('cf-connecting-ip'),
 })
 ```
+
+**On Cloudflare the session quotas are app-wide, not per-user.**
+`routeToAgentDO` sends every `/agent/mcp` request to the single `__root`
+Durable Object — it has to, because MCP authenticates _inside_ the
+protocol via `connect_session`, so there is no `tid` to shard on when
+the request arrives. One `McpRouter` instance therefore serves every
+caller of the deployment, and `maxSessions` /
+`maxUnauthenticatedSessions` are budgets shared across all of them: the
+16 anonymous slots are 16 for the whole app, not 16 per user. Size them
+for your concurrent-pairing traffic, not for one person.
 
 ### Client
 

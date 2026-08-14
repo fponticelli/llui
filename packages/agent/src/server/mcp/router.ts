@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js'
 import { McpSessionMap } from './session-map.js'
 import { createAgentMcpServer } from './server.js'
 import type { TokenStore } from '../token-store.js'
@@ -94,6 +95,26 @@ export type McpRouterOptions = {
    * session's plaintext bearer from `McpSessionMap`. Default: 30 min.
    */
   idleTtlMs?: number
+  /**
+   * How many dropped session IDs are remembered as RESURRECTABLE — the
+   * bound on the tombstone FIFO behind session resurrection (#149).
+   *
+   * The endpoint's memory bound is LRU over provisional sessions, and a
+   * pairing session is the LRU provisional BY CONSTRUCTION: it is idle
+   * precisely because a human is reading the pairing panel. So an
+   * unrelated anonymous burst evicts it, `connect_session` 404s, and
+   * the MCP SDK cannot recover — 1.29.0 has no 404 case on the POST
+   * path and clears `_sessionId` only in `terminateSession()`. Rather
+   * than make the pairing un-evictable (which turns a full quota into a
+   * denial window — the #102 defect), a dropped id is remembered and
+   * the session REBUILT under it on the next request.
+   *
+   * A tombstone is a string and a timestamp, but it is still state a
+   * caller can cause, so it is a FIFO with a hard ceiling: past it the
+   * oldest ids are forgotten and answer 404 again. Default:
+   * `maxSessions * 4`.
+   */
+  maxResurrectableSessions?: number
 }
 
 export type McpRouterDeps = {
@@ -157,6 +178,18 @@ export type McpRouter = ((req: Request) => Promise<Response | null>) & {
    */
   liveSessionCount(): number
   /**
+   * True while `mcpSessionId` is RETAINED — its transport and
+   * `McpServer` still allocated.
+   *
+   * Since session resurrection (#149) a 404 probe no longer answers
+   * this: a dropped id the server still remembers is REBUILT on the
+   * next request, which is the whole point. So "was this session
+   * evicted" has to be asked directly, and the eviction/quota tests are
+   * where it matters — a bound that is only checked through a probe
+   * that silently repairs what it is probing checks nothing.
+   */
+  hasLiveSession(mcpSessionId: string): boolean
+  /**
    * True when `mcpSessionId` still holds a bearer token bound by
    * `connect_session`. Goes false the moment the session is reclaimed —
    * not retaining those plaintext tokens past a session's usefulness is
@@ -175,6 +208,8 @@ const DEFAULT_MAX_UNAUTHENTICATED_SESSIONS = 16
 const DEFAULT_MAX_SESSIONS_PER_IDENTITY = 8
 const DEFAULT_UNAUTHENTICATED_MAX_LIFETIME_MS = 30 * 60_000
 const DEFAULT_IDLE_TTL_MS = 30 * 60_000
+/** Tombstones per configured session slot — see `maxResurrectableSessions`. */
+const DEFAULT_RESURRECTABLE_PER_SLOT = 4
 
 /**
  * One retained MCP session.
@@ -205,6 +240,21 @@ type McpSessionEntry = {
    */
   identity: string | null
 }
+
+/**
+ * A session id this server ISSUED and has since dropped.
+ *
+ * Only the original `createdAt` is kept, and it does two jobs at once:
+ * it is the deadline the tombstone itself expires on, and it is what a
+ * resurrected session INHERITS. Both matter. Inheriting it is what
+ * stops resurrection renewing `unauthenticatedMaxLifetimeMs` — reset
+ * the clock and a caller holds a quota slot forever by letting it lapse
+ * and replaying the id, which is the refreshable-window defect that
+ * absolute lifetime exists to close. And expiring on it means an id
+ * stays resurrectable for exactly as long as its session would have
+ * been allowed to live, no longer.
+ */
+type Tombstone = { createdAt: number }
 
 function jsonResponse(
   body: unknown,
@@ -251,6 +301,27 @@ function jsonResponse(
  * provisional session is therefore left alone until the quota is
  * actually contended — reclaiming it below the quota costs the
  * human-paced pairing flow and buys nothing back.
+ *
+ * ── RESURRECTION ───────────────────────────────────────────────────
+ * (4) still costs a real user their pairing (#149): under contention
+ * the LRU provisional session IS the pairing, because it is idle
+ * precisely while a human reads the panel — and the LRU key is
+ * caller-refreshable, so an adversary pinging its own sessions makes
+ * the victim SELECTABLE rather than incidental. The MCP SDK cannot
+ * recover from the resulting 404. So the fix is recoverability, not
+ * prevention: an id this server ISSUED and has since dropped is
+ * remembered (bounded FIFO, same 30-minute clock) and its session
+ * REBUILT under the same id, with the triggering request replayed. The
+ * client never learns anything happened.
+ *
+ * A resurrect is an ALLOCATION and is treated as one — same rate
+ * limiter, same `reserveSlot`, same 429/503 refusals — and what it
+ * rebuilds is PROVISIONAL: the bearer binding went with the session, so
+ * nothing is escalated. What this trades is a hard bound on how many
+ * sessions may EXIST (unchanged) for a softer bound on allocation
+ * CHURN: replaying N tombstoned ids forces N rate-limited,
+ * quota-bounded re-allocations. Under a SUSTAINED full quota a
+ * resurrect still 503s; this recovers a burst, not a siege.
  */
 export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}): McpRouter {
   const mcpPath = opts.path ?? '/agent/mcp'
@@ -271,6 +342,10 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     1,
     opts.maxSessionsPerIdentity ?? DEFAULT_MAX_SESSIONS_PER_IDENTITY,
   )
+  const maxResurrectable = Math.max(
+    0,
+    opts.maxResurrectableSessions ?? maxSessions * DEFAULT_RESURRECTABLE_PER_SLOT,
+  )
   const clientIp = deps.clientIp ?? ((req: Request) => clientIpOf(req))
 
   // The per-identity cap has two doors, and this is the second: a
@@ -287,6 +362,24 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
   // mcp-session-id → retained session. Populated on initialize; dropped
   // by DELETE, by transport close, or by the idle sweep below.
   const sessions = new Map<string, McpSessionEntry>()
+
+  /**
+   * Dropped ids that may still be resurrected, oldest first — a `Map`
+   * because JS maps iterate in insertion order, which is the FIFO the
+   * bound is applied against.
+   */
+  const tombstones = new Map<string, Tombstone>()
+
+  /**
+   * Resurrections in flight, by id. Overlapping requests on ONE session
+   * id are ordinary in MCP (the SDK runs a standalone GET stream beside
+   * its POSTs), and both would find no session and both would rebuild
+   * one: the second `sessions.set` strands the first transport +
+   * `McpServer` with nothing accounting for them — a permanent leak
+   * inside the very bound that exists to prevent it. The loser of the
+   * race waits for the winner and then uses the session it registered.
+   */
+  const resurrecting = new Map<string, Promise<void>>()
 
   /**
    * A session is authenticated once it either arrived with a verified
@@ -314,12 +407,51 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     sessions.delete(id)
     sessionMap.delete(id)
     if (!entry) return
+    // Remember the id so a client that has no way to know it is gone can
+    // recover (#149). Uniform across every teardown reason on purpose:
+    // an explicitly-terminated id is no more dangerous to remember than
+    // an evicted one — resurrecting either yields a fresh provisional
+    // session, which is strictly more expensive for a caller than just
+    // calling `initialize` — and a `reason` parameter here would be one
+    // more thing every future teardown path has to get right.
+    tombstone(id, entry.createdAt)
     // Closing the server closes its transport, whose `onclose` re-enters
     // here; the delete above already ran, so the re-entry is a no-op
     // rather than a loop.
     void entry.server.close().catch(() => {
       // Best-effort — a transport already tearing down may reject.
     })
+  }
+
+  /**
+   * Record a dropped id, oldest-out at the ceiling. Re-inserting an id
+   * moves it to the back — the FIFO is over the LAST drop of each id,
+   * which is the one whose `createdAt` is current.
+   */
+  const tombstone = (id: string, createdAt: number): void => {
+    if (maxResurrectable === 0) return
+    tombstones.delete(id)
+    tombstones.set(id, { createdAt })
+    while (tombstones.size > maxResurrectable) {
+      const oldest = tombstones.keys().next()
+      if (oldest.done) break
+      tombstones.delete(oldest.value)
+    }
+  }
+
+  /**
+   * The tombstone for `id`, or null if the server never issued it, has
+   * forgotten it, or its clock has run out. Expired entries are dropped
+   * on sight so the lookup and the sweep agree on one deadline.
+   */
+  const resurrectable = (id: string, nowMs: number): Tombstone | null => {
+    const tomb = tombstones.get(id)
+    if (!tomb) return null
+    if (nowMs >= tomb.createdAt + unauthenticatedMaxLifetimeMs) {
+      tombstones.delete(id)
+      return null
+    }
+    return tomb
   }
 
   /**
@@ -347,6 +479,10 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
         : entry.createdAt + unauthenticatedMaxLifetimeMs
       if (nowMs >= deadline) dropSession(id)
     }
+    // Tombstones run on the provisional clock too, and this is what
+    // reclaims them below the FIFO ceiling — the ceiling alone would
+    // hold a quiet endpoint's last few ids forever.
+    for (const id of tombstones.keys()) resurrectable(id, nowMs)
   }
 
   /**
@@ -466,6 +602,171 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     void deps.auditSink?.write({ at, tid: null, uid: null, event, detail })
   }
 
+  /**
+   * Build the transport + `McpServer` pair one session is made of, wired
+   * so that either half tearing down drops the whole entry. The two
+   * allocating paths — a fresh `initialize` and a resurrect — differ
+   * ONLY in where the session id comes from, so they share this: a
+   * teardown hook wired on one path and forgotten on the other is a leak
+   * with no symptom until the quota fills.
+   */
+  const buildSession = (
+    sessionIdGenerator: () => string,
+  ): { transport: WebStandardStreamableHTTPServerTransport; server: McpServer } => {
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator,
+      onsessionclosed: (id) => {
+        dropSession(id)
+      },
+    })
+    transport.onclose = () => {
+      const id = transport.sessionId
+      if (id) dropSession(id)
+    }
+    const server = createAgentMcpServer({
+      coreRouter: deps.coreRouter,
+      tokenStore: deps.tokenStore,
+      sessionMap,
+      getSessionId: () => transport.sessionId,
+      lapBasePath,
+      serverName,
+      serverVersion,
+      connectDescription,
+      slidingTtlMs: deps.slidingTtlMs,
+    })
+    return { transport, server }
+  }
+
+  /**
+   * The `initialize` a resurrected transport never received.
+   *
+   * The SDK will not serve a request carrying a session id until the
+   * transport is `_initialized`, and the only public way into that state
+   * is an `initialize` POST — which is also where `sessionIdGenerator`
+   * is consulted, so this is what actually stamps the OLD id back on.
+   * Its response is discarded; the client's own request is replayed
+   * afterwards and is what they see.
+   *
+   * The protocol version is echoed from the request when it carries one
+   * so the rebuilt session negotiates what the client already speaks.
+   * The transport validates that header against its supported list
+   * independently of anything negotiated here, so a client on an
+   * unsupported version is refused on its own request, as before.
+   */
+  const resurrectionHandshake = (req: Request): Request =>
+    new Request(req.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'llui-resurrect',
+        method: 'initialize',
+        params: {
+          protocolVersion: req.headers.get('mcp-protocol-version') ?? LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'llui-agent-resurrect', version: serverVersion },
+        },
+      }),
+    })
+
+  /**
+   * Rebuild `id`'s session and replay `req` against it, registering the
+   * attempt in `resurrecting` so a concurrent request on the same id
+   * waits instead of building a second one. The gate is installed
+   * SYNCHRONOUSLY — before the first `await` inside `resurrect` — for
+   * the same reason `reserveSlot` is synchronous: every overlapping
+   * caller is suspended between the lookup and the registration.
+   */
+  const startResurrect = (
+    req: Request,
+    id: string,
+    tomb: Tombstone,
+    nowMs: number,
+  ): Promise<Response> => {
+    const attempt = resurrect(req, id, tomb, nowMs)
+    // Waiters must never see this promise's rejection — they only need
+    // to know the attempt is over — so the gate is a neutralized copy.
+    const gate = attempt.then(
+      () => undefined,
+      () => undefined,
+    )
+    resurrecting.set(id, gate)
+    void gate.then(() => {
+      if (resurrecting.get(id) === gate) resurrecting.delete(id)
+    })
+    return attempt
+  }
+
+  const resurrect = async (
+    req: Request,
+    id: string,
+    tomb: Tombstone,
+    nowMs: number,
+  ): Promise<Response> => {
+    // A resurrect allocates a transport and a fully-registered
+    // `McpServer`, exactly like an `initialize`, so it passes exactly the
+    // same two gates in the same order. Anything less would make the
+    // with-session-id path a way around them.
+    const rl = await deps.rateLimiter.check(clientIp(req), 'identity')
+    if (!rl.allowed) {
+      auditRefusal('rate-limited', nowMs, { endpoint: mcpPath, reason: 'resurrect' })
+      return jsonResponse({ error: { code: 'rate-limited', retryAfterMs: rl.retryAfterMs } }, 429, {
+        'retry-after': String(Math.max(1, Math.ceil(rl.retryAfterMs / 1000))),
+      })
+    }
+    // Always PROVISIONAL: whatever the dropped session had, its bearer
+    // binding went with it, so this asks for an anonymous slot and can
+    // be refused by the anonymous quota like any other anonymous caller.
+    if (!reserveSlot(false)) {
+      auditRefusal('rate-limited', nowMs, {
+        endpoint: mcpPath,
+        reason: 'session-capacity',
+        resurrect: true,
+      })
+      return jsonResponse({ error: { code: 'session-capacity' } }, 503, { 'retry-after': '30' })
+    }
+
+    let transport: WebStandardStreamableHTTPServerTransport | null = null
+    let mcpServer: McpServer | null = null
+    try {
+      const { transport: t, server } = buildSession(() => id)
+      transport = t
+      mcpServer = server
+
+      await server.connect(t)
+      const handshake = await t.handleRequest(resurrectionHandshake(req))
+      await handshake.body?.cancel().catch(() => {})
+      if (t.sessionId !== id) {
+        // Defensive: the SDK assigns the id from the generator during
+        // the handshake, so this cannot happen — but registering under
+        // the wrong key would leave an unreachable, unaccounted pair.
+        await server.close().catch(() => {})
+        return jsonResponse({ error: 'session not found' }, 404)
+      }
+
+      tombstones.delete(id)
+      sessions.set(id, {
+        transport: t,
+        server,
+        lastSeenAt: nowMs,
+        // Inherited, never reset — see `Tombstone`.
+        createdAt: tomb.createdAt,
+        admitted: false,
+        identity: null,
+      })
+      return await t.handleRequest(req)
+    } catch (err) {
+      if (mcpServer) await mcpServer.close().catch(() => {})
+      else if (transport) await transport.close().catch(() => {})
+      throw err
+    } finally {
+      releaseSlot(false)
+    }
+  }
+
   const route = async (req: Request): Promise<Response | null> => {
     const url = new URL(req.url)
     if (!url.pathname.startsWith(mcpPath)) return null
@@ -478,14 +779,40 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     // ── Existing session ───────────────────────────────────────────
     if (sessionHeader) {
       const entry = sessions.get(sessionHeader)
-      if (!entry) {
-        // Unknown (or already-reclaimed) session ID — reject so the
-        // client can reinitialize.
+      if (entry) {
+        // Traffic on a session is what keeps it out of the sweep.
+        entry.lastSeenAt = nowMs
+        return entry.transport.handleRequest(req)
+      }
+
+      // Someone is already rebuilding this id: wait for them rather
+      // than building a second one on top (see `resurrecting`).
+      const pending = resurrecting.get(sessionHeader)
+      if (pending) {
+        await pending
+        const revived = sessions.get(sessionHeader)
+        if (!revived) return jsonResponse({ error: 'session not found' }, 404)
+        revived.lastSeenAt = now()
+        return revived.transport.handleRequest(req)
+      }
+
+      const tomb = resurrectable(sessionHeader, nowMs)
+      if (!tomb) {
+        // An id this server never issued, or has forgotten. This is the
+        // guardrail that keeps the with-session-id path — free and
+        // unthrottled by design — from becoming a second allocation
+        // door: only ids we handed out are rebuildable.
         return jsonResponse({ error: 'session not found' }, 404)
       }
-      // Traffic on a session is what keeps it out of the sweep.
-      entry.lastSeenAt = nowMs
-      return entry.transport.handleRequest(req)
+
+      if (req.method === 'DELETE') {
+        // The client is saying it is done with this id. Rebuilding a
+        // session only to tear it down is an allocation for nothing.
+        tombstones.delete(sessionHeader)
+        return new Response(null, { status: 200 })
+      }
+
+      return startResurrect(req, sessionHeader, tomb, nowMs)
     }
 
     // ── New session (no mcp-session-id) ───────────────────────────
@@ -551,30 +878,8 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     let transport: WebStandardStreamableHTTPServerTransport | null = null
     let mcpServer: McpServer | null = null
     try {
-      const t = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        onsessionclosed: (id) => {
-          dropSession(id)
-        },
-      })
+      const { transport: t, server } = buildSession(() => crypto.randomUUID())
       transport = t
-
-      t.onclose = () => {
-        const id = t.sessionId
-        if (id) dropSession(id)
-      }
-
-      const server = createAgentMcpServer({
-        coreRouter: deps.coreRouter,
-        tokenStore: deps.tokenStore,
-        sessionMap,
-        getSessionId: () => t.sessionId,
-        lapBasePath,
-        serverName,
-        serverVersion,
-        connectDescription,
-        slidingTtlMs: deps.slidingTtlMs,
-      })
       mcpServer = server
 
       await server.connect(t)
@@ -618,6 +923,7 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
 
   return Object.assign(route, {
     liveSessionCount: occupancy,
+    hasLiveSession: (mcpSessionId: string) => sessions.has(mcpSessionId),
     hasBoundToken: (mcpSessionId: string) => sessionMap.get(mcpSessionId) !== null,
   })
 }

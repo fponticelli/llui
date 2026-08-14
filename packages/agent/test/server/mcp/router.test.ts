@@ -305,14 +305,13 @@ describe('MCP router session bounding (#102)', () => {
 
     // And it is a working session, not an accounting artefact: the quota
     // still holds, and what made room is the STALEST squatter.
+    //
+    // Asked directly rather than through a 404 probe: since #149 a
+    // request on a dropped id REBUILDS the session, so a probe would
+    // repair exactly what it is meant to detect.
     expect(router.liveSessionCount()).toBe(2)
-    const evicted = await router(
-      new Request('http://local/agent/mcp', {
-        method: 'POST',
-        headers: { 'mcp-session-id': squatters[0] as string },
-      }),
-    )
-    expect(evicted?.status).toBe(404)
+    expect(router.hasLiveSession(squatters[0] as string)).toBe(false)
+    expect(router.hasLiveSession(squatters[1] as string)).toBe(true)
   })
 
   it('answers 503 without allocating when every slot is held by a connected session', async () => {
@@ -574,20 +573,8 @@ describe('MCP router per-identity cap (#102)', () => {
     await initialize(router, { authorization: `Bearer ${token}` })
     const third = await initialize(router, { authorization: `Bearer ${token}` })
 
-    const stale = await router(
-      new Request('http://local/agent/mcp', {
-        method: 'POST',
-        headers: { 'mcp-session-id': first.sessionId as string },
-      }),
-    )
-    expect(stale?.status).toBe(404)
-    const live = await router(
-      new Request('http://local/agent/mcp', {
-        method: 'POST',
-        headers: { 'mcp-session-id': third.sessionId as string },
-      }),
-    )
-    expect(live?.status).not.toBe(404)
+    expect(router.hasLiveSession(first.sessionId as string)).toBe(false)
+    expect(router.hasLiveSession(third.sessionId as string)).toBe(true)
   })
 
   it('applies the cap to sessions that authenticate through connect_session', async () => {
@@ -717,13 +704,7 @@ describe('MCP router provisional-session lifetime (#102)', () => {
     for (let i = 0; i < 20; i++) await initialize(router)
 
     expect(router.liveSessionCount()).toBe(2)
-    const stale = await router(
-      new Request('http://local/agent/mcp', {
-        method: 'POST',
-        headers: { 'mcp-session-id': first.sessionId as string },
-      }),
-    )
-    expect(stale?.status).toBe(404)
+    expect(router.hasLiveSession(first.sessionId as string)).toBe(false)
   })
 
   it('does not cap the lifetime of a session that completed connect_session', async () => {
