@@ -363,10 +363,13 @@ The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
   route seam calls `enter` on the very element it just left — the enter clears
   that residue before snapshotting its own baseline.
   Interrupting a phase mid-flight resumes from the element's CURRENT rendered
-  values in BOTH directions: a leave skips `leaveFrom` rather than snapping to
-  fully-shown, and an enter freezes the animated properties at what the element
-  is showing rather than applying `enterFrom` and re-animating from the far end.
-  A phase that has already settled counts as resting, not as an interrupt.
+  values in BOTH directions, by the same mechanism: the animated properties are
+  frozen at what the element is showing and applied in place of the phase's
+  `from` value, so neither direction re-animates from the far end. Freezing is
+  what makes it work — merely SKIPPING the `from` value is not enough, because
+  superseding the interrupted phase fires its rollback, which restores the
+  pre-phase inline value (for a fade, `''` — fully visible). A phase that has
+  already settled counts as resting, not as an interrupt.
   Completion: a phase resolves only once EVERY property it animates (the style
   keys of its `from`/`to` values) has reported a `transitionend` on the element
   itself — an unrelated `transitionend` (a hover `background-color`, or the fast

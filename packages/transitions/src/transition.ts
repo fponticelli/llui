@@ -51,10 +51,13 @@ import { waitForEnd, createRunScope, prefersReducedMotion } from './anim.js'
  * that residue before snapshotting its own baseline.
  *
  * Interrupting a phase mid-flight resumes from the element's CURRENT rendered
- * values in BOTH directions: a leave skips `leaveFrom` rather than snapping to
- * fully-shown, and an enter freezes the animated properties at what the element
- * is showing rather than applying `enterFrom` and re-animating from the far end.
- * A phase that has already settled counts as resting, not as an interrupt.
+ * values in BOTH directions, by the same mechanism: the animated properties are
+ * frozen at what the element is showing and applied in place of the phase's
+ * `from` value, so neither direction re-animates from the far end. Freezing is
+ * what makes it work — merely SKIPPING the `from` value is not enough, because
+ * superseding the interrupted phase fires its rollback, which restores the
+ * pre-phase inline value (for a fade, `''` — fully visible). A phase that has
+ * already settled counts as resting, not as an interrupt.
  *
  * Completion: a phase resolves only once EVERY property it animates (the style
  * keys of its `from`/`to` values) has reported a `transitionend` on the element
@@ -178,10 +181,20 @@ export function transition(spec: TransitionSpec): TransitionOptions {
     // An element with a run already in flight is a mid-animation enter being
     // interrupted. Applying `leaveFrom` there would snap it to the fully-shown
     // resting state before animating out (the "snaps to fully-visible" bug), so
-    // for those elements we skip `leaveFrom` and let the leave transition from
-    // the element's current values. A fresh (resting) element keeps the normal
-    // `leaveFrom` → `leaveTo` swap. Captured BEFORE `supersede` clears the run.
+    // for those elements we freeze the values the element is actually showing
+    // and let the leave run out from there. A fresh (resting) element keeps the
+    // normal `leaveFrom` → `leaveTo` swap.
+    //
+    // The mirror image of the enter path, and for the same reason: SKIPPING
+    // `leaveFrom` is not on its own enough, because `supersede` below fires the
+    // interrupted enter's rollback, which `restoreInline`s the PRE-ENTER inline
+    // value — for a fade that is `''`, i.e. fully visible. So both reads happen
+    // BEFORE `supersede`: `isActive` because superseding clears the run, and the
+    // computed values because the rollback erases them.
     const interrupting = els.map((el) => runs.isActive(el))
+    const resume = els.map((el, i) =>
+      interrupting[i] ? computedValues(el, leaveProperties) : undefined,
+    )
 
     // Rollback (only fired if a newer run supersedes this leave before it ends,
     // e.g. an enter re-shows the element) restores the pre-transition inline
@@ -202,13 +215,18 @@ export function transition(spec: TransitionSpec): TransitionOptions {
       })
     })
 
+    // Apply from + active — or, when interrupting, the frozen current values in
+    // place of `leaveFrom`.
     els.forEach((el, i) => {
-      if (!interrupting[i]) applyValue(el, spec.leaveFrom)
+      applyValue(el, resume[i] ?? spec.leaveFrom)
       applyValue(el, spec.leaveActive)
     })
 
     forceReflow(els[0]!)
 
+    // An interrupting element never had `leaveFrom` applied, so there is nothing
+    // to remove — and removing it would strip the frozen value the transition is
+    // meant to start from, since both write the same property keys.
     els.forEach((el, i) => {
       if (!interrupting[i]) removeValue(el, spec.leaveFrom)
       applyValue(el, spec.leaveTo)
