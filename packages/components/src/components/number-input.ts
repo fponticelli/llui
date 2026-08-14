@@ -24,17 +24,17 @@ export type NumberInputMsg =
   | { type: 'setValue'; value: number | null }
   /** @humanOnly */
   | { type: 'setRawText'; text: string }
-  /** @intent("Commit the in-progress text input — parse, clamp, snap, and update value") */
+  /** @intent("Commit the in-progress text input — parse, clamp, snap, and update value. Ignored while disabled or readonly") */
   | { type: 'commit' }
-  /** @intent("Increase value by step (or step × multiplier)") */
+  /** @intent("Increase value by step (or step × multiplier). Ignored while disabled or readonly") */
   | { type: 'increment'; multiplier?: number }
-  /** @intent("Decrease value by step (or step × multiplier)") */
+  /** @intent("Decrease value by step (or step × multiplier). Ignored while disabled or readonly") */
   | { type: 'decrement'; multiplier?: number }
-  /** @intent("Snap value to the configured minimum") */
+  /** @intent("Snap value to the configured minimum. Ignored while disabled or readonly") */
   | { type: 'toMin' }
-  /** @intent("Snap value to the configured maximum") */
+  /** @intent("Snap value to the configured maximum. Ignored while disabled or readonly") */
   | { type: 'toMax' }
-  /** @humanOnly */
+  /** @intent("Enable or disable the input — a host/agent write, never gated") */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface NumberInputInit {
@@ -84,7 +84,14 @@ function decimalPlaces(n: number): number {
 /**
  * Messages a disabled/readonly instance still accepts. `disabled` gates HUMAN
  * interaction — typing, stepping, committing text — not the host's or an
- * agent's programmatic writes, which used to be dropped too (#120).
+ * agent's programmatic writes, which used to be dropped too (#120). *
+ * This allow-list and the `@intent`/`@humanOnly` JSDoc on the Msg union answer
+ * DIFFERENT questions — "does this survive the gate" versus "may an agent
+ * dispatch it at all" — and they must not contradict each other: every message
+ * named here is agent-dispatchable, and every gated variant an agent may still
+ * send says so in its `@intent` text instead of promising a write the gate
+ * swallows. `test/disabled-gate-annotations.test.ts` fails the build if the two
+ * drift apart (#138 review).
  */
 const PROGRAMMATIC: ReadonlySet<NumberInputMsg['type']> = new Set(['setValue', 'setDisabled'])
 

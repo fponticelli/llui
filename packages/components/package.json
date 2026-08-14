@@ -573,6 +573,7 @@
     }
   },
   "devDependencies": {
+    "@llui/compiler": "workspace:*",
     "@llui/dom": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"

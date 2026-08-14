@@ -528,6 +528,9 @@ importers:
         specifier: ^4.0.0
         version: 4.2.2
     devDependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom

@@ -27,17 +27,17 @@ export interface SliderState {
 export type SliderMsg =
   /** @intent("Replace all thumb values at once") */
   | { type: 'setValue'; value: number[] }
-  /** @intent("Set the value of the thumb at the given index") */
+  /** @intent("Set the value of the thumb at the given index. Ignored while disabled") */
   | { type: 'setThumb'; index: number; value: number }
-  /** @intent("Move the thumb at the given index up by one step (or step × multiplier)") */
+  /** @intent("Move the thumb at the given index up by one step (or step × multiplier). Ignored while disabled") */
   | { type: 'increment'; index: number; multiplier?: number }
-  /** @intent("Move the thumb at the given index down by one step (or step × multiplier)") */
+  /** @intent("Move the thumb at the given index down by one step (or step × multiplier). Ignored while disabled") */
   | { type: 'decrement'; index: number; multiplier?: number }
-  /** @intent("Snap the thumb at the given index to the slider's minimum") */
+  /** @intent("Snap the thumb at the given index to the slider's minimum. Ignored while disabled") */
   | { type: 'toMin'; index: number }
-  /** @intent("Snap the thumb at the given index to the slider's maximum") */
+  /** @intent("Snap the thumb at the given index to the slider's maximum. Ignored while disabled") */
   | { type: 'toMax'; index: number }
-  /** @humanOnly */
+  /** @intent("Enable or disable the slider — a host/agent write, never gated") */
   | { type: 'setDisabled'; disabled: boolean }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
@@ -102,7 +102,14 @@ function setThumbValue(state: SliderState, index: number, rawValue: number): num
 /**
  * Messages a disabled slider still accepts. `disabled` gates HUMAN interaction
  * — dragging a thumb, arrow keys — not the host's or an agent's programmatic
- * writes, which used to be dropped too (#120).
+ * writes, which used to be dropped too (#120). *
+ * This allow-list and the `@intent`/`@humanOnly` JSDoc on the Msg union answer
+ * DIFFERENT questions — "does this survive the gate" versus "may an agent
+ * dispatch it at all" — and they must not contradict each other: every message
+ * named here is agent-dispatchable, and every gated variant an agent may still
+ * send says so in its `@intent` text instead of promising a write the gate
+ * swallows. `test/disabled-gate-annotations.test.ts` fails the build if the two
+ * drift apart (#138 review).
  */
 const PROGRAMMATIC: ReadonlySet<SliderMsg['type']> = new Set(['setValue', 'setDisabled', 'setDir'])
 
