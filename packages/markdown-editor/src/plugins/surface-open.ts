@@ -31,9 +31,19 @@
 // host publishes those readers per editor, here, as the plugin's `register` half
 // is the one place that needs them. A reader is a PULL — `isOpen(slice.peek())`,
 // evaluated at the moment the key handler asks — not a mirrored copy, so there is
-// no cached second opinion that can drift from the state the user is looking at,
-// and no dependence on when the DOM commit lands (`send` applies state
-// synchronously in every scheduler mode; only the commit is deferrable).
+// no cached second opinion to fall out of step with the STATE the overlay is
+// rendered from. `peek()` is a plain read of live state (`@llui/dom`'s
+// `handle.ts`), so asking during a commit neither throws nor re-enters the
+// scheduler.
+//
+// It is STATE-truthful, not DOM-truthful, and the difference is measurable in
+// exactly one place: under `mountApp(..., { scheduler: 'raf' })` the DOM commit
+// is deferred to a frame while `send` still applies state synchronously, so
+// between Escape #1 and the next frame the slice says CLOSED while the overlay is
+// still on screen. A second Escape inside that sub-frame window falls through to
+// the host instead of being claimed. Unreachable by a human at 16 ms, and the
+// error direction is the safe one — fall through, never steal. Gating on the DOM
+// instead would trade that for the failure this file exists to prevent.
 //
 // A plugin whose reader was never published reads CLOSED, so an unpublished gate
 // makes a typeahead inert rather than making it swallow keys — the failure that
@@ -49,9 +59,19 @@ export type SurfaceReaders = ReadonlyMap<string, () => boolean>
 const published = new WeakMap<LexicalEditor, SurfaceReaders>()
 
 /**
- * Publish the open-state readers for `editor`'s plugin UIs. Called by the host
- * from `onReady` (the editor exists, and no key can have been pressed yet).
- * Returns a detach for the host's dispose path.
+ * Publish the open-state readers for `editor`'s plugin UIs, and return the
+ * detach. For the HOST (`markdownEditor`, or any host built on the same plugin
+ * contract); a plugin never calls this.
+ *
+ * Call it from the host's `lexicalForeign` **`register`** hook, whose return value
+ * IS the disposer — attach and detach are then the same closure, in the same
+ * disposer chain that releases the mount's other editor references. NOT from
+ * `onReady`: that hook has no symmetric teardown, so the detach would have to be
+ * written somewhere else and could drift out of step with the attach.
+ *
+ * `register` runs while the editor is being built, before any plugin's own
+ * `register` can matter and long before a key can be pressed — the readers only
+ * have to exist by the first keystroke, not by any earlier moment.
  */
 export function publishSurfaceOpen(editor: LexicalEditor, readers: SurfaceReaders): () => void {
   published.set(editor, readers)
