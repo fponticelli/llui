@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { attachFloating } from '../../src/utils/floating'
+import { attachFloating, type Placement } from '../../src/utils/floating'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -38,11 +38,29 @@ function rect(x: number, y: number, w: number, h: number): DOMRect {
 
 const ANCHOR = { x: 100, y: 50, width: 40, height: 20 }
 
+// jsdom does no layout, so `documentElement.clientWidth/Height` are 0 and
+// `detectOverflow` sees a zero-sized viewport — `shift` then pins everything to
+// its padding. Give the tests a real viewport so the middleware cases measure
+// the direction maths rather than jsdom's missing layout.
+for (const [prop, value] of [
+  ['clientWidth', 1024],
+  ['clientHeight', 768],
+] as const) {
+  Object.defineProperty(document.documentElement, prop, { value, configurable: true })
+}
+
 async function placeX(opts: {
-  placement: 'bottom-start' | 'bottom-end' | 'right-start' | 'right-end'
+  placement: Placement
   dir?: 'ltr' | 'rtl'
   /** Whether the floating element itself computes to `direction: rtl`. */
   computedRtl?: boolean
+  /** Both middlewares ALSO read `platform.isRTL`, and every production caller
+   * turns them on (`overlay-engine.ts`), so the rtl cases must be provable with
+   * them on too. Off by default so the base cases read the raw placement
+   * maths, not viewport fitting (#138 review, item 10). */
+  flip?: boolean
+  shift?: boolean
+  offset?: number
 }): Promise<{ x: number; y: number }> {
   const anchor = document.createElement('button')
   const floating = document.createElement('div')
@@ -55,9 +73,9 @@ async function placeX(opts: {
     anchor,
     floating,
     placement: opts.placement,
-    // Off so the assertions read the raw placement maths, not viewport fitting.
-    flip: false,
-    shift: false,
+    flip: opts.flip ?? false,
+    shift: opts.shift ?? false,
+    offset: opts.offset ?? 0,
     dir: opts.dir,
     onUpdate: ({ x, y }) => {
       seen = x != null ? { x, y } : seen
@@ -69,8 +87,12 @@ async function placeX(opts: {
   return seen
 }
 
-// The floating element measures 0×0 in jsdom, so a start-aligned box sits on
-// the anchor's left edge and an end-aligned one on its right edge.
+// The floating element measures 0×0 in jsdom (floating-ui reads its size from
+// `offsetWidth`, which no `getBoundingClientRect` stub can supply), so a
+// start-aligned box sits on the anchor's left edge and an end-aligned one on
+// its right edge. Same fact as the reviewer's Chromium numbers, expressed
+// without a width: the browser's 120-wide box at inline-end lands at
+// RIGHT_EDGE - 120 = 20, versus 100 for inline-start.
 const LEFT_EDGE = ANCHOR.x
 const RIGHT_EDGE = ANCHOR.x + ANCHOR.width
 
@@ -168,5 +190,67 @@ describe('menu never overrides the page direction it was not given', () => {
     expect(menuFloatingDir(s1)).toBe('rtl')
     const [s2] = menuUpdate(s1, { type: 'setDir', dir: null })
     expect(menuFloatingDir(s2)).toBeUndefined()
+  })
+})
+
+/**
+ * The coordinate tests above run with `flip: false, shift: false`, but BOTH
+ * middlewares also consult `platform.isRTL` (`flip` for its cross-axis
+ * overflow sides, `offset` for its cross-axis sign) and every production caller
+ * enables them — `overlay-engine.ts` passes `flip`/`shift` through with `true`
+ * defaults. A fix that only holds with the middleware off is not a fix
+ * (#138 review, item 10).
+ */
+describe('the middlewares production actually enables keep one negation', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  const on = { flip: true, shift: true, offset: 4 } as const
+
+  it('dir:rtl on an rtl page still flips exactly once with flip+shift+offset on', async () => {
+    expect(
+      (await placeX({ placement: 'bottom-start', dir: 'rtl', computedRtl: true, ...on })).x,
+    ).toBe(RIGHT_EDGE)
+    expect(
+      (await placeX({ placement: 'bottom-end', dir: 'rtl', computedRtl: true, ...on })).x,
+    ).toBe(LEFT_EDGE)
+  })
+
+  it('an undeclared dir still follows the page with the middleware on', async () => {
+    expect((await placeX({ placement: 'bottom-start', computedRtl: true, ...on })).x).toBe(
+      RIGHT_EDGE,
+    )
+    expect((await placeX({ placement: 'bottom-start', ...on })).x).toBe(LEFT_EDGE)
+  })
+
+  it('top-* mirrors bottom-* on the inline axis', async () => {
+    expect((await placeX({ placement: 'top-start' })).x).toBe(LEFT_EDGE)
+    expect((await placeX({ placement: 'top-end' })).x).toBe(RIGHT_EDGE)
+    expect((await placeX({ placement: 'top-start', dir: 'rtl' })).x).toBe(RIGHT_EDGE)
+    expect((await placeX({ placement: 'top-end', dir: 'rtl' })).x).toBe(LEFT_EDGE)
+  })
+
+  it('suffix-less physical placements are centred whatever the direction', async () => {
+    const centre = ANCHOR.x + ANCHOR.width / 2
+    expect((await placeX({ placement: 'bottom' })).x).toBe(centre)
+    expect((await placeX({ placement: 'bottom', dir: 'rtl' })).x).toBe(centre)
+    expect((await placeX({ placement: 'top', dir: 'rtl' })).x).toBe(centre)
+    // `left`/`right` sit off the anchor's edges; direction never moves them.
+    expect((await placeX({ placement: 'left', dir: 'rtl' })).x).toBe(
+      (await placeX({ placement: 'left' })).x,
+    )
+  })
+
+  it('left-start is NOT flipped by rtl — its alignment runs down the block axis', async () => {
+    const ltr = await placeX({ placement: 'left-start' })
+    const rtl = await placeX({ placement: 'left-start', dir: 'rtl' })
+    expect(rtl).toEqual(ltr)
+    expect(ltr.y).toBe(ANCHOR.y)
+    // The deleted `flipPlacement('left-start', 'rtl') === 'left-end'` claimed
+    // otherwise; left-end is a DIFFERENT y, which is why that test was wrong.
+    const end = await placeX({ placement: 'left-end' })
+    expect(end.y).toBe(ANCHOR.y + ANCHOR.height)
+    expect(end.y).not.toBe(ltr.y)
   })
 })

@@ -234,6 +234,26 @@ describe('aspect-ratio lock survives clamping', () => {
     expect(ratioOf(s.crop)).toBeCloseTo(2)
   })
 
+  // The test below drives width to <= 0, which takes fitCrop's COLLAPSE branch
+  // — that branch already seeds at `minSize`, so the grow step is a no-op there
+  // and `const grow = 1` survives it. This case keeps the rectangle positive but
+  // under the floor, which is the only way into the real grow step
+  // (#138 review, item 5).
+  it('a positive but sub-minimum crop is GROWN on ratio, not clamped per axis', () => {
+    const s0 = init({
+      image: { width: 400, height: 400 },
+      crop: { x: 0, y: 0, width: 200, height: 100 },
+      aspectRatio: 2,
+      minSize: 50,
+    })
+    const [s] = update(s0, { type: 'setCrop', crop: { x: 0, y: 0, width: 20, height: 10 } })
+    expect(ratioOf(s.crop)).toBeCloseTo(2)
+    // grow = max(1, 50/20, 50/10) = 5 → 100×50: the SHORTER side lands exactly
+    // on the floor and the longer side follows the ratio.
+    expect(s.crop.width).toBeCloseTo(100)
+    expect(s.crop.height).toBeCloseTo(50)
+  })
+
   it('applyResize keeps the ratio when the minSize floor bites', () => {
     const s0 = {
       ...init({

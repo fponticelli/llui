@@ -130,6 +130,13 @@ describe('listbox item identity is value-based', () => {
     const s0 = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 2 }
     const [s] = update(s0, { type: 'setItems', items: ['x', 'c'] })
     expect(s.highlightedIndex).toBe(1)
+    // The fixture above cannot tell the two branches apart: following the value
+    // and the Math.min clamp fallback BOTH give 1, so deleting the value-follow
+    // still passes it. Here they disagree — 'a' moved to index 2 while the
+    // clamp would leave 0 (#138 review, item 6).
+    const moved = { ...init({ items: ['a', 'b', 'c'] }), highlightedIndex: 0 }
+    const [s2] = update(moved, { type: 'setItems', items: ['x', 'y', 'a'] })
+    expect(s2.highlightedIndex).toBe(2)
   })
 
   it('setItems clamps a highlight that outlived its item', () => {
