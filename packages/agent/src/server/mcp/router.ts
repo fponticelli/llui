@@ -55,24 +55,36 @@ export type McpRouterOptions = {
    */
   maxSessionsPerIdentity?: number
   /**
-   * Idle window, in ms, after which a provisional session (no bearer, no
-   * `connect_session`) is closed and swept. Short by design — a real
-   * client connects within a turn or two. Default: 60 s.
-   */
-  unauthenticatedTtlMs?: number
-  /**
-   * ABSOLUTE lifetime, in ms, of a provisional session — measured from
-   * its `initialize`, not from its last request.
+   * ABSOLUTE lifetime, in ms, of a provisional session (no bearer, no
+   * `connect_session`) — measured from its `initialize`, never from its
+   * last request. This is the ONLY clock a provisional session runs on.
    *
-   * The idle TTL alone is refreshable, and refreshing it costs an
-   * attacker one empty POST: pinging just under the idle window held a
-   * slot of the anonymous quota indefinitely, so the quota bounded
-   * memory but not availability. Nothing legitimate needs a provisional
-   * session for long — `connect_session` is one tool call after
-   * `initialize` — so a session that has not authenticated by this
-   * deadline is closed no matter how much traffic it carries. An
+   * There used to be an idle TTL beside it (`unauthenticatedTtlMs`, 60
+   * s), and it was the wrong shape twice over. It bounded nothing: the
+   * memory bound is `maxUnauthenticatedSessions`, which caps how many
+   * provisional sessions exist at all, and the sweep ran on every route
+   * call regardless of pressure — so it reclaimed sessions on an empty
+   * endpoint, buying no memory. Meanwhile it broke the pairing flow the
+   * docs describe, which is HUMAN-paced: the client initializes at
+   * startup and the session then idles while a person opens the app,
+   * clicks "Connect with Claude", copies the snippet and pastes it. The
+   * MCP SDK client does not re-initialize on a 404, so that reclaim
+   * surfaced as a thrown error, not a reconnect. An idle provisional
+   * session is now reclaimed only when the quota is CONTENDED, by the
+   * LRU eviction in `reserveSlot` — which is the pressure the bound
+   * exists for.
+   *
+   * What this clock is for is the case the quota does not cover:
+   * traffic. An idle window is refreshable for the price of an empty
+   * POST, so pinging under it held a quota slot forever. Nothing
+   * refreshes this one, so a session that has not authenticated by the
+   * deadline is closed however much traffic it carries. An
    * authenticated session is NOT capped this way; it moves to
-   * `idleTtlMs`. Default: 5 min.
+   * `idleTtlMs`.
+   *
+   * Default: 30 min — the pairing window has to fit a person, and a
+   * provisional session holds no bearer, so the only thing this bounds
+   * is one slot of a quota that is already bounded.
    */
   unauthenticatedMaxLifetimeMs?: number
   /**
@@ -161,8 +173,7 @@ const DEFAULT_CONNECT_DESCRIPTION =
 const DEFAULT_MAX_SESSIONS = 64
 const DEFAULT_MAX_UNAUTHENTICATED_SESSIONS = 16
 const DEFAULT_MAX_SESSIONS_PER_IDENTITY = 8
-const DEFAULT_UNAUTHENTICATED_TTL_MS = 60_000
-const DEFAULT_UNAUTHENTICATED_MAX_LIFETIME_MS = 5 * 60_000
+const DEFAULT_UNAUTHENTICATED_MAX_LIFETIME_MS = 30 * 60_000
 const DEFAULT_IDLE_TTL_MS = 30 * 60_000
 
 /**
@@ -226,13 +237,20 @@ function jsonResponse(
  *   2. A bearer that IS presented must verify, or the request is refused
  *      401 having allocated nothing. Fail closed: the no-bearer path
  *      stays open, the invalid-bearer path does not.
- *   3. Sessions carry an idle timestamp and are swept — a short TTL
- *      while provisional, a long one once authenticated. The sweep is
- *      what reclaims a session whose client vanished without the DELETE
- *      the protocol assumes, and what releases its plaintext bearer.
+ *   3. Sessions are swept — an AUTHENTICATED one on an idle timestamp
+ *      (which is what releases its plaintext bearer), a PROVISIONAL one
+ *      on an absolute lifetime from `initialize`. Either way a client
+ *      that vanished without the DELETE the protocol assumes is
+ *      reclaimed with no help from it.
  *   4. Provisional sessions have their own quota inside `maxSessions`,
  *      LRU-evicted, so anonymous churn can never displace an
  *      authenticated session. With no slot to free, `initialize` 503s.
+ *
+ * (3) is the bound on a session's LIFETIME; (4) is the bound on the
+ * endpoint's MEMORY, and it is the one that has to be tight. An idle
+ * provisional session is therefore left alone until the quota is
+ * actually contended — reclaiming it below the quota costs the
+ * human-paced pairing flow and buys nothing back.
  */
 export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}): McpRouter {
   const mcpPath = opts.path ?? '/agent/mcp'
@@ -246,7 +264,6 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     Math.max(1, opts.maxUnauthenticatedSessions ?? DEFAULT_MAX_UNAUTHENTICATED_SESSIONS),
     maxSessions,
   )
-  const unauthenticatedTtlMs = opts.unauthenticatedTtlMs ?? DEFAULT_UNAUTHENTICATED_TTL_MS
   const unauthenticatedMaxLifetimeMs =
     opts.unauthenticatedMaxLifetimeMs ?? DEFAULT_UNAUTHENTICATED_MAX_LIFETIME_MS
   const idleTtlMs = opts.idleTtlMs ?? DEFAULT_IDLE_TTL_MS
@@ -306,23 +323,29 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
   }
 
   /**
-   * Drop every session past a deadline: the idle TTL its authentication
-   * earns it, plus — while provisional — an ABSOLUTE lifetime the caller
-   * cannot refresh. Without the second one an empty POST every
-   * `unauthenticatedTtlMs - 1` ms holds a quota slot forever.
+   * Drop every session past its deadline. The two halves are on
+   * deliberately different clocks:
+   *
+   *   - AUTHENTICATED: idle. `idleTtlMs` since the last request. This
+   *     one is time-driven rather than pressure-driven on purpose — it
+   *     is what releases the session's plaintext bearer from
+   *     `McpSessionMap`, and holding that past the session's usefulness
+   *     is a security cost, not a memory one.
+   *   - PROVISIONAL: absolute, from `initialize`. Deliberately NOT
+   *     idle-swept: how many provisional sessions may exist is already
+   *     capped by `maxUnauthenticatedSessions`, so reclaiming an idle
+   *     one below that quota frees nothing that was scarce and breaks
+   *     the human-paced pairing flow (see
+   *     `unauthenticatedMaxLifetimeMs`). Under quota pressure the LRU
+   *     eviction in `reserveSlot` reclaims the stalest one, which is
+   *     the same session an idle sweep would have picked.
    */
   const sweep = (nowMs: number): void => {
     for (const [id, entry] of sessions) {
-      if (isAuthenticated(id, entry)) {
-        if (nowMs - entry.lastSeenAt >= idleTtlMs) dropSession(id)
-        continue
-      }
-      if (
-        nowMs - entry.lastSeenAt >= unauthenticatedTtlMs ||
-        nowMs - entry.createdAt >= unauthenticatedMaxLifetimeMs
-      ) {
-        dropSession(id)
-      }
+      const deadline = isAuthenticated(id, entry)
+        ? entry.lastSeenAt + idleTtlMs
+        : entry.createdAt + unauthenticatedMaxLifetimeMs
+      if (nowMs >= deadline) dropSession(id)
     }
   }
 
@@ -356,7 +379,13 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
    * had. Only provisional REGISTERED sessions are evictable — evicting
    * an authenticated one on behalf of an anonymous caller would turn the
    * bound itself into the attack, and evicting an in-flight one would
-   * free a slot whose allocation is still running. Returns false when
+   * free a slot whose allocation is still running.
+   *
+   * This LRU is also the ONLY thing that reclaims an idle provisional
+   * session, which is why it is expressed as pressure rather than as a
+   * clock: it fires exactly when a slot is scarce, and the session it
+   * picks — the least recently seen — is the one an idle sweep would
+   * have picked anyway. Returns false when
    * nothing can be freed; the caller then refuses rather than
    * allocating. Synchronous by construction: an `await` anywhere in here
    * would reopen the race it exists to close.
@@ -509,35 +538,47 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       return jsonResponse({ error: { code: 'session-capacity' } }, 503, { 'retry-after': '30' })
     }
 
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      onsessionclosed: (id) => {
-        dropSession(id)
-      },
-    })
-
-    transport.onclose = () => {
-      const id = transport.sessionId
-      if (id) dropSession(id)
-    }
-
-    const mcpServer = createAgentMcpServer({
-      coreRouter: deps.coreRouter,
-      tokenStore: deps.tokenStore,
-      sessionMap,
-      getSessionId: () => transport.sessionId,
-      lapBasePath,
-      serverName,
-      serverVersion,
-      connectDescription,
-      slidingTtlMs: deps.slidingTtlMs,
-    })
-
     // From here the reservation is live and MUST be handed back exactly
-    // once, whichever way this returns.
+    // once, whichever way this returns — so EVERYTHING it covers is
+    // inside the `try`, constructors included. They used to sit above
+    // it, on the reasoning that none of them can throw because none of
+    // them reads request data; that made the `finally`'s "every exit
+    // path" claim false for any future line added there, and a lost
+    // reservation is permanent (nothing sweeps a slot with no id).
+    //
+    // These two are the CATCH's cleanup handles — the body works with
+    // the consts, which is also what the closures below have to capture.
+    let transport: WebStandardStreamableHTTPServerTransport | null = null
+    let mcpServer: McpServer | null = null
     try {
-      await mcpServer.connect(transport)
-      const res = await transport.handleRequest(req)
+      const t = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        onsessionclosed: (id) => {
+          dropSession(id)
+        },
+      })
+      transport = t
+
+      t.onclose = () => {
+        const id = t.sessionId
+        if (id) dropSession(id)
+      }
+
+      const server = createAgentMcpServer({
+        coreRouter: deps.coreRouter,
+        tokenStore: deps.tokenStore,
+        sessionMap,
+        getSessionId: () => t.sessionId,
+        lapBasePath,
+        serverName,
+        serverVersion,
+        connectDescription,
+        slidingTtlMs: deps.slidingTtlMs,
+      })
+      mcpServer = server
+
+      await server.connect(t)
+      const res = await t.handleRequest(req)
       // Register AFTER the transport has assigned its session ID. The
       // SDK's `onsessioninitialized` hook would fire earlier, but
       // reaching it means forward-referencing `mcpServer` from the
@@ -547,26 +588,28 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       // undefined and therefore retains nothing. The reservation becomes
       // the registered session here — there is no `await` between the
       // `set` and the release, so the slot is never momentarily free.
-      const id = transport.sessionId
+      const id = t.sessionId
       if (id) {
         sessions.set(id, {
-          transport,
-          server: mcpServer,
+          transport: t,
+          server,
           lastSeenAt: nowMs,
           createdAt: nowMs,
           admitted: presentedBearer,
           identity: admittedTid,
         })
       } else {
-        await mcpServer.close().catch(() => {})
+        await server.close().catch(() => {})
       }
       return res
     } catch (err) {
       // A failed handshake must not strand the pair it allocated: the
       // reservation is about to be released, so without this the
       // transport and its `McpServer` would outlive every accounting of
-      // them.
-      await mcpServer.close().catch(() => {})
+      // them. Closing the server closes its transport; a throw before
+      // the server exists leaves the transport to close on its own.
+      if (mcpServer) await mcpServer.close().catch(() => {})
+      else if (transport) await transport.close().catch(() => {})
       throw err
     } finally {
       releaseSlot(presentedBearer)

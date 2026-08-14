@@ -190,7 +190,10 @@ describe('MCP router session bounding (#102)', () => {
 
   it('reclaims a stranded session without a client DELETE', async () => {
     const c = clock()
-    const router = mkRouter({ unauthenticatedTtlMs: 60_000 }, { now: c.now })
+    // The reclaim runs on the provisional session's ABSOLUTE lifetime —
+    // the one clock a stranded client cannot refresh and the one that
+    // does not need the quota to be contended to fire.
+    const router = mkRouter({ unauthenticatedMaxLifetimeMs: 60_000 }, { now: c.now })
 
     const first = await initialize(router)
     expect(first.sessionId).toBeTruthy()
@@ -393,6 +396,52 @@ describe('MCP router rate limiting (#102)', () => {
     expect((await router(initializeRequest({ 'x-forwarded-for': '10.0.0.2' })))?.status).toBe(200)
   })
 
+  /**
+   * The declared-proxy path has its own bypass, and it is the one a real
+   * deployment hits. `trustProxy: n` asserts that `n` proxies you
+   * control APPEND to `X-Forwarded-For`; behind an nginx that sets only
+   * `X-Real-IP`, or with a declaration deeper than the chain, the router
+   * used to read a caller-authored value anyway — one bucket per
+   * request, through a limiter the deployment believed was on. Measured
+   * before the fix: 60/60 allocations in both shapes below.
+   */
+  it('does not let a caller mint fresh buckets under a trusted-proxy declaration', async () => {
+    const mk = (trustProxy: number, c: Clock): McpRouter =>
+      mkRouter(
+        {},
+        {
+          rateLimiter: defaultRateLimiter({ perBucket: '3/minute' }, c.now),
+          now: c.now,
+          clientIp: createClientIpResolver({ trustProxy }),
+        },
+      )
+
+    // A proxy that writes X-Real-IP and no chain: the caller's own
+    // X-Forwarded-For is not the proxy's word, and neither is the
+    // X-Real-IP it can equally write.
+    const realIpOnly = clock()
+    const realIpRouter = mk(1, realIpOnly)
+    const a: number[] = []
+    for (let i = 0; i < 60; i++) {
+      const res = await realIpRouter(initializeRequest({ 'x-real-ip': `192.0.2.${i}` }))
+      a.push(res?.status ?? 0)
+    }
+    expect(a.filter((s) => s === 200)).toHaveLength(3)
+    expect(a.filter((s) => s === 429)).toHaveLength(57)
+
+    // A chain shorter than the declared depth cannot have passed through
+    // that many appending proxies.
+    const shortChain = clock()
+    const shortRouter = mk(2, shortChain)
+    const b: number[] = []
+    for (let i = 0; i < 60; i++) {
+      const res = await shortRouter(initializeRequest({ 'x-forwarded-for': `10.0.0.${i}` }))
+      b.push(res?.status ?? 0)
+    }
+    expect(b.filter((s) => s === 200)).toHaveLength(3)
+    expect(b.filter((s) => s === 429)).toHaveLength(57)
+  })
+
   it('carries retry-after on a 429 so a client backs off instead of hammering', async () => {
     const c = clock()
     const router = mkRouter(
@@ -514,19 +563,15 @@ describe('MCP router per-identity cap (#102)', () => {
 
 describe('MCP router provisional-session lifetime (#102)', () => {
   /**
-   * Attack B: an idle TTL alone is refreshable. Pinging an established
-   * provisional session just under the TTL held the anonymous quota
-   * indefinitely at near-zero cost, so the quota bounded memory but not
-   * availability. A provisional session therefore also has an ABSOLUTE
-   * lifetime: traffic keeps it out of the idle sweep, nothing keeps it
-   * past the handshake window.
+   * Attack B: an idle window alone is refreshable. Pinging an
+   * established provisional session just under it held a slot of the
+   * anonymous quota indefinitely at near-zero cost. The provisional
+   * clock is therefore ABSOLUTE: traffic buys nothing, and the session
+   * goes at the deadline however busy it looks.
    */
   it('reclaims a provisional session held open by keepalive traffic', async () => {
     const c = clock()
-    const router = mkRouter(
-      { unauthenticatedTtlMs: 60_000, unauthenticatedMaxLifetimeMs: 300_000 },
-      { now: c.now },
-    )
+    const router = mkRouter({ unauthenticatedMaxLifetimeMs: 300_000 }, { now: c.now })
     const { sessionId } = await initialize(router)
     expect(sessionId).toBeTruthy()
 
@@ -541,8 +586,9 @@ describe('MCP router provisional-session lifetime (#102)', () => {
     }
 
     const statuses: number[] = []
-    // Ten pings at 50 s — always inside the 60 s idle TTL, so the idle
-    // sweep alone never fires.
+    // Ten pings at 50 s — busy enough that no idle window would ever
+    // lapse, and each one refreshes `lastSeenAt` so the LRU would keep
+    // choosing someone else.
     for (let i = 0; i < 10; i++) {
       c.advance(50_000)
       statuses.push(await ping())
@@ -550,6 +596,86 @@ describe('MCP router provisional-session lifetime (#102)', () => {
 
     expect(statuses).toContain(404)
     expect(router.liveSessionCount()).toBe(0)
+  })
+
+  /**
+   * The flow `site/content/agents.md` documents is HUMAN-paced: Claude
+   * Desktop initializes at startup, and the provisional session then
+   * idles while a person opens the app, clicks "Connect with Claude",
+   * copies the snippet and pastes it into the chat. Nothing in that
+   * sequence sends a request.
+   *
+   * Sweeping the session out from under it is not a memory bound — the
+   * anonymous quota is — and the MCP SDK client (1.29.0) does not
+   * re-initialize on a 404, so the reclaim surfaces to the user as a
+   * thrown `StreamableHTTPError` rather than a transparent reconnect.
+   * Six minutes exceeds BOTH pre-repair bounds (a 60 s idle TTL and a
+   * 5 min absolute lifetime), and this runs on the shipped DEFAULTS
+   * because the defaults are what that flow meets.
+   */
+  it('connects after a human-paced pause on the shipped defaults', async () => {
+    const c = clock()
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1', now: c.now() })
+    const router = mkRouter({}, { tokenStore: store, now: c.now })
+
+    const { status, sessionId } = await initialize(router)
+    expect(status).toBe(200)
+
+    // The human opens the app, clicks connect, copies, pastes.
+    c.advance(6 * 60_000)
+
+    const connected = await callTool(router, sessionId as string, 'connect_session', { token })
+    expect(connected.status).toBe(200)
+    const payload = connected.result as {
+      result?: { structuredContent?: { status?: string }; isError?: boolean }
+    }
+    expect(payload.result?.isError).toBeFalsy()
+    expect(payload.result?.structuredContent?.status).toBe('connected')
+  })
+
+  it('leaves an idle provisional session alone while the quota is uncontended', async () => {
+    // The sweep used to run at the top of every route call regardless of
+    // pressure, so unrelated traffic on an endpoint with 15 free
+    // anonymous slots reclaimed a session that was costing nothing. The
+    // quota is the memory bound; reclaiming below it buys nothing and
+    // costs the pairing.
+    const c = clock()
+    const router = mkRouter({}, { now: c.now })
+
+    const first = await initialize(router)
+    c.advance(10 * 60_000)
+    await initialize(router)
+
+    const still = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: { 'mcp-session-id': first.sessionId as string },
+      }),
+    )
+    expect(still?.status).not.toBe(404)
+    expect(router.liveSessionCount()).toBe(2)
+  })
+
+  it('reclaims idle provisional sessions once the quota IS contended', async () => {
+    // The other half: not sweeping on an idle endpoint must not turn the
+    // quota into a leak. Under contention the LRU provisional session —
+    // the stalest one, by construction — is what makes room.
+    const c = clock()
+    const router = mkRouter({ maxSessions: 8, maxUnauthenticatedSessions: 2 }, { now: c.now })
+
+    const first = await initialize(router)
+    c.advance(10 * 60_000)
+    for (let i = 0; i < 20; i++) await initialize(router)
+
+    expect(router.liveSessionCount()).toBe(2)
+    const stale = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: { 'mcp-session-id': first.sessionId as string },
+      }),
+    )
+    expect(stale?.status).toBe(404)
   })
 
   it('does not cap the lifetime of a session that completed connect_session', async () => {

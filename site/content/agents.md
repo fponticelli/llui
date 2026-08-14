@@ -223,8 +223,7 @@ MCP server, so that open path is bounded on several axes:
 | `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                       |
 | `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session. |
 | `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.  |
-| `unauthenticatedTtlMs`         | `60000`   | Idle window before a session that never connected is closed and swept.                                                                                                                              |
-| `unauthenticatedMaxLifetimeMs` | `300000`  | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. Traffic refreshes the idle window; nothing refreshes this one.                                                     |
+| `unauthenticatedMaxLifetimeMs` | `1800000` | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. The only clock such a session runs on — nothing refreshes it, so traffic cannot hold a quota slot open.            |
 | `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                              |
 
 The quota counts sessions that are still being built, not just
@@ -247,9 +246,23 @@ Two further rules apply to every `initialize`:
 
 Requests on an already-established session are not throttled here; their
 tool handlers reach LAP through the core router, which gates them on the
-per-token bucket. That is why a session that has not authenticated also
-carries `unauthenticatedMaxLifetimeMs`: an idle window alone is
-refreshable by anyone who can send an empty POST.
+per-token bucket. That is why a session that has not authenticated
+carries `unauthenticatedMaxLifetimeMs` rather than an idle window: an
+idle window is refreshable by anyone who can send an empty POST.
+
+A session that has not connected yet is **not** reclaimed for being
+idle. Pairing is human-paced — the client initializes at startup, then
+the session waits while a person opens the app, clicks "Connect with
+Claude", copies the snippet and pastes it — and the MCP SDK client does
+not re-initialize when a session goes missing, so a reclaim mid-pairing
+surfaces as an error rather than a reconnect. What bounds the memory is
+`maxUnauthenticatedSessions`, so an idle provisional session is only
+evicted when that quota is actually contended, least-recently-seen
+first. One consequence to know: a burst of anonymous `initialize`s while
+a person is mid-pairing can evict that pairing's session, because an
+idle session is by definition the least recently seen. It is the LRU
+quota working as designed, and the cost of leaving the endpoint
+reachable without a bearer.
 
 ### Client IP, proxies, and the rate-limit bucket
 
@@ -258,10 +271,10 @@ allocate server state for a caller with no resolved identity, so both
 throttle on a bucket keyed by the caller's address. Two server options
 decide what that address is:
 
-| Option          | Default | Effect                                                                                                                                                |
-| --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trustProxy`    | `0`     | Number of trusted reverse proxies in front. `0` reads **no** forwarding header at all. `n > 0` reads the hop `n` from the END of `X-Forwarded-For`.   |
-| `clientAddress` | —       | `(req) => string \| null` returning the peer address the host runtime knows. Node: `socket.remoteAddress`. Cloudflare: the `cf-connecting-ip` header. |
+| Option          | Default | Effect                                                                                                                                                                                  |
+| --------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trustProxy`    | `0`     | Number of trusted reverse proxies in front, **each of which appends to `X-Forwarded-For`**. `0` reads no forwarding header at all. `n > 0` reads the hop `n` from the END of the chain. |
+| `clientAddress` | —       | `(req) => string \| null` returning the peer address the host runtime knows. Node: `socket.remoteAddress`. Cloudflare: the `cf-connecting-ip` header.                                   |
 
 The default trusts nothing on purpose. `X-Forwarded-For` and `X-Real-IP`
 are ordinary request headers: on a direct-to-origin deployment the caller
@@ -270,6 +283,26 @@ per request and the limit stops existing. Behind a proxy the header is
 evidence, but only the hops your proxies appended — which is why
 `trustProxy` is a COUNT and the value read is taken from the right-hand
 end of the chain, never the first entry.
+
+**Declaring `trustProxy: n` asserts that all `n` proxies write
+`X-Forwarded-For`.** Everything else follows: a chain shorter than `n`
+did not come through `n` appending proxies, so it is dropped rather than
+read, and `X-Real-IP` is never consulted — it is set rather than
+appended, so nothing about it says a proxy wrote it, and reading it made
+the whole declaration bypassable by omitting `X-Forwarded-For`. If your
+proxy sets only `X-Real-IP` (nginx with `proxy_set_header X-Real-IP` and
+no `X-Forwarded-For` is a common config), name it through
+`clientAddress` instead of `trustProxy`:
+
+```ts
+createLluiAgentServer({ mcp: true, clientAddress: (req) => req.headers.get('x-real-ip') })
+```
+
+One case is unavoidable: a chain of exactly `n` entries is what a direct
+client behind `n` appending proxies produces and also what a caller who
+spoofs `n` entries produces, and no property of the request separates
+them. `trustProxy` is trusted input — set it only for proxies that are
+really in the path and really append.
 
 ```ts
 // Behind one reverse proxy (nginx, Caddy, an ALB):
