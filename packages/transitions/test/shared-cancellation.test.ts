@@ -43,6 +43,13 @@ const HELPERS: ReadonlyArray<readonly [string, string]> = [
 // Textual matching still cannot see an expando or a plain closure variable. What
 // it CAN do is put a signpost where a cache is written, so the rule is stated to
 // the person adding one rather than discovered by a red build.
+//
+// A marker is scoped to ONE statement — its own — in both directions. The
+// forward half of that was a claim before it was true: the window took the line
+// above unconditionally, so a marked declaration exempted the unmarked
+// construction on the next line, which is precisely how `flip.ts` writes its
+// adjacent per-pass caches. `statementWindow` is where both directions are
+// decided, and the leak is pinned in both.
 const CACHE_CONSTRUCTION = /\bnew\s+(?:Weak)?(?:Map|Set|Ref)\b/
 /** `// run-scope-exempt: <reason>` — a bare marker with no reason does not count. */
 const EXEMPTION = /\/\/\s*run-scope-exempt:\s*\S/
@@ -53,26 +60,59 @@ interface UnmarkedCache {
   text: string
 }
 
+/** How far a line is indented, in characters. */
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length
+}
+
 /**
- * Every cache construction in `source` that carries no exemption marker.
+ * The lines a marker may sit on to explain the construction on line `i` — the
+ * construction's own STATEMENT, and nothing else.
  *
- * The marker counts on the line above, on the construction's own line, or
- * anywhere up to the line that closes the construction call — so a declaration
- * prettier has wrapped across several lines keeps its trailing marker.
+ * Backwards, the line above counts, so a marker may be written as a comment
+ * over the declaration — but only when that line is not ITSELF a construction.
+ * Admitting it unconditionally let a marked declaration silently exempt the
+ * unmarked one beneath it, and adjacent cache declarations are exactly the
+ * shape `flip.ts` already has.
+ *
+ * Forwards, the window follows a prettier rewrap by INDENTATION rather than by
+ * counting lines or hunting for a `)`: every following line indented deeper
+ * than the declaration belongs to it, and the line that brings the indentation
+ * back while opening with a closing token (`>()` and friends) is its last —
+ * the natural home for a trailing marker. Both of the alternatives are wrong in
+ * the same direction: a five-line cap loses the marker on a longer wrap, and a
+ * first-`)` scan loses it on a type argument that contains one
+ * (`Array<() => void>`). Each failure blocks a build on correctly-marked code.
  */
+function statementWindow(lines: readonly string[], i: number): string[] {
+  const own = lines[i]!
+  const above = lines[i - 1]
+  const window: string[] = []
+  if (above !== undefined && !CACHE_CONSTRUCTION.test(above)) window.push(above)
+  window.push(own)
+
+  const indent = indentOf(own)
+  for (let j = i + 1; j < lines.length; j++) {
+    const line = lines[j]!
+    if (line.trim() === '') break
+    if (indentOf(line) > indent) {
+      window.push(line)
+      continue
+    }
+    if (/^\s*[)\]}>]/.test(line)) window.push(line)
+    break
+  }
+  return window
+}
+
+/** Every cache construction in `source` that carries no exemption marker. */
 export function unmarkedCaches(file: string, source: string): UnmarkedCache[] {
   const lines = source.split('\n')
   const found: UnmarkedCache[] = []
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i]!
     if (!CACHE_CONSTRUCTION.test(text)) continue
-    const window = [lines[i - 1] ?? '']
-    for (let j = i; j < Math.min(lines.length, i + 5); j++) {
-      const line = lines[j]!
-      window.push(line)
-      if (line.includes(')')) break // the construction call closes here
-    }
-    if (window.some((line) => EXEMPTION.test(line))) continue
+    if (statementWindow(lines, i).some((line) => EXEMPTION.test(line))) continue
     found.push({ file, line: i + 1, text: text.trim() })
   }
   return found
@@ -82,7 +122,9 @@ const RULE =
   'Per-node LIVENESS state belongs on a RunScope (createRunScope), not on a ' +
   'hand-rolled cache — that is how the #40 interrupt fix landed in half the ' +
   'helpers (#111). If this one is NOT liveness, say why where you wrote it: ' +
-  'add a `// run-scope-exempt: <reason>` comment on the line.'
+  'add a `// run-scope-exempt: <reason>` comment on the line, or on the line ' +
+  'directly above it. A marker covers ONE statement — the one it is written ' +
+  'on — so a neighbouring construction needs its own.'
 
 describe('one shared cancellation path', () => {
   it.each(HELPERS)('%s routes cancellation through createRunScope', (_file, source) => {
@@ -141,6 +183,58 @@ describe('the run-scope drift gate itself', () => {
     // The window closes at the line that closes the call, so the marker on a
     // LATER statement cannot cover this one.
     expect(at('const a = new Map()\nconst b = new Map() // run-scope-exempt: reason')).toEqual([1])
+  })
+
+  it('does not let a marker leak FORWARD onto the construction below it', () => {
+    // The other direction, and the one the window used to allow: a marked
+    // declaration silently exempted the UNMARKED one on the next line, because
+    // the line above was admitted to the window unconditionally. Adjacent cache
+    // declarations are exactly the shape `flip.ts` already has, so this was
+    // reachable in the very source the gate guards.
+    expect(at('const a = new Map() // run-scope-exempt: reason\nconst b = new Map()')).toEqual([2])
+  })
+
+  it('accepts a marker after a rewrap of any length', () => {
+    // The window used to stop after five lines, so a longer wrap lost its
+    // trailing marker and failed the build on correctly-marked code.
+    expect(
+      at(
+        'const positions = new WeakMap<\n' +
+          '  Element,\n' +
+          '  {\n' +
+          '    left: number\n' +
+          '    top: number\n' +
+          '    width: number\n' +
+          '    height: number\n' +
+          '  }\n' +
+          '>() // run-scope-exempt: geometry, not liveness\n',
+      ),
+    ).toEqual([])
+  })
+
+  it('accepts a marker after a rewrap whose type argument contains parens', () => {
+    // `Array<() => void>` closes a paren inside the type argument; the window
+    // used to end at the first line containing `)` and stopped there.
+    expect(
+      at(
+        'const listeners = new WeakMap<\n' +
+          '  Element,\n' +
+          '  Array<() => void>\n' +
+          '>() // run-scope-exempt: not liveness\n',
+      ),
+    ).toEqual([])
+  })
+
+  it('does not let a rewrapped construction swallow the statement after it', () => {
+    expect(
+      at(
+        'const positions = new WeakMap<\n' +
+          '  Element,\n' +
+          '  Point\n' +
+          '>()\n' +
+          'const runs = new Map() // run-scope-exempt: reason\n',
+      ),
+    ).toEqual([1])
   })
 })
 
