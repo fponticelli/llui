@@ -66,9 +66,11 @@ function sanitize(char: string, type: PinType): string {
  * Accepted characters of a pasted sequence, in order and WITHOUT the holes a
  * rejected character used to leave. Sanitizing per SLOT dropped '123-456' into
  * ['1','2','3','','4','5'] — the separator ate a slot and the last digit fell
- * off the end (#125). Entries may hold more than one character (a caller that
- * passes the clipboard text whole), and are split by code point so a surrogate
- * pair is judged as one character.
+ * off the end (#125). Entries may hold more than one character — the paste
+ * handler passes the clipboard text WHOLE, which is what makes the code-point
+ * iteration below reachable: a surrogate pair is judged (and rejected) as ONE
+ * character rather than as two lone halves. Splitting by UTF-16 code unit
+ * before the call throws that away, which is what the caller used to do.
  */
 export function acceptedChars(values: readonly string[], type: PinType): string[] {
   const accepted: string[] = []
@@ -255,7 +257,11 @@ export function connect(
       onPaste: tagSend(send, ['setAll'], (e) => {
         e.preventDefault()
         const text = e.clipboardData?.getData('text') ?? ''
-        send({ type: 'setAll', values: text.split('') })
+        // Hand the clipboard text over WHOLE. `acceptedChars` iterates an entry
+        // by CODE POINT; `text.split('')` splits by UTF-16 code UNIT, so a
+        // pasted surrogate pair arrived as two lone halves and the code-point
+        // guarantee never reached the only caller that needed it.
+        send({ type: 'setAll', values: [text] })
       }),
     }),
   }

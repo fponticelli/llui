@@ -186,4 +186,12 @@ describe('pin-input paste (connect)', () => {
     const { sent } = paste('')
     expect(update(init({ length: 4 }), sent[0]!)[0].values).toEqual(['', '', '', ''])
   })
+
+  it('hands the clipboard text over WHOLE, so acceptedChars splits it by code point', () => {
+    // `acceptedChars` judges a surrogate pair as one character, but only if it
+    // arrives as one entry: `text.split('')` splits by UTF-16 code UNIT and
+    // delivered two lone halves, which made the documented claim false.
+    const { sent } = paste('1\u{1F600}2')
+    expect(sent[0]).toEqual({ type: 'setAll', values: ['1\u{1F600}2'] })
+  })
 })
