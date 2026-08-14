@@ -134,10 +134,10 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
  * cannot hold them (see the file header) and because a host's upload effect
  * needs to reach a handle far from the view that produced it.
  *
- * Entries are dropped by `releaseFile`/`releaseDropped`. `connect` calls
- * `releaseDropped` after every message it sends, so the handles a transition
- * made unreachable are freed without the host doing anything; a host that
- * drives the reducer itself should call it too.
+ * Entries are dropped by `releaseFile`/`releaseDropped`/`releaseUnlanded`.
+ * `connect` calls the latter two after every message it sends, so the handles a
+ * transition made unreachable are freed without the host doing anything; a host
+ * driving the reducer itself owes BOTH per message.
  */
 const fileRegistry = new Map<string, File>()
 let fileSeq = 0
@@ -174,6 +174,15 @@ export function releaseFiles(refs: readonly (FileMeta | string)[]): void {
   for (const ref of refs) releaseFile(ref)
 }
 
+/**
+ * How many live handles the registry currently holds. A leak probe: a handle no
+ * State references any more is invisible from every other angle, which is
+ * exactly the shape a leak takes here.
+ */
+export function trackedFileCount(): number {
+  return fileRegistry.size
+}
+
 function referencedIds(state: FileUploadState, into: Set<string>): Set<string> {
   for (const f of state.files) into.add(f.id)
   for (const r of state.rejectedFiles) into.add(r.file.id)
@@ -181,15 +190,44 @@ function referencedIds(state: FileUploadState, into: Set<string>): Set<string> {
 }
 
 /**
- * Release the handles that `next` no longer references. Pure bookkeeping over
- * two states, so it is correct for every transition — including the ones that
- * drop a file without naming it (single-select replacement, a rejected list
- * overwritten by the next selection).
+ * Release the handles `prev` referenced and `next` does not. Pure bookkeeping
+ * over two states, so it covers every transition that drops a file without
+ * naming it (single-select replacement, a rejected list overwritten by the next
+ * selection).
+ *
+ * It CANNOT cover a message whose handles never reached state at all: it only
+ * sees ids referenced by `prev`, and a gated `addFiles` was tracked before the
+ * send. Those are `releaseUnlanded`'s job — read it before assuming this one
+ * function is enough (#138 review).
  */
 export function releaseDropped(prev: FileUploadState, next: FileUploadState): void {
   if (prev.files === next.files && prev.rejectedFiles === next.rejectedFiles) return
   const kept = referencedIds(next, new Set<string>())
   for (const id of referencedIds(prev, new Set<string>())) {
+    if (!kept.has(id)) fileRegistry.delete(id)
+  }
+}
+
+/** The ids a message carries, i.e. the ones its sender minted for it. */
+function carriedIds(msg: FileUploadMsg): string[] {
+  if (msg.type !== 'setFiles' && msg.type !== 'addFiles') return []
+  const ids = msg.files.map((f) => f.id)
+  for (const r of msg.customRejected ?? []) ids.push(r.file.id)
+  return ids
+}
+
+/**
+ * Release the handles `msg` carried that `next` does not reference. A `disabled`
+ * or `readonly` gate returns the state unchanged, so the files a drop tracked
+ * are unreachable from any state the moment `update` returns — `releaseDropped`
+ * cannot see them, and they leaked live `File` objects (and the blobs behind
+ * them) for the lifetime of the page (#138 review, blocking 1).
+ */
+export function releaseUnlanded(msg: FileUploadMsg, next: FileUploadState): void {
+  const carried = carriedIds(msg)
+  if (carried.length === 0) return
+  const kept = referencedIds(next, new Set<string>())
+  for (const id of carried) {
     if (!kept.has(id)) fileRegistry.delete(id)
   }
 }
@@ -497,14 +535,22 @@ export function connect(
   const clearLabel = opts.clearLabel ?? locale.fileUpload.clear
 
   /**
-   * Send, then free the handles the transition dropped. `send` is synchronous
-   * (CLAUDE.md), so the post-send peek is the state the message produced — no
-   * handler has to know which messages remove a file.
+   * Send, then free every handle the message left unreachable — the ones the
+   * transition dropped from State, AND the ones the message carried that never
+   * landed there. The second half is not redundant: a `disabled`/`readonly`
+   * gate swallows the message whole, so its freshly-minted handles appear in
+   * neither the before-state nor the after-state and `releaseDropped` is blind
+   * to them (#138 review, blocking 1).
+   *
+   * `send` is synchronous (CLAUDE.md), so the post-send peek is the state this
+   * message produced — no handler has to know which messages remove a file.
    */
   const sendTracked = (msg: FileUploadMsg): void => {
     const before = state.peek()
     send(msg)
-    releaseDropped(before, state.peek())
+    const after = state.peek()
+    releaseDropped(before, after)
+    releaseUnlanded(msg, after)
   }
 
   const runPipeline = async (

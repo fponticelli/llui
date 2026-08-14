@@ -12,8 +12,9 @@ import {
   getFile,
   releaseFile,
   releaseDropped,
+  trackedFileCount,
 } from '../../src/components/file-upload'
-import type { FileMeta, FileUploadState } from '../../src/components/file-upload'
+import type { FileMeta, FileUploadMsg, FileUploadState } from '../../src/components/file-upload'
 import { pathHandle } from '@llui/dom'
 import { rootSignal, signalOf, read } from '../_signal'
 
@@ -259,12 +260,22 @@ describe('connect: new parts + attrs', () => {
   })
 
   it('custom validate adds to rejectedFiles via the pipeline', async () => {
-    const send = vi.fn()
-    const pc = connect(signalOf(init()), send, {
-      id: 'x',
-      validate: (file) =>
-        file.name.endsWith('.bad') ? [{ code: 'CUSTOM', message: 'banned name' }] : null,
+    // A live reducer behind the spy: a `send` that drops the message on the
+    // floor is indistinguishable from a disabled gate, and connect now
+    // (correctly) frees the handles of a message that never reached State.
+    let state = init({ multiple: true })
+    const send = vi.fn((m: FileUploadMsg) => {
+      ;[state] = update(state, m)
     })
+    const pc = connect(
+      pathHandle<FileUploadState>(() => state, ''),
+      send,
+      {
+        id: 'x',
+        validate: (file) =>
+          file.name.endsWith('.bad') ? [{ code: 'CUSTOM', message: 'banned name' }] : null,
+      },
+    )
     const input = document.createElement('input')
     input.type = 'file'
     const ok = makeFile('ok.txt', 10)
@@ -454,6 +465,73 @@ describe('connect releases dropped handles', () => {
     expect(state.files).toEqual([])
     expect(getFile(a)).toBeUndefined()
     expect(getFile(b)).toBeUndefined()
+  })
+})
+
+// A gated message never reaches State, so `releaseDropped(prev, next)` — which
+// can only free ids referenced by `prev` — cannot see the handles it carried.
+// They were minted BEFORE the send and land in NEITHER state, so they stayed in
+// the registry forever: two live `File` objects per drop on a disabled dropzone.
+// `onDrop`/`dispatchAdd` carry no disabled/readonly guard, so this is the
+// component's own path (#138 review, blocking 1).
+describe('connect releases handles a gate swallowed', () => {
+  /** A `drop` carrying files. jsdom has no `DataTransfer`, and the handler reads
+   * exactly one field, so the event carries exactly that field. */
+  function dropEvent(files: readonly File[]): DragEvent {
+    const ev = new MouseEvent('drop')
+    Object.defineProperty(ev, 'dataTransfer', { value: { files } })
+    return ev as DragEvent
+  }
+
+  function live(state: FileUploadState): {
+    parts: ReturnType<typeof connect>
+    read: () => FileUploadState
+  } {
+    let current = state
+    const parts = connect(
+      pathHandle<FileUploadState>(() => current, ''),
+      (m) => {
+        ;[current] = update(current, m)
+      },
+      { id: 'x' },
+    )
+    return { parts, read: () => current }
+  }
+
+  it('a drop on a DISABLED uploader leaves nothing in the registry', () => {
+    const before = trackedFileCount()
+    const { parts, read } = live(init({ disabled: true, multiple: true }))
+    parts.dropzone.onDrop(dropEvent([makeFile('a.txt', 1), makeFile('b.txt', 1)]))
+    expect(read().files).toEqual([])
+    expect(trackedFileCount()).toBe(before)
+  })
+
+  it('a drop on a READONLY uploader leaves nothing in the registry', () => {
+    const before = trackedFileCount()
+    const { parts, read } = live(init({ readonly: true, multiple: true }))
+    parts.dropzone.onDrop(dropEvent([makeFile('c.txt', 1)]))
+    expect(read().files).toEqual([])
+    expect(trackedFileCount()).toBe(before)
+  })
+
+  it('a rejected file stays tracked — it is still in State, under rejectedFiles', () => {
+    const before = trackedFileCount()
+    const { parts, read } = live(init({ multiple: true, maxSize: 1 }))
+    parts.dropzone.onDrop(dropEvent([makeFile('big.txt', 50)]))
+    expect(read().files).toEqual([])
+    expect(read().rejectedFiles).toHaveLength(1)
+    expect(trackedFileCount()).toBe(before + 1)
+    expect(getFile(read().rejectedFiles[0]!.file)).toBeDefined()
+  })
+
+  it('single-select keeps only the accepted file of a multi-file drop', () => {
+    const before = trackedFileCount()
+    const { parts, read } = live(init({ multiple: false }))
+    parts.dropzone.onDrop(dropEvent([makeFile('a.txt', 1), makeFile('b.txt', 1)]))
+    // 1 accepted + 1 rejected (TOO_MANY) — both are in State, both stay tracked.
+    expect(read().files).toHaveLength(1)
+    expect(read().rejectedFiles).toHaveLength(1)
+    expect(trackedFileCount()).toBe(before + 2)
   })
 })
 
