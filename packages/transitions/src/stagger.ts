@@ -1,5 +1,6 @@
 import type { TransitionOptions } from '@llui/dom'
-import { prefersReducedMotion } from './anim.js'
+import type { RunScope } from './anim.js'
+import { prefersReducedMotion, createRunScope } from './anim.js'
 
 export interface StaggerOptions {
   /** Delay between each item in milliseconds (default: 30). */
@@ -22,6 +23,8 @@ export interface StaggerOptions {
 interface ScheduledPhase {
   /** Nodes still due to run. Cancelled nodes are removed; empty ⇒ nothing to do. */
   nodes: Set<Node>
+  /** This phase's run token per node, so `fire` can end only its OWN runs. */
+  tokens: Map<Node, symbol>
   /** Set once `arm` schedules the timer; absent while still reserved. */
   timer?: ReturnType<typeof setTimeout>
   /** True once every node was cancelled, so a pending `arm` becomes a no-op. */
@@ -38,9 +41,13 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
   // immediately per item (and itself resolves instantly if it honors the setting).
   const reducedMotion = (): boolean => respectReduced && prefersReducedMotion()
 
-  // Deferred phases, keyed by node so each phase can cancel the other's.
-  const scheduledEnter = new WeakMap<Node, ScheduledPhase>()
-  const scheduledLeave = new WeakMap<Node, ScheduledPhase>()
+  // Deferred phases, one run scope per direction so each phase can cancel the
+  // other's on a given node. Both are the package's shared registry (#111):
+  // superseding a node fires the reservation's rollback, which drops it from its
+  // batch. The batch/timer bookkeeping below is stagger's own; the "who owns
+  // this node right now" half is not.
+  const scheduledEnter = createRunScope()
+  const scheduledLeave = createRunScope()
 
   /** Settle `result` (promise or not) into `resolve`. */
   function settle(result: void | Promise<void>, resolve: () => void): void {
@@ -52,20 +59,48 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
   }
 
   /**
-   * Reserve `nodes` in `map` immediately, BEFORE any delay is known. The reverse
+   * Drop `node` from its reservation. A reservation left with no nodes is
+   * cancelled outright and RESOLVED — the runtime gates DOM removal on that
+   * promise, so one that never settled would strand the row's teardown.
+   *
+   * This is the rollback every reservation registers, so the opposite phase
+   * cancels by simply superseding the node in this scope.
+   */
+  function drop(entry: ScheduledPhase, node: Node): void {
+    entry.nodes.delete(node)
+    entry.tokens.delete(node)
+    if (entry.nodes.size > 0 || entry.cancelled) return
+    entry.cancelled = true
+    if (entry.timer !== undefined) clearTimeout(entry.timer)
+    entry.resolve()
+  }
+
+  /**
+   * Reserve `nodes` in `runs` immediately, BEFORE any delay is known. The reverse
    * order can only compute its delay on a microtask, and a cancellation arriving
    * in that window must still land — so registration happens up front and `arm`
    * checks the reservation is still live.
    */
-  function reserve(map: WeakMap<Node, ScheduledPhase>, nodes: Node[], resolve: () => void) {
-    const entry: ScheduledPhase = { nodes: new Set(nodes), cancelled: false, resolve }
-    for (const node of nodes) map.set(node, entry)
+  function reserve(runs: RunScope, nodes: Node[], resolve: () => void) {
+    const entry: ScheduledPhase = {
+      // run-scope-exempt: batch membership; the scope below owns liveness
+      nodes: new Set(nodes),
+      // run-scope-exempt: holds the scope's OWN tokens, one per node
+      tokens: new Map(),
+      cancelled: false,
+      resolve,
+    }
+    for (const node of nodes)
+      entry.tokens.set(
+        node,
+        runs.register(node, () => drop(entry, node)),
+      )
     return entry
   }
 
   /** Run `base` on the reservation's surviving nodes, now or after `delay`. */
   function arm(
-    map: WeakMap<Node, ScheduledPhase>,
+    runs: RunScope,
     entry: ScheduledPhase,
     base: (nodes: Node[]) => void | Promise<void>,
     delay: number,
@@ -73,8 +108,12 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
     const fire = (): void => {
       if (entry.cancelled) return // resolved by the cancellation
       const remaining = Array.from(entry.nodes)
-      for (const node of remaining) map.delete(node)
+      // `end`, not `supersede`: the run is finished, not undone — and it clears
+      // only runs still owned by THIS reservation, so a newer phase that already
+      // claimed the node is left alone.
+      for (const node of remaining) runs.end(node, entry.tokens.get(node)!)
       entry.nodes.clear()
+      entry.tokens.clear()
       settle(base(remaining), entry.resolve)
     }
     if (entry.cancelled) return
@@ -85,22 +124,9 @@ export function stagger(spec: TransitionOptions, opts?: StaggerOptions): Transit
     entry.timer = setTimeout(fire, delay)
   }
 
-  /**
-   * Drop `nodes` from any phase deferred in `map`. A reservation left with no
-   * nodes is cancelled outright and RESOLVED — the runtime gates DOM removal on
-   * that promise, so one that never settled would strand the row's teardown.
-   */
-  function cancelScheduled(map: WeakMap<Node, ScheduledPhase>, nodes: Node[]): void {
-    for (const node of nodes) {
-      const entry = map.get(node)
-      if (!entry) continue
-      map.delete(node)
-      entry.nodes.delete(node)
-      if (entry.nodes.size > 0 || entry.cancelled) continue
-      entry.cancelled = true
-      if (entry.timer !== undefined) clearTimeout(entry.timer)
-      entry.resolve()
-    }
+  /** Drop `nodes` from any phase deferred in `runs` (fires each one's rollback). */
+  function cancelScheduled(runs: RunScope, nodes: Node[]): void {
+    for (const node of nodes) runs.supersede(node)
   }
 
   // ── Enter stagger ──────────────────────────────────────────────

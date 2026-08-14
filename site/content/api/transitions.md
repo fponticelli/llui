@@ -191,9 +191,33 @@ function fade(opts: FadeOptions = {}): TransitionOptions
 
 FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
 `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
-It compares each surviving child's last-known position (kept in a
-`WeakMap<Element, DOMRect>`) against its new one and, for any that moved,
+It compares each surviving child's last-known LAYOUT position (kept in a
+`WeakMap<Element, Point>`) against its new one and, for any that moved,
 plays an inverse-then-identity transform so the row appears to glide.
+A pass is split into a read phase and a write phase: every measurement
+(`getBoundingClientRect`, the computed transform) happens before the first
+`cancel()`/`animate()`, so a K-row reorder forces layout ONCE rather than
+once per row. Do not reintroduce a write between the reads.
+Interruption: the live `Animation` is retained per element and cancelled
+before the next one starts, and the new delta is measured from where the row
+VISUALLY is — its previous layout box plus whatever translation the running
+glide had already applied — so an interrupted reorder continues rather than
+jumping. `getBoundingClientRect` reports the transformed box, so the stored
+position is the rect with that translation subtracted back out. The run ENDS
+when the glide completes (or is cancelled by anyone, including someone other
+than us): only while one is live is the computed transform ours to read, and
+a run left registered makes every later pass measure a row's own author
+transform as if it were a glide.
+Known defect (#144): the keyframes below set `transform` to a translation
+alone, so they REPLACE the row's own `transform` rather than composing with
+it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
+CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
+that amount when a glide starts and jumps back when it ends. The DELTA is
+unaffected — the author transform is folded into both the stored position and
+the new rect and cancels out — so this is bounded, cosmetic and
+self-correcting. The fix is to compose the author transform into both
+keyframes; see the issue for why that trades against the single-read rule
+above.
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
@@ -278,11 +302,31 @@ function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): Tra
 
 ### `scale()`
 
+Scale an element in/out from `from` to 1, optionally fading with it.
+
+> **Known defect (#142).** Carries the same malformed `transition` shorthand
+> as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
+> duration, so it snaps rather than scaling and never reports a
+> `transitionend` — the phase resolves on the fallback timer instead.
+
 ```typescript
 function scale(opts: ScaleOptions = {}): TransitionOptions
 ```
 
 ### `slide()`
+
+Slide an element in/out along one axis, optionally fading with it.
+
+> **Known defect (#142).** The active value is built as
+> `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
+> grammar reads as TWO single-transitions — the first, `transform`, taking the
+> initial `transition-duration` of **0s**. In a real browser the transform
+> therefore SNAPS and only the opacity animates. A 0s transition also fires no
+> `transitionend`, so `transform` never leaves the set of properties the phase
+> waits on (see {@link waitForEnd}) and the phase always resolves on the
+> fallback timer rather than on a real end — 16ms late, never a hang. Do not
+> read the property filter as "every shipped preset lines up with it": `fade()`
+> does, `slide()` and `scale()` do not until #142 lands.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions
@@ -302,6 +346,8 @@ Interruption: enter and leave on the SAME element supersede each other. A new
 phase cancels the previous element's loop WITHOUT letting it snap to its own
 (now-stale) target, so an enter interrupted by a leave rests at the leave
 target rather than being clobbered back to the enter target by the dying loop.
+Either direction resumes from the element's CURRENT value — the endpoints
+`from`/`to` are resting starts, used only when nothing is in flight.
 Passed as the trailing transition argument to the signal `show`/`branch`/`each`
 primitives to spring an arm/row in and defer its leave, e.g.
 `show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
@@ -347,6 +393,20 @@ The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
   be detached) but stays registered, so if the element is instead reused — the
   route seam calls `enter` on the very element it just left — the enter clears
   that residue before snapshotting its own baseline.
+  Interrupting a phase mid-flight resumes from the element's CURRENT rendered
+  values in BOTH directions, by the same mechanism: the animated properties are
+  frozen at what the element is showing and applied in place of the phase's
+  `from` value, so neither direction re-animates from the far end. Freezing is
+  what makes it work — merely SKIPPING the `from` value is not enough, because
+  superseding the interrupted phase fires its rollback, which restores the
+  pre-phase inline value (for a fade, `''` — fully visible). A phase that has
+  already settled counts as resting, not as an interrupt.
+  Completion: a phase resolves only once EVERY property it animates (the style
+  keys of its `from`/`to` values) has reported a `transitionend` on the element
+  itself — an unrelated `transitionend` (a hover `background-color`, or the fast
+  half of `transition: opacity 100ms, transform 500ms`) does not end the phase,
+  because the runtime detaches a leaving node on exactly that promise. A
+  class-only spec names no properties, so any end on the target resolves it.
   Duration (used only for the fallback timer / when no CSS transition fires):
 - If `duration` is given, it is used verbatim.
 - Otherwise, computed `transition-duration + transition-delay` is read after

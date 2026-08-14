@@ -45,6 +45,20 @@ export interface SlideOptions {
   respectReducedMotion?: boolean
 }
 
+/**
+ * Slide an element in/out along one axis, optionally fading with it.
+ *
+ * > **Known defect (#142).** The active value is built as
+ * > `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
+ * > grammar reads as TWO single-transitions — the first, `transform`, taking the
+ * > initial `transition-duration` of **0s**. In a real browser the transform
+ * > therefore SNAPS and only the opacity animates. A 0s transition also fires no
+ * > `transitionend`, so `transform` never leaves the set of properties the phase
+ * > waits on (see {@link waitForEnd}) and the phase always resolves on the
+ * > fallback timer rather than on a real end — 16ms late, never a hang. Do not
+ * > read the property filter as "every shipped preset lines up with it": `fade()`
+ * > does, `slide()` and `scale()` do not until #142 lands.
+ */
 export function slide(opts: SlideOptions = {}): TransitionOptions {
   const direction = opts.direction ?? 'down'
   const distance = opts.distance ?? 20
@@ -103,6 +117,14 @@ export interface ScaleOptions {
   respectReducedMotion?: boolean
 }
 
+/**
+ * Scale an element in/out from `from` to 1, optionally fading with it.
+ *
+ * > **Known defect (#142).** Carries the same malformed `transition` shorthand
+ * > as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
+ * > duration, so it snaps rather than scaling and never reports a
+ * > `transitionend` — the phase resolves on the fallback timer instead.
+ */
 export function scale(opts: ScaleOptions = {}): TransitionOptions {
   const from = opts.from ?? 0.95
   const duration = opts.duration ?? 200
@@ -168,6 +190,10 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
   const easing = opts.easing ?? 'ease-out'
   const appear = opts.appear !== false
   const sizeProp = axis === 'y' ? 'height' : 'width'
+  // The one property collapse transitions — anything else ending on the element
+  // (a hover `background-color`, a sibling fade) must not resolve the wait and
+  // let the runtime detach the row mid-collapse (#105).
+  const sizeProperties = [sizeProp]
   const runs = createRunScope()
   const reducedMotion = (): boolean => opts.respectReducedMotion !== false && prefersReducedMotion()
 
@@ -197,6 +223,15 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
       return Promise.resolve()
     }
 
+    // A run already in flight means this enter is REVERSING a leave mid-collapse.
+    // Measure the element's current rendered size before `snapshotRestore`
+    // supersedes that run — its rollback restores the pre-leave (natural) size,
+    // so reading afterwards would report the far end. A fresh enter opens from
+    // 0px as before.
+    const interrupting = runs.isActive(el)
+    const rect = interrupting ? el.getBoundingClientRect() : undefined
+    const startSize = rect ? (axis === 'y' ? rect.height : rect.width) : 0
+
     const restore = snapshotRestore(el)
     const token = runs.register(el, restore)
 
@@ -205,12 +240,12 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     const style = el.style
 
     style.overflow = 'hidden'
-    style[sizeProp] = '0px'
+    style[sizeProp] = `${startSize}px`
     style.transition = `${sizeProp} ${duration}ms ${easing}`
     forceReflow(el)
     style[sizeProp] = `${naturalSize}px`
 
-    return waitForEnd(el, duration).then(() => {
+    return waitForEnd(el, duration, sizeProperties).then(() => {
       if (!runs.isCurrent(el, token)) return
       restore()
       runs.end(el, token)
@@ -244,7 +279,7 @@ export function collapse(opts: CollapseOptions = {}): TransitionOptions {
     forceReflow(el)
     style[sizeProp] = '0px'
 
-    return waitForEnd(el, duration).then(() => {
+    return waitForEnd(el, duration, sizeProperties).then(() => {
       // Leave finished — under show/branch/each the runtime removes the element
       // next, so keep the collapsed state. SETTLE rather than `end` the run: on
       // a REUSED element (the `@llui/vike` route seam calls enter on the element

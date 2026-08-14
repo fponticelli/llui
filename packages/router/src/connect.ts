@@ -20,7 +20,134 @@ export interface RouterEffect {
   y?: number
 }
 
+// ── Router environment ───────────────────────────────────────────
+
+/**
+ * The History / Location / scroll surface `connectRouter` depends on, injected
+ * rather than reached for globally — the same pattern `@llui/dom`'s
+ * `dom-env.ts` already models, and for the same three reasons: no
+ * `globalThis` mutation (strict-isolate runtimes forbid it), no process-level
+ * singleton two routers could collide on, and a test/SSR host can supply its
+ * own surface instead of shimming the world.
+ *
+ * The surface is deliberately narrow — exactly what the connector touches. The
+ * READ members return an empty/`null` value where the corresponding global is
+ * absent, matching the guards this replaced; the MUTATORS dereference their
+ * global at call time, so invoking one on a runtime with no history is the same
+ * error it always was.
+ */
+export interface RouterEnv {
+  /** `location.hash` (`''` where there is no location). */
+  readonly hash: string
+  /** `location.pathname` (`''` where there is no location). */
+  readonly pathname: string
+  /** `location.search` (`''` where there is no location). */
+  readonly search: string
+  /** `history.state` (`null` where there is no history). */
+  readonly historyState: unknown
+  /**
+   * `history.length` — the session-history entry count (`0` where there is no
+   * history).
+   *
+   * Load-bearing, not diagnostic: it is the only signal that tells a `hashchange`
+   * caused by a NEW fragment navigation apart from one caused by a TRAVERSAL,
+   * which need opposite index handling (a push grows the stack, a traversal
+   * never does). An implementation that returns a constant makes every unstamped
+   * hash entry read as a traversal.
+   *
+   * `0` doubles as the "this surface has no history at all" answer — every real
+   * session history contains at least the entry you are standing on — which is
+   * what the seed checks before it writes.
+   */
+  readonly historyLength: number
+
+  /** Assign `location.hash` — a same-document navigation that fires `hashchange`. */
+  setHash(hash: string): void
+  /** `location.replace(url)` — swap the current entry without growing history. */
+  replaceLocation(url: string): void
+
+  pushState(state: unknown, url: string): void
+  /**
+   * `history.replaceState(state, '', url)` — swap the current entry's state,
+   * and its URL when one is given.
+   *
+   * `url` is OPTIONAL because "re-stamp this entry's state and leave the URL
+   * alone" is a distinct operation (merging a foreign key into `history.state`,
+   * recording a scroll offset), and `''` does not express it: an empty url
+   * resolves against the document base and drops the fragment, which silently
+   * breaks hash mode. An implementation must forward an absent `url` as absent.
+   */
+  replaceState(state: unknown, url?: string): void
+  back(): void
+  forward(): void
+  /** `history.go(delta)` — used to REWIND a blocked pop, never a fresh push. */
+  go(delta: number): void
+
+  scrollTo(x: number, y: number): void
+
+  /**
+   * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
+   * caller never has to hold the handler identity to detach it.
+   */
+  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
+}
+
+/**
+ * Wrap the browser globals as a {@link RouterEnv} — the default for
+ * `connectRouter`.
+ *
+ * Reads delegate through getters, so evaluating this on a server process before
+ * a DOM exists is safe: the globals are only dereferenced when a member is
+ * actually used, and the read members fall back rather than throwing (the
+ * connector seeds its starting route at construction time, which happens at
+ * module scope in most apps).
+ */
+export function browserRouterEnv(): RouterEnv {
+  return {
+    get hash() {
+      return typeof location === 'undefined' ? '' : location.hash
+    },
+    get pathname() {
+      return typeof location === 'undefined' ? '' : location.pathname
+    },
+    get search() {
+      return typeof location === 'undefined' ? '' : location.search
+    },
+    get historyState() {
+      return typeof history === 'undefined' ? null : history.state
+    },
+    get historyLength() {
+      return typeof history === 'undefined' ? 0 : history.length
+    },
+    setHash: (hash) => {
+      location.hash = hash
+    },
+    replaceLocation: (url) => location.replace(url),
+    pushState: (state, url) => history.pushState(state, '', url),
+    // `null` rather than a forwarded `undefined`: both mean "leave the URL
+    // alone" to `history.replaceState`, but only one says so on purpose.
+    replaceState: (state, url) => history.replaceState(state, '', url ?? null),
+    back: () => history.back(),
+    forward: () => history.forward(),
+    go: (delta) => history.go(delta),
+    scrollTo: (x, y) => window.scrollTo(x, y),
+    onUrlChange: (event, handler) => {
+      window.addEventListener(event, handler)
+      return () => {
+        window.removeEventListener(event, handler)
+      }
+    },
+  }
+}
+
 export interface ConnectOptions<R> {
+  /**
+   * The History/Location surface to drive (default: {@link browserRouterEnv}).
+   * Inject one to route a test, an SSR host, or an embedded frame through its
+   * own history without touching the page's.
+   */
+  env?: RouterEnv
+
   /**
    * Called before entering a new route. Return:
    * - `void` / `undefined` → allow navigation
@@ -153,18 +280,6 @@ function sameHash(a: string, b: string): boolean {
   return normHash(a) === normHash(b)
 }
 
-/**
- * The `history.state` to write when re-stamping the CURRENT entry, preserving
- * every other key already on it — the seed rewrites an entry the host app (or
- * another library) may already own state on.
- */
-function stampCurrent(index: number): Record<string, unknown> {
-  const existing = history.state
-  const base =
-    existing !== null && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}
-  return { ...base, [STATE_KEY]: index }
-}
-
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
@@ -175,12 +290,17 @@ export function connectRouter<R>(
   const navigateMsg: (route: R) => unknown =
     options?.navigateMsg ?? ((r: R) => ({ type: 'navigate', route: r }))
 
+  // Every history/location touch below goes through this. Never reach for
+  // `location`/`history`/`window` directly here (#111).
+  const env = options?.env ?? browserRouterEnv()
+
   // Seed currentRoute from the current location so the first navigation's
   // guards see the actual starting route as `from` (not null) and a
-  // blocked navigation can restore the real starting URL.
+  // blocked navigation can restore the real starting URL. With no location the
+  // env reads as `''`, which matches to the root route (or the fallback under a
+  // base) — exactly what the `'#/'`/`'/'` defaults this replaced resolved to.
   function currentInput(): string {
-    if (typeof location === 'undefined') return router.mode === 'hash' ? '#/' : '/'
-    return router.mode === 'hash' ? location.hash : location.pathname + location.search
+    return router.mode === 'hash' ? env.hash : env.pathname + env.search
   }
   let currentRoute: R | null = (() => {
     try {
@@ -190,14 +310,37 @@ export function connectRouter<R>(
     }
   })()
 
+  /**
+   * The `history.state` to write when re-stamping the CURRENT entry, preserving
+   * every other key already on it — the seed rewrites an entry the host app (or
+   * another library) may already own state on.
+   *
+   * Closes over `env` rather than reading `history.state` itself, so a stamp
+   * lands on the injected surface like every other history touch here (#111).
+   */
+  function stampCurrent(index: number): Record<string, unknown> {
+    const existing = env.historyState
+    const base =
+      existing !== null && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}
+    return { ...base, [STATE_KEY]: index }
+  }
+
   // Our position in the session history stack. The browser exposes no such
   // counter, so it is carried in `history.state` on every entry we create and
   // is what a blocked navigation's `history.go(delta)` restore is computed
   // from. `null` means UNKNOWN — we are sitting on an entry nobody stamped, so
   // no delta can be derived and none may be guessed.
   let currentIndex: number | null = null
-  if (typeof history !== 'undefined') {
-    const seeded = readIndex(history.state)
+  // `historyLength > 0` is the env's own "is there a history here" capability
+  // test, replacing the `typeof history !== 'undefined'` guard this seed used
+  // to carry: an injected env is never `undefined`, so the existence check has
+  // to be asked of the ENV. Every real session history has at least the entry
+  // you are standing on, and `browserRouterEnv` reports `0` exactly where the
+  // global is absent — so this is the same question, asked through the seam. It
+  // guards a WRITE, and `connectRouter` typically runs at module scope, so
+  // without it an SSR import would throw where it used to no-op.
+  if (env.historyLength > 0) {
+    const seeded = readIndex(env.historyState)
     if (seeded !== null) {
       currentIndex = seeded
     } else {
@@ -208,7 +351,10 @@ export function connectRouter<R>(
       // blocked, and (worse) leaves the suppression armed for a restore that
       // never happened, swallowing the user's next genuine pop (#103).
       currentIndex = 0
-      history.replaceState(stampCurrent(0), '')
+      // No path: this re-stamps the entry we are ALREADY on. Passing `''` here
+      // resolves against the document base and drops the fragment, silently
+      // breaking hash mode (see `RouterEnv.replaceState`).
+      env.replaceState(stampCurrent(0))
     }
   }
 
@@ -225,9 +371,9 @@ export function connectRouter<R>(
   // index. The only fully sound alternative is to treat every unstamped hash
   // entry as UNKNOWN (what history mode does), which costs the address-bar-edit
   // case this deliberately keeps. That trade is #150, not a patch.
-  let knownLength = typeof history !== 'undefined' ? history.length : 0
+  let knownLength = env.historyLength
   function noteLength(): void {
-    if (typeof history !== 'undefined') knownLength = history.length
+    knownLength = env.historyLength
   }
 
   // How many `hashchange` events our own writes are about to echo back, and
@@ -266,19 +412,21 @@ export function connectRouter<R>(
    * unreachable delta — #103's original symptom, re-reachable (#139 review).
    */
   function landedIndex(): number {
-    return readIndex(history.state) ?? currentIndex ?? 0
+    return readIndex(env.historyState) ?? currentIndex ?? 0
   }
 
   function pushUrl(path: string): void {
     currentIndex = landedIndex() + 1
-    history.pushState({ [STATE_KEY]: currentIndex }, '', path)
+    env.pushState({ [STATE_KEY]: currentIndex }, path)
     noteLength()
   }
 
   function replaceUrl(path: string): void {
     // A replace swaps the entry in place, so it keeps THAT entry's index.
     currentIndex = landedIndex()
-    history.replaceState(stampCurrent(currentIndex), '', path)
+    // The one re-stamp that legitimately carries a path: this navigation is
+    // changing the URL as well as the entry's state.
+    env.replaceState(stampCurrent(currentIndex), path)
     noteLength()
   }
 
@@ -290,20 +438,24 @@ export function connectRouter<R>(
    * nothing may be armed or counted for it.
    */
   function setHash(newHash: string): boolean {
-    if (sameHash(location.hash, newHash)) return false
+    if (sameHash(env.hash, newHash)) return false
     // Read the index of the entry we are LEAVING before the write replaces it.
     const from = landedIndex()
     armEcho(newHash)
-    location.hash = newHash
+    env.setHash(newHash)
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
-    // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
+    // `hashchange` EVENT is queued), so stamp it now: setting the hash
     // cannot carry state itself, and the blocked-back restore needs an index on
     // every entry to compute a `history.go` delta from.
     currentIndex = from + 1
     // A fresh fragment entry carries no state, so this merges with nothing —
     // but every re-stamp in this file goes through `stampCurrent`, with no
     // exception for a reader to re-verify.
-    history.replaceState(stampCurrent(currentIndex), '')
+    //
+    // No path: re-stamping the entry the hash write just created. A `''` here
+    // would resolve against the document base and throw the fragment away —
+    // i.e. undo the navigation on the line above.
+    env.replaceState(stampCurrent(currentIndex))
     noteLength()
     return true
   }
@@ -342,7 +494,7 @@ export function connectRouter<R>(
    */
   function consumeHashEcho(): boolean {
     if (pendingEchoCount === 0) return false
-    if (pendingEchoHash === null || !sameHash(location.hash, pendingEchoHash)) {
+    if (pendingEchoHash === null || !sameHash(env.hash, pendingEchoHash)) {
       pendingEchoCount = 0
       pendingEchoHash = null
       return false
@@ -362,14 +514,14 @@ export function connectRouter<R>(
     if (pendingRestoreIndex === null) return false
     const expected = pendingRestoreIndex
     pendingRestoreIndex = null
-    if (readIndex(history.state) !== expected) return false
+    if (readIndex(env.historyState) !== expected) return false
     currentIndex = expected
     return true
   }
 
   /** Resync `currentIndex` to the entry a browser-driven navigation landed on. */
   function adoptLandedEntry(): void {
-    const landed = readIndex(history.state)
+    const landed = readIndex(env.historyState)
     if (landed !== null) {
       currentIndex = landed
       return
@@ -382,9 +534,10 @@ export function connectRouter<R>(
       // sits below, which inverts the delta and sends the next blocked back
       // FURTHER backwards. `history.length` is the discriminator — a push grows
       // the stack, a traversal never does.
-      if (history.length > knownLength) {
+      if (env.historyLength > knownLength) {
         currentIndex = (currentIndex ?? 0) + 1
-        history.replaceState(stampCurrent(currentIndex), '')
+        // No path: stamping the entry the browser just navigated to.
+        env.replaceState(stampCurrent(currentIndex))
         noteLength()
         return
       }
@@ -411,7 +564,7 @@ export function connectRouter<R>(
    */
   function restoreBlocked(): void {
     if (currentRoute === null) return
-    const landed = readIndex(history.state)
+    const landed = readIndex(env.historyState)
     // Both positions must be known for a delta to mean anything. When either is
     // not, do NOTHING: no `history.go` with a guessed delta, and above all
     // nothing armed for a restore that will not happen (#103).
@@ -424,11 +577,11 @@ export function connectRouter<R>(
       // forward entry above the blocked one (#103). The traversal echoes a
       // hashchange, which is suppressed like any of our own writes.
       armEcho(router.href(currentRoute))
-      history.go(delta)
+      env.go(delta)
       return
     }
     pendingRestoreIndex = currentIndex
-    history.go(delta)
+    env.go(delta)
   }
 
   // The route to run guards/dispatch against: the caller's ORIGINAL object (all
@@ -452,7 +605,7 @@ export function connectRouter<R>(
         if (router.mode === 'hash') {
           if (effect.action === 'push') {
             setHash(finalPath)
-          } else if (!sameHash(location.hash, finalPath)) {
+          } else if (!sameHash(env.hash, finalPath)) {
             // `location.replace` swaps the current entry and DROPS its state —
             // INCLUDING whatever the host app or another library owns on it, so
             // snapshot it here and put it back with the stamp. This is the one
@@ -461,9 +614,11 @@ export function connectRouter<R>(
             currentIndex = landedIndex()
             const carried = stampCurrent(currentIndex)
             armEcho(finalPath)
-            location.replace(finalPath)
-            // The index is unchanged — nothing was pushed.
-            history.replaceState(carried, '')
+            env.replaceLocation(finalPath)
+            // The index is unchanged — nothing was pushed. No path: the URL is
+            // already where `replaceLocation` just put it, and a `''` here
+            // would resolve it away.
+            env.replaceState(carried)
             noteLength()
           }
         } else if (effect.action === 'push') {
@@ -506,13 +661,13 @@ export function connectRouter<R>(
         break
       }
       case 'back':
-        history.back()
+        env.back()
         break
       case 'forward':
-        history.forward()
+        env.forward()
         break
       case 'scroll':
-        window.scrollTo(effect.x!, effect.y!)
+        env.scrollTo(effect.x!, effect.y!)
         break
     }
   }
@@ -562,9 +717,7 @@ export function connectRouter<R>(
               return
             }
 
-            const input =
-              router.mode === 'hash' ? location.hash : location.pathname + location.search
-            const outcome = runGuards(router.match(input))
+            const outcome = runGuards(router.match(currentInput()))
             if (outcome.blocked) {
               restoreBlocked()
               return
@@ -573,10 +726,9 @@ export function connectRouter<R>(
             currentRoute = outcome.route
             send(factory(outcome.route))
           }
-          window.addEventListener(event, handler)
-          return () => {
-            window.removeEventListener(event, handler)
-          }
+          // The env hands back its own unsubscribe, so the mount teardown never
+          // has to name the target it registered on.
+          return env.onUrlChange(event, handler)
         }),
       ]
     },

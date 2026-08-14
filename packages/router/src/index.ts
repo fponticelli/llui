@@ -347,8 +347,11 @@ export function createRouter<R>(
       queryParams = parseQuery(noFrag.slice(qIdx + 1))
     }
 
-    const path = rawPath.replace(/^\/+|\/+$/g, '')
-    const pathSegments = path === '' ? [] : path.split('/')
+    // Drop EVERY empty part, not just the leading/trailing runs a
+    // `/^\/+|\/+$/g` strip removed: an INTERNAL run (`/article//x`, from a
+    // hand-typed or concatenated URL) otherwise survives as an empty segment
+    // that matches no def, and the route silently resolves to the fallback.
+    const pathSegments = rawPath.split('/').filter((seg) => seg !== '')
 
     // Try each route definition
     for (const def of defs) {

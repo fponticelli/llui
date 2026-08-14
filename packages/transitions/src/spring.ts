@@ -1,6 +1,6 @@
 import type { TransitionOptions } from '@llui/dom'
 import { asElements } from './style-utils.js'
-import { prefersReducedMotion } from './anim.js'
+import { prefersReducedMotion, createRunScope } from './anim.js'
 
 export interface SpringOptions {
   /** Spring stiffness (default: 170). */
@@ -62,6 +62,8 @@ function isDocumentHidden(): boolean {
  * phase cancels the previous element's loop WITHOUT letting it snap to its own
  * (now-stale) target, so an enter interrupted by a leave rests at the leave
  * target rather than being clobbered back to the enter target by the dying loop.
+ * Either direction resumes from the element's CURRENT value — the endpoints
+ * `from`/`to` are resting starts, used only when nothing is in flight.
  *
  * Passed as the trailing transition argument to the signal `show`/`branch`/`each`
  * primitives to spring an arm/row in and defer its leave, e.g.
@@ -78,17 +80,18 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
   const to = opts.to ?? 1
   const respectReduced = opts.respectReducedMotion !== false
 
-  // Per-element cancellation. A new phase (enter↔leave) on an element marks the
-  // previous loop cancelled; that loop then stops without writing, so two loops
+  // Per-element cancellation, on the package's ONE run registry (#111). A new
+  // phase (enter↔leave) on an element supersedes the previous loop; that loop
+  // sees it is no longer the current run and stops WITHOUT writing, so two loops
   // never fight over the same style and no stale loop snaps back to its target.
-  const runs = new WeakMap<HTMLElement, { cancelled: boolean }>()
+  const runs = createRunScope()
 
   const animateOne = (el: HTMLElement, start: number, target: number): Promise<void> => {
-    // Supersede any in-flight loop on this element (no snap — we own it now).
-    const prev = runs.get(el)
-    if (prev) prev.cancelled = true
-    const run = { cancelled: false }
-    runs.set(el, run)
+    // Supersede any in-flight loop on this element. Its rollback is a no-op by
+    // design: the newer loop owns the element's value from here, so there is
+    // nothing for the dying one to restore — it must merely stop.
+    runs.supersede(el)
+    const token = runs.register(el, () => {})
 
     return new Promise<void>((resolve) => {
       let settled = false
@@ -107,7 +110,8 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
         settled = true
         if (write) el.style.setProperty(property, String(value))
         cleanup()
-        if (runs.get(el) === run) runs.delete(el)
+        // `end`, not `settle`: the loop leaves nothing for a later phase to undo.
+        runs.end(el, token)
         resolve()
       }
       const snap = (): void => done(true, target)
@@ -137,7 +141,7 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
       function step(time: number): void {
         if (settled) return
         // Superseded by a newer phase — stop WITHOUT snapping.
-        if (run.cancelled) {
+        if (!runs.isCurrent(el, token)) {
           done(false, target)
           return
         }
@@ -169,18 +173,9 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
     })
   }
 
-  const animateAll = (els: HTMLElement[], start: number, target: number): Promise<void> => {
-    if (els.length === 0) return Promise.resolve()
-    return Promise.all(els.map((el) => animateOne(el, start, target))).then(() => undefined)
-  }
-
-  const enter = (nodes: Node[]): void => {
-    void animateAll(asElements(nodes), from, to)
-  }
-
-  // The element's live value for `property`, used as the leave start so an
-  // interrupted enter leaves from wherever it currently sits rather than
-  // snapping to the fully-shown `to`. Prefers computed, then inline, then `to`.
+  // The element's live value for `property`, used as an interrupting phase's
+  // start so it continues from wherever the element currently sits rather than
+  // snapping to a resting endpoint. Prefers computed, then inline, then `to`.
   const currentValue = (el: HTMLElement): number => {
     if (typeof getComputedStyle === 'function') {
       const computed = parseFloat(getComputedStyle(el).getPropertyValue(property))
@@ -188,6 +183,19 @@ export function spring(opts: SpringOptions = {}): TransitionOptions {
     }
     const inline = parseFloat(el.style.getPropertyValue(property))
     return Number.isNaN(inline) ? to : inline
+  }
+
+  const enter = (nodes: Node[]): void => {
+    const els = asElements(nodes)
+    if (els.length === 0) return
+    // Per-element start: an enter reversing a mid-flight leave resumes from the
+    // element's own current value. `from` is the RESTING start and would drive a
+    // half-faded element back to the far end before re-animating (#106).
+    // `isActive` is the in-flight test — a loop that finished has already ended
+    // its run, so the next enter is a fresh one.
+    void Promise.all(
+      els.map((el) => animateOne(el, runs.isActive(el) ? currentValue(el) : from, to)),
+    ).then(() => undefined)
   }
 
   const leave = (nodes: Node[]): Promise<void> => {
