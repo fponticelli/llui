@@ -103,22 +103,42 @@ export function moduleGraph(entry: string): ModuleGraph {
   while (queue.length > 0) {
     const file = queue.pop()
     if (file === undefined || inputs.has(file)) continue
-    const source = SOURCES.get(file)
-    if (source === undefined) throw new Error(`source not found under src/: ${file}`)
     inputs.add(file)
-    const emitted = ts.transpileModule(source, {
-      fileName: file,
-      compilerOptions: {
-        module: ts.ModuleKind.ESNext,
-        target: ts.ScriptTarget.ES2022,
-        isolatedModules: true,
-        verbatimModuleSyntax: true,
-      },
-    }).outputText
-    for (const specifier of runtimeSpecifiers(emitted, file)) {
+    for (const specifier of specifiersOf(file)) {
       if (specifier.startsWith('.')) queue.push(resolveRelative(file, specifier))
       else externals.add(specifier)
     }
   }
   return { inputs, externals }
+}
+
+/**
+ * `runtimeSpecifiers` of one file's EMIT, memoized.
+ *
+ * A file's specifiers do not depend on which entry point reached it, and both
+ * callers walk overlapping graphs many times over — `packaging.test.ts` once per
+ * export entry, `commit-cost.test.ts` once per plugin — so without this the
+ * barrel's whole transitive graph is transpiled and parsed from scratch on every
+ * call. That put "every JS entry point resolves to a source module" over
+ * vitest's 5s default whenever the full workspace ran concurrently.
+ */
+const SPECIFIERS = new Map<string, readonly string[]>()
+
+function specifiersOf(file: string): readonly string[] {
+  const cached = SPECIFIERS.get(file)
+  if (cached !== undefined) return cached
+  const source = SOURCES.get(file)
+  if (source === undefined) throw new Error(`source not found under src/: ${file}`)
+  const emitted = ts.transpileModule(source, {
+    fileName: file,
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+      isolatedModules: true,
+      verbatimModuleSyntax: true,
+    },
+  }).outputText
+  const specifiers = runtimeSpecifiers(emitted, file)
+  SPECIFIERS.set(file, specifiers)
+  return specifiers
 }
