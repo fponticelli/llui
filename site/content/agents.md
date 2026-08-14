@@ -279,21 +279,32 @@ dropped is remembered, and the next request carrying it **rebuilds** the
 session under the same ID and replays the request. The client never
 learns anything happened, and the paste succeeds.
 
-Three things about that are load-bearing:
+Four things about that are load-bearing:
 
 - Only IDs the server issued resurrect. The list is a bounded FIFO
   (`maxResurrectableSessions`) on the same clock as
   `unauthenticatedMaxLifetimeMs`, so an arbitrary ID is still a plain
   `404` and the free, unthrottled with-session-ID path does not become a
   second allocation door.
-- A resurrect **is** an allocation, and passes the same gates as a fresh
-  `initialize`: the rate limiter, then the quota. It is refused `429` or
-  `503` on the same terms.
+- A resurrect **is** an allocation, and passes the same three gates as a
+  fresh `initialize`, in the same order: the rate limiter, then the
+  fail-closed bearer check (a bearer is not required, but one that is
+  _presented_ must be valid or the request is `401` having allocated
+  nothing), then the quota. It is refused `429`, `401` or `503` on the
+  same terms.
 - What comes back is **provisional**. The bearer binding went with the
   old session, so a resurrected session sits inside the anonymous quota
   and every tool refuses until `connect_session` runs again. It also
   inherits the original `createdAt`, so resurrection cannot renew
-  `unauthenticatedMaxLifetimeMs`.
+  `unauthenticatedMaxLifetimeMs`. Note the deliberate asymmetry with
+  `initialize`: there a valid bearer buys admission outside the anonymous
+  quota, here it buys nothing at all.
+- **An explicit `DELETE` is durable.** Every other teardown reason — LRU
+  eviction, the per-identity cap, either clock — is a decision the
+  _server_ made that the client has no way to learn about, which is what
+  resurrection exists to paper over. A `DELETE` is the opposite: the
+  client asked for the session to be destroyed, so its ID is forgotten
+  rather than remembered, and `terminateSession()` means what it says.
 
 The trade: the bound on how many sessions may **exist** is unchanged,
 but allocation **churn** is now softer — replaying N remembered IDs

@@ -315,9 +315,13 @@ function jsonResponse(
  * client never learns anything happened.
  *
  * A resurrect is an ALLOCATION and is treated as one — same rate
- * limiter, same `reserveSlot`, same 429/503 refusals — and what it
- * rebuilds is PROVISIONAL: the bearer binding went with the session, so
- * nothing is escalated. What this trades is a hard bound on how many
+ * limiter, same fail-closed bearer check, same `reserveSlot`, same
+ * 401/429/503 refusals — and what it rebuilds is PROVISIONAL: the
+ * bearer binding went with the session, so nothing is escalated (a
+ * VALID bearer buys admission on `initialize` and nothing at all here).
+ * A DELETE is the one teardown that is NOT remembered: an explicit
+ * termination has to stay terminated. What this trades is a hard bound
+ * on how many
  * sessions may EXIST (unchanged) for a softer bound on allocation
  * CHURN: replaying N tombstoned ids forces N rate-limited,
  * quota-bounded re-allocations. Under a SUSTAINED full quota a
@@ -382,6 +386,15 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
   const resurrecting = new Map<string, Promise<void>>()
 
   /**
+   * Ids whose teardown is an EXPLICIT client termination (a DELETE), for
+   * the duration of that request. Read by `dropSession`, which the SDK
+   * re-enters through `onsessionclosed`/`onclose` from inside
+   * `handleRequest` — so intent has to be parked somewhere the callback
+   * can see it rather than passed as an argument.
+   */
+  const terminating = new Set<string>()
+
+  /**
    * A session is authenticated once it either arrived with a verified
    * bearer or bound one through `connect_session`. Authenticated
    * sessions are neither evictable nor on the short TTL.
@@ -408,13 +421,16 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     sessionMap.delete(id)
     if (!entry) return
     // Remember the id so a client that has no way to know it is gone can
-    // recover (#149). Uniform across every teardown reason on purpose:
-    // an explicitly-terminated id is no more dangerous to remember than
-    // an evicted one — resurrecting either yields a fresh provisional
-    // session, which is strictly more expensive for a caller than just
-    // calling `initialize` — and a `reason` parameter here would be one
-    // more thing every future teardown path has to get right.
-    tombstone(id, entry.createdAt)
+    // recover (#149) — for every teardown reason EXCEPT one. A DELETE is
+    // the client saying "I am done with this id", and `terminating`
+    // carries that intent down to here: remembering it would make the
+    // protocol's own `terminateSession()` non-durable, since the next
+    // request on the id would quietly rebuild the session the client
+    // just asked to destroy. Every OTHER reason (LRU eviction, the
+    // identity cap, either clock) is a decision the SERVER made and the
+    // client has no way to learn about, which is exactly what
+    // resurrection exists to paper over.
+    if (!terminating.has(id)) tombstone(id, entry.createdAt)
     // Closing the server closes its transport, whose `onclose` re-enters
     // here; the delete above already ran, so the re-entry is a no-op
     // rather than a loop.
@@ -708,7 +724,7 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
   ): Promise<Response> => {
     // A resurrect allocates a transport and a fully-registered
     // `McpServer`, exactly like an `initialize`, so it passes exactly the
-    // same two gates in the same order. Anything less would make the
+    // same three gates in the same order. Anything less would make the
     // with-session-id path a way around them.
     const rl = await deps.rateLimiter.check(clientIp(req), 'identity')
     if (!rl.allowed) {
@@ -716,6 +732,32 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       return jsonResponse({ error: { code: 'rate-limited', retryAfterMs: rl.retryAfterMs } }, 429, {
         'retry-after': String(Math.max(1, Math.ceil(rl.retryAfterMs / 1000))),
       })
+    }
+    // Gate 2, the same "fail closed" rule the allocating path states: a
+    // bearer is not REQUIRED (the endpoint is deliberately reachable
+    // without one), but a bearer that IS presented has to be one of ours
+    // or nothing is allocated. Omitting this made the comment above a
+    // lie and let a bogus-bearer caller allocate here while the same
+    // header 401s on `initialize`.
+    //
+    // The ASYMMETRY with `initialize` is deliberate and is the point of
+    // the next comment: there, a valid bearer buys ADMISSION outside the
+    // anonymous quota. Here it buys nothing at all. A resurrected
+    // session is provisional whatever the caller presents, so a bearer
+    // can only ever make this stricter, never looser.
+    if (req.headers.get('authorization')?.startsWith('Bearer ') ?? false) {
+      const auth = await verifyAndReadTid(req, deps.tokenStore, {
+        now: nowMs,
+        slidingTtlMs: deps.slidingTtlMs,
+      })
+      if (!auth.ok) {
+        auditRefusal('auth-failed', nowMs, {
+          endpoint: mcpPath,
+          code: auth.code,
+          resurrect: true,
+        })
+        return jsonResponse({ error: { code: auth.code } }, auth.status)
+      }
     }
     // Always PROVISIONAL: whatever the dropped session had, its bearer
     // binding went with it, so this asks for an anonymous slot and can
@@ -782,6 +824,20 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       if (entry) {
         // Traffic on a session is what keeps it out of the sweep.
         entry.lastSeenAt = nowMs
+        if (req.method === 'DELETE') {
+          // An explicit termination has to be DURABLE. The SDK's own
+          // `terminateSession()` clears its `_sessionId` and never sends
+          // it again, so a tombstone here would only ever be replayable
+          // by someone ELSE — and would contradict the client's request.
+          // The flag is dropped in a `finally` because the teardown it
+          // marks happens INSIDE `handleRequest`.
+          terminating.add(sessionHeader)
+          try {
+            return await entry.transport.handleRequest(req)
+          } finally {
+            terminating.delete(sessionHeader)
+          }
+        }
         return entry.transport.handleRequest(req)
       }
 

@@ -358,6 +358,77 @@ describe('MCP session resurrection — allocation guardrails (#149)', () => {
   })
 
   /**
+   * The allocating path states the rule as "fail closed: the no-bearer
+   * path stays open, the invalid-bearer path does not", and a resurrect
+   * is an allocation, so the same has to hold here. It did not: the same
+   * `Authorization: Bearer <bogus>` that 401s an `initialize` having
+   * allocated nothing built a session on a replayed id.
+   *
+   * It was never an escalation — the endpoint is deliberately bearerless
+   * and the caller could allocate by simply omitting the header — but a
+   * comment claiming a gate that is not there is worse than no comment,
+   * and a bogus bearer is a caller error on every other path.
+   */
+  it('rejects a resurrect carrying an unknown bearer, allocating nothing', async () => {
+    const router = mkRouter({ maxSessions: 4, maxUnauthenticatedSessions: 1 })
+    const first = await initialize(router)
+    await initialize(router) // evicts `first`
+    expect(router.liveSessionCount()).toBe(1)
+
+    const res = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: {
+          'mcp-session-id': first.sessionId as string,
+          authorization: 'Bearer agt_not-a-real-token',
+        },
+      }),
+    )
+    expect(res?.status).toBe(401)
+    expect(router.hasLiveSession(first.sessionId as string)).toBe(false)
+    expect(router.liveSessionCount()).toBe(1)
+    // Refused, not forgotten: the id is still the client's to recover.
+    expect(await ping(router, first.sessionId as string)).not.toBe(404)
+  })
+
+  /**
+   * The deliberate ASYMMETRY with `initialize`, pinned so nobody
+   * "restores parity" into an escalation. On `initialize` a valid bearer
+   * buys ADMISSION — the session sits outside the anonymous quota and is
+   * never evicted for an anonymous caller. On a resurrect it buys
+   * NOTHING: what comes back is provisional whatever is presented, so a
+   * bearer can only ever make this path stricter.
+   */
+  it('gives a valid bearer no admission on a resurrect', async () => {
+    const store = new InMemoryTokenStore()
+    const { token } = await seedToken(store, { tid: 't1' })
+    const router = mkRouter(
+      { maxSessions: 8, maxUnauthenticatedSessions: 1 },
+      { tokenStore: store },
+    )
+
+    const first = await initialize(router)
+    await initialize(router) // evicts `first`
+    const res = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'POST',
+        headers: {
+          'mcp-session-id': first.sessionId as string,
+          authorization: `Bearer ${token}`,
+        },
+      }),
+    )
+    expect(res?.status).not.toBe(404)
+    expect(router.hasLiveSession(first.sessionId as string)).toBe(true)
+
+    // Still inside the anonymous quota, and still evictable by ordinary
+    // anonymous churn — an ADMITTED session would survive all of these.
+    for (let i = 0; i < 5; i++) expect((await initialize(router)).status).toBe(200)
+    expect(router.liveSessionCount()).toBe(1)
+    expect(router.hasLiveSession(first.sessionId as string)).toBe(false)
+  })
+
+  /**
    * Guardrail 3, the quota half. "Provisional" is not only about the
    * bearer: a session marked as ADMITTED sits OUTSIDE the anonymous
    * quota and can never be evicted for an anonymous caller. A
@@ -459,7 +530,7 @@ describe('MCP session resurrection — tombstone bounds (#149)', () => {
   /**
    * A DELETE is a client saying "I am done with this id". Rebuilding a
    * session to immediately tear it down is a pure allocation for
-   * nothing, so a tombstoned id answers the termination directly.
+   * nothing, so a TOMBSTONED id answers the termination directly.
    */
   it('answers a DELETE on a tombstoned id without allocating', async () => {
     const router = mkRouter({ maxSessions: 4, maxUnauthenticatedSessions: 1 })
@@ -475,8 +546,42 @@ describe('MCP session resurrection — tombstone bounds (#149)', () => {
     )
     expect(res?.status).toBe(200)
     expect(router.liveSessionCount()).toBe(1)
-    // And the id is forgotten — a replay after termination gets a 404.
+    // The id is forgotten by the termination, so a later replay 404s.
     expect(await ping(router, first.sessionId as string)).toBe(404)
+  })
+
+  /**
+   * The ORDINARY termination path, and the one case where remembering a
+   * dropped id would be wrong: the client held a LIVE session and asked
+   * for it to be destroyed.
+   *
+   * Every other teardown reason — LRU eviction, the identity cap, either
+   * clock — is a decision the SERVER made that the client has no way to
+   * learn about, which is precisely what resurrection exists to paper
+   * over. A DELETE is the opposite: rebuilding the session on the next
+   * request carrying that id would make the protocol's own
+   * `terminateSession()` non-durable. Tombstoning uniformly across every
+   * teardown reason quietly did exactly that.
+   */
+  it('forgets a live session the client explicitly terminated', async () => {
+    const router = mkRouter()
+    const { sessionId } = await initialize(router)
+    expect(router.hasLiveSession(sessionId as string)).toBe(true)
+
+    const res = await router(
+      new Request('http://local/agent/mcp', {
+        method: 'DELETE',
+        headers: { 'mcp-session-id': sessionId as string },
+      }),
+    )
+    expect(res?.status).toBe(200)
+    expect(router.liveSessionCount()).toBe(0)
+
+    // A single DELETE is enough — the id must not come back on the next
+    // request, and must not consume a slot doing so.
+    expect(await ping(router, sessionId as string)).toBe(404)
+    expect(router.hasLiveSession(sessionId as string)).toBe(false)
+    expect(router.liveSessionCount()).toBe(0)
   })
 })
 
