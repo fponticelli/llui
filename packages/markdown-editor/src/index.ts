@@ -43,6 +43,10 @@ export {
   definePluginUI,
 } from './plugins/ui.js'
 
+// The gate a plugin's `register` half reads to answer "is MY surface up?" — the
+// only legitimate basis for claiming a key at COMMAND_PRIORITY_HIGH (#130).
+export { surfaceGate, type SurfaceReaders } from './plugins/surface-open.js'
+
 export { type CorePluginOptions, corePlugin } from './plugins/core.js'
 export {
   type InlineFormat,

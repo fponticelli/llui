@@ -19,6 +19,7 @@ import type { CommitFacts } from '@llui/lexical'
 import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
+import { surfaceGate } from './surface-open.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
 interface MenuItem {
@@ -93,15 +94,16 @@ export function slashPlugin(): MarkdownPlugin {
       )
     },
     register: (editor, ctx) => {
-      // The query as of the last commit. A keydown always arrives BEFORE the
-      // commit it causes, so this is the same value a fresh read would return —
-      // and the key handlers no longer open a read context each keystroke.
-      let liveQuery: string | null = null
-      const isActive = (): boolean => liveQuery !== null
+      // The gate is "the MENU IS UP", read from the live slice — never "the caret
+      // is on a `/`" (issue #130). The two differ in both directions: a dismissed
+      // menu leaves the trigger text in place (no commit follows a dismissal, so a
+      // cached query would stay set forever), and a query matching nothing opens
+      // no menu at all. Claiming a key on the caret's position swallowed Escape
+      // in both, and the host's COMMAND_PRIORITY_LOW handler never saw it.
+      const isActive = surfaceGate(editor, 'slash')
 
       const refresh = (facts: CommitFacts): void => {
         const query = slashQuery(facts)
-        liveQuery = query
         if (query === null) {
           ctx.emit({ type: 'plugin', name: 'slash', msg: { type: 'hide' } })
           return
@@ -145,6 +147,9 @@ export function slashPlugin(): MarkdownPlugin {
     },
     ui: definePluginUI<SlashState, SlashMsg, SlashEffect>({
       init: () => ({ open: false, query: '', items: [], index: 0, x: 0, y: 0 }),
+      // What `register`'s key handlers gate on — the same flag the overlay renders
+      // from, so a dismissal, a chosen row and an empty result set all read alike.
+      isOpen: (state) => state.open,
       update: (state, msg) => {
         switch (msg.type) {
           case 'show':

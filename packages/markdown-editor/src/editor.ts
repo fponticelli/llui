@@ -34,6 +34,7 @@ import { registerLinkSanitizer } from './security.js'
 import { toolbar as renderToolbar } from './surfaces/toolbar.js'
 import type { CommandItem, MarkdownPlugin } from './plugins/types.js'
 import type { PluginUI } from './plugins/ui.js'
+import { publishSurfaceOpen } from './plugins/surface-open.js'
 import { buildTransformers } from './transformers/registry.js'
 import { mergeTheme } from './theme.js'
 import { computeFormatState } from './format.js'
@@ -281,6 +282,22 @@ export function markdownEditor(
     // fills it; effects/plugins read it through `contextFor(api.send)`.
     const mount = contextFor(send)
 
+    // Each plugin UI's slice handle for THIS mount — the views bind to it below,
+    // and every plugin declaring `isOpen` also publishes a live reader over it.
+    // The reader is a PULL (`isOpen(slice.peek())`, answered when asked), which is
+    // what lets a plugin's `register` half gate its COMMAND_PRIORITY_HIGH key
+    // handlers on "my surface is up" instead of a cached proxy for it (#130).
+    const uiSlices = pluginUIs.map(({ name, ui }) => ({
+      name,
+      ui,
+      slice: state.at(`plugins.${name}`),
+    }))
+    const surfaceReaders = new Map<string, () => boolean>()
+    for (const { name, ui, slice } of uiSlices) {
+      const isOpen = ui.isOpen
+      if (isOpen) surfaceReaders.set(name, () => isOpen(slice.peek()))
+    }
+
     // Build the collab binding (once, at mount) from the consumer's factory,
     // injecting the markdown seed + status sinks that mirror into `state.collab`.
     const collabBinding: CollabBinding | null = config.collab
@@ -330,6 +347,11 @@ export function markdownEditor(
         : {}),
       register: (editor) => {
         const disposers = [
+          // Hand this mount's plugins the one gate their key handlers may claim
+          // on. Published here rather than from `onReady` so attach and detach
+          // are the same closure, and before any plugin's own `register` can
+          // matter — no key can be pressed until the editor is on screen.
+          publishSurfaceOpen(editor, surfaceReaders),
           // Keep the WYSIWYG surface and the serialized GFM dialect in lock-step:
           // underline (Cmd+U) has no markdown representation, so it is swallowed
           // rather than applied-then-silently-stripped on save.
@@ -383,10 +405,10 @@ export function markdownEditor(
     })
 
     // Plugin view contributions (overlays/panels) — each gets its own slice + send.
-    const pluginViews: Renderable = pluginUIs.flatMap(({ name, ui }) => {
+    const pluginViews: Renderable = uiSlices.flatMap(({ name, ui, slice }) => {
       if (!ui.view) return []
       const rendered = ui.view({
-        state: state.at(`plugins.${name}`),
+        state: slice,
         send: (msg) => send({ type: 'plugin', name, msg }),
         editor: () => mount.editor,
       })

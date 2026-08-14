@@ -94,6 +94,7 @@ import { div, each, input, onMount, show, text, type Signal } from '@llui/dom'
 import { setTransformerPrecedence } from '../transformers/registry.js'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, overlayRoot } from './overlay.js'
+import { surfaceGate } from './surface-open.js'
 import type { CommandItem, MarkdownPlugin } from './types.js'
 
 const PLUGIN = 'wikilink'
@@ -717,9 +718,15 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
       }
       // The query as of the last commit. A keydown always arrives BEFORE the
       // commit it causes, and a debounced search resolves between commits, so
-      // this is the same value a fresh read would return at either point.
+      // this is the same value a fresh read would return at either point. It is
+      // the STALENESS check for a resolving search — NOT the key gate: the caret
+      // sitting inside `[[…` says nothing about whether a panel is on screen
+      // (the search is debounced, may return nothing, and a dismissal leaves the
+      // text exactly where it was — issue #130).
       let liveQuery: string | null = null
-      const isActive = (): boolean => liveQuery !== null
+      // The panel — typing OR the click-opened repoint panel, which is the same
+      // `searchOpen` surface — is UP. The one thing that justifies claiming a key.
+      const isActive = surfaceGate(editor, PLUGIN)
 
       const refresh = (facts: CommitFacts): void => {
         const query = wikiQuery(facts)
@@ -780,6 +787,10 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           KEY_ESCAPE_COMMAND,
           () => {
             if (!isActive()) return false
+            // Dismissing the repoint panel ends edit mode too, so the next
+            // caret-driven refresh is free to hide again rather than believing a
+            // panel it can't see is still being driven by its own input.
+            editing = false
             emit({ type: 'searchHide' })
             return true
           },
@@ -799,6 +810,10 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
         searchY: 0,
         editKey: null,
       }),
+      // The gate `register`'s key handlers read. ONE flag covers both panels: the
+      // `[[…` typeahead and the click-opened repoint panel are the same surface,
+      // so Escape is released by whichever of them just closed.
+      isOpen: (state) => state.searchOpen,
       update: (state, msg) => {
         switch (msg.type) {
           case 'activate': {
