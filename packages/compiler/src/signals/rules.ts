@@ -74,7 +74,7 @@
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
 
 import ts from 'typescript'
-import { isSignalExpr, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
+import { isSignalExpr, singleRoot, unwrapCasts, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, bindingNames, scopeIntroduces } from './helper-bindings.js'
@@ -1454,8 +1454,19 @@ function checkTagSendCall(
 }
 
 /** The variant list, or null when any element is not a plain string literal
- * (a spread, a computed name, an identifier) — unreadable is not a violation. */
-function readVariantList(list: ts.Expression): { value: string; node: ts.Node }[] | null {
+ * (a spread, a computed name, an identifier) — unreadable is not a violation.
+ *
+ * Read through `as const` / `satisfies` / parentheses first, via the same
+ * {@link unwrapCasts} the dep analyzer uses — one unwrap helper, as with #96's
+ * parenthesized types. An assertion is ERASED, so the array literal underneath
+ * is exactly what reaches `__lluiVariants` at runtime, and its elements are
+ * still checked below. Skipping this made the rule bail on the very spelling
+ * the narrowed `readonly M['type'][]` signature pushes authors toward — the
+ * type asking for `as const` while the rule silently switched itself off for
+ * that call site. The unwrap does NOT resolve bindings: a hoisted `VARIANTS`
+ * is still unreadable, `as const` or not. */
+function readVariantList(expr: ts.Expression): { value: string; node: ts.Node }[] | null {
+  const list = unwrapCasts(expr)
   if (!ts.isArrayLiteralExpression(list)) return null
   const out: { value: string; node: ts.Node }[] = []
   for (const el of list.elements) {
@@ -1487,6 +1498,13 @@ function readVariantList(list: ts.Expression): { value: string; node: ts.Node }[
  * shadowing per walker is how the cases at the end of that list get forgotten.
  * Below a rebinding scope the subtree is still walked (its calls still cost
  * completeness); only the dispatcher ATTRIBUTION stops.
+ *
+ * The scan covers the handler's PARAMETER LIST as well as its body, and both
+ * halves of that matter. The parameters are a binding scope — the nearest one,
+ * so the shadowing prune has to start at the handler node itself or it misses
+ * the case it exists for — and a parameter DEFAULT is ordinary code that runs
+ * on every call, so a call there costs completeness and a dispatcher mention
+ * there escapes.
  *
  * A nested `tagSend` is likewise not this call's business: the inner call is
  * checked on its own, so its handler is skipped rather than folded into the
@@ -1546,7 +1564,21 @@ function scanHandlerDispatches(
 
     n.forEachChild((c) => walk(c, inScope))
   }
-  walk(handler.body, true)
+  // The handler's OWN parameter list is a scope and a body, and the walk used
+  // to start past both. Two consequences, both false positives:
+  //   * a parameter that rebinds the name (`({ send }: Ctx) => send({…})`,
+  //     `(send: Ctx['send']) => …`) is the SAME shadowing case as an inner
+  //     `items.forEach(({ send }) => …)`, one scope up — so the handler itself
+  //     must reach `scopeIntroduces` rather than being assumed live;
+  //   * a parameter DEFAULT is code that runs on every call, so a call there
+  //     costs completeness and a dispatcher mention there escapes, exactly as
+  //     in the body. Skipping the parameter list claimed a completeness the
+  //     handler had not earned.
+  // Defaults are evaluated in the PARAMETER scope, where the parameter names
+  // are already bound, so they take the same liveness as the body.
+  const live = !scopeIntroduces(handler, dispatcherName)
+  for (const p of handler.parameters) if (p.initializer !== undefined) walk(p.initializer, live)
+  walk(handler.body, live)
   return { dispatches, complete }
 }
 

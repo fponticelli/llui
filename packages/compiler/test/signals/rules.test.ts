@@ -1259,6 +1259,44 @@ describe('tag-send-drift (issue #118)', () => {
     )
   })
 
+  // ── the list read through an `as const` / `satisfies` assertion ──────────
+  // The NARROWED signature (`readonly M['type'][]`) actively nudges authors
+  // toward `as const` — it is the documented fix for a list that widened to
+  // `string[]` — so the two guards were pushing in opposite directions: the
+  // spelling the type asks for made the rule bail and silently switch itself
+  // off for that call site. An assertion is erased at runtime, so the array
+  // literal underneath is exactly what becomes `__lluiVariants`; unwrapping it
+  // is runtime-faithful, and the elements are still validated as string
+  // literals, so it widens coverage without widening what counts as readable.
+  it('reads the variant list through an `as const` assertion', () => {
+    expect(
+      rules(src("const p = tagSend(send, ['touch'] as const, () => send({ type: 'touched' }))")),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(src("const p = tagSend(send, ['touch'] as const, () => send({ type: 'touch' }))")),
+    ).not.toContain('tag-send-drift')
+    // …and through the sibling erasures the repo's one unwrap helper covers.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, (['touch'] satisfies readonly string[]), () => send({ type: 'touched' }))",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('still bails on a HOISTED variant list, assertion or not', () => {
+    // Unwrapping an assertion must not be mistaken for resolving an
+    // identifier: `VARIANTS` is a binding this analysis does not follow, and
+    // `as const` on it changes nothing.
+    expect(
+      rules(src("const p = tagSend(send, VARIANTS, () => send({ type: 'touched' }))")),
+    ).not.toContain('tag-send-drift')
+    expect(
+      rules(src("const p = tagSend(send, VARIANTS as const, () => send({ type: 'touched' }))")),
+    ).not.toContain('tag-send-drift')
+  })
+
   it('does NOT flag a non-literal handler — its dispatches are not visible', () => {
     // `tagSend(send, ['hide'], dismissOnEscape)` is real (`@llui/components`).
     expect(rules(src("const p = tagSend(send, ['hide'], dismissOnEscape))"))).not.toContain(
@@ -1463,6 +1501,95 @@ describe('tag-send-drift (issue #118)', () => {
         ),
       ),
     ).toContain('tag-send-drift')
+  })
+
+  // ── negative: the HANDLER'S OWN parameter list is a scope too ────────────
+  // The shadowing prune above starts INSIDE the handler, so it caught every
+  // rebinding except the nearest one: the handler's own parameters. That is the
+  // same class as `items.forEach(({ send }) => …)` exactly one scope up — the
+  // dispatcher name resolves to the parameter, which is a different function,
+  // and attributing its dispatches to this tag reports a variant the control
+  // cannot emit (plus an over-declaration for the one it really does emit).
+  it('does NOT flag a dispatch through a DESTRUCTURED parameter of the handler itself', () => {
+    // E2 — `Ctx` carries its own `send`; the handler destructures it.
+    const e2 = [
+      'type Ctx = { send: (m: Msg) => void }',
+      "const p = tagSend(send, ['open'], ({ send }: Ctx) => send({ type: 'inner' }))",
+    ].join('\n')
+    expect(rules(src(e2))).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a dispatch through a handler parameter NAMED like the dispatcher', () => {
+    // E1 — the same rebinding, spelled as a plain parameter.
+    const e1 = [
+      'type Ctx = { send: (m: Msg) => void }',
+      "const p = tagSend(send, ['open'], (send: Ctx['send']) => send({ type: 'inner' }))",
+    ].join('\n')
+    expect(rules(src(e1))).not.toContain('tag-send-drift')
+  })
+
+  it('does NOT flag a handler-parameter shadow in a .tsx module', () => {
+    // The ScriptKind must not change the answer — a TSX parse of the same shape
+    // reaches the same walk, and `.tsx` is where consumer view code lives.
+    const tsx = [
+      IMPORT,
+      'type Ctx = { send: (m: Msg) => void }',
+      'const icon = <span>x</span>',
+      "export const p = tagSend(send, ['open'], ({ send }: Ctx) => send({ type: 'inner' }))",
+    ].join('\n')
+    expect(lintTagSendSource(tsx, 'm.tsx')).toEqual([])
+  })
+
+  // ── negative: a PARAMETER DEFAULT is code, and it runs ───────────────────
+  // Defaults are evaluated on every call, so a call or a dispatcher mention
+  // sitting in one is exactly as consequential as the same text in the body —
+  // but the walk started at `handler.body` and never visited the parameter
+  // list at all, so both the completeness cost and the escape guard were
+  // silently skipped there.
+  it('forfeits completeness for a call in a PARAMETER DEFAULT', () => {
+    // F1 — `compute()` is an unreadable call that may dispatch, so "I never saw
+    // 'b'" stops being evidence and direction 2 must not run.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], (e: Ev = compute()) => {",
+            '  e.preventDefault()',
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('forfeits completeness when the dispatcher ESCAPES in a PARAMETER DEFAULT', () => {
+    // F2 — the escape guard's own hole, relocated into parameter position:
+    // `register(send)` hands the dispatcher away, so it can be called out of
+    // sight and the absent `'b'` proves nothing.
+    expect(
+      rules(
+        src(
+          [
+            "const p = tagSend(send, ['a', 'b'], (_h: Ev = register(send)) => {",
+            "  send({ type: 'a' })",
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
+  it('still flags a dispatch made from a PARAMETER DEFAULT', () => {
+    // The parameter list is WALKED, not merely skipped: a readable dispatch
+    // there is attributed like any other. Asserted on the direction-1 message
+    // rather than on the rule name, because the unwalked version also reported
+    // something here — the over-declaration of 'a' — and would pass a
+    // rule-name-only check while seeing nothing at all.
+    const msgs = lint(src("const p = tagSend(send, ['a'], (_x = send({ type: 'boot' })) => {})"))
+      .filter((d) => d.rule === 'tag-send-drift')
+      .map((d) => d.message)
+    expect(msgs.some((m) => m.includes("dispatches `{ type: 'boot' }`"))).toBe(true)
   })
 
   it('does NOT flag when the dispatcher is not the identifier being called', () => {
