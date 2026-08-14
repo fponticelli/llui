@@ -64,7 +64,8 @@ function endedProperty(e: Event): string | undefined {
  * does not really animate: `slide()` and `scale()` named `transform` while
  * giving it a 0s duration in their `transition` shorthand, so both resolved on
  * the timer every time and #105's discrimination was inert for them until #142
- * fixed the shorthand. Emit every active value through `transitionShorthand`.
+ * fixed the shorthand. Emit every active value through the package's one
+ * `transitionShorthand` helper (internal, `style-utils.ts`).
  *
  * Two deliberate escape hatches:
  *  - An EMPTY `properties` means "nothing to discriminate on" — a class-driven

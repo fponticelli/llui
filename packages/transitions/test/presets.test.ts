@@ -177,6 +177,12 @@ describe('the emitted transition shorthand (#142)', () => {
   // The generic form of the defect: whatever a preset animates, EVERY
   // single-transition in the list it emits must carry its own duration. A
   // property listed without one silently takes 0s.
+  //
+  // LIMITATION: this splits on `,`, so an easing that CONTAINS one —
+  // `cubic-bezier(0.4, 0, 0.2, 1)` — would fail it even though the emitted CSS
+  // would be correct. No preset takes a caller easing into a list today (the
+  // exact-value cases above cover the shapes that ship), so nothing triggers
+  // it; if one ever does, fix the SPLIT (a paren-aware one), not the code.
   it.each([
     ['fade', () => fade({ duration: 120 })],
     ['slide', () => slide({ duration: 120 })],

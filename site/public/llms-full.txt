@@ -10844,11 +10844,10 @@ function scale(opts: ScaleOptions = {}): TransitionOptions
 
 Slide an element in/out along one axis, optionally fading with it.
 Both animated properties carry their own duration and easing in the emitted
-shorthand (see {@link transitionShorthand}) — `transform 250ms ease-out,
-opacity 250ms ease-out`. Writing the properties as one list with a single
-trailing timing (`transform, opacity 250ms ease-out`) gives `transform` the
-initial duration of 0s, so it snaps and reports no `transitionend`; that was
-#142, and it is invisible to jsdom.
+shorthand — `transform 250ms ease-out, opacity 250ms ease-out`. Writing the
+properties as one list with a single trailing timing (`transform, opacity
+250ms ease-out`) gives `transform` the initial duration of 0s, so it snaps
+and reports no `transitionend`; that was #142, and it is invisible to jsdom.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions

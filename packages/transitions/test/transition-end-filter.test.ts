@@ -329,10 +329,17 @@ describe('slide() / scale() end filtering', () => {
   // discrimination inert for two of the three shipped presets.
   //
   // With the per-property shorthand both properties really transition, so the
-  // real `transform` end arrives and releases the node ahead of the timer. jsdom
-  // fires no transition events of its own — its `cssstyle` does not even expand
-  // the shorthand — so the ends below are dispatched by hand; the emitted string
-  // itself is pinned in `presets.test.ts`.
+  // real `transform` end arrives and releases the node ahead of the timer.
+  //
+  // WHICH OF THE TWO CASES BELOW IS THE ACTUAL #142 GUARD: the second one.
+  // jsdom fires no transition events of its own and does not even expand the
+  // shorthand, so the first case dispatches both ends BY HAND and `waitForEnd`
+  // derives its pending set from the `from`/`to` style keys rather than from
+  // the emitted `transition` — it therefore passes with the #142 bug present
+  // too. What it still pins is #105's half: the opacity end ALONE must not
+  // release the node. The emitted-shorthand case below is what reddens when
+  // the per-property form regresses, and the exact strings live in
+  // `presets.test.ts`.
   beforeEach(() => {
     vi.useFakeTimers()
   })
