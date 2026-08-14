@@ -132,6 +132,39 @@ export interface ConnectedRouter<R> {
 /** history.state key holding our monotonic navigation index. */
 const STATE_KEY = '__llui_idx'
 
+/** The outcome of the guard pipeline for one navigation. */
+type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
+
+/** Our index stamped on a history entry, or `null` when nobody stamped it. */
+function readIndex(state: unknown): number | null {
+  if (state !== null && typeof state === 'object') {
+    const v = (state as Record<string, unknown>)[STATE_KEY]
+    if (typeof v === 'number') return v
+  }
+  return null
+}
+
+/** Normalize a hash for comparison: `''` and `'/x'` both mean `'#/'`-rooted. */
+function normHash(h: string): string {
+  return h === '' ? '#/' : h.startsWith('#') ? h : '#' + h
+}
+
+function sameHash(a: string, b: string): boolean {
+  return normHash(a) === normHash(b)
+}
+
+/**
+ * The `history.state` to write when re-stamping the CURRENT entry, preserving
+ * every other key already on it — the seed rewrites an entry the host app (or
+ * another library) may already own state on.
+ */
+function stampCurrent(index: number): Record<string, unknown> {
+  const existing = history.state
+  const base =
+    existing !== null && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}
+  return { ...base, [STATE_KEY]: index }
+}
+
 export function connectRouter<R>(
   router: Router<R>,
   options?: ConnectOptions<R>,
@@ -157,63 +190,245 @@ export function connectRouter<R>(
     }
   })()
 
-  // Monotonic index tracked across our own pushState entries. A blocked
-  // popstate is undone with history.go(delta) (never a fresh pushState, which
-  // would grow a forward entry on every block).
-  let currentIndex = 0
-  if (
-    typeof history !== 'undefined' &&
-    history.state &&
-    typeof (history.state as Record<string, unknown>)[STATE_KEY] === 'number'
-  ) {
-    currentIndex = (history.state as Record<string, number>)[STATE_KEY]!
+  // Our position in the session history stack. The browser exposes no such
+  // counter, so it is carried in `history.state` on every entry we create and
+  // is what a blocked navigation's `history.go(delta)` restore is computed
+  // from. `null` means UNKNOWN — we are sitting on an entry nobody stamped, so
+  // no delta can be derived and none may be guessed.
+  let currentIndex: number | null = null
+  if (typeof history !== 'undefined') {
+    const seeded = readIndex(history.state)
+    if (seeded !== null) {
+      currentIndex = seeded
+    } else {
+      // Seed the entry the app LOADED on. Without this stamp a pop back onto
+      // it carries no index, `currentIndex` never resyncs across it, and every
+      // later delta is inflated — a blocked back then calls `history.go` with
+      // an unreachable delta, leaves the URL sitting on the route it just
+      // blocked, and (worse) leaves the suppression armed for a restore that
+      // never happened, swallowing the user's next genuine pop (#103).
+      currentIndex = 0
+      history.replaceState(stampCurrent(0), '')
+    }
   }
-  // Suppress the echo event our own URL mutation triggers, so a single
-  // navigation dispatches exactly once (see findings 2a/2b/2c).
-  let suppressNextHashchange = false
-  let suppressNextPopstate = false
+
+  // `history.length` as of the last time we looked. The browser exposes no way
+  // to ask whether a `hashchange` came from a NEW fragment navigation or from a
+  // traversal, and the two need opposite handling — but a push grows the stack
+  // and a traversal never does, so the length answers it. Kept in sync at every
+  // point we observe or change history.
+  //
+  // KNOWN GAP (#150): only points the ROUTER sees refresh this. History growth
+  // it never sees — a foreign `pushState`, or an IFRAME navigation, which does
+  // grow the joint session history — leaves it stale-LOW, and a traversal onto
+  // an unstamped entry then reads as a push and is stamped with an inverted
+  // index. The only fully sound alternative is to treat every unstamped hash
+  // entry as UNKNOWN (what history mode does), which costs the address-bar-edit
+  // case this deliberately keeps. That trade is #150, not a patch.
+  let knownLength = typeof history !== 'undefined' ? history.length : 0
+  function noteLength(): void {
+    if (typeof history !== 'undefined') knownLength = history.length
+  }
+
+  // How many `hashchange` events our own writes are about to echo back, and
+  // where the last of those writes left the URL. A BOOLEAN cannot express this:
+  // hashchange events QUEUE, so two navigations in one tick echo twice and one
+  // flag swallows only the first — the second navigation's message is then
+  // dispatched a SECOND time, running the reducer and its effects twice (#108).
+  // `batch()` makes multi-send bursts an explicitly supported pattern, so a
+  // batched navigation is not an exotic case.
+  //
+  // A COUNT plus the newest hash, not a queue of them: only those two are ever
+  // read, and #110.2 made a mounted `listener()` optional — a hash app can
+  // navigate for its whole lifetime with nothing subscribed, which grew a queue
+  // by one string per navigation for events nobody would ever consume. As a
+  // pair of scalars that leak is unrepresentable rather than merely capped.
+  let pendingEchoCount = 0
+  let pendingEchoHash: string | null = null
+
+  /** Arm the echo `hashchange` one of our own URL writes is about to produce. */
+  function armEcho(newHash: string): void {
+    pendingEchoCount++
+    pendingEchoHash = normHash(newHash)
+  }
+  // The index a blocked navigation's `history.go` is restoring to, or `null`.
+  // Keyed on the destination rather than a bare flag: `history.go` is
+  // asynchronous and a delta it cannot reach fires nothing at all, so a flag
+  // stays armed and swallows the next genuine popstate (#103).
+  let pendingRestoreIndex: number | null = null
+
+  /**
+   * The index of the entry we are physically STANDING on — which is not always
+   * the last one we wrote. `history.go` is asynchronous, so an app that
+   * navigates in the same tick as a blocked pop pushes from the BLOCKED entry,
+   * truncating everything above it. Numbering from `currentIndex` there claims
+   * a depth the stack no longer has, and the next blocked back computes an
+   * unreachable delta — #103's original symptom, re-reachable (#139 review).
+   */
+  function landedIndex(): number {
+    return readIndex(history.state) ?? currentIndex ?? 0
+  }
 
   function pushUrl(path: string): void {
-    currentIndex += 1
+    currentIndex = landedIndex() + 1
     history.pushState({ [STATE_KEY]: currentIndex }, '', path)
+    noteLength()
   }
 
   function replaceUrl(path: string): void {
-    history.replaceState({ [STATE_KEY]: currentIndex }, '', path)
+    // A replace swaps the entry in place, so it keeps THAT entry's index.
+    currentIndex = landedIndex()
+    history.replaceState(stampCurrent(currentIndex), '', path)
+    noteLength()
   }
 
-  function sameHash(a: string, b: string): boolean {
-    const norm = (h: string) => (h === '' ? '#/' : h.startsWith('#') ? h : '#' + h)
-    return norm(a) === norm(b)
-  }
-
-  /** Set location.hash, optionally suppressing the echo hashchange dispatch. */
-  function setHash(newHash: string, suppress: boolean): void {
-    if (sameHash(location.hash, newHash)) return
-    if (suppress) suppressNextHashchange = true
+  /**
+   * Set location.hash, arming the echo `hashchange` it is about to produce —
+   * every one of our own writes is echoed, and every caller suppressed it, so
+   * there is no second behaviour to select. Returns whether the URL actually
+   * changed: a same-hash write is a no-op the browser reports nothing for, so
+   * nothing may be armed or counted for it.
+   */
+  function setHash(newHash: string): boolean {
+    if (sameHash(location.hash, newHash)) return false
+    // Read the index of the entry we are LEAVING before the write replaces it.
+    const from = landedIndex()
+    armEcho(newHash)
     location.hash = newHash
+    // The fragment navigation created its entry SYNCHRONOUSLY (only the
+    // `hashchange` EVENT is queued), so stamp it now: `location.hash = …`
+    // cannot carry state itself, and the blocked-back restore needs an index on
+    // every entry to compute a `history.go` delta from.
+    currentIndex = from + 1
+    // A fresh fragment entry carries no state, so this merges with nothing —
+    // but every re-stamp in this file goes through `stampCurrent`, with no
+    // exception for a reader to re-verify.
+    history.replaceState(stampCurrent(currentIndex), '')
+    noteLength()
+    return true
   }
   /**
-   * Run guards for a navigation to `newRoute`. Returns the final route
-   * to navigate to, or `null` if navigation should be blocked.
+   * Run guards for a navigation to `newRoute`. `redirected` is reported
+   * explicitly rather than inferred by comparing routes: a guard may return a
+   * structurally equal object, and `push`/`replace` need to know whether the
+   * URL they are about to write is the one their caller actually asked for.
    */
-  function runGuards(newRoute: R): R | null {
+  function runGuards(newRoute: R): GuardOutcome<R> {
     if (options?.beforeLeave && currentRoute !== null) {
-      if (!options.beforeLeave(currentRoute, newRoute)) return null
+      if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
     }
     if (options?.beforeEnter) {
       const result = options.beforeEnter(newRoute, currentRoute)
-      if (result === false) return null
+      if (result === false) return { blocked: true }
       // Any non-`false`, non-nullish return is a redirect Route. Routes are
       // generic `R` and may be primitives (e.g. a string-union route), so
       // gate on nullishness, NOT `typeof === 'object'` — the latter silently
       // dropped string/number redirects and let navigation proceed to the
       // original target (an auth-guard bypass).
       if (result !== undefined && result !== null) {
-        return result as R
+        return { blocked: false, route: result as R, redirected: true }
       }
     }
-    return newRoute
+    return { blocked: false, route: newRoute, redirected: false }
+  }
+
+  /**
+   * Consume one queued echo if this `hashchange` is ours. The queue is only
+   * trusted while the URL is still where our last write left it: when it is
+   * not, a write we armed never landed and the event in hand is a GENUINE
+   * navigation, which must dispatch rather than be swallowed. That check is
+   * what keeps a stale entry from eating real events indefinitely — the failure
+   * mode the old boolean had (#103/#108).
+   */
+  function consumeHashEcho(): boolean {
+    if (pendingEchoCount === 0) return false
+    if (pendingEchoHash === null || !sameHash(location.hash, pendingEchoHash)) {
+      pendingEchoCount = 0
+      pendingEchoHash = null
+      return false
+    }
+    pendingEchoCount--
+    if (pendingEchoCount === 0) pendingEchoHash = null
+    return true
+  }
+
+  /**
+   * Consume the popstate our own restoring `history.go` produced. Cleared
+   * unconditionally: the traversal may land somewhere else entirely (or never
+   * fire), and an armed flag that outlives its restore swallows the next
+   * genuine popstate (#103).
+   */
+  function consumePopstateRestore(): boolean {
+    if (pendingRestoreIndex === null) return false
+    const expected = pendingRestoreIndex
+    pendingRestoreIndex = null
+    if (readIndex(history.state) !== expected) return false
+    currentIndex = expected
+    return true
+  }
+
+  /** Resync `currentIndex` to the entry a browser-driven navigation landed on. */
+  function adoptLandedEntry(): void {
+    const landed = readIndex(history.state)
+    if (landed !== null) {
+      currentIndex = landed
+      return
+    }
+    if (router.mode === 'hash') {
+      // `hashchange` fires for a NEW fragment navigation (the user editing the
+      // address bar) as well as for a TRAVERSAL, and an unstamped entry does
+      // not tell them apart: every entry that pre-dates `connectRouter` is
+      // unstamped too. Assuming a push stamped such an entry ABOVE the one it
+      // sits below, which inverts the delta and sends the next blocked back
+      // FURTHER backwards. `history.length` is the discriminator — a push grows
+      // the stack, a traversal never does.
+      if (history.length > knownLength) {
+        currentIndex = (currentIndex ?? 0) + 1
+        history.replaceState(stampCurrent(currentIndex), '')
+        noteLength()
+        return
+      }
+      // A traversal onto an entry we never stamped: its position is UNKNOWN and
+      // the browser will not tell us. Record that rather than guess — a guessed
+      // index is exactly what turns a blocked back into a wrong-direction
+      // `history.go` (#103). (A push whose entry did not grow the stack, i.e.
+      // one that truncated forward entries, lands here too: also unknown, which
+      // is the safe answer either way.)
+      currentIndex = null
+      noteLength()
+      return
+    }
+    // History mode: popstate is always a TRAVERSAL, so an unstamped entry is
+    // one we have genuinely never seen and whose position the browser will not
+    // tell us. Record that instead of guessing — a guessed index is exactly
+    // what turns a blocked back into an unreachable `history.go` (#103).
+    currentIndex = null
+  }
+
+  /**
+   * Undo a browser-driven navigation a guard blocked, leaving the stack exactly
+   * as it was: a TRAVERSAL back to the entry we were on, never a fresh push.
+   */
+  function restoreBlocked(): void {
+    if (currentRoute === null) return
+    const landed = readIndex(history.state)
+    // Both positions must be known for a delta to mean anything. When either is
+    // not, do NOTHING: no `history.go` with a guessed delta, and above all
+    // nothing armed for a restore that will not happen (#103).
+    if (currentIndex === null || landed === null) return
+    const delta = currentIndex - landed
+    if (delta === 0) return
+    if (router.mode === 'hash') {
+      // `location.hash = restore` cannot be the mechanism — assigning the hash
+      // PUSHES, which grows history.length on every block and truncates every
+      // forward entry above the blocked one (#103). The traversal echoes a
+      // hashchange, which is suppressed like any of our own writes.
+      armEcho(router.href(currentRoute))
+      history.go(delta)
+      return
+    }
+    pendingRestoreIndex = currentIndex
+    history.go(delta)
   }
 
   // The route to run guards/dispatch against: the caller's ORIGINAL object (all
@@ -227,34 +442,43 @@ export function connectRouter<R>(
 
   function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
     switch (effect.action) {
-      case 'push': {
+      case 'push':
+      case 'replace': {
         // URL only. In hash mode, suppress the echo hashchange so the listener
         // does not ALSO dispatch a navigate (finding 2b).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
+        const outcome = runGuards(targetRoute(effect))
+        if (outcome.blocked) return
+        const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
-          setHash(finalPath, true)
-        } else {
+          if (effect.action === 'push') {
+            setHash(finalPath)
+          } else if (!sameHash(location.hash, finalPath)) {
+            // `location.replace` swaps the current entry and DROPS its state —
+            // INCLUDING whatever the host app or another library owns on it, so
+            // snapshot it here and put it back with the stamp. This is the one
+            // re-stamp that cannot use `stampCurrent`: by the time it runs the
+            // state it should have merged is already gone.
+            currentIndex = landedIndex()
+            const carried = stampCurrent(currentIndex)
+            armEcho(finalPath)
+            location.replace(finalPath)
+            // The index is unchanged — nothing was pushed.
+            history.replaceState(carried, '')
+            noteLength()
+          }
+        } else if (effect.action === 'push') {
           pushUrl(finalPath)
-        }
-        currentRoute = finalRoute
-        break
-      }
-      case 'replace': {
-        // URL only. Same echo suppression as push (finding 2b).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
-        if (router.mode === 'hash') {
-          if (!sameHash(location.hash, finalPath)) suppressNextHashchange = true
-          location.replace(finalPath)
         } else {
           replaceUrl(finalPath)
         }
-        currentRoute = finalRoute
+        currentRoute = outcome.route
+        // A guard REDIRECT wrote a URL the caller never asked for. push/replace
+        // are URL-only by contract — the caller's reducer already set
+        // `state.route` — but it set it to the REQUESTED route, so staying
+        // silent leaves `state.route` and the URL disagreeing permanently
+        // (#110). Only a redirect dispatches; the plain case keeps the
+        // documented URL-only contract.
+        if (outcome.redirected) send(navigateMsg(outcome.route))
         break
       }
       case 'navigate': {
@@ -269,17 +493,16 @@ export function connectRouter<R>(
         //
         // In hash mode we dispatch here AND suppress the echo hashchange, so
         // the listener does not double-dispatch the same message (finding 2a).
-        const target = targetRoute(effect)
-        const finalRoute = runGuards(target)
-        if (finalRoute === null) return
-        const finalPath = router.href(finalRoute)
+        const outcome = runGuards(targetRoute(effect))
+        if (outcome.blocked) return
+        const finalPath = router.href(outcome.route)
         if (router.mode === 'hash') {
-          setHash(finalPath, true)
+          setHash(finalPath)
         } else {
           pushUrl(finalPath)
         }
-        currentRoute = finalRoute
-        send(navigateMsg(finalRoute))
+        currentRoute = outcome.route
+        send(navigateMsg(outcome.route))
         break
       }
       case 'back':
@@ -334,55 +557,21 @@ export function connectRouter<R>(
             // Swallow the echo event our own URL mutation triggered — it was
             // already dispatched (navigate) or is URL-only (push/replace).
             if (router.mode === 'hash') {
-              if (suppressNextHashchange) {
-                suppressNextHashchange = false
-                return
-              }
-            } else if (suppressNextPopstate) {
-              suppressNextPopstate = false
-              // Resync the index to the entry history.go landed us on.
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
+              if (consumeHashEcho()) return
+            } else if (consumePopstateRestore()) {
               return
             }
 
             const input =
               router.mode === 'hash' ? location.hash : location.pathname + location.search
-            const route = router.match(input)
-            const finalRoute = runGuards(route)
-            if (finalRoute === null) {
-              // Guard blocked the browser-driven navigation — restore the URL.
-              if (currentRoute !== null) {
-                if (router.mode === 'history') {
-                  // Reverse the pop with history.go(delta), tracked by a
-                  // monotonic index — NEVER pushState, which would leave a
-                  // stray forward entry on every block (finding 2c).
-                  const st = history.state as Record<string, unknown> | null
-                  const poppedIdx =
-                    st && typeof st[STATE_KEY] === 'number' ? (st[STATE_KEY] as number) : 0
-                  const delta = currentIndex - poppedIdx
-                  if (delta !== 0) {
-                    suppressNextPopstate = true
-                    history.go(delta)
-                  }
-                } else {
-                  // Hash mode: restore the previous hash without dispatching.
-                  const restore = router.href(currentRoute)
-                  if (!sameHash(location.hash, restore)) {
-                    suppressNextHashchange = true
-                    location.hash = restore
-                  }
-                }
-              }
+            const outcome = runGuards(router.match(input))
+            if (outcome.blocked) {
+              restoreBlocked()
               return
             }
-            // Allowed — resync index to the entry we're now on.
-            if (router.mode === 'history') {
-              const st = history.state as Record<string, unknown> | null
-              if (st && typeof st[STATE_KEY] === 'number') currentIndex = st[STATE_KEY] as number
-            }
-            currentRoute = finalRoute
-            send(factory(finalRoute))
+            adoptLandedEntry()
+            currentRoute = outcome.route
+            send(factory(outcome.route))
           }
           window.addEventListener(event, handler)
           return () => {
@@ -414,23 +603,30 @@ export function connectRouter<R>(
             const anchor = e.currentTarget as HTMLAnchorElement | null
             const target = anchor?.target
             if (target && target !== '' && target !== '_self') return
+            // `download` means the href is a FILE the browser must save, not a
+            // route to navigate to. Intercepting it cancels the download and
+            // navigates instead, so the file never arrives (#109). The bare
+            // attribute is valid and carries no value, so test for its
+            // PRESENCE, never for a truthy value.
+            if (anchor?.hasAttribute('download')) return
             e.preventDefault()
-            if (router.mode === 'hash') {
-              // Set the hash and let the listener run guards + dispatch — the
-              // single dispatch source in hash mode. (No suppression: we WANT
-              // the echo hashchange to drive the navigation.)
-              setHash(router.href(route), false)
-              return
-            }
-            // History mode is the primary nav path — run the SAME guard
-            // pipeline as the navigate() effect (guards → block/redirect/allow
-            // → pushState + send + currentRoute), so auth / unsaved-changes
-            // guards are never silently skipped (finding 1).
-            const finalRoute = runGuards(route)
-            if (finalRoute === null) return
-            pushUrl(router.href(finalRoute))
-            currentRoute = finalRoute
-            send(factory(finalRoute))
+            // BOTH modes run the same pipeline as the navigate() effect —
+            // guards → block/redirect/allow → URL write + send + currentRoute —
+            // so auth / unsaved-changes guards are never silently skipped
+            // (finding 1). Hash mode used to write the hash and leave the rest
+            // to the listener, which made a link INERT without a mounted
+            // listener() (zero dispatches, ever, and no guards at click time)
+            // and made a click on the CURRENT route a dead one: preventDefault
+            // ran, `setHash` bailed on the identical hash, and nothing followed
+            // (#110). A click on the current route is a request to re-enter it,
+            // so it dispatches; only the redundant URL write is skipped.
+            const outcome = runGuards(route)
+            if (outcome.blocked) return
+            const finalPath = router.href(outcome.route)
+            if (router.mode === 'hash') setHash(finalPath)
+            else pushUrl(finalPath)
+            currentRoute = outcome.route
+            send(factory(outcome.route))
           },
         },
         children,

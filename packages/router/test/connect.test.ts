@@ -147,8 +147,10 @@ describe('connectRouter', () => {
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(true)
-        // In hash mode, location.hash is set and the hashchange listener
-        // handles sending the navigate message — send is not called directly
+        // Since #110, hash mode runs the same pipeline as history mode: the
+        // click sets the hash AND dispatches directly, so a link no longer
+        // depends on a mounted listener(). Dispatch counts are asserted in
+        // test/hash-link-semantics.test.ts.
       })
     })
 

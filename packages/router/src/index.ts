@@ -88,23 +88,136 @@ export interface Router<R> {
   fallback: R
 }
 
-// Non-enumerable tag attached to routes produced by `match`, carrying the
-// RouteDef that built them. `toPath`/`href` read it for a direct O(segments)
-// format with no round-trip and no per-format `build()` call. Non-enumerable
-// so it never shows up in JSON, equality checks, or object spreads.
-const ROUTE_DEF = Symbol('llui.routeDef')
-
-/** Primitive fixed fields a builder emits for a def, keyed by field name. */
+/** Per-def selection metadata, computed ONCE at createRouter. */
 interface DefMeta<R> {
   def: RouteDef<R>
   /** param + rest segment names — all must be present on a route to select this def */
   paramKeys: string[]
   /**
-   * The builder's primitive, non-param, non-query output fields (e.g. `page`,
-   * `tab`) computed ONCE at createRouter with sample params. `null` when the
-   * builder threw on sample params (selection then falls back to params only).
+   * The builder's CONSTANT output fields (e.g. `page`, `tab`): primitive,
+   * non-param, non-query fields whose value did not move when the sample params
+   * did. SAMPLED, therefore only a HEURISTIC — a field that happens to take the
+   * same value for both samples reads as constant even when it is derived. It
+   * orders candidates and breaks ties; the winner is settled by round-tripping
+   * the formatted path (`verifySelection`), never by this map alone.
+   * `null` when the builder threw on sample params.
    */
-  fixed: Record<string, string | number | boolean> | null
+  constants: Record<string, string | number | boolean> | null
+  /**
+   * The def's COMPLETE primitive output, known EXACTLY rather than sampled.
+   * Only defs that read no params at all (no path parameters, no query keys)
+   * qualify: their builder is a pure function of `{}`, so this is the one and
+   * only route they can ever produce. A route that disagrees with it on a field
+   * they both carry provably did not come from this def, which is what lets the
+   * common single-template case skip verification entirely (and keeps `href()`
+   * at zero builder calls). `null` for every param-reading def.
+   */
+  exact: Record<string, string | number | boolean> | null
+}
+
+type Primitive = string | number | boolean
+
+function isPrimitive(v: unknown): v is Primitive {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+}
+
+/** Lexicographic compare of two selection scores; > 0 when `a` is the better fit. */
+function compareScore(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]! !== b[i]!) return a[i]! - b[i]!
+  }
+  return 0
+}
+
+/** How well the route a URL actually denotes reproduces the route we formatted. */
+interface Fidelity {
+  /**
+   * Fields BOTH routes carry as primitives with DIFFERENT values. This is the
+   * only observation that PROVES the URL denotes a different route, which is
+   * why it is tracked apart from the merely unexplained and dominates the
+   * comparison. The legitimate `/p/:id` vs `/p/:id/edit` contest never produces
+   * one — it is decided entirely by what each def leaves unexplained.
+   */
+  disagreements: number
+  /** +1 per agreeing primitive field, −1 per disagreement and per unexplained one. */
+  score: number
+  /** No disagreement and nothing unexplained — this URL denotes exactly this route. */
+  perfect: boolean
+}
+
+/** Is `a` a better reproduction than `b`? Proven-wrong loses to merely-imperfect. */
+function isBetterFit(a: Fidelity, b: Fidelity): boolean {
+  if (a.disagreements !== b.disagreements) return a.disagreements < b.disagreements
+  return a.score > b.score
+}
+
+/**
+ * Compare a route against the route its formatted URL round-trips back to,
+ * over PRIMITIVE fields only (an object field — a runtime `data` payload — is
+ * never part of a URL and must not influence selection).
+ *
+ * A field only the ROUND-TRIP carries is a default this def would supply, and
+ * #104 established that it must not DISQUALIFY the def. It is still weaker
+ * evidence than an exact reproduction, so it costs a point: between two defs
+ * that agree on everything the route carries, the one that invents nothing is
+ * the better fit. That is the whole of the `/p/:id` vs `/p/:id/edit` decision.
+ *
+ * A field the URL fails to reproduce at all is the same kind of gap in the
+ * other direction — the URL cannot carry it — and is likewise only UNEXPLAINED.
+ * A DISAGREEMENT is stronger: both routes name the field, both give it a
+ * primitive value, and the values differ. Only that proves the URL means a
+ * different route, so it is counted separately (see `isBetterFit`).
+ *
+ * That boundary is load-bearing because counting an unreproduced field as a
+ * disagreement INVERTS the ranking whenever one def reproduces a field the
+ * correct def cannot — `/x/:id` owns the route but cannot put its three flags
+ * in a URL (0 disagreements → 3), so it loses to `/y/:id`, which reproduces
+ * all three and denotes a different `page` (1). Note it does not DISQUALIFY
+ * anything: `isBetterFit` compares disagreements relatively, so a field every
+ * candidate equally fails to reproduce cancels out.
+ */
+function fidelityOf(route: Record<string, unknown>, produced: Record<string, unknown>): Fidelity {
+  let score = 0
+  let disagreements = 0
+  let perfect = true
+  for (const key of Object.keys(route)) {
+    const a = route[key]
+    if (!isPrimitive(a)) continue
+    const b = produced[key]
+    if (!isPrimitive(b)) {
+      score -= 1
+      perfect = false
+      continue
+    }
+    if (Object.is(a, b)) {
+      score += 1
+    } else {
+      score -= 1
+      disagreements += 1
+      perfect = false
+    }
+  }
+  for (const key of Object.keys(produced)) {
+    if (!isPrimitive(produced[key])) continue
+    if (isPrimitive(route[key])) continue
+    score -= 1
+    perfect = false
+  }
+  return { disagreements, score, perfect }
+}
+
+/** Does a route contradict a def's EXACTLY known output on a field they share? */
+function contradictsExact(
+  exact: Record<string, Primitive>,
+  route: Record<string, unknown>,
+): boolean {
+  for (const key in exact) {
+    const v = route[key]
+    // An OMITTED field is a default this def supplies, not a contradiction (#104).
+    if (v === undefined) continue
+    if (!Object.is(v, exact[key])) return true
+  }
+  return false
 }
 
 export function createRouter<R>(
@@ -115,33 +228,14 @@ export function createRouter<R>(
   const mode = config?.mode ?? 'hash'
   const base = normalizeBase(config?.base)
 
-  function tagRoute(r: R, def: RouteDef<R>): R {
-    if (r !== null && typeof r === 'object') {
-      Object.defineProperty(r as object, ROUTE_DEF, {
-        value: def,
-        enumerable: false,
-        configurable: true,
-        writable: true,
-      })
-    }
-    return r
-  }
-
-  function getTag(r: R): RouteDef<R> | undefined {
-    if (r !== null && typeof r === 'object') {
-      return (r as Record<symbol, unknown>)[ROUTE_DEF] as RouteDef<R> | undefined
-    }
-    return undefined
-  }
-
   /** Placeholder params covering every path/query key a builder may read. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function sampleParamsFor(def: RouteDef<any>): Record<string, string> {
+  function sampleParamsFor(def: RouteDef<any>, value: string): Record<string, string> {
     const params: Record<string, string> = {}
     for (const seg of def.segments) {
-      if (typeof seg !== 'string') params[seg.name] = '1'
+      if (typeof seg !== 'string') params[seg.name] = value
     }
-    for (const key of def.queryKeys) params[key] = '1'
+    for (const key of def.queryKeys) params[key] = value
     return params
   }
 
@@ -171,33 +265,43 @@ export function createRouter<R>(
 
   // Fallback: an explicit config value, else the first route built with sample
   // params so a param-reading builder does not crash createRouter.
-  const fallback: R =
-    config?.fallback ?? tagRoute(defs[0]!.build(sampleParamsFor(defs[0]!)) as R, defs[0]!)
+  const fallback: R = config?.fallback ?? (defs[0]!.build(sampleParamsFor(defs[0]!, '1')) as R)
 
-  // Precompute per-def selection metadata ONCE. Never calls build({}) per
-  // format, never round-trips through match — replaces the old
-  // O(defs²×deepEqual) heuristic.
-  function computeFixed(
+  /**
+   * Precompute per-def selection metadata ONCE — `href()` is on the hot path of
+   * every link and must never call a builder.
+   *
+   * Classify the builder's emitted fields by building it TWICE with clearly
+   * different sample params and keeping only what did not move. A field that
+   * moves is param-DERIVED (`title: \`User ${id}\``, `upper: id.toUpperCase()`)
+   * and carries no information a route can be matched on; freezing one sample's
+   * value and demanding equality against it is what sent every real route to
+   * the fallback URL (#104). The two samples differ in length, characters AND
+   * numeric value, so the usual derivations — interpolation, case mapping,
+   * `.length`, `parseInt` — all move.
+   */
+  function computeConstants(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     def: RouteDef<any>,
     paramKeys: string[],
   ): Record<string, string | number | boolean> | null {
     try {
-      const out = def.build(sampleParamsFor(def)) as Record<string, unknown>
-      const fixed: Record<string, string | number | boolean> = {}
+      const a = def.build(sampleParamsFor(def, '1')) as Record<string, unknown>
+      const b = def.build(sampleParamsFor(def, '2zz')) as Record<string, unknown>
+      const constants: Record<string, string | number | boolean> = {}
       const querySet = new Set(def.queryKeys)
-      for (const key of Object.keys(out)) {
+      for (const key of Object.keys(a)) {
         if (paramKeys.includes(key)) continue
         if (querySet.has(key)) continue
-        const v = out[key]
+        const v = a[key]
         // Only primitive fields discriminate a route. Object/array fields (e.g.
         // a runtime `data` payload) are not part of the URL and would break
         // selection, so they are excluded.
-        if (v === null || v === undefined) continue
-        if (typeof v === 'object') continue
-        fixed[key] = v as string | number | boolean
+        if (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') continue
+        if (!Object.is(v, b[key])) continue
+        constants[key] = v
       }
-      return fixed
+      return constants
     } catch {
       // Builder threw on sample params — selection falls back to params only.
       return null
@@ -209,8 +313,25 @@ export function createRouter<R>(
     for (const seg of def.segments) {
       if (typeof seg !== 'string') paramKeys.push(seg.name)
     }
-    return { def: def as RouteDef<R>, paramKeys, fixed: computeFixed(def, paramKeys) }
+    const constants = computeConstants(def, paramKeys)
+    // A def that reads NO params has one possible output, so the sampled map IS
+    // its exact output. Any param or query key makes the output param-dependent
+    // and the map a heuristic again.
+    const readsNoParams = paramKeys.length === 0 && def.queryKeys.length === 0
+    return {
+      def: def as RouteDef<R>,
+      paramKeys,
+      constants,
+      exact: readsNoParams ? constants : null,
+    }
   })
+
+  /** Every name any def consumes from a route to build its URL. */
+  const urlParamNames = new Set<string>()
+  for (const meta of defMetas) {
+    for (const p of meta.paramKeys) urlParamNames.add(p)
+    for (const q of meta.def.queryKeys) urlParamNames.add(q)
+  }
 
   function matchPathname(pathname: string): R {
     // Drop the URL fragment first — it is client-only and never part of route
@@ -237,30 +358,24 @@ export function createRouter<R>(
         for (const key of def.queryKeys) {
           if (queryParams[key] !== undefined) params[key] = queryParams[key]!
         }
-        return tagRoute(def.build(params) as R, def as RouteDef<R>)
+        return def.build(params) as R
       }
     }
 
     return fallback
   }
 
-  /** Pick the def that produced a route object, without round-tripping. */
-  function selectDef(r: R): DefMeta<R> | null {
-    const ro = r as Record<string, unknown>
-    let best: DefMeta<R> | null = null
+  /**
+   * The defs that could format this route at all: it carries every path
+   * parameter they need (without one there is no URL to format), and it does
+   * not contradict an EXACTLY known output. That second filter is the only
+   * sound elimination available without calling a builder, and it is what
+   * leaves the ordinary single-template route with one candidate — hence no
+   * verification and no builder call on the `href()` hot path.
+   */
+  function candidateMetas(ro: Record<string, unknown>): DefMeta<R>[] {
+    const out: DefMeta<R>[] = []
     for (const meta of defMetas) {
-      // Every fixed field the builder emits must match the route's value.
-      if (meta.fixed) {
-        let ok = true
-        for (const key in meta.fixed) {
-          if (ro[key] !== meta.fixed[key]) {
-            ok = false
-            break
-          }
-        }
-        if (!ok) continue
-      }
-      // Every path parameter must be present on the route.
       let allParams = true
       for (const p of meta.paramKeys) {
         const v = ro[p]
@@ -270,24 +385,237 @@ export function createRouter<R>(
         }
       }
       if (!allParams) continue
-      // Prefer the most specific viable def (most params); on a tie, the
-      // later-registered def wins (matches the old "most specific first").
-      if (best === null || meta.paramKeys.length >= best.paramKeys.length) best = meta
+      if (meta.exact !== null && contradictsExact(meta.exact, ro)) continue
+      out.push(meta)
     }
-    return best
+    return out
+  }
+
+  /**
+   * Order the candidates by SHAPE — a cheap, builder-free heuristic used to
+   * pick which candidate to verify first and to break ties between equally
+   * faithful ones. Two tiers:
+   *
+   * 1. STRICT — every constant the route actually carries agrees. This is the
+   *    discriminating tier: it is what keeps two shared-prefix defs separated
+   *    by a constant (`tab: 'authored'` vs `'favorited'`) apart. A constant the
+   *    route OMITS is a default this def would supply, not a contradiction, so
+   *    it does not disqualify — `href({page:'user', id:'7'})` must resolve
+   *    through a def that also emits `tab: 'profile'` (#104).
+   * 2. RELAXED — only when no def matches strictly. A builder-emitted field the
+   *    caller set to a NON-default value is not representable in the URL and
+   *    must not send the route to the fallback URL, so the def that agrees with
+   *    the most constants wins. Contradicting every constant while agreeing
+   *    with none means a different route entirely, never this URL.
+   */
+  function preferByShape(candidates: DefMeta<R>[], ro: Record<string, unknown>): DefMeta<R> | null {
+    let strict: DefMeta<R> | null = null
+    let strictScore: readonly number[] = []
+    let relaxed: DefMeta<R> | null = null
+    let relaxedScore: readonly number[] = []
+
+    for (const meta of candidates) {
+      let matched = 0
+      let mismatched = 0
+      let invented = 0
+      if (meta.constants) {
+        for (const key in meta.constants) {
+          // A constant the route does not carry is a default this def would
+          // INVENT. It does not disqualify (#104), but it is exactly what
+          // `fidelityOf` charges a point for, so the ordering agrees with the
+          // verification it feeds and the right def is verified FIRST.
+          if (ro[key] === undefined) {
+            invented++
+            continue
+          }
+          if (ro[key] === meta.constants[key]) matched++
+          else mismatched++
+        }
+      }
+
+      if (mismatched === 0) {
+        // Prefer the most specific def (most params), then the one that invents
+        // the fewest defaults — "later-registered wins" put `/u/:id/edit` ahead
+        // of `/u/:id` for a plain `{page:'u', id}`, which is the wrong first
+        // guess for by far the more common route and cost a second round-trip
+        // on every one of them. On a full tie the later-registered def still
+        // wins (the longer, more specific pattern).
+        const score = [meta.paramKeys.length, -invented]
+        if (strict === null || compareScore(score, strictScore) >= 0) {
+          strict = meta
+          strictScore = score
+        }
+        continue
+      }
+      if (matched === 0) continue
+      const score = [matched, -mismatched, meta.paramKeys.length, -invented]
+      if (relaxed === null || compareScore(score, relaxedScore) >= 0) {
+        relaxed = meta
+        relaxedScore = score
+      }
+    }
+    return strict ?? relaxed
   }
 
   function formatWithDef(def: RouteDef<R>, r: R): string | null {
     return def.toPath ? def.toPath(r) : tryFormat(def, r)
   }
 
-  function formatPath(r: R): string {
-    // Fast + exact path: a route produced by match carries its def.
-    const tagged = getTag(r)
-    if (tagged) {
-      const p = formatWithDef(tagged, r)
-      if (p !== null) return p
+  /**
+   * Verified selections, keyed on the route's primitive key/value signature.
+   * Bounded: a router whose routes carry an unbounded param space (an id per
+   * user) would otherwise grow one entry per distinct route ever formatted.
+   * Dropping the whole table on overflow costs a re-verification, never a wrong
+   * answer — the cache is an optimization, and the verification is the truth.
+   *
+   * DO NOT re-key this on the route's SHAPE (its key-set, or the def "template"
+   * it looks like) to raise the hit rate. The param VALUES are what decide the
+   * answer, and that is #104's own headline: with a def whose builder reads a
+   * param (`kind: id === 'me' ? 'self' : 'other'`) competing against one that
+   * owns that value as a constant, `{page:'a', id:'me', kind:'self'}` formats
+   * to `#/a/me` while `{page:'a', id:'zzz', kind:'self'}` formats to `#/b/zzz`
+   * — same key-set, different def. A shape key would serve one of those
+   * answers for the other route: a plausible URL for the wrong route, silently,
+   * which is the exact defect this verification exists to remove.
+   *
+   * The cost of keying on values is bounded THRASH, not a cliff: past
+   * `VERIFIED_MAX` distinct routes the hit rate falls to zero and every
+   * `href()` pays the uncached price it would have paid anyway. Slower than a
+   * shape key, never wrong.
+   */
+  const verified = new Map<string, DefMeta<R> | null>()
+  const VERIFIED_MAX = 512
+
+  /**
+   * A key that determines the verification outcome, or `null` when it cannot.
+   * Values are length-prefixed so no two different routes can encode alike. A
+   * NON-primitive value is only observable through `String(value)` in a URL
+   * segment, so it disables caching just for the keys a def actually formats.
+   */
+  function signatureOf(ro: Record<string, unknown>): string | null {
+    let sig = ''
+    for (const key of Object.keys(ro).sort()) {
+      const v = ro[key]
+      if (v === undefined) continue
+      if (v === null || !isPrimitive(v)) {
+        if (urlParamNames.has(key)) return null
+        continue
+      }
+      const t = typeof v === 'string' ? 's' : typeof v === 'number' ? 'n' : 'b'
+      const s = String(v)
+      sig += `${key.length}:${key}=${t}${s.length}:${s};`
     }
+    return sig
+  }
+
+  /** The route the def's URL actually denotes, and how well it reproduces `r`. */
+  function roundTrip(meta: DefMeta<R>, r: R, ro: Record<string, unknown>): Fidelity | null {
+    try {
+      const path = formatWithDef(meta.def, r)
+      if (path === null) return null
+      return fidelityOf(ro, matchPathname(path) as Record<string, unknown>)
+    } catch {
+      // A hand-written `toPath` or a builder that throws on these params: this
+      // def cannot be verified, so it cannot win a contest it might lose.
+      return null
+    }
+  }
+
+  /**
+   * Settle a contested selection by ROUND-TRIP: format with each candidate and
+   * ask `match()` which route that URL actually denotes. Sampling cannot tell a
+   * param-derived field from a constant when the samples coincide, and the
+   * shape tiers then hand the route to a def that genuinely owns that constant
+   * — a plausible URL for the WRONG route, which `link()` both renders and
+   * pushes. The round-trip answers the real question ("does this URL mean this
+   * route?") instead of guessing at it.
+   *
+   * Only runs when more than one def can format the route, and is memoized on
+   * the route's signature, so the ordinary case stays at zero builder calls.
+   */
+  function verifySelection(
+    r: R,
+    ro: Record<string, unknown>,
+    candidates: DefMeta<R>[],
+    preferred: DefMeta<R> | null,
+  ): DefMeta<R> | null {
+    const key = signatureOf(ro)
+    if (key !== null) {
+      const hit = verified.get(key)
+      if (hit !== undefined) return hit
+    }
+
+    let best: DefMeta<R> | null = null
+    let bestFit: Fidelity | null = null
+    let exact: DefMeta<R> | null = null
+    let preferredVerified = false
+
+    // The shape-preferred candidate is verified FIRST — when it round-trips
+    // exactly, no other candidate can beat it and no further builder runs — and
+    // exactly ONCE: reaching it again through `candidates` would round-trip
+    // (and therefore BUILD) it a second time on every contest it does not win.
+    // Index −1 IS that first slot, so the ordering costs no array.
+    for (let i = preferred === null ? 0 : -1; i < candidates.length; i++) {
+      const meta = i < 0 ? preferred! : candidates[i]!
+      if (i >= 0 && meta === preferred) continue
+      const fit = roundTrip(meta, r, ro)
+      // Unverifiable — its builder threw on these params, or it has no
+      // formattable URL. That is an UNKNOWN, not a demerit: nothing has been
+      // learned about this def, so it is neither promoted nor eliminated.
+      if (fit === null) continue
+      if (meta === preferred) preferredVerified = true
+      if (fit.perfect) {
+        exact = meta
+        break
+      }
+      // Strictly better: an equal fit leaves the shape order in charge, so a
+      // genuinely ambiguous route keeps the answer it has always had.
+      if (bestFit === null || isBetterFit(fit, bestFit)) {
+        best = meta
+        bestFit = fit
+      }
+    }
+
+    // A PERFECT round-trip is proof this URL denotes exactly this route, and
+    // proof beats everything. Short of that, an UNVERIFIABLE shape-preferred
+    // candidate keeps the route: an imperfect rival's round-trip is evidence
+    // about the RIVAL, never about the incumbent — and a rival that disagrees
+    // on a field they both carry is in fact proven to denote a different route.
+    // Letting one displace an incumbent nothing has been learned about is how a
+    // builder that throws on a single id emitted a competing def's URL.
+    let winner: DefMeta<R> | null
+    if (exact !== null) winner = exact
+    else if (preferred !== null && !preferredVerified) winner = preferred
+    else winner = best ?? preferred
+    if (key !== null) {
+      if (verified.size >= VERIFIED_MAX) verified.clear()
+      verified.set(key, winner)
+    }
+    return winner
+  }
+
+  /**
+   * Pick the def whose URL template a route belongs to: narrow to the defs that
+   * can format it, order them by shape, and — only when more than one competes
+   * — verify the winner by round-tripping its URL back through `match()`.
+   *
+   * This composes EIGHT ranked inference rules, each justified by a measured
+   * wrong URL a cheaper design shipped. #156 records the whole set, the three
+   * disproved simplifications, the trigger for replacing the lot with a real
+   * ranked-candidate structure (a sixth comparison rule), and the root-cause
+   * fix that would delete all of it (a serializable route tag). Read it before
+   * "simplifying" anything here.
+   */
+  function selectDef(r: R): DefMeta<R> | null {
+    const ro = r as Record<string, unknown>
+    const candidates = candidateMetas(ro)
+    if (candidates.length === 0) return null
+    if (candidates.length === 1) return candidates[0]!
+    const preferred = preferByShape(candidates, ro)
+    return verifySelection(r, ro, candidates, preferred)
+  }
+
+  function formatPath(r: R): string {
     const meta = selectDef(r)
     if (meta) {
       const p = formatWithDef(meta.def, r)
