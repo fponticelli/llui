@@ -292,7 +292,10 @@ export function connectRouter<R>(
     // cannot carry state itself, and the blocked-back restore needs an index on
     // every entry to compute a `history.go` delta from.
     currentIndex = from + 1
-    history.replaceState({ [STATE_KEY]: currentIndex }, '')
+    // A fresh fragment entry carries no state, so this merges with nothing —
+    // but every re-stamp in this file goes through `stampCurrent`, with no
+    // exception for a reader to re-verify.
+    history.replaceState(stampCurrent(currentIndex), '')
     noteLength()
     return true
   }
