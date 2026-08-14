@@ -18003,15 +18003,6 @@ exporter relies on that position (see the transformer's `export`).
 function $setFrontmatter(source: string | null): void
 ```
 
-### `asListMarker()`
-
-Narrow an unknown to a {@link ListMarker}, or `null`. `find` keeps this a
-lookup rather than a cast: the element type IS `ListMarker`.
-
-```typescript
-function asListMarker(value: unknown): ListMarker | null
-```
-
 ### `blockAtPoint()`
 
 The block whose vertical band contains `clientY`, or `null` when the pointer
@@ -18204,16 +18195,6 @@ function indicatorRect(blocks: readonly BlockRect[], target: DropTarget): Indica
 function init(opts: InitOptions): [EditorState, EditorEffect[]]
 ```
 
-### `isCheckedMarker()`
-
-Whether a task marker's interior means "ticked". GFM ticks `[x]` and `[X]`
-alike; reading it case-sensitively is exactly the #100 defect, so every place
-that asks the question asks it through this one predicate.
-
-```typescript
-function isCheckedMarker(inner: string | undefined): boolean
-```
-
 ### `isImageData()`
 
 ```typescript
@@ -18330,6 +18311,25 @@ Deliberate choices, each load-bearing for exact round-tripping:
 function parseWikiLinkInner(inner: string): WikiLink | null
 ```
 
+### `registerListNodeUpgrade()`
+
+Replace a stock `ListNode` with a `MarkdownListNode` the first time the
+document touches it, so a list that never went through `$createListNode`
+cannot keep the merging transform.
+The registration IS the back-compat half's other end. `MARKDOWN_LIST_NODES`
+keeps stock `ListNode` registered so JSON written before this node existed
+still loads — but `$parseSerializedNodeImpl` (`LexicalUpdates.ts:433`) calls
+`nodeClass.importJSON` with NO replacement resolution, so that JSON, and any
+CRDT document created by an older build, yields a GENUINE stock `ListNode`
+carrying `ListNode.$config().$transform`. Without this the #129 guarantee
+held only for documents created after the fix — the opposite of the ones the
+issue was reported from.
+Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
+
+```typescript
+function registerListNodeUpgrade(editor: LexicalEditor): () => void
+```
+
 ### `registerMarkdownPaste()`
 
 Register the markdown-on-paste handler on `editor`. Returns a disposer.
@@ -18418,17 +18418,6 @@ function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
 ```
 
 ## Types
-
-### `AnyListNode`
-
-Either list class. `MarkdownListNode` IS a `ListNode` at runtime, but Lexical
-encodes a node's config chain in its `$config()` return type, and this node
-deliberately declares a different one — so the two are not assignable to each
-other and a helper that takes both has to say so.
-
-```typescript
-export type AnyListNode = ListNode | MarkdownListNode
-```
 
 ### `BlockType`
 
@@ -19414,7 +19403,8 @@ const IMAGE_BRIDGE_TYPE
 
 The node registrations a marker-aware editor needs: the stock `ListNode`
 (which the replacement is keyed on and which still deserializes any document
-saved before this existed), this subclass, and the redirect that makes
+saved before this existed — see `registerListNodeUpgrade` below for what has
+to happen to such a node next), this subclass, and the redirect that makes
 `$createListNode` — and therefore every list command, transformer and DOM
 conversion in `@lexical/list` — produce the subclass.
 
