@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { deriveOnce, indexMap, membershipSet } from '../../src/utils/derive'
+import { deriveOnce, deriveOnceN, indexMap, membershipSet } from '../../src/utils/derive'
 
 describe('deriveOnce', () => {
   it('recomputes only when an argument identity changes', () => {
@@ -16,11 +16,11 @@ describe('deriveOnce', () => {
     expect(compute).toHaveBeenCalledTimes(2)
   })
 
-  it('watches every argument', () => {
+  it('watches every argument (deriveOnceN)', () => {
     const compute = vi.fn((items: readonly string[], disabled: readonly string[]) =>
       items.filter((i) => !disabled.includes(i)),
     )
-    const derive = deriveOnce(compute)
+    const derive = deriveOnceN(compute)
     const items = ['a', 'b']
     const disabled = ['b']
     expect(derive(items, disabled)).toEqual(['a'])

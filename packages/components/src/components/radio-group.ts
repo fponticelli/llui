@@ -2,7 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
-import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
 import {
   firstEnabled,
   lastEnabled,
@@ -160,7 +160,7 @@ export function connect(
   // WAI-ARIA: the CHECKED radio is the group's tab stop; with none checked (or
   // a checked value the list no longer holds) it falls to the first enabled
   // one, so the group always has exactly one.
-  const tabStop = deriveOnce((items: string[], disabledItems: string[], value: string | null) =>
+  const tabStop = deriveOnceN((items: string[], disabledItems: string[], value: string | null) =>
     rovingTabStop(items, disabledItems, value),
   )
 

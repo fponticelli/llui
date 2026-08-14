@@ -3,7 +3,7 @@ import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { nextEnabled, pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
-import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces
@@ -159,7 +159,7 @@ export function connect(
   // tabindex cost a scan of the entire list.
   const selected = membershipSet<string>()
   const disabled = membershipSet<string>()
-  const tabStop = deriveOnce(
+  const tabStop = deriveOnceN(
     (
       items: string[],
       value: string[],

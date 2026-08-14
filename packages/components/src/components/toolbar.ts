@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
-import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
 import {
   firstEnabled,
   isEnabledItem,
@@ -164,7 +164,7 @@ export function connect(
   // -1 and is reached only via arrow keys. Answered ONCE per update — asking
   // per item made one item's tabindex cost a scan of the whole list (#124).
   const disabledItems = membershipSet<string>()
-  const stopValue = deriveOnce((items: string[], disabled: string[], focused: string | null) =>
+  const stopValue = deriveOnceN((items: string[], disabled: string[], focused: string | null) =>
     rovingTabStop(items, disabled, focused),
   )
   const tabStop = (value: string): Signal<number> =>

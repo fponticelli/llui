@@ -8,7 +8,7 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { focusRovingItem } from '../utils/roving.js'
-import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { deriveOnceN, membershipSet } from '../utils/derive.js'
 import { pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
 
 /** A tree row is never "disabled" — the whole visible list is navigable. */
@@ -663,7 +663,7 @@ export function connect(
   const loadFailed = membershipSet<string>()
   // The tree's single tab stop: the focused row, or the first visible one when
   // nothing is focused (or what was focused is gone). Answered once per update.
-  const tabStop = deriveOnce((visibleItems: string[], focused: string | null) =>
+  const tabStop = deriveOnceN((visibleItems: string[], focused: string | null) =>
     rovingTabStop(visibleItems, NO_DISABLED, focused),
   )
 
