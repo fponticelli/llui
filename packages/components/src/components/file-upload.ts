@@ -20,6 +20,14 @@ import { LocaleContext } from '../locale.js'
  * back from a round-trip as `{}`, wiping every name and turning `totalSize`
  * into NaN (#119). The handles live in a module-scoped registry keyed by
  * `FileMeta.id`; see `trackFile`/`getFile`/`releaseDropped`.
+ *
+ * **A restored State has no handles.** Serializability is exactly what makes
+ * that so: SSR hydration, `replayTrace` and an agent state snapshot carry the
+ * `FileMeta` records and nothing else, so after a restore `getFile()` returns
+ * `undefined` for every one of them. That is correct and unavoidable — a `File`
+ * cannot cross the wire — but it is invisible unless you are told, so a view
+ * must treat a missing handle as normal (render the metadata, skip the object-URL
+ * preview) and a re-upload needs a fresh selection from the user.
  */
 
 export type AcceptValue = string | Record<string, string[]>
