@@ -538,7 +538,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
@@ -911,7 +911,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `'ltr' \| 'rtl'`                 |
+| `dir`                | `TextDirection \| null`          |
 
 **Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
@@ -935,17 +935,17 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `'ltr' \| 'rtl'`                 |
+| `dir`                | `TextDirection \| null`          |
 
 **Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: 'ltr' | 'rtl', skipAnimations?: boolean`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`
 
 ---
 
