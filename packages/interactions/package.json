@@ -1,0 +1,59 @@
+{
+  "name": "@llui/interactions",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@llui/dom": "workspace:^"
+  },
+  "devDependencies": {
+    "@llui/dom": "workspace:*",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "^1.7.6"
+  },
+  "description": "Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation",
+  "keywords": [
+    "llui",
+    "interactions",
+    "focus-trap",
+    "dismissable",
+    "floating-ui",
+    "accessibility"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/interactions"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/interactions#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

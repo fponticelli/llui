@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp } from '@llui/dom'
-import { isInNestedLayer, getNestedLayers } from '@llui/components/utils'
+import { isInNestedLayer, getNestedLayers } from '@llui/interactions'
 import { markdownEditor } from '../src/editor.js'
 import { corePlugin } from '../src/plugins/core.js'
 import { contextMenuPlugin } from '../src/plugins/context-menu.js'

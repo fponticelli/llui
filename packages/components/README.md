@@ -139,7 +139,15 @@ file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, ti
 
 ## Utilities
 
-Shared helpers used internally and exported for advanced use:
+Shared helpers used internally and exported for advanced use. New code that needs interaction
+primitives without component machines should install `@llui/interactions` and import them directly:
+
+```ts
+import { attachFloating, pushDismissable, pushFocusTrap } from '@llui/interactions'
+```
+
+The existing `@llui/components/utils` subpath remains supported for compatibility and is
+tree-shakeable: importing it does not pull component modules into the bundle.
 
 | Utility          | Purpose                                                                  |
 | ---------------- | ------------------------------------------------------------------------ |

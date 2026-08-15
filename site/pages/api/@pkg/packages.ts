@@ -46,6 +46,11 @@ export const PACKAGES: PackageMeta[] = [
     blurb: 'http, debounce, race, websocket, retry, upload',
   },
   { slug: 'components', category: 'libraries', blurb: '66 headless components + opt-in theme' },
+  {
+    slug: 'interactions',
+    category: 'libraries',
+    blurb: 'Focus, dismissal, floating positioning, modal isolation, and roving focus',
+  },
   { slug: 'router', category: 'libraries', blurb: 'Path matching, history/hash, guards, links' },
   {
     slug: 'transitions',

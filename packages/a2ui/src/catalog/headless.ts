@@ -19,7 +19,7 @@ import {
   type Send,
   type Signal,
 } from '@llui/dom'
-import { lockBodyScroll, pushFocusTrap } from '@llui/components/utils'
+import { lockBodyScroll, pushFocusTrap } from '@llui/interactions'
 import * as checkbox from '@llui/components/checkbox'
 import * as tabs from '@llui/components/tabs'
 import * as dialog from '@llui/components/dialog'

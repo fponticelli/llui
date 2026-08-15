@@ -36,7 +36,7 @@ import {
   type Renderable,
   type Signal,
 } from '@llui/dom'
-import { registerNestedLayer } from '@llui/components/utils'
+import { registerNestedLayer } from '@llui/interactions'
 
 export const OVERLAY_Z = {
   typeahead: 60,

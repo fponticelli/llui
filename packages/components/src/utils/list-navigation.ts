@@ -18,6 +18,12 @@
  *    contract is positional (`aria-activedescendant` by index).
  */
 
+import { firstEnabled, lastEnabled, nextEnabled } from '@llui/interactions'
+
+// Value navigation belongs to the standalone roving-focus primitive. Keep the
+// component utility path as a compatibility re-export of that one implementation.
+export { firstEnabled, lastEnabled, nextEnabled }
+
 export type SelectionMode = 'single' | 'multiple'
 
 /** An item counts as navigable only while it is in the list AND not disabled. */
@@ -43,19 +49,6 @@ export function pruneToEnabled(
   return isEnabledItem(items, disabled, value) ? value : null
 }
 
-export function firstEnabled(items: readonly string[], disabled: readonly string[]): string | null {
-  for (const v of items) if (!disabled.includes(v)) return v
-  return null
-}
-
-export function lastEnabled(items: readonly string[], disabled: readonly string[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const v = items[i]!
-    if (!disabled.includes(v)) return v
-  }
-  return null
-}
-
 /**
  * The next enabled value `delta` steps from `from`, or null when there is none
  * (empty list, all disabled, or `loop` off at an end).
@@ -65,26 +58,6 @@ export function lastEnabled(items: readonly string[], disabled: readonly string[
  * a filter or a reorder dropped it — and the widget must still move rather than
  * refuse every arrow key until the user clicks something.
  */
-export function nextEnabled(
-  items: readonly string[],
-  disabled: readonly string[],
-  from: string,
-  delta: 1 | -1,
-  loop: boolean,
-): string | null {
-  if (items.length === 0) return null
-  const idx = items.indexOf(from)
-  if (idx === -1) return firstEnabled(items, disabled)
-  const n = items.length
-  for (let i = 1; i <= n; i++) {
-    const rawIdx = idx + delta * i
-    if (!loop && (rawIdx < 0 || rawIdx >= n)) return null
-    const next = items[((rawIdx % n) + n) % n]!
-    if (!disabled.includes(next)) return next
-  }
-  return null
-}
-
 /**
  * The single item that carries `tabindex="0"`.
  *

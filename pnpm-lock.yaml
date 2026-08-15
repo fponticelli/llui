@@ -395,6 +395,9 @@ importers:
       '@llui/components':
         specifier: workspace:^
         version: link:../components
+      '@llui/interactions':
+        specifier: workspace:^
+        version: link:../interactions
       '@llui/security':
         specifier: workspace:^
         version: link:../security
@@ -518,9 +521,9 @@ importers:
 
   packages/components:
     dependencies:
-      '@floating-ui/dom':
-        specifier: ^1.7.6
-        version: 1.7.6
+      '@llui/interactions':
+        specifier: workspace:^
+        version: link:../interactions
       '@standard-schema/spec':
         specifier: ^1.0.0
         version: 1.1.0
@@ -626,6 +629,22 @@ importers:
       '@llui/test':
         specifier: workspace:*
         version: link:../test
+
+  packages/interactions:
+    dependencies:
+      '@floating-ui/dom':
+        specifier: ^1.7.6
+        version: 1.7.6
+    devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/lexical:
     devDependencies:
@@ -795,6 +814,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/interactions':
+        specifier: workspace:*
+        version: link:../interactions
       '@llui/lexical':
         specifier: workspace:*
         version: link:../lexical
