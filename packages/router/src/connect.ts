@@ -559,6 +559,50 @@ export function connectRouter<R>(
   }
 
   /**
+   * Rewrite the URL of the entry a browser-driven navigation just LANDED on,
+   * so a guard REDIRECT reaches the address bar as well as `state.route`
+   * (#143). Called only from the listener, only for a redirect, and only after
+   * `adoptLandedEntry` has resynced the position.
+   *
+   * DESIGN CHOICE (#143): replace the landed entry — never `go` + push.
+   *
+   * A replace neither grows the stack nor truncates it, so `history.length` and
+   * every forward entry survive exactly as they do for a blocked navigation —
+   * the property #103 exists to protect. The redirect target simply TAKES THE
+   * PLACE of the route the user tried to reach: back still reaches the entry
+   * below it, forward still reaches everything above it, and the target itself
+   * stays reachable from either side. What stops being reachable is the guarded
+   * route at that slot, which is the point — returning to it would only redirect
+   * again, and leaving it there is the desync this issue is about.
+   *
+   * `go` + push was the alternative. It is rejected twice over: `history.go` is
+   * ASYNCHRONOUS, so the push would have to be sequenced on a later popstate —
+   * the exact hazard `restoreBlocked` and `landedIndex` document — and a push
+   * from the rewound position TRUNCATES every forward entry, turning an auth
+   * redirect into the stack corruption #103 fixed.
+   *
+   * The entry does not move, so it keeps the index `adoptLandedEntry` just read.
+   * An UNKNOWN position stays unknown: the URL is still written (that is the
+   * fix), but no index is invented for it — a guessed stamp is what turns a
+   * later blocked back into a wrong-direction `history.go` (#103).
+   *
+   * In HASH mode this is `replaceState` with a fragment-only url, NOT
+   * `location.replace` (what the hash `replace()` effect uses). Two reasons:
+   * `replaceState` fires neither `hashchange` nor `popstate` — the HTML spec's
+   * URL-and-history update steps fire no event at all, so there is no echo, and
+   * ARMING one for an event that never arrives would leave a suppression
+   * pending that swallows a later genuine hashchange onto the same hash —
+   * and `location.replace` DROPS the entry's state, which would take the stamp
+   * this path depends on with it.
+   */
+  function rewriteLandedUrl(path: string): void {
+    env.replaceState(currentIndex === null ? env.historyState : stampCurrent(currentIndex), path)
+    // A replace cannot change `history.length`; re-reading it keeps the
+    // push-vs-traversal baseline honest rather than assuming it.
+    noteLength()
+  }
+
+  /**
    * Undo a browser-driven navigation a guard blocked, leaving the stack exactly
    * as it was: a TRAVERSAL back to the entry we were on, never a fresh push.
    */
@@ -723,6 +767,13 @@ export function connectRouter<R>(
               return
             }
             adoptLandedEntry()
+            // A guard REDIRECT means the route we are about to dispatch is NOT
+            // the one the browser navigated to, so the URL has to follow it —
+            // otherwise `state.route` says `/login` while the address bar (and
+            // therefore a reload, a share or a bookmark) still says `/admin`
+            // (#143). The URL is written BEFORE the dispatch so the reducer and
+            // any effect it emits already read the final URL.
+            if (outcome.redirected) rewriteLandedUrl(router.href(outcome.route))
             currentRoute = outcome.route
             send(factory(outcome.route))
           }
