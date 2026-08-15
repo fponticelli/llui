@@ -719,7 +719,11 @@ export function connectRouter<R>(
    *    LOSSY (two routes differing only in a field no URL expresses project to
    *    one string), and for a TERMINATION test lossiness fails in the safe
    *    direction: it settles EARLY, degrading to exactly the single-hop
-   *    behaviour that shipped before, never to a refusal.
+   *    behaviour that shipped before, never to a refusal. A STRUCTURAL settle
+   *    test chains further and passes this same suite — it was demonstrated in
+   *    review — but a guard that ADDS a field per call then runs to the cap
+   *    where `href` settles on hop one, so the cost moves rather than
+   *    disappearing. Left open as #212 rather than guessed at.
    * 2. THE HOP IS ADOPTED BEFORE THE SETTLE TEST. A guard that normalises `to`
    *    and hands back an equivalent route — #162's shape — settles immediately,
    *    but the route DISPATCHED is the one it returned, not the one it was
@@ -1026,6 +1030,19 @@ export function connectRouter<R>(
             // pending that swallows a later genuine hashchange onto this same
             // hash. `stampCurrent` merges the host's keys here as it does
             // everywhere else, with no exception left for a reader to re-verify.
+            //
+            // Under a `<base href>` it is not merely tidier, it is the
+            // difference between working and not. Both spellings resolve the
+            // fragment-only url against the BASE rather than the document — but
+            // they do different things with the result. Measured in Chrome, on a
+            // document at `http://127.0.0.1:8791/page.html` with
+            // `<base href="/sub/dir/">`: `history.replaceState({…}, '', '#/x')`
+            // stays on the same document and keeps the entry's state, while
+            // `location.replace('#/zz')` performs a CROSS-DOCUMENT navigation
+            // that unloads the app entirely (the tab ended up on the server's
+            // directory listing for `/sub/dir/`). So the mechanism this replaced
+            // did not merely lose state under a base — it destroyed the running
+            // app; this one moves the address bar and nothing else.
             env.replaceState(stampCurrent(stand(replaceStamp())), finalPath)
           }
         } else if (effect.action === 'push') {

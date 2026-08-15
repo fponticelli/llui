@@ -189,7 +189,8 @@ Four rules make that predictable:
   back out of. It is deliberately lossy: two routes that differ only in a field
   no URL can express settle as one, which stops the chain early rather than
   refusing the navigation. If your routes carry non-URL fields, do not rely on a
-  hop that moves only those.
+  hop that moves only those — a structural settle test is the open alternative
+  ([#212]).
 - **The hop is taken whether or not it moved the URL.** A guard that _normalises_
   `to` and returns an equivalent route settles immediately, and the route your
   reducer receives is the one the guard returned. (Since the URL did not move,
@@ -207,6 +208,7 @@ no route change at all, which hides the bug; landing keeps it usable and the
 warning names the cause. ([#161])
 
 [#161]: https://github.com/fponticelli/llui/issues/161
+[#212]: https://github.com/fponticelli/llui/issues/212
 
 ### Auth guard
 
