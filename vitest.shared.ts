@@ -132,10 +132,14 @@ export default defineConfig({
     // AND THE PRICE IS STILL NOT FULLY PAID, so do not read the paragraph above
     // as settled: at the calibrated thresholds only 145 of 618 files are within
     // resolution, and "a 5 ms unit test becoming 30 ms" — named right here as the
-    // thing #193 wants — is BELOW THIS WORKSPACE'S RUN-TO-RUN NOISE and is not
-    // detectable by this tool. No threshold recovers it. What the tool does give
-    // is a real signal on the ~145 files that cost enough to resolve, and an
-    // explicit count of its own coverage on every run instead of a silent gap.
+    // thing #193 wants — is NOT detected. Precisely: +25 ms sits around the p97
+    // edge of this workspace's run-to-run drift (p50 2.1 ms, p90 26.3 ms), so a
+    // much tighter `6x / +25 ms` does catch it on a QUIET machine at 0-2 false
+    // positives — but not at zero cost, not stably across run order, and not at
+    // all under load, where that floor produced 39 false positives. What the tool
+    // does give is a real signal on the ~145 files that cost enough to resolve,
+    // and an explicit count of its own coverage on every run instead of a silent
+    // gap.
     //
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers

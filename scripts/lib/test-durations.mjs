@@ -59,6 +59,7 @@ import { relative } from 'node:path'
  */
 export const DEFAULTS = Object.freeze({
   factor: 4,
+  maxScale: 8,
   scaleFloorMs: 200,
   minDeltaMs: 400,
   maxSpread: 3,
@@ -134,6 +135,8 @@ export function aggregateDurations(reports, repoRoot) {
  * @property {number} [maxSpread] Decline to compare when the run's interquartile
  *   ratio spread (p75/p25) exceeds this — too noisy to support a verdict.
  *   Default 3.
+ * @property {number} [maxScale] Decline when the run's load factor is further
+ *   than this from the baseline in either direction. Default 8.
  * @property {number} [minSample] Fewest comparable files for the median scale to
  *   mean anything. Default 5.
  */
@@ -164,6 +167,7 @@ export function compareDurations(baseline, current, options = {}) {
     scaleFloorMs = DEFAULTS.scaleFloorMs,
     minDeltaMs = DEFAULTS.minDeltaMs,
     maxSpread = DEFAULTS.maxSpread,
+    maxScale = DEFAULTS.maxScale,
     minSample = DEFAULTS.minSample,
   } = options
 
@@ -198,7 +202,18 @@ export function compareDurations(baseline, current, options = {}) {
     scaleSample.length >= minSample
       ? percentile(scaleSample, 0.75) / Math.max(percentile(scaleSample, 0.25), 1e-9)
       : Infinity
-  const comparable = scaleSample.length >= minSample && spread <= maxSpread
+  // A SCALE FAR FROM 1 IS ITSELF A REFUSAL, independently of spread. De-scaling
+  // assumes every file's cost moves with machine load; the further the run is
+  // from the baseline, the less that holds — a browser launch or a process spawn
+  // is dominated by fixed overheads that do NOT scale, so those files deviate
+  // systematically rather than randomly and the spread never notices. Measured:
+  // a run at scale 15.5x with spread 2.7 (under the spread threshold, so no
+  // decline) reported five "regressions", every one of them a playwright or
+  // agent-e2e browser file. 8x is generous — a loaded CI container against a
+  // quiet baseline sits well inside it — and it is the difference between "this
+  // machine is slower" and "these runs are not the same experiment".
+  const scaleSane = scale >= 1 / maxScale && scale <= maxScale
+  const comparable = scaleSample.length >= minSample && spread <= maxSpread && scaleSane
 
   /** @type {DurationComparison['regressions']} */
   const regressions = []
@@ -305,6 +320,7 @@ export function formatComparison(
     factor = DEFAULTS.factor,
     minDeltaMs = DEFAULTS.minDeltaMs,
     maxSpread = DEFAULTS.maxSpread,
+    maxScale = DEFAULTS.maxScale,
   } = {},
 ) {
   const lines = []
@@ -315,8 +331,12 @@ export function formatComparison(
       `ratio spread (p75/p25) = ${comparison.spread ?? 'n/a'}`,
   )
   if (comparison.comparable === false) {
+    const why =
+      comparison.spread !== null && comparison.spread > maxSpread
+        ? `spread > ${maxSpread}`
+        : `scale is further than ${maxScale}x from the baseline`
     lines.push(
-      `run is NOT comparable with the baseline (spread > ${maxSpread}); no verdict. ` +
+      `run is NOT comparable with the baseline (${why}); no verdict. ` +
         `Re-record with \`pnpm test:durations\` on a quiet machine if this persists.`,
     )
     return lines.join('\n')

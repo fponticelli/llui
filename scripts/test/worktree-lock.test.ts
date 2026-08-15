@@ -1,11 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { acquireLock, lockIsStale, releaseLock, withLock } from '../lib/worktree-lock.mjs'
+import {
+  acquireLock,
+  lockIsStale,
+  releaseLock,
+  sameInode,
+  withLock,
+} from '../lib/worktree-lock.mjs'
 
 /**
  * Cover for the cross-worktree commit lock (#179).
@@ -185,6 +200,63 @@ describe('acquireLock', () => {
   })
 })
 
+/**
+ * The predicate the FOURTH defect turned on, pinned deterministically.
+ *
+ * A break must replace the victim's INODE, so it has to ask "does `lockPath`
+ * still name the thing I identified?". The first attempt asked `nlink >= 2`
+ * instead — "does this inode still have at least two names?" — which is a
+ * different question, and concurrent breakers make it the wrong one: each holds
+ * its own probe link, so a victim's inode carries 1+N names and STILL has N >= 2
+ * after the winner replaced it. Every loser then replaced it too (measured: one
+ * victim broken 16 times). This is timing-free, unlike the stress tests, so the
+ * regression cannot hide behind machine load.
+ */
+describe('sameInode', () => {
+  it('is true for two names of one inode, false across a replacement', () => {
+    const a = join(dir, 'a')
+    const probe = join(dir, 'probe')
+    writeFileSync(a, 'victim')
+    linkSync(a, probe)
+    expect(sameInode(a, probe)).toBe(true)
+
+    // Replace `a` atomically, exactly as a break does.
+    const replacement = join(dir, 'b')
+    writeFileSync(replacement, 'mine')
+    renameSync(replacement, a)
+    expect(sameInode(a, probe)).toBe(false)
+  })
+
+  it('is NOT fooled where a link count is — the 16-double-break case', () => {
+    const victim = join(dir, 'victim')
+    writeFileSync(victim, 'v')
+    // Three concurrent breakers, each holding its own probe link.
+    const probes = ['p1', 'p2', 'p3'].map((n) => {
+      const p = join(dir, n)
+      linkSync(victim, p)
+      return p
+    })
+    expect(statSync(probes[0]!).nlink).toBe(4) // victim + three probes
+
+    // The winner replaces the victim.
+    const winner = join(dir, 'winner')
+    writeFileSync(winner, 'w')
+    renameSync(winner, victim)
+
+    // A link count still says "2 or more", so the old predicate let every loser
+    // through; inode identity correctly says the victim is no longer there.
+    expect(statSync(probes[0]!).nlink).toBeGreaterThanOrEqual(2)
+    for (const p of probes) expect(sameInode(victim, p)).toBe(false)
+  })
+
+  it('is false when either name is gone', () => {
+    const a = join(dir, 'gone-a')
+    writeFileSync(a, 'x')
+    expect(sameInode(a, join(dir, 'nope'))).toBe(false)
+    expect(sameInode(join(dir, 'nope'), a)).toBe(false)
+  })
+})
+
 describe('lockIsStale', () => {
   const host = 'this-host'
   const base = { pid: 10, host, token: 't', startedAt: 1_000, label: '' }
@@ -346,4 +418,84 @@ describe('withLock', () => {
       expect(existsSync(lockPath)).toBe(false)
     }
   }, 120_000)
+
+  /**
+   * THE CRASH-RECOVERY WORKLOAD, and the one whose absence hid the fourth defect.
+   *
+   * The test above never leaves an abandoned lock, so it never exercises the
+   * stale-break path at all — which is exactly where the removal half was still
+   * unsound. Here a third of the contenders die WHILE HOLDING (`process.exit`,
+   * no release), so every survivor must break a genuinely abandoned record while
+   * dozens of others are trying to do the same. `confirmMs` makes them all fire
+   * at the same instant, which is what supplies the racing breakers.
+   *
+   * Measured detection against the pre-fix implementation at this shape: 1-9
+   * overlaps and 2-7 displaced holders per 10-12 rounds. After the fix, 0 across
+   * every configuration tried (32-64 contenders, crash rates 1-in-2 to 1-in-4,
+   * with and without extra CPU load), over 373 successful breaks with no victim
+   * broken twice.
+   */
+  it('stays exclusive while crashed holders are being recovered', async () => {
+    const journal = join(dir, 'crash-journal.ndjson')
+    const worker = join(dir, 'crash-worker.mjs')
+    writeFileSync(
+      worker,
+      [
+        `import { appendFileSync, readFileSync } from 'node:fs'`,
+        `import { acquireLock } from ${JSON.stringify(lockModule)}`,
+        `const [lockPath, journal, id, crash] = process.argv.slice(2)`,
+        `const h = await acquireLock(lockPath, { pollMs: 1, confirmMs: 60, timeoutMs: 60000 })`,
+        `appendFileSync(journal, JSON.stringify({ id, edge: 'enter', tok: h.record.token }) + '\\n')`,
+        // Die holding: no release, no cleanup. This is the abandoned lock.
+        `if (crash === '1') process.exit(9)`,
+        `await new Promise((r) => setTimeout(r, 1))`,
+        `let now = 'GONE'`,
+        `try { now = JSON.parse(readFileSync(lockPath, 'utf8')).token } catch {}`,
+        `appendFileSync(journal, JSON.stringify({ id, edge: 'exit', tok: h.record.token, displaced: now !== h.record.token }) + '\\n')`,
+        `h.release()`,
+      ].join('\n'),
+    )
+
+    const WORKERS = 48
+    const ROUNDS = 2
+    for (let round = 0; round < ROUNDS; round++) {
+      writeFileSync(journal, '')
+      await Promise.all(
+        Array.from(
+          { length: WORKERS },
+          (_unused, i) =>
+            new Promise<void>((resolvePromise, rejectPromise) => {
+              const child = spawn(
+                process.execPath,
+                [worker, lockPath, journal, `w${i}`, i % 3 === 0 ? '1' : '0'],
+                { stdio: ['ignore', 'ignore', 'inherit'] },
+              )
+              child.on('error', rejectPromise)
+              child.on('exit', () => resolvePromise())
+            }),
+        ),
+      )
+      // The last crasher may leave its lock behind; that is the point, not a leak.
+      rmSync(lockPath, { force: true })
+
+      const events = readFileSync(journal, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { id: string; edge: string; displaced?: boolean })
+
+      // No survivor may have had its lock taken while it held it.
+      expect(events.filter((e) => e.displaced)).toEqual([])
+
+      // Among holders that COMPLETED (a crasher never writes `exit`), entry and
+      // exit must strictly alternate — two live holders otherwise.
+      const exited = new Set(events.filter((e) => e.edge === 'exit').map((e) => e.id))
+      const completed = events.filter((e) => exited.has(e.id))
+      expect(completed.length).toBeGreaterThan(0)
+      for (let i = 0; i < completed.length; i += 2) {
+        expect(completed[i]?.edge).toBe('enter')
+        expect(completed[i + 1]?.edge).toBe('exit')
+        expect(completed[i + 1]?.id).toBe(completed[i]?.id)
+      }
+    }
+  }, 180_000)
 })

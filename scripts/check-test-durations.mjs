@@ -35,6 +35,7 @@ const noRun = args.includes('--no-run')
 const factor = numberFlag('--factor', DEFAULTS.factor)
 const minDeltaMs = numberFlag('--min-delta', DEFAULTS.minDeltaMs)
 const maxSpread = numberFlag('--max-spread', DEFAULTS.maxSpread)
+const maxScale = numberFlag('--max-scale', DEFAULTS.maxScale)
 // REPORT-ONLY BY DEFAULT. The exit code is opt-in (`--gate`) because a duration
 // comparison across machines is not yet proven trustworthy enough to redden
 // `main` on unchanged code — which is exactly what an earlier revision of this
@@ -122,8 +123,10 @@ if (!existsSync(baselinePath)) {
   process.exit(1)
 }
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')).files ?? {}
-const comparison = compareDurations(baseline, current, { factor, minDeltaMs, maxSpread })
-process.stdout.write(formatComparison(comparison, { factor, minDeltaMs, maxSpread }) + '\n')
+const comparison = compareDurations(baseline, current, { factor, minDeltaMs, maxSpread, maxScale })
+process.stdout.write(
+  formatComparison(comparison, { factor, minDeltaMs, maxSpread, maxScale }) + '\n',
+)
 if (comparison.regressions.length > 0 && !gate) {
   process.stdout.write('(reporting only — pass --gate to make this exit non-zero)\n')
 }

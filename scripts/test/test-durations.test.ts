@@ -134,11 +134,16 @@ describe('compareDurations', () => {
    * THE HONEST LIMIT, asserted so nobody re-reads the docs as a stronger promise
    * than the measurements support. `vitest.shared.ts` cites "a 5 ms unit test
    * becoming 30 ms" as the case #193 wants caught. At the SHIPPED defaults it is
-   * NOT caught, because +25 ms is far below this workspace's measured run-to-run
-   * noise (two identical back-to-back full runs produced 39 such "regressions" at
-   * a +40 ms floor). No threshold recovers it — lowering the floor buys false
-   * positives, not sensitivity — and the previous clamped-denominator design did
-   * not catch it either; it only hid that it did not.
+   * NOT caught: two identical back-to-back full runs produced 39 such
+   * "regressions" at a +40 ms floor.
+   *
+   * State the limit accurately rather than absolutely — +25 ms is not "far below"
+   * the noise, it is at roughly its p97 edge (per-file drift p50 2.1 ms, p90
+   * 26.3 ms; only 1.7% of sub-50 ms files drift by >= +25 ms). A much tighter
+   * `6x / +25 ms` DOES catch it on a quiet machine at 0-2 false positives. It is
+   * not recoverable at zero false-positive cost, it flips with run order, and it
+   * is hopeless under load. The previous clamped-denominator design did not catch
+   * it either; it only hid that it did not.
    */
   it('does NOT reach a 5ms→30ms change at the shipped defaults, and says so via judgeable', () => {
     const result = compareDurations(
@@ -180,6 +185,21 @@ describe('compareDurations', () => {
     )
   })
 
+  it('pins the calibrated factor, not just the noise floor', () => {
+    // `minDeltaMs` is pinned implicitly through `judgeable`, but `factor` was
+    // not: mutating it 4 -> 2 left every test green. It is the difference between
+    // reporting a 2x wobble and the 6x case #193 names, so assert the value AND
+    // what it buys.
+    expect(DEFAULTS.factor).toBe(4)
+    const flat = Object.fromEntries('abcdefgh'.split('').map((n) => [`${n}.test.ts`, 1_000]))
+    // A 3x growth on a file well clear of the floor stays silent at factor 4…
+    expect(compareDurations(flat, { ...flat, 'a.test.ts': 3_000 }).regressions).toEqual([])
+    // …and the 6x case is reported.
+    expect(
+      compareDurations(flat, { ...flat, 'a.test.ts': 6_000 }).regressions.map((r) => r.file),
+    ).toEqual(['a.test.ts'])
+  })
+
   it('declines to judge a run whose ratios are smeared rather than shifted', () => {
     // Every file slower by a DIFFERENT amount: a 4-core box running the baseline
     // machine's fan-out, not a code change. Reporting the worst of these as a
@@ -206,6 +226,27 @@ describe('compareDurations', () => {
     const result = compareDurations(baseline, { ...baseline, 'd.test.ts': 4_000 * 9 })
     expect(result.comparable).toBe(true)
     expect(result.regressions.map((r) => r.file)).toEqual(['d.test.ts'])
+  })
+
+  it('declines a run whose SCALE is far from the baseline, whatever the spread', () => {
+    // Measured: a run at scale 15.5x with spread 2.7 — under the spread
+    // threshold, so no decline — reported five "regressions", every one a
+    // browser/e2e file whose cost is dominated by fixed overheads that do not
+    // move with machine load. Spread cannot see that, because the deviation is
+    // systematic rather than random.
+    const uniform = Object.fromEntries(Object.entries(baseline).map(([k, v]) => [k, v * 15.5]))
+    const result = compareDurations(baseline, uniform)
+    expect(result.scale).toBeGreaterThan(8)
+    expect(result.comparable).toBe(false)
+    expect(result.regressions).toEqual([])
+    expect(formatComparison(result)).toContain('scale is further than')
+  })
+
+  it('still compares a merely-slower machine', () => {
+    const slower = Object.fromEntries(Object.entries(baseline).map(([k, v]) => [k, v * 4]))
+    const result = compareDurations(baseline, slower)
+    expect(result.comparable).toBe(true)
+    expect(result.regressions).toEqual([])
   })
 
   it('declines when too few files clear the floor to estimate a scale', () => {

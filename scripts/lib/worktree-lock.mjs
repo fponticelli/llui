@@ -1,7 +1,16 @@
-import { mkdirSync, writeFileSync, readFileSync, linkSync, renameSync, rmSync } from 'node:fs'
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  linkSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { hostname } from 'node:os'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, createHash } from 'node:crypto'
 
 /**
  * A cross-worktree mutual-exclusion lock.
@@ -19,7 +28,14 @@ import { randomBytes } from 'node:crypto'
  * Two lanes destroyed each other's entries in one batch of parallel agent work;
  * both recovered by hand.
  *
- * ── The three rules that make this a mutex, each written in blood ────────────
+ * ── The four rules that make this a mutex, each written in blood ────────────
+ *
+ * Read the sequence before changing anything here: FOUR mutual-exclusion defects
+ * shipped in this file, each one reachable only after the previous was fixed,
+ * and each one found by contending harder rather than by reasoning. Rules (1)
+ * and (2) are about the JUDGING half, (3) and (4) about the REMOVAL half, and
+ * the recurring mistake every time was believing the judging half was the whole
+ * problem.
  *
  * (1) ACQUISITION IS `link(2)`, NOT `openSync(path, 'wx')`. Both are atomic
  *     creates, but `wx` leaves the lock file EMPTY between the create and the
@@ -62,11 +78,44 @@ import { randomBytes } from 'node:crypto'
  *     into that gap co-held the section with it — 21 overlaps in 10 rounds.
  *     REFUSING TO ENTER IS NOT THE SAME AS NOT HAVING REMOVED IT.
  *
- *     So the removal is gated on the same bytes being observed stale TWICE,
+ *     So a stale verdict is gated on the same bytes being observed TWICE,
  *     `confirmMs` apart. A ghost read cannot survive that — the next read opens
  *     the live inode — while a genuinely abandoned record is byte-identical for
- *     as long as it sits there. The post-rename check below is KEPT as defence
- *     in depth, not as the guarantee.
+ *     as long as it sits there.
+ *
+ * (4) A BREAK NEVER EMPTIES THE PATH: IDENTIFY WITHOUT REMOVING, ELECT ONE
+ *     BREAKER, THEN REPLACE ATOMICALLY. Rule (3) fixed the judging half and left
+ *     the removal half exactly as unsound — `breakLock` still unlinked FIRST and
+ *     only then asked whose lock it had taken, so the answer arrived after the
+ *     damage. A third contender linking into that gap co-held the section with
+ *     the innocent holder it had displaced. Measured on the rule-(3) code: 2-9
+ *     overlaps per 10 rounds at 48 processes with crashed holders.
+ *
+ *     And `confirmMs` SUPPLIES the racing breakers rather than reducing them:
+ *     every waiter watching the same stale record fires at the same instant.
+ *
+ *     So, in order: hard-link the lock to a PRIVATE name (identity with no
+ *     window, and no open-then-read hazard, because nobody else can touch it);
+ *     win an exclusive-create election keyed by the victim's bytes, so exactly
+ *     one process may act on a given record; re-check that `lockPath` still
+ *     names the victim's INODE; then `rename` our record over it in one step.
+ *     `lockPath` is never absent, so no waiter can link into a gap, and the
+ *     breaker HOLDS the lock on success — there is no re-acquire for anyone
+ *     else to win instead.
+ *
+ *     The inode check is an INODE-NUMBER comparison, never a link count. The
+ *     first attempt at this rule used `nlink >= 2` and failed for a reason worth
+ *     keeping: with N concurrent breakers each holding a probe link the victim's
+ *     inode has 1+N names, so after the winner's rename it still has N >= 2 and
+ *     every loser's check passed — one victim was broken 16 times. `nlink`
+ *     answers "how many names exist", which is not the question.
+ *
+ *     Residual, stated rather than claimed closed: a FOREIGN-HOST record aged
+ *     out by rule `staleMs` may belong to a process that is still alive, and no
+ *     PID is readable across machines to tell. That case can still be replaced
+ *     under its owner. It is inherent to a filesystem lock shared across hosts,
+ *     it is not the crash-recovery case above, and this repo's worktrees are all
+ *     on one machine.
  */
 
 /** @typedef {{ pid: number, host: string, token: string, startedAt: number, label: string }} LockRecord */
@@ -81,6 +130,8 @@ import { randomBytes } from 'node:crypto'
  * @property {number} [confirmMs]  How long an abandoned record must be observed
  *   BYTE-IDENTICAL before it may be removed. Guards against a ghost read of an
  *   unlinked inode; see rule (3). Default 250.
+ * @property {number} [breakerTtlMs] How long a breaker-election token may sit
+ *   before it is treated as abandoned. Only ever costs a retry. Default 5_000.
  * @property {string} [label]      Free text recorded in the lock, shown when waiting.
  * @property {() => number} [now]  Clock, injectable for tests.
  * @property {(pid: number) => boolean} [isAlive] Liveness probe, injectable for tests.
@@ -204,33 +255,115 @@ export function lockIsStale(record, ctx) {
  * @param {string} token        Ours, only to name the private path uniquely.
  * @returns {boolean} true when the intended victim was removed.
  */
-function breakLock(lockPath, expectedRaw, token) {
-  const claimed = `${lockPath}.broken-${token}`
+function breakAndTake(lockPath, expectedRaw, myRaw, token, ctx) {
+  const probe = `${lockPath}.probe-${token}`
+  const mine = `${lockPath}.take-${token}`
+  const brkStaging = `${lockPath}.brk-${token}`
+  // Keyed by the VICTIM, so two breakers of the same record contend and exactly
+  // one wins, while breakers of different records never block each other. The
+  // victim's `token` is 8 random bytes minted per acquisition, so a key is
+  // never reused and a stranded token can never block a future, different
+  // victim.
+  const breaker = `${lockPath}.break-${createHash('sha256').update(expectedRaw).digest('hex').slice(0, 16)}`
+  let elected = false
+
   try {
-    renameSync(lockPath, claimed)
-  } catch {
-    // Already gone — somebody else cleaned it up. Nothing was removed by us.
-    return false
-  }
-  let removedRaw = null
-  try {
-    removedRaw = readFileSync(claimed, 'utf8')
-  } catch {
-    // Unreadable after the rename; treat as "not what we intended".
-  }
-  if (removedRaw === expectedRaw) {
-    rmSync(claimed, { force: true })
+    // 1. IDENTITY WITHOUT REMOVAL. A hard link gives a second name for the same
+    //    inode while leaving `lockPath` in place, so reading the PRIVATE name
+    //    tells us exactly whose lock is there — with no window in which the
+    //    path is empty, and no open-then-read hazard, because nobody else can
+    //    touch `probe`.
+    try {
+      linkSync(lockPath, probe)
+    } catch {
+      return false // gone already; nothing to break
+    }
+    if (readFileSync(probe, 'utf8') !== expectedRaw) return false // not our victim
+
+    // 2. ELECT ONE BREAKER. Concurrent waiters all confirm the same stale bytes
+    //    at the same instant (`confirmMs` makes them synchronise), so without
+    //    this they would all act. Exclusive create picks exactly one.
+    writeFileSync(brkStaging, JSON.stringify({ pid: process.pid, at: ctx.now() }))
+    try {
+      linkSync(brkStaging, breaker)
+      elected = true
+    } catch (err) {
+      if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'EEXIST') throw err
+      if (!reapAbandonedBreaker(breaker, ctx)) return false // another breaker is on it
+      try {
+        linkSync(brkStaging, breaker)
+        elected = true
+      } catch {
+        return false
+      }
+    }
+
+    // 3. `lockPath` must STILL name the victim's INODE — compared by inode
+    //    number, never by link count. A link count is not an identity test and
+    //    reading it as one is how the previous attempt failed: with N breakers
+    //    each holding their own probe link, the victim's inode carries 1+N
+    //    names, so after the winner's rename it still has N >= 2 and EVERY
+    //    loser's `nlink >= 2` check passed. Measured: one victim broken 16
+    //    times. The count answers "how many names exist", which is not the
+    //    question.
+    if (!sameInode(lockPath, probe)) return false
+
+    // 4. ATOMIC REPLACE, not remove-then-reacquire. `rename` swaps our record in
+    //    over the victim's in one step, so `lockPath` is NEVER absent and no
+    //    waiter can link into a gap. This is the half `confirmMs` did not fix:
+    //    the previous version unlinked first and only then asked whose lock it
+    //    was, and a third contender linking into that window co-held the
+    //    section with the innocent holder it had displaced.
+    writeFileSync(mine, myRaw)
+    renameSync(mine, lockPath)
     return true
+  } finally {
+    rmSync(probe, { force: true })
+    rmSync(mine, { force: true })
+    rmSync(brkStaging, { force: true })
+    if (elected) rmSync(breaker, { force: true })
   }
-  // WRONG VICTIM. Put it back so its owner's `release()` still matches, and
-  // leave without the lock.
+}
+
+/**
+ * Do `a` and `b` name the same inode right now?
+ *
+ * This is the identity test a lock needs, and it is deliberately NOT a link
+ * count: `nlink` says how many names an inode has, which several concurrent
+ * probes make meaningless. Device is compared as well as inode number, since
+ * inode numbers are only unique within a filesystem.
+ */
+export function sameInode(a, b) {
   try {
-    linkSync(claimed, lockPath)
+    const sa = statSync(a)
+    const sb = statSync(b)
+    return sa.ino === sb.ino && sa.dev === sb.dev
   } catch {
-    // A third party linked in the meantime; theirs stands, ours is abandoned.
+    return false // one of them is gone
   }
-  rmSync(claimed, { force: true })
-  return false
+}
+
+/**
+ * Remove a breaker token nobody is using any more.
+ *
+ * Deliberately liberal: losing this election only costs a retry, and removing a
+ * token that IS in use merely restores the pre-election behaviour of two
+ * breakers — which step 4 above already makes safe. Being conservative here, by
+ * contrast, would let one crashed breaker wedge every future break of that
+ * victim.
+ * @returns {boolean} true when the caller may retry the election.
+ */
+function reapAbandonedBreaker(breaker, ctx) {
+  try {
+    const held = JSON.parse(readFileSync(breaker, 'utf8'))
+    const age = ctx.now() - (typeof held.at === 'number' ? held.at : 0)
+    const ownerGone = typeof held.pid === 'number' && !ctx.isAlive(held.pid)
+    if (!ownerGone && age < ctx.breakerTtlMs) return false
+  } catch {
+    // Unreadable: treat as abandoned.
+  }
+  rmSync(breaker, { force: true })
+  return true
 }
 
 /**
@@ -246,6 +379,7 @@ export async function acquireLock(lockPath, options = {}) {
     staleMs = 120_000,
     pollMs = 50,
     confirmMs = 250,
+    breakerTtlMs = 5_000,
     label = '',
     now = Date.now,
     isAlive = pidIsAlive,
@@ -318,8 +452,15 @@ export async function acquireLock(lockPath, options = {}) {
       if (pending === null || pending.raw !== snapshot.raw) {
         pending = { raw: snapshot.raw, firstSeenAt: now() }
       } else if (now() - pending.firstSeenAt >= confirmMs) {
-        breakLock(lockPath, snapshot.raw, token)
+        // RULE (4): break by REPLACING, never by removing — and we hold it on
+        // success, so there is no re-acquire step for anyone to win instead.
+        const took = breakAndTake(lockPath, snapshot.raw, JSON.stringify(record), token, {
+          now,
+          isAlive,
+          breakerTtlMs,
+        })
         pending = null
+        if (took) return { release: () => releaseLock(lockPath, token), record }
         continue
       }
       if (now() >= deadline) throw timedOut(lockPath, timeoutMs, null)
@@ -362,19 +503,32 @@ function timedOut(lockPath, timeoutMs, holder) {
 /**
  * Drop a lock we hold.
  *
- * Routed through the same verified removal as a steal, for the same reason: a
- * plain `read, then rm` would remove whatever is at the path at `rm` time, which
- * after a stale-sweep took ours away is somebody else's live lock. Reading our
- * own token first and deleting second is exactly the two-step the whole file
- * exists to avoid.
+ * Identity is established the same way a break establishes it — a private hard
+ * link, so the bytes read are provably the bytes at `lockPath` and no
+ * open-then-read ghost is possible — and the unlink is gated on the link count
+ * still showing two names. A plain `read, then rm` would remove whatever is at
+ * the path at `rm` time, which is exactly the two-step this file exists to
+ * avoid.
  * @param {string} lockPath
  * @param {string} token
  */
 export function releaseLock(lockPath, token) {
-  const snapshot = snapshotLock(lockPath)
-  if (snapshot.kind === 'absent') return
-  if (snapshot.record !== null && snapshot.record.token !== token) return
-  breakLock(lockPath, snapshot.raw, token)
+  const probe = `${lockPath}.rel-${token}`
+  try {
+    linkSync(lockPath, probe)
+  } catch {
+    return // already gone
+  }
+  try {
+    const record = parseRecord(readFileSync(probe, 'utf8'))
+    if (record === null || record.token !== token) return // not ours any more
+    if (!sameInode(lockPath, probe)) return // somebody already replaced it
+    unlinkSync(lockPath)
+  } catch {
+    // Nothing left to release.
+  } finally {
+    rmSync(probe, { force: true })
+  }
 }
 
 /**
