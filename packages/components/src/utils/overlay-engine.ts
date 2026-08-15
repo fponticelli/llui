@@ -256,8 +256,13 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         // from inside me" from "merely open at the same time" (#171).
         //
         // An anchorless overlay (`context-menu`) has no element to name, so it
-        // registers UNOWNED and keeps the flat, exempt-from-everything answer —
-        // see the fallback note in `nested-layer.ts`.
+        // registers UNOWNED and keeps the flat, exempt-from-everything answer.
+        // That is #171 UNFIXED for it — measured still failing in real Chromium,
+        // tracked as #215. Note `anchorId` is NOT a free owner: it also feeds
+        // `dismiss.ignore` below and the focus-restore target in the teardown,
+        // so an overlay cannot opt into ownership through it without changing
+        // its dismissal and focus behaviour. See the fallback note in
+        // `nested-layer.ts`.
         cleanups.push(
           registerNestedLayer(els.content, {
             aspects: nestedLayerAspects,

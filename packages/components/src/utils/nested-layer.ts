@@ -69,15 +69,30 @@ import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
  *
  * ## Two limits, both deliberate
  *
- * **An UNOWNED registration is still flat.** `owner` is optional, and a
- * registration without one cannot be attributed to any layer — so it falls back
- * to the legacy answer and counts as nested inside whoever asks. That keeps the
- * documented registration recipe working for a consumer that has not been
- * updated, at the cost of re-opening #171 for exactly that surface. Pass an
- * `owner`. The one in-repo registration that cannot is `context-menu`: it has no
- * trigger *element* of its own (its `trigger` part is a bare event-handler bag
- * with no id), so `createOverlay` has nothing to name. Giving it one is a change
- * to that component's public part bag and is tracked separately.
+ * **An UNOWNED registration is still flat, and that is #171 UNFIXED for it.**
+ * `owner` is optional, and a registration without one cannot be attributed to
+ * any layer — so it falls back to the legacy answer and counts as nested inside
+ * whoever asks. State the cost concretely rather than as "the flat answer": the
+ * layer is exempt from EVERY modal on the page, so a modal opened over it leaves
+ * it un-`aria-hidden`, un-`inert` and Tab-reachable from inside the modal —
+ * #171's headline symptom, verbatim. It also AMPLIFIES: an unowned provider's
+ * elements join the frontier in {@link Lookup.nestedIn}, so anything owned
+ * INSIDE it is dragged into every asking layer too. The fallback exists only so
+ * the documented registration recipe keeps working for a consumer that has not
+ * been updated. Pass an `owner`.
+ *
+ * The one in-repo registration that cannot is `context-menu`: it is anchorless
+ * by design (it positions at the pointer, it has no trigger button) and its
+ * `trigger` part is a bare event-handler bag with no id, so `createOverlay` has
+ * nothing to name. Measured as still failing in real Chromium and tracked as
+ * **#215**, which also records why the obvious fix is not owner-only —
+ * `anchorId` additionally feeds `dismiss.ignore` and the focus-restore target,
+ * so routing an owner through it changes dismissal and focus behaviour too.
+ *
+ * The fallback can also be reached BY ACCIDENT: `resolveEls` only bails on an
+ * unresolvable anchor when `requireAnchor` is set, so an overlay that sets
+ * `anchorId` without it (`menubar`) degrades to unowned, silently, if its
+ * trigger id ever fails to resolve.
  *
  * **`hide` is weaker than `focus`.** {@link setAriaHiddenOutside} snapshots the
  * exempt set ONCE, when the sweep runs, and there is no `MutationObserver`
@@ -178,9 +193,19 @@ export function registerNestedLayer(source: ElementSource, opts?: NestedLayerOpt
 }
 
 /**
- * One lookup's resolved view of the registry. Every provider's elements are
- * resolved AT MOST ONCE per lookup — the nesting fixpoint below re-reads the
- * frontier repeatedly, and a resolver is consumer code.
+ * One lookup's resolved view of the registry.
+ *
+ * A provider's `source` is resolved AT MOST ONCE per lookup — the fixpoint below
+ * re-reads the frontier repeatedly, and a resolver is consumer code.
+ *
+ * Its `owner` is NOT memoized: `nestedIn` calls `resolveElements(provider.owner)`
+ * on every pass for every provider not yet included, so a lookup makes up to
+ * ~N²/2 owner-resolver calls for N registrations. That is deliberate — realistic
+ * N is ≤5 (≤0.1 ms) and `getNestedLayers` runs on every Tab / pointerdown /
+ * focusin, so a second Map costs more than it saves. It does NOT scale: measured
+ * on a worst-order chain, N=32 → 528 calls / 2.0 ms, N=64 → 2080 / 1499 ms,
+ * N=200 → 12.9 s. If the registry ever holds tens of live layers, memoize the
+ * owner the same way — do not discover this from a frame-time regression.
  */
 class Lookup {
   private readonly elements = new Map<Provider, Element[]>()
