@@ -417,11 +417,11 @@ describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', (
     }
   }
 
-  // 60s, not the 5s default: this mounts and streams 120 documents through the
-  // real reactive path, which is legitimately slow — ~5s idle, ~19s when the rest
-  // of the monorepo's suites are running beside it. The default timeout is sized
-  // for unit tests and turns machine load into a red build (it did exactly that
-  // at `pnpm turbo test`'s default concurrency, while passing standalone).
+  // KEPT above the shared 30s `testTimeout` (`vitest.shared.ts`, #147): this
+  // mounts and streams 120 documents through the real reactive path, which is
+  // legitimately slow — ~5s idle, ~19s when the rest of the monorepo's suites
+  // are running beside it. 30s is only ~1.6x that measured worst case, which is
+  // not enough headroom for the thing the shared budget exists to absorb.
   // Widen the budget rather than thin the corpus — the trial count is the point.
   it(
     'streamed DOM equals a cold render across 120 generated documents',

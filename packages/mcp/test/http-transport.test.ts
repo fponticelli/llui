@@ -62,6 +62,11 @@ describe('llui-mcp --http integration', () => {
       /HTTP transport on http:\/\/127\.0\.0\.1:(\d+)/,
       30000,
     )
+    // NOTE: that 30 s cap is what bounds this hook, not a vitest budget. It
+    // throws the line above — naming the real cause — and it is below the
+    // shared 60 s `hookTimeout` (`vitest.shared.ts`, #147), so the internal
+    // error always wins. A local hook literal here would only shadow the
+    // shared budget without changing that.
     if (announced === null) throw new Error('[llui-mcp] did not start within 30s')
     TEST_PORT = Number(announced[1])
     expect(TEST_PORT).toBeGreaterThan(0)
@@ -70,7 +75,7 @@ describe('llui-mcp --http integration', () => {
     // would authenticate.
     token = readFileSync(mcpHttpTokenPath(), 'utf8').trim()
     expect(token.length).toBeGreaterThan(0)
-  }, 35000)
+  })
 
   afterAll(async () => {
     await killChild(proc)

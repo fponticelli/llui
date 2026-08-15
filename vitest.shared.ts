@@ -53,11 +53,26 @@ export default defineConfig({
     // headroom and matches what `@llui/agent-e2e` had already measured for its
     // own browser fixtures.
     //
+    // THE PRICE, stated plainly because it is real and nothing here offsets
+    // it: the 5 s default doubled as a PERFORMANCE CANARY. A unit test that
+    // silently got 6x slower used to go red; at 30 s it passes in silence, and
+    // this change adds no compensating signal. That is the deliberate trade —
+    // the canary only ever fired on a saturated machine, where it could not
+    // distinguish a regression from contention, so it was crying wolf on this
+    // workspace far more often than it caught anything. A real slow-test
+    // signal wants a per-test DURATION budget (a reporter threshold or a
+    // `--slowTestThreshold`-style warning), which is orthogonal to a timeout
+    // and not attempted here (#193).
+    //
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers
     // work that is slow-but-bounded. A test that HANGS still fails — just less
-    // promptly. If a test starts approaching either number for reasons other
-    // than the floor above, the fix is a cheaper test, not a bigger budget.
+    // promptly, so a raised budget makes an unbounded wait MORE expensive to
+    // report, never safe: an actual hang is a bug to fix at the source (see
+    // `packages/agent/test/server/ws/upgrade.test.ts`, whose teardown could
+    // wait forever on a socket a failed test left open, #191). If a test starts
+    // approaching either number for reasons other than the floor above, the fix
+    // is a cheaper test, not a bigger budget.
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },

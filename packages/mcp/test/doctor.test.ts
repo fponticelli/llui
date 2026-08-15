@@ -78,6 +78,13 @@ describe('llui-mcp doctor', () => {
     } finally {
       await killChild(server)
     }
+    // KEPT deliberately above the shared 30 s `testTimeout` (`vitest.shared.ts`,
+    // #147), and it is the one budget here that is load-bearing rather than
+    // decorative: the poll above is itself capped at 30 s, so an equal budget
+    // races it. Losing that race costs twice — the clear "did not start within
+    // 30s" is replaced by a generic vitest timeout, and the test is torn down
+    // without running `finally`, leaking the spawned `dist/cli.js` as an
+    // orphan (#192). 35 s lets the internal cap fire first, every time.
   }, 35000)
 
   it('falls back to OK/FAIL glyphs with --plain', async () => {

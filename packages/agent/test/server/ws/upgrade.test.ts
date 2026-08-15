@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { WebSocket } from 'ws'
+import { WebSocket, type ClientOptions } from 'ws'
 import type { AddressInfo } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { createWsUpgradeHandler } from '../../../src/server/ws/upgrade.js'
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
@@ -12,6 +13,22 @@ let server: Server
 let registry: WsPairingRegistry
 let store: InMemoryTokenStore
 let port = 0
+
+/**
+ * Every socket this file opens, tracked on BOTH sides of the handshake so
+ * teardown can hard-close whatever a test left behind (#191).
+ *
+ * `http.Server#close()` does not invoke its callback while any connection is
+ * still live, and a connection that has been UPGRADED is no longer reachable
+ * from `closeAllConnections()` either (measured: the callback still never
+ * fires) — so a test that threw before reaching its own `ws.close()` turned
+ * `afterEach` into an UNBOUNDED wait, not a slow one. No test/hook budget
+ * bounds that; a budget only decides how long the bill runs before vitest
+ * reports "Hook timed out". Closing here, unconditionally, is what makes the
+ * failure of any test in this file report promptly.
+ */
+const clients: WebSocket[] = []
+const serverSockets: Duplex[] = []
 
 // Build the handler over a real core so it exercises the shared
 // `acceptConnection` auth path (revoke / sliding-TTL / grace), with an
@@ -30,6 +47,11 @@ function startServer(corsOrigins?: readonly string[]): Promise<void> {
     acceptConnection: core.acceptConnection,
     corsOrigins: core.allowedOrigins,
   })
+  // Tracked first, so teardown owns the raw socket even for handshakes the
+  // handler rejects and destroys itself.
+  server.on('upgrade', (_req, socket) => {
+    serverSockets.push(socket)
+  })
   server.on('upgrade', upgrade)
   return new Promise<void>((resolve) =>
     server.listen(0, () => {
@@ -39,36 +61,94 @@ function startServer(corsOrigins?: readonly string[]): Promise<void> {
   )
 }
 
-// `acceptConnection` registers the pairing asynchronously (after the
-// socket `open` fires), so poll briefly rather than asserting inline.
-async function waitForPaired(tid: string): Promise<void> {
-  for (let i = 0; i < 50; i++) {
-    if (registry.isPaired(tid)) return
+/** Hard-close every tracked socket, then wait for the server to actually close. */
+async function stopServer(): Promise<void> {
+  for (const ws of clients.splice(0)) ws.terminate()
+  for (const socket of serverSockets.splice(0)) socket.destroy()
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+}
+
+/** Open a tracked client socket against the current server. */
+function connect(path: string, opts?: ClientOptions): WebSocket {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, opts)
+  clients.push(ws)
+  return ws
+}
+
+/**
+ * Resolve on `open`, but REJECT on the terminal handshake outcomes rather
+ * than waiting for a budget to expire: an `open` that never arrives is a
+ * failure this file should report in milliseconds.
+ */
+function waitForOpen(ws: WebSocket): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    ws.once('open', () => resolve())
+    ws.once('error', (err) => reject(err))
+    ws.once('unexpected-response', (_req, res) =>
+      reject(new Error(`handshake rejected with HTTP ${res.statusCode}`)),
+    )
+    ws.once('close', () => reject(new Error('socket closed before open')))
+  })
+}
+
+function waitForClose(ws: WebSocket): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (ws.readyState === WebSocket.CLOSED) {
+      resolve()
+      return
+    }
+    ws.once('close', () => resolve())
+  })
+}
+
+/**
+ * Poll a condition against a WALL-CLOCK deadline.
+ *
+ * The server-side effects these tests observe (`acceptConnection` registering
+ * the pairing, `markAwaitingClaude` writing the store) are async, and a fixed
+ * `setTimeout(…, 10)` does not wait for them — it races them, and on a loaded
+ * machine it loses (#147, #191). A deadline-driven poll turns that into "as
+ * fast as the machine allows, up to a generous ceiling", so the test measures
+ * the transition rather than the scheduler.
+ */
+async function waitUntil(
+  what: string,
+  cond: () => boolean | Promise<boolean>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (await cond()) return
+    if (Date.now() >= deadline)
+      throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`)
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
 }
+
+const waitForPaired = (tid: string): Promise<void> =>
+  waitUntil(`pairing ${tid} to register`, () => registry.isPaired(tid))
 
 beforeEach(async () => {
   await startServer()
 })
 
 afterEach(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()))
+  await stopServer()
 })
 
 describe('createWsUpgradeHandler', () => {
   it('accepts a WS connection with a valid token and registers the pairing', async () => {
     const { token } = await seedToken(store, { tid: 't1', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
-    await new Promise<void>((resolve) => ws.once('open', resolve))
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`)
+    await waitForOpen(ws)
     await waitForPaired('t1')
     expect(registry.isPaired('t1')).toBe(true)
     ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
+    await waitForClose(ws)
   })
 
   it('rejects a connection with a missing token (401 Unauthorized)', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws`)
+    const ws = connect('/agent/ws')
     await new Promise<void>((resolve) => {
       ws.on('unexpected-response', (_req, res) => {
         expect(res.statusCode).toBe(401)
@@ -85,7 +165,7 @@ describe('createWsUpgradeHandler', () => {
     // ends as an immediately-closed socket that never registers a
     // pairing, rather than a pre-handshake 401. Well-formed prefix, but
     // no record in the store maps to this hash.
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=agt_unknown`)
+    const ws = connect('/agent/ws?token=agt_unknown')
     await new Promise<void>((resolve) => {
       ws.on('close', () => resolve())
       ws.on('unexpected-response', () => {
@@ -99,31 +179,35 @@ describe('createWsUpgradeHandler', () => {
 
   it('unregisters on socket close', async () => {
     const { token } = await seedToken(store, { tid: 't2', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
-    await new Promise<void>((resolve) => ws.once('open', resolve))
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`)
+    await waitForOpen(ws)
     ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitForClose(ws)
+    await waitUntil('pairing t2 to be unregistered', () => !registry.isPaired('t2'))
     expect(registry.isPaired('t2')).toBe(false)
   })
 
   it('transitions token status to awaiting-claude on WS connect', async () => {
     const { token } = await seedToken(store, { tid: 't3', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
-    await new Promise<void>((resolve) => ws.once('open', resolve))
-    // Give the server-side handler a tick to call markAwaitingClaude
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`)
+    await waitForOpen(ws)
+    // `markAwaitingClaude` runs on the server side after the socket opens;
+    // wait for the transition itself rather than for a fixed interval.
+    await waitUntil(
+      't3 to reach awaiting-claude',
+      async () => (await store.findByTid('t3'))?.status === 'awaiting-claude',
+    )
     const rec = await store.findByTid('t3')
     expect(rec?.status).toBe('awaiting-claude')
     ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
+    await waitForClose(ws)
   })
 
   it('rejects a cross-origin handshake (CSWSH, 403)', async () => {
     // A browser always sends Origin; a foreign Origin with no allowlist
     // configured must be rejected as same-origin-only.
     const { token } = await seedToken(store, { tid: 'tco', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`, {
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`, {
       headers: { origin: 'http://evil.example' },
     })
     await new Promise<void>((resolve) => {
@@ -138,28 +222,28 @@ describe('createWsUpgradeHandler', () => {
 
   it('accepts a same-origin handshake', async () => {
     const { token } = await seedToken(store, { tid: 'tso', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`, {
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`, {
       headers: { origin: `http://127.0.0.1:${port}` },
     })
-    await new Promise<void>((resolve) => ws.once('open', resolve))
+    await waitForOpen(ws)
     await waitForPaired('tso')
     expect(registry.isPaired('tso')).toBe(true)
     ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
+    await waitForClose(ws)
   })
 
   it('accepts an allowlisted cross-origin handshake when corsOrigins is set', async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await stopServer()
     await startServer(['http://trusted.example'])
     const { token } = await seedToken(store, { tid: 'tal', uid: 'u1', status: 'awaiting-ws' })
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`, {
+    const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`, {
       headers: { origin: 'http://trusted.example' },
     })
-    await new Promise<void>((resolve) => ws.once('open', resolve))
+    await waitForOpen(ws)
     await waitForPaired('tal')
     expect(registry.isPaired('tal')).toBe(true)
     ws.close()
-    await new Promise<void>((resolve) => ws.once('close', resolve))
+    await waitForClose(ws)
   })
 
   it('ignores non /agent/ws upgrade paths', async () => {
@@ -168,7 +252,7 @@ describe('createWsUpgradeHandler', () => {
     // Simplified: the handler only runs on `server.on('upgrade')` dispatched events, so
     // an upgrade to /other would reach the handler too — but the handler's first check
     // is the path. Test by sending to `/other` and expecting 404/close.
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/other?token=x`)
+    const ws = connect('/other?token=x')
     await new Promise<void>((resolve) => {
       ws.on('unexpected-response', (_req, res) => {
         expect(res.statusCode).toBe(404)

@@ -192,7 +192,7 @@ describe('MCP bridge (WebSocket)', () => {
     ).rejects.toThrow()
 
     browser.close()
-  }, 10_000)
+  })
 })
 
 describe('MCP active marker file', () => {

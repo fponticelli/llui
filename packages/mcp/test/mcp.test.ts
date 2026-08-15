@@ -181,7 +181,7 @@ describe('llui_lint tool', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 15_000)
+  })
 
   it('rejects non-.ts/.tsx paths', async () => {
     const server = new LluiMcpServer()

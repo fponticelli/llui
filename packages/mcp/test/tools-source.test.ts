@@ -76,6 +76,10 @@ describe('llui_run_test', () => {
     })) as { passed: boolean; output: string }
     expect(typeof result.passed).toBe('boolean')
     expect(typeof result.output).toBe('string')
+    // KEPT above the shared 30 s `testTimeout` (`vitest.shared.ts`, #147):
+    // `llui_run_test` shells out to a COMPLETE nested `vitest run` of another
+    // file, so this test's cost is a whole second vitest process — cold start
+    // included — on a box already running the first one.
   }, 60_000)
 })
 
@@ -146,6 +150,8 @@ describe('source tools — command injection hardening', () => {
       testName: `nope"; touch ${sentinel}; echo "`,
     })
     expect(existsSync(sentinel)).toBe(false)
+    // Same nested-`vitest run` cost as above, hence the same budget above the
+    // shared 30 s one (#147).
   }, 60_000)
 
   it('does not execute an injected command in llui_find_msg_producers msgType', async () => {

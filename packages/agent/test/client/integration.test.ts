@@ -192,7 +192,7 @@ describe('integration: mint → ws → describe → state', () => {
   // full-repo parallel load, so retry transient starvation.
   it(
     'describe returns 200 with hello payload after WS connects and sends hello',
-    { retry: 2, timeout: 20_000 },
+    { retry: 2 },
     async () => {
       // 1. Mint
       const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
@@ -230,7 +230,7 @@ describe('integration: mint → ws → describe → state', () => {
     },
   )
 
-  it("state returns the rpc host's current state", { retry: 2, timeout: 20_000 }, async () => {
+  it("state returns the rpc host's current state", { retry: 2 }, async () => {
     // Mint + connect WS
     const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
     const { token } = (await mintRes.json()) as MintResponse
