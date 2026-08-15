@@ -28,6 +28,7 @@
 // See docs/proposals/signals/README.md "Runtime — output equality check".
 
 import { type PathTable, type SparseMask, computeDirtyInto, intersects } from './mask.js'
+import { isFrameworkError } from './framework-error.js'
 
 /** A binding-evaluation failure surfaced to a `setOnBindingError` hook. Shape
  * matches the agent's dispatch-envelope `drain.errors` entries. */
@@ -83,10 +84,34 @@ export function toBindingError(err: unknown, kind: BindingErrorKind): BindingErr
   }
 }
 
+/** Surface an isolated binding throw. Mirrors `component.ts`'s
+ * `reportSubscriberError` deliberately, and for the same reason:
+ *
+ *  - The console write is UNCONDITIONAL (not dev-gated). Containing a throw is
+ *    only an improvement while it stays VISIBLE — a dev-gated log would make the
+ *    throw vanish completely in a prod build with no hook installed, which is
+ *    strictly worse than the escape it replaces (that at least reached
+ *    `window.onerror`). #165 is precisely what invisible-and-contained costs.
+ *  - The hook is tooling too (the agent bridge installs one), so a throw FROM it
+ *    would escape the very loop that is containing the binding's throw. Contain
+ *    it here or the fix reopens its own hole. */
 function reportBindingError(err: unknown): void {
+  console.error(
+    `[llui] a binding threw and was isolated — the DOM it writes keeps its prior ` +
+      `value and the sibling bindings still ran.`,
+    err,
+  )
   const handler = errorHandlers[errorHandlers.length - 1]
   if (!handler) return
-  handler(toBindingError(err, 'binding'))
+  try {
+    handler(toBindingError(err, 'binding'))
+  } catch (hookErr) {
+    console.error(
+      `[llui] the setOnBindingError hook threw while reporting a binding error. ` +
+        `It was isolated too.`,
+      hookErr,
+    )
+  }
 }
 
 /** The behavioral half of a binding: the accessor + the DOM write. The scope
@@ -116,7 +141,11 @@ export interface SignalBinding<V = unknown> {
 }
 
 export interface SignalScope {
-  /** mount: run every binding once against the initial state */
+  /** mount: run every binding once against the initial state. A binding that
+   * THROWS is contained to itself — reported (console + any `setOnBindingError`
+   * hook) and skipped, so its siblings still mount rather than the fragment being
+   * abandoned half-drawn (#165). This holds with or without a hook installed;
+   * {@link SignalScope.update} is the asymmetric half. */
   mount(state: unknown): void
   /** update: gate by dirty bits, commit only changed values (STRUCTURAL bindings
    * commit whenever their gate passes — see {@link SignalBinding.structural}), then
@@ -159,32 +188,51 @@ class SignalScopeImpl implements SignalScope {
     this.last = new Array<unknown>(bindings.length)
   }
 
+  // MOUNT IS ALWAYS GUARDED; `update` (below) keeps its unguarded fast path. The
+  // asymmetry is the design, not an oversight — see #165.
+  //
+  // A mount has NO PREVIOUS FRAME to fall back on. When a throw escapes this loop
+  // the enclosing fragment is abandoned HALF-DRAWN and stays that way: the
+  // reporting incident rendered a header, a section heading and an empty table,
+  // then nothing — no rows, no totals, no footer, no error on screen, reading as a
+  // confident "there is no data". Nothing recovers from that; the DOM the loop
+  // already wrote is live and no later state change re-runs the bindings it never
+  // reached. So one binding's throw is contained to that binding: its slot in
+  // `last` stays untouched, every sibling still mounts, and the throw is REPORTED
+  // (console + any hook) rather than swallowed.
+  //
+  // `update` deliberately does NOT get the same containment by default. A throw
+  // there leaves the PREVIOUS, consistent frame in the DOM and aborts the settle
+  // round, which drops that round's collected effects and propagates to the
+  // `send` caller — schedule contract pinned by `test/signals/
+  // scheduler-throw-path.test.ts` and spelled out in `commit-scope.ts`'s header.
+  // Containment there is opt-in via `setOnBindingError`, exactly as before.
+  //
+  // Structure: ONE try region for the whole loop (re-entered only after a throw,
+  // resuming at the next binding) rather than a try/catch PER BINDING. The
+  // per-iteration wrapper was the thing the old fast path existed to avoid — this
+  // shape keeps the throw-free path a single plain loop inside a single try.
   mount(state: unknown): void {
     const { bindings, last } = this
     const n = bindings.length
-    // Fast path: no binding-error hook installed (the common case). Run the
-    // hottest loop in the runtime WITHOUT a per-iteration try/catch — that wrapper
-    // is a V8 optimization barrier, and a throw here propagates by default exactly
-    // as before. The safe path is taken only while a hook is active (agent/debug).
-    if (errorHandlers.length === 0) {
-      for (let i = 0; i < n; i++) {
-        const b = bindings[i]!
-        const v = b.produce(state)
-        b.commit(v)
-        last[i] = v
-      }
-      return
-    }
-    for (let i = 0; i < n; i++) {
-      const b = bindings[i]!
+    let i = 0
+    while (i < n) {
       try {
-        const v = b.produce(state)
-        b.commit(v)
-        last[i] = v
+        for (; i < n; i++) {
+          const b = bindings[i]!
+          const v = b.produce(state)
+          b.commit(v)
+          last[i] = v
+        }
       } catch (err) {
-        // Hook installed: report and continue siblings, leaving this binding's
-        // last value untouched (DOM keeps its prior value).
+        // A FRAMEWORK authoring invariant is not a data surprise and is NOT
+        // contained: swallowing "a row cannot have a `show` as its top-level node"
+        // mounts a tree that cannot be reconciled, and the failure then resurfaces
+        // as a `NotFoundError` three interactions later — the displacement #165 is
+        // filed about. See framework-error.ts.
+        if (isFrameworkError(err)) throw err
         reportBindingError(err)
+        i++ // skip the binding that threw; its `last` slot stays unwritten
       }
     }
   }

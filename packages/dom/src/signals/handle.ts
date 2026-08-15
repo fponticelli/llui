@@ -18,6 +18,7 @@ import { resolveSegments } from './mask.js'
 // import handle).
 import { __inRowBuild } from './build-context.js'
 import { isRowLocalDep, rebaseComponentDep } from './row-rebase.js'
+import { LluiFrameworkError } from './framework-error.js'
 import type { Signal, MappedSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
@@ -122,7 +123,9 @@ function makeMappedHandle<T>(
     rowLocal,
     peek,
     at: (() => {
-      throw new Error('.at() on a mapped signal is unsupported — slice with .at() before .map()')
+      throw new LluiFrameworkError(
+        '.at() on a mapped signal is unsupported — slice with .at() before .map()',
+      )
     }) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
       mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal)) as Signal<T>['map'],

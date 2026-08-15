@@ -28,6 +28,7 @@ import { scopeFromSpecs, depsSignatureMatches, type ScopeShape } from './scope-b
 import { RowStateGate } from './row-state-gate.js'
 import { EMPTY_ROW_NODES, EMPTY_ROW_TEARDOWNS, EMPTY_ROW_MOUNTS, type RowCtx } from './row.js'
 import type { TransitionOptions } from '../types.js'
+import { LluiFrameworkError } from './framework-error.js'
 
 export type { RowCtx } from './row.js'
 
@@ -35,12 +36,75 @@ export type { RowCtx } from './row.js'
  * component state, plus the dep paths the list depends on — the items path AND
  * any component-state paths the rows read (so the list reconciles on either). */
 export interface EachSource<T> {
-  items: (state: unknown) => readonly T[]
+  /** Read the list out of the state the reconcile was handed.
+   *
+   * The return type is DELIBERATELY nullable even though every authoring entry
+   * point is typed `Signal<readonly T[]>`: the accessor is a path walk, and
+   * `mask.ts`'s `resolveSegs` is explicitly undefined-safe, so `state.at('items')`
+   * over an absent/late-arriving path produces `undefined` rather than throwing.
+   * The reconcile totals that with {@link createItemsResolver} — see #165. */
+  items: (state: unknown) => readonly T[] | null | undefined
   deps: readonly string[]
   /** See {@link BindingSpec.componentRooted}: `true` when the items accessor reads
    * the COMPONENT state (so a nested each reads `ctx.state`, not the enclosing row
    * ctx). Set by the authoring layer from the items handle; unbranded → inference. */
   componentRooted?: boolean
+}
+
+/** The one empty list every nullish-items reconcile renders. FROZEN because it is
+ * shared across every `each`/`virtualEach` site in the document — a mutation would
+ * corrupt unrelated lists. */
+const EMPTY_ITEMS: readonly never[] = []
+Object.freeze(EMPTY_ITEMS)
+
+/**
+ * Make the items seam TOTAL, and loud about it in dev.
+ *
+ * `mask.ts:resolveSegs` is undefined-safe by design: a path walk that runs off the
+ * end of the data returns `undefined` instead of throwing. The list reconcile is
+ * one step further along that same path, and it used to be the single link that
+ * wasn't — `source.items(state).length` threw a TypeError from inside a binding
+ * commit, one frame away from its cause, for an `each(sec.at('items'), …)` whose
+ * path was merely absent (#165). Rendering empty makes the seam consistent with
+ * the walk that feeds it.
+ *
+ * That trade cuts both ways: a list that silently renders empty can be WORSE than
+ * one that visibly breaks (the reporting incident was a medication table that read
+ * as "this patient takes no medications"). So dev gets a warning naming the
+ * primitive and the dep paths, while production renders empty.
+ *
+ * The warning fires on each TRANSITION into nullish — the first nullish read, and
+ * again after the source has recovered — never on a legitimately empty array, and
+ * never repeatedly while the source stays nullish (a list gated on a
+ * frequently-changing path would otherwise warn once per frame).
+ *
+ * @param primitive which structural primitive is reporting (`each`/`virtualEach`)
+ * @param deps the each-site dep paths, so the warning names the offending path
+ * @returns a per-site resolver; stateful (it remembers the last verdict), so build
+ *   ONE per list instance, not one per reconcile.
+ */
+export function createItemsResolver<T>(
+  primitive: 'each' | 'virtualEach',
+  deps: readonly string[],
+): (raw: readonly T[] | null | undefined) => readonly T[] {
+  let wasNullish = false
+  return (raw) => {
+    if (raw != null) {
+      wasNullish = false
+      return raw
+    }
+    if (import.meta.env?.DEV === true && !wasNullish) {
+      console.warn(
+        `[llui] ${primitive}: the items source produced ${raw === null ? 'null' : 'undefined'}, ` +
+          `so an EMPTY list was rendered. This is almost never an intentionally empty ` +
+          `list — a missing/late state path reads the same way, and a production build ` +
+          `renders it empty in silence. Check the path the items handle reads. ` +
+          `(${primitive} items deps: ${JSON.stringify(deps)})`,
+      )
+    }
+    wasNullish = true
+    return EMPTY_ITEMS
+  }
 }
 
 /** A compiler-emitted (or hand-written) direct `each` row: real DOM nodes built
@@ -285,12 +349,15 @@ function buildSignalEach<T>(
   // back to a fresh shape otherwise. Mirrors `directShape` for the verbatim path.
   let authorShape: ScopeShape | null = null
   let authorDeps: ReadonlyArray<readonly string[]> | null = null
+  // Totals the items seam (nullish → empty list, loud in dev). Per-site, because it
+  // remembers whether it already warned about the current nullish run (#165).
+  const resolveItems = createItemsResolver<T>('each', source.deps)
   const reconcile = (input: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
     const rowState = inRow ? (input as { state: unknown }).state : input
     const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
-    const items = source.items(itemsState)
+    const items = resolveItems(source.items(itemsState))
     const n = items.length
 
     // State-fanout gating: does this reconcile have to re-evaluate EVERY row (a
@@ -370,7 +437,7 @@ function buildSignalEach<T>(
           `share one live scope, so reorder/removal misbehaves). ` +
           `(each items deps: ${JSON.stringify(source.deps)})`
         console.error(msg)
-        throw new Error(msg)
+        throw new LluiFrameworkError(msg)
       }
       newKeys[index] = k
       if (sameOrder && order[index] !== k) sameOrder = false
@@ -440,7 +507,7 @@ function buildSignalEach<T>(
         // make a LATER row's root a bare fragment even when the first row was an
         // element, and that divergent row must be caught too.
         if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
-          throw new Error(
+          throw new LluiFrameworkError(
             'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
               'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
               'row has a stable node to key, move, and remove. ' +
@@ -509,7 +576,7 @@ function buildSignalEach<T>(
                 `use the authoring \`each\` render path instead. (row deps: ` +
                 `${JSON.stringify(rowSpecs.map((s) => s.deps))})`
               console.error(msg)
-              throw new Error(msg)
+              throw new LluiFrameworkError(msg)
             }
             // Prod: build this row its own correct shape rather than mis-masking it.
             const r = scopeFromSpecs(rowSpecs)

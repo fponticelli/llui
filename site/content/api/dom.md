@@ -1808,7 +1808,14 @@ any component-state paths the rows read (so the list reconciles on either).
 
 ```typescript
 export interface EachSource<T> {
-  items: (state: unknown) => readonly T[]
+  /** Read the list out of the state the reconcile was handed.
+   *
+   * The return type is DELIBERATELY nullable even though every authoring entry
+   * point is typed `Signal<readonly T[]>`: the accessor is a path walk, and
+   * `mask.ts`'s `resolveSegs` is explicitly undefined-safe, so `state.at('items')`
+   * over an absent/late-arriving path produces `undefined` rather than throwing.
+   * The reconcile totals that with {@link createItemsResolver} — see #165. */
+  items: (state: unknown) => readonly T[] | null | undefined
   deps: readonly string[]
   /** See {@link BindingSpec.componentRooted}: `true` when the items accessor reads
    * the COMPONENT state (so a nested each reads `ctx.state`, not the enclosing row
