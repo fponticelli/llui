@@ -220,7 +220,26 @@ at glide start; a row whose author transform was mid CSS-transition folded the
 in-flight 33.66px into `dx` and jumped by it). Neither available measurement
 is on its own both transform-free and sub-pixel exact, so both are taken and
 {@link layoutDelta} decides — see there, including why reading the author
-transform per row instead is not free.
+transform per row instead is not free, and the size of the one case it gets
+wrong.
+
+That choice has an exposure of its OWN, and it is a trade rather than a free
+win (#217). `offsetLeft`/`offsetTop` are relative to the row's
+`offsetParent`, so an ancestor whose `position` CHANGES between two passes
+moves every stored layout at once. Rows of one list always share an
+`offsetParent`, so a reorder alone can never trip it — but a structural change
+and an ancestor `position` change in ONE update can (a panel becoming
+`relative` to host a dropdown; a container going `sticky` on scroll), and
+there this is a REGRESSION on what the rect did: measured in Chromium, a
+wrapper going `static → relative` in the same update as a reorder glides the
+moved row 310px instead of 60 and two untouched rows 250px each (`static →
+sticky`: 240/120/180), where the rect-based code was correct. It is taken
+anyway because the exposure it REPLACES is commoner and worse — any scroll
+between two passes moved every stored rect, so a 200px page scroll plus a
+reorder glided the moved row 260px instead of 60 AND glided rows that had not
+moved at all by 200px, and an inner `overflow: auto` scroller did the same.
+No guard is in place: none has been costed against #107/#137, which is what
+#217 tracks.
 
 Interruption: the live `Animation` is retained per element and cancelled
 before the next one starts, and the translation the running glide had already
