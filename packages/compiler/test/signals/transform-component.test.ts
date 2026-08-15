@@ -118,13 +118,28 @@ function allBindingNames(sf: ts.SourceFile): Set<string> {
 
 /** Identifiers `src` READS that it binds NOWHERE and that are not globals.
  *
- * Deliberately coarse in ONE direction: a name bound in a SIBLING scope counts
- * as bound, because a scope-aware check would re-derive `scopeIntroduces` inside
- * the test. That is enough for what it must catch — #181 destroys the ONLY
- * binding a name had, so the identifier is bound nowhere in the module at all,
- * and the emitted module still parses and still contains the call text. Both of
- * the checks that were in place (`assertParses`, `toContain('div([])')`) pass on
- * the broken output; this one does not. */
+ * SCOPE-BLIND, in both directions, and neither is a general gate:
+ *
+ * - It only catches a name whose bindings are ALL destroyed. That covers four of
+ *   the five #181 sites (repro 1 `div`, repro 2 `renderRow`, the factory's `f`,
+ *   pass-2's `nest`) — the relocated body was the name's only binding, so the
+ *   emitted module binds it nowhere while still parsing and still containing the
+ *   call text, which is exactly what `assertParses` + `toContain` cannot see. It
+ *   does NOT cover `inlineHelperRender`: there the helper's own declaration
+ *   (`const other = function rowHelper(…)`) SURVIVES in the emitted module, so a
+ *   free `rowHelper` in the inlined copy still reads as bound and this returns
+ *   `[]` on the broken output. The teeth of that test are its
+ *   `not.toContain('signalEachDirect')` assertion — measured: on the broken
+ *   output a real `ts.Program` reports `TS2304: Cannot find name 'rowHelper'`
+ *   while this oracle reports clean. Do not cite it as the check there.
+ * - It over-reports: a global outside `KNOWN_GLOBALS` (measured: `Intl`, `URL`,
+ *   `fetch`, `localStorage`) or an enum member reads as free. Harmless where it
+ *   is used — every call site here asserts `[]` on output that has neither — but
+ *   it is not a check to point at new code without extending the allowlist.
+ *
+ * Deliberately kept scope-blind: a scope-aware version would re-derive
+ * `scopeIntroduces` inside the test, which is the duplication CLAUDE.md warns
+ * about, and the assertion it would strengthen already has a `toContain` guard. */
 function unboundIdentifiers(src: string): string[] {
   const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const bound = allBindingNames(sf)
@@ -1465,8 +1480,13 @@ describe('transformSignalComponentSource', () => {
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
-      expect(unboundIdentifiers(out)).toEqual([])
+      // THE TEETH OF THIS TEST ARE THE NEXT LINE, not the oracle: the helper's own
+      // declaration survives in the emitted module, so a free `rowHelper` in the
+      // INLINED copy still reads as bound and `unboundIdentifiers` returns `[]` on
+      // the broken output (a real `ts.Program` reports TS2304 there). Kept only as
+      // a consistency check; see the oracle's docstring.
       expect(out).not.toContain('signalEachDirect')
+      expect(unboundIdentifiers(out)).toEqual([])
     })
 
     // ── controls: lowering is switched off for the NAMED shape only ──────────
