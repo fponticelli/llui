@@ -29,10 +29,12 @@ let port: number
  * teardown can hard-close whatever a test left behind (#191).
  *
  * This teardown previously called `server.closeAllConnections()` and claimed
- * that stopped a live socket from hanging the hook. It does not: an UPGRADED
- * socket is no longer reachable from `closeAllConnections()` (nor from
- * `closeIdleConnections()`), so `server.close()`'s callback still never fires
- * — measured directly. Both tests below assert BETWEEN `open` and their own
+ * that stopped a live socket from hanging the hook. For an UPGRADED socket it
+ * does not: the server stops tracking it at upgrade, so neither
+ * `closeAllConnections()` nor `closeIdleConnections()` reaches it and
+ * `server.close()`'s callback still never fires — measured directly. (It IS
+ * the right fix for a live plain-HTTP stream, which is the sibling case in the
+ * notes/capture fixtures.) Both tests below assert BETWEEN `open` and their own
  * `ws.close()`, so any failed assertion left the socket open and the hook
  * waited forever. With `retry: 2` that is three consecutive hook timeouts:
  * one broken assertion cost 180 s to report against a 60 s budget.

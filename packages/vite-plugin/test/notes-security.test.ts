@@ -65,6 +65,14 @@ function startFixture(): Promise<Fixture> {
 
 function stopFixture(f: Fixture): Promise<void> {
   rmSync(f.notesRoot, { recursive: true, force: true })
+  // Destroy any connection still open before awaiting the close. `close()`
+  // alone never fires its callback while a connection is NOT IDLE, and an SSE
+  // stream or an in-flight long-poll is exactly that — so a test that threw
+  // before releasing one turned this hook into an UNBOUNDED wait rather than a
+  // slow one (#191). `closeAllConnections()` DOES reach an active plain-HTTP
+  // response (unlike `closeIdleConnections()`, and unlike the UPGRADED-socket
+  // case, which it cannot reach at all — see the agent WS tests).
+  f.server.closeAllConnections()
   return new Promise((resolve) => f.server.close(() => resolve()))
 }
 
@@ -410,6 +418,7 @@ describe('task-spawn capability token (S2)', () => {
       expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(false)
     } finally {
       rmSync(cf.notesRoot, { recursive: true, force: true })
+      cf.server.closeAllConnections()
       await new Promise<void>((r) => cf.server.close(() => r()))
     }
   })
@@ -422,6 +431,7 @@ describe('task-spawn capability token (S2)', () => {
       expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(false)
     } finally {
       rmSync(cf.notesRoot, { recursive: true, force: true })
+      cf.server.closeAllConnections()
       await new Promise<void>((r) => cf.server.close(() => r()))
     }
   })
@@ -434,6 +444,7 @@ describe('task-spawn capability token (S2)', () => {
       expect(cf.trusted.isTrusted(created.sessionId, created.id)).toBe(true)
     } finally {
       rmSync(cf.notesRoot, { recursive: true, force: true })
+      cf.server.closeAllConnections()
       await new Promise<void>((r) => cf.server.close(() => r()))
     }
   })

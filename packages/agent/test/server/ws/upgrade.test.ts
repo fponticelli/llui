@@ -18,10 +18,11 @@ let port = 0
  * Every socket this file opens, tracked on BOTH sides of the handshake so
  * teardown can hard-close whatever a test left behind (#191).
  *
- * `http.Server#close()` does not invoke its callback while any connection is
- * still live, and a connection that has been UPGRADED is no longer reachable
- * from `closeAllConnections()` either (measured: the callback still never
- * fires) — so a test that threw before reaching its own `ws.close()` turned
+ * `http.Server#close()` withholds its callback until every connection is IDLE,
+ * and an UPGRADED socket never is. `closeAllConnections()` does not help here
+ * either: it DOES reach an active plain-HTTP response, but the server stops
+ * tracking a socket once it is upgraded (measured — the callback still never
+ * fires). So a test that threw before reaching its own `ws.close()` turned
  * `afterEach` into an UNBOUNDED wait, not a slow one. No test/hook budget
  * bounds that; a budget only decides how long the bill runs before vitest
  * reports "Hook timed out". Closing here, unconditionally, is what makes the

@@ -67,12 +67,25 @@ export default defineConfig({
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers
     // work that is slow-but-bounded. A test that HANGS still fails — just less
-    // promptly, so a raised budget makes an unbounded wait MORE expensive to
-    // report, never safe: an actual hang is a bug to fix at the source (see
-    // `packages/agent/test/server/ws/upgrade.test.ts`, whose teardown could
-    // wait forever on a socket a failed test left open, #191). If a test starts
-    // approaching either number for reasons other than the floor above, the fix
-    // is a cheaper test, not a bigger budget.
+    // promptly, so a raised budget makes an unbounded wait MORE EXPENSIVE to
+    // report, never safe: an actual hang is a bug to fix at the source.
+    //
+    // The specific hang to know about, because THREE instances were found in
+    // this repo (#191): a teardown that AWAITS `server.close()` while a
+    // connection is still live. `close()` withholds its callback until every
+    // connection is IDLE, so that wait is UNBOUNDED and the budget only decides
+    // how long the bill runs. Non-idle means an upgraded WebSocket, an
+    // SSE/streaming response, or an in-flight long-poll — NOT merely "a
+    // WebSocket"; the SSE instance is the one an upgrade-only reading missed.
+    // A test that throws before releasing one leaves it live.
+    //   - plain HTTP (streams, long-polls): call `server.closeAllConnections()`
+    //     before the await. `closeIdleConnections()` does NOT work.
+    //   - UPGRADED sockets: `closeAllConnections()` cannot reach those either
+    //     (the server stops tracking them at upgrade), so the teardown must
+    //     track and destroy the sockets itself.
+    //
+    // If a test starts approaching either number for reasons other than the
+    // floor above, the fix is a cheaper test, not a bigger budget.
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },
