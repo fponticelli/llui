@@ -46,6 +46,15 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 - **Nothing is sacred.** There is no legacy code or backward compatibility concern. When changing assumptions, update the docs in `site/content/` (published to [llui.dev](https://llui.dev)) to match.
 - **No shortcuts.** Engineering economy, expedience, or "good enough for now" must never drive decisions. The drivers are engineering excellence, sound solutions, correctness, and developer experience. If the correct fix is harder, do the harder thing.
 
+### Mutation testing: an UNFAITHFUL mutation reads as coverage
+
+Mutation testing is this repo's main defence against vacuous tests, and every lint-rule, reconciler and quota change is expected to arrive with a mutation table. In ONE batch (PRs #158–#180) four agents reported a mutation number that was wrong — in every case because the MUTATION was malformed, not because the tests were weak. All four were caught by hand (two by the author, two by review); a green suite catches none of them. The trap is counter-intuitive: **a badly-formed mutation usually reddens MORE tests, not fewer, so it reads as strong coverage.**
+
+- **Verify the mutation reached live code before reading the result** — print or assert the applied diff. PR #158 patched a line whose text appeared TWICE in the file and landed on `replaceUrl` instead, never reaching the code under test; the resulting false "12 green" read as WEAK tests. When a mutation reddens NOTHING, suspect the patch before concluding the test is weak.
+- **A mutation must be FAITHFUL: it changes exactly the property under test and leaves every invariant around it intact.** PR #168 dropped the `reserveSlot` guard but left `releaseSlot` unpaired, so `reserved` went NEGATIVE and MASKED the unbounded growth the test existed to expose — green against a genuinely unbounded resurrect, where removing reserve AND release killed it. PR #170's "host stops publishing" written `(() => {})()` put `undefined` into the disposer array, so every test additionally died in teardown with `TypeError: dispose is not a function`: a reported 10/10 red where the faithful mutation gives 7/10. If the mutation also breaks paired bookkeeping, a teardown contract, or throws where the real defect would not, the number measures the breakage, not the property.
+- **A mutation cannot redden a test whose assertion the mutation SATISFIES.** A fail-closed mutation cannot kill a test asserting the closed direction, yet two PRs reported "all N red" for suites containing exactly such tests — a number that could not have been measured. Stating per row WHY a survivor survives is what makes a table trustworthy; a partial score (`tag-send-drift`'s 64 of 66, below) is the normal shape of an honest one.
+- **Re-run mutations against the FINAL committed code.** One figure in the batch was measured before a TypeScript fix that later widened an assertion, so the number never described the tree that shipped.
+
 ## Code Style
 
 - Single quotes, no semicolons, trailing commas
