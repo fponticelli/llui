@@ -600,13 +600,13 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     dispose()
   })
 
-  it('#161 the LISTENER redirect is single-hop too, URL and route agreeing on it', () => {
-    // The call site #161 was reported from. The same rule as `push`/`replace`/
-    // `navigate`/`link` (pinned in `guards.test.ts`), asserted here at the env
-    // seam because this is the path that also WRITES the URL: what has to hold
-    // is that the single written URL and the single dispatched route name the
-    // same hop, so #143 is not reopened by the decision to leave chains to the
-    // app. `/home` — the second hop — is what a multi-hop reading would produce.
+  it('#161 the LISTENER chains to the fixed point, and writes it ONCE', () => {
+    // The call site #161 was reported from, asserted here at the env seam
+    // because this is the path that also WRITES the URL. Two things have to
+    // hold: the chain settles on `/home` (the guard is re-asked about `login`),
+    // and the intermediate hops write NOTHING — the URL is rewritten once, from
+    // the resolved outcome, so #143's agreement lands on the settled route
+    // rather than on a hop the guard would have moved on from.
     const rec = recordingEnv({ pathname: '/' })
     const seen: Route[] = []
     const routing = connectRouter(historyRouter(), {
@@ -624,11 +624,11 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     rec.calls.length = 0
     rec.fire()
 
-    expect(seen).toEqual([{ page: 'admin' }])
-    expect(rec.calls).toEqual(['replaceState:/login'])
-    expect(rec.env.pathname).toBe('/login')
+    expect(seen).toEqual([{ page: 'admin' }, { page: 'login' }, { page: 'home' }])
+    expect(rec.calls).toEqual(['replaceState:/'])
+    expect(rec.env.pathname).toBe('/')
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: HOME })
 
     dispose()
   })

@@ -86,6 +86,40 @@ describe('link() runs the guard pipeline in history mode (finding 1)', () => {
     handle.dispose()
   })
 
+  it('#161 a redirect CHAIN settles before the link writes anything', () => {
+    // `link()` is the fourth call site of `runGuards`, and the loop is inside
+    // it — so the chain resolves before `pushUrl`/`send` are reached, and the
+    // intermediate hop never appears in the history stack.
+    const send = vi.fn()
+    const seen: Route[] = []
+    const pushSpy = vi.spyOn(history, 'pushState')
+    const { anchor, handle } = mountLink(
+      {
+        beforeEnter: (to) => {
+          seen.push(to)
+          if (to.page === 'admin') return { page: 'login' }
+          if (to.page === 'login') return { page: 'article', slug: 'x' }
+          return undefined
+        },
+      },
+      send,
+      { page: 'admin' },
+    )
+
+    click(anchor)
+
+    expect(seen).toEqual([{ page: 'admin' }, { page: 'login' }, { page: 'article', slug: 'x' }])
+    expect(pushSpy).toHaveBeenCalledTimes(1)
+    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'x' },
+    })
+
+    pushSpy.mockRestore()
+    handle.dispose()
+  })
+
   it('an allowed link navigation pushes + dispatches the target', () => {
     const send = vi.fn()
     const pushSpy = vi.spyOn(history, 'pushState')

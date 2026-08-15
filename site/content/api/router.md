@@ -158,51 +158,53 @@ const routing = connectRouter(router, {
 
 Guards run in the effect handler and the popstate listener, keeping `update()` pure.
 
-### Redirects are single-hop
+### Redirect chains
 
-A guard redirect is **single-hop**, in both modes and at every call site —
-`push()`, `replace()`, `navigate()`, `link()` and the browser-driven listener
-alike. `beforeEnter` is asked **once** per navigation; when it returns a target,
-that target is the destination and **its own guard is not re-run**.
+A guard redirect **chains to a fixed point**, in both modes and at every call
+site — `push()`, `replace()`, `navigate()`, `link()` and the browser-driven
+listener alike. `beforeEnter` is re-asked about each target it returns until it
+**accepts** one (returns nothing), **blocks** one (returns `false`), or **stops
+moving the URL**.
 
-So this rests on `login`, not on `home`:
-
-```ts
-connectRouter(router, {
-  beforeEnter(to) {
-    if (to.page === 'admin') return { page: 'login' } // taken
-    if (to.page === 'login') return { page: 'home' } //  NOT re-asked
-  },
-})
-```
-
-The URL and the dispatched route still **agree** on `login` — a redirect writes
-the URL it dispatched (see _Navigation semantics_ below) — so nothing desyncs.
-What you get is the first hop, not the fixed point. **Fold the chain yourself**
-when you need one:
+So this rests on `home`:
 
 ```ts
 connectRouter(router, {
   beforeEnter(to) {
-    if (to.page === 'admin') return isLoggedIn() ? { page: 'home' } : { page: 'login' }
+    if (to.page === 'admin') return { page: 'login' } // hop 1
+    if (to.page === 'login') return { page: 'home' } //  hop 2 — re-asked
   },
 })
 ```
 
-This is deliberate, not a limitation waiting to be lifted. Chaining to a fixed
-point needs an **equality on your `Route` type**, and the router has none it can
-compute: routes are fully generic, may be primitives (a string-union route is
-valid), and may carry fields no URL can express. Identity fails for any guard
-that rebuilds the object, structural equality is undefined for an arbitrary `R`,
-and `href()` is a lossy projection. Without a fixed-point test, an **idempotent**
-guard — one that normalises `to` and returns it, which the "return a Route"
-contract explicitly allows — would never settle, so a bounded loop would have to
-end by **blocking** a navigation that works today. `beforeLeave` could not be
-re-run per hop either: it is the unsaved-changes prompt.
+Only the **settled** route is dispatched, and only its URL is written: the
+intermediate hops never reach the history stack and never reach your reducer.
+The URL and the dispatched route **agree** on it (see _Navigation semantics_
+below).
 
-Your app has the route equality the router does not, and `beforeEnter` is a
-single function you own — so folding a chain is a local edit, not the middleware
-composition the framework would have to do for you. ([#161])
+Four rules make that predictable:
+
+- **The chain settles when the URL stops moving.** The equality is `router.href`
+  — the same projection the router writes to the address bar and matches routes
+  back out of. It is deliberately lossy: two routes that differ only in a field
+  no URL can express settle as one, which stops the chain early rather than
+  refusing the navigation. If your routes carry non-URL fields, do not rely on a
+  hop that moves only those.
+- **The hop is taken whether or not it moved the URL.** A guard that _normalises_
+  `to` and returns an equivalent route settles immediately, and the route your
+  reducer receives is the one the guard returned. (Since the URL did not move,
+  nothing is written — see _Navigation semantics_.)
+- **`beforeLeave` is asked once**, before the chain, about the route you
+  originally requested. It is the unsaved-changes prompt: one navigation, one
+  prompt, however many hops resolve it.
+- **`from` is the route you are leaving, on every hop.** No hop is entered — they
+  are proposals — so `from` does not advance as the chain resolves.
+
+A `beforeEnter` that never settles (`admin → login → admin → …`) is capped at
+**10 hops**. On exhaustion the router **rests on the last hop and warns** on the
+console; it does not block. A blocked navigation would leave your app stuck with
+no route change at all, which hides the bug; landing keeps it usable and the
+warning names the cause. ([#161])
 
 [#161]: https://github.com/fponticelli/llui/issues/161
 
@@ -257,10 +259,10 @@ The same contract holds in **both** `history` and `hash` mode:
   still reaches every entry above. What stops being reachable at that slot is the
   guarded route itself — returning to it would only redirect again. When the
   landed entry's position is unknown (see the blocked case below) the URL is
-  still written, but no index is invented for it. The redirect target's **own**
-  guard is not re-run — see _Redirects are single-hop_ — so the URL and the
-  route agree on the first hop, and a guard that returns a route addressing the
-  URL already showing writes nothing at all.
+  still written, but no index is invented for it. The redirect target is itself
+  offered to the guard — see _Redirect chains_ — so the entry is replaced once,
+  with the **settled** route, and a guard that returns a route addressing the URL
+  already showing writes nothing at all.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
   **when the router knows the distance back to the entry it was on**. It knows

@@ -152,12 +152,21 @@ export interface ConnectOptions<R> {
    * - `void` / `undefined` → allow navigation
    * - `false` → block navigation (stay on current route)
    * - a different `Route` → redirect to that route
+   *
+   * A redirect CHAINS: the target is offered back to this same function until it
+   * is accepted, blocked, or stops moving the URL (capped at 10 hops — see
+   * `runGuards`). So this may be called several times for one navigation, and
+   * only the settled route is dispatched. `from` is the route being LEFT on
+   * every hop — no hop is entered.
    */
   beforeEnter?: (to: R, from: R | null) => R | false | void
   /**
    * Called before leaving the current route. Return:
    * - `true` → allow navigation
    * - `false` → block (e.g. unsaved changes prompt)
+   *
+   * Called ONCE per navigation, before any `beforeEnter`, with the route
+   * originally REQUESTED as `to` — a redirect chain must not prompt N times.
    */
   beforeLeave?: (from: R, to: R) => boolean
 
@@ -295,6 +304,18 @@ function mintRun(): string {
 type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
 
 /**
+ * How many times `beforeEnter` may redirect within ONE navigation before the
+ * chain is declared non-terminating (#161).
+ *
+ * Only a chain that keeps MOVING the URL counts against it: the loop settles the
+ * moment a hop addresses the URL the previous one already did, so an idempotent
+ * guard — one that normalises `to` and hands back an equivalent route — stops on
+ * hop one and never approaches the cap. Reaching it means a genuine cycle
+ * (`a → b → a → …`), which is an app bug.
+ */
+const MAX_REDIRECT_HOPS = 10
+
+/**
  * A position this router can measure a delta against: an index AND the run it
  * was numbered in. Never one without the other — see {@link readPosition}.
  */
@@ -421,14 +442,16 @@ export function connectRouter<R>(
    * projection {@link currentInput} already matches routes against — the same
    * string `router.href` produces in that mode.
    *
-   * Every URL write here asks it before writing, and for two different reasons.
-   * `setHash` MUST: a same-hash assignment is a no-op the browser reports
-   * nothing for, so arming an echo for it would leave a suppression pending that
-   * swallows a later genuine `hashchange`. The `replace()` effect and
-   * `rewriteLandedUrl` merely SHOULD: their write is a `replaceState` that fires
-   * no event, so a redundant one is invisible rather than harmful — but a reader
-   * who has learned the rule from `setHash` will assume it holds everywhere, and
-   * it now does.
+   * The two `replaceState` writers — the `replace()` effect and
+   * {@link rewriteLandedUrl} — ask it before writing. Their write fires no
+   * event, so a redundant one is invisible rather than harmful; they skip it
+   * because a reader who has learned the rule from {@link setHash} will assume
+   * it holds everywhere, and it now does.
+   *
+   * {@link setHash} is NOT one of its callers, deliberately: its guard MUST hold
+   * (see there) and what it asks about is the fragment unconditionally, so it
+   * calls {@link sameHash} directly rather than depending on a mode test made
+   * here.
    */
   function sameUrl(path: string): boolean {
     return router.mode === 'hash' ? sameHash(env.hash, path) : currentInput() === path
@@ -646,7 +669,15 @@ export function connectRouter<R>(
    * nothing may be armed or counted for it.
    */
   function setHash(newHash: string): boolean {
-    if (sameUrl(newHash)) return false
+    // `sameHash` DIRECTLY, not `sameUrl`. This guard is load-bearing — arming an
+    // echo for a write the browser will not report leaves a suppression pending
+    // that swallows a later genuine `hashchange` — and what it is asking about
+    // is the FRAGMENT, because that is what the line below writes. `sameUrl`
+    // answers the same question only while `router.mode === 'hash'`, which is
+    // true of all three of this function's callers today; routing a guard this
+    // load-bearing through a mode test made ELSEWHERE would make a fourth caller
+    // silently unsafe rather than obviously wrong (#162 review).
+    if (sameHash(env.hash, newHash)) return false
     // Resolve the position (and the run) of the entry we are LEAVING before the
     // write replaces it.
     const next = pushStamp()
@@ -673,48 +704,79 @@ export function connectRouter<R>(
    * structurally equal object, and `push`/`replace` need to know whether the
    * URL they are about to write is the one their caller actually asked for.
    *
-   * A redirect is SINGLE-HOP, deliberately, at every call site (#161).
-   * `beforeEnter` is asked once; if it returns a target, that target is the
-   * destination and its OWN guard is not re-run. A `beforeEnter` that redirects
-   * `admin → login` and separately redirects `login → home` therefore rests on
-   * `login`, with the URL and the dispatched route in agreement (#143's
-   * property) on a route the guard itself would have moved on from.
+   * A redirect CHAINS to a fixed point (#161), in both modes and at every call
+   * site — the loop lives here, so no call site needed changing. A `beforeEnter`
+   * that redirects `admin → login` and separately redirects `login → home` rests
+   * on `home`: each hop's target is offered to the guard in turn until the guard
+   * accepts it (returns nullish), blocks it, or stops moving it.
    *
-   * Looping to a fixed point is not available here, and the reason is the same
-   * one stated for `redirected` one paragraph up: it needs an EQUALITY on `R`,
-   * and there is none the framework can compute. Routes are generic, may be
-   * primitives, and may carry fields no URL can express, so identity fails for
-   * any guard that rebuilds the object, structural equality is undefined, and
-   * `router.href` is a lossy projection. Without a fixed-point test an
-   * IDEMPOTENT guard — one that normalises `to` and returns it, a shape this API
-   * documents as valid and which is exactly #162's — never settles: it would run
-   * to whatever hop cap bounded the loop and then have to BLOCK, silently
-   * converting working navigation into refused navigation. `beforeLeave` cannot
-   * be re-run per hop either, being the unsaved-changes PROMPT.
+   * FOUR things make that terminate and stay honest, and each is a decision:
    *
-   * The chain is the app's to fold, and folding it is cheap in a way it is not
-   * in a middleware stack: `beforeEnter` is ONE function the app owns, and the
-   * app has the route equality this file does not. Documented under "Navigation
-   * semantics" in `site/content/api/router.md`, and pinned by name in
+   * 1. THE SETTLE TEST IS `router.href`. A fixed point needs an equality on `R`,
+   *    and the only one this file can compute is the projection it already
+   *    treats as route identity everywhere else — the string it writes to the
+   *    URL, matches routes back out of, and compares in {@link sameUrl}. It is
+   *    LOSSY (two routes differing only in a field no URL expresses project to
+   *    one string), and for a TERMINATION test lossiness fails in the safe
+   *    direction: it settles EARLY, degrading to exactly the single-hop
+   *    behaviour that shipped before, never to a refusal.
+   * 2. THE HOP IS ADOPTED BEFORE THE SETTLE TEST. A guard that normalises `to`
+   *    and hands back an equivalent route — #162's shape — settles immediately,
+   *    but the route DISPATCHED is the one it returned, not the one it was
+   *    asked about, and `redirected` is true for it. That is what shipped
+   *    before and what the same-URL short-circuit downstream expects: the flag
+   *    means "the guard replaced the object", never "the URL moved".
+   * 3. `beforeLeave` RUNS ONCE, before the loop, against the ORIGINALLY
+   *    REQUESTED route. It is the unsaved-changes PROMPT; asking it per hop
+   *    would prompt N times for one navigation. Running it first also keeps the
+   *    order right — a refused leave must run no `beforeEnter` at all.
+   * 4. `from` IS `currentRoute` ON EVERY HOP. No hop is ENTERED — they are
+   *    proposals — so where the navigation is coming from does not change as
+   *    the chain resolves.
+   *
+   * A cycle (`a → b → a → …`) never settles, so the loop is capped at
+   * {@link MAX_REDIRECT_HOPS} and, on exhaustion, LANDS ON THE LAST ALLOWED HOP
+   * and warns — it does NOT block. Issue #161 named both; blocking converts an
+   * app bug into a dead navigation with the app stuck where it was, whereas
+   * landing leaves it usable and the warning names the guard as the cause.
+   *
+   * Documented under "Guards" in `site/content/api/router.md` and pinned in
    * `test/guards.test.ts`.
    */
   function runGuards(newRoute: R): GuardOutcome<R> {
     if (options?.beforeLeave && currentRoute !== null) {
       if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
     }
-    if (options?.beforeEnter) {
-      const result = options.beforeEnter(newRoute, currentRoute)
+    const beforeEnter = options?.beforeEnter
+    if (!beforeEnter) return { blocked: false, route: newRoute, redirected: false }
+
+    let route = newRoute
+    let redirected = false
+    for (let hops = 0; ; ) {
+      const result = beforeEnter(route, currentRoute)
       if (result === false) return { blocked: true }
       // Any non-`false`, non-nullish return is a redirect Route. Routes are
       // generic `R` and may be primitives (e.g. a string-union route), so
       // gate on nullishness, NOT `typeof === 'object'` — the latter silently
       // dropped string/number redirects and let navigation proceed to the
       // original target (an auth-guard bypass).
-      if (result !== undefined && result !== null) {
-        return { blocked: false, route: result as R, redirected: true }
+      if (result === undefined || result === null) break
+      const next = result as R
+      // Whether the URL MOVED decides only whether to ask again; the hop is
+      // taken either way (see 2 above).
+      const moved = router.href(next) !== router.href(route)
+      route = next
+      redirected = true
+      if (!moved) break
+      if (++hops >= MAX_REDIRECT_HOPS) {
+        console.warn(
+          `[@llui/router] beforeEnter redirected ${MAX_REDIRECT_HOPS} times without settling ` +
+            `(last: ${router.href(route)}). Resting on the last hop — the chain is a cycle.`,
+        )
+        break
       }
     }
-    return { blocked: false, route: newRoute, redirected: false }
+    return { blocked: false, route, redirected }
   }
 
   /**
