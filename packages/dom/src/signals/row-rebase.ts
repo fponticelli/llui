@@ -3,8 +3,17 @@
 // signal) composes correctly inside an authoring `each`/`show`/`branch` row.
 //
 // Locality is decided from the `componentRooted` brand (collision-proof, set from
-// the origin handle) with a legacy string-inference fallback for unbranded
-// compiler-emitted specs.
+// the origin handle) with a legacy string-inference fallback for unbranded specs.
+//
+// Issue #48 audited whether the fallback lets a compiler-emitted bare component
+// dep named `state`/`item`/`index` reach a live row. No public route was found:
+// lowering a row uses `eachRoots`, so compiler-emitted component reads are already
+// namespaced as `state.state`/`state.item`/`state.index`; when row lowering bails,
+// the authoring helpers consume the original handles and preserve their
+// `componentRooted` provenance. A captured Mountable follows the latter path too,
+// because the compiler leaves its local initializer as an authoring helper call.
+// Keep the inference only as defensive compatibility for manually constructed,
+// unbranded specs; it is not a demonstrated compiler/runtime collision seam.
 
 import type { BindingSpec } from './build-context.js'
 
@@ -57,7 +66,7 @@ export const rebaseComponentDep = (d: string): string => (d === '' ? 'state' : `
 
 /** Does a VALUE spec need re-rooting onto `ctx.state` inside a row? Prefers the
  * `componentRooted` brand (set from the origin handle — collision-proof); falls
- * back to `isRowLocalDep` string inference only for unbranded compiler specs. */
+ * back to `isRowLocalDep` string inference only for unbranded specs. */
 export function specNeedsRebase(spec: BindingSpec): boolean {
   if (spec.structural) return false
   if (spec.componentRooted === true) return true
