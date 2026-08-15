@@ -247,7 +247,7 @@ describe('#143 a guard redirect on a browser-driven navigation — hash mode', (
 
   it('keeps the forward entry and a later blocked back reachable', async () => {
     // AC 3 + AC 4 in hash mode, where a blocked back is undone by a suppressed
-    // traversal rather than by `pendingRestoreIndex`.
+    // traversal rather than by `pendingRestore`.
     let guardOn = false
     const routing = connectRouter(hashRouter(), {
       beforeEnter: (to) => {
