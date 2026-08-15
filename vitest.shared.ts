@@ -34,12 +34,21 @@ export default defineConfig({
     // (18-core M5 Max, 72 spinner processes, load average 400–640) rather than
     // picked as round numbers. Worst observed cases:
     //
+    //   lexical-loro     harden.test.ts            33.0 s  (200-op 3-peer burst)
+    //   @llui/mcp        playwright-e2e teardown   30.2 s  (see below)
+    //   lexical-loro     harden.test.ts (sibling)  14.9 s  (multi-block pastes)
     //   @llui/mcp        doctor.test.ts            10.8 s  (spawns dist/cli.js)
     //   markdown-editor  typing-loop.test.ts        6.4 s  (480 keystrokes)
-    //   @llui/mcp        playwright-e2e teardown   30.2 s  (see below)
     //
-    // testTimeout 30 s is ~3x the heaviest measured test, and is already the
-    // number four separate files had converged on independently.
+    // testTimeout 30 s is the number four separate files had converged on
+    // independently — but be honest about the headroom: it is NOT a multiple of
+    // the heaviest test, it is AT PARITY with it. `harden.test.ts`'s 200-op
+    // burst was measured at 33.0 s at load 520 (0.7 s idle, 10.0 s at load 200)
+    // and FAILS with `Test timed out in 30000ms` there. That is pre-existing and
+    // budget-identical to what `packages/lexical-loro` already set for itself,
+    // so raising the shared number would not be a fix — by the rule stated at
+    // the bottom of this comment, a test that approaches the budget wants to be
+    // CHEAPER, not to be given more room. Tracked rather than actioned here.
     //
     // hookTimeout 60 s is sized by a hard upstream floor, not by our own work:
     // under CPU saturation Chromium never completes a graceful shutdown, so
