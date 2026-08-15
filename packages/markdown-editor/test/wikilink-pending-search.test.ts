@@ -108,21 +108,50 @@ function deferredSearch(): {
   fn: (q: string) => Promise<readonly DocCandidate[]>
   queries: string[]
   settle: () => Promise<void>
+  resolveQuery: (q: string) => Promise<void>
+  rejectQuery: (q: string) => Promise<void>
 } {
-  const pending: Array<(items: readonly DocCandidate[]) => void> = []
+  interface Call {
+    query: string
+    resolve: (items: readonly DocCandidate[]) => void
+    reject: (err: unknown) => void
+  }
+  const pending: Call[] = []
   const queries: string[] = []
+  // Let the `.then`/`.catch` chains (and the reduce + reconcile they trigger)
+  // run to completion.
+  const drain = async (): Promise<void> => {
+    await wait(0)
+    await wait(0)
+  }
+  /** Take every outstanding call for `query` (or all of them). */
+  const take = (query?: string): Call[] => {
+    const taken = pending.filter((c) => query === undefined || c.query === query)
+    for (const c of taken) pending.splice(pending.indexOf(c), 1)
+    return taken
+  }
   return {
-    fn: (q) => {
-      queries.push(q)
-      return new Promise<readonly DocCandidate[]>((resolve) => pending.push(resolve))
-    },
+    fn: (q) =>
+      new Promise<readonly DocCandidate[]>((resolve, reject) => {
+        queries.push(q)
+        pending.push({ query: q, resolve, reject })
+      }),
     queries,
-    // Resolve every outstanding call, then let the `.then` chains (and the
-    // reduce + reconcile they trigger) run to completion.
     settle: async () => {
-      while (pending.length > 0) pending.shift()?.(CANDIDATES)
-      await wait(0)
-      await wait(0)
+      for (const c of take()) c.resolve(CANDIDATES)
+      await drain()
+    },
+    resolveQuery: async (q) => {
+      const taken = take(q)
+      expect(taken.length).toBeGreaterThan(0)
+      for (const c of taken) c.resolve(CANDIDATES)
+      await drain()
+    },
+    rejectQuery: async (q) => {
+      const taken = take(q)
+      expect(taken.length).toBeGreaterThan(0)
+      for (const c of taken) c.reject(new Error(`search failed: ${q}`))
+      await drain()
     },
   }
 }
@@ -212,6 +241,23 @@ describe('wikilink typing search — a dismissal inside the debounce window', ()
     expect(panelUp()).toBe(false)
   }, 15_000)
 
+  it('a click that moves nothing must NOT kill the pending typing search', async () => {
+    const { editor } = await mountWith(() => CANDIDATES)
+
+    type(editor, ' [[ho')
+    expect(panelUp()).toBe(false)
+
+    // `CLICK_COMMAND` fires on every click, including one that lands where the
+    // caret already is — so no selection change, no commit, and NOTHING to
+    // re-arm a search cancelled here. This is why the click-path cancel is
+    // scoped to the repoint branch (`if (editing)`) rather than to every
+    // click-elsewhere: the typing search is not the user saying "not this".
+    editor.getRootElement()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    await wait(SETTLE_MS)
+    expect(panelUp()).toBe(true)
+  }, 15_000)
+
   it('a search already ON THE WIRE is dropped by a dismissal, not just a pending timer', async () => {
     const search = deferredSearch()
     const { editor } = await mountWith(search.fn)
@@ -231,11 +277,27 @@ describe('wikilink typing search — a dismissal inside the debounce window', ()
 })
 
 describe('wikilink repoint search — a dismissal while the click search is in flight', () => {
-  /** Click the rendered wikilink — the path that opens the repoint panel. */
-  function clickLink(): void {
-    const el = document.querySelector('[data-wikilink]')
-    expect(el).not.toBeNull()
+  /** Click the nth rendered wikilink — the path that opens the repoint panel. */
+  function clickLink(index = 0): void {
+    const el = document.querySelectorAll('[data-wikilink]')[index]
+    expect(el).toBeDefined()
     el?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  }
+
+  /**
+   * Click somewhere in the editor that is NOT a wikilink, the way a browser
+   * does it: the click travels `CLICK_COMMAND` AND the caret moves (a caret
+   * move is its own commit, which is what feeds the plugin's refresh).
+   */
+  function clickElsewhere(editor: LexicalEditor): void {
+    editor.getRootElement()?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    editor.update(
+      () => {
+        const block = $getRoot().getLastChild()
+        if ($isElementNode(block)) block.selectEnd()
+      },
+      { discrete: true },
+    )
   }
 
   it('CONTROL: undismissed, the click search opens the repoint panel', async () => {
@@ -265,6 +327,56 @@ describe('wikilink repoint search — a dismissal while the click search is in f
 
     await search.settle()
     expect(panelUp()).toBe(false)
+  }, 15_000)
+
+  it('a click ELSEWHERE drops the in-flight repoint search, and a later click still opens it', async () => {
+    const search = deferredSearch()
+    const { editor } = await mountWith(search.fn, 'see [[Page]] here')
+
+    clickLink()
+    expect(search.queries).toEqual(['Page'])
+    expect(panelUp()).toBe(false)
+
+    // Clicking away is as unambiguous a "not this" as Escape — and it is the
+    // gesture issue #183 names in its own bullet list. The dismissal itself
+    // shows nothing, so the assertion that matters is the one after the search
+    // lands.
+    clickElsewhere(editor)
+    expect(panelUp()).toBe(false)
+
+    await search.settle()
+    expect(panelUp()).toBe(false)
+
+    // CONTROL, in this exact test: the cancel latches nothing off — clicking the
+    // link again opens the repoint panel as usual. (This also re-resolves the
+    // abandoned first call, which must stay dropped: one panel, from the second
+    // click.)
+    clickLink()
+    await search.resolveQuery('Page')
+    expect(panelUp()).toBe(true)
+    expect(document.querySelector('[data-part="edit-input"]')).not.toBeNull()
+  }, 15_000)
+
+  it('a SUPERSEDED repoint search that REJECTS does not clear a live panel', async () => {
+    const search = deferredSearch()
+    const { editor } = await mountWith(search.fn, 'see [[Page]] and [[Other]] here')
+
+    // Two clicks in a row: the second supersedes the first, which is left on the
+    // wire with nobody waiting for it.
+    clickLink(0)
+    clickLink(1)
+    expect(search.queries).toEqual(['Page', 'Other'])
+
+    // The winner lands and the repoint panel is really up.
+    await search.resolveQuery('Other')
+    expect(panelUp()).toBe(true)
+
+    // The loser then FAILS. Its `.catch` must be as stale-aware as its `.then`:
+    // clearing edit mode here belongs to a panel that is no longer this search's
+    // to close, and the next commit would act on it.
+    await search.rejectQuery('Page')
+    type(editor, ' x')
+    expect(panelUp()).toBe(true)
   }, 15_000)
 })
 

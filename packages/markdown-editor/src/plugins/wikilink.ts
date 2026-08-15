@@ -658,10 +658,13 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
       // is outstanding on either path.
       //
       // Declared HERE, above `navigation`, rather than beside the typing search
-      // below: the CLICK handler claims a sequence number too, and the search
-      // machinery below sits after the `search === undefined` early return — a
-      // `let` declared there is in its temporal dead zone for every click on a
-      // search-less editor.
+      // below: this state is now shared by BOTH searches, and the CLICK handler
+      // is one of its users. Hygiene, not a bug fix — today the click handler
+      // reaches `++seq` only after `search === undefined` has already returned,
+      // so it can never observe the temporal dead zone of a declaration made
+      // below that return. But that safety is an accident of an early return
+      // written for an unrelated reason, and shared state belongs above every
+      // user of it rather than beside one of them.
       let seq = 0
       let timer: ReturnType<typeof setTimeout> | null = null
       const clearTimer = (): void => {
@@ -692,9 +695,22 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
           (event: MouseEvent) => {
             const node = $wikiLinkFromEvent(event)
             if (!node) {
-              // A click elsewhere dismisses an open edit panel.
+              // A click elsewhere dismisses an open edit panel — and, by the
+              // same argument the Escape handler makes, cancels a repoint
+              // search that has not landed yet: clicking away is as
+              // unambiguous a "not this" as Escape, and the pending work's
+              // only outcome is opening the panel the user just left.
+              //
+              // Kept INSIDE the `editing` gate, which is exactly the repoint
+              // path. Ungated, this would also kill a TYPING search on a click
+              // that merely repositions the caret inside `[[ho` — a search
+              // nothing re-arms, since the caret has not moved out of the
+              // trigger and no keystroke follows. The typing search needs no
+              // help here anyway: a caret move commits, `refresh` nulls
+              // `liveQuery` and clears the timer, and the resolve's
+              // `liveQuery !== query` guard drops whatever was on the wire.
               if (editing) {
-                editing = false
+                cancelSearch()
                 emit({ type: 'searchHide' })
               }
               return false
@@ -726,6 +742,11 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
                 })
               })
               .catch(() => {
+                // The SAME staleness check as the `.then` above, for the same
+                // reason: a superseded search that REJECTS must not clear the
+                // edit mode a newer, live repoint panel is running in (the
+                // next commit would then hide it).
+                if (mine !== seq) return
                 editing = false
               })
             return true
