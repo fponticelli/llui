@@ -646,15 +646,71 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
       // panel we just opened.
       let editing = false
 
+      // ── Ownership of a search that has not landed yet ────────────────────────
+      //
+      // Both searches this plugin runs — the debounced `[[…` typing search and
+      // the click path's repoint search — are SPECULATIVE work whose only
+      // outcome is opening the panel. Between starting one and its `emit` there
+      // are two windows, and each needs its own knob: the debounce timer (clear
+      // it) and the host promise already on the wire (a promise cannot be
+      // cancelled, so invalidate its result instead). `seq` is the one staleness
+      // token every resolve path consults, so a single bump abandons whatever
+      // is outstanding on either path.
+      //
+      // Declared HERE, above `navigation`, rather than beside the typing search
+      // below: this state is now shared by BOTH searches, and the CLICK handler
+      // is one of its users. Hygiene, not a bug fix — today the click handler
+      // reaches `++seq` only after `search === undefined` has already returned,
+      // so it can never observe the temporal dead zone of a declaration made
+      // below that return. But that safety is an accident of an early return
+      // written for an unrelated reason, and shared state belongs above every
+      // user of it rather than beside one of them.
+      let seq = 0
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const clearTimer = (): void => {
+        if (timer !== null) {
+          clearTimeout(timer)
+          timer = null
+        }
+      }
+      /**
+       * Abandon every search this plugin has outstanding — pending in the
+       * debounce window AND already on the wire — and with it the edit mode a
+       * pending repoint search was opening (nothing is on screen for it, so
+       * leaving the flag set would only lie to the caret-driven refresh).
+       *
+       * Issue #183: without this, Escape inside the debounce window let the
+       * panel open ~120 ms LATER, on top of a user who had already dismissed it
+       * and a host that had already handled the key.
+       */
+      const cancelSearch = (): void => {
+        clearTimer()
+        seq++
+        editing = false
+      }
+
       const navigation = mergeRegister(
         editor.registerCommand(
           CLICK_COMMAND,
           (event: MouseEvent) => {
             const node = $wikiLinkFromEvent(event)
             if (!node) {
-              // A click elsewhere dismisses an open edit panel.
+              // A click elsewhere dismisses an open edit panel — and, by the
+              // same argument the Escape handler makes, cancels a repoint
+              // search that has not landed yet: clicking away is as
+              // unambiguous a "not this" as Escape, and the pending work's
+              // only outcome is opening the panel the user just left.
+              //
+              // Kept INSIDE the `editing` gate, which is exactly the repoint
+              // path. Ungated, this would also kill a TYPING search on a click
+              // that merely repositions the caret inside `[[ho` — a search
+              // nothing re-arms, since the caret has not moved out of the
+              // trigger and no keystroke follows. The typing search needs no
+              // help here anyway: a caret move commits, `refresh` nulls
+              // `liveQuery` and clears the timer, and the resolve's
+              // `liveQuery !== query` guard drops whatever was on the wire.
               if (editing) {
-                editing = false
+                cancelSearch()
                 emit({ type: 'searchHide' })
               }
               return false
@@ -669,8 +725,13 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
             const key = node.getKey()
             const target = node.getTarget()
             const { x, y } = linkXY(key)
+            // Same staleness token as the typing search: a dismissal (or the
+            // teardown of the mount) that lands while this is on the wire drops
+            // the response instead of opening a panel nobody is waiting for.
+            const mine = ++seq
             void Promise.resolve(search(target))
-              .then((items) =>
+              .then((items) => {
+                if (mine !== seq) return
                 emit({
                   type: 'editOpen',
                   key,
@@ -678,9 +739,14 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
                   items: items.slice(0, MAX_RESULTS),
                   x,
                   y,
-                }),
-              )
+                })
+              })
               .catch(() => {
+                // The SAME staleness check as the `.then` above, for the same
+                // reason: a superseded search that REJECTS must not clear the
+                // edit mode a newer, live repoint panel is running in (the
+                // next commit would then hide it).
+                if (mine !== seq) return
                 editing = false
               })
             return true
@@ -708,14 +774,6 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
       // opens and `[[target]]` still works by typing the closing `]]`.
       if (search === undefined) return navigation
 
-      let seq = 0
-      let timer: ReturnType<typeof setTimeout> | null = null
-      const clearTimer = (): void => {
-        if (timer !== null) {
-          clearTimeout(timer)
-          timer = null
-        }
-      }
       // The query as of the last commit. A keydown always arrives BEFORE the
       // commit it causes, and a debounced search resolves between commits, so
       // this is the same value a fresh read would return at either point. It is
@@ -786,17 +844,36 @@ export function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
         editor.registerCommand(
           KEY_ESCAPE_COMMAND,
           () => {
+            // Cancel FIRST, and cancel unconditionally — including on an Escape
+            // this handler goes on to DECLINE (issue #183).
+            //
+            // Declining is about who owns the KEY: with nothing on screen the
+            // key belongs to the host, and the `return false` below still hands
+            // it over untouched (#130). Abandoning our own speculative work is a
+            // different act, and it does not need the key: a search inside the
+            // debounce window has exactly one outcome — opening the panel the
+            // user just refused — so honouring the refusal only where a panel
+            // already happens to be up would make the fix depend on a 120 ms
+            // race the user cannot see.
+            //
+            // The cost of cancelling one we should not have is one abandoned
+            // search, re-armed by the very next keystroke; the cost of not
+            // cancelling is the panel opening on top of whoever DID own the key.
+            //
+            // Cancelling also ends edit mode, so the next caret-driven refresh
+            // is free to hide again rather than believing a panel it can't see
+            // is still being driven by its own input.
+            cancelSearch()
             if (!isActive()) return false
-            // Dismissing the repoint panel ends edit mode too, so the next
-            // caret-driven refresh is free to hide again rather than believing a
-            // panel it can't see is still being driven by its own input.
-            editing = false
             emit({ type: 'searchHide' })
             return true
           },
           COMMAND_PRIORITY_HIGH,
         ),
-        clearTimer,
+        // Teardown owns the same two windows: clearing the timer alone leaves a
+        // search ALREADY on the wire to resolve into a disposed mount and emit
+        // (`send() after dispose() was ignored`). The `seq` bump drops it.
+        cancelSearch,
       )
     },
     ui: definePluginUI<WikiLinkState, WikiLinkMsg, WikiLinkEffect>({
