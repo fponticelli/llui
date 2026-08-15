@@ -246,33 +246,46 @@ export function compareDurations(baseline, current, options = {}) {
   // thresholds be set from MEASURED noise rather than from a number that happens
   // to hide it.
   //
-  // THE CALIBRATION, and the honest limit it establishes. Two full suite runs of
-  // IDENTICAL code, back to back on an 18-core machine at load ~300 (twelve
-  // parallel agent lanes), compared against each other:
+  // THE CALIBRATION, measured under TWO conditions, because one is not enough to
+  // choose a threshold: pairs of full suite runs of IDENTICAL code, back to back
+  // on an 18-core machine — once QUIET (load ~20, i.e. ~1 per core) and once
+  // LOADED (load ~300, twelve parallel agent lanes). False positives in each,
+  // and the number of files a `factor`-fold regression could actually clear:
   //
-  //     factor  minDelta   false positives   files within resolution
-  //        3       40ms          39                    346
-  //        3      100ms           9                    218
-  //        4      100ms           5                    264
-  //        4      200ms           2                    187
-  //        4      400ms           0                    145   <- shipped
-  //        5      400ms           0                    164
-  //        3      800ms           0                     88
+  //     factor  minDelta | quiet FP  judgeable | loaded FP
+  //        4       25ms  |    3         377    |    28
+  //        4       50ms  |    0         258    |    16
+  //        4      100ms  |    0         167    |     5
+  //        4      200ms  |    0         129    |     2
+  //        4      400ms  |    0          76    |     0   <- shipped
+  //        5      400ms  |    0         104    |     0
+  //        6      400ms  |    0         117    |     0
   //
-  // So the run-to-run noise on THIS workspace's small files is tens of
-  // milliseconds and the 39-false-positive row is what a naive floor buys. The
-  // shipped pair is the cheapest one with zero measured false positives that
-  // still catches the 6x case #193 names.
+  // Read the two FP columns together: a quiet machine tolerates a +50 ms floor,
+  // and a loaded one does not tolerate anything under +400 ms. Calibrating on
+  // the quiet column alone would have shipped a floor that fires 16 times on a
+  // busy CI runner. +400 ms is the only floor with zero false positives in BOTH,
+  // and it still catches the 6x case #193 names.
+  //
+  // `factor` stays at 4 rather than 5 or 6 even though those cover more files:
+  // a lower factor detects SMALLER regressions among the files it covers, which
+  // is the more valuable property, and the files the higher factors add are the
+  // cheapest ones where a regression costs least in absolute terms.
   //
   // BE STRAIGHT ABOUT WHAT THAT COSTS: at +400 ms a file must cost roughly 133 ms
   // for a 4x regression to clear the floor, so "a 5 ms unit test becoming 30 ms"
-  // — the example `vitest.shared.ts` cites — IS NOT DETECTABLE HERE. That is not
-  // a threshold that can be tuned away; +25 ms is below this machine's noise, so
-  // no setting recovers it, and the old clamped denominator did not detect it
-  // either — it merely hid the fact. `judgeable` is reported on every run so the
-  // coverage is stated rather than assumed. On quieter hardware, lower
-  // `--min-delta` and the resolution improves; the printed false-positive
-  // behaviour is how you check that you have gone too far.
+  // — the example `vitest.shared.ts` cites — IS NOT DETECTED. State the limit
+  // accurately rather than absolutely: +25 ms is not far below the noise, it is
+  // at roughly its p97 edge, and the `4x / +25 ms` row above does catch it on a
+  // QUIET machine at 3 false positives. It is not recoverable at zero
+  // false-positive cost, and it is hopeless on a loaded machine (28). The old
+  // clamped denominator did not detect it either — it merely hid the fact.
+  //
+  // `judgeable` is reported on every run so the coverage is stated rather than
+  // assumed, and note it moves with the BASELINE's absolute cost: the same
+  // thresholds cover 145 files against a loaded baseline and 76 against a quiet
+  // one, because on a quiet machine every file is cheaper and fewer of them
+  // clear the floor. A lower number is not a regression in the tool.
   let judgeable = 0
   for (const file of common) {
     const baselineMs = baseline[file]

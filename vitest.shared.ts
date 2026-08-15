@@ -131,7 +131,7 @@ export default defineConfig({
     //
     // AND THE PRICE IS STILL NOT FULLY PAID, so do not read the paragraph above
     // as settled: at the calibrated thresholds only 145 of 618 files are within
-    // resolution, and "a 5 ms unit test becoming 30 ms" — named right here as the
+    // resolution (76 against the current quiet baseline), and "a 5 ms unit test becoming 30 ms" — named right here as the
     // thing #193 wants — is NOT detected. Precisely: +25 ms sits around the p97
     // edge of this workspace's run-to-run drift (p50 2.1 ms, p90 26.3 ms), so a
     // much tighter `6x / +25 ms` does catch it on a QUIET machine at 0-2 false
