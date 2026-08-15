@@ -196,6 +196,25 @@ export type McpRouter = ((req: Request) => Promise<Response | null>) & {
    * half of what the session bound is for.
    */
   hasBoundToken(mcpSessionId: string): boolean
+  /**
+   * How many dropped ids are currently REMEMBERED as resurrectable —
+   * the occupancy of the tombstone FIFO, bounded by
+   * `maxResurrectableSessions`.
+   *
+   * A tombstone is cheap but it is still caller-caused state, so it is
+   * bounded, and a bound that cannot be read from outside cannot be
+   * asserted. It is also the only window onto the INCREMENTAL
+   * reclamation (#188): whether an expired tombstone has been reclaimed
+   * yet is invisible through the request surface by design —
+   * `resurrectable()` re-checks the deadline at lookup, so an unswept
+   * entry answers exactly like a swept one.
+   *
+   * Counts entries, not live ones: an entry past its deadline that this
+   * request's slice has not reached yet is still occupying memory and
+   * still occupying a FIFO slot, which is precisely what a caller of
+   * this wants to know.
+   */
+  retainedTombstoneCount(): number
 }
 
 const DEFAULT_CONNECT_DESCRIPTION =
@@ -210,6 +229,13 @@ const DEFAULT_UNAUTHENTICATED_MAX_LIFETIME_MS = 30 * 60_000
 const DEFAULT_IDLE_TTL_MS = 30 * 60_000
 /** Tombstones per configured session slot — see `maxResurrectableSessions`. */
 const DEFAULT_RESURRECTABLE_PER_SLOT = 4
+/**
+ * How many tombstones one request reclaims (#188). The tombstone map is
+ * already HARD-bounded by `maxResurrectableSessions`; reclamation below
+ * that ceiling is opportunistic, so it is paid for in constant-size
+ * slices rather than a full scan per request. See `reclaimTombstones`.
+ */
+const TOMBSTONE_RECLAIM_SLICE = 64
 
 /**
  * One retained MCP session.
@@ -498,7 +524,57 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     // Tombstones run on the provisional clock too, and this is what
     // reclaims them below the FIFO ceiling — the ceiling alone would
     // hold a quiet endpoint's last few ids forever.
-    for (const id of tombstones.keys()) resurrectable(id, nowMs)
+    reclaimTombstones(nowMs)
+  }
+
+  /**
+   * Where the last tombstone reclamation slice stopped. A `Map`
+   * iterator is LIVE under mutation — an entry deleted before the
+   * iterator reaches it is skipped, and a re-inserted one moves to the
+   * back and is visited again — so keeping one across requests is what
+   * makes the scan resumable rather than restartable.
+   */
+  let reclaimCursor: IterableIterator<string> | null = null
+
+  /**
+   * Reclaim expired tombstones, at most `TOMBSTONE_RECLAIM_SLICE` per
+   * call (#188).
+   *
+   * This used to be `for (const id of tombstones.keys()) resurrectable(id, nowMs)`
+   * on EVERY request: O(`maxResurrectableSessions`) per request, which
+   * is nothing at the default of `maxSessions * 4` and ~5.8 ms/request
+   * at 20 000.
+   *
+   * An early `break` is the obvious fix and is UNSOUND here, which is
+   * why this is a cursor and not a break condition. The map's insertion
+   * order is by LAST DROP, while the deadline is `createdAt +
+   * unauthenticatedMaxLifetimeMs` and `createdAt` is INHERITED — a
+   * resurrected session keeps its predecessor's, and re-tombstoning
+   * moves the id to the back of the FIFO carrying that OLD `createdAt`.
+   * So a recently-inserted entry can have an EARLIER deadline than an
+   * older one and the map is not ordered by deadline at all; stopping
+   * at the first live entry would strand expired ones indefinitely.
+   *
+   * Slicing is sound where breaking is not because a slice STILL VISITS
+   * EVERY ENTRY, just across several requests. Nothing depends on the
+   * timing: `resurrectable()` re-checks the deadline at lookup, so an
+   * entry this slice has not reached can never actually resurrect past
+   * its clock. What the delay costs is memory held a few requests
+   * longer — inside a ceiling that already bounds it.
+   */
+  const reclaimTombstones = (nowMs: number): void => {
+    for (let budget = TOMBSTONE_RECLAIM_SLICE; budget > 0; budget--) {
+      if (!reclaimCursor) reclaimCursor = tombstones.keys()
+      const next = reclaimCursor.next()
+      if (next.done === true) {
+        // A full round completed (or the map is empty). Drop the spent
+        // iterator so the next call starts a fresh round rather than
+        // spinning on a permanently-done one.
+        reclaimCursor = null
+        return
+      }
+      resurrectable(next.value, nowMs)
+    }
   }
 
   /**
@@ -771,6 +847,22 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
       return jsonResponse({ error: { code: 'session-capacity' } }, 503, { 'retry-after': '30' })
     }
 
+    // The reservation must be handed back EXACTLY ONCE, and there are
+    // now two routes to that: the success route hands it back the
+    // instant the session is registered, every failure route in the
+    // trailing `finally`. Idempotence is the whole of it — the
+    // `finally` covers the failure paths too, so a release simply MOVED
+    // up would be released twice on success, and a release simply
+    // dropped from the `finally` would leak a slot on every failure
+    // path. A leaked reservation is permanent: nothing sweeps a slot
+    // with no id.
+    let slotHeld = true
+    const release = (): void => {
+      if (!slotHeld) return
+      slotHeld = false
+      releaseSlot(false)
+    }
+
     let transport: WebStandardStreamableHTTPServerTransport | null = null
     let mcpServer: McpServer | null = null
     try {
@@ -799,13 +891,23 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
         admitted: false,
         identity: null,
       })
+      // The reservation BECOMES the registered session here, exactly as
+      // on the `initialize` path, and for the same reason: there must
+      // be no `await` between the `set` and the release. Releasing in
+      // the `finally` instead put the replay below inside the window,
+      // and across that `await` the session was counted TWICE — once in
+      // `sessions`, once in `reserved` — so `liveSessionCount()` read
+      // `maxSessions + 1` (#186). Never a breach (`sessions.size` held),
+      // but over-strict: a concurrent caller saw a spurious 503 or
+      // triggered one LRU eviction that was not needed.
+      release()
       return await t.handleRequest(req)
     } catch (err) {
       if (mcpServer) await mcpServer.close().catch(() => {})
       else if (transport) await transport.close().catch(() => {})
       throw err
     } finally {
-      releaseSlot(false)
+      release()
     }
   }
 
@@ -851,41 +953,78 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
 
     // ── Existing session ───────────────────────────────────────────
     if (sessionHeader) {
-      const entry = sessions.get(sessionHeader)
-      if (entry) {
-        // Traffic on a session is what keeps it out of the sweep.
-        entry.lastSeenAt = nowMs
-        return dispatch(sessionHeader, entry, req)
-      }
+      // RE-EVALUATED, not fallen through (#187). Waiting on another
+      // request's resurrect invalidates every branch below it, and the
+      // waiter used to assume exactly one outcome — that the winner
+      // registered a session — so a missing session was read as "the
+      // server has forgotten this id" and answered 404. When the
+      // winner's resurrect was REFUSED (429 or 503) nothing was
+      // registered, and the loser got a 404 for an id the server still
+      // holds a live tombstone for: two concurrent replays on a full
+      // quota measured `[503, 404]`, while a SERIAL retry of the same
+      // id got the honest 503. That 404 is the one answer the MCP SDK
+      // cannot recover from (no re-initialize on the POST path,
+      // `_sessionId` cleared only by `terminateSession()`) and it is
+      // false — which is the whole thing #149 exists to remove.
+      //
+      // Re-deriving the answer is preferred over copying the winner's
+      // refusal for two reasons: the winner's 401 belongs to the
+      // winner's bearer, not to a loser that presented none; and by the
+      // time the loser resumes the refusal may simply no longer be
+      // true. Nothing is weakened by it — a re-attempt is a fresh
+      // allocation and takes the same rate limiter, the same
+      // fail-closed bearer check and the same `reserveSlot` the winner
+      // took, so a genuinely-refused resurrect is refused AGAIN, with
+      // its own honest 429/503/401. It costs a loser on a full quota
+      // one rate-limiter token, which is exactly what the same requests
+      // issued serially would cost.
+      //
+      // The loop TERMINATES because a request either returns or waits
+      // on a resurrect started by SOME OTHER request, each request
+      // starts at most one (it returns that attempt), and the gate is
+      // removed from `resurrecting` before any waiter resumes — so the
+      // iteration count is bounded by the number of requests
+      // concurrently in flight on this id.
+      for (let at = nowMs; ; at = now()) {
+        const entry = sessions.get(sessionHeader)
+        if (entry) {
+          // Traffic on a session is what keeps it out of the sweep.
+          entry.lastSeenAt = at
+          return dispatch(sessionHeader, entry, req)
+        }
 
-      // Someone is already rebuilding this id: wait for them rather
-      // than building a second one on top (see `resurrecting`).
-      const pending = resurrecting.get(sessionHeader)
-      if (pending) {
-        await pending
-        const revived = sessions.get(sessionHeader)
-        if (!revived) return jsonResponse({ error: 'session not found' }, 404)
-        revived.lastSeenAt = now()
-        return dispatch(sessionHeader, revived, req)
-      }
+        // Someone is already rebuilding this id: wait for them rather
+        // than building a second one on top (see `resurrecting`). Two
+        // `sessions.set` under one id would strand the first transport
+        // + `McpServer` with nothing accounting for them, so the retry
+        // above MUST come back through here rather than allocating
+        // beside an attempt already in flight.
+        const pending = resurrecting.get(sessionHeader)
+        if (pending) {
+          await pending
+          continue
+        }
 
-      const tomb = resurrectable(sessionHeader, nowMs)
-      if (!tomb) {
-        // An id this server never issued, or has forgotten. This is the
-        // guardrail that keeps the with-session-id path — free and
-        // unthrottled by design — from becoming a second allocation
-        // door: only ids we handed out are rebuildable.
-        return jsonResponse({ error: 'session not found' }, 404)
-      }
+        const tomb = resurrectable(sessionHeader, at)
+        if (!tomb) {
+          // An id this server never issued, or has forgotten. This is
+          // the guardrail that keeps the with-session-id path — free
+          // and unthrottled by design — from becoming a second
+          // allocation door: only ids we handed out are rebuildable.
+          // It is also now the ONLY route to a 404 on this path, which
+          // is what makes the 404 mean what it says.
+          return jsonResponse({ error: 'session not found' }, 404)
+        }
 
-      if (req.method === 'DELETE') {
-        // The client is saying it is done with this id. Rebuilding a
-        // session only to tear it down is an allocation for nothing.
-        tombstones.delete(sessionHeader)
-        return new Response(null, { status: 200 })
-      }
+        if (req.method === 'DELETE') {
+          // The client is saying it is done with this id. Rebuilding a
+          // session only to tear it down is an allocation for nothing.
+          tombstones.delete(sessionHeader)
+          return new Response(null, { status: 200 })
+        }
 
-      return startResurrect(req, sessionHeader, tomb, nowMs)
+        return startResurrect(req, sessionHeader, tomb, at)
+      }
     }
 
     // ── New session (no mcp-session-id) ───────────────────────────
@@ -998,5 +1137,6 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
     liveSessionCount: occupancy,
     hasLiveSession: (mcpSessionId: string) => sessions.has(mcpSessionId),
     hasBoundToken: (mcpSessionId: string) => sessionMap.get(mcpSessionId) !== null,
+    retainedTombstoneCount: () => tombstones.size,
   })
 }

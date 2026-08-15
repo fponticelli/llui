@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { withLapGates, readJsonCapped } from '../../../src/server/lap/gate.js'
+import { withLapGates, readJsonCapped, verifyAndReadTid } from '../../../src/server/lap/gate.js'
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import type { RateLimiter } from '../../../src/server/rate-limit.js'
@@ -109,6 +109,79 @@ describe('withLapGates body cap (chunked bypass)', () => {
     const gated = withLapGates({ touchOn: 'completion' }, async () => new Response('ok'))
     const res = await gated(req, deps())
     expect(res.status).toBe(413)
+  })
+})
+
+describe('verifyAndReadTid revocation (#190)', () => {
+  const bearerReq = (token: string): Request =>
+    new Request('https://app/agent/lap/v1/describe', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+  /**
+   * The defect. `verifyAndReadTid` read the record's expiry but never
+   * its `status`, so a REVOKED token verified — and every ADMISSION
+   * gate routes through this function. Revocation was enforced only at
+   * tool-call time, which is why it never showed as an escalation: a
+   * revoked token could not drive the app. What it could still do was
+   * buy resource admission.
+   *
+   * Seeded revoked rather than revoked through the store on purpose:
+   * `InMemoryTokenStore.revoke` also drops the hash index, so the
+   * record would never be found at all and the branch under test would
+   * be unreachable. The `TokenStore` interface does not REQUIRE
+   * dropping the index (the row is explicitly kept "for audit / replay
+   * purposes"), so a persistent store that keeps it indexed is the
+   * shape this guards.
+   */
+  it('refuses a revoked token at the verify boundary', async () => {
+    const revoked = await seedToken(store, { tid: 't-dead', uid: 'u1', status: 'revoked' })
+    const auth = await verifyAndReadTid(bearerReq(revoked.token), store)
+    expect(auth.ok).toBe(false)
+    if (auth.ok) return
+    expect(auth.status).toBe(403)
+    expect(auth.code).toBe('revoked')
+  })
+
+  /**
+   * …and only revoked. An `active` record still verifies, or this check
+   * would be a denial of every request instead of a gate.
+   */
+  it('still verifies an active token', async () => {
+    const auth = await verifyAndReadTid(bearerReq(bearer), store)
+    expect(auth).toEqual({ ok: true, tid: 't1' })
+  })
+
+  /**
+   * The status is the ONLY thing that distinguishes itself. An unknown
+   * hash, a missing prefix and an expired record all stay collapsed
+   * into one `401 auth-failed` so a probe-by-hash cannot tell them
+   * apart — the revoked answer is reachable only by someone already
+   * holding the token value.
+   */
+  it('keeps unknown and expired bearers on the uniform 401', async () => {
+    const unknown = await verifyAndReadTid(bearerReq('agt_not-a-real-token'), store)
+    expect(unknown).toEqual({ ok: false, status: 401, code: 'auth-failed' })
+
+    const stale = await seedToken(store, { tid: 't-old', uid: 'u1', expiresAt: 10 })
+    const expired = await verifyAndReadTid(bearerReq(stale.token), store, { now: 1_000 })
+    expect(expired).toEqual({ ok: false, status: 401, code: 'auth-failed' })
+  })
+
+  /**
+   * The LAP surface's answer is UNCHANGED by moving the check earlier:
+   * `403 {"error":{"code":"revoked"}}` is what `withLapGates` returned
+   * from its own follow-up `findByTid` check before, and it is what the
+   * client acts on ("this session is dead, paste a new snippet"). The
+   * follow-up check stays as defence in depth.
+   */
+  it('leaves the LAP gate answering 403 revoked, byte for byte', async () => {
+    const revoked = await seedToken(store, { tid: 't-dead', uid: 'u1', status: 'revoked' })
+    const gated = withLapGates({ touchOn: 'completion' }, async () => new Response('reached'))
+    const res = await gated(bearerReq(revoked.token), deps())
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: { code: 'revoked' } })
   })
 })
 

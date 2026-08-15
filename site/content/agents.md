@@ -218,14 +218,14 @@ where this protocol authenticates, and a client has to get far enough to
 call it. Each `initialize` allocates a transport plus a fully-registered
 MCP server, so that open path is bounded on several axes:
 
-| Option                         | Default   | What it bounds                                                                                                                                                                                               |
-| ------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                                |
-| `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session.          |
-| `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.           |
-| `unauthenticatedMaxLifetimeMs` | `1800000` | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. The only clock such a session runs on — nothing refreshes it, so traffic cannot hold a quota slot open.                     |
-| `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                                       |
-| `maxResurrectableSessions`     | `256`     | How many dropped session IDs stay **resurrectable** (see below). A bounded FIFO on the same clock as `unauthenticatedMaxLifetimeMs`; past the bound the oldest IDs are forgotten. Default `maxSessions * 4`. |
+| Option                         | Default   | What it bounds                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxSessions`                  | `64`      | Total sessions retained OR under construction. An `initialize` that can't free a slot gets `503`, never a smaller allocation.                                                                                                                                                                                                            |
+| `maxUnauthenticatedSessions`   | `16`      | Of those, how many may be held by callers that presented no bearer and haven't run `connect_session`. LRU-evicted within the quota, so anonymous churn can never displace an authenticated session.                                                                                                                                      |
+| `maxSessionsPerIdentity`       | `8`       | How many sessions one `tid` may hold. Reaching it evicts that identity's own oldest session — so one bearer, or one crash-looping client, can't fill the endpoint with sessions nothing may evict.                                                                                                                                       |
+| `unauthenticatedMaxLifetimeMs` | `1800000` | ABSOLUTE lifetime of a session that never connected, measured from `initialize`. The only clock such a session runs on — nothing refreshes it, so traffic cannot hold a quota slot open.                                                                                                                                                 |
+| `idleTtlMs`                    | `1800000` | Idle window before an authenticated session is closed. This is also what releases its bearer token from server memory.                                                                                                                                                                                                                   |
+| `maxResurrectableSessions`     | `256`     | How many dropped session IDs stay **resurrectable** (see below). A bounded FIFO on the same clock as `unauthenticatedMaxLifetimeMs`; past the bound the oldest IDs are forgotten. Raising it is cheap per request — expired entries are reclaimed in constant-size slices, not scanned in full on every call. Default `maxSessions * 4`. |
 
 The quota counts sessions that are still being built, not just
 registered ones — a burst of concurrent `initialize`s is exactly the case
@@ -240,10 +240,16 @@ Two further rules apply to every `initialize`:
   address the server can't establish share one bucket. Set `rateLimiter`
   on the server options to change the rate.
 - An `Authorization: Bearer` header, **if present**, must be a valid LLui
-  agent token or the request is rejected `401` having allocated nothing.
-  Omitting the header is still fine; presenting a bogus one is not. A
-  valid bearer only buys admission outside the anonymous quota — every
-  tool still refuses until `connect_session` binds a token.
+  agent token or the request is rejected having allocated nothing —
+  `401` for an unknown or expired token, `403 revoked` for one that was
+  explicitly revoked. Omitting the header is still fine; presenting a
+  bogus or dead one is not. A valid bearer only buys admission outside
+  the anonymous quota — every tool still refuses until `connect_session`
+  binds a token. A **revoked** token buys nothing anywhere: revocation
+  is checked at the same boundary that resolves the bearer, so it is
+  refused at admission and not merely at tool-call time. Otherwise it
+  could still hold slots outside the anonymous quota that an anonymous
+  caller can never reclaim.
 
 Requests on an already-established session are not throttled here; their
 tool handlers reach LAP through the core router, which gates them on the
@@ -279,7 +285,7 @@ dropped is remembered, and the next request carrying it **rebuilds** the
 session under the same ID and replays the request. The client never
 learns anything happened, and the paste succeeds.
 
-Four things about that are load-bearing:
+Five things about that are load-bearing:
 
 - Only IDs the server issued resurrect. The list is a bounded FIFO
   (`maxResurrectableSessions`) on the same clock as
@@ -299,6 +305,14 @@ Four things about that are load-bearing:
   `unauthenticatedMaxLifetimeMs`. Note the deliberate asymmetry with
   `initialize`: there a valid bearer buys admission outside the anonymous
   quota, here it buys nothing at all.
+- **Overlapping requests on one session ID are ordinary** in MCP (the
+  SDK runs a standalone GET stream beside its POSTs), so concurrent
+  resurrections of one ID are deduplicated: the first rebuilds the
+  session, the others use it. A request that loses that race does not
+  inherit the winner's outcome — it re-derives its own through the same
+  gates, so it is served if the winner's session is there and refused
+  `429`/`503`/`401`/`403` on the same terms if not. A `404` on this path
+  means one thing only: the server does not remember this ID.
 - **An explicit `DELETE` is durable.** Every other teardown reason — LRU
   eviction, the per-identity cap, either clock — is a decision the
   _server_ made that the client has no way to learn about, which is what
