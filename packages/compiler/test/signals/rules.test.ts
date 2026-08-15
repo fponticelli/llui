@@ -2117,6 +2117,70 @@ describe('tag-send-drift (issue #118)', () => {
     ).toContain('tag-send-drift')
   })
 
+  it('STILL reads the DECORATORS of a skipped member (#194)', () => {
+    // A member decorator is evaluated when the CLASS EXPRESSION is evaluated —
+    // inside the handler — so it is the same kind as `static {}` / `static h =`
+    // / a heritage clause, one level down on the member node that gets skipped
+    // whole. Missing it is a missed lint, never a broken build, but the
+    // enumeration in CLAUDE.md has to be complete or it becomes the next
+    // "fifth round".
+    for (const member of [
+      '@dec(send({type:"DECO"})) h() {}',
+      '@dec(send({type:"DECO"})) get h() { return 1 }',
+      '@dec(send({type:"DECO"})) set h(v) {}',
+      'h(@dec(send({type:"DECO"})) x: number) {}',
+      'constructor(@dec(send({type:"DECO"})) x: number) {}',
+    ]) {
+      expect(
+        rules(
+          src(
+            `const p = tagSend(send, ['a'], () => { send({type:'a'}); return class { ${member} } })`,
+          ),
+        ),
+      ).toContain('tag-send-drift')
+    }
+    // Controls: a decorator on the CLASS itself and on a NON-skipped field were
+    // never skipped and must stay reported.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return dec2(send({type:'DECO'}))(class { h() {} }) })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return class { @dec(send({type:'DECO'})) h = () => send({type:'inner'}) } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+  })
+
+  it('walks a rescued position with the OUTER liveness, not the member’s', () => {
+    // A computed key and a decorator are both evaluated OUTSIDE the member's
+    // own parameter scope, so a parameter that happens to spell the dispatcher
+    // must not prune them. Passing the member's `inScope` did prune them —
+    // pre-existing, and fixed with the decorator walk since both rescues share
+    // the liveness argument.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return { [send({type:'KEY'})](send: unknown) {} } })",
+        ),
+      ),
+    ).toContain('tag-send-drift')
+    // …and the class-expression self-name IS honoured, because that binding is
+    // established one scope further OUT and is already in `live`.
+    expect(
+      rules(
+        src(
+          "const p = tagSend(send, ['a'], () => { send({type:'a'}); return class send { [send({type:'KEY'})]() {} } })",
+        ),
+      ),
+    ).not.toContain('tag-send-drift')
+  })
+
   it('STILL reads a COMPUTED member name of a skipped member', () => {
     // The name is not part of the deferred body — `{ [k()]() {} }` evaluates
     // `k()` when the literal is built. Skipping the whole member would have made

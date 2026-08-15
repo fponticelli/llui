@@ -1561,13 +1561,13 @@ function scanHandlerDispatches(
     // and forfeit completeness (it may dispatch anything, later).
     if (isReturnedFunction(n)) {
       complete = false
-      // …but a COMPUTED member name is not part of the deferred body: it is
-      // evaluated when the object or class literal is built, i.e. inside this
-      // handler. Skipping it would have made a member the one position where a
-      // computed key stops being read, which is the asymmetry an arrow in a
-      // `PropertyAssignment` never had.
-      const key = computedNameExpression(n)
-      if (key !== undefined) walk(key, inScope)
+      // …but a member node carries positions that are NOT part of its deferred
+      // body and DO run when the literal is built — see
+      // {@link memberBuildTimeExpressions}. They are walked with the OUTER
+      // liveness, not `inScope`: both a computed key and a decorator are
+      // evaluated outside the member's own parameter scope, so a parameter
+      // spelling the dispatcher must not prune them.
+      for (const e of memberBuildTimeExpressions(n)) walk(e, live)
       return
     }
 
@@ -1635,21 +1635,40 @@ function isDeferredBody(n: ts.Node): boolean {
   )
 }
 
-/** The expression of a member's COMPUTED name, if it has one. A computed key is
- * not part of the deferred body — `{ [k()]() { … } }` evaluates `k()` when the
- * object literal is built, inside the handler — so skipping the member must not
- * skip its name. (An arrow in a PROPERTY position never had this problem: its
- * sibling `ComputedPropertyName` hangs off the `PropertyAssignment`, which the
- * walk keeps visiting.) */
-function computedNameExpression(n: ts.Node): ts.Expression | undefined {
+/** Everything on a SKIPPED member node that is nevertheless evaluated when the
+ * object or class literal is BUILT — i.e. inside the handler — and therefore
+ * must still be walked. A member is skipped as a whole subtree, so each of these
+ * has to be rescued by name; they are the same kind of exception as a returned
+ * class's `static {}` block and `static h = …` initializer, one level down.
+ *
+ *   • the COMPUTED name: `{ [k()]() { … } }` evaluates `k()` when the literal is
+ *     built. (An arrow in a PROPERTY position never had this problem — its
+ *     sibling `ComputedPropertyName` hangs off the `PropertyAssignment`, which
+ *     the walk keeps visiting. Skipping the member made a method the one
+ *     position where a computed key stopped being read.)
+ *   • the member's own DECORATORS and its parameters' DECORATORS: a decorator
+ *     expression is evaluated when the class expression is evaluated, exactly
+ *     like a heritage clause. Only classes have these, so an object-literal
+ *     member contributes none.
+ *
+ * A parameter DEFAULT is deliberately absent: it runs when the member is
+ * CALLED, which is the deferred half. */
+function memberBuildTimeExpressions(n: ts.Node): ts.Node[] {
+  const out: ts.Node[] = []
   if (
-    !ts.isMethodDeclaration(n) &&
-    !ts.isGetAccessorDeclaration(n) &&
-    !ts.isSetAccessorDeclaration(n)
+    ts.isMethodDeclaration(n) ||
+    ts.isGetAccessorDeclaration(n) ||
+    ts.isSetAccessorDeclaration(n)
   ) {
-    return undefined
+    if (ts.isComputedPropertyName(n.name)) out.push(n.name.expression)
   }
-  return ts.isComputedPropertyName(n.name) ? n.name.expression : undefined
+  if (ts.canHaveDecorators(n)) out.push(...(ts.getDecorators(n) ?? []))
+  if (ts.isFunctionLike(n)) {
+    for (const p of n.parameters) {
+      if (ts.canHaveDecorators(p)) out.push(...(ts.getDecorators(p) ?? []))
+    }
+  }
+  return out
 }
 
 /** True when `n` is a deferred-body node the handler RETURNS — reachable from
@@ -1735,7 +1754,7 @@ function isTransparentReturnContainer(cur: ts.Node, parent: ts.Node): boolean {
   if (ts.isPropertyAssignment(parent)) return parent.initializer === cur
   // `return { h() { … } }` / `{ get h() { … } }` — a member sits directly under
   // the object literal. Its computed NAME does not (see
-  // {@link computedNameExpression}); it runs when the literal is built.
+  // {@link memberBuildTimeExpressions}); it runs when the literal is built.
   if (ts.isObjectLiteralExpression(parent)) return parent.properties.some((p) => p === cur)
   // `return class { h() { … } }` — a MEMBER of a returned class expression is
   // returned with it. A heritage clause (`extends mixin()`) is not a member and
