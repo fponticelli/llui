@@ -16,6 +16,8 @@
     "smoke:examples": "tsx scripts/smoke-examples.ts",
     "check:docs": "node scripts/check-readme-examples.mjs",
     "check:generated": "node scripts/check-generated.mjs",
+    "check:test-durations": "node scripts/check-test-durations.mjs",
+    "test:durations": "node scripts/check-test-durations.mjs --save",
     "check:dist": "node scripts/check-dist.mjs",
     "verify": "pnpm format && turbo run build check lint test && pnpm test:scripts && pnpm check:docs && pnpm check:generated && pnpm check:dist",
     "bench": "tsx benchmarks/run-jfb.ts",
@@ -27,7 +29,7 @@
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
+    "pre-commit": "node scripts/pre-commit.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,html,yml,yaml}": "prettier --write"

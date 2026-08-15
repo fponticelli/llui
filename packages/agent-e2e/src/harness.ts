@@ -9,6 +9,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage } from 'node:http'
 import { bundleHost } from './build.js'
+import { closeServer, runTeardownSteps, trackUpgradedSockets } from './teardown.js'
 // Internal bridge imports — llui-agent exposes ./internal/* sub-paths that
 // give e2e tests direct access to bridge internals without going through the
 // CLI. These sub-paths are not part of the public API.
@@ -119,6 +120,13 @@ export async function setup(): Promise<E2EContext> {
     res.end('not found')
   })
 
+  // Track every upgraded socket BEFORE the agent's handler sees it, so teardown
+  // owns the raw socket even for handshakes the agent rejects and destroys
+  // itself. `server.close()` counts an upgraded socket as open while
+  // `closeAllConnections()` can no longer reach it, so this set is the only
+  // thing that can unblock the close — see `teardown.ts` (#196).
+  const upgraded = trackUpgradedSockets(server)
+
   // Forward WS upgrade events to the agent's WS handler.
   server.on('upgrade', agent.wsUpgrade)
 
@@ -195,16 +203,18 @@ export async function setup(): Promise<E2EContext> {
   }
 
   // ── Teardown ──────────────────────────────────────────────────────────────
-  const close = async () => {
-    await browser.close()
-    await mcpClient.close()
-    // Force-close lingering sockets (agent WS connections opened by the tests) so
-    // `server.close()` can't hang the teardown hook waiting on them.
-    server.closeAllConnections?.()
-    await new Promise<void>((resolve, reject) =>
-      server.close((err) => (err ? reject(err) : resolve())),
-    )
-  }
+  // Every step runs even if an earlier one throws, and `closeServer` terminates
+  // whatever is still open — so the teardown no longer depends on the ordering
+  // that used to be doing all the work (#196). The order below is still the
+  // right one (close the clients, then the server they talk to), it is just no
+  // longer load-bearing: `browser.close()` burning playwright's 30 s deadline
+  // and throwing can no longer strand `server.close()`.
+  const close = async () =>
+    runTeardownSteps([
+      ['browser.close', () => browser.close()],
+      ['mcpClient.close', () => mcpClient.close()],
+      ['server.close', () => closeServer(server, upgraded)],
+    ])
 
   return {
     browser,

@@ -1,4 +1,37 @@
 import { defineConfig } from 'vitest/config'
+import { relative, resolve, join } from 'node:path'
+
+// ── Per-test duration capture (#193) ─────────────────────────────────────────
+// Off unless `LLUI_TEST_DURATIONS` names a directory, so a normal `pnpm test`
+// behaves exactly as before and no run acquires a side effect it did not ask
+// for. When it IS set, every package's vitest additionally emits vitest's stock
+// `json` report there; `scripts/check-test-durations.mjs` aggregates the lot and
+// diffs it against the committed baseline. Using the BUILT-IN reporter rather
+// than a bespoke one is deliberate — the reporter API is a moving target across
+// vitest majors and a custom reporter that silently stops emitting is worse than
+// no signal, which is the whole complaint #193 records.
+//
+// If you drive this through turbo, note that turbo 2 runs tasks in STRICT env
+// mode: an undeclared variable does not reach the task and nothing says so. Root
+// `turbo.json` therefore lists `LLUI_TEST_DURATIONS` under the `test` task's
+// `env` (in `env`, not `passThroughEnv` — it changes what the task emits, so it
+// belongs in the cache key). Measured the hard way: the first attempt to record
+// a baseline was a green 11-minute run that produced zero reports.
+// Resolved against the REPO ROOT, not each package's cwd: every package's
+// vitest runs from its own directory, and a relative value would scatter the
+// reports instead of collecting them.
+const durationsDir = process.env['LLUI_TEST_DURATIONS']
+  ? resolve(import.meta.dirname, process.env['LLUI_TEST_DURATIONS'])
+  : undefined
+// One file per package, named for its path from the repo root — package
+// BASENAMES are not unique enough to bet a silent overwrite on.
+const durationsSlug = relative(import.meta.dirname, process.cwd()).replace(/[/\\]/g, '__')
+const durationReporters = durationsDir
+  ? ([
+      'default',
+      ['json', { outputFile: join(durationsDir, `${durationsSlug || 'root'}.json`) }],
+    ] as const)
+  : undefined
 
 // Shared vitest base for every package. Packages import this and `mergeConfig`
 // it with ONLY their real deltas (environment, coverage, …) so the common bits —
@@ -19,6 +52,11 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+
+    // See the block at the top of this file. `mergeConfig` concatenates arrays,
+    // and no package sets `reporters` of its own — if one ever does, it appends
+    // rather than replaces, which is the harmless direction.
+    ...(durationReporters ? { reporters: [...durationReporters] } : {}),
 
     // Timeout budgets are workspace-wide ON PURPOSE (issue #147). `turbo test`
     // fans ~40 vitest processes across the workspace at once, and the failures
@@ -62,16 +100,29 @@ export default defineConfig({
     // headroom and matches what `@llui/agent-e2e` had already measured for its
     // own browser fixtures.
     //
-    // THE PRICE, stated plainly because it is real and nothing here offsets
-    // it: the 5 s default doubled as a PERFORMANCE CANARY. A unit test that
-    // silently got 6x slower used to go red; at 30 s it passes in silence, and
-    // this change adds no compensating signal. That is the deliberate trade —
-    // the canary only ever fired on a saturated machine, where it could not
-    // distinguish a regression from contention, so it was crying wolf on this
-    // workspace far more often than it caught anything. A real slow-test
-    // signal wants a per-test DURATION budget (a reporter threshold or a
-    // `--slowTestThreshold`-style warning), which is orthogonal to a timeout
-    // and not attempted here (#193).
+    // THE PRICE these numbers used to carry: the 5 s default doubled as a
+    // PERFORMANCE CANARY. A unit test that silently got 6x slower went red; at
+    // 30 s it passes in silence. That trade was right on its own terms — the
+    // canary only ever fired on a saturated machine, where it could not
+    // distinguish a regression from contention, so it cried wolf far more often
+    // than it caught anything — but it left the workspace with no duration
+    // signal at all.
+    //
+    // THAT IS NOW PAID (#193), and deliberately NOT as a timeout. A timeout is a
+    // single cliff that conflates "too slow" with "hung", and no absolute number
+    // can serve a workspace spanning 33 s browser bursts and sub-millisecond
+    // unit files. The signal is a per-file duration BASELINE instead:
+    //
+    //   pnpm test:durations         record a fresh baseline from a full run
+    //   pnpm check:test-durations   run and diff against the committed one
+    //
+    // Setting `LLUI_TEST_DURATIONS` to a directory makes every package emit
+    // vitest's stock `json` report there (see the top of this file);
+    // `scripts/check-test-durations.mjs` folds those into per-file totals and
+    // compares them AFTER dividing out a same-run load factor, so a uniformly
+    // slower machine reports nothing while one file that got 6x slower still
+    // does. That is the property a wall-clock budget cannot have, and it is why
+    // the two mechanisms are orthogonal rather than redundant.
     //
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers

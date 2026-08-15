@@ -18,6 +18,9 @@ pnpm turbo test           # Run tests (vitest) across all packages
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
 
+pnpm test:durations       # Record the per-file test-duration baseline from a full run (#193)
+pnpm check:test-durations # Re-run and diff against that baseline (load-normalized, see below)
+
 # Single package
 pnpm --filter @llui/dom build
 pnpm --filter @llui/dom test
@@ -37,6 +40,16 @@ pnpm bench --save             # Overwrite baseline with current results
 pnpm bench --all              # Also re-run all competitor frameworks (~15 min)
 pnpm bench:build              # Build jfb app only (no benchmark run)
 ```
+
+## Committing (parallel worktrees)
+
+- **Never run `git stash` in this repository.** `refs/stash` is ONE ref on the COMMON git dir — worktrees do not get their own — so two lanes stashing at overlapping times interleave on a single stack and a `pop`/`drop` acts on the wrong entry. Two lanes destroyed each other's entries this way in one batch of parallel agent work.
+- The pre-commit hook is that hazard automated, which is why it is not left to convention: `lint-staged`'s backup IS a `git stash`, and it resolves its own entry's INDEX in one `git` call and uses it in the next (`stash drop <n>` / `stash apply --index <n>`), so a lane that pushes in between shifts the index and the second call lands on someone else's entry. The hook therefore runs through `scripts/pre-commit.mjs`, which serializes every worktree's `lint-staged` behind a lock on the common git dir (#179). `--no-stash` was measured and rejected — it removes every stash call and changes nothing about what gets committed, but on a FAILING task with a partially staged file the unstaged hunks are silently destroyed with no recovery path; read the header of `scripts/pre-commit.mjs` before revisiting it.
+- Hooks are shared across worktrees, so a change to `simple-git-hooks.pre-commit` only reaches a lane after its next `pnpm install`.
+
+## Test durations (#193)
+
+The workspace `testTimeout` is 30 s (#180), which cost the repo its accidental performance canary — the old 5 s default. The replacement is a per-file duration BASELINE, not a bigger/smaller timeout: `LLUI_TEST_DURATIONS=<dir>` makes every package emit vitest's stock `json` report, `scripts/check-test-durations.mjs` folds those into per-file totals and compares them against `test-durations.baseline.json` **after dividing out a same-run load factor** (the median of all files' current/baseline ratios). A uniformly slower machine reports nothing; one file that got 6× slower still does. When the run's interquartile ratio spread is too wide to support a verdict the tool says "not comparable" and passes — deliberately, because a signal that fires on every loaded CI run is how the last one got deleted. Turbo runs tasks in STRICT env mode, so `LLUI_TEST_DURATIONS` is declared in `turbo.json`'s `test.env`; without that a `turbo test` is green and emits nothing.
 
 ## Development Approach
 
