@@ -878,6 +878,13 @@ function generateComponentsDoc(): string {
  * which for an aliased re-export is not a name the root entry point exports at
  * all — `HEADER_ROW_INDEX` is documented under Table, but importing it from
  * `@llui/components` requires `TABLE_HEADER_ROW_INDEX`, which appeared nowhere.
+ *
+ * SCOPE, and the prose says so: the source is the COMPONENT barrel
+ * (`src/components/index.ts`). The package root (`src/index.ts`) re-exports that
+ * barrel wholesale — so every row here really is importable from
+ * `@llui/components` — but it ALSO re-exports `en`/`LocaleContext` and the whole
+ * of `format/` and `utils/`, which this table does not see. Do not let the
+ * sentence drift back to claiming the root's complete surface.
  */
 function renderBarrelExports(barrelPath: string, barrelText: string): string {
   const exports = collectBarrelExports(barrelText, barrelPath)
@@ -889,10 +896,15 @@ function renderBarrelExports(barrelPath: string, barrelText: string): string {
   let md = `## Top-Level Exports\n\n`
   md +=
     `Besides the per-component namespaces (\`import { menu } from '@llui/components'\`), ` +
-    `the root entry point re-exports these members directly. Where the barrel name ` +
-    `differs from the component's own, the barrel name is the only one that resolves ` +
-    `on \`@llui/components\` — the component's own spelling is reachable through its ` +
-    `namespace or its subpath entry (\`@llui/components/table\`).\n\n`
+    `the components barrel re-exports these members directly, and \`@llui/components\` ` +
+    `passes them through. Where the barrel name differs from the component's own, the ` +
+    `barrel name is the only one that resolves on \`@llui/components\` — the component's ` +
+    `own spelling is reachable through its namespace or its subpath entry ` +
+    `(\`@llui/components/table\`).\n\n` +
+    `This table covers the **component** modules only. The package root additionally ` +
+    `re-exports the locale surface (\`en\`, \`LocaleContext\`), the \`format/\` helpers and ` +
+    `the shared \`utils/\` helpers (see [Utilities](#utilities) above); those are not ` +
+    `listed here.\n\n`
   md += `| From \`@llui/components\` | Component | Declared as |\n| --- | --- | --- |\n`
   for (const e of exports) {
     const kind = requireKind(barrelPath, e.exported, resolver.kindOf(barrelPath, e.exported))

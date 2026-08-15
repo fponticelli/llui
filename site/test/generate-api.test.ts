@@ -464,6 +464,19 @@ export type { MenuNode } from './menu-machine.js'
     expect([...mods].sort()).toEqual(['menu', 'sortable', 'table'])
   })
 
+  it('skips a re-export whose every specifier is type-only, but keeps a mixed one', () => {
+    // The per-specifier spelling. `export type { … } from` (whole-clause) is
+    // covered by the case above; `export { type A, type B } from` is a separate
+    // branch and publishes no value either, so the module stays internal. The
+    // second half guards the other direction — one value specifier is enough.
+    expect([...publicComponentModules("export { type A, type B } from './secret.js'", {})]).toEqual(
+      [],
+    )
+    expect([...publicComponentModules("export { type A, b } from './mixed.js'", {})]).toEqual([
+      'mixed',
+    ])
+  })
+
   it('includes a module reachable only through a package.json#exports subpath', () => {
     const mods = publicComponentModules('', {
       './timer': { types: './dist/components/timer.d.ts', import: './dist/components/timer.js' },

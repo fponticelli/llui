@@ -1812,7 +1812,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ## Top-Level Exports
 
-Besides the per-component namespaces (`import { menu } from '@llui/components'`), the root entry point re-exports these members directly. Where the barrel name differs from the component's own, the barrel name is the only one that resolves on `@llui/components` — the component's own spelling is reachable through its namespace or its subpath entry (`@llui/components/table`).
+Besides the per-component namespaces (`import { menu } from '@llui/components'`), the components barrel re-exports these members directly, and `@llui/components` passes them through. Where the barrel name differs from the component's own, the barrel name is the only one that resolves on `@llui/components` — the component's own spelling is reachable through its namespace or its subpath entry (`@llui/components/table`).
+
+This table covers the **component** modules only. The package root additionally re-exports the locale surface (`en`, `LocaleContext`), the `format/` helpers and the shared `utils/` helpers (see [Utilities](#utilities) above); those are not listed here.
 
 | From `@llui/components`  | Component      | Declared as                  |
 | ------------------------ | -------------- | ---------------------------- |
