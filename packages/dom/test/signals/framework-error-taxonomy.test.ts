@@ -30,12 +30,19 @@ declare global {
 // unbranded throw to a file on the binding path fails this test with the fix in the
 // message.
 
-const SOURCES: Record<string, string> = import.meta.glob('../../src/signals/*.ts', {
+// The WHOLE package, not just `src/signals/`. Review found the first cut globbed
+// `src/signals/*.ts` while the failure message said "the signal runtime" — no live
+// gap (`src/*.ts`, `src/ssr/`, `src/tracking/` contain zero `throw new` today) but
+// an enforcement narrower than it reads is how the next one slips through, which is
+// the exact shape of the defect this file exists to stop.
+const SOURCES: Record<string, string> = import.meta.glob('../../src/**/*.ts', {
   query: '?raw',
   import: 'default',
   eager: true,
 })
 
+/** `../../src/signals/each.ts` → `signals/each.ts` (the part after `src/`). */
+const relative = (path: string): string => path.slice(path.indexOf('/src/') + 5)
 /** `../../src/signals/each.ts` → `each.ts` */
 const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
@@ -81,11 +88,11 @@ function bareThrows(text: string): Array<{ ctor: string; tail: string }> {
 }
 
 describe('#165 framework-error taxonomy is enforced, not remembered', () => {
-  it('every throw in the signal runtime is branded or explicitly allow-listed', () => {
+  it('every throw in the package is branded or explicitly allow-listed', () => {
     const offenders: string[] = []
     // A sanity floor: if the glob ever resolves to nothing this test would pass
     // vacuously, which is the one way an enforcement test fails silently.
-    expect(Object.keys(SOURCES).length).toBeGreaterThan(20)
+    expect(Object.keys(SOURCES).length).toBeGreaterThan(30)
     for (const [path, text] of Object.entries(SOURCES)) {
       const file = basename(path)
       if (file === 'framework-error.ts') continue
@@ -93,12 +100,14 @@ describe('#165 framework-error taxonomy is enforced, not remembered', () => {
         if (ctor === 'LluiFrameworkError') continue
         const allowed = ALLOWED_BARE_THROWS[file] ?? []
         if (allowed.some((a) => tail.includes(a.fragment))) continue
-        offenders.push(`${file}: throw new ${ctor}(…) — ${tail.slice(0, 120).replace(/\s+/g, ' ')}`)
+        offenders.push(
+          `${relative(path)}: throw new ${ctor}(…) — ${tail.slice(0, 120).replace(/\s+/g, ' ')}`,
+        )
       }
     }
     expect(
       offenders,
-      'An unbranded throw in the signal runtime is SILENTLY DEMOTED by the mount ' +
+      'An unbranded throw anywhere in @llui/dom is SILENTLY DEMOTED by the mount ' +
         'error boundary when it is reachable from a binding commit: the fragment ' +
         'renders blank and one console line is written, instead of the error ' +
         'stopping the build. Either throw an `LluiFrameworkError`, or add the site ' +

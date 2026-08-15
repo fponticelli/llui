@@ -219,8 +219,13 @@ class SignalScopeImpl implements SignalScope {
     this.last = new Array<unknown>(bindings.length)
   }
 
-  // A mount OUTSIDE a commit round is guarded; a mount INSIDE one is not (unless a
-  // `setOnBindingError` hook is installed, which is main's pre-existing behaviour).
+  // A mount OUTSIDE a commit round is guarded; a mount INSIDE one is not — unless a
+  // `setOnBindingError` hook is installed, in which case it is guarded too. That
+  // hooked case matches main in WHEN it engages, but not in what it does: this loop
+  // re-throws an `LluiFrameworkError` (see below), which main's hooked mount path
+  // reported and swallowed. The change is deliberate and in the fatal direction —
+  // the taxonomy is uniform wherever a throw is caught — but it is a change, not
+  // pre-existing behaviour.
   //
   // WHY GUARD AT ALL. A mount has no previous frame to fall back on. When a throw
   // escaped this loop the enclosing fragment was abandoned HALF-DRAWN and stayed

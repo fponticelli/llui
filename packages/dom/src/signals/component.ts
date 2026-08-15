@@ -361,14 +361,22 @@ export function mountSignalComponent<S, M, E = never>(
     // scheduler keeps the commit pending and the post-mount replay lands it.
     if (mount === null) return false
     const next = state
-    // Hot per-send path: skip the withBindingErrors wrapper (and its per-commit
-    // closure) when no error handler is installed — the common case; a 1k-send
-    // burst was allocating 1k closures here. Same for the subscriber sweep: a
-    // Set iterator per commit is waste when nobody subscribed.
     // `withCommitRound` marks this as round DOM work, which is what tells
     // `SignalScopeImpl.mount` it may NOT contain a throw (see #165 / #216): a
     // subtree mounted from inside this reconcile must abort the round exactly as it
-    // did before the boundary existed, so the effect schedule is unchanged.
+    // did before the boundary existed, so the effect schedule is unchanged. It costs
+    // ONE closure + one try/finally per commit on BOTH branches.
+    //
+    // That closure is why the branch below no longer reads as a closure-avoidance
+    // optimization, and the comment that used to say so has been removed rather
+    // than left to mislead: the no-hook branch was introduced to skip the
+    // `withBindingErrors` wrapper because a 1k-send burst allocated 1k closures
+    // here, and `withCommitRound` now allocates one on that path regardless. The
+    // branch still earns its place — it skips the handler push/pop and keeps the
+    // hooked and unhooked reconciles distinguishable — but the saving it was named
+    // for is gone, and the round-marking cost was measured at parity (500k sends,
+    // paired ×3, Chromium: indistinguishable from main). The subscriber sweep below
+    // keeps its own `size > 0` guard for the reason stated there.
     if (onBindingError) {
       withCommitRound(() => withBindingErrors(onBindingError, () => mount?.update(next)))
     } else {
