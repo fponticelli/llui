@@ -1,5 +1,5 @@
 import { div, nav, a, span, button, text, details, summary, onMount } from '@llui/dom'
-import type { Signal, Send } from '@llui/dom'
+import type { Mountable, Signal, Send } from '@llui/dom'
 import { EXAMPLES } from '../examples-data'
 import { PACKAGES, PACKAGE_CATEGORIES } from '../../pages/api/@pkg/packages'
 import type { PackageMeta } from '../../pages/api/@pkg/packages'
@@ -36,8 +36,8 @@ export function siteLayout({
   slug: Signal<string>
   menuOpen: Signal<boolean>
   send: Send<LayoutMsg>
-  content: Node[]
-}): Node {
+  content: readonly Mountable[]
+}): Mountable {
   // Wire theme toggle button after mount (self-contained — no component state)
   onMount(() => {
     setupThemeToggle()
@@ -228,7 +228,12 @@ function updateIcon(btn: HTMLElement, pref: ThemePref): void {
   btn.setAttribute('aria-label', `Theme: ${pref}. Click to switch.`)
 }
 
-function navLink(href: string, slug: string, label: string, currentSlug: Signal<string>): Node {
+function navLink(
+  href: string,
+  slug: string,
+  label: string,
+  currentSlug: Signal<string>,
+): Mountable {
   return a(
     {
       href,
@@ -245,7 +250,7 @@ function navLink(href: string, slug: string, label: string, currentSlug: Signal<
  * colour accent (via `data-cat`, styled in styles.css), and a one-line blurb
  * underneath so the long package list is scannable at a glance.
  */
-function pkgNavLink(pkg: PackageMeta, currentSlug: Signal<string>): Node {
+function pkgNavLink(pkg: PackageMeta, currentSlug: Signal<string>): Mountable {
   const slug = `api/${pkg.slug}`
   return a(
     {
@@ -274,8 +279,8 @@ function navSection(
   label: string,
   currentSlug: Signal<string>,
   memberSlugs: readonly string[],
-  children: Node[],
-): Node {
+  children: readonly Mountable[],
+): Mountable {
   const isActive = currentSlug.map((current) => memberSlugs.includes(current))
   return details(
     {

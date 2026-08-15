@@ -9,6 +9,7 @@
     "build": "pnpm run generate && vite build && tsx src/build-examples.ts",
     "preview": "vite preview",
     "lint": "eslint src test",
+    "check": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
@@ -30,6 +31,6 @@
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "unified": "^11.0.5",
-    "vite": "^6.3.1"
+    "vite": "^8.0.0"
   }
 }

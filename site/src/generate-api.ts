@@ -14,14 +14,18 @@
  * deterministic — exports are sorted by name within each kind section.
  *
  * `components` is special: its per-component state-machine shape is extracted
- * directly (see `generateComponentsDoc`).
+ * directly (see `generateComponentsDoc`). It gets the same "public surface, not
+ * file set" discipline the checker gives every other package, but syntactically:
+ * `publicComponentModules` gates collection on reachability from the barrel /
+ * `package.json#exports` (#175), and `collectBarrelExports` documents the names
+ * the root entry point re-exports under a DIFFERENT spelling (#174).
  *
  * Run as part of the build: `tsx src/generate-api.ts`. The generation itself is
  * behind an entry-point guard at the bottom, so the extraction helpers can be
  * imported and unit-tested (`test/generate-api.test.ts`) without writing files.
  */
 import * as ts from 'typescript'
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync, realpathSync } from 'fs'
 import { resolve, basename, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { PACKAGE_SLUGS } from '../pages/api/@pkg/packages.js'
@@ -391,6 +395,37 @@ class KindResolver {
   }
 }
 
+/**
+ * Assert a member's kind was actually resolved.
+ *
+ * This used to be `kind ?? 'function'`. A fallback in THAT direction re-creates
+ * the exact defect the classifier exists to prevent (#151, `CREATE_OPTION_VALUE()`
+ * — a string sentinel published as a callable) and does it silently: the page
+ * regenerates, `check:generated` stays green, and the docs assert something false
+ * about a name a consumer is being told to import. So the generator stops instead
+ * (#174). The failure is loud on purpose — a `NAME()` that is not a function is a
+ * worse outcome than a red build.
+ *
+ * If this ever fires, TEACH THE RESOLVER — do not restore a guess. `KindResolver`
+ * follows local declarations, local aliases (`export const a = b`) and ONE hop of
+ * relative re-export; a two-hop chain, a re-export through an index, or a computed
+ * member needs `kindOf`/`ModuleReader` widened to cover it.
+ */
+function requireKind(
+  id: string,
+  memberName: string,
+  kind: ComponentMember['kind'] | undefined,
+): ComponentMember['kind'] {
+  if (kind) return kind
+  throw new Error(
+    `${id}: cannot classify exported member \`${memberName}\` as a function or a constant.\n` +
+      `  The kind resolver follows local declarations, local aliases and ONE hop of\n` +
+      `  relative re-export. Widen it (KindResolver.kindOf / ModuleReader) to cover\n` +
+      `  this shape. Do NOT reintroduce a default kind: guessing \`function\` is what\n` +
+      `  published \`CREATE_OPTION_VALUE()\` for a string constant (issue #151/#174).`,
+  )
+}
+
 function collectModuleFacts(sf: ts.SourceFile): ModuleFacts {
   const bindings = new Map<string, LocalBinding>()
   const exportedLocals: string[] = []
@@ -519,11 +554,7 @@ export function extractComponentFromText(
   const addExtra = (memberName: string, kind: ComponentMember['kind'] | undefined) => {
     if (excluded.has(memberName)) return
     if (info.extras.some((e) => e.name === memberName)) return
-    // An unresolved name is one re-exported through a module this pass could not
-    // read. Every such name in this package is a helper function, and the shape
-    // that made #151 visible (a module's own sentinel constant) always resolves
-    // locally — so `function` is the right fallback here.
-    info.extras.push({ name: memberName, kind: kind ?? 'function' })
+    info.extras.push({ name: memberName, kind: requireKind(id, memberName, kind) })
   }
 
   ts.forEachChild(sf, (node) => {
@@ -664,6 +695,105 @@ function findReturn(block: ts.Block): ts.Expression | null {
   return null
 }
 
+// ── Public reachability (issue #175) ─────────────────────────────
+
+/**
+ * The component modules a consumer can actually reach, by basename.
+ *
+ * Being a `.ts` file in `src/components/` is NOT the public API — it is where the
+ * extractor used to collect from, which is why `menu-machine.ts` (imported by
+ * `menu.ts` and `context-menu.ts`, exported by nobody) had 15 of its functions
+ * advertised on the API page as though they were importable (#175).
+ *
+ * Two independent doors, unioned:
+ *  - a VALUE re-export from the components barrel (`export * as menu from './menu.js'`,
+ *    `export { reorder } from './sortable.js'`); a `export type { … }`-only line does
+ *    NOT count — it publishes the module's types, not its state machine.
+ *  - a `package.json#exports` subpath resolving to `dist/components/<name>.js`
+ *    (`@llui/components/menu`).
+ */
+export function publicComponentModules(
+  barrelText: string,
+  pkgExports: Record<string, unknown>,
+  barrelId = 'index.ts',
+): Set<string> {
+  const out = new Set<string>()
+
+  const sf = ts.createSourceFile(barrelId, barrelText, ts.ScriptTarget.Latest, true)
+  for (const stmt of sf.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier) continue
+    if (stmt.isTypeOnly) continue
+    const spec = (stmt.moduleSpecifier as ts.StringLiteral).text
+    if (!spec.startsWith('.')) continue
+    // `export type { A, B } from './x.js'` is spelled per-specifier too.
+    if (
+      stmt.exportClause &&
+      ts.isNamedExports(stmt.exportClause) &&
+      stmt.exportClause.elements.every((e) => e.isTypeOnly)
+    ) {
+      continue
+    }
+    out.add(basename(spec).replace(/\.js$/, ''))
+  }
+
+  for (const target of Object.values(pkgExports)) {
+    const resolved =
+      typeof target === 'string'
+        ? target
+        : target && typeof target === 'object'
+          ? ((target as Record<string, unknown>).types ??
+            (target as Record<string, unknown>).import)
+          : undefined
+    if (typeof resolved !== 'string') continue
+    const m = /^\.\/dist\/components\/([^/]+)\.(?:d\.ts|js)$/.exec(resolved)
+    if (m && m[1] !== 'index') out.add(m[1])
+  }
+
+  return out
+}
+
+// ── Barrel exports (issue #174) ──────────────────────────────────
+
+/**
+ * One name `@llui/components` re-exports at its top level, and where it comes from.
+ *
+ * The ALIASES are why this exists: `index.ts` publishes `table`'s `HEADER_ROW_INDEX`
+ * as `TABLE_HEADER_ROW_INDEX` and `menubar`'s triple as `menubarInit`/`menubarUpdate`/
+ * `menubarConnect`, and the per-component sections above only ever knew the
+ * component's own spelling — so the name a consumer must actually import was
+ * documented nowhere (#151's second complaint, reopened as #174).
+ */
+export interface BarrelExport {
+  /** The name importable from `@llui/components`. */
+  exported: string
+  /** Source module basename, e.g. `table`. */
+  module: string
+  /** The name that module declares — differs from `exported` only for an alias. */
+  local: string
+}
+
+/** Named VALUE re-exports of the components barrel, in source order. */
+export function collectBarrelExports(barrelText: string, barrelId = 'index.ts'): BarrelExport[] {
+  const sf = ts.createSourceFile(barrelId, barrelText, ts.ScriptTarget.Latest, true)
+  const out: BarrelExport[] = []
+  for (const stmt of sf.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || stmt.isTypeOnly) continue
+    if (!stmt.exportClause || !ts.isNamedExports(stmt.exportClause)) continue
+    const spec = (stmt.moduleSpecifier as ts.StringLiteral).text
+    if (!spec.startsWith('.')) continue
+    const moduleName = basename(spec).replace(/\.js$/, '')
+    for (const el of stmt.exportClause.elements) {
+      if (el.isTypeOnly) continue
+      out.push({
+        exported: el.name.text,
+        module: moduleName,
+        local: (el.propertyName ?? el.name).text,
+      })
+    }
+  }
+  return out
+}
+
 function toTitle(kebab: string): string {
   return kebab
     .split('-')
@@ -673,9 +803,27 @@ function toTitle(kebab: string): string {
 
 function generateComponentsDoc(): string {
   const componentsDir = resolve(packagesDir, 'components/src/components')
-  const files = readdirSync(componentsDir)
+  const barrelPath = resolve(componentsDir, 'index.ts')
+  const barrelText = readFileSync(barrelPath, 'utf-8')
+  const pkgExports = (
+    JSON.parse(readFileSync(resolve(packagesDir, 'components/package.json'), 'utf-8')) as {
+      exports?: Record<string, unknown>
+    }
+  ).exports
+
+  // Only modules a consumer can actually import get a section (#175).
+  const publicModules = publicComponentModules(barrelText, pkgExports ?? {}, barrelPath)
+  const allModules = readdirSync(componentsDir)
     .filter((f) => f.endsWith('.ts') && f !== 'index.ts')
     .sort()
+  const files = allModules.filter((f) => publicModules.has(basename(f, '.ts')))
+  const internal = allModules.filter((f) => !publicModules.has(basename(f, '.ts')))
+  if (internal.length > 0) {
+    console.log(
+      `  · skipping ${internal.length} internal module(s), unreachable from the barrel and package.json#exports: ` +
+        internal.join(', '),
+    )
+  }
 
   const components: ComponentInfo[] = []
   for (const file of files) {
@@ -718,6 +866,41 @@ function generateComponentsDoc(): string {
     if (constants.length > 0) md += `**Constants:** ${constants.map(memberRef).join(', ')}\n\n`
     md += '---\n\n'
   }
+
+  md += renderBarrelExports(barrelPath, barrelText)
+  return md
+}
+
+/**
+ * The top-level `@llui/components` re-export table (#174).
+ *
+ * The per-component sections above are written in each component's OWN spelling,
+ * which for an aliased re-export is not a name the root entry point exports at
+ * all — `HEADER_ROW_INDEX` is documented under Table, but importing it from
+ * `@llui/components` requires `TABLE_HEADER_ROW_INDEX`, which appeared nowhere.
+ */
+function renderBarrelExports(barrelPath: string, barrelText: string): string {
+  const exports = collectBarrelExports(barrelText, barrelPath)
+  if (exports.length === 0) return ''
+
+  const resolver = new KindResolver(siblingReader)
+  resolver.factsFor(barrelPath, barrelText)
+
+  let md = `## Top-Level Exports\n\n`
+  md +=
+    `Besides the per-component namespaces (\`import { menu } from '@llui/components'\`), ` +
+    `the root entry point re-exports these members directly. Where the barrel name ` +
+    `differs from the component's own, the barrel name is the only one that resolves ` +
+    `on \`@llui/components\` — the component's own spelling is reachable through its ` +
+    `namespace or its subpath entry (\`@llui/components/table\`).\n\n`
+  md += `| From \`@llui/components\` | Component | Declared as |\n| --- | --- | --- |\n`
+  for (const e of exports) {
+    const kind = requireKind(barrelPath, e.exported, resolver.kindOf(barrelPath, e.exported))
+    const exported = memberRef({ name: e.exported, kind })
+    const local = e.local === e.exported ? '—' : memberRef({ name: e.local, kind }) + ' (aliased)'
+    md += `| ${exported} | \`${e.module}\` | ${local} |\n`
+  }
+  md += '\n'
   return md
 }
 
@@ -838,6 +1021,30 @@ function main(): void {
   console.log('Done.')
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-if (invokedDirectly) main()
+/**
+ * Was this module run as the entry script?
+ *
+ * Compared through `realpath` on BOTH sides (#174): a plain string compare makes
+ * the generator a no-op that exits 0 whenever the script is invoked through a
+ * symlinked FILE (`node link-to-generate-api.ts`) — `process.argv[1]` keeps the
+ * link path while `import.meta.url` is the resolved target. Nothing in this repo
+ * invokes it that way today, but a gate whose failure mode is "silently generated
+ * nothing, exit 0" is exactly the shape #174 is about. A symlinked parent
+ * DIRECTORY was already fine (both sides carried it); realpath covers both.
+ *
+ * `realpathSync` throws on a path that does not exist, so each side falls back to
+ * its unresolved form rather than taking the process down.
+ */
+export function invokedAsScript(argvPath: string | undefined, moduleUrl: string): boolean {
+  if (argvPath === undefined) return false
+  const real = (p: string): string => {
+    try {
+      return realpathSync(p)
+    } catch {
+      return p
+    }
+  }
+  return real(resolve(argvPath)) === real(fileURLToPath(moduleUrl))
+}
+
+if (invokedAsScript(process.argv[1], import.meta.url)) main()
