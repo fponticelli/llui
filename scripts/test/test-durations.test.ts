@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import {
+  DEFAULTS,
   aggregateDurations,
   compareDurations,
   formatComparison,
@@ -113,17 +114,70 @@ describe('compareDurations', () => {
     expect(result.regressions.map((r) => r.file)).toEqual(['a.test.ts'])
   })
 
-  it('ignores files under the floor, in both directions', () => {
-    // 5ms -> 60ms is 12x and pure timer noise; it must not be reported.
-    const noise = compareDurations(baseline, { ...baseline, 'tiny.test.ts': 60 }, { floorMs: 200 })
-    expect(noise.regressions).toEqual([])
-    // …but 5ms -> 5s is a real regression and the floor must not hide it.
-    const real = compareDurations(
-      baseline,
-      { ...baseline, 'tiny.test.ts': 5_000 },
-      { floorMs: 200 },
+  /**
+   * The MECHANISM can reach a small file — an absolute delta floor, unlike the
+   * clamped denominator it replaced, does not rebase cheap files against a
+   * constant. Whether the SHIPPED DEFAULTS reach one is a separate question with
+   * an uncomfortable answer, pinned in the test below this.
+   */
+  it('can catch a 5ms unit test becoming 30ms when the noise floor allows it', () => {
+    const result = compareDurations(
+      { ...baseline, 'unit.test.ts': 5 },
+      { ...baseline, 'unit.test.ts': 30 },
+      { factor: 3, minDeltaMs: 20 },
     )
-    expect(real.regressions.map((r) => r.file)).toEqual(['tiny.test.ts'])
+    expect(result.regressions.map((r) => r.file)).toEqual(['unit.test.ts'])
+    expect(result.regressions[0]?.ratio).toBeCloseTo(6, 1)
+  })
+
+  /**
+   * THE HONEST LIMIT, asserted so nobody re-reads the docs as a stronger promise
+   * than the measurements support. `vitest.shared.ts` cites "a 5 ms unit test
+   * becoming 30 ms" as the case #193 wants caught. At the SHIPPED defaults it is
+   * NOT caught, because +25 ms is far below this workspace's measured run-to-run
+   * noise (two identical back-to-back full runs produced 39 such "regressions" at
+   * a +40 ms floor). No threshold recovers it — lowering the floor buys false
+   * positives, not sensitivity — and the previous clamped-denominator design did
+   * not catch it either; it only hid that it did not.
+   */
+  it('does NOT reach a 5ms→30ms change at the shipped defaults, and says so via judgeable', () => {
+    const result = compareDurations(
+      { ...baseline, 'unit.test.ts': 5 },
+      { ...baseline, 'unit.test.ts': 30 },
+    )
+    expect(result.regressions).toEqual([])
+    // The file is outside the tool's resolution, and `judgeable` counts only
+    // files a `factor`-fold regression could actually clear the floor for.
+    const reachable = (ms: number) => ms * (DEFAULTS.factor - 1) >= DEFAULTS.minDeltaMs
+    expect(reachable(5)).toBe(false)
+    expect(result.judgeable).toBe(Object.values(baseline).filter(reachable).length)
+  })
+
+  it('still refuses to shout about timer granularity', () => {
+    // 4ms -> 12ms is a 3x ratio made of scheduling jitter: +8ms is under the
+    // noise floor, so it must stay silent.
+    const result = compareDurations(
+      { ...baseline, 'tiny.test.ts': 4 },
+      { ...baseline, 'tiny.test.ts': 12 },
+      { factor: 3, minDeltaMs: 40 },
+    )
+    expect(result.regressions).toEqual([])
+  })
+
+  it('reports its own resolution rather than leaving it implicit', () => {
+    // Only files where a `factor`-fold growth clears the noise floor can ever be
+    // reported; saying how many there are is the difference between a signal and
+    // a signal that quietly covers 30% of the workspace.
+    const result = compareDurations(baseline, baseline, { factor: 3, minDeltaMs: 40 })
+    const reachable = Object.values(baseline).filter((ms) => ms * 2 >= 40).length
+    expect(result.judgeable).toBe(reachable)
+    expect(formatComparison(result, { factor: 3, minDeltaMs: 40 })).toContain('within resolution')
+    // The header must state the SETTINGS ACTUALLY USED. These lived as separate
+    // literals in two functions and silently diverged, so the tool printed a
+    // resolution it was not running at.
+    expect(formatComparison(compareDurations(baseline, baseline))).toContain(
+      `at ${DEFAULTS.factor}x / +${DEFAULTS.minDeltaMs}ms`,
+    )
   })
 
   it('declines to judge a run whose ratios are smeared rather than shifted', () => {
@@ -168,8 +222,8 @@ describe('compareDurations', () => {
     expect(result.regressions).toEqual([])
   })
 
-  it('falls back to a scale of 1 when nothing clears the floor', () => {
-    const result = compareDurations({ 'tiny.test.ts': 5 }, { 'tiny.test.ts': 9 }, { floorMs: 200 })
+  it('falls back to a scale of 1 when nothing clears the scale floor', () => {
+    const result = compareDurations({ 'tiny.test.ts': 5 }, { 'tiny.test.ts': 9 }, {})
     expect(result.scale).toBe(1)
     expect(result.comparable).toBe(false)
     expect(result.regressions).toEqual([])

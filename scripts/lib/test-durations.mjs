@@ -48,6 +48,23 @@ import { relative } from 'node:path'
  * regression vanishes).
  */
 
+/**
+ * The shipped thresholds, stated ONCE.
+ *
+ * They were duplicated across `compareDurations` and `formatComparison` for
+ * about ten minutes, and in that time they silently diverged — the comparison
+ * ran at the calibrated 4x/+400ms while the header it printed still claimed
+ * 3x/+40ms, i.e. the tool reported a resolution it was not using. Same fact,
+ * one place.
+ */
+export const DEFAULTS = Object.freeze({
+  factor: 4,
+  scaleFloorMs: 200,
+  minDeltaMs: 400,
+  maxSpread: 3,
+  minSample: 5,
+})
+
 /** Median of a numeric array. Returns 0 for an empty one. */
 export function median(values) {
   if (values.length === 0) return 0
@@ -106,8 +123,14 @@ export function aggregateDurations(reports, repoRoot) {
  * @typedef {object} CompareOptions
  * @property {number} [factor]  How much slower than baseline (after de-scaling)
  *   counts as a regression. Default 3.
- * @property {number} [floorMs] Files cheaper than this on BOTH sides are ignored.
- *   Default 200.
+ * @property {number} [scaleFloorMs] Only files at least this costly on BOTH
+ *   sides take part in estimating the run's scale and spread. Small files are
+ *   dominated by fixed overheads that do not track load, so their ratios are
+ *   noise as far as a LOAD estimate is concerned. Default 200.
+ * @property {number} [minDeltaMs] A file must have grown by at least this many
+ *   milliseconds (after de-scaling) to be reported at all. This is the noise
+ *   floor, and it replaces the old clamped denominator — see the note on
+ *   `compareDurations`. Default 400, CALIBRATED (not guessed) — see below.
  * @property {number} [maxSpread] Decline to compare when the run's interquartile
  *   ratio spread (p75/p25) exceeds this — too noisy to support a verdict.
  *   Default 3.
@@ -121,6 +144,9 @@ export function aggregateDurations(reports, repoRoot) {
  * @property {number | null} spread  p75/p25 of the ratios; null when unmeasurable.
  * @property {boolean} comparable    False when the run was too noisy to judge.
  * @property {number} compared  How many files took part in the comparison.
+ * @property {number} judgeable How many of those are costly enough that a
+ *   `factor`-fold regression would clear the noise floor — i.e. the tool's real
+ *   coverage, printed so it is never an unstated property.
  * @property {{ file: string, baselineMs: number, currentMs: number, normalizedMs: number, ratio: number }[]} regressions
  * @property {string[]} added
  * @property {string[]} removed
@@ -133,14 +159,20 @@ export function aggregateDurations(reports, repoRoot) {
  * @returns {DurationComparison}
  */
 export function compareDurations(baseline, current, options = {}) {
-  const { factor = 3, floorMs = 200, maxSpread = 3, minSample = 5 } = options
+  const {
+    factor = DEFAULTS.factor,
+    scaleFloorMs = DEFAULTS.scaleFloorMs,
+    minDeltaMs = DEFAULTS.minDeltaMs,
+    maxSpread = DEFAULTS.maxSpread,
+    minSample = DEFAULTS.minSample,
+  } = options
 
   const common = Object.keys(baseline).filter((file) => file in current)
   // The scale estimator uses only files big enough for their ratio to mean
   // something. A 0.4 ms file reading 1.2 ms is a 3x ratio made of timer
   // granularity, and a few hundred of those would dominate the median.
   const scaleSample = common
-    .filter((file) => baseline[file] >= floorMs && current[file] >= floorMs)
+    .filter((file) => baseline[file] >= scaleFloorMs && current[file] >= scaleFloorMs)
     .map((file) => current[file] / baseline[file])
   const scale = scaleSample.length > 0 ? median(scaleSample) : 1
 
@@ -176,6 +208,7 @@ export function compareDurations(baseline, current, options = {}) {
       spread: Number.isFinite(spread) ? Math.round(spread * 100) / 100 : null,
       comparable: false,
       compared: common.length,
+      judgeable: 0,
       regressions,
       added: Object.keys(current)
         .filter((file) => !(file in baseline))
@@ -185,15 +218,58 @@ export function compareDurations(baseline, current, options = {}) {
         .sort(),
     }
   }
+  // THE NOISE FLOOR IS AN ABSOLUTE DELTA, NOT A CLAMPED DENOMINATOR, and the
+  // difference is the whole reach of this tool. The first version computed
+  // `ratio = normalized / max(baseline, floorMs)`, which silently rebased every
+  // cheap file against the floor: with floorMs = 200 a 4 ms file first reported
+  // at 150x — measured, on a quiet run, 6x/20x/100x/124x all missed. That made
+  // ~70% of the workspace (430 of 618 files) unreachable and, worse, made
+  // unreachable the exact case `vitest.shared.ts` names as the thing #193 asks
+  // to catch: "a 5 ms unit test becoming 30 ms".
+  //
+  // Requiring a real RATIO and a real absolute GROWTH instead lets the two
+  // thresholds be set from MEASURED noise rather than from a number that happens
+  // to hide it.
+  //
+  // THE CALIBRATION, and the honest limit it establishes. Two full suite runs of
+  // IDENTICAL code, back to back on an 18-core machine at load ~300 (twelve
+  // parallel agent lanes), compared against each other:
+  //
+  //     factor  minDelta   false positives   files within resolution
+  //        3       40ms          39                    346
+  //        3      100ms           9                    218
+  //        4      100ms           5                    264
+  //        4      200ms           2                    187
+  //        4      400ms           0                    145   <- shipped
+  //        5      400ms           0                    164
+  //        3      800ms           0                     88
+  //
+  // So the run-to-run noise on THIS workspace's small files is tens of
+  // milliseconds and the 39-false-positive row is what a naive floor buys. The
+  // shipped pair is the cheapest one with zero measured false positives that
+  // still catches the 6x case #193 names.
+  //
+  // BE STRAIGHT ABOUT WHAT THAT COSTS: at +400 ms a file must cost roughly 133 ms
+  // for a 4x regression to clear the floor, so "a 5 ms unit test becoming 30 ms"
+  // — the example `vitest.shared.ts` cites — IS NOT DETECTABLE HERE. That is not
+  // a threshold that can be tuned away; +25 ms is below this machine's noise, so
+  // no setting recovers it, and the old clamped denominator did not detect it
+  // either — it merely hid the fact. `judgeable` is reported on every run so the
+  // coverage is stated rather than assumed. On quieter hardware, lower
+  // `--min-delta` and the resolution improves; the printed false-positive
+  // behaviour is how you check that you have gone too far.
+  let judgeable = 0
   for (const file of common) {
     const baselineMs = baseline[file]
     const currentMs = current[file]
-    // Both sides must clear the floor. Requiring it of the BASELINE alone would
-    // miss a file that went from 5 ms to 5 s; requiring it of the CURRENT alone
-    // would report every cheap file whose baseline rounded to nothing.
-    if (Math.max(baselineMs, currentMs) < floorMs) continue
     const normalizedMs = currentMs / scale
-    const ratio = normalizedMs / Math.max(baselineMs, floorMs)
+    const growthMs = normalizedMs - baselineMs
+    // A file can only ever be reported if a `factor`-fold growth would clear the
+    // noise floor; anything cheaper than that is outside this tool's resolution
+    // and is counted so the output can say so honestly.
+    if (baselineMs * (factor - 1) >= minDeltaMs) judgeable++
+    if (growthMs < minDeltaMs) continue
+    const ratio = normalizedMs / Math.max(baselineMs, 0.1)
     if (ratio >= factor) {
       regressions.push({
         file,
@@ -211,6 +287,7 @@ export function compareDurations(baseline, current, options = {}) {
     spread: Math.round(spread * 100) / 100,
     comparable: true,
     compared: common.length,
+    judgeable,
     regressions,
     added: Object.keys(current)
       .filter((file) => !(file in baseline))
@@ -222,12 +299,20 @@ export function compareDurations(baseline, current, options = {}) {
 }
 
 /** Human-readable rendering of a comparison, used by the CLI and by its test. */
-export function formatComparison(comparison, { factor = 3, floorMs = 200, maxSpread = 3 } = {}) {
+export function formatComparison(
+  comparison,
+  {
+    factor = DEFAULTS.factor,
+    minDeltaMs = DEFAULTS.minDeltaMs,
+    maxSpread = DEFAULTS.maxSpread,
+  } = {},
+) {
   const lines = []
   lines.push(
-    `compared ${comparison.compared} test files; run scale vs baseline = ${comparison.scale}x, ` +
-      `ratio spread (p75/p25) = ${comparison.spread ?? 'n/a'} ` +
-      `(threshold ${factor}x after de-scaling, files under ${floorMs}ms ignored)`,
+    `compared ${comparison.compared} test files ` +
+      `(${comparison.judgeable ?? 0} within resolution at ${factor}x / +${minDeltaMs}ms); ` +
+      `run scale vs baseline = ${comparison.scale}x, ` +
+      `ratio spread (p75/p25) = ${comparison.spread ?? 'n/a'}`,
   )
   if (comparison.comparable === false) {
     lines.push(

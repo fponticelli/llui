@@ -124,6 +124,19 @@ export default defineConfig({
     // does. That is the property a wall-clock budget cannot have, and it is why
     // the two mechanisms are orthogonal rather than redundant.
     //
+    // It REPORTS, it does not gate (`--gate` opts in, and CI does not pass it).
+    // That is measured, not cautious: two runs of IDENTICAL code back to back on
+    // this machine produced 39 "regressions" at a naive noise floor, and an
+    // earlier revision that gated reddened on unchanged code.
+    //
+    // AND THE PRICE IS STILL NOT FULLY PAID, so do not read the paragraph above
+    // as settled: at the calibrated thresholds only 145 of 618 files are within
+    // resolution, and "a 5 ms unit test becoming 30 ms" — named right here as the
+    // thing #193 wants — is BELOW THIS WORKSPACE'S RUN-TO-RUN NOISE and is not
+    // detectable by this tool. No threshold recovers it. What the tool does give
+    // is a real signal on the ~145 files that cost enough to resolve, and an
+    // explicit count of its own coverage on every run instead of a silent gap.
+    //
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers
     // work that is slow-but-bounded. A test that HANGS still fails — just less

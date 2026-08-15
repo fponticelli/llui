@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
+import { loadavg, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
-import { aggregateDurations, compareDurations, formatComparison } from './lib/test-durations.mjs'
+import {
+  DEFAULTS,
+  aggregateDurations,
+  compareDurations,
+  formatComparison,
+} from './lib/test-durations.mjs'
 
 /**
  * The slow-test signal (#193). Two modes:
@@ -26,9 +32,16 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const save = args.includes('--save')
 const noRun = args.includes('--no-run')
-const factor = numberFlag('--factor', 3)
-const floorMs = numberFlag('--floor', 200)
-const maxSpread = numberFlag('--max-spread', 3)
+const factor = numberFlag('--factor', DEFAULTS.factor)
+const minDeltaMs = numberFlag('--min-delta', DEFAULTS.minDeltaMs)
+const maxSpread = numberFlag('--max-spread', DEFAULTS.maxSpread)
+// REPORT-ONLY BY DEFAULT. The exit code is opt-in (`--gate`) because a duration
+// comparison across machines is not yet proven trustworthy enough to redden
+// `main` on unchanged code — which is exactly what an earlier revision of this
+// tool did, on the same platform that recorded its baseline, one day later.
+// Flip CI to `--gate` once a few main-branch runs have shown it stable; until
+// then the numbers are printed and the job stays honest about what it knows.
+const gate = args.includes('--gate')
 const baselinePath = join(repoRoot, 'test-durations.baseline.json')
 const outDir = process.env['LLUI_TEST_DURATIONS'] ?? join(repoRoot, '.test-durations')
 
@@ -80,9 +93,19 @@ if (save) {
     JSON.stringify(
       {
         // Recorded for the reader, never read by the comparison — the whole
-        // point of de-scaling is that the recording machine does not matter.
+        // point of de-scaling is that the recording machine does not matter for
+        // the LEVEL. It does matter for the SHAPE, though: a baseline taken on a
+        // saturated machine has smear already in it, which is how an earlier one
+        // came to sit at scale 0.428 against a quieter run and produce a false
+        // regression. Stamp the conditions so the next reader can judge whether
+        // this baseline deserves trust, and re-record if it does not.
         recordedOn: `${process.platform}/${process.arch}`,
         recordedAt: new Date().toISOString().slice(0, 10),
+        recordedUnder: {
+          cpus: cpus().length,
+          loadAvg1m: Math.round(loadavg()[0] * 10) / 10,
+          note: 'load per core well above ~2 means this baseline is smeared; prefer re-recording',
+        },
         metric: 'sum of test durations per file, milliseconds (hooks excluded)',
         files: Object.fromEntries(Object.entries(current).sort(([a], [b]) => (a < b ? -1 : 1))),
       },
@@ -99,6 +122,9 @@ if (!existsSync(baselinePath)) {
   process.exit(1)
 }
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')).files ?? {}
-const comparison = compareDurations(baseline, current, { factor, floorMs, maxSpread })
-process.stdout.write(formatComparison(comparison, { factor, floorMs, maxSpread }) + '\n')
-process.exit(comparison.regressions.length > 0 ? 1 : 0)
+const comparison = compareDurations(baseline, current, { factor, minDeltaMs, maxSpread })
+process.stdout.write(formatComparison(comparison, { factor, minDeltaMs, maxSpread }) + '\n')
+if (comparison.regressions.length > 0 && !gate) {
+  process.stdout.write('(reporting only — pass --gate to make this exit non-zero)\n')
+}
+process.exit(gate && comparison.regressions.length > 0 ? 1 : 0)

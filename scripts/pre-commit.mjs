@@ -34,17 +34,43 @@ import { withLock, lockPathFor } from './lib/worktree-lock.mjs'
  * convention ("don't"), because no lock can cover a command a human types — but
  * that is the case a lane controls, and the hook is the one it does not.
  *
- * WHY NOT `--no-stash`, the cheap option the issue floats: measured on 16.4.0 it
- * does remove every stash call (11 git invocations, none of them `stash`) and it
- * does NOT change what gets committed — partial staging still works, because
- * `--no-stash` implies only `--no-revert`, not `--no-hide-partially-staged`, and
- * the hide/restore mechanism uses a patch file rather than the stash. But it
- * trades the race for silent DATA LOSS on the failure path: with a partially
- * staged file and a failing task (`prettier --write` on an unparseable file),
- * "Restoring unstaged changes" does not complete and the unstaged hunks are gone
- * with no recovery path, while the successful tasks' modifications stay applied
- * to the index. Swapping a loud, recoverable race for a silent, unrecoverable
- * one is not an improvement, so the backup stays and the lock makes it safe.
+ * ── The three cheaper options, all measured and all rejected ────────────────
+ *
+ * `--no-stash`. On 16.4.0 it does remove every stash call (11 git invocations,
+ * none of them `stash`) and it does NOT change what gets committed — partial
+ * staging still works, because `--no-stash` implies only `--no-revert`, not
+ * `--no-hide-partially-staged`, and the hide/restore mechanism uses a patch file
+ * rather than the stash. But it trades the race for SILENT loss on the failure
+ * path: with a partially staged file and a failing task (`prettier --write` on
+ * an unparseable file), "Restoring unstaged changes" never completes and the
+ * unstaged hunks leave the working tree and the index, while the successful
+ * tasks' modifications stay applied. State the recoverability precisely, because
+ * "unrecoverable" is too strong: `.git/lint-staged_unstaged.patch` survives, and
+ * `git apply` restores the hunk cleanly — but there is no recovery path git will
+ * OFFER you, and only until the next run overwrites that file. A loud,
+ * recoverable race swapped for a silent, easily-missed loss is not an
+ * improvement, so the backup stays and the lock makes it safe.
+ *
+ * `SKIP_SIMPLE_GIT_HOOKS=1`. Not an alternative at all: it does not serialize
+ * anything, it skips the hook outright. Measured against a verbatim copy of this
+ * repo's generated wrapper, `export   const   c=3` commits UNFORMATTED with zero
+ * stash entries, and `prettier --check` on the committed tree then fails. It is
+ * strictly worse than `--no-stash`, which at least still formats.
+ *
+ * READ THIS BEFORE ASSUMING THE LOCK IS UNCONDITIONAL: that early exit lives in
+ * the wrapper `simple-git-hooks` generates, AHEAD of the line invoking this
+ * file. So `SKIP_SIMPLE_GIT_HOOKS=1` does not merely bypass lint-staged, it
+ * bypasses THIS LOCK — one exported variable silently removes the serialization
+ * for that shell and re-opens #179 for every lane racing it. Nothing in this
+ * repo can close that; it is a property of the hook runner.
+ *
+ * `SIMPLE_GIT_HOOKS_RC`. This one CAN serialize — an rc file sourced by the same
+ * wrapper can take a lock and `trap` its release, and a working one was built
+ * and measured (formatting preserved, lock released). It is disqualified on
+ * SCOPE, not capability: it is an environment variable, so it cannot be
+ * committed to the repository and binds only the actors who export it in the
+ * shell running `git commit`. #179 needs TWO unprotected lanes to bite, and
+ * protection that is opt-in per shell is not exclusion.
  */
 
 const gitCommonDir = resolve(

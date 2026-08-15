@@ -27,11 +27,22 @@
  * captured at startup — measured: a child's `process.ppid` flips to 1 within one
  * poll of its parent being SIGKILLed.
  *
- * THE CARVE-OUT that keeps this from breaking legitimate use: a process
- * DELIBERATELY daemonized (`nohup llui-mcp --http 5200 & disown`) is already
- * parented to init, and exiting because of that would be absurd. So the watch
- * arms only when the ORIGINAL parent was something other than init, and it fires
- * on the parent CHANGING — not on it merely being 1.
+ * THE CARVE-OUT, stated accurately because the first version of this comment was
+ * wrong in a way that mattered. The watch arms only when the ORIGINAL parent was
+ * something other than init, and it fires on the parent CHANGING — not on it
+ * merely being 1. That covers a process genuinely STARTED BY init (a launchd or
+ * systemd service, or anything already re-parented when it execs).
+ *
+ * It does NOT cover `nohup llui-mcp --http <port> & disown` from a live
+ * interactive shell, and the earlier claim that it did was false: `disown` only
+ * removes the job from the shell's job table, it does not reparent anything. The
+ * child's ppid is the SHELL, so the watch arms, and when that shell exits the
+ * ppid becomes 1 and this shuts the server down — measured, and exactly contrary
+ * to what the person typing `nohup` was asking for.
+ *
+ * `LLUI_MCP_NO_PARENT_WATCH=1` is the only thing that protects that case, so it
+ * is documented in CLAUDE.md rather than living only here. If you are
+ * daemonizing this server from a shell, export it.
  */
 
 export interface ParentWatchOptions {

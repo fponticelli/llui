@@ -25,12 +25,24 @@ describe('shouldWatchParent', () => {
   })
 
   it('does NOT arm when the process was started by init', () => {
-    // A deliberately daemonized `nohup llui-mcp --http 5200 & disown` is already  llui-no-bind
-    // parented to init; exiting because of that would break the launch instead
-    // of protecting it. (The trailing marker above tells `port-isolation.test.ts`
-    // that this is prose about a user's command line, not a bind in this suite.)
+    // A launchd/systemd service, or anything already re-parented when it execs.
+    // There is no parent death left to observe.
     expect(shouldWatchParent(1)).toBe(false)
     expect(shouldWatchParent(0)).toBe(false)
+  })
+
+  it('DOES arm under a shell, which is why the env opt-out exists', () => {
+    // `nohup … & disown` from a live shell does NOT reparent — `disown` only
+    // drops the job from the shell's table — so the ppid is the shell and the
+    // watch arms. When that shell exits, this server would shut itself down,
+    // contrary to what `nohup` was asking for. Documented, and covered ONLY by
+    // the opt-out; asserted here so the carve-out cannot be re-described as
+    // handling it.
+    const shellPid = 4242
+    expect(shouldWatchParent(shellPid)).toBe(true)
+    expect(
+      shouldWatchParent(shellPid, parentWatchDisabled({ LLUI_MCP_NO_PARENT_WATCH: '1' })),
+    ).toBe(false)
   })
 
   it('honors the documented opt-out', () => {
