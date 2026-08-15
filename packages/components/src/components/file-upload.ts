@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * File upload — input element + drag-and-drop zone. Tracks selected files,
@@ -126,9 +127,12 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
     disabled: opts.disabled ?? false,
     multiple: opts.multiple ?? false,
     accept: opts.accept ?? '',
-    maxFiles: opts.maxFiles ?? 0,
-    maxSize: opts.maxSize ?? 0,
-    minFileSize: opts.minFileSize ?? 0,
+    // The three acceptance bounds (0 = unlimited). A non-finite one is
+    // unserializable AND silently switches its own check off, since every
+    // comparison against `NaN` is false (#177).
+    maxFiles: finiteBound(opts.maxFiles) ?? 0,
+    maxSize: finiteBound(opts.maxSize) ?? 0,
+    minFileSize: finiteBound(opts.minFileSize) ?? 0,
     required: opts.required ?? false,
     readonly: opts.readonly ?? false,
     invalid: opts.invalid ?? false,

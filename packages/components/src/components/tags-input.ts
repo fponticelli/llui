@@ -4,6 +4,7 @@ import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnce, deriveOnceN } from '../utils/derive.js'
+import { finiteBound } from '../utils/number.js'
 import { LocaleContext } from '../locale.js'
 
 /** No individual chip is disabled; the whole widget is or isn't. */
@@ -60,7 +61,9 @@ export function init(opts: TagsInputInit = {}): TagsInputState {
     value: opts.value ?? [],
     inputValue: opts.inputValue ?? '',
     disabled: opts.disabled ?? false,
-    max: opts.max ?? 0,
+    // The tag-count limit (0 = unlimited); every comparison against a `NaN`
+    // one is false, so it would switch the limit off silently (#177).
+    max: finiteBound(opts.max) ?? 0,
     unique: opts.unique ?? true,
     focusedIndex: null,
   }

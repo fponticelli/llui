@@ -9344,7 +9344,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 | `position` | `{ x: number; y: number }` |
 | `size` | `{ width: number; height: number }` |
 | `minSize` | `{ width: number; height: number }` |
-| `maxSize` | `{ width: number; height: number } \| null` |
+| `maxSize` | `{ width?: number; height?: number } \| null` |
 | `open` | `boolean` |
 | `minimized` | `boolean` |
 | `maximized` | `boolean` |
@@ -9355,7 +9355,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`
 
-**Init options:** `position?: { x: number; y: number }, size?: { width: number; height: number }, minSize?: { width: number; height: number }, maxSize?: { width: number; height: number } | null, open?: boolean, disabled?: boolean`
+**Init options:** `position?: { x: number; y: number }, size?: { width: number; height: number }, minSize?: { width?: number; height?: number }, maxSize?: { width?: number; height?: number } | null, open?: boolean, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 

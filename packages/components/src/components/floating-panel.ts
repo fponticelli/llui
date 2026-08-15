@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { clamp } from '../utils/number.js'
+import { clamp, finiteBound } from '../utils/number.js'
 
 /**
  * Floating panel — a draggable + resizable window-like surface, useful
@@ -20,7 +20,15 @@ export interface FloatingPanelState {
   position: { x: number; y: number }
   size: { width: number; height: number }
   minSize: { width: number; height: number }
-  maxSize: { width: number; height: number } | null
+  /**
+   * The upper size bound. `null` — or an absent dimension — is unbounded on
+   * that axis, which is what `clampSize` already spelled `?? Infinity` at the
+   * point of use. A bound in state is finite or absent, never an infinity
+   * (`JSON.stringify` writes `null` for one) and never `NaN` (which is not
+   * nullish, so it survives the `??` and switches that axis's clamp off) —
+   * #177.
+   */
+  maxSize: { width?: number; height?: number } | null
   open: boolean
   minimized: boolean
   maximized: boolean
@@ -68,18 +76,45 @@ export type FloatingPanelMsg =
 export interface FloatingPanelInit {
   position?: { x: number; y: number }
   size?: { width: number; height: number }
-  minSize?: { width: number; height: number }
-  maxSize?: { width: number; height: number } | null
+  minSize?: { width?: number; height?: number }
+  maxSize?: { width?: number; height?: number } | null
   open?: boolean
   disabled?: boolean
+}
+
+/**
+ * Normalise an upper size bound into what state may hold: each axis kept only
+ * when it is a finite number, the key OMITTED otherwise so the value round-trips
+ * through JSON unchanged (setting it to `undefined` would rehydrate as a MISSING
+ * key and differ from the live object by a key).
+ */
+function finiteSize(
+  raw: { width?: number; height?: number } | null | undefined,
+): { width?: number; height?: number } | null {
+  if (raw == null) return null
+  const width = finiteBound(raw.width)
+  const height = finiteBound(raw.height)
+  if (width === undefined && height === undefined) return null
+  return {
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+  }
 }
 
 export function init(opts: FloatingPanelInit = {}): FloatingPanelState {
   return {
     position: opts.position ?? { x: 100, y: 100 },
     size: opts.size ?? { width: 400, height: 300 },
-    minSize: opts.minSize ?? { width: 200, height: 150 },
-    maxSize: opts.maxSize ?? null,
+    // Both size bounds are normalised per AXIS (#177): `minSize` is required,
+    // so an unusable dimension takes the default, while `maxSize` is
+    // unbounded-capable, so an unusable dimension is simply omitted — the same
+    // absence `clampSize` expands to `Infinity`. A whole `maxSize` with no
+    // usable dimension left is `null`, the canonical "no maximum".
+    minSize: {
+      width: finiteBound(opts.minSize?.width) ?? 200,
+      height: finiteBound(opts.minSize?.height) ?? 150,
+    },
+    maxSize: finiteSize(opts.maxSize),
     open: opts.open ?? true,
     minimized: false,
     maximized: false,

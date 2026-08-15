@@ -19,16 +19,14 @@ import * as splitter from '../../src/components/splitter'
  * State-is-JSON-serializable invariant and with it devtools time-travel,
  * `@llui/test` replay, agent state snapshots and SSR rehydration.
  *
- * SCOPE, stated precisely: the guarantee covers the paths that route a number
+ * SCOPE, stated precisely: this file covers the paths that route a number
  * THROUGH the grid — `value`, `thumbs`, and the increment/decrement/step
- * family. It does NOT cover the BOUNDS themselves. A bound is the grid rather
- * than a position on it, so nothing clamps it: `angleSlider.update(s,
- * { type: 'setMin', min: NaN })` stores `min: NaN` (and `JSON.stringify` then
- * yields `"min": null`), exactly as an unbounded `number-input` stores
- * `min: -Infinity` / `max: Infinity` in state by design. Both are the same
- * State-is-JSON-serializable break one field over from this fix, and both are
- * out of #152's scope — see the "bounds are not covered" block at the end,
- * which pins the current behaviour so a later fix has to notice it.
+ * family — where `clamp` is the one boundary check (#152). The BOUNDS take the
+ * same policy through a DIFFERENT function, `finiteBound` (#177): a bound is
+ * the grid rather than a position on it, so nothing clamps it and it is
+ * normalised where it is WRITTEN (`init`, `setMin`/`setMax`) instead. The last
+ * block here covers the seam between the two; the package-wide bound sweep is
+ * `bound-serialization.test.ts`.
  */
 
 const NON_FINITE = [NaN, Infinity, -Infinity]
@@ -115,13 +113,13 @@ describe('number-input stores a legal value for a non-finite input (#152)', () =
   })
 
   it('setValue, init and toMin/toMax on an UNBOUNDED grid', () => {
-    // With no min/max the bounds are ±Infinity, so the clamp had no finite
-    // answer to fall back on: `toMin` stored -Infinity and displayed
+    // With no min/max the grid is unbounded on both sides, so the clamp has no
+    // finite bound to fall back on: `toMin` used to store -Infinity and display
     // "-Infinity", which JSON turns into null.
     //
-    // NOT round-trip-asserted here: an unbounded instance keeps `min`/`max`
-    // themselves as ±Infinity IN STATE, which is a separate (pre-existing)
-    // break of the same invariant and outside #152's clamp fix.
+    // The round trip IS asserted now — the bounds themselves used to be
+    // ±Infinity in state, which is the separate break #177 closed by dropping
+    // the key instead.
     for (const bad of NON_FINITE) {
       expect(Number.isFinite(numberInput.init({ value: bad }).value!)).toBe(true)
       const [s] = numberInput.update(numberInput.init({ value: 5 }), {
@@ -130,12 +128,14 @@ describe('number-input stores a legal value for a non-finite input (#152)', () =
       })
       expect(Number.isFinite(s.value!)).toBe(true)
       expect(s.rawText).toBe(String(s.value))
+      expectJsonRoundTrip(s, `unbounded setValue(${bad})`)
     }
     const unbounded = numberInput.init({ value: 5 })
     for (const msg of [{ type: 'toMin' }, { type: 'toMax' }] as const) {
       const [s] = numberInput.update(unbounded, msg)
       expect(Number.isFinite(s.value!), msg.type).toBe(true)
       expect(s.rawText).toBe(String(s.value))
+      expectJsonRoundTrip(s, msg.type)
     }
   })
 
@@ -206,34 +206,76 @@ describe('the other components that route through the same clamp (#152)', () => 
   })
 })
 
-describe('bounds are NOT covered by #152 — pinned, not endorsed', () => {
-  // A bound defines the grid rather than naming a position on it, so nothing
-  // clamps it. These are the same State-is-JSON-serializable break one field
-  // over from the fix above, deliberately left in place so the scope of #152 is
-  // exactly one boundary check in `clamp`. The header states the limit; these
-  // pin it, so whoever closes it has to delete a test rather than discover the
-  // gap by accident.
+describe('bounds are finite or ABSENT, never non-finite (#177)', () => {
+  // What the two retired pins above used to assert — `setMin: NaN` stored
+  // verbatim, and `±Infinity` bounds on an unbounded `number-input` — is now
+  // the defect, not the documented limit. A bound is normalised where it is
+  // WRITTEN, because it never reaches `clamp`.
 
-  it('angle-slider.setMin/setMax store a non-finite BOUND verbatim', () => {
-    const [s] = angleSlider.update(angleSlider.init({ value: 45 }), {
-      type: 'setMin',
-      min: NaN,
-    })
-    expect(Number.isNaN(s.min)).toBe(true)
-    // …and the state therefore does NOT survive a JSON round-trip.
-    expect(JSON.parse(JSON.stringify(s)).min).toBeNull()
-    // The VALUE is still legal, which is the half #152 does guarantee.
-    expect(Number.isFinite(s.value)).toBe(true)
+  it('angle-slider DROPS a non-finite setMin/setMax and keeps clamping', () => {
+    const s0 = angleSlider.init({ value: 45 })
+    for (const bad of NON_FINITE) {
+      const [s] = angleSlider.update(s0, { type: 'setMin', min: bad })
+      // The write is refused outright — the state object is the same one.
+      expect(s, `setMin(${bad})`).toBe(s0)
+      expect(s.min).toBe(0)
+      expectJsonRoundTrip(s, `setMin(${bad})`)
+      // The half that made this more than a serialization defect: a NaN min is
+      // not nullish, so it reached `clamp`, every comparison against it was
+      // false, and that side of the range stopped clamping.
+      expect(angleSlider.update(s, { type: 'setValue', value: -9999 })[0].value).toBe(0)
+
+      const [t] = angleSlider.update(s0, { type: 'setMax', max: bad })
+      expect(t, `setMax(${bad})`).toBe(s0)
+      expect(t.max).toBe(360)
+      expect(angleSlider.update(t, { type: 'setValue', value: 9999 })[0].value).toBe(360)
+    }
   })
 
-  it('an unbounded number-input stores ±Infinity bounds in state', () => {
+  it('an unbounded number-input has NO min/max key at all', () => {
     const s = numberInput.init({ value: 5 })
-    expect(s.min).toBe(-Infinity)
-    expect(s.max).toBe(Infinity)
-    const round = JSON.parse(JSON.stringify(s))
-    expect(round.min).toBeNull()
-    expect(round.max).toBeNull()
-    // Independent of `value`, which is finite here — filed as its own issue.
-    expect(Number.isFinite(s.value!)).toBe(true)
+    expect(s.min).toBeUndefined()
+    expect(s.max).toBeUndefined()
+    expect('min' in s).toBe(false)
+    expect('max' in s).toBe(false)
+    // Absence is the serializable spelling of "unbounded": the round trip is an
+    // identity, key for key, on the DEFAULT configuration.
+    expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s)
+    // …and the grid still reads it as unbounded, so nothing else changes.
+    expect(numberInput.update(s, { type: 'setValue', value: 1e9 })[0].value).toBe(1e9)
+    expect(numberInput.update(s, { type: 'setValue', value: -1e9 })[0].value).toBe(-1e9)
+  })
+
+  it('a non-finite number-input bound is unbounded, not stored', () => {
+    for (const bad of NON_FINITE) {
+      const s = numberInput.init({ value: 5, min: bad, max: bad, step: bad })
+      expect(s.min, `min ${bad}`).toBeUndefined()
+      expect(s.max, `max ${bad}`).toBeUndefined()
+      // `step` is REQUIRED, so it takes the default instead of an absence.
+      expect(s.step, `step ${bad}`).toBe(1)
+      expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s)
+    }
+  })
+
+  it('Home/End on an unbounded number-input still store a real number', () => {
+    // `toMin`/`toMax` expand the absent bound to the infinity the grid would
+    // have expanded it to, and `clamp` maps that to a legal finite value (#152)
+    // — the seam between the two policies.
+    const unbounded = numberInput.init({ value: 5 })
+    for (const msg of [{ type: 'toMin' }, { type: 'toMax' }] as const) {
+      const [s] = numberInput.update(unbounded, msg)
+      expect(Number.isFinite(s.value!), msg.type).toBe(true)
+      expect(s.rawText).toBe(String(s.value))
+      expectJsonRoundTrip(s, msg.type)
+    }
+  })
+
+  it('a one-sided number-input keeps the bound it was given', () => {
+    const s = numberInput.init({ value: 5, max: 10 })
+    expect(s.min).toBeUndefined()
+    expect(s.max).toBe(10)
+    expect(numberInput.update(s, { type: 'setValue', value: 999 })[0].value).toBe(10)
+    expect(numberInput.update(s, { type: 'setValue', value: -999 })[0].value).toBe(-999)
+    expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s)
   })
 })

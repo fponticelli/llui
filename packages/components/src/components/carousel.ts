@@ -2,6 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { flipArrow } from '../utils/direction.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide
@@ -133,13 +134,17 @@ export interface CarouselInit {
 export function init(opts: CarouselInit = {}): CarouselState {
   return {
     current: opts.current ?? 0,
-    count: opts.count ?? 0,
+    // `count` is the bound every index is clamped into, `interval` and
+    // `swipeThreshold` the thresholds autoplay and a swipe are measured
+    // against: a non-finite one is unserializable and `clampIndex` would carry
+    // it into `current` (#177).
+    count: finiteBound(opts.count) ?? 0,
     loop: opts.loop ?? true,
     autoplay: opts.autoplay ?? false,
-    interval: opts.interval ?? 5000,
+    interval: finiteBound(opts.interval) ?? 5000,
     paused: false,
     direction: 'forward',
-    swipeThreshold: opts.swipeThreshold ?? 50,
+    swipeThreshold: finiteBound(opts.swipeThreshold) ?? 50,
     dragging: null,
     dir: opts.dir ?? 'ltr',
   }
@@ -185,8 +190,12 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
       return { ...state, current: prev, direction: 'backward' }
     }
     case 'setCount': {
-      const current = Math.min(state.current, Math.max(0, msg.count - 1))
-      return { ...state, count: msg.count, current }
+      // Dropped rather than stored: a slide count has no "absent" spelling and
+      // a non-finite one lands in `current` too, via the clamp below (#177).
+      const count = finiteBound(msg.count)
+      if (count === undefined) return state
+      const current = Math.min(state.current, Math.max(0, count - 1))
+      return { ...state, count, current }
     }
     case 'pause':
       return { ...state, paused: true }

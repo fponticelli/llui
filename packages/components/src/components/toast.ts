@@ -2,6 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { presenceEndProps } from '../utils/presence-end.js'
+import { finiteBound } from '../utils/number.js'
 import type { PresenceStatus } from './presence.js'
 
 /**
@@ -120,7 +121,8 @@ export interface ToasterInit {
 export function init(opts: ToasterInit = {}): ToasterState {
   return {
     toasts: [],
-    max: opts.max ?? 5,
+    // The queue limit the toast list is trimmed to (#177).
+    max: finiteBound(opts.max) ?? 5,
     placement: opts.placement ?? 'bottom-end',
     animated: opts.animated ?? false,
   }

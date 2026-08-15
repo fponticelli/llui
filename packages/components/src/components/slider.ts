@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, clampToStep, stepBy } from '../utils/number.js'
+import { clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Slider — numeric input controlled by drag or keyboard. Supports multiple
@@ -59,14 +59,20 @@ export function init(opts: SliderInit = {}): SliderState {
   // it the one remaining way to seed thumbs no drag could produce — off-grid,
   // outside [min,max], or closer together than the gap allows (#125). The seed
   // goes through the SAME normalisation `setValue` uses.
+  //
+  // The bounds go through `finiteBound` for the same reason (#177): they are
+  // the grid, so nothing clamps them, and a non-finite one is both
+  // unserializable and a way to switch that side of the clamp off entirely.
+  // A slider's range is intrinsically bounded, so an unusable option takes the
+  // default rather than an infinity.
   const state: SliderState = {
     value: opts.value ?? [0],
-    min: opts.min ?? 0,
-    max: opts.max ?? 100,
-    step: opts.step ?? 1,
+    min: finiteBound(opts.min) ?? 0,
+    max: finiteBound(opts.max) ?? 100,
+    step: finiteBound(opts.step) ?? 1,
     disabled: opts.disabled ?? false,
     orientation: opts.orientation ?? 'horizontal',
-    minStepsBetweenThumbs: opts.minStepsBetweenThumbs ?? 0,
+    minStepsBetweenThumbs: finiteBound(opts.minStepsBetweenThumbs) ?? 0,
     dir: opts.dir ?? 'ltr',
   }
   return { ...state, value: normalizeValues(state, state.value) }

@@ -1,5 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Breadcrumbs — a hierarchical trail of links to ancestor pages.
@@ -36,7 +37,9 @@ export interface BreadcrumbsInit {
 export function init(opts: BreadcrumbsInit = {}): BreadcrumbsState {
   return {
     items: opts.items ?? [],
-    maxVisible: opts.maxVisible ?? null,
+    // The collapse threshold; `null` is its own "no limit" spelling, so an
+    // unusable one takes that rather than an unserializable number (#177).
+    maxVisible: finiteBound(opts.maxVisible) ?? null,
     expanded: opts.expanded ?? false,
   }
 }

@@ -3,6 +3,7 @@ import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { LocaleContext } from '../locale.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.
@@ -44,7 +45,26 @@ export interface PinInputInit {
 }
 
 export function init(opts: PinInputInit = {}): PinInputState {
-  const length = opts.length ?? 4
+  // The cell count — the bound every focus move is clamped into, AND the length
+  // of the array built on the next line, which is why this one is normalised
+  // harder than the other bounds (#177). `new Array(n)` THROWS a RangeError for
+  // anything that is not a non-negative 32-bit integer, so `length: NaN`,
+  // `2.5` and `-1` were all a crash in `init` rather than a bad value in state.
+  // Finiteness alone does not close that: the floor and the truncation are part
+  // of the same precondition. The truncation is toward ZERO, so `length: 1e-9`
+  // is a legal EMPTY pin input rather than a one-cell one — the alternative
+  // (rounding up) would invent a cell the caller did not ask for.
+  //
+  // What is left is SIZE, and it is not the clean throw an "array-length
+  // ceiling" suggests. Measured under a 256 MB heap, one process per input:
+  // `2**32` and above throw `RangeError: Invalid array length`, but
+  // `2**32 - 1` — and `1e8`, which is a units mix-up rather than a request for
+  // a hundred million cells — exhaust the heap and CRASH instead. Nothing
+  // between normal input and there fails at all (every integer 0..5000 and
+  // every fraction probed is fine). Capping it needs a number chosen for the
+  // UI rather than for the array, which is a product decision a normalisation
+  // does not get to make.
+  const length = Math.max(0, Math.trunc(finiteBound(opts.length) ?? 4))
   const values = opts.values ?? new Array<string>(length).fill('')
   return {
     values,

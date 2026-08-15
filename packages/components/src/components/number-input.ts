@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { clampToStep, stepBy } from '../utils/number.js'
+import { clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Number input — numeric field with increment/decrement buttons. Clamps
@@ -11,8 +11,21 @@ import { clampToStep, stepBy } from '../utils/number.js'
 
 export interface NumberInputState {
   value: number | null
-  min: number
-  max: number
+  /**
+   * The bounds, ABSENT when that side is unbounded — the state's `min`/`max`/
+   * `step` ARE a `NumericGrid`, which is what lets `clampToStep(value, state)`
+   * take the state object straight in.
+   *
+   * A bound is never `±Infinity` and never `NaN`: this is the ONE component in
+   * the package whose DEFAULT range is unbounded, and it used to spell that
+   * `min: -Infinity` / `max: Infinity` in state, which `JSON.stringify` writes
+   * as `null` — so its default state did not survive a round trip and the
+   * rehydrated object held `null` in a `number` field (#177). Absence is the
+   * serializable spelling of the same fact; `finiteBound` is the one place it
+   * is decided.
+   */
+  min?: number
+  max?: number
   step: number
   disabled: boolean
   readonly: boolean
@@ -51,10 +64,19 @@ export function init(opts: NumberInputInit = {}): NumberInputState {
   // init IS a mutation path. It used to store `opts.value` verbatim, which made
   // it the one remaining way to seed a value no other path could produce —
   // off-grid or outside [min,max] (#125).
-  const grid = {
-    min: opts.min ?? -Infinity,
-    max: opts.max ?? Infinity,
-    step: opts.step ?? 1,
+  //
+  // It is the only write path for the BOUNDS too (no message sets one), and the
+  // keys are OMITTED rather than set to `undefined` when a side is unbounded:
+  // `JSON.stringify` drops an `undefined` property, so a state carrying
+  // `min: undefined` would rehydrate WITHOUT the key and the live and
+  // rehydrated objects would differ by a key — which is exactly the comparison
+  // devtools time-travel and `@llui/test` replay make (#177).
+  const min = finiteBound(opts.min)
+  const max = finiteBound(opts.max)
+  const grid: Pick<NumberInputState, 'min' | 'max' | 'step'> = {
+    ...(min === undefined ? {} : { min }),
+    ...(max === undefined ? {} : { max }),
+    step: finiteBound(opts.step) ?? 1,
   }
   const seed = opts.value ?? null
   const value = seed === null ? null : clampToStep(seed, grid)
@@ -75,6 +97,19 @@ export function init(opts: NumberInputInit = {}): NumberInputState {
  */
 function commit(state: NumberInputState, value: number): NumberInputState {
   return { ...state, value, rawText: String(value) }
+}
+
+/**
+ * Is the value sitting on a bound — i.e. is that stepper button spent? An
+ * ABSENT bound is unbounded, so the answer is no: the old `>= Infinity` said
+ * the same thing, and the explicit test says it without a sentinel (#177).
+ */
+function atMax(state: NumberInputState): boolean {
+  return state.max !== undefined && (state.value ?? 0) >= state.max
+}
+
+function atMin(state: NumberInputState): boolean {
+  return state.min !== undefined && (state.value ?? 0) <= state.min
 }
 
 /**
@@ -112,10 +147,14 @@ export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInp
       return [commit(state, stepBy(state.value ?? 0, msg.multiplier ?? 1, state)), []]
     case 'decrement':
       return [commit(state, stepBy(state.value ?? 0, -(msg.multiplier ?? 1), state)), []]
+    // An ABSENT bound is unbounded, so it expands to the infinity the grid
+    // would have expanded it to anyway — and `clamp` maps that to a finite
+    // legal value when the bound it points at is itself infinite (#152), which
+    // is what keeps Home/End on an unbounded input storing a real number.
     case 'toMin':
-      return [commit(state, clampToStep(state.min, state)), []]
+      return [commit(state, clampToStep(state.min ?? -Infinity, state)), []]
     case 'toMax':
-      return [commit(state, clampToStep(state.max, state)), []]
+      return [commit(state, clampToStep(state.max ?? Infinity, state)), []]
     case 'setDisabled':
       return [{ ...state, disabled: msg.disabled }, []]
   }
@@ -209,8 +248,10 @@ export function connect(
       type: 'text',
       role: 'spinbutton',
       inputmode: 'decimal',
-      'aria-valuemin': state.map((st) => (isFinite(st.min) ? st.min : undefined)),
-      'aria-valuemax': state.map((st) => (isFinite(st.max) ? st.max : undefined)),
+      // No `isFinite` filter needed any more: a bound in state is finite or
+      // absent, and an absent one must not be announced (#177).
+      'aria-valuemin': state.map((st) => st.min),
+      'aria-valuemax': state.map((st) => st.max),
       'aria-valuenow': state.map((st) => st.value ?? undefined),
       'aria-disabled': state.map((st) => (st.disabled ? 'true' : undefined)),
       'aria-readonly': state.map((st) => (st.readonly ? 'true' : undefined)),
@@ -261,9 +302,9 @@ export function connect(
       type: 'button',
       'aria-label': incrementLabel,
       'aria-disabled': state.map((st) =>
-        st.disabled || st.readonly || (st.value ?? 0) >= st.max ? 'true' : undefined,
+        st.disabled || st.readonly || atMax(st) ? 'true' : undefined,
       ),
-      disabled: state.map((st) => st.disabled || st.readonly || (st.value ?? 0) >= st.max),
+      disabled: state.map((st) => st.disabled || st.readonly || atMax(st)),
       'data-scope': 'number-input',
       'data-part': 'increment',
       tabindex: -1,
@@ -273,9 +314,9 @@ export function connect(
       type: 'button',
       'aria-label': decrementLabel,
       'aria-disabled': state.map((st) =>
-        st.disabled || st.readonly || (st.value ?? 0) <= st.min ? 'true' : undefined,
+        st.disabled || st.readonly || atMin(st) ? 'true' : undefined,
       ),
-      disabled: state.map((st) => st.disabled || st.readonly || (st.value ?? 0) <= st.min),
+      disabled: state.map((st) => st.disabled || st.readonly || atMin(st)),
       'data-scope': 'number-input',
       'data-part': 'decrement',
       tabindex: -1,

@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Time picker — hours and minutes input with increment/decrement buttons.
@@ -59,8 +60,9 @@ export function init(opts: TimePickerInit = {}): TimePickerState {
   return {
     value: opts.value ?? { hours: 0, minutes: 0, seconds: 0 },
     format: opts.format ?? '24',
-    minuteStep: opts.minuteStep ?? 1,
-    secondStep: opts.secondStep ?? 1,
+    // The increments every arrow/wheel adjustment is quantised by (#177).
+    minuteStep: finiteBound(opts.minuteStep) ?? 1,
+    secondStep: finiteBound(opts.secondStep) ?? 1,
     showSeconds: opts.showSeconds ?? false,
     disabled: opts.disabled ?? false,
   }

@@ -2,6 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import { flipArrow, type TextDirection } from '../utils/direction.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -50,10 +51,14 @@ export interface PaginationInit {
 export function init(opts: PaginationInit = {}): PaginationState {
   return {
     page: opts.page ?? 1,
-    pageSize: opts.pageSize ?? 10,
-    total: opts.total ?? 0,
-    siblings: opts.siblings ?? 1,
-    boundaries: opts.boundaries ?? 1,
+    // `pageSize`/`total` are the bounds every page number is computed against
+    // — `Math.ceil(total / pageSize)` — so a non-finite one is not merely
+    // unserializable, it propagates straight into `page` (#177). `siblings`/
+    // `boundaries` bound the rendered window the same way.
+    pageSize: finiteBound(opts.pageSize) ?? 10,
+    total: finiteBound(opts.total) ?? 0,
+    siblings: finiteBound(opts.siblings) ?? 1,
+    boundaries: finiteBound(opts.boundaries) ?? 1,
     disabled: opts.disabled ?? false,
     dir: opts.dir ?? 'ltr',
   }
@@ -85,16 +90,23 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
       return [{ ...state, page: 1 }, []]
     case 'last':
       return [{ ...state, page: pages }, []]
+    // A non-finite bound is DROPPED rather than stored: neither field has an
+    // "absent" spelling, and both divide into `page`, so accepting one would
+    // put `NaN` in two fields at once (#177).
     case 'setPageSize': {
+      const pageSize = finiteBound(msg.pageSize)
+      if (pageSize === undefined) return [state, []]
       // Preserve first visible item when pageSize changes
       const firstItem = (state.page - 1) * state.pageSize
-      const nextPage = Math.floor(firstItem / msg.pageSize) + 1
-      const nextPages = Math.max(1, Math.ceil(state.total / msg.pageSize))
-      return [{ ...state, pageSize: msg.pageSize, page: Math.min(nextPage, nextPages) }, []]
+      const nextPage = Math.floor(firstItem / pageSize) + 1
+      const nextPages = Math.max(1, Math.ceil(state.total / pageSize))
+      return [{ ...state, pageSize, page: Math.min(nextPage, nextPages) }, []]
     }
     case 'setTotal': {
-      const nextPages = Math.max(1, Math.ceil(msg.total / state.pageSize))
-      return [{ ...state, total: msg.total, page: Math.min(state.page, nextPages) }, []]
+      const total = finiteBound(msg.total)
+      if (total === undefined) return [state, []]
+      const nextPages = Math.max(1, Math.ceil(total / state.pageSize))
+      return [{ ...state, total, page: Math.min(state.page, nextPages) }, []]
     }
   }
 }

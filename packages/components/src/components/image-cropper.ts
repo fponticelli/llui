@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
-import { clamp } from '../utils/number.js'
+import { clamp, finiteBound } from '../utils/number.js'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -150,11 +150,25 @@ export function centerFill(
   }
 }
 
+/** Natural image dimensions with a non-finite axis replaced by the 0 default. */
+function finiteImage(raw: { width?: number; height?: number } | undefined): {
+  width: number
+  height: number
+} {
+  return { width: finiteBound(raw?.width) ?? 0, height: finiteBound(raw?.height) ?? 0 }
+}
+
 export function init(opts: ImageCropperInit = {}): ImageCropperState {
-  const image = opts.image ?? { width: 0, height: 0 }
-  const aspectRatio = opts.aspectRatio ?? null
+  // Everything the crop is fitted AGAINST is a bound and is normalised here
+  // (#177): `image` and `minSize` are required, so an unusable value takes the
+  // default, while `aspectRatio` is nullable and `null` already means "no
+  // constraint", so an unusable ratio takes that. A non-finite bound is not
+  // merely unserializable — it divides straight into `fitCrop` and hands the
+  // whole `crop` rectangle to `NaN`.
+  const image = finiteImage(opts.image)
+  const aspectRatio = finiteBound(opts.aspectRatio) ?? null
   const crop = opts.crop ?? centerFill(image, aspectRatio)
-  const minSize = opts.minSize ?? 20
+  const minSize = finiteBound(opts.minSize) ?? 20
   return {
     image,
     crop: fitCrop(crop, image, aspectRatio, minSize),
@@ -232,8 +246,14 @@ export function update(
     return [state, []]
   }
   switch (msg.type) {
+    // A message that carries a non-finite BOUND is dropped: the image
+    // dimensions are the outer limit every crop is fitted into, and there is no
+    // "unbounded image" to fall back to (#177).
     case 'setImage': {
-      const image = { width: msg.width, height: msg.height }
+      const width = finiteBound(msg.width)
+      const height = finiteBound(msg.height)
+      if (width === undefined || height === undefined) return [state, []]
+      const image = { width, height }
       const crop = centerFill(image, state.aspectRatio)
       return [{ ...state, image, crop }, []]
     }
@@ -242,15 +262,28 @@ export function update(
         { ...state, crop: fitCrop(msg.crop, state.image, state.aspectRatio, state.minSize) },
         [],
       ]
-    case 'setAspectRatio':
+    case 'setAspectRatio': {
+      // `null` is this bound's own spelling of "no constraint", so a
+      // non-finite ratio takes it rather than dividing into every later fit.
+      //
+      // Stated because it is the ONE place in this change where an absent bound
+      // REMOVES a constraint instead of declining to add one: on a cropper
+      // already locked to 16:9, `setAspectRatio(NaN)` unlocks it, and later
+      // `setCrop`/`dragMove` are free-form. That is the nullable idiom being
+      // consistent (the same as `setAspectRatio(null)`), and it is strictly
+      // better than the `NaN`-poisoned rectangle it replaces — but it is not
+      // the "drop the write" answer the REQUIRED bounds take, so it is a
+      // deliberate difference rather than an oversight.
+      const ratio = finiteBound(msg.ratio) ?? null
       return [
         {
           ...state,
-          aspectRatio: msg.ratio,
-          crop: fitCrop(state.crop, state.image, msg.ratio, state.minSize),
+          aspectRatio: ratio,
+          crop: fitCrop(state.crop, state.image, ratio, state.minSize),
         },
         [],
       ]
+    }
     case 'dragStart':
       return [{ ...state, dragging: true }, []]
     case 'dragMove': {

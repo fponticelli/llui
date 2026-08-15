@@ -1,4 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Meter — role="meter" gauge for a scalar measurement within a known range
@@ -33,14 +34,21 @@ export interface MeterInit {
 }
 
 export function init(opts: MeterInit = {}): MeterState {
+  // Five bounds, all normalised (#177). `min`/`max` are required, so a
+  // non-finite one takes the default; `low`/`high`/`optimum` are OPTIONAL —
+  // absence is already their "no threshold" spelling, and `thresholdState`
+  // reads them with `undefined` checks — so an unusable one is simply left out.
   const state: MeterState = {
     value: opts.value ?? 0,
-    min: opts.min ?? 0,
-    max: opts.max ?? 100,
+    min: finiteBound(opts.min) ?? 0,
+    max: finiteBound(opts.max) ?? 100,
   }
-  if (opts.low !== undefined) state.low = opts.low
-  if (opts.high !== undefined) state.high = opts.high
-  if (opts.optimum !== undefined) state.optimum = opts.optimum
+  const low = finiteBound(opts.low)
+  const high = finiteBound(opts.high)
+  const optimum = finiteBound(opts.optimum)
+  if (low !== undefined) state.low = low
+  if (high !== undefined) state.high = high
+  if (optimum !== undefined) state.optimum = optimum
   return state
 }
 
@@ -48,8 +56,11 @@ export function update(state: MeterState, msg: MeterMsg): [MeterState, never[]] 
   switch (msg.type) {
     case 'setValue':
       return [{ ...state, value: msg.value }, []]
-    case 'setMax':
-      return [{ ...state, max: msg.max }, []]
+    case 'setMax': {
+      const max = finiteBound(msg.max)
+      if (max === undefined) return [state, []]
+      return [{ ...state, max }, []]
+    }
   }
 }
 

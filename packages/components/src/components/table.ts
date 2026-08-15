@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Table / data grid — a headless machine for sortable columns, row
@@ -126,7 +127,8 @@ export function init(opts: TableInit = {}): TableState {
     selectionMode: opts.selectionMode ?? 'none',
     focusedCell: opts.focusedCell ?? null,
     rangeAnchor: null,
-    pageSize: opts.pageSize ?? 10,
+    // The page bound row indices are computed against (#177).
+    pageSize: finiteBound(opts.pageSize) ?? 10,
     descFirst: opts.descFirst ?? false,
     disabled: opts.disabled ?? false,
   }

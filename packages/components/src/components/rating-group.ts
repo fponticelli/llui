@@ -2,7 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
-import { clamp } from '../utils/number.js'
+import { clamp, finiteBound } from '../utils/number.js'
 
 /**
  * Rating group — a sequence of clickable items (stars) representing a
@@ -51,7 +51,10 @@ export interface RatingGroupInit {
 export function init(opts: RatingGroupInit = {}): RatingGroupState {
   return {
     value: opts.value ?? 0,
-    count: opts.count ?? 5,
+    // `count` IS this component's upper bound — every write clamps into
+    // `0..count` and `toEnd` assigns it straight to `value` — so a non-finite
+    // one both breaks serialization and switches the clamp off (#177).
+    count: finiteBound(opts.count) ?? 5,
     allowHalf: opts.allowHalf ?? false,
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,

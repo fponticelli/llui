@@ -3,6 +3,7 @@ import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { LocaleContext } from '../locale.js'
 import { formatDate } from '../format/format-date.js'
+import { finiteBound } from '../utils/number.js'
 import { defaultLocale } from '../format/defaults.js'
 
 /**
@@ -198,7 +199,8 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
     hoverDate: null,
     visibleMonth,
     visibleYear,
-    months: opts.months ?? 1,
+    // The count of month grids rendered side by side (#177).
+    months: finiteBound(opts.months) ?? 1,
     focused: anchorIso ?? today,
     min: opts.min ?? null,
     max: opts.max ?? null,

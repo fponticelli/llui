@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, clampToStep, stepBy } from '../utils/number.js'
+import { clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Angle slider — a circular input that selects a value in 0..360 degrees
@@ -53,9 +53,12 @@ export interface AngleSliderInit {
 }
 
 export function init(opts: AngleSliderInit = {}): AngleSliderState {
-  const min = opts.min ?? 0
-  const max = opts.max ?? 360
-  const step = opts.step ?? 1
+  // The bounds are REQUIRED and finite here — an angle range is intrinsically
+  // bounded, so there is no way to spell "unbounded" in `min: number` and a
+  // non-finite option takes the default instead of poisoning the grid (#177).
+  const min = finiteBound(opts.min) ?? 0
+  const max = finiteBound(opts.max) ?? 360
+  const step = finiteBound(opts.step) ?? 1
   return {
     value: clampToStep(opts.value ?? 0, { min, max, step }),
     min,
@@ -80,10 +83,22 @@ export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSlid
       return [{ ...state, value: stepBy(state.value, msg.steps ?? 1, state) }, []]
     case 'decrement':
       return [{ ...state, value: stepBy(state.value, -(msg.steps ?? 1), state) }, []]
-    case 'setMin':
-      return [{ ...state, min: msg.min, value: clamp(state.value, msg.min, state.max) }, []]
-    case 'setMax':
-      return [{ ...state, max: msg.max, value: clamp(state.value, state.min, msg.max) }, []]
+    // A bound names the grid rather than a position on it, so it never passes
+    // through `clamp` and nothing else would reject it. A non-finite one is
+    // DROPPED — the range the component already had is the only answer that
+    // cannot silently switch clamping off for that side, which is what a `NaN`
+    // min did: every comparison against it is false, so `setValue(-9999)`
+    // stored -9999 while the max still clamped (#177).
+    case 'setMin': {
+      const min = finiteBound(msg.min)
+      if (min === undefined) return [state, []]
+      return [{ ...state, min, value: clamp(state.value, min, state.max) }, []]
+    }
+    case 'setMax': {
+      const max = finiteBound(msg.max)
+      if (max === undefined) return [state, []]
+      return [{ ...state, max, value: clamp(state.value, state.min, max) }, []]
+    }
     case 'setDir':
       return [{ ...state, dir: msg.dir }, []]
   }
