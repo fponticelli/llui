@@ -103,32 +103,36 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        # Runs under turbo (with the daemon OFF) so unchanged packages replay
-        # from the shared `.turbo` cache restored above — this is the most
-        # expensive step in the job, and the only one that was still paying full
-        # price on every run.
+        # THE DAEMON WAS NOT THE CAUSE. Recorded per the instruction this comment
+        # used to carry, because the experiment it proposed has now run and failed.
         #
-        # HISTORY, because this step has bitten before: `turbo test` used to hang
-        # here for 24 min after every task had finished (all log groups closed,
-        # turbo never returned), only inside the GH container — it exits fine
-        # locally. The step was parked on `pnpm -r` with the standing hypothesis
-        # that the culprit was turbo's background DAEMON doing I/O after the
-        # tasks exit. `TURBO_DAEMON=false` tests exactly that, and the 30-minute
-        # job timeout is the backstop if the hypothesis is wrong.
+        # HISTORY: `turbo test` hangs in the GH container for ~24 min AFTER every
+        # task has finished — all log groups closed, every suite green, turbo
+        # simply never returns. It exits fine locally. The standing hypothesis was
+        # turbo's background DAEMON doing I/O after the tasks exit, so the step ran
+        # `TURBO_DAEMON=false pnpm turbo test --concurrency=2` to test exactly that.
         #
-        # IF THIS STALLS AGAIN: revert to `pnpm -r --workspace-concurrency=2 run
-        # test`, which always runs fresh and has no stale-cache risk, and record
-        # here that the daemon was NOT the cause.
+        # Run 31862751399 (2026-08-15) disproves it. With the daemon off, all 23
+        # packages started AND printed their summaries by 03:54:33 — then 23
+        # minutes of total silence until the 30-minute job timeout killed it at
+        # 04:17:50. Same stall, daemon off. The hypothesis is dead; do not retry it.
         #
-        # --concurrency=2 is the turbo equivalent of the previous
+        # Why it stayed hidden for months: `turbo.json` lists
+        # `$TURBO_ROOT$/vitest.shared.ts` as a `test` input, so almost every run
+        # replayed all 42 tasks from the restored cache in seconds and turbo exited
+        # before it could hang. The stall only appears when turbo actually EXECUTES
+        # the tasks — i.e. the first run after that file changes. Verify was 4–5 min
+        # on those cached runs; this one never finished.
+        #
+        # So: back to `pnpm -r`, which always runs fresh and has no stale-cache
+        # risk. The cost is that unchanged packages no longer replay — measured at
+        # 52 s for the whole workspace cold on an 18-core machine, so the 30-minute
+        # job budget has ample room even on the 4-core runner.
+        #
         # --workspace-concurrency=2: each vitest already forks ~ncpu workers, so
         # running many package suites at once oversubscribes the 4-core runner
         # ~10x and starves timer-sensitive tests. Two at a time keeps load gentle.
-        #
-        # Cache correctness: turbo.json's `test` task lists
-        # `$TURBO_ROOT$/vitest.shared.ts` as an input, so a replay cannot survive
-        # a change to the shared vitest config (e.g. a define flip).
-        run: TURBO_DAEMON=false pnpm turbo test --concurrency=2
+        run: pnpm -r --workspace-concurrency=2 run test
 
       # Root `scripts/` belongs to no workspace package, so `turbo test` above
       # cannot see it — these tests run under their own vitest config and would
