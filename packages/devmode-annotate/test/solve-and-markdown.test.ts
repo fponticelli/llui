@@ -1,8 +1,5 @@
 /// <reference lib="dom" />
-// Tests for the Save / Solve action buttons. Prose now comes from the embedded
-// `markdownEditor()`; tests seed it via the persisted draft (the real restore
-// path). The Markdown formatting logic lives in hud-core and is covered by
-// hud-core.test.ts — the hand-rolled toolbar it used to drive is gone.
+// Tests for the standalone textarea plus the Save / Solve action buttons.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mountAnnotateHud } from '../src/index.js'
@@ -49,13 +46,24 @@ describe('Save / Solve action buttons', () => {
     expect(root.querySelector('[data-llui-solve]')).not.toBeNull()
   })
 
-  it('mounts the embedded markdown editor in the compose tab', () => {
+  it('mounts a textarea that submits the text typed into it', async () => {
+    const calls = mockFetch()
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
     expect(root.querySelector('[data-llui-editor]')).not.toBeNull()
-    // The WYSIWYG surface is a Lexical contenteditable, not a textarea.
-    expect(root.querySelector('[data-llui-editor] [data-lexical-editor]')).not.toBeNull()
-    expect(root.querySelector('textarea')).toBeNull()
+    expect(root.querySelector('[data-llui-editor] [data-lexical-editor]')).toBeNull()
+
+    const textarea = root.querySelector('textarea')!
+    textarea.value = 'typed in the standalone HUD'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    const saveBtn = Array.from(root.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save note',
+    )!
+    saveBtn.click()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const body = JSON.parse(calls[0]![1].body as string) as { body: string }
+    expect(body.body).toBe('typed in the standalone HUD')
   })
 
   it("Solve submits with intent='task'", async () => {

@@ -1,19 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
-// Imported as JSON rather than read through `require`/`node:fs`: both packages
-// restrict their `exports` map (so the `./package.json` subpath is unresolvable),
-// and this is a browser package that deliberately carries no `@types/node`.
 import self from '../package.json'
-import markdownEditor from '../../markdown-editor/package.json'
 
 const isLexical = (name: string) => name === 'lexical' || name.startsWith('@lexical/')
-
-/** The peers `@llui/markdown-editor` marks optional — needed only by the consumer
- * that imports the entry point behind them. */
-const optionalPeers = (pkg: { peerDependenciesMeta?: Record<string, { optional?: boolean }> }) =>
-  Object.entries(pkg.peerDependenciesMeta ?? {})
-    .filter(([, meta]) => meta.optional === true)
-    .map(([name]) => name)
 
 declare global {
   // vite/vitest provide `import.meta.glob`; declare the narrow shape we use so the
@@ -85,109 +74,27 @@ const RUNTIME_IMPORTS: ReadonlySet<string> = (() => {
   return found
 })()
 
-/**
- * `@llui/devmode-annotate` value-imports `@llui/markdown-editor` (the HUD's note
- * editor) as a hard dependency, and `@llui/markdown-editor` declares `lexical` +
- * seven REQUIRED `@lexical/*` packages as peer dependencies — it value-imports them
- * across ~30 source files. A peer is the *consumer's* obligation, and devmode-annotate
- * is that consumer, so these entries are the peer-satisfaction layer, NOT dead weight.
- *
- * They look unused because devmode-annotate's own source references `lexical` exactly
- * once, in a type-only `import type { LexicalEditor }` that is erased at build. A sweep
- * of `src/` therefore "proves" they are droppable — and issue #63 was filed on exactly
- * that reading. Dropping them is invisible to every in-repo signal (build, check and all
- * other tests still pass) because inside the workspace `@llui/markdown-editor`
- * satisfies its own peers from its devDependencies. The breakage only reaches a
- * consumer's install, under a package manager that does not auto-install peers (Yarn's
- * default; pnpm with `auto-install-peers=false`), as unmet peers and a HUD whose
- * editor cannot resolve `lexical` at runtime. Measured against a packed tarball, the
- * removal also saves nothing: pnpm/npm auto-install the peers, so the dependency
- * closure is byte-identical either way.
- *
- * `@lexical/table` is the ONE exception, and it is a different fact rather than a
- * softening of the one above: since #75 it is an OPTIONAL peer, reachable only from
- * `@llui/markdown-editor/plugins/table`, an entry point this package never imports.
- * Nothing has to satisfy it here, so carrying it would push a package onto every
- * consumer of the HUD for nothing. The suites below pin BOTH halves — the required
- * peers are declared, the optional one is not — so neither can drift into the other.
- *
- * This test is the guard that no other in-repo signal can provide.
- */
-describe('packaging: Lexical peer satisfaction for @llui/markdown-editor', () => {
-  it('declares every REQUIRED Lexical peer of @llui/markdown-editor as its own dependency', () => {
-    const optional = new Set(optionalPeers(markdownEditor))
-    const required = Object.keys(markdownEditor.peerDependencies)
-      .filter(isLexical)
-      .filter((name) => !optional.has(name))
-      .sort()
-    // Guard the guard: if markdown-editor ever stops peering Lexical this test would
-    // silently stop testing anything, so assert the precondition still holds.
-    expect(required.length).toBeGreaterThan(0)
-
-    const declared = Object.keys(self.dependencies).filter(isLexical).sort()
-    expect(declared).toEqual(required)
-  })
-
-  it('keeps them in dependencies, not devDependencies (they must reach consumers)', () => {
-    expect(Object.keys(self.devDependencies).filter(isLexical)).toEqual([])
-  })
-
+describe('packaging: core stays editor-free', () => {
   it('does not regress @llui/dom out of peerDependencies', () => {
-    // The repo-wide packaging landmine: @llui/dom as a hard dep gives a consumer two
-    // physical installs, each with its own module-scoped currentContext, and every
-    // provide()/structural primitive throws. It must stay a peer.
     expect(self.peerDependencies).toHaveProperty('@llui/dom')
     expect(self.dependencies).not.toHaveProperty('@llui/dom')
   })
-})
-
-/**
- * The other half of #75: an optional peer of the editor must not become a MANDATORY
- * dependency of the HUD, because a `dependency` is exactly that for everyone who
- * installs `@llui/devmode-annotate`.
- *
- * What licenses the omission is not the manifest but the imports: this package names
- * neither the peer nor the editor entry point behind it. Both are asserted, because
- * either one coming back would make the missing dependency a runtime failure in a
- * consumer's app rather than an install warning here.
- */
-describe('packaging: optional peers of the editor stay out of the HUD', () => {
-  it('does not declare @lexical/table at all', () => {
-    expect(self.dependencies).not.toHaveProperty('@lexical/table')
-    expect(self.devDependencies).not.toHaveProperty('@lexical/table')
-    // …and the precondition that makes that correct.
-    expect(optionalPeers(markdownEditor)).toContain('@lexical/table')
+  it('declares no editor or Lexical package in any dependency class', () => {
+    const declared = [
+      ...Object.keys(self.dependencies),
+      ...Object.keys(self.devDependencies),
+      ...Object.keys(self.peerDependencies),
+    ]
+    expect(declared.filter(isLexical)).toEqual([])
+    expect(declared.filter((name) => name.includes('markdown-editor'))).toEqual([])
   })
 
-  it('never imports an optional peer of the editor', () => {
-    for (const peer of optionalPeers(markdownEditor)) {
-      expect([peer, RUNTIME_IMPORTS.has(peer)]).toEqual([peer, false])
-    }
-  })
-
-  it('imports only editor entry points that are free of optional peers', () => {
-    const used = [...RUNTIME_IMPORTS].filter((s) => s.startsWith('@llui/markdown-editor')).sort()
-    // The barrel, plus the same stylesheet twice — once as a side-effect import for the
-    // light DOM and once `?raw` to adopt into the shadow root. Neither CSS entry pulls a
-    // module graph at all, and the barrel's freedom from optional peers is pinned by
-    // `markdown-editor/test/packaging.test.ts`. A NEW entry point added to this list is
-    // a deliberate decision that has to be re-justified against that gate.
-    expect(used).toEqual([
-      '@llui/markdown-editor',
-      '@llui/markdown-editor/styles/editor.css',
-      '@llui/markdown-editor/styles/editor.css?raw',
-    ])
-  })
-
-  // A negative control for the scan itself: the assertions above are "must NOT
-  // contain", which pass vacuously if nothing is scanned. Pin that it really did read
-  // this package's sources, and really does see through the emit.
-  it('the import scan actually reads this package', () => {
-    expect(RUNTIME_IMPORTS.has('@llui/markdown-editor')).toBe(true)
+  it('emits no runtime import of an editor or Lexical package', () => {
+    expect([...RUNTIME_IMPORTS].filter(isLexical)).toEqual([])
+    expect([...RUNTIME_IMPORTS].filter((name) => name.includes('markdown-editor'))).toEqual([])
+    // Negative controls: the emitted scan really walked runtime imports and
+    // still sees the non-editor packages core deliberately owns.
+    expect(RUNTIME_IMPORTS.has('@llui/dom')).toBe(true)
     expect(RUNTIME_IMPORTS.has('fflate')).toBe(true)
-    // The type-only `import type { LexicalEditor } from 'lexical'` in `index.ts` is the
-    // whole reason a source sweep misleads. The scan must NOT see it — if it did, the
-    // "never imports an optional peer" assertion above would be checking the wrong thing.
-    expect(RUNTIME_IMPORTS.has('lexical')).toBe(false)
   })
 })

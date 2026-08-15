@@ -42,19 +42,6 @@ import {
   type Signal,
   type SignalViewBag,
 } from '@llui/dom'
-import {
-  corePlugin,
-  floatingToolbarPlugin,
-  linkPlugin,
-  markdownEditor,
-  slashPlugin,
-  type EditorState,
-} from '@llui/markdown-editor'
-import '@llui/markdown-editor/styles/editor.css'
-// The same stylesheet as raw text, so isolate (shadow-DOM) mode can adopt it
-// into the shadow root where the light-DOM side-effect import can't reach.
-import EDITOR_CSS from '@llui/markdown-editor/styles/editor.css?raw'
-import type { LexicalEditor } from 'lexical'
 
 import {
   collapsible,
@@ -107,6 +94,11 @@ import { createPersistence } from './persistence.js'
 import { applySavedPosition, createDragController, readSavedPosition } from './drag-controller.js'
 import { installAutoCapture } from './auto-capture.js'
 import { createCapturePipeline, type BakeFn } from './capture-pipeline.js'
+import {
+  registeredAnnotateEditor,
+  type AnnotateEditorInstance,
+  type AnnotateEditorRegistration,
+} from './editor.js'
 
 // The notes transport seam. Re-exported so consumers can supply their own
 // adapter (IndexedDB, HTTP, export bundle) via `mountAnnotateHud({ store })`.
@@ -141,6 +133,12 @@ export type { RedactHooks, CaptureDefaults, SecretRedactorOptions } from './reda
 // The capture geometry + annotation baker types live with the capture
 // pipeline; re-exported here so the public surface is unchanged.
 export type { ScreenshotGeometry, BakeFn } from './capture-pipeline.js'
+export {
+  registerAnnotateEditor,
+  type AnnotateEditorInstance,
+  type AnnotateEditorMountOptions,
+  type AnnotateEditorRegistration,
+} from './editor.js'
 
 function isAutomatedBrowser(): boolean {
   return typeof navigator !== 'undefined' && navigator.webdriver === true
@@ -231,10 +229,9 @@ export interface MountAnnotateOptions {
    *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
    *  default); `installAnnotateHud` turns it on for production. */
   isolate?: boolean
-  /** Markdown-editor stylesheet text adopted into the shadow root in isolate
-   *  mode (the light-DOM `import '…/editor.css'` can't cross the shadow
-   *  boundary). Defaults to the bundled stylesheet (`editor.css?raw`). Override
-   *  to supply the CSS in environments where the `?raw` import can't resolve. */
+  /** Registered editor stylesheet text adopted into the shadow root in isolate
+   *  mode. Defaults to the active editor registration's `shadowCss`. Override
+   *  to supply the CSS in environments where raw CSS imports can't resolve. */
   editorCss?: string
 }
 
@@ -567,6 +564,9 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
   }
   const solveEnabled = opts.solveEnabled !== false
   const elementPickEnabled = opts.elementPick !== false
+  // Capture once per mount. Registering an editor upgrades future HUD mounts;
+  // it never hot-swaps a live editing surface out from under the user.
+  const richEditor: AnnotateEditorRegistration | null = registeredAnnotateEditor()
   // Prod-safe capture defaults: the debug-telemetry body and interaction
   // recording default ON in dev and OFF in production (host opts in).
   const isDev = import.meta.env?.DEV ?? false
@@ -607,12 +607,8 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     return manifest
   }
 
-  // Imperative refs (the embedded markdown editor + DOM nodes used for measurement).
-  // The prose field is a nested `markdownEditor()` app mounted into a `foreign`
-  // host; `mdApp` is its handle (read/clear via `setValue`), `editorApi` the live
-  // Lexical editor (for focus).
-  let mdApp: ReturnType<typeof mountSignalComponent> | null = null
-  let editorApi: LexicalEditor | null = null
+  // Imperative refs (the optional editor surface + DOM nodes used for measurement).
+  let noteEditor: AnnotateEditorInstance | null = null
   let modalEl: HTMLElement | null = null
 
   const reproRecorder = createReproRecorder()
@@ -685,10 +681,9 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     // portal into it (styles apply, content is contained).
     if (overlayHost) shadow.appendChild(overlayHost)
     applyShadowStyles(shadow, THEME_STYLESHEET)
-    // Bundle the markdown-editor stylesheet into the shadow — the light-DOM
-    // side-effect `import '…/editor.css'` doesn't cross the shadow boundary, so
-    // the embedded editor would render unstyled without this.
-    const editorCss = opts.editorCss ?? EDITOR_CSS
+    // An optional editor package supplies its shadow styles through the same
+    // registration as its mount implementation. Core has no module edge to it.
+    const editorCss = opts.editorCss ?? richEditor?.shadowCss
     if (editorCss) applyShadowStyles(shadow, editorCss)
     document.body.appendChild(shadowHost)
     idEl = shadowHost
@@ -721,10 +716,9 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
   // ── Imperative bridge fns (declared before the view so handlers close over them) ──
 
   const getState = (): HudState => handle.getState()
-  // Prefer the live editor's serialized markdown over the (debounced) state mirror
-  // so a submit fired right after the last keystroke still captures it.
-  const proseValue = (): string =>
-    mdApp ? (mdApp.getState() as EditorState).value : getState().draftProse
+  // Prefer the live surface over the state mirror so a submit fired right after
+  // the last keystroke always captures it (including a debounced rich editor).
+  const proseValue = (): string => noteEditor?.getValue() ?? getState().draftProse
 
   const reanchorModal = (): void => {
     if (!modalEl) return
@@ -759,7 +753,7 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     handle.send({ type: 'modal/open' })
     refreshContext()
     queueMicrotask(reanchorModal)
-    queueMicrotask(() => editorApi?.focus())
+    queueMicrotask(() => noteEditor?.focus())
   }
   const close = (): void => handle.send({ type: 'modal/close' })
 
@@ -1107,11 +1101,7 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
           ...attachmentRow(state, send),
           ...editorForeign(state, send),
           div({ style: STYLES.markdownHint }, [
-            text('Rich editor · select text to format · '),
-            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('/')]),
-            text(' for commands · '),
-            span({ 'style.fontFamily': 'ui-monospace,SFMono-Regular,monospace' }, [text('⌘↵')]),
-            text(' to submit'),
+            text(richEditor?.hint ?? 'Markdown textarea · type Markdown directly · ⌘↵ to submit'),
           ]),
           ...moreOptions(state, send),
           div({ 'data-llui-status': '', style: STYLES.status }, [
@@ -1231,16 +1221,15 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     ]),
   ]
 
-  // The prose field is a real `markdownEditor()` (WYSIWYG, hides the Markdown).
-  // It's mounted as a nested app inside a `foreign` host so the surrounding HUD
-  // stays one TEA component. Formatting (bold/italic/code/lists/links) is the
-  // editor's job — its floating selection toolbar + Markdown shortcuts replace the
-  // old hand-rolled toolbar. Cmd/Ctrl+Enter submits (plain Enter is a newline).
+  // The prose field is always usable: core mounts a plain textarea, while an
+  // optional registration may replace only that surface. Both implementations
+  // obey the same value/focus/disposal contract. Cmd/Ctrl+Enter submits (plain
+  // Enter is a newline).
   interface EditorInst {
-    app: ReturnType<typeof mountSignalComponent>
     unbind: () => void
     onKey: (e: KeyboardEvent) => void
     host: HTMLElement
+    editor: AnnotateEditorInstance
   }
   const editorForeign = (state: Signal<HudState>, send: (m: HudMsg) => void): Renderable => [
     foreign<EditorInst, { value: Signal<string> }>({
@@ -1249,36 +1238,46 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
       mount: ({ el, state: { value } }) => {
         const host = el as HTMLElement
         host.setAttribute('data-llui-editor', '')
-        host.style.cssText = STYLES.editorHost
         let last = value.peek()
-        const app = mountSignalComponent(
-          host,
-          markdownEditor({
-            defaultValue: last,
+        const onChange = (next: string): void => {
+          last = next
+          send({ type: 'setProse', value: next })
+        }
+        let editor: AnnotateEditorInstance
+        if (richEditor) {
+          host.style.cssText = STYLES.editorHost
+          editor = richEditor.mount({
+            host,
+            initialValue: last,
             placeholder: 'Describe the issue…',
-            // Near-synchronous so a quick Solve click captures the last keystrokes.
-            changeDebounceMs: 50,
-            plugins: [corePlugin(), linkPlugin(), floatingToolbarPlugin(), slashPlugin()],
-            onChange: (md) => {
-              last = md
-              send({ type: 'setProse', value: md })
+            onChange,
+          })
+        } else {
+          const textarea = document.createElement('textarea')
+          textarea.setAttribute('data-llui-editor-textarea', '')
+          textarea.placeholder = 'Describe the issue…'
+          textarea.value = last
+          textarea.rows = 5
+          textarea.style.cssText = STYLES.textarea
+          const onInput = (): void => onChange(textarea.value)
+          textarea.addEventListener('input', onInput)
+          host.appendChild(textarea)
+          editor = {
+            getValue: () => textarea.value,
+            setValue: (next) => {
+              textarea.value = next
             },
-            onReady: (ed) => {
-              editorApi = ed
-            },
-          }),
-          // Keep the HUD's own editor out of the global __lluiComponents registry
-          // so it never pollutes the app component-info / debug snapshots the HUD
-          // collects (the HUD itself mounts with devtools:false for the same reason).
-          { devtools: false },
-        )
-        mdApp = app
-        // External pushes (persistence restore, clear-on-submit) → into the editor,
-        // echo-guarded against our own onChange round-trips.
+            focus: () => textarea.focus(),
+            dispose: () => textarea.removeEventListener('input', onInput),
+          }
+        }
+        noteEditor = editor
+        // External pushes (persistence restore, clear-on-submit) flow through
+        // the surface contract, guarded against our own onChange round-trips.
         const unbind = value.bind((v) => {
           if (v === last) return
           last = v
-          app.send({ type: 'setValue', value: v })
+          editor.setValue(v)
         })
         const onKey = (e: KeyboardEvent): void => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -1287,14 +1286,13 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
           }
         }
         host.addEventListener('keydown', onKey, true)
-        return { app, unbind, onKey, host }
+        return { editor, unbind, onKey, host }
       },
       unmount: (inst) => {
         inst.host.removeEventListener('keydown', inst.onKey, true)
         inst.unbind()
-        inst.app.dispose()
-        if (mdApp === inst.app) mdApp = null
-        editorApi = null
+        inst.editor.dispose()
+        if (noteEditor === inst.editor) noteEditor = null
       },
     }),
   ]

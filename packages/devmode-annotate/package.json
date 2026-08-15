@@ -24,6 +24,10 @@
       "types": "./dist/install.d.ts",
       "import": "./dist/install.js"
     },
+    "./editor": {
+      "types": "./dist/editor.d.ts",
+      "import": "./dist/editor.js"
+    },
     "./stores": {
       "types": "./dist/stores/index.d.ts",
       "import": "./dist/stores/index.js"
@@ -41,20 +45,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lexical/code-core": "^0.49.0",
-    "@lexical/link": "^0.49.0",
-    "@lexical/list": "^0.49.0",
-    "@lexical/markdown": "^0.49.0",
-    "@lexical/rich-text": "^0.49.0",
-    "@lexical/selection": "^0.49.0",
-    "@lexical/utils": "^0.49.0",
     "@llui/components": "workspace:^",
-    "@llui/lexical": "workspace:^",
-    "@llui/markdown-editor": "workspace:^",
     "@llui/notes-format": "workspace:^",
     "fflate": "^0.8.3",
-    "html-to-image": "^1.11.13",
-    "lexical": "^0.49.0"
+    "html-to-image": "^1.11.13"
   },
   "peerDependencies": {
     "@llui/dom": "workspace:^"
