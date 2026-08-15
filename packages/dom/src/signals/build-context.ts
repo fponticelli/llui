@@ -47,10 +47,10 @@ export type Producer = (state: unknown) => unknown
  * target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
  *
  * A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
- * stores specs as-is (see `scopeFromSpecs`), so it EXTENDS the runtime contract
- * rather than restating it; `produce`/`commit`/`structural` have exactly one
- * declaration, in `runtime.ts`. */
-export interface BindingSpec extends SignalBinding {
+ * stores specs as-is (see `scopeFromSpecs`), so its intersection ADDS metadata to
+ * the runtime contract rather than restating it; `produce`/`commit`/`structural`
+ * have exactly one declaration, in `runtime.ts`. */
+export type BindingSpec = SignalBinding & {
   deps: readonly string[]
   // Root discriminant for row rebasing — set from the ORIGIN handle, so row
   // locality never depends on string-inferring `item`/`index`/`state` prefixes

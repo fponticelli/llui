@@ -12,18 +12,12 @@
 //   3. output-equality: calls produce, commits only if the value actually
 //      changed — so a coarse dependency wastes a produce but never a DOM write.
 //
-// Step 3 applies to VALUE bindings only. A STRUCTURAL binding (`show`/`branch`/
+// Step 3 belongs to `ValueBinding` only. A `StructuralBinding` (`show`/`branch`/
 // `each`/`virtualEach`) has an IDENTITY `produce`, because its `commit` reconciles
-// arms/rows and needs the whole state to mount them against — so output-equality
-// would compare the STATE BUFFER's identity, not the binding's output. Inside an
-// `each` row that buffer is one of two recycled ctx objects the row rotates on
-// every update, while `last[i]` advances only on commit: a single gated-out row
-// update desynchronises the two, and from then on `produce()` returns the very
-// object already in `last[i]`, suppressing every later reconcile (issue #52 — a
-// `branch` that stops swapping arms after an odd number of unrelated row updates).
-// Structural bindings are therefore exempt: they are already gated by their deps,
-// and they de-duplicate internally (`ArmController.switchTo` short-circuits on an
-// unchanged arm key; `each`'s reconcile has its own same-structure fast path).
+// arms/rows against the whole state. The discriminated union keeps that state out
+// of the value-only output-equality path by construction. Structural reconciles
+// de-duplicate internally (`ArmController.switchTo` short-circuits on an unchanged
+// arm key; `each` has its own same-structure fast path).
 //
 // See docs/proposals/signals/README.md "Runtime — output equality check".
 
@@ -151,24 +145,62 @@ function reportBindingError(err: unknown): void {
  * `{ mask, produce, commit }` object — `each` builds one scope per ROW, so the
  * per-binding wrapper was an allocation per binding per row (2 extra objects
  * per jfb row, 20k on a create-10k). The caller's spec objects (compiler
- * `BindingSpec`s / `DirectRow.bindings`) are stored as-is. */
-export interface SignalBinding<V = unknown> {
+ * `BindingSpec`s / `DirectRow.bindings`) are stored as-is.
+ *
+ * A DOM-value binding's produced output is eligible for output-equality. */
+export interface ValueBinding<V = unknown> {
   /** evaluate the compiled accessor expression against the current state */
   produce(state: unknown): V
-  /** apply the produced value (DOM mutation) — called only when it changed
-   * (always, for a {@link SignalBinding.structural} binding) */
+  /** apply the produced value (DOM mutation) — called only when it changed */
   commit(value: V): void
+  /** Discriminant: omitted by the ordinary value specs emitted on the hot path. */
+  structural?: false
+}
+
+/** A structural reconciler. Its identity-produced state is never output-compared. */
+export interface StructuralBinding {
   /** A structural primitive's binding (`show`/`branch`/`each`/`virtualEach`): its
    * `produce` is the IDENTITY function, because `commit` reconciles arms/rows (and
    * owns their child scopes) and so needs the whole state to mount them against.
    *
-   * Two consequences, both load-bearing:
-   *  - RUNTIME: such a binding is EXEMPT from the output-equality check — see
-   *    {@link SignalScope.update} and the file header.
-   *  - BUILD: structural specs make themselves row-aware at build time (see
-   *    `BuildCtx.inRow`), so the enclosing `each`'s value-spec rebasing must SKIP
-   *    them rather than rewrite their identity produce. */
-  structural?: boolean
+   * Structural specs make themselves row-aware at build time (see
+   * `BuildCtx.inRow`), so the enclosing `each`'s value-spec rebasing must SKIP
+   * them rather than rewrite their identity produce. */
+  structural: true
+  /** pass the whole state through to the structural reconciler */
+  produce(state: unknown): unknown
+  /** reconcile arms/rows against the current state */
+  commit(state: unknown): void
+}
+
+export type SignalBinding<V = unknown> = ValueBinding<V> | StructuralBinding
+
+/** Value-only update path. Its parameter excludes `StructuralBinding`, making the
+ * output-equality check statically unreachable for a structural reconcile. */
+function updateValueBinding(
+  binding: ValueBinding,
+  state: unknown,
+  last: unknown[],
+  index: number,
+): void {
+  const value = binding.produce(state)
+  if (Object.is(value, last[index])) return
+  binding.commit(value)
+  last[index] = value
+}
+
+/** Structural-only update path. Keep advancing `last`: although structural
+ * bindings never read the slot, retaining mount-time state for the scope's whole
+ * lifetime would be a leak. */
+function updateStructuralBinding(
+  binding: StructuralBinding,
+  state: unknown,
+  last: unknown[],
+  index: number,
+): void {
+  const value = binding.produce(state)
+  binding.commit(value)
+  last[index] = value
 }
 
 export interface SignalScope {
@@ -178,9 +210,9 @@ export interface SignalScope {
    * abandoned half-drawn (#165). This holds with or without a hook installed;
    * {@link SignalScope.update} is the asymmetric half. */
   mount(state: unknown): void
-  /** update: gate by dirty bits, commit only changed values (STRUCTURAL bindings
-   * commit whenever their gate passes — see {@link SignalBinding.structural}), then
-   * propagate to child scopes (mounted content of conditional/structural primitives). */
+  /** update: gate by dirty bits, output-compare value bindings, always commit
+   * structural bindings whose gate passes, then propagate to child scopes (mounted
+   * content of conditional/structural primitives). */
   update(oldState: unknown, newState: unknown): void
   /** register a child scope that should receive the same state updates (e.g.
    * `show`/`branch` content that reads the owning component's state). */
@@ -301,25 +333,16 @@ class SignalScopeImpl implements SignalScope {
         for (let i = 0; i < n; i++) {
           if (!intersects(masks[i]!, d)) continue // gate: irrelevant binding
           const b = bindings[i]!
-          const v = b.produce(newState)
-          if (b.structural === true || !Object.is(v, last[i])) {
-            b.commit(v) // output-equality: only commit real changes
-            // Structural bindings never READ `last[i]` (the check above short-
-            // circuits), but keep writing it: the slot would otherwise pin the
-            // MOUNT-time state object for the scope's lifetime.
-            last[i] = v
-          }
+          if (b.structural === true) updateStructuralBinding(b, newState, last, i)
+          else updateValueBinding(b, newState, last, i)
         }
       } else {
         for (let i = 0; i < n; i++) {
           if (!intersects(masks[i]!, d)) continue // gate: irrelevant binding
           const b = bindings[i]!
           try {
-            const v = b.produce(newState)
-            if (b.structural === true || !Object.is(v, last[i])) {
-              b.commit(v) // output-equality: only commit real changes
-              last[i] = v
-            }
+            if (b.structural === true) updateStructuralBinding(b, newState, last, i)
+            else updateValueBinding(b, newState, last, i)
           } catch (err) {
             reportBindingError(err)
           }
