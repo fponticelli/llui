@@ -68,9 +68,22 @@ async function stopServer(): Promise<void> {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 }
 
-/** Open a tracked client socket against the current server. */
+/**
+ * Open a tracked client socket against the current server.
+ *
+ * The no-op `'error'` listener is required, not defensive. Teardown calls
+ * `terminate()` on whatever is still open, and terminating a socket that is
+ * still CONNECTING emits an `'error'` ("WebSocket was closed before the
+ * connection was established"); with no listener attached, `ws` re-emits it as
+ * an unhandled exception, which vitest flags as possibly causing false
+ * positives. Four tests here attach no `'error'` handler of their own, and it
+ * would fire on exactly the teardown path that exists to make failures report
+ * cleanly. Tests that need to OBSERVE an error still add their own listener —
+ * this one only guarantees the event is never unhandled.
+ */
 function connect(path: string, opts?: ClientOptions): WebSocket {
   const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, opts)
+  ws.on('error', () => {})
   clients.push(ws)
   return ws
 }
@@ -181,6 +194,11 @@ describe('createWsUpgradeHandler', () => {
     const { token } = await seedToken(store, { tid: 't2', uid: 'u1', status: 'awaiting-ws' })
     const ws = connect(`/agent/ws?token=${encodeURIComponent(token)}`)
     await waitForOpen(ws)
+    // Wait for the pairing to actually REGISTER first. Without this the
+    // unregister assertion below passes vacuously — it would hold just as well
+    // if the pairing had never been created at all (proved by mutation: point
+    // it at a tid that never existed and the file still passes).
+    await waitForPaired('t2')
     ws.close()
     await waitForClose(ws)
     await waitUntil('pairing t2 to be unregistered', () => !registry.isPaired('t2'))

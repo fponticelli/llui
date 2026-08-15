@@ -60,16 +60,20 @@ describe('llui-mcp doctor', () => {
     // spawn + MCP SDK load under parallel CI load can take many seconds,
     // and a tight cap let doctor run before the bridge was up. Breaks
     // immediately once the line appears, so the happy path stays fast.
-    let listening = false
-    for (let i = 0; i < 600; i++) {
-      if (/HTTP transport on/.test(stderr)) {
-        listening = true
-        break
-      }
-      await delay(50)
-    }
-    if (!listening) throw new Error('[llui-mcp] did not start within 30s')
+    // The `finally` must cover the POLL as well as the assertions: the startup
+    // timeout below is an error path like any other, and while it sat outside
+    // the `try` it leaked the spawned CLI exactly the way a vitest timeout does
+    // (#192).
     try {
+      let listening = false
+      for (let i = 0; i < 600; i++) {
+        if (/HTTP transport on/.test(stderr)) {
+          listening = true
+          break
+        }
+        await delay(50)
+      }
+      if (!listening) throw new Error('[llui-mcp] did not start within 30s')
       const run = await runDoctor()
       expect(run.stdout).toMatch(/✓\s+marker file/)
       expect(run.stdout).toMatch(/✓\s+marker valid JSON/)
@@ -79,12 +83,15 @@ describe('llui-mcp doctor', () => {
       await killChild(server)
     }
     // KEPT deliberately above the shared 30 s `testTimeout` (`vitest.shared.ts`,
-    // #147), and it is the one budget here that is load-bearing rather than
-    // decorative: the poll above is itself capped at 30 s, so an equal budget
-    // races it. Losing that race costs twice — the clear "did not start within
-    // 30s" is replaced by a generic vitest timeout, and the test is torn down
-    // without running `finally`, leaking the spawned `dist/cli.js` as an
-    // orphan (#192). 35 s lets the internal cap fire first, every time.
+    // #147): the poll above is itself capped at 30 s, so an equal budget races
+    // it, and 35 s lets the internal cap fire first every time.
+    //
+    // What that buys, precisely: the clear "did not start within 30s" instead
+    // of a generic vitest timeout. It does NOT by itself prevent the orphan —
+    // a vitest timeout tears the test down without running `finally` at all,
+    // which is one of the ways #192 is produced, and no per-test budget can
+    // change that. (Until the `try` was widened just above, the internal path
+    // orphaned the child too, so the budget bought only the message.)
   }, 35000)
 
   it('falls back to OK/FAIL glyphs with --plain', async () => {

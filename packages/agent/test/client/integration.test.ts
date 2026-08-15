@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { createLluiAgentServer, InMemoryTokenStore } from '../../src/server/index.js'
 import { attachWsClient, type RpcHosts } from '../../src/client/ws-client.js'
 import type { HelloFrame, MintResponse, LapDescribeResponse } from '../../src/protocol.js'
@@ -22,6 +23,22 @@ let server: Server
 let agent: AgentServerHandle
 let store: InMemoryTokenStore
 let port: number
+
+/**
+ * Every socket this file opens, tracked on BOTH sides of the handshake so
+ * teardown can hard-close whatever a test left behind (#191).
+ *
+ * This teardown previously called `server.closeAllConnections()` and claimed
+ * that stopped a live socket from hanging the hook. It does not: an UPGRADED
+ * socket is no longer reachable from `closeAllConnections()` (nor from
+ * `closeIdleConnections()`), so `server.close()`'s callback still never fires
+ * — measured directly. Both tests below assert BETWEEN `open` and their own
+ * `ws.close()`, so any failed assertion left the socket open and the hook
+ * waited forever. With `retry: 2` that is three consecutive hook timeouts:
+ * one broken assertion cost 180 s to report against a 60 s budget.
+ */
+const clients: WebSocket[] = []
+const serverSockets: Duplex[] = []
 
 // Node's http.Server only handles HTTP; we need to bridge fetch calls through
 // to the agent's Web-fetch-style router. The server handles two things:
@@ -66,6 +83,11 @@ beforeEach(async () => {
     res.end(Buffer.from(resBody))
   })
 
+  // Tracked first, so teardown owns the raw socket even for handshakes the
+  // agent's own handler rejects and destroys.
+  server.on('upgrade', (_req, socket) => {
+    serverSockets.push(socket)
+  })
   server.on('upgrade', agent.wsUpgrade)
 
   await new Promise<void>((resolve) => server.listen(0, () => resolve()))
@@ -73,12 +95,28 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  // Force-close any lingering sockets — e.g. a WS still open because a test threw
-  // before its `ws.close()` — so `server.close()` can't hang the hook waiting on
-  // them (Node 18.2+). Then wait for the graceful close to complete.
-  server.closeAllConnections?.()
+  // Hard-close every tracked socket BEFORE awaiting the graceful close. This
+  // has to hold the sockets itself — see the note on `clients` above for why
+  // `closeAllConnections()` cannot do it.
+  for (const ws of clients.splice(0)) ws.terminate()
+  for (const socket of serverSockets.splice(0)) socket.destroy()
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
+
+/**
+ * Open a tracked client socket. The no-op `'error'` listener is required, not
+ * defensive: `terminate()` on a socket that is still CONNECTING emits an
+ * `'error'` ("WebSocket was closed before the connection was established"),
+ * and with no listener attached `ws` re-emits it as an unhandled exception —
+ * which vitest reports as a possible false positive, on the very teardown path
+ * that exists to make failures report cleanly.
+ */
+function connect(path: string, token: string): WebSocket {
+  const ws = new WebSocket(`${wsUrl(path)}?token=${encodeURIComponent(token)}`)
+  ws.on('error', () => {})
+  clients.push(ws)
+  return ws
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -200,7 +238,7 @@ describe('integration: mint → ws → describe → state', () => {
       const { token } = (await mintRes.json()) as MintResponse
 
       // 2. Open WS + wire attachWsClient so it sends hello on open
-      const ws = new WebSocket(`${wsUrl('/agent/ws')}?token=${encodeURIComponent(token)}`)
+      const ws = connect('/agent/ws', token)
       // ws package implements the WsLike interface (addEventListener + send + close)
       const fakeRpc = makeFakeRpcHost({ value: 42 })
       attachWsClient(
@@ -236,7 +274,7 @@ describe('integration: mint → ws → describe → state', () => {
     const { token } = (await mintRes.json()) as MintResponse
 
     const appState = { value: 99, label: 'hello' }
-    const ws = new WebSocket(`${wsUrl('/agent/ws')}?token=${encodeURIComponent(token)}`)
+    const ws = connect('/agent/ws', token)
     attachWsClient(
       ws as unknown as import('../../src/client/ws-client.js').WsLike,
       makeFakeRpcHost(appState),
