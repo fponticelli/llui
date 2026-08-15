@@ -48,6 +48,8 @@ function makeList(count: number) {
   // Layout position per child, and the transform the test wants reported.
   const layout = new Map<HTMLElement, { left: number; top: number }>()
   const transform = new Map<HTMLElement, string>()
+  // Shared by every row, as a viewport scroll is.
+  const scroll = { left: 0, top: 0 }
 
   const children: HTMLElement[] = []
   for (let i = 0; i < count; i++) {
@@ -59,6 +61,7 @@ function makeList(count: number) {
     // the whole-pixel offsets.
     fakeLayout(child, () => layout.get(child)!, {
       transform: () => transform.get(child) ?? 'none',
+      scroll: () => scroll,
       onRead: (kind) => log.push(kind),
     })
     child.animate = ((keyframes: unknown) => {
@@ -100,7 +103,7 @@ function makeList(count: number) {
     return originalComputed(el, pseudo)
   })
 
-  return { parent, children, log, animations, layout, transform }
+  return { parent, children, log, animations, layout, transform, scroll }
 }
 
 /** How many times the pass switched from writing back to reading. */
@@ -644,6 +647,32 @@ describe('flip() read/write batching', () => {
       expect(animations[0]!.keyframes).toEqual([
         { transform: 'translate(0px, 60.75px) matrix(1, 0, 0, 1, 0, -0.75)' },
         { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -0.75)' },
+      ])
+    })
+
+    it('does not glide a row because the VIEWPORT moved', () => {
+      // The same defect, from the other direction, and a bigger one: a rect is
+      // viewport-relative, so a scroll between two passes moved every stored
+      // position without moving any row. Measured against the real `flip()` in
+      // Chromium after a 200px scroll: the row that actually moved 60px glided
+      // `translate(0px, 260px)`, and a row that had not moved at all glided
+      // `translate(0px, 200px)`. The offsets are not viewport-relative, so the
+      // scroll shows up as a disagreement and is discarded.
+      const { parent, children, layout, animations, scroll } = makeList(2)
+      const [moved, still] = children as [HTMLElement, HTMLElement]
+      layout.set(moved, { left: 0, top: 60 })
+      layout.set(still, { left: 0, top: 120 })
+      const f = flip()
+      f.enter!([moved, still])
+
+      scroll.top = 200
+      layout.set(moved, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations).toHaveLength(1)
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60px)' },
+        { transform: 'translate(0, 0)' },
       ])
     })
 

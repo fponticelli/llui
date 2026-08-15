@@ -32,6 +32,11 @@ export type ReadKind = 'rect' | 'offset'
 export interface FakeLayoutOptions {
   /** The element's computed `transform`, as a browser would report it. */
   transform?: () => string
+  /**
+   * How far the viewport has scrolled. A rect is viewport-relative and so moves
+   * with it; the offsets are not and do not.
+   */
+  scroll?: () => Box
   /** Called on every read, so a test can assert the read/write batching. */
   onRead?: (kind: ReadKind) => void
 }
@@ -63,7 +68,13 @@ export function fakeLayout(el: HTMLElement, box: () => Box, opts: FakeLayoutOpti
     read('rect')
     const { left, top } = box()
     const [dx, dy] = parseTranslate(opts.transform?.() ?? 'none')
-    return { left: left + dx, top: top + dy, width: 10, height: 10 } as DOMRect
+    const scroll = opts.scroll?.() ?? { left: 0, top: 0 }
+    return {
+      left: left + dx - scroll.left,
+      top: top + dy - scroll.top,
+      width: 10,
+      height: 10,
+    } as DOMRect
   }
   const axes = [
     ['offsetLeft', 'left'],
