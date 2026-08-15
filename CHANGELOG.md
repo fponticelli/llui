@@ -36,9 +36,26 @@ release entry and deletes it — do not leave it here across a release.
   fragment-only `location.replace()` performs a cross-document navigation that
   **unloads the app** (verified in Chrome), where `replaceState` moves the
   address bar and nothing else. ([#164])
+- **`@llui/components`** — **a numeric bound in state is finite or absent, never
+  `±Infinity` and never `NaN`.** `NumberInputState.min`/`max` and the axes of
+  `FloatingPanelState.maxSize` are now **optional**, so a consumer reading
+  `state.min` as a `number` sees `number | undefined`. That is the type starting
+  to tell the truth rather than a new hazard: unbounded used to be spelled
+  `min: -Infinity`, which JSON round-trips to `null`, so the **default** state of
+  a `number-input` already rehydrated as a field declared `number` holding
+  `null`. Bounds are normalised at every write by `utils/number.ts:finiteBound`.
+  ([#177])
 
 ### Migration
 
+- If you read `NumberInputState.min`/`max` or `FloatingPanelState.maxSize` as a
+  plain `number`, **handle the absent case** — absence is now spelled by
+  omitting the key, so `state.min ?? -Infinity` is the direct replacement for
+  the old sentinel. Persisted snapshots are **not** migrated: one taken before
+  this change keeps its old form (post-JSON `null`, or a live pre-upgrade
+  `±Infinity`) until the component is re-`init`ed. Both were checked through
+  every reducer of both changed shapes and behave identically or better, so this
+  is not a regression — but nothing rewrites them.
 - If you implement your own `RouterEnv`, **delete the `replaceLocation` member**.
   With the documented pattern — an object literal annotated `const env:
 RouterEnv = {…}` — leaving it in is a compile error. It is **not** an error
@@ -55,6 +72,7 @@ RouterEnv = {…}` — leaving it in is a compile error. It is **not** an error
 
 [#161]: https://github.com/fponticelli/llui/issues/161
 [#164]: https://github.com/fponticelli/llui/issues/164
+[#177]: https://github.com/fponticelli/llui/issues/177
 [#212]: https://github.com/fponticelli/llui/issues/212
 
 ## 2026-08-10 — @llui/markdown-editor@0.7.0
