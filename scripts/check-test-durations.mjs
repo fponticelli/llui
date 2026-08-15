@@ -44,7 +44,14 @@ const maxScale = numberFlag('--max-scale', DEFAULTS.maxScale)
 // then the numbers are printed and the job stays honest about what it knows.
 const gate = args.includes('--gate')
 const baselinePath = join(repoRoot, 'test-durations.baseline.json')
-const outDir = process.env['LLUI_TEST_DURATIONS'] ?? join(repoRoot, '.test-durations')
+// `resolve` against the REPO ROOT, exactly as `vitest.shared.ts` does with the
+// same variable — the writer and the reader have to agree, and taking the value
+// raw here meant they only agreed when it was absolute. A relative value is the
+// portable spelling (a container job's workspace is NOT the path
+// `github.workspace` reports), so it has to mean the same thing on both sides.
+const outDir = process.env['LLUI_TEST_DURATIONS']
+  ? resolve(repoRoot, process.env['LLUI_TEST_DURATIONS'])
+  : join(repoRoot, '.test-durations')
 
 function numberFlag(name, fallback) {
   const index = args.indexOf(name)

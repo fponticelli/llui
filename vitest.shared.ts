@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, type ViteUserConfig as VitestUserConfig } from 'vitest/config'
 import { relative, resolve, join } from 'node:path'
 
 // ── Per-test duration capture (#193) ─────────────────────────────────────────
@@ -26,11 +26,15 @@ const durationsDir = process.env['LLUI_TEST_DURATIONS']
 // One file per package, named for its path from the repo root — package
 // BASENAMES are not unique enough to bet a silent overwrite on.
 const durationsSlug = relative(import.meta.dirname, process.cwd()).replace(/[/\\]/g, '__')
-const durationReporters = durationsDir
-  ? ([
-      'default',
-      ['json', { outputFile: join(durationsDir, `${durationsSlug || 'root'}.json`) }],
-    ] as const)
+// NOT `as const`: vitest types `reporters` as `ReporterName | Reporter | [name,
+// options]`, and a `readonly` tuple is not assignable to that mutable pair — so
+// the `as const` that looks like ordinary hygiene here is a type error at every
+// call site that type-checks this file. It went unnoticed because nothing DID:
+// the site was the only package whose `check` reaches this file, and it gained
+// that script in the same batch (#176) that added this reporter (#193).
+type Reporters = NonNullable<NonNullable<VitestUserConfig['test']>['reporters']>
+const durationReporters: Reporters | undefined = durationsDir
+  ? ['default', ['json', { outputFile: join(durationsDir, `${durationsSlug || 'root'}.json`) }]]
   : undefined
 
 // Shared vitest base for every package. Packages import this and `mergeConfig`

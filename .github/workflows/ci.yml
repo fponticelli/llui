@@ -139,7 +139,14 @@ jobs:
         # looks at, rather than a second measurement pass that could drift from
         # it.
         env:
-          LLUI_TEST_DURATIONS: ${{ github.workspace }}/.test-durations
+          # RELATIVE on purpose, and it must stay that way: this job runs inside a
+          # `container:`, where the workspace is mounted at /__w/<repo>/<repo> but
+          # `github.workspace` still expands to the HOST path
+          # (/home/runner/work/...). That absolute value named a directory that
+          # does not exist in the container, so the reports went one place and the
+          # reader looked in another. Both sides resolve a relative value against
+          # the repo root (`vitest.shared.ts`, `scripts/check-test-durations.mjs`).
+          LLUI_TEST_DURATIONS: .test-durations
 
       # The slow-test signal that replaced the 5 s timeout canary (#193). Reads
       # the reports the step above just wrote (`--no-run`) and diffs per-file
@@ -147,7 +154,14 @@ jobs:
       # load factor, so a slower runner reports nothing while a single file that
       # got 6x slower still does.
       #
-      # REPORT-ONLY ON PURPOSE — no `--gate`, so this step cannot fail the job.
+      # REPORT-ONLY ON PURPOSE, and enforced by `continue-on-error` rather than by
+      # the absence of `--gate`. Omitting `--gate` only suppresses the REGRESSION
+      # verdict; the script still exits 1 when it finds no reports, cannot read the
+      # baseline, or aborts on load — and the first of those failed this job on the
+      # very first run, under a comment asserting it could not. A step whose whole
+      # contract is "cannot fail the job" has to say so in the one place the runner
+      # actually reads.
+      #
       # An earlier revision DID gate, and it reddened on unchanged code: the
       # committed baseline had been recorded on a loaded machine, so de-scaling
       # inflated a file whose cost does not track load and reported a 3.33x
@@ -161,9 +175,17 @@ jobs:
       # visible instead of hiding it behind the first red step.
       - name: Test durations (report only)
         if: always()
+        continue-on-error: true
         run: pnpm check:test-durations --no-run
         env:
-          LLUI_TEST_DURATIONS: ${{ github.workspace }}/.test-durations
+          # RELATIVE on purpose, and it must stay that way: this job runs inside a
+          # `container:`, where the workspace is mounted at /__w/<repo>/<repo> but
+          # `github.workspace` still expands to the HOST path
+          # (/home/runner/work/...). That absolute value named a directory that
+          # does not exist in the container, so the reports went one place and the
+          # reader looked in another. Both sides resolve a relative value against
+          # the repo root (`vitest.shared.ts`, `scripts/check-test-durations.mjs`).
+          LLUI_TEST_DURATIONS: .test-durations
 
       # Root `scripts/` belongs to no workspace package, so `turbo test` above
       # cannot see it — these tests run under their own vitest config and would
