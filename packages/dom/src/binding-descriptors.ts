@@ -38,12 +38,6 @@ export type VariantTaggable<M> = ((msg: M) => void) & {
   readonly __lluiVariants?: readonly string[]
 }
 
-// Formatting note for maintainers, kept OUT of the JSDoc below so it does not
-// ship onto the generated API page: several notes in that comment are prose
-// written as LIST ITEMS. That is a workaround for issue #148 —
-// `site/src/generate-api.ts` erases JSDoc paragraph breaks on the way into
-// `site/content/api/dom.md`, so a paragraph following a list gets swallowed
-// into the last bullet. When #148 lands, they can go back to plain paragraphs.
 /**
  * Library helper for `*.connect` implementations: tags an event
  * handler with the variants it dispatches at runtime, so the binding
@@ -79,37 +73,34 @@ export type VariantTaggable<M> = ((msg: M) => void) & {
  * - the compiler's `tag-send-drift` rule reads the handler and
  *   rejects a tag that names the WRONG variant — which type-checks,
  *   since `'touch'` and `'blur'` are equally valid `M['type']`.
- * - that rule BAILS rather than guess, so it is a backstop and not a
- *   proof: it recognizes `tagSend` only when imported from the
- *   `@llui/dom` specifier (a barrel re-export or a relative import is
- *   invisible — issue #146), reads only a literal variant list
- *   (`as const` and `satisfies` are read through; a hoisted
- *   `VARIANTS` identifier is not) with an inline handler, and reports
- *   an over-declaration only when nothing in the handler body could
- *   dispatch unseen.
- * - **Library authors, one quiet consequence of that last bail.**
- *   The over-declaration half survives exactly one kind of call on a
- *   handler parameter: a zero-argument `preventDefault` /
- *   `stopPropagation` / `stopImmediatePropagation`. Any OTHER event
- *   method — `e.persist()`, `e.composedPath()`,
- *   `e.dataTransfer.setData(…)` — is a call this analysis cannot see
- *   into, so it forfeits completeness and silently switches the
- *   "declares a variant it never dispatches" check off for that call
- *   site. The failure is SILENCE, not a broken build: the
- *   dispatched-but-undeclared direction still runs and nothing stops
- *   working. But do not read a clean build of such a handler as
- *   confirmation that its variant list is exhaustive.
- * - `send` is REQUIRED and non-nullable. Before #118 it was typed
- *   `unknown` and read through `?.`, so a nullish first argument
- *   returned a tagged `fn`; it now throws a `TypeError`. That is
- *   deliberate — the `?.` existed only to satisfy the cast the
- *   `unknown` parameter forced, and it disappeared with the cast. A
- *   nullish dispatcher is now a type error, so only untyped or
- *   casting callers can reach the throw, and failing at BIND time is
- *   earlier and closer to the mistake than failing on the first
- *   click. (It is NOT an argument about the published variants: the
- *   first parameter is only a tag SOURCE, and a handler need not
- *   dispatch through it.)
+ *
+ * That rule BAILS rather than guess, so it is a backstop and not a proof: it
+ * recognizes `tagSend` only when imported from the `@llui/dom` specifier (a
+ * barrel re-export or a relative import is invisible — issue #146), reads only a
+ * literal variant list (`as const` and `satisfies` are read through; a hoisted
+ * `VARIANTS` identifier is not) with an inline handler, and reports an
+ * over-declaration only when nothing in the handler body could dispatch unseen.
+ *
+ * **Library authors, one quiet consequence of that last bail.** The
+ * over-declaration half survives exactly one kind of call on a handler
+ * parameter: a zero-argument `preventDefault` / `stopPropagation` /
+ * `stopImmediatePropagation`. Any OTHER event method — `e.persist()`,
+ * `e.composedPath()`, `e.dataTransfer.setData(…)` — is a call this analysis
+ * cannot see into, so it forfeits completeness and silently switches the
+ * "declares a variant it never dispatches" check off for that call site. The
+ * failure is SILENCE, not a broken build: the dispatched-but-undeclared
+ * direction still runs and nothing stops working. But do not read a clean build
+ * of such a handler as confirmation that its variant list is exhaustive.
+ *
+ * `send` is REQUIRED and non-nullable. Before #118 it was typed `unknown` and
+ * read through `?.`, so a nullish first argument returned a tagged `fn`; it now
+ * throws a `TypeError`. That is deliberate — the `?.` existed only to satisfy
+ * the cast the `unknown` parameter forced, and it disappeared with the cast. A
+ * nullish dispatcher is now a type error, so only untyped or casting callers can
+ * reach the throw, and failing at BIND time is earlier and closer to the mistake
+ * than failing on the first click. (It is NOT an argument about the published
+ * variants: the first parameter is only a tag SOURCE, and a handler need not
+ * dispatch through it.)
  *
  * @example
  * ```ts

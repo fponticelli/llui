@@ -89,6 +89,7 @@ registrars. Each tool's Zod schema (declared once in `tools.ts`)
 drives both runtime input validation and the JSON Schema published
 to `tools/list` — eliminating the hand-written-schema-vs-handler
 drift that the low-level `setRequestHandler` pattern is prone to.
+
 Forwarded tools (`kind: 'forward'`) share the `@llui/agent/mcp/executor`
 dispatch — the same code the server-side MCP runs — so describe
 caching, schemaHash invalidation, and error shaping behave identically

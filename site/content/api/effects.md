@@ -174,10 +174,12 @@ function _getEffectInterceptor(): EffectInterceptor
 Dev-only hook reserved for Phase 2 use. No-op in production — setting
 this is a developer opt-in. When `null`, callers skip the check entirely
 so there is zero allocation on the hot path.
+
 Phase 1 reality: `@llui/dom`'s dev effect-dispatch wrapper
 (`dispatchEffectDev`) catches every update-loop effect upstream, so
 Phase 1 callers of this hook will NOT observe invocations. Third-party
 effect libraries must not rely on this hook being called during Phase 1.
+
 Phase 2 wires this for off-loop dispatches (e.g., effects dispatched
 from Web Workers or post-mount lifecycle hooks) where `@llui/dom`'s
 wrapper doesn't reach.
@@ -190,6 +192,7 @@ function _setEffectInterceptor(hook: EffectInterceptor): void
 
 Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
 the signal-runtime `onEffect` shape: `(effect, api) => cleanup`.
+
 The signal runtime now hands `onEffect` a per-mount `api.signal` (an
 `AbortSignal` aborted exactly once, on THIS mount's `dispose()`). When present,
 this adapter passes that signal straight through to the chain: every mount owns
@@ -199,6 +202,7 @@ runtime aborting `api.signal`, so the returned cleanup is a no-op — the chain'
 own abort listener clears the mount's pending http / debounce / interval /
 websocket resources. We must NOT abort `api.signal` ourselves (it is the
 runtime's, shared with everything else on the mount).
+
 FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
 caller), the adapter owns one AbortController PER MOUNT, keyed off the mount's
 `send` identity in a `WeakMap`. The runtime passes ONE stable `send` per mount
@@ -212,6 +216,7 @@ and recreated if a stale (aborted) one is found under a reused `send`, so a
 re-mount never inherits a dead signal. The returned cleanup captures the
 controller live at ITS dispatch, so a late unmount of one mount never tears
 down a later mount's effects.
+
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
 
 ```typescript
@@ -299,6 +304,7 @@ function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, 
 Build a handler chain over an explicit set of runners. `handleEffects()` is
 this with the batteries-included {@link defaultRunners}; pass a hand-picked
 subset here to tree-shake unused runner code out of the bundle.
+
 Per-mount registries are keyed off each mount's lifecycle `AbortSignal` (a
 `WeakMap` so a torn-down mount's registry is collectible once its signal is
 unreachable). One registry is created lazily per distinct signal — i.e. per
@@ -388,6 +394,7 @@ function race(effects: BuiltinEffect[]): RaceEffect
 
 Execute all HTTP effects reachable from the effect list, apply the resulting
 messages to state via update(), and return the final loaded state.
+
 Http effects nested inside composite builtins (`sequence`/`race`/`retry`/
 `cancel`/`debounce`) are unwrapped recursively — a `sequence([http(...)])`
 pre-resolves on the server just like a bare `http(...)`. Top-level effects run
@@ -585,6 +592,7 @@ export type EffectInterceptor = ((effect: unknown, id: string) => EffectIntercep
 
 Dev-only effect interceptor hook — consumed by `@llui/mcp` (via
 `@llui/dom`'s devtools wiring) to implement effect mocking.
+
 Contract:
 
 - Default state is `null` — zero overhead when no interceptor is set.
@@ -592,9 +600,10 @@ Contract:
 - The hook receives the raw effect object and an opaque dispatch ID;
   it returns either `{ mocked: true, response }` to short-circuit the
   real effect dispatch, or `{ mocked: false }` to pass through.
-  Phase 1 consumers rely on the pass-through path; the short-circuit
-  path is exercised end-to-end through `@llui/dom`'s effect-dispatch
-  wrapper. This module only owns the null-safe set/get contract.
+
+Phase 1 consumers rely on the pass-through path; the short-circuit
+path is exercised end-to-end through `@llui/dom`'s effect-dispatch
+wrapper. This module only owns the null-safe set/get contract.
 
 ```typescript
 export type EffectInterceptorResult = { mocked: true; response: unknown } | { mocked: false }
@@ -806,10 +815,12 @@ A single effect runner. `types` are the effect `type` discriminants this runner
 claims; `run` executes the effect; `completesWithoutDispatch` is the static
 signal used by `sequence` to advance past a fire-and-forget step immediately —
 a step that never calls `send` would otherwise stall the chain forever.
+
 `run` may RETURN a boolean to override `completesWithoutDispatch` on a per-call
 basis (only `cancel` needs this: bare `cancel` completes without dispatching,
 but `cancel(token, inner)` may dispatch via its inner effect). Returning
 `undefined`/`void` falls back to the static `completesWithoutDispatch`.
+
 `managesCompletion` (default false) marks a COMPOSITE runner that drives the
 completion signal itself: instead of `sequence`'s "first bubbled message means
 done" leaf heuristic, `dispatch` hands such a runner the `onComplete` callback

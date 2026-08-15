@@ -181,10 +181,12 @@ function $setFrontmatter(source: string | null): void
 
 The block whose vertical band contains `clientY`, or `null` when the pointer
 is in no block's band.
+
 TWO passes, and the order matters. A block's OWN rect always wins outright;
 only a point in no block at all falls through to the widened search, where
 the NEAREST band within `tolerance` wins (ties biased upward, matching how a
 reader attributes a gap to the block above it).
+
 A single widened pass with first-match-wins — which this was — is wrong
 wherever two rects touch or nearly touch, and touching rects are the common
 case, not the exotic one: list items, table rows, consecutive lines, and any
@@ -310,6 +312,7 @@ function emojiPlugin(opts: EmojiPluginOptions = {}): MarkdownPlugin
 ### `findDropTarget()`
 
 The slot `clientY` points at, expressed relative to a neighbouring block.
+
 The document has `n + 1` slots for `n` blocks; the slot index is the count of
 blocks whose vertical midpoint is above the pointer. Two of those slots are
 where `sourceKey` already sits — dropping there is a no-op, so both return
@@ -431,6 +434,7 @@ function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
 
 Merge a consumer theme over the default. `text` is merged per-key so a
 consumer overriding (say) `strikethrough` keeps the other default entries.
+
 Always returns a FRESH theme (never the shared `defaultTheme` singleton):
 Lexical caches resolved class arrays by MUTATING the `text` object it is
 handed (`text.__lexicalClassNameCache`). Handing it a fresh copy keeps the
@@ -450,6 +454,7 @@ function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin
 ### `normalizeCodeInfo()`
 
 Canonicalize a fence info string.
+
 CommonMark's info string is the remainder of the opening-fence line with the
 surrounding whitespace stripped; a blank one means "no language". Two
 characters are removed rather than preserved, because keeping them would emit
@@ -458,8 +463,9 @@ markdown that no longer re-imports to the same block:
 - a backtick — illegal in a backtick-fenced info string (it would terminate
   or corrupt the fence);
 - a newline — it would end the fence line entirely.
-  Everything else survives verbatim, including spaces (`'lance table'`) and
-  punctuation (`'c++'`, `'objective-c'`).
+
+Everything else survives verbatim, including spaces (`'lance table'`) and
+punctuation (`'c++'`, `'objective-c'`).
 
 ```typescript
 function normalizeCodeInfo(raw: string | null | undefined): string | null
@@ -478,6 +484,7 @@ function orderTransformers(transformers: readonly Transformer[]): Transformer[]
 Parse a single line as CommonMark and return its image, or `null` when the
 line is not EXACTLY one image (inline image, two images, a linked image, an
 image in a list item or blockquote, plain text).
+
 `src` keeps whatever the document spelled — percent-encoding included; only
 CommonMark's own escapes and character references are resolved, because those
 are markdown syntax rather than part of the URL.
@@ -490,6 +497,7 @@ function parseImageLine(line: string): ImageData | null
 
 Parse the content BETWEEN the brackets. Returns `null` when the content is not
 a valid wikilink body.
+
 Deliberate choices, each load-bearing for exact round-tripping:
 
 - split on the FIRST `|` only, so `[[a|b|c]]` has alias `b|c` and re-exports
@@ -527,6 +535,7 @@ function publishSurfaceOpen(editor: LexicalEditor, readers: SurfaceReaders): () 
 Replace a stock `ListNode` with a `MarkdownListNode` the first time the
 document touches it, so a list that never went through `$createListNode`
 cannot keep the merging transform.
+
 The registration IS the back-compat half's other end. `MARKDOWN_LIST_NODES`
 keeps stock `ListNode` registered so JSON written before this node existed
 still loads — but `$parseSerializedNodeImpl` (`LexicalUpdates.ts:433`) calls
@@ -535,6 +544,7 @@ CRDT document created by an older build, yields a GENUINE stock `ListNode`
 carrying `ListNode.$config().$transform`. Without this the #129 guarantee
 held only for documents created after the fix — the opposite of the ones the
 issue was reported from.
+
 The upgrade is on TOUCH, and the window that leaves open is ONE MICROTASK —
 not "until the user edits". `registerNodeTransform` itself calls
 `markNodesWithTypesAsDirty` (`LexicalEditor.ts:1545`), which dirties every
@@ -543,6 +553,7 @@ so both registration orders converge: `setEditorState` THEN register gives
 `list` synchronously and `md-list` after one microtask; register THEN
 `setEditorState` gives `md-list` immediately. That holds for a non-editable
 editor and for a list nobody ever edits, too.
+
 What it CANNOT do is pre-empt a stock node's OWN merging transform inside the
 update that first dirties it. A stock `ListNode` arriving BETWEEN two settled
 `md-list`s in a live update — exactly what `@lexical/yjs` produces, since
@@ -555,6 +566,7 @@ pre-#129 behaviour (stock merges all three as well), so it is not a
 regression — but the #129 guarantee does NOT extend to a live collab document
 mixing old and new builds. It is not closable from userland; #154 tracks the
 two upstream levers that would close it.
+
 Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
 
 ```typescript
@@ -564,6 +576,7 @@ function registerListNodeUpgrade(editor: LexicalEditor): () => void
 ### `registerMarkdownPaste()`
 
 Register the markdown-on-paste handler on `editor`. Returns a disposer.
+
 Plain-text pastes are converted as Markdown. Pastes that also carry
 `text/html` are ignored so Lexical's richer HTML import handles them.
 
@@ -714,6 +727,7 @@ Disposer-returning binding the collab layer installs on the live editor.
 `@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
 both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
 nor a Loro dependency of its own.
+
 At least one slot must be filled — a binding that fills neither registers
 nothing at all, which the union below rejects at compile time. Either way the
 built-in history stack is off in collab mode (the editor hard-codes it), so a
@@ -1621,6 +1635,7 @@ const FRONTMATTER_BRIDGE_TYPE
 ### `GFM_NODES`
 
 Node classes required to render the GFM superset.
+
 `LexicalNodeConfig`, not `Klass<LexicalNode>`: lists are registered as a
 `{ replace, with, withKlass }` redirect onto `MarkdownListNode`, which is the
 only way to take a node's own `$config` transform out of play. See

@@ -16,7 +16,9 @@
  * `components` is special: its per-component state-machine shape is extracted
  * directly (see `generateComponentsDoc`).
  *
- * Run as part of the build: `tsx src/generate-api.ts`
+ * Run as part of the build: `tsx src/generate-api.ts`. The generation itself is
+ * behind an entry-point guard at the bottom, so the extraction helpers can be
+ * imported and unit-tested (`test/generate-api.test.ts`) without writing files.
  */
 import * as ts from 'typescript'
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
@@ -31,12 +33,7 @@ const packagesDir = resolve(root, 'packages')
 
 // ── Shared helpers ───────────────────────────────────────────────
 
-function readSource(path: string): ts.SourceFile {
-  const text = readFileSync(path, 'utf-8')
-  return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true)
-}
-
-function getJSDoc(node: ts.Node, sf: ts.SourceFile): string | undefined {
+export function getJSDoc(node: ts.Node, sf: ts.SourceFile): string | undefined {
   const ranges = ts.getLeadingCommentRanges(sf.text, node.getFullStart())
   if (!ranges || ranges.length === 0) return undefined
   for (let i = ranges.length - 1; i >= 0; i--) {
@@ -46,14 +43,12 @@ function getJSDoc(node: ts.Node, sf: ts.SourceFile): string | undefined {
     const cleaned = raw
       .replace(/^\/\*\*\s*/, '')
       .replace(/\s*\*\/$/, '')
-      // BUG (issue #148): `\s` matches newlines, so the trailing `\s?` eats the
-      // newline of a blank comment line and every JSDoc PARAGRAPH BREAK is
-      // erased here — a following paragraph gets swallowed into the preceding
-      // bullet. The fix is `/^[ \t]*\*[ \t]?/gm`; it is not applied yet because
-      // it regenerates every `api/*.md` and `llms-full.txt`. Until then, source
-      // comments work around it by writing prose as list items (see
-      // `tagSend` in `packages/dom/src/binding-descriptors.ts`).
-      .replace(/^\s*\*\s?/gm, '')
+      // Strip each line's leading ` * ` gutter. The horizontal-only classes are
+      // load-bearing (issue #148): with `\s` the trailing optional character
+      // matched a NEWLINE, so a blank comment line (` *`) lost its own line
+      // break and every JSDoc PARAGRAPH BREAK was erased — prose following a
+      // bulleted list got swallowed into the last bullet.
+      .replace(/^[ \t]*\*[ \t]?/gm, '')
       // A lone `@example` tag line is JSDoc syntax, not prose: rendered as-is
       // it either sits on the page as a stray `@example` (router.md) or — when
       // the preceding block is a list — gets swallowed into the last bullet
@@ -298,6 +293,25 @@ function formatExports(items: ExportedItem[]): string {
 
 // ── Component API Generator (special-cased) ──────────────────────
 
+/**
+ * A component's public surface beyond the `init`/`update`/`connect` triple —
+ * both the extra members of its namespace object and its module-level exports.
+ *
+ * The `kind` is what issue #151 was about: this list used to be bare names
+ * rendered with a hardcoded `()`, so `combobox`'s string sentinel shipped as
+ * `CREATE_OPTION_VALUE()`. The generic package extractor has always classified
+ * (`renderExport` + `formatExports`); this mirrors it for the components page.
+ */
+export interface ComponentMember {
+  name: string
+  kind: 'function' | 'const'
+}
+
+/** Markdown reference for one member — only functions get call parens. */
+export function memberRef(m: ComponentMember): string {
+  return m.kind === 'function' ? `\`${m.name}()\`` : `\`${m.name}\``
+}
+
 interface ComponentInfo {
   name: string
   stateType: string
@@ -306,13 +320,182 @@ interface ComponentInfo {
   initParams: string
   connectParams: string
   parts: string[]
-  extras: string[]
+  extras: ComponentMember[]
 }
 
+/** Members the page documents through the shared pattern preamble, not the lists. */
+const STANDARD_MEMBERS = ['init', 'update', 'connect']
+
+/**
+ * Reads a module reachable from `fromId` by a relative specifier, so a name a
+ * component re-exports from a sibling (`alert-dialog`'s `isMounted`, which is
+ * `dialog`'s function) can still be classified. Returning `undefined` — the
+ * default — simply leaves such a name unclassified.
+ */
+export type ModuleReader = (fromId: string, specifier: string) => ModuleSource | undefined
+export interface ModuleSource {
+  id: string
+  text: string
+}
+
+/** How a module binds one name locally: to a kind, or to another name. */
+type LocalBinding =
+  | { kind: 'function' | 'const' }
+  | { alias: string }
+  | { from: string; imported: string }
+
+interface ModuleFacts {
+  bindings: Map<string, LocalBinding>
+  /** Names this module exports with a LOCAL declaration, in source order. */
+  exportedLocals: string[]
+}
+
+/**
+ * Classifies exported names across the component modules, following local
+ * aliases (`export const isMounted = isPresent`) and relative re-exports one
+ * module at a time.
+ *
+ * Only a syntactically obvious function counts as a function; a name this pass
+ * cannot resolve at all stays `undefined` and the caller decides. The asymmetry
+ * is deliberate — a missing `()` merely under-advertises a name, while a
+ * spurious one asserts something false about it, which is what shipped as
+ * `CREATE_OPTION_VALUE()` (#151).
+ */
+class KindResolver {
+  private readonly facts = new Map<string, ModuleFacts>()
+
+  constructor(private readonly read: ModuleReader) {}
+
+  factsFor(id: string, text?: string): ModuleFacts {
+    const cached = this.facts.get(id)
+    if (cached) return cached
+    const facts = collectModuleFacts(
+      ts.createSourceFile(id, text ?? '', ts.ScriptTarget.Latest, true),
+    )
+    this.facts.set(id, facts)
+    return facts
+  }
+
+  kindOf(id: string, name: string, seen = new Set<string>()): ComponentMember['kind'] | undefined {
+    const key = `${id}#${name}`
+    if (seen.has(key)) return undefined
+    seen.add(key)
+    const binding = this.facts.get(id)?.bindings.get(name)
+    if (!binding) return undefined
+    if ('kind' in binding) return binding.kind
+    if ('alias' in binding) return this.kindOf(id, binding.alias, seen)
+    const source = this.read(id, binding.from)
+    if (!source) return undefined
+    this.factsFor(source.id, source.text)
+    return this.kindOf(source.id, binding.imported, seen)
+  }
+}
+
+function collectModuleFacts(sf: ts.SourceFile): ModuleFacts {
+  const bindings = new Map<string, LocalBinding>()
+  const exportedLocals: string[] = []
+
+  for (const stmt of sf.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      bindings.set(stmt.name.text, { kind: 'function' })
+      if (hasExportModifier(stmt)) exportedLocals.push(stmt.name.text)
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name)) continue
+        const init = decl.initializer
+        bindings.set(
+          decl.name.text,
+          init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+            ? { kind: 'function' }
+            : init && ts.isIdentifier(init)
+              ? { alias: init.text }
+              : { kind: 'const' },
+        )
+        if (hasExportModifier(stmt)) exportedLocals.push(decl.name.text)
+      }
+    } else if (ts.isImportDeclaration(stmt) && stmt.importClause?.namedBindings) {
+      const from = (stmt.moduleSpecifier as ts.StringLiteral).text
+      const named = stmt.importClause.namedBindings
+      if (ts.isNamedImports(named) && !stmt.importClause.isTypeOnly) {
+        for (const spec of named.elements) {
+          if (spec.isTypeOnly) continue
+          bindings.set(spec.name.text, { from, imported: (spec.propertyName ?? spec.name).text })
+        }
+      }
+    } else if (ts.isExportDeclaration(stmt) && stmt.exportClause && !stmt.isTypeOnly) {
+      // `export { a as b } from './x'` binds `b`; a local `export { a }` is
+      // already bound by its declaration, it only becomes an EXPORT here.
+      if (!ts.isNamedExports(stmt.exportClause)) continue
+      const from = stmt.moduleSpecifier
+        ? (stmt.moduleSpecifier as ts.StringLiteral).text
+        : undefined
+      for (const spec of stmt.exportClause.elements) {
+        if (spec.isTypeOnly) continue
+        const local = (spec.propertyName ?? spec.name).text
+        if (from) bindings.set(spec.name.text, { from, imported: local })
+        else if (spec.propertyName) bindings.set(spec.name.text, { alias: local })
+      }
+    }
+  }
+
+  return { bindings, exportedLocals }
+}
+
+/**
+ * The component's namespace object, identified by SHAPE rather than by name.
+ * Name-matching against the file's basename silently missed every multi-word
+ * component (`alert-dialog` exports `alertDialog`) and `switch` (which exports
+ * `switchMachine`), so their namespace members were never collected — and, once
+ * module-level exports were emitted, the object itself was listed as a constant.
+ */
+/**
+ * Classify one property of a component's namespace object. Shorthand and plain
+ * identifier values resolve through `kindOf`; an inline function is a function;
+ * anything else is a value.
+ */
+function memberKind(
+  prop: ts.ObjectLiteralElementLike,
+  kindOf: (name: string) => ComponentMember['kind'] | undefined,
+): ComponentMember['kind'] | undefined {
+  if (ts.isMethodDeclaration(prop)) return 'function'
+  if (ts.isShorthandPropertyAssignment(prop)) return kindOf(prop.name.text)
+  if (ts.isPropertyAssignment(prop)) {
+    const value = prop.initializer
+    if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) return 'function'
+    if (ts.isIdentifier(value)) return kindOf(value.text)
+    return 'const'
+  }
+  return undefined
+}
+
+function isNamespaceObject(init: ts.ObjectLiteralExpression, sf: ts.SourceFile): boolean {
+  const props = new Set(init.properties.map((p) => p.name?.getText(sf) ?? ''))
+  return props.has('connect') || (props.has('init') && props.has('update'))
+}
+
+const NO_MODULES: ModuleReader = () => undefined
+
 function extractComponent(filePath: string): ComponentInfo | null {
-  const sf = readSource(filePath)
   const name = basename(filePath, '.ts')
   if (name === 'index') return null
+  return extractComponentFromText(name, readFileSync(filePath, 'utf-8'), siblingReader, filePath)
+}
+
+/** Resolve a relative `./x.js` specifier back to its `src/x.ts` sibling. */
+const siblingReader: ModuleReader = (fromId, specifier) => {
+  if (!specifier.startsWith('.')) return undefined
+  const id = resolve(dirname(fromId), specifier.replace(/\.js$/, '.ts'))
+  if (!existsSync(id)) return undefined
+  return { id, text: readFileSync(id, 'utf-8') }
+}
+
+export function extractComponentFromText(
+  name: string,
+  text: string,
+  read: ModuleReader = NO_MODULES,
+  id = `${name}.ts`,
+): ComponentInfo | null {
+  const sf = ts.createSourceFile(id, text, ts.ScriptTarget.Latest, true)
 
   const info: ComponentInfo = {
     name,
@@ -323,6 +506,24 @@ function extractComponent(filePath: string): ComponentInfo | null {
     connectParams: '',
     parts: [],
     extras: [],
+  }
+
+  // Pre-pass: what every top-level binding IS, so a namespace member written in
+  // shorthand (`export const table = { …, HEADER_ROW_INDEX }`) can be classified
+  // and module-level exports can be emitted alongside it (#151).
+  const resolver = new KindResolver(read)
+  const facts = resolver.factsFor(id, text)
+  const kindOf = (memberName: string) => resolver.kindOf(id, memberName)
+
+  const excluded = new Set(STANDARD_MEMBERS)
+  const addExtra = (memberName: string, kind: ComponentMember['kind'] | undefined) => {
+    if (excluded.has(memberName)) return
+    if (info.extras.some((e) => e.name === memberName)) return
+    // An unresolved name is one re-exported through a module this pass could not
+    // read. Every such name in this package is a helper function, and the shape
+    // that made #151 visible (a module's own sentinel constant) always resolves
+    // locally — so `function` is the right fallback here.
+    info.extras.push({ name: memberName, kind: kind ?? 'function' })
   }
 
   ts.forEachChild(sf, (node) => {
@@ -416,18 +617,26 @@ function extractComponent(filePath: string): ComponentInfo | null {
         if (
           decl.initializer &&
           ts.isObjectLiteralExpression(decl.initializer) &&
-          decl.name.getText(sf) === name
+          isNamespaceObject(decl.initializer, sf)
         ) {
+          excluded.add(decl.name.getText(sf))
           for (const prop of decl.initializer.properties) {
             const pName = prop.name?.getText(sf) ?? ''
-            if (!['init', 'update', 'connect'].includes(pName) && pName) {
-              if (!info.extras.includes(pName)) info.extras.push(pName)
-            }
+            if (!pName) continue
+            addExtra(pName, memberKind(prop, kindOf))
           }
         }
       }
     }
   })
+
+  // Module-level exports the namespace object does not carry. Before #151 these
+  // were dropped entirely, which is why `HEADER_ROW_INDEX` — moved out of the
+  // `table` object in PR #134 precisely to dodge the `()` bug — appeared nowhere
+  // in the docs at all.
+  for (const exported of facts.exportedLocals) {
+    addExtra(exported, kindOf(exported))
+  }
 
   if (info.parts.length === 0) {
     ts.forEachChild(sf, (node) => {
@@ -503,8 +712,10 @@ function generateComponentsDoc(): string {
     if (c.initParams) md += `**Init options:** \`${c.initParams}\`\n\n`
     if (c.connectParams) md += `**Connect options:** \`${c.connectParams}\`\n\n`
     if (c.parts.length > 0) md += `**Parts:** ${c.parts.map((p) => `\`${p}\``).join(', ')}\n\n`
-    if (c.extras.length > 0)
-      md += `**Utilities:** ${c.extras.map((e) => `\`${e}()\``).join(', ')}\n\n`
+    const utilities = c.extras.filter((e) => e.kind === 'function')
+    const constants = c.extras.filter((e) => e.kind === 'const')
+    if (utilities.length > 0) md += `**Utilities:** ${utilities.map(memberRef).join(', ')}\n\n`
+    if (constants.length > 0) md += `**Constants:** ${constants.map(memberRef).join(', ')}\n\n`
     md += '---\n\n'
   }
   return md
@@ -537,83 +748,96 @@ function injectSection(filePath: string, marker: string, content: string): void 
 
 // ── Main ─────────────────────────────────────────────────────────
 
-// Every generic package (everything but `components`) is driven straight from
-// the single registry in `pages/api/@pkg/packages.ts`.
-const genericSlugs = PACKAGE_SLUGS.filter((s) => s !== 'components')
+/**
+ * Regenerate every `content/api/*.md`. Guarded behind the entry-point check
+ * below so the extraction helpers above can be imported (and unit-tested)
+ * without the module writing to disk as a side effect of the import.
+ */
+function main(): void {
+  // Every generic package (everything but `components`) is driven straight from
+  // the single registry in `pages/api/@pkg/packages.ts`.
+  const genericSlugs = PACKAGE_SLUGS.filter((s) => s !== 'components')
 
-// Guard: any publishable package on disk that is absent from the registry gets
-// LOUDLY surfaced (previously such a package silently produced no page). The
-// registry lives in `pages/api/@pkg/packages.ts`; add the package there (route +
-// nav + llms.txt + this page all key off it) or mark it `private`.
-{
-  const documented = new Set(PACKAGE_SLUGS)
-  const undocumented: string[] = []
-  for (const dir of readdirSync(packagesDir)) {
-    const pjPath = resolve(packagesDir, dir, 'package.json')
-    if (!existsSync(pjPath)) continue
-    const pkg = JSON.parse(readFileSync(pjPath, 'utf-8')) as {
-      private?: boolean
-      exports?: unknown
+  // Guard: any publishable package on disk that is absent from the registry gets
+  // LOUDLY surfaced (previously such a package silently produced no page). The
+  // registry lives in `pages/api/@pkg/packages.ts`; add the package there (route +
+  // nav + llms.txt + this page all key off it) or mark it `private`.
+  {
+    const documented = new Set(PACKAGE_SLUGS)
+    const undocumented: string[] = []
+    for (const dir of readdirSync(packagesDir)) {
+      const pjPath = resolve(packagesDir, dir, 'package.json')
+      if (!existsSync(pjPath)) continue
+      const pkg = JSON.parse(readFileSync(pjPath, 'utf-8')) as {
+        private?: boolean
+        exports?: unknown
+      }
+      const publishable = !pkg.private && pkg.exports !== undefined
+      if (publishable && !documented.has(dir)) undocumented.push(dir)
     }
-    const publishable = !pkg.private && pkg.exports !== undefined
-    if (publishable && !documented.has(dir)) undocumented.push(dir)
+    if (undocumented.length > 0) {
+      console.error(
+        `\n  ⚠ PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY (pages/api/@pkg/packages.ts):\n` +
+          undocumented.map((d) => `      - @llui/${d}`).join('\n') +
+          `\n    They get NO API page, route, nav entry, or llms.txt line. Register or mark private.\n`,
+      )
+    }
   }
-  if (undocumented.length > 0) {
-    console.error(
-      `\n  ⚠ PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY (pages/api/@pkg/packages.ts):\n` +
-        undocumented.map((d) => `      - @llui/${d}`).join('\n') +
-        `\n    They get NO API page, route, nav entry, or llms.txt line. Register or mark private.\n`,
-    )
+
+  // Resolve entrypoints for every generic package up front, then build ONE program
+  // spanning them all (transitive re-exports resolve through the type system).
+  const pkgEntries = new Map<string, string[]>()
+  for (const slug of genericSlugs) {
+    const pkgDir = resolve(packagesDir, slug)
+    if (!existsSync(pkgDir)) {
+      throw new Error(
+        `@llui/${slug} is in the registry but packages/${slug} does not exist on disk.`,
+      )
+    }
+    const files = entrySourceFiles(pkgDir)
+    if (files.length === 0) {
+      throw new Error(
+        `@llui/${slug}: no resolvable src entrypoints from package.json#exports (mapped dist→src).`,
+      )
+    }
+    pkgEntries.set(slug, files)
   }
+
+  const program = ts.createProgram([...pkgEntries.values()].flat(), {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    allowJs: true,
+    skipLibCheck: true,
+    noEmit: true,
+    strict: false,
+  })
+  const checker = program.getTypeChecker()
+
+  // Components are special — use the component extractor.
+  console.log('Generating component API reference...')
+  const componentsSeed = resolve(contentDir, 'components.md')
+  if (!existsSync(componentsSeed)) throw new Error('missing seed content/api/components.md')
+  injectSection(componentsSeed, 'auto-api', generateComponentsDoc())
+  console.log('  → components.md')
+
+  // All other packages use the generic checker-based extractor.
+  for (const slug of genericSlugs) {
+    const items = extractPackageExports(slug, pkgEntries.get(slug)!, program, checker)
+    if (items.length === 0) {
+      throw new Error(`@llui/${slug}: zero exports extracted — refusing to emit an empty API page.`)
+    }
+    const contentFile = resolve(contentDir, `${slug}.md`)
+    if (!existsSync(contentFile)) {
+      throw new Error(`@llui/${slug}: missing seed content/api/${slug}.md`)
+    }
+    injectSection(contentFile, 'auto-api', formatExports(items))
+    console.log(`  → ${slug}.md (${items.length} exports)`)
+  }
+
+  console.log('Done.')
 }
 
-// Resolve entrypoints for every generic package up front, then build ONE program
-// spanning them all (transitive re-exports resolve through the type system).
-const pkgEntries = new Map<string, string[]>()
-for (const slug of genericSlugs) {
-  const pkgDir = resolve(packagesDir, slug)
-  if (!existsSync(pkgDir)) {
-    throw new Error(`@llui/${slug} is in the registry but packages/${slug} does not exist on disk.`)
-  }
-  const files = entrySourceFiles(pkgDir)
-  if (files.length === 0) {
-    throw new Error(
-      `@llui/${slug}: no resolvable src entrypoints from package.json#exports (mapped dist→src).`,
-    )
-  }
-  pkgEntries.set(slug, files)
-}
-
-const program = ts.createProgram([...pkgEntries.values()].flat(), {
-  target: ts.ScriptTarget.ES2022,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-  allowJs: true,
-  skipLibCheck: true,
-  noEmit: true,
-  strict: false,
-})
-const checker = program.getTypeChecker()
-
-// Components are special — use the component extractor.
-console.log('Generating component API reference...')
-const componentsSeed = resolve(contentDir, 'components.md')
-if (!existsSync(componentsSeed)) throw new Error('missing seed content/api/components.md')
-injectSection(componentsSeed, 'auto-api', generateComponentsDoc())
-console.log('  → components.md')
-
-// All other packages use the generic checker-based extractor.
-for (const slug of genericSlugs) {
-  const items = extractPackageExports(slug, pkgEntries.get(slug)!, program, checker)
-  if (items.length === 0) {
-    throw new Error(`@llui/${slug}: zero exports extracted — refusing to emit an empty API page.`)
-  }
-  const contentFile = resolve(contentDir, `${slug}.md`)
-  if (!existsSync(contentFile)) {
-    throw new Error(`@llui/${slug}: missing seed content/api/${slug}.md`)
-  }
-  injectSection(contentFile, 'auto-api', formatExports(items))
-  console.log(`  → ${slug}.md (${items.length} exports)`)
-}
-
-console.log('Done.')
+const invokedDirectly =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (invokedDirectly) main()

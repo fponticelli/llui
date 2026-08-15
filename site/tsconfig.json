@@ -9,5 +9,5 @@
     "lib": ["ES2022", "DOM"],
     "skipLibCheck": true
   },
-  "include": ["src", "pages", "vite.config.ts"]
+  "include": ["src", "pages", "test", "vite.config.ts", "vitest.config.ts"]
 }

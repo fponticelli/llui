@@ -2089,10 +2089,12 @@ export function branch<K extends string | number>(
 
 Wrap the browser globals as a `DomEnv`. Used as the default env for
 `mountApp` / `hydrateSignalApp` on the client.
+
 The returned object delegates to `globalThis.document` / `globalThis.X`
 lazily — evaluating `browserEnv()` on a server process before a DOM
 exists is safe because the delegation only dereferences the globals
 when a method is actually called.
+
 Never mutates `globalThis`. A process with no browser globals that
 invokes one of the factory methods gets a `TypeError` / `ReferenceError`
 at the call site — which is correct: you're trying to build DOM on a
@@ -2112,6 +2114,7 @@ function collectHeadSink(): CollectHeadSink
 
 Define a signal component. Identity at runtime — the view has been lowered by
 the compiler; the authoring/runtime bag shapes coincide (state: Signal<S>).
+
 The three type parameters:
 - **`S` — State.** The component's state shape. Must be JSON-serializable
   (plain objects/arrays/primitives — no class instances, functions, Maps, or
@@ -2125,6 +2128,7 @@ The three type parameters:
 - **`E` — Effect.** The effect union returned from `init`/`update`, also a
   **discriminated union with a `type` field**. Defaults to `never` (a pure
   component with no effects). Handled in `onEffect` (or by `@llui/effects`).
+
 Spelling these out (and the `{ type: string }` constraint) catches a malformed
 Msg/Effect union at the call site instead of at the first failed dispatch.
 
@@ -2154,9 +2158,12 @@ function currentDoc(): SignalDoc
 Combine N independent signals into one derived signal. Use when the inputs have
 no shared parent signal (cross-tree, or a per-row item signal + a component-state
 signal); for a single source, prefer {@link Signal.map}.
+
 Two call forms — pick whichever reads cleaner:
+
     derived(a, b, (va, vb) => …)   // variadic: 2–4 sources, positional values
     derived([a, b, …c], (…vals) => …)  // array: any N, tuple-typed values
+
 The compiler lowers `derived(...)` inside a DIRECT view to an inline call. This
 is the equivalent RUNTIME handle for view-helper composition (where there is no
 statically-known path): `produce`/`peek` apply `fn` over the resolved sources and
@@ -2381,10 +2388,12 @@ function mountApp<S, M, E = never>(container: Element, def: SignalComponentDef<S
 
 Mount a signal view: build the nodes (collecting bindings), attach them at the
 target, and wire a chunked-mask reconciler over the collected bindings.
+
 For a `container` target, 'append' (fresh mount) leaves existing children and
 'replace' swaps server HTML out atomically (hydration). For an `anchor` target,
 the nodes are inserted immediately after the anchor comment and bracketed by a
 synthesized end sentinel — `dispose()` removes that bracketed region.
+
 `seedContexts` seeds the build's root context values (see `runBuild`); used by
 adapters mounting a nested build whose providers live in a different pass.
 
@@ -2411,8 +2420,10 @@ bare `state` (the convenience return) — to a `[state, effects]` pair. This is
 the ONE place the `[S, E[]] | S` heuristic lives; component, SSR, and (later)
 `@llui/test` / `@llui/vike` all route through it so the shape decision never
 diverges.
+
 The heuristic: a 2-element array whose SECOND element is itself an array is
 read as `[state, effects]`; anything else is a bare state with no effects.
+
 KNOWN AMBIGUITY (deliberately unchanged — dropping the bare-`S` convenience is
 a repo-wide breaking ripple, out of scope here): a state that is ITSELF a
 2-tuple whose second element is an array (e.g. the whole state is
@@ -2508,6 +2519,7 @@ function registerBinding(deps: readonly string[], produce: (state: unknown) => u
 Build a signal component's DOM tree on the server, returning the (detached)
 nodes plus a `dispose` that runs the build's teardowns. The caller composes /
 serializes the nodes; effects are NOT dispatched (server render is pure).
+
 For persistent layouts, compose multiple `renderNodes` results before
 `serializeNodes` so the layout/page trees are stitched at the slot position.
 
@@ -2582,6 +2594,7 @@ signal scope mounted on a combined `{ item, state }` context — so a row reacts
 to its item AND to component state, with per-row, per-binding gating (a shared
 state change fans out only to the row bindings that read it; item changes hit
 only that row). Kept rows are mutated in place, never recreated.
+
 Reorder is move-minimizing via a longest-increasing-subsequence pass over the
 rows' previous DOM positions: only `n − |LIS|` rows move, so a 2-row swap is 2
 DOM moves and a single removal is 0 — not the O(n) re-insert the naive cursor
@@ -2624,6 +2637,7 @@ loaded component is mounted via `mountSignalComponent({ anchor, mode:'append' })
 — reusing the anchor-mount infra (nodes inserted after the anchor, bracketed by
 an `llui-mount-end` sentinel; its handle owns that region's update loop and
 dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
+
 If the surrounding build is torn down before the loader settles, a cancelled
 flag skips the deferred mount; any already-mounted child handle is disposed.
 The flag is re-checked AFTER the deferred mount too, so a teardown raised from
@@ -2675,11 +2689,13 @@ Virtualized keyed list — only the rows in the scroll viewport (+overscan) exis
 in the DOM. A scroll container (fixed `containerHeight`, `data-virtual-container`)
 holds an inner spacer (`data-virtual-spacer`) sized to the total height; each
 visible row is absolutely positioned (`translateY`) at its cumulative offset.
+
 On scroll the visible window is recomputed and rows are reconciled BY KEY using
 the same per-row machinery as `signalEach` (per-row sub-build via `runBuild`
 with `inherit`, a row scope mounted on a `{ item, state, index }` ctx, teardowns
 on removal). Rows scrolled out are disposed; rows scrolled in are built. The
 window also recomputes when `items` changes (a spec gated on `items.deps`).
+
 `itemHeight` is a uniform `number` (O(1) windowing) or a per-item function
 `(item, index) => number` for variable-height rows (cumulative offsets via a
 prefix sum, rebuilt when `items` changes). Heights come from the data —
@@ -2710,65 +2726,70 @@ function style(css: HeadValue<string>, attrs: StyleAttrs = {}): Mountable
 Library helper for `*.connect` implementations: tags an event
 handler with the variants it dispatches at runtime, so the binding
 registers them when the user spreads the bag onto an element.
+
 Resolution rules — choose whichever is defined and non-empty:
+
 1. **`send.__lluiVariants`** (translator pattern). When the user
    passed a compiler-tagged dispatch translator like
    `(m) => dispatch({type: 'Auth/UserMenu'})`, `send` itself
    carries the user-side variants the translator forwards. We
    surface those — the agent should see what `update()` actually
    receives, not the library's internal Msg shape.
+
 2. **`libraryVariants`** fallback. When `send` is the user's raw
    component send (no translator), the library's internal Msgs flow
    directly into `update()`, so the library's own variants ARE the
    user variants. Library author hand-lists them once per handler.
+
 Returns `fn` mutated (via `Object.assign`) so the same reference
 remains identity-equal — important for downstream code that diffs
 handlers across re-bindings.
+
 `libraryVariants` and the `type` the handler dispatches are two
 statements of ONE fact, and they used to be unchecked against each
 other — a drifted tag lies to the agent about what a control does,
 silently (issue #118). Two guards now cover it, and neither is
 sufficient alone:
+
 - the TYPE `readonly M['type'][]` (this signature) rejects a name
   that is not a Msg variant at all, including where the handler is
   a named function the compiler cannot read; and
 - the compiler's `tag-send-drift` rule reads the handler and
   rejects a tag that names the WRONG variant — which type-checks,
   since `'touch'` and `'blur'` are equally valid `M['type']`.
-- that rule BAILS rather than guess, so it is a backstop and not a
-  proof: it recognizes `tagSend` only when imported from the
-  `@llui/dom` specifier (a barrel re-export or a relative import is
-  invisible — issue #146), reads only a literal variant list
-  (`as const` and `satisfies` are read through; a hoisted
-  `VARIANTS` identifier is not) with an inline handler, and reports
-  an over-declaration only when nothing in the handler body could
-  dispatch unseen.
-- **Library authors, one quiet consequence of that last bail.**
-  The over-declaration half survives exactly one kind of call on a
-  handler parameter: a zero-argument `preventDefault` /
-  `stopPropagation` / `stopImmediatePropagation`. Any OTHER event
-  method — `e.persist()`, `e.composedPath()`,
-  `e.dataTransfer.setData(…)` — is a call this analysis cannot see
-  into, so it forfeits completeness and silently switches the
-  "declares a variant it never dispatches" check off for that call
-  site. The failure is SILENCE, not a broken build: the
-  dispatched-but-undeclared direction still runs and nothing stops
-  working. But do not read a clean build of such a handler as
-  confirmation that its variant list is exhaustive.
-- `send` is REQUIRED and non-nullable. Before #118 it was typed
-  `unknown` and read through `?.`, so a nullish first argument
-  returned a tagged `fn`; it now throws a `TypeError`. That is
-  deliberate — the `?.` existed only to satisfy the cast the
-  `unknown` parameter forced, and it disappeared with the cast. A
-  nullish dispatcher is now a type error, so only untyped or
-  casting callers can reach the throw, and failing at BIND time is
-  earlier and closer to the mistake than failing on the first
-  click. (It is NOT an argument about the published variants: the
-  first parameter is only a tag SOURCE, and a handler need not
-  dispatch through it.)
+
+That rule BAILS rather than guess, so it is a backstop and not a proof: it
+recognizes `tagSend` only when imported from the `@llui/dom` specifier (a
+barrel re-export or a relative import is invisible — issue #146), reads only a
+literal variant list (`as const` and `satisfies` are read through; a hoisted
+`VARIANTS` identifier is not) with an inline handler, and reports an
+over-declaration only when nothing in the handler body could dispatch unseen.
+
+**Library authors, one quiet consequence of that last bail.** The
+over-declaration half survives exactly one kind of call on a handler
+parameter: a zero-argument `preventDefault` / `stopPropagation` /
+`stopImmediatePropagation`. Any OTHER event method — `e.persist()`,
+`e.composedPath()`, `e.dataTransfer.setData(…)` — is a call this analysis
+cannot see into, so it forfeits completeness and silently switches the
+"declares a variant it never dispatches" check off for that call site. The
+failure is SILENCE, not a broken build: the dispatched-but-undeclared
+direction still runs and nothing stops working. But do not read a clean build
+of such a handler as confirmation that its variant list is exhaustive.
+
+`send` is REQUIRED and non-nullable. Before #118 it was typed `unknown` and
+read through `?.`, so a nullish first argument returned a tagged `fn`; it now
+throws a `TypeError`. That is deliberate — the `?.` existed only to satisfy
+the cast the `unknown` parameter forced, and it disappeared with the cast. A
+nullish dispatcher is now a type error, so only untyped or casting callers can
+reach the throw, and failing at BIND time is earlier and closer to the mistake
+than failing on the first click. (It is NOT an argument about the published
+variants: the first parameter is only a tag SOURCE, and a handler need not
+dispatch through it.)
+
 
 ```ts
 import { tagSend } from '@llui/dom'
+
 export function connect<S>(get, send, opts) {
   return {
     trigger: {
@@ -2895,6 +2916,7 @@ get their precise DOM event type, so `onClick: (e) => e.clientX` infers
 `aria-*`, signals, and less-common events — is an {@link AttrValue} or a
 loosely-typed handler via the index signature, which also lets `connect()`
 part bags (with their own pre-typed handlers) spread in cleanly.
+
 The handler index falls back to `any` ON PURPOSE: a stricter index type would
 be a supertype of the precise `on*` handlers and reject them (function params
 are contravariant), so the precise types live in the mapped half and the
@@ -3135,6 +3157,7 @@ export interface BindingLocation {
 A reactive binding: the dependency paths it reads + an accessor (`produce`)
 and a `commit` that applies the value. This is the compiler transform's output
 target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
+
 A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
 stores specs as-is (see `scopeFromSpecs`), so it EXTENDS the runtime contract
 rather than restating it; `produce`/`commit`/`structural` have exactly one
@@ -3189,6 +3212,7 @@ export interface CollectHeadSink extends HeadSink {
 The compiler-injected introspection metadata carried by a compiled
 `component({...})` literal. Every field is optional: a production build
 without `agent: true` emits none of them, and `componentMeta` is dev-only.
+
 Spelled with computed keys so the declared shape and the runtime read path
 cannot drift from {@link COMPILER_META_KEYS} — there is exactly one place a
 key name is written.
@@ -3278,11 +3302,13 @@ export interface Context<T> {
 ### `CoverageSnapshot`
 
 Per-variant Msg coverage tracker — dev-only.
+
 Records each dispatched message's discriminant (or `<non-discriminant>`
 for objects missing a `type` field) along with the message index it
 fired at. Consumed by the `llui_coverage` MCP tool to surface untested
 Msg variants: any variant declared in the compiled msg schema that
 never fired in the current session shows up in `neverFired`.
+
 Zero cost in production: `installSignalDebug` is the only caller, and it
 never runs in prod builds. Hot path is one optional-chain read per
 dispatched message (`ci._coverage?.record(...)`).
@@ -3389,10 +3415,12 @@ export interface DirectRow {
 Dev-only disposer log entry, emitted once per `disposeLifetime` call
 when the owning component instance has an `_disposerLog` ring buffer
 installed by `installSignalDebug`.
+
 `cause` is set by the structural primitive (each / branch / child)
 immediately before calling `disposeLifetime`. When no cause was
 explicitly set, `disposeLifetime` falls back to `'component-unmount'`.
 `'app-unmount'` is reserved for the top-level `mountApp` teardown.
+
 Used by the `llui_disposer_log` MCP tool to diagnose leaks on
 structural transitions (e.g., branch swap that fails to release a
 subscription registered in the old arm).
@@ -3417,7 +3445,9 @@ export interface DisposerEvent {
 Minimal DOM surface that `@llui/dom`'s internals depend on. Passed to
 `mountApp` / `hydrateSignalApp` / `renderToString` as a context object so
 the runtime never reaches for `globalThis.document` directly.
+
 Why an injected shape instead of a global shim:
+
 1. **Bundler-friendly.** A Cloudflare Worker that imports
    `@llui/dom/ssr/linkedom` reaches only linkedom via its module
    graph. No `await import('jsdom')` appears in reachable source,
@@ -3426,6 +3456,7 @@ Why an injected shape instead of a global shim:
    different envs; no process-level singleton to collide on.
 3. **Strict-isolate safe.** No `globalThis[key] = ...` mutation —
    Cloudflare workerd and Deno strict modes forbid it.
+
 The surface is deliberately narrow: exactly the methods and
 constructors the runtime touches. Grep `document\.` /
 `instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
@@ -3502,6 +3533,7 @@ export interface DomEnv {
 Per-each-block reconciliation diff, recorded once per update that
 mutates an each() block's key set. Dev-only — populated when
 `installSignalDebug` has initialized an `_eachDiffLog` on the instance.
+
 `updateIndex` correlates with the message-history index recorded by
 `devtools.ts` so tools can join diffs back to the message that caused
 them. `eachSiteId` identifies the each() call site stably across
@@ -3588,6 +3620,7 @@ match for the mock to fire:
   `'body.key'`). When present without `payloadEquals`, presence of
   the path is sufficient.
 - `payloadEquals`: strict (`===`) equality check at `payloadPath`.
+
 An empty match (no fields) matches every effect — callers should
 set at least `type` to avoid accidental catch-all.
 
@@ -3733,9 +3766,11 @@ export interface ListComponentsResult {
 A materialized signal handed to imperative code at the `foreign` boundary.
 Minimal on purpose — all derivation stays in the declarative `state:`
 declaration, so this is a read+subscribe handle only.
+
 - `peek()` — one-shot, non-reactive read (same verb as {@link Signal}).
 - `bind(cb)` — fires `cb` synchronously with the current value, then on every
   change; returns an unsubscribe. Mount-time `bind`s auto-dispose on unmount.
+
 Deliberately no `on` (event-listener vocabulary trains a redundant
 peek-then-subscribe), no change-only mode, and no `at`/`map`/`derived`.
 
@@ -3749,6 +3784,7 @@ export interface LiveSignal<T> {
 ### `LluiDebugAPI`
 
 The relay-callable debug surface of a mounted LLui component.
+
 Required methods are implemented by every runtime (and by
 `installSignalDebug`). Optional methods are binding/scope/effect
 introspection that only the legacy runtime provides — callers must
@@ -4006,6 +4042,7 @@ export interface ShowCond {
 
 A reactive view of a value of type `T`. Three methods, the entire reactive
 vocabulary alongside `derived`:
+
 - `at(path)` — slice into a sub-signal via a statically-typed dot path.
 - `map(fn)` — transform into a derived signal (single source).
 - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
@@ -4894,6 +4931,7 @@ function allAnnotationArgs(text: string, tag: string): string[][]
 
 Analyze a signal-accessor function. Each parameter is treated as a tainted
 root; the returned `deps[i]` is the set of paths read from parameter `i`.
+
 A parameter whose value ESCAPES (passed to a call, spread, returned whole)
 yields the empty path `''` — "the whole parameter" — which is what a caller
 must read as "cannot narrow this one".
@@ -4940,6 +4978,7 @@ Build a single field descriptor from a property signature: type,
 optionality, and any `@should("…")` JSDoc hint. Emits the compact
 bare form when there's nothing extra to communicate; otherwise the
 rich `{type, optional?, priority?, hint?}` shape.
+
 Exported so the cross-file resolver (which walks the same property
 signatures when the Msg type lives in a different file from the
 `component()` call) can produce identical descriptors. Without
@@ -4981,11 +5020,13 @@ function clearManifestCache(): void
 ### `collectSignalDeps()`
 
 Collect the dependency paths every signal component view in `mod` reads.
+
 Paths are reported at full authored depth: `state.at('user').at('profile')
 .at('address').at('city')` is `user.profile.address.city`, not a two-segment
 prefix of it. Truncating to a prefix stays SOUND for gating (a dep on a prefix
 covers every descendant, because an immutable update replaces the prefix
 reference) but it misreports what the code actually reads.
+
 Takes a {@link ParsedModule} — which carries the real filename, and with it the
 parse ScriptKind. That is not merely for reporting: a `.ts` file parsed as TSX
 misparses the generic arrow form (`const id = <T>(x: T): T => x`), and here
@@ -5000,6 +5041,7 @@ function collectSignalDeps(mod: ParsedModule): SignalDepsResult
 The EFFECTIVE State/Msg/Effect type names for a `component<…>()` call: its own
 type arguments where they are plain identifiers, else the
 {@link CONVENTION_TYPE_NAMES} the file-local extractors fall back to.
+
 The adapter (pre-resolution) and the transform (metadata emission + lookup)
 MUST both derive names through this function: they meet on the
 {@link crossFileKey} built from the result, and any divergence would make the
@@ -5018,6 +5060,7 @@ function componentTypeNames(call: ts.CallExpression): {
 Stable hex SHA-256 (first 32 chars) over a normalized JSON serialization
 of msgSchema + stateSchema + msgAnnotations. Object key order is
 normalized so equivalent inputs always produce equal hashes.
+
 Used by the runtime to detect when the browser-to-server `hello` frame
 needs to re-send its schema payload (dev hot-reload).
 
@@ -5046,11 +5089,13 @@ function createModuleCache(): ModuleCache
 
 The {@link CrossFileResolutions} key for a tuple of effective type names — both
 the transform's metadata cache key and the adapter's lookup key.
+
 The key is the NAME tuple, not the resolved declaration, so two calls that name
 the same types share one entry. That is exact for the TOP-LEVEL declarations and
 module imports this resolver walks. Two known cases where a name is NOT a unique
 referent — both pre-existing limits shared with the file-local extractors, which
 key off names the same way:
+
  - **Shadowing.** A `Msg` declared inside a block/function scope collides with a
    top-level `Msg`; the resolver only ever sees the top-level one, so a component
    under the shadow is keyed as if it used the outer type.
@@ -5058,6 +5103,7 @@ key off names the same way:
    or a qualified name (`A.Msg`) is not a plain identifier, so
    {@link componentTypeNames} falls back to the convention name — and two calls
    with DIFFERENT qualified types collide on that one key.
+
 Both produce the same wrongly-shared or file-local schema they produced before
 per-call keying; the fix is name resolution through a checker, not a wider key.
 
@@ -5068,6 +5114,7 @@ function crossFileKey(names: { state: string; msg: string; effect: string }): st
 ### `extractDiscriminatedUnionSchemaCrossFile()`
 
 Cross-file companion to `extractMsgSchema` / `extractEffectSchema`.
+
 Discriminated-union schema extractor that follows composed
 TypeReferences through the resolver. Same recursion shape as
 `extractMsgAnnotationsCrossFile`, just collecting field shapes
@@ -5091,12 +5138,14 @@ function extractEffectSchema(mod: ParsedModule, typeName: string = 'Effect'): Ms
 Walk a Msg-like discriminated-union type alias and extract JSDoc
 annotations attached to each union member. Returns null if no
 recognizable union is found so callers can skip emission cleanly.
+
 Expected JSDoc grammar (order-independent):
   @intent("human readable")
   @alwaysAffordable
   @requiresConfirm
   @humanOnly       — sugar for dispatchMode: 'human-only'
   @agentOnly       — sugar for dispatchMode: 'agent-only'
+
 Unknown tags are ignored; malformed @intent (no quoted string) is
 treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
 exclusive — if both are present (which the ESLint rule
@@ -5111,15 +5160,18 @@ function extractMsgAnnotations(mod: ParsedModule, typeName: string = 'Msg'): Rec
 ### `extractMsgAnnotationsCrossFile()`
 
 Annotation extractor that walks composed Msg unions across files.
+
 Given a Msg type that may be a union of inline `{ type: 'literal' }`
 objects AND TypeReferences (e.g.
 `type Msg = ImportedFoo | { type: 'extra' }`), recursively follow
 each TypeReference via `findTypeSource` and merge its variants into
 the returned map.
+
 Composition + cross-file is the union of two failure modes the
 file-local sync extractor silently mishandles. This function
 produces the same map the runtime expects regardless of how the
 developer organized the type declarations.
+
 Conflict policy: if two composed branches contribute the same
 discriminant string (e.g. both halves declare `{ type: 'inc' }`),
 the first one walked wins — silently. Nothing in the toolchain flags
@@ -5147,7 +5199,9 @@ a JSON-serializable shape descriptor. Supports primitives, string-literal
 unions, arrays, nested objects, `T | undefined` optional fields and
 `T | null` nullable ones (optionality and nullability are distinct — see
 {@link StateType}).
+
 Returns null if the named type isn't found or isn't a type literal.
+
 Takes a {@link ParsedModule}, not a source string: the tree is shared with
 lint, the transform and the cross-file resolver (one parse per pass, #93), and
 the module carries the real filename — this used to parse every source as
@@ -5251,6 +5305,7 @@ component. A Msg union commonly lives in a plain `msg.ts` sibling that
 carries no `component(` call, so `lintSignalSource` never sees it — yet that
 is exactly where `@routeGated`/`@validates` are authored. The adapter calls
 this for every other TS module it transforms.
+
 The cheap string pre-check runs against `mod.text` BEFORE the module is parsed,
 so a file with no agent annotation costs a regex and nothing else — which is
 what keeps this affordable on every module in the project.
@@ -5264,6 +5319,7 @@ function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[]
 Run the signal lint rules over an already-parsed module, returning diagnostics
 with resolved line/column. The adapter (vite plugin) surfaces these as build
 errors. Call only on confirmed signal components.
+
 Takes a {@link ParsedModule} so the tree it lints is the SAME one the transform
 and the cross-file resolver use — one parse per dev transform (#93). The
 module also fixes the ScriptKind from the real filename: a `.ts` file using the
@@ -5282,6 +5338,7 @@ reason: `tagSend` is a LIBRARY-author helper, so the canonical call site is a
 plain `connect()` module with no `component(` call in it, which
 `lintSignalSource` never sees. Without this the rule would cover only the
 rarest call sites.
+
 Same pre-check discipline: the name is looked for in `mod.text` BEFORE the
 module is parsed, so a module that never mentions `tagSend` costs one
 substring search.
@@ -5293,6 +5350,7 @@ function lintTagSendSource(mod: ParsedModule): SignalLintMessage[]
 ### `lookupHelperFromSymbol()`
 
 Resolve the manifest helper entry for a call-site callee symbol.
+
 @param sym   the (possibly aliased) symbol of the call target
 @param checker the program's type checker
 
@@ -5340,6 +5398,7 @@ function parseManifest(json: string): ParseManifestResult
 Pair `text` with the `fileName` it came from. The parse happens on the first
 {@link ParsedModule.sourceFile} call and is reused thereafter, so passing the
 SAME instance to lint, cross-file resolution and the transform costs one parse.
+
 Two calls with the same arguments produce two INDEPENDENT modules (and so two
 parses) — hold the instance, or go through a {@link ModuleCache}.
 
@@ -5365,6 +5424,7 @@ positions whose type argument isn't a plain identifier (e.g.
 inline literal types, generic instantiations, namespace-qualified
 names). Identifiers are what the resolver can chase; everything else
 we leave to the local extractor's existing behavior.
+
 Order: `[State, Msg, Effect]` matching `component<State, Msg, Effect>`.
 
 ```typescript
@@ -5445,6 +5505,7 @@ runtime-readable literal. The emission shape mirrors the StateType
 tagged union — `string`/`number`/`boolean`/`null`/`unknown` become string
 literals; the structural kinds become object literals with a `kind`
 field plus the appropriate payload (`of`/`fields`/`values`).
+
 Used by the transform for state-schema emission. The shape
 is the runtime/agent contract; downstream tools (MCP introspection,
 agent's "what type is this field?") consume it.
@@ -5456,9 +5517,11 @@ function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression
 ### `substituteHelperCall()`
 
 Substitute a manifest helper call against its call-site arguments.
+
 Given a helper's manifest entry and the argument expressions at one call
 site, returns the set of host-state paths the call contributes to the
 consumer's __prefixes table.
+
 §4.4 substitution rules:
   1. For each ViaParams entry, resolve the call-site argument.
   2. `shape: 'accessor'` parameters are walked via `extractPaths`.
@@ -5484,14 +5547,17 @@ function substituteHelperCall(entry: HelperEntry, callArgs: ReadonlyArray<ts.Exp
 Walks every `ArrowFunction` and `FunctionExpression` in the source
 and wraps any whose body contains literal `<id>({type:'X', …})`
 dispatches with `Object.assign(fn, {__lluiVariants: ['X', …]})`.
+
 The runtime (in `@llui/dom` `elements.ts` / `el-split.ts`) reads
 `__lluiVariants` from event-handler bindings only — so tags placed
 on functions in non-handler positions (a const declared but never
 bound, an arrow passed to `Array.filter`, a view function whose
 body has nested handlers with dispatches) are runtime-inert. The
 compiler tags generously; the runtime registers selectively.
+
 Universal scope means three concrete patterns all surface their
 variants without the app author having to think about it:
+
 1. **Inline event-handler arrows** —
    `onClick: () => send({type:'X'})` (the original Pass 1 case).
 2. **Const-bound translator functions** —
@@ -5506,16 +5572,19 @@ variants without the app author having to think about it:
    eventually binds the function as an event listener. The arrow
    is still tagged at its declaration site, and the runtime reads
    the tag when the wrapper binds it.
+
 False positives are deliberate. The alternative — proving that a
 tagged arrow actually reaches an event-handler binding — would
 require cross-function, cross-file flow analysis the compiler
 doesn't do. In practice the cost of an over-tagged arrow is bytes,
 not behavior: the runtime never reads the tag from non-handler
 bindings.
+
 Pass 2's `collectLocalFns` resolves identifiers to their original
 arrow/function initializers; this pass replaces those initializers
 with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
 so the resolver still sees raw arrows.
+
 Already-wrapped functions (CallExpressions, including user-applied
 `tagSend(...)` or this pass's own prior output) are skipped — the
 pass only fires on bare arrow/function expressions.
@@ -5528,6 +5597,7 @@ function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceF
 
 Rewrite signal `view`s in a source file and inject the runtime import.
 Returns the source unchanged if it contains no signal components.
+
 Code-only convenience wrapper over {@link transformSignalComponentSourceWithMap}
 — kept for the many callers (mcp, dom codegen tests) that need no source map.
 
@@ -5584,6 +5654,7 @@ export type CompilerMetaKey = (typeof COMPILER_META_KEYS)[CompilerMetaField]
 
 Per-file cross-file resolutions, keyed by {@link crossFileKey} of a
 `component()` call's effective type-argument names.
+
 Keyed PER CALL, not per file (issue #91): a file may declare component A with
 an imported `Msg` and component B with a local one, and B must not be handed
 A's schema/annotations. A wrong schema on the agent/devtools ABI is worse than
@@ -5764,6 +5835,7 @@ The "bare type" of a field. Covers five cases:
     Emitted when every member of a union is an object literal sharing one
     literal-string property name with distinct values. Symmetric with
     how the top-level Msg union itself is encoded — same shape, recursed.
+
 The synthesizer in `@llui/agent`'s `list_actions` walks these to build
 copy-paste-ready payload examples; the validator in `send_message`
 walks them too (treating object/array as "any" since deep validation
@@ -5833,6 +5905,7 @@ export type SchemaHashInput = {
 ### `StateType`
 
 Descriptor for one state field's type, as consumed by agents/devtools.
+
 `'null'` describes a field whose declared type includes `null`. It is a
 VALUE, not an absence: `null` survives JSON (state must be
 JSON-serializable) and TypeScript keeps `field: T | null` required, so a
@@ -5865,6 +5938,7 @@ Index of type aliases and interfaces visible from a source file,
 keyed by name. Lets the field-type resolver follow `Criterion[]` →
 `interface Criterion { … }` and emit a nested object shape rather
 than `'unknown'`.
+
 The cross-file resolver pipeline (`cross-file-resolver.ts`) builds
 an enriched index that includes types imported from sibling files —
 follow `GridSorting` → `'rank' | 'crit-X' | 'crit-Y'` → `{enum: […]}`
@@ -6192,6 +6266,7 @@ Per-pass memo of {@link ParsedModule}s by path. The cross-file resolver looks
 the same sibling up once per type argument, per composed union member and
 again while enriching the type index — eight lookups of one `msg.ts` in a
 single pre-resolution pass was typical, each its own parse.
+
 Keyed by `fileName` and validated against the TEXT: a cached entry is reused
 only while the text is identical, so a file edited between passes (or a
 module the lint autofix rewrote mid-transform) re-parses instead of serving a
@@ -6318,6 +6393,7 @@ export interface Range {
 ### `ResolveContext`
 
 Cross-file type resolver.
+
 The schema/annotation extractors (`extractMsgAnnotations`,
 `extractMsgSchema`, `extractStateSchema`, `extractEffectSchema`) only
 see the source string for the file currently being transformed. When
@@ -6326,11 +6402,13 @@ separate file and imports it where `component()` is called, those
 extractors silently return `null` — the plugin emits no annotations,
 runtime LAP validation is disabled, and Claude can dispatch arbitrary
 `type` strings that fall through to `assertNever`.
+
 This module follows imports and re-exports to find the source file
 that declares the requested type alias, returning that file's source
 string + the local name of the alias there. Extractors then run
 against that source and produce the same output they would have for
 a co-located declaration.
+
 Limitations of `findTypeSource` itself (all of them SILENT — nothing
 warns, and the affected metadata is simply absent):
  - Composition (`type Msg = ImportedA | { type: 'b' }`): it locates the
@@ -6342,6 +6420,7 @@ warns, and the affected metadata is simply absent):
    (`export *` re-export barrels ARE followed — step 4.)
  - Generic types: not parameterized resolution; the type argument
    must resolve to a concrete type alias.
+
 NOTE for future readers: this file used to attribute these gaps to a lint
 rule named `agent-msg-resolvable`. That rule belonged to the DELETED
 `@llui/eslint-plugin` and was never reimplemented as a compiler rule — there
@@ -6582,6 +6661,7 @@ const COMPILER_META_KEYS
 
 The @llui/compiler version stamped on every emitted ComponentDef.
 Stamped so the runtime can check compiler/runtime compatibility.
+
 Keep this in sync with `package.json` — the publish script (Phase 7
 `scripts/publish.sh`) reads from package.json so a drift is caught at
 release time.
@@ -6645,6 +6725,7 @@ const MANIFEST_SCHEMA_VERSION
 ### `SVG_ELEMENT_HELPERS`
 
 SVG element-helper callee names (the `svgHelper(...)` exports of `@llui/dom`).
+
 These are EXPORT names, not tags — the SVG `<text>` helper is exported as
 `svgText` so it doesn't collide with the `text()` node helper. Kept out of
 {@link ELEMENT_HELPERS} because the view transform must NOT lower them
@@ -6717,6 +6798,7 @@ Normalize the user's `router` setting into the public `LlmRouterConfig`
 shape (or null when disabled). Accepts `false`, a preset string, or
 a full config object. Used in `configResolved` so the rest of the
 plugin (router startup + HUD bootstrap) sees one canonical shape.
+
 OPT-IN by default: an unset `router` resolves to `null` (disabled). The
 attention router auto-spawns an LLM CLI (with tool access) in the project
 root, so it must never turn on implicitly — a forgeable same-origin/loopback
@@ -7474,10 +7556,13 @@ replacement for the SSR build. Every `export const X = <expr>` becomes
 becomes a stub, and `export default <expr>` becomes a default stub.
 Returns `null` if the directive is absent (caller should fall through
 to the normal compiler pass).
+
 The client build is expected to skip this path entirely — Vite passes
 `{ ssr: false }` there, and the plugin checks that before invoking
 this function.
+
 Every export with a statically-known name is stubbed uniformly:
+
   - `export const/let NAME = …`, `export function NAME()`, `export class
     NAME`, `export enum NAME` — each becomes `export const NAME =
     __clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
@@ -7487,11 +7572,14 @@ Every export with a statically-known name is stubbed uniformly:
     names are known, so each is stubbed (the `from './other.js'` source
     module is DROPPED, never pulled into the SSR graph).
   - `export default …` — stubbed as `export default __clientOnlyStub("default")`.
+
 NOT stubbable (dropped from the output, WITH a warning):
+
   - `export * from './other.js'` — its re-exported names can't be
     enumerated statically, so they can't be stubbed. Any client-only
     value it re-exported is undefined during SSR; move the 'use client'
     directive to the source module.
+
 Left untouched: `export type …` / `interface` (erased by TS anyway).
 
 ```typescript
@@ -7681,10 +7769,12 @@ function _getEffectInterceptor(): EffectInterceptor
 Dev-only hook reserved for Phase 2 use. No-op in production — setting
 this is a developer opt-in. When `null`, callers skip the check entirely
 so there is zero allocation on the hot path.
+
 Phase 1 reality: `@llui/dom`'s dev effect-dispatch wrapper
 (`dispatchEffectDev`) catches every update-loop effect upstream, so
 Phase 1 callers of this hook will NOT observe invocations. Third-party
 effect libraries must not rely on this hook being called during Phase 1.
+
 Phase 2 wires this for off-loop dispatches (e.g., effects dispatched
 from Web Workers or post-mount lifecycle hooks) where `@llui/dom`'s
 wrapper doesn't reach.
@@ -7697,6 +7787,7 @@ function _setEffectInterceptor(hook: EffectInterceptor): void
 
 Adapt a `handleEffects()` chain (the `(ctx) => void` returned by `.else()`) to
 the signal-runtime `onEffect` shape: `(effect, api) => cleanup`.
+
 The signal runtime now hands `onEffect` a per-mount `api.signal` (an
 `AbortSignal` aborted exactly once, on THIS mount's `dispose()`). When present,
 this adapter passes that signal straight through to the chain: every mount owns
@@ -7706,6 +7797,7 @@ runtime aborting `api.signal`, so the returned cleanup is a no-op — the chain'
 own abort listener clears the mount's pending http / debounce / interval /
 websocket resources. We must NOT abort `api.signal` ourselves (it is the
 runtime's, shared with everything else on the mount).
+
 FALLBACK: when no `api.signal` is supplied (a bare unit test, or a non-signal
 caller), the adapter owns one AbortController PER MOUNT, keyed off the mount's
 `send` identity in a `WeakMap`. The runtime passes ONE stable `send` per mount
@@ -7719,6 +7811,7 @@ and recreated if a stale (aborted) one is found under a reused `send`, so a
 re-mount never inherits a dead signal. The returned cleanup captures the
 controller live at ITS dispatch, so a late unmount of one mount never tears
 down a later mount's effects.
+
 Usage: `onEffect: asOnEffect(handleEffects<E, M>().use(…).else(…))`.
 
 ```typescript
@@ -7801,6 +7894,7 @@ function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, 
 Build a handler chain over an explicit set of runners. `handleEffects()` is
 this with the batteries-included {@link defaultRunners}; pass a hand-picked
 subset here to tree-shake unused runner code out of the bundle.
+
 Per-mount registries are keyed off each mount's lifecycle `AbortSignal` (a
 `WeakMap` so a torn-down mount's registry is collectible once its signal is
 unreachable). One registry is created lazily per distinct signal — i.e. per
@@ -7882,6 +7976,7 @@ function race(effects: BuiltinEffect[]): RaceEffect
 
 Execute all HTTP effects reachable from the effect list, apply the resulting
 messages to state via update(), and return the final loaded state.
+
 Http effects nested inside composite builtins (`sequence`/`race`/`retry`/
 `cancel`/`debounce`) are unwrapped recursively — a `sequence([http(...)])`
 pre-resolves on the server just like a bare `http(...)`. Top-level effects run
@@ -8063,12 +8158,14 @@ export type EffectInterceptor = ((effect: unknown, id: string) => EffectIntercep
 
 Dev-only effect interceptor hook — consumed by `@llui/mcp` (via
 `@llui/dom`'s devtools wiring) to implement effect mocking.
+
 Contract:
 - Default state is `null` — zero overhead when no interceptor is set.
 - Calling `_setEffectInterceptor(null)` clears the hook.
 - The hook receives the raw effect object and an opaque dispatch ID;
   it returns either `{ mocked: true, response }` to short-circuit the
   real effect dispatch, or `{ mocked: false }` to pass through.
+
 Phase 1 consumers rely on the pass-through path; the short-circuit
 path is exercised end-to-end through `@llui/dom`'s effect-dispatch
 wrapper. This module only owns the null-safe set/get contract.
@@ -8283,10 +8380,12 @@ A single effect runner. `types` are the effect `type` discriminants this runner
 claims; `run` executes the effect; `completesWithoutDispatch` is the static
 signal used by `sequence` to advance past a fire-and-forget step immediately —
 a step that never calls `send` would otherwise stall the chain forever.
+
 `run` may RETURN a boolean to override `completesWithoutDispatch` on a per-call
 basis (only `cancel` needs this: bare `cancel` completes without dispatching,
 but `cancel(token, inner)` may dispatch via its inner effect). Returning
 `undefined`/`void` falls back to the static `completesWithoutDispatch`.
+
 `managesCompletion` (default false) marks a COMPOSITE runner that drives the
 completion signal itself: instead of `sequence`'s "first bubbled message means
 done" leaf heuristic, `dispatch` hands such a runner the `onComplete` callback
@@ -8723,6 +8822,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Connect options:** `AlertDialogConnectOptions`
 
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
+
 ---
 
 ### Angle Slider
@@ -8747,6 +8848,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `control`, `thumb`, `valueText`, `hiddenInput`
 
+**Utilities:** `angleFromPoint()`, `pointFromAngle()`
+
 ---
 
 ### Async List
@@ -8766,6 +8869,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Init options:** `items?: T[], page?: number, hasMore?: boolean`
 
 **Parts:** `root`, `sentinel`, `loadMoreTrigger`, `retryTrigger`, `errorText`
+
+**Utilities:** `isLoading()`, `isError()`, `isEmpty()`, `watchSentinel()`
 
 ---
 
@@ -8856,6 +8961,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `clearTrigger`, `level`
 
+**Utilities:** `isLevelReady()`, `isComplete()`, `completeValues()`
+
 ---
 
 ### Checkbox
@@ -8934,6 +9041,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `preview`, `area`, `areaThumb`, `alphaSlider`, `swatchGroup`, `swatch`
 
+**Utilities:** `stateHsl()`, `toHex()`, `toHex8()`, `hexToHsl()`, `hslToRgb()`, `hslToHsv()`, `hsvToHsl()`, `colorFromPoint()`, `parseColor()`
+
 ---
 
 ### Combobox
@@ -8965,7 +9074,9 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`, `isCreateOption()`, `CREATE_OPTION_VALUE()`
+**Utilities:** `overlay()`, `isCreateOption()`
+
+**Constants:** `CREATE_OPTION_VALUE`
 
 ---
 
@@ -8985,6 +9096,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -9010,6 +9123,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `input`, `clearTrigger`, `errorText`
+
+**Utilities:** `parseDate()`, `formatDate()`, `toIsoDate()`
 
 ---
 
@@ -9040,6 +9155,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`, `preset`
+
+**Utilities:** `monthGrid()`, `weekRows()`, `monthLabel()`, `weekdayLabels()`
 
 ---
 
@@ -9179,6 +9296,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `dropzone`, `trigger`, `hiddenInput`, `label`, `clearTrigger`, `itemGroup`, `item`
 
+**Utilities:** `totalSize()`, `acceptToString()`, `fileMatchesAccept()`, `validateFiles()`, `preventDocumentDrop()`, `trackFile()`, `trackFiles()`, `getFile()`, `releaseFile()`, `releaseFiles()`, `releaseAllFiles()`, `trackedFileCount()`, `releaseDropped()`, `releaseUnlanded()`, `effectiveMaxFiles()`
+
 ---
 
 ### Floating Panel
@@ -9247,6 +9366,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `arrow`
 
+**Utilities:** `overlay()`, `isMounted()`, `isPresent()`
+
 ---
 
 ### Image Cropper
@@ -9271,6 +9392,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `image`, `cropBox`, `resizeHandle`, `resetTrigger`
 
+**Utilities:** `centerFill()`
+
 ---
 
 ### In View
@@ -9286,6 +9409,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`
+
+**Utilities:** `createObserver()`
 
 ---
 
@@ -9358,6 +9483,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
 
 **Parts:** `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `rootKeyNav`
+
+**Utilities:** `statusOnOpen()`, `statusOnClose()`, `findItem()`, `levelItems()`, `navigable()`, `firstNav()`, `lastNav()`, `nextNav()`, `isDisabled()`, `setHighlight()`, `closedPatch()`, `deepestMenuLevel()`, `activeMenuHighlight()`, `reduceMenuTree()`, `createMenuTreeParts()`
 
 ---
 
@@ -9460,6 +9587,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `item`
 
+**Utilities:** `isOpen()`
+
 ---
 
 ### Number Input
@@ -9553,6 +9682,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `label`, `input`
 
+**Utilities:** `isComplete()`, `getValue()`, `acceptedChars()`
+
 ---
 
 ### Popover
@@ -9592,7 +9723,7 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`
 
-**Utilities:** `isMounted()`, `isVisible()`, `isAnimating()`
+**Utilities:** `isMounted()`, `isVisible()`, `isAnimating()`, `presenceOpen()`, `presenceClose()`, `presenceEnd()`
 
 ---
 
@@ -9636,6 +9767,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `svg`, `background`, `foreground`, `downloadTrigger`
+
+**Utilities:** `size()`, `toSvgPath()`, `toDataUrl()`
 
 ---
 
@@ -9685,6 +9818,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `item`
 
+**Utilities:** `itemFill()`
+
 ---
 
 ### Scroll Area
@@ -9704,6 +9839,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Init options:** `visibility?: ScrollbarVisibility`
 
 **Parts:** `root`, `viewport`, `content`, `scrollbarX`, `scrollbarY`, `thumbX`, `thumbY`, `corner`
+
+**Utilities:** `showScrollbars()`, `thumbPosition()`, `thumbSize()`
 
 ---
 
@@ -9775,6 +9912,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `control`, `clearTrigger`, `undoTrigger`, `guide`, `hiddenInput`
+
+**Utilities:** `isEmpty()`, `pointCount()`, `getBounds()`
 
 ---
 
@@ -9924,6 +10063,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Utilities:** `isRowSelected()`, `isAllSelected()`, `isSomeSelected()`, `sortDirectionFor()`
 
+**Constants:** `HEADER_ROW_INDEX`
+
 ---
 
 ### Tabs
@@ -9991,6 +10132,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `option`, `toggle`
 
+**Utilities:** `resolveTheme()`, `applyTheme()`, `watchSystemTheme()`
+
 ---
 
 ### Time Picker
@@ -10013,6 +10156,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `hoursInput`, `minutesInput`, `periodTrigger`
+
+**Utilities:** `displayHours()`, `hoursFromDisplay()`, `period()`, `formatTime()`
 
 ---
 
@@ -10228,6 +10373,8 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 
 **Parts:** `root`, `item`
 
+**Utilities:** `isExpanded()`, `isSelected()`, `isChecked()`, `isIndeterminate()`, `isRenaming()`, `isLoading()`, `isLoaded()`, `isLoadFailed()`
+
 ---
 
 ---
@@ -10325,9 +10472,9 @@ const frameEnv: RouterEnv = {
   get historyState() {
     return frame.history.state
   },
-  // A capability test, not a position: `0` means "no history here" and is the
-  // only value the connector distinguishes (it gates the construction-time
-  // seed). Any positive number will do for a surface that has a history.
+  // Load-bearing: it is what tells a NEW hash navigation apart from a
+  // traversal. A constant here makes every unstamped hash entry read as a
+  // traversal.
   get historyLength() {
     return frame.history.length
   },
@@ -10417,104 +10564,21 @@ The same contract holds in **both** `history` and `hash` mode:
   **redirect** — the URL then points somewhere the caller never asked for, so the
   navigate message is dispatched and `state.route` and the URL stay in agreement.
   Use **`navigate()`** when you want the push _and_ the dispatch unconditionally.
-- A **redirected** browser navigation (back/forward or the address bar landing on
-  a route whose `beforeEnter` returns a different one) **replaces the entry it
-  landed on** with the redirect target, then dispatches it. `state.route` and the
-  URL agree, so a reload, a share or a bookmark goes to the redirect target
-  rather than back to the guarded route. The entry is _replaced_, never pushed:
-  `history.length` is unchanged, back still reaches the entry below and forward
-  still reaches every entry above. What stops being reachable at that slot is the
-  guarded route itself — returning to it would only redirect again. When the
-  landed entry's position is unknown (see the blocked case below) the URL is
-  still written, but no index is invented for it.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
-  **when the router knows the distance back to the entry it was on**. It knows
-  that between two entries it created in one numbering run. It does **not** know
-  it for an entry it never stamped, nor across one, because no browser API
-  reports a position (see _Which entries the router can place_). Blocking a
-  navigation onto or across such an entry is **guard-honouring but not
-  undoable**: nothing is dispatched,
-  `state.route` keeps the route you never left, and the URL is left showing the
-  blocked one until the next navigation — a visible disagreement, deliberately
-  preferred over a guessed `history.go(delta)`, which traverses to the wrong
-  entry and dispatches a route the user never asked for.
+  **when the router knows where the popped entry sits**. It knows that for every
+  entry it created itself. It does **not** know it for an entry that existed
+  before `connectRouter` ran (a deep link the user then navigated away from and
+  came back to), because no browser API reports a position. Blocking a
+  navigation onto such an entry is **guard-honouring but not undoable**: nothing
+  is dispatched, `state.route` keeps the route you never left, and the URL is
+  left showing the blocked one until the next navigation — a visible
+  disagreement, deliberately preferred over a guessed `history.go(delta)`, which
+  traverses to the wrong entry and dispatches a route the user never asked for.
 
 `link()` never intercepts a click carrying a modifier key, a non-`_self`
 `target`, a `download` attribute, or a `defaultPrevented` set by an earlier
 handler — those are the browser's to handle.
-
-### Which entries the router can place
-
-Every entry `connectRouter` creates is stamped with its position in
-`history.state` — an index under `__llui_idx` plus the numbering **run** it
-belongs to under `__llui_run`, both merged into whatever your app already keeps
-there — starting with the entry the app loaded on. Those are the entries a
-blocked navigation can be undone against.
-
-An entry it did **not** create is treated as **unknown**, in both modes, and no
-position is invented for one. That covers:
-
-- entries that existed before `connectRouter` ran (a deep link the user
-  navigated away from and came back to);
-- an entry created by a **foreign `history.pushState`** — analytics, an embedded
-  widget, another framework on the page — which fires no event, so the router
-  never learns the stack moved. It reads the entry it is standing on rather than
-  trusting its own last write, which is how it notices;
-- in **hash mode**, an entry created by the user **editing the fragment in the
-  address bar**;
-- an entry stamped by a **build of this router that predates `__llui_run`** — an
-  index with no run beside it. Every such build restarted its numbering across
-  entries it could not place and recorded nothing about the restart, so its
-  indices name no single run and continuing them would compute a delta straight
-  across a gap. The exposure is a **deploy window**: a tab that loaded an older
-  build, navigated, and then loaded a newer one on top of that stack loses the
-  undo for the entries the older build numbered. The entry the new build loads
-  on is re-stamped into a run of its own (your own `history.state` keys are
-  preserved), so everything it goes on to create is placeable as usual.
-
-Such an entry also **ends a run**. Indices count physical entries, so they only
-subtract to a distance while every entry between two of them was numbered in one
-pass; the entries the router numbers after an unknown one start a new run and
-count from their own origin. A delta is computed only within a single run.
-
-The address-bar edit itself works normally — guards run, the message is
-dispatched, `state.route` follows. What is given up is the _undo_, in two
-shapes — both of which leave the stack exactly as it was:
-
-- a guard-blocked traversal **onto** an entry the router never stamped;
-- a guard-blocked traversal **across** one — a `history.go(-3)` from a
-  back-button long-press menu, say, that spans a hand-edited entry.
-
-In both, the URL is left showing the route the guard refused until the next
-navigation, nothing is dispatched, and `state.route` keeps the route you never
-left.
-
-There is one gap no `history.state` scheme can close: an **iframe navigation**
-grows the _joint_ session history without moving the top-level document, so the
-entry it adds is invisible to the stamps above and below it, and even a
-single-step delta can under-count. That needs the Navigation API (below).
-
-That is an accepted trade, decided in [#150]. The alternative was to classify an
-unstamped `hashchange` by watching `history.length` grow — a push grows the
-session history, a traversal does not. It works only while the router has seen
-every change to the stack, and it cannot: a **foreign `history.pushState`**
-(analytics, an embedded widget, another framework on the page) or an **iframe
-navigation** grows the joint session history without firing anything the router
-listens to. The cached length then reads a traversal as a push and stamps an
-**inverted** index — the entry below numbered above the one it sits under — and
-the next blocked back computes its delta from that and traverses **two** entries
-backwards, landing somewhere the user never asked for. Refusing to guess costs
-an undo; guessing corrupts the stack.
-
-(The `popstate`-vs-`hashchange` distinction is not an alternative: assigning
-`location.hash` fires both events, in the same order as `history.back()` —
-measured in Chromium 143, with the `location.hash` half reproduced in this
-package's jsdom tests. `navigation.currentEntry.index` from the Navigation API
-is an authoritative position, immune to foreign `pushState` and iframes alike,
-and is the real fix once it can be relied on.)
-
-[#150]: https://github.com/fponticelli/llui/issues/150
 
 
 ## Functions
@@ -10544,6 +10608,7 @@ function rest(name: string): RestSegment
 ### `route()`
 
 Define a route with structured path segments.
+
 
 route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
 route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
@@ -10774,12 +10839,15 @@ each(state.at('list'), {
 ### `collapse()`
 
 Animate an element open/closed along the y-axis (height) or x-axis (width).
+
 Unlike CSS-only presets, `collapse()` measures the element's natural size
 at runtime — the animation works regardless of content size. Only the
 first element in each `nodes` group is animated.
+
 Because it mutates `overflow` / `height` / `transition` inline, collapse
 registers a per-element restore that runs the moment a later phase supersedes
 it — so an interrupted open/close never leaves stale inline styles behind.
+
 Like the other presets, this bundle is passed as the trailing transition
 argument to the signal `show`/`branch`/`each` primitives (e.g.
 `show(state.at('open'), () => [panel()], undefined, collapse())`) and is also
@@ -10798,14 +10866,17 @@ function fade(opts: FadeOptions = {}): TransitionOptions
 ### `flip()`
 
 FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
+
 `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
 It compares each surviving child's last-known LAYOUT position (kept in a
 `WeakMap<Element, Point>`) against its new one and, for any that moved,
 plays an inverse-then-identity transform so the row appears to glide.
+
 A pass is split into a read phase and a write phase: every measurement
 (`getBoundingClientRect`, the computed transform) happens before the first
 `cancel()`/`animate()`, so a K-row reorder forces layout ONCE rather than
 once per row. Do not reintroduce a write between the reads.
+
 Interruption: the live `Animation` is retained per element and cancelled
 before the next one starts, and the new delta is measured from where the row
 VISUALLY is — its previous layout box plus whatever translation the running
@@ -10816,44 +10887,39 @@ when the glide completes (or is cancelled by anyone, including someone other
 than us): only while one is live is the computed transform ours to read, and
 a run left registered makes every later pass measure a row's own author
 transform as if it were a glide.
-Composition (#144): a WAAPI animation wins the cascade for the property it
-animates, so keyframes naming a bare `translate(...)` REPLACE the row's own
-`transform` for the length of the glide. A row carrying a constant author
-transform therefore jumped by that amount when a glide started and jumped back
-when it ended (measured in Chromium: a `.lift { transform: translateY(-20px) }`
-row resting at `top: 0` reported `top: 22` one frame into a 60px glide). Both
-keyframes are therefore emitted as `translate(…) <author transform>`, which
-puts the glide OUTSIDE the author's transform — the translation then means the
-same thing whatever the author's linear part is, and a row with no transform
-of its own still gets exactly the bare keyframes it always did.
-The author transform is read in the read phase, and ONLY for a row that is
-about to glide: rows that did not move keep paying nothing, which is the cost
-balance #137 struck when it stopped reading the computed transform on every
-settled row forever. A row that IS mid-glide cannot be read at all (our own
-animation owns `transform`), so the value captured when its glide started is
-cached and reused — an author transform that CHANGES mid-glide is therefore
-carried at its old value until the row next settles.
-The composition feeds back into the delta: the computed transform of a
-composed glide carries the author's translation too, so the read phase
-subtracts the cached author translation to recover our glide alone. Matrix
-multiplication makes that exact — `translate(g)·A` has translation
-`g + A.translation` for any A.
+
+Known defect (#144): the keyframes below set `transform` to a translation
+alone, so they REPLACE the row's own `transform` rather than composing with
+it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
+CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
+that amount when a glide starts and jumps back when it ends. The DELTA is
+unaffected — the author transform is folded into both the stored position and
+the new rect and cancels out — so this is bounded, cosmetic and
+self-correcting. The fix is to compose the author transform into both
+keyframes; see the issue for why that trades against the single-read rule
+above.
+
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
 free to be garbage-collected. There is no independent strong Set.
+
 Combine with an item-level appear/disappear preset via `mergeTransitions`:
+
 ```ts
 mergeTransitions(fade(), flip())
 ```
+
 The signal `each()` primitive invokes `onTransition` (with the entering /
 leaving / parent for the reconcile), so passing `flip()` as `each`'s trailing
 transition argument animates surviving rows to their new positions:
+
 ```ts
 each(state.at('rows'), r => r.id, row, undefined, flip({ duration: 300 }))
 // or combined with an appear/disappear preset:
 each(state.at('rows'), r => r.id, row, undefined, mergeTransitions(fade(), flip()))
 ```
+
 Requires WAAPI (`element.animate()`). In environments without it (old
 browsers, minimal jsdom) positions are still tracked but no animation runs.
 
@@ -10866,10 +10932,13 @@ function flip(opts: FlipOptions = {}): TransitionOptions
 Merge multiple TransitionOptions into one, chaining their `enter`,
 `leave`, and `onTransition` handlers in order. `leave` waits for every
 part's returned Promise before resolving.
+
 Useful for combining an item-level animation (fade/slide/...) with flip():
+
 ```ts
 mergeTransitions(fade(), flip())
 ```
+
 The merged bundle is passed as the trailing transition argument to
 `show`/`branch`/`each` (or adapted onto a route via `fromTransition`); `each`
 drives the `onTransition` half of a `flip()` part. See `flip()`.
@@ -10882,26 +10951,32 @@ function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions
 
 Convenience wrapper that returns `{ enter, leave }` hooks suitable for
 animating page-to-page transitions.
+
 **Vike filesystem routing (`@llui/vike`):** this is the wired consumer.
 Vike's `onRenderClient` doesn't take `{ enter, leave }` directly — each page
 is its own component and the swap goes through dispose + clear + mount — so
 `fromTransition` from `@llui/vike/client` adapts the bundle to the
 `onLeave` / `onEnter` hook shape:
+
 ```ts
 // pages/+onRenderClient.ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
+
 export const onRenderClient = createOnRenderClient({
   ...fromTransition(routeTransition({ duration: 200 })),
 })
 ```
+
 The vike variant operates on the container / page-slot element itself — its
 opacity / transform fades out the whole page, then the new page fades in when
 it mounts.
+
 > Note: this preset targets the WHOLE page slot. For animating individual
 > arms/rows, pass a preset bundle (`fade`/`slide`/`flip`/…) as the trailing
 > transition argument to `show`/`branch`/`each` directly; `routeTransition`
 > via `fromTransition` is for the page-to-page/container swap.
+
 The call form also accepts a pre-built `TransitionOptions` from any preset or
 composition (`fade`, `slide`, `scale`, `flip`, `mergeTransitions`, …) —
 detected by the presence of an `enter`, `leave`, or `onTransition` hook — and
@@ -10914,10 +10989,11 @@ function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): Tra
 ### `scale()`
 
 Scale an element in/out from `from` to 1, optionally fading with it.
-Emits the same per-property shorthand as {@link slide} — `transform 200ms
-ease-out, opacity 200ms ease-out` — for the reason spelled out there (#142).
-`transform-origin` rides along in the active value but never transitions, so
-it is not one of the properties the phase waits on.
+
+> **Known defect (#142).** Carries the same malformed `transition` shorthand
+> as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
+> duration, so it snaps rather than scaling and never reports a
+> `transitionend` — the phase resolves on the fallback timer instead.
 
 ```typescript
 function scale(opts: ScaleOptions = {}): TransitionOptions
@@ -10926,11 +11002,17 @@ function scale(opts: ScaleOptions = {}): TransitionOptions
 ### `slide()`
 
 Slide an element in/out along one axis, optionally fading with it.
-Both animated properties carry their own duration and easing in the emitted
-shorthand — `transform 250ms ease-out, opacity 250ms ease-out`. Writing the
-properties as one list with a single trailing timing (`transform, opacity
-250ms ease-out`) gives `transform` the initial duration of 0s, so it snaps
-and reports no `transitionend`; that was #142, and it is invisible to jsdom.
+
+> **Known defect (#142).** The active value is built as
+> `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
+> grammar reads as TWO single-transitions — the first, `transform`, taking the
+> initial `transition-duration` of **0s**. In a real browser the transform
+> therefore SNAPS and only the opacity animates. A 0s transition also fires no
+> `transitionend`, so `transform` never leaves the set of properties the phase
+> waits on (see {@link waitForEnd}) and the phase always resolves on the
+> fallback timer rather than on a real end — 16ms late, never a hang. Do not
+> read the property filter as "every shipped preset lines up with it": `fade()`
+> does, `slide()` and `scale()` do not until #142 lands.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions
@@ -10940,18 +11022,21 @@ function slide(opts: SlideOptions = {}): TransitionOptions
 
 Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
 property using a damped spring simulation driven by `requestAnimationFrame`.
+
 When `requestAnimationFrame` can't drive the loop — server render, or a
 hidden/background tab where rAF is paused — the animation settles instantly
 to its target and the returned Promise still resolves. This matters for the
 `leave` Promise: it gates DOM removal, so a spring leave in a hidden tab must
 not hang (e.g. `fromTransition(spring())` route navigation). Honoring
 `prefers-reduced-motion` takes the same instant-settle path.
+
 Interruption: enter and leave on the SAME element supersede each other. A new
 phase cancels the previous element's loop WITHOUT letting it snap to its own
 (now-stale) target, so an enter interrupted by a leave rests at the leave
 target rather than being clobbered back to the enter target by the dying loop.
 Either direction resumes from the element's CURRENT value — the endpoints
 `from`/`to` are resting starts, used only when nothing is in flight.
+
 Passed as the trailing transition argument to the signal `show`/`branch`/`each`
 primitives to spring an arm/row in and defer its leave, e.g.
 `show(state.at('open'), () => [panel()], undefined, spring())`; also consumed
@@ -10970,25 +11055,31 @@ function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOpti
 ### `transition()`
 
 Build a `TransitionOptions` bundle (`{ enter, leave }`) from a class/style spec.
+
 The returned hooks operate on raw DOM `Node`s and are invoked by two seams:
+
  - **Element-level structural transitions** — the signal `show`/`branch`/`each`
    primitives accept this `TransitionOptions` bundle directly and drive it:
    `enter` animates a freshly-mounted arm/row in, and `leave` DEFERS the
    swapped-out arm/row's unmount until its promise resolves. Pass a bundle as
    the trailing argument:
+
    ```ts
    show(state.at('open'), () => [panel()], undefined, fade({ duration: 150 }))
    branch(state, s => s.tab, { a: () => [tabA()], b: () => [tabB()] }, slide())
    each(state.at('items'), i => i.id, row, undefined, fade({ duration: 120 }))
    ```
+
  - **Route/container** seam — `fromTransition(...)` in `@llui/vike/client`
    adapts the same bundle onto the page slot element (see `routeTransition`)
    for whole-view/route navigations rather than individual arms.
+
 Lifecycle:
  - **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
    → wait for `transitionend` (timer fallback) → remove all transient values.
  - **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
    → resolve on `transitionend` (timer fallback) so DOM removal is deferred.
+
 Interruption: enter/leave on a reused element are guarded by a per-element run
 token — a new phase first rolls back the previous phase's transient values,
 and a superseded phase's delayed cleanup is skipped. This holds for a leave
@@ -10996,6 +11087,7 @@ that already COMPLETED too: it keeps its resting values (the arm is about to
 be detached) but stays registered, so if the element is instead reused — the
 route seam calls `enter` on the very element it just left — the enter clears
 that residue before snapshotting its own baseline.
+
 Interrupting a phase mid-flight resumes from the element's CURRENT rendered
 values in BOTH directions, by the same mechanism: the animated properties are
 frozen at what the element is showing and applied in place of the phase's
@@ -11004,12 +11096,14 @@ what makes it work — merely SKIPPING the `from` value is not enough, because
 superseding the interrupted phase fires its rollback, which restores the
 pre-phase inline value (for a fade, `''` — fully visible). A phase that has
 already settled counts as resting, not as an interrupt.
+
 Completion: a phase resolves only once EVERY property it animates (the style
 keys of its `from`/`to` values) has reported a `transitionend` on the element
 itself — an unrelated `transitionend` (a hover `background-color`, or the fast
 half of `transition: opacity 100ms, transform 500ms`) does not end the phase,
 because the runtime detaches a leaving node on exactly that promise. A
 class-only spec names no properties, so any end on the target resolves it.
+
 Duration (used only for the fallback timer / when no CSS transition fires):
  - If `duration` is given, it is used verbatim.
  - Otherwise, computed `transition-duration + transition-delay` is read after
@@ -11031,6 +11125,7 @@ export type SlideDirection = 'up' | 'down' | 'left' | 'right'
 
 CSS style properties as a plain object. Numeric values are automatically
 suffixed with `px` for known dimensional properties.
+
 Example: `{ opacity: 0, transform: 'scale(0.95)', width: 200 }`
 
 ```typescript
@@ -11040,6 +11135,7 @@ export type Styles = Record<string, string | number>
 ### `TransitionValue`
 
 One "state" in a transition.
+
 - `string` — space-separated class names (applied via classList)
 - `Styles` — inline style object (applied via element.style)
 - `Array<string | Styles>` — mix both (useful for utility classes + dynamic styles)
@@ -11335,6 +11431,7 @@ function defineTestComponent<S, M extends { type: string }, E extends { type: st
 ### `emulateBlurOnRemoval()`
 
 Browser-faithful blur emulation for jsdom.
+
 The HTML standard's node-removing steps run a "focus fixup": when the
 currently-focused element (or an ancestor of it) is removed from the
 document, the user agent resets focus to the viewport and fires `blur` then
@@ -11342,13 +11439,16 @@ document, the user agent resets focus to the viewport and fires `blur` then
 Real apps depend on this: an inline-edit `<input>` whose `onBlur` commits,
 sitting in a structural arm that the commit itself swaps out, fires that blur
 mid-reconcile and re-enters the reducer.
+
 jsdom resets `document.activeElement` to `<body>` on removal but fires NO
 events, so that reentrancy is invisible in tests — the single most important
 inline-edit interaction can't be exercised. `emulateBlurOnRemoval` closes the
 gap by patching the removal-causing mutation methods to dispatch the missing
 events synchronously, in browser order (`blur`, then the bubbling `focusout`).
+
 Opt-in and reversible: returns an uninstall function (call it in `afterEach`),
 or use {@link withBlurOnRemoval} for automatic scoping.
+
 @param doc - document whose `activeElement` is consulted (defaults to the
   ambient `document`). The patch is applied to the shared `Node`/`Element`
   prototypes, matching the single jsdom document under test.
@@ -11369,7 +11469,9 @@ function propertyTest<S, M, E>(def: SignalComponentDef<S, M, E>, config: Propert
 Begin recording an agent session. Returns a recorder whose `send`
 forwards to the handle and captures the message; `stop()` finalizes
 the trace into a JSON-serializable fixture.
+
 Typical usage:
+
 ```ts
 const handle = mountApp(root, App)
 const r = recordAgentSession(handle)
@@ -11380,6 +11482,7 @@ const fixture = r.stop()
 // Persist `fixture` as JSON; replay in CI to assert the same
 // sequence still produces the same final state.
 ```
+
 The recorder relies on the handle's `flush()` after every send so
 the snapshot in `stop()` reflects the drained-message-queue state.
 For long-running async effects, snapshot only fires after the
@@ -11399,6 +11502,7 @@ Builds a view-less `ComponentDef` from an init + update pair so reducer
 suites can drop a component definition into `testComponent()` without
 padding a no-op `view`. Use when a test only exercises pure state
 transitions (no DOM, no accessors).
+
 The default name `'__reducer__'` is intentionally unergonomic — it
 shows up in devtools/HMR registries if one ever leaks into a real
 mount, flagging the mistake. Override via `name` when you want the
@@ -11418,9 +11522,11 @@ function replayAgentSession(handle: SignalComponentHandle<unknown, AgentMsg>, fi
 
 Replay a recorded message trace against a component definition, asserting the
 state and effects at every step.
+
 The trace's version and recording component are validated FIRST — before
 `init()` and the first `update()` — so a mismatched trace fails with a
 version/identity error instead of a state diff that blames the reducer.
+
 An absent `component` field is accepted with a warning rather than rejected:
 traces predate the field and hand-written ones legitimately omit it, so
 rejecting would break working traces to buy nothing. The warning is what
@@ -11465,6 +11571,7 @@ function withBlurOnRemoval<T>(fn: () => T, doc: Document = document): T
 Mount options `testView` forwards verbatim to `mountApp` — the whole bag, so a
 consumer can exercise the mode their app really runs in (notably
 `scheduler: 'raf'`, where `handle.flush()` forces the coalesced commit).
+
 The one exclusion rule: an option that competes with what `testView` itself
 owns is dropped. `mountSignalComponent` resolves the seed as
 `hydrate.serverState` → `initialState` → `init()`, and `testView` seeds
@@ -11600,11 +11707,13 @@ export interface ReplayOptions {
 Replay a previously-recorded session against a fresh `handle`.
 Dispatches each msg in order, snapshots state after the last one,
 and compares to `fixture.finalState`. Returns:
+
   - `matches: true`           — bit-exact replay; nothing changed.
   - `matches: false, diff`   — final state differs; `diff` lists the
     paths that diverged in the same JSON-Patch shape as
     `send_message`'s `stateDiff`. Use it in test assertions:
     `expect(result.diff).toEqual([])`.
+
 The harness deliberately ignores the `initialState` half of the
 fixture by default — replay starts from whatever the new handle's
 `init()` produced, so apps with deterministic init don't need to
@@ -11786,6 +11895,7 @@ function createNavigationProgress(options?: NavigationProgressOptions): Navigati
 
 Factory to create a customized onRenderClient hook. See
 `RenderClientOptions` for the full option surface.
+
 **Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
 prefix for its own framework config conventions. Name the file
 `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` that Vike
@@ -11798,15 +11908,18 @@ function createOnRenderClient(options: RenderClientOptions): (pageContext: Clien
 ### `createOnRenderHtml()`
 
 Factory to create a customized onRenderHtml hook.
+
 **Do not name your layout file `+Layout.ts`.** Vike reserves `+Layout`
 for its own framework-adapter config (`vike-react` / `vike-vue` /
 `vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
 Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
 `/pages` that Vike won't scan, and import it here by path.
+
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
 import { AppLayout } from './Layout.js' // ← NOT './+Layout'
+
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
   document: ({ html, state, head }) => `<!DOCTYPE html>
@@ -11824,17 +11937,21 @@ function createOnRenderHtml(options: RenderHtmlOptions): (pageContext: PageConte
 
 Adapt a `TransitionOptions` object into the `onLeave` / `onEnter` pair
 expected by `createOnRenderClient`.
+
 ```ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
+
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
   ...fromTransition(routeTransition({ duration: 200 })),
 })
 ```
+
 The transition operates on the slot element — in a no-layout setup,
 the root container; in a layout setup, the innermost surviving layer's
 `pageSlot()` element.
+
 Like the underlying {@link RenderClientOptions.onLeave}/`onEnter`, the
 transition brackets the DOM *swap*, which runs after Vike has fetched the new
 page's `+data` — it does not animate over the network wait. For a
@@ -11868,6 +11985,7 @@ Default onRenderHtml hook — no layout, minimal document template,
 jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
 a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
 with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
+
 The lazy import below keeps jsdom out of the client bundle —
 Rollup's graph walker only pulls it when this server hook executes.
 
@@ -11881,10 +11999,12 @@ Declare where a persistent layout renders its nested content — either
 a nested layout or the route's page component. The vike adapter's
 client and server render paths walk the layout chain, and each layer's
 `pageSlot()` call records the position where the next layer mounts.
+
 Emits a single `<!-- llui-page-slot -->` comment as an insertion
 anchor. The nested layer's DOM lives as siblings of this comment
 within the layout's own parent element; a synthesized end sentinel
 (`<!-- llui-mount-end -->`) brackets the owned region.
+
 **You may place your own siblings next to `pageSlot()`** — before it, or
 after it — in the same parent element (e.g. a navigation-loading bar beside
 the page inside `<main>`). The slot owns only the region between its anchor
@@ -11893,25 +12013,30 @@ inserts/disposes that region without touching your siblings. The
 `display: contents` wrapper that older guidance used to isolate the slot is
 **no longer needed** — drop it (regression-tested in
 `client-page-slot.test.ts` and `ssr-page-slot.test.ts`).
+
 ```ts
 main([
   navBar(state.at('nav'), send),   // ← your sibling survives navigation…
   pageSlot(),                      // …only this region swaps
 ])
 ```
+
 Contexts provided by the layout (via `provide()`) ABOVE the slot are
 reachable from inside the nested page: `pageSlot()` snapshots the
 in-scope context values and the adapter replays them into the nested
 layer's build. That's how patterns like a layout-owned toast
 dispatcher work — the page does `useContext(ToastContext)` and reads
 the value the layout provided above the slot.
+
 Do NOT name the file `+Layout.ts` — Vike reserves the `+` prefix for
 its own framework config conventions. Use `Layout.ts`, `app-layout.ts`,
 or anywhere outside `/pages` that Vike won't scan.
+
 ```ts
 // pages/Layout.ts    ← not +Layout.ts
 import { component, div, main, header } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
+
 export const AppLayout = component<LayoutState, LayoutMsg>({
   name: 'AppLayout',
   init: () => ({  ...  }),
@@ -11924,8 +12049,10 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   ],
 })
 ```
+
 Returns a `Mountable` (the slot's anchor comment) — drop it straight into
 a children array (`main([pageSlot()])`); no spread needed.
+
 Call exactly once per layout. Calling more than once in a single
 view throws (when both are placed).
 
@@ -11950,12 +12077,14 @@ The pageContext a `Layout` **resolver function** receives. Identical to
 `routeParams`) are guaranteed present — the resolver only ever runs against a
 live Vike navigation, which always populates them. Typing them as required
 here lets a route-scoped resolver read the route directly, with no cast:
+
 ```ts
 Layout: (pageContext) =>
   pageContext.urlPathname.startsWith('/docs')
     ? [AppLayout, DocsLayout]   // docs section keeps its sidebar mounted…
     : [AppLayout],              // …only the article re-mounts on docs→docs nav
 ```
+
 The chain diff keeps every layer shared (by def reference) between the old
 and new chain mounted, disposing only the divergent suffix — so navigating
 `/docs/a → /docs/b` re-mounts just the page while `DocsLayout` (and its
@@ -11988,6 +12117,7 @@ export type ServerLayoutResolverContext = PageContext &
 A type-erased signal component as the adapter handles it. Layouts and pages are
 `SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter treats them
 uniformly with the type params erased — the runtime doesn't use them.
+
 Declared with METHOD syntax and a single `unknown` view-bag param so a concrete
 `SignalComponentDef<S,M,E>` assigns in for ANY S/M/E — `SignalComponentDef<
 unknown,unknown,unknown>` can't be that erasure, because `view(bag:
@@ -12026,13 +12156,16 @@ export interface AnyLayer {
 Page context shape as seen by `@llui/vike`'s client-side hooks. The
 `Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
 Vike resolved for the current route.
+
 `data` is derived from the global `Vike.PageContext` namespace — the
 convention users already know from Vike. Consumer augmentations flow
 through to every callback here without a cast; unaugmented projects
 fall back to `unknown`.
+
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
+
 `lluiLayoutData` is optional and carries per-layer data for the layout
 chain configured via `createOnRenderClient({ Layout })`. It's indexed
 outermost-to-innermost, one entry per layout layer.
@@ -12091,6 +12224,7 @@ export interface DocumentContext {
 
 A navigation-progress handle: the first-class answer to "show a loader while a
 client navigation is in flight."
+
 **Why this exists.** None of `createOnRenderClient`'s lifecycle hooks fire
 during the latency window a user perceives as lag. `onLeave`/`onEnter` bracket
 the DOM *swap*, and Vike only invokes `onRenderClient` *after* it has already
@@ -12101,10 +12235,12 @@ the server round-trip) are Vike's native `onPageTransitionStart` /
 boolean the layout binds, removing the module-singleton + layout-handle capture
 + hand-rolled `nav/pending` message + reducer case every app would otherwise
 re-derive.
+
 **Wiring (three small files, no per-app glue logic).** `@llui/vike` cannot
 register Vike's `+onPageTransition*` hooks for you — Vike discovers them by the
 `+` filename convention — so create the handle once in your own module and
 re-export its hook functions from the convention files:
+
 ```ts
 // nav-progress.ts — your module, created once
 import { createNavigationProgress } from '@llui/vike/client'
@@ -12116,13 +12252,16 @@ export { onPageTransitionStart } from '../nav-progress'   // (re-export by name)
 // pages/+onPageTransitionEnd.ts
 export { onPageTransitionEnd } from '../nav-progress'
 ```
+
 Then bind `pending` in the layout. It is a {@link LiveSignal}: `peek()` in
 handlers, `bind()` for a reactive subscription. The zero-message path is to
 place an `onMount` in the layout view and `bind()` there — `bind` returns its
 unsubscribe, which doubles as the `onMount` cleanup, so it auto-disposes:
+
 ```ts
 import { onMount, div } from '@llui/dom'
 import { navProgress } from '../nav-progress'
+
 view: () => [
   div({ class: 'app-shell' }, [
     onMount((root) =>
@@ -12183,10 +12322,12 @@ Page context shape as seen by `@llui/vike`'s server hook. `Page` and
 `data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
 current route; `lluiLayoutData` is an optional array of per-layer
 layout data matching the chain configured on `createOnRenderHtml`.
+
 `data` is derived from the global `Vike.PageContext` namespace so that
 consumer-side augmentations (the Vike convention for typing data) flow
 into this hook's callbacks without any cast. When the consumer hasn't
 augmented the namespace, `data` falls back to `unknown`.
+
 In the signal runtime a component's `init()` takes no data argument, so
 each layer's `data` slice is used directly as that layer's seed STATE
 when present; when absent, the layer's own `init()` provides the seed.
@@ -12224,6 +12365,7 @@ Page-lifecycle hooks that fire around the dispose → mount cycle on
 client navigation. With persistent layouts in play the cycle only
 tears down the *divergent* suffix of the layout chain — any layers
 shared between the old and new routes stay mounted.
+
 On the initial hydration render, `onLeave` and `onEnter` are NOT
 called — there's no outgoing page to leave and no animation to enter.
 Use `onMount` for code that should run on every render including the
@@ -12447,6 +12589,7 @@ browser page (CSWSH / drive-by hijack) presents a non-loopback Origin and is
 rejected. A literal `Origin: null` (sandboxed / `file:` / `data:` context)
 fails `new URL` and is likewise rejected — it is NOT the same as an absent
 header.
+
 IPv6 loopback origins arrive bracketed (`http://[::1]`), and WHATWG
 `URL.hostname` keeps the brackets (`[::1]`); {@link isLoopbackHost} strips them
 before the comparison so bracketed IPv6 loopback is recognised.
@@ -12459,10 +12602,12 @@ function isLoopbackOrigin(origin: string | undefined): boolean
 
 Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
 relative/anchor/query URL — always safe), otherwise `null`.
+
 Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
 precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
 chars ignored first, the way a browser does — so `java\tscript:` or a leading
 control char cannot hide a dangerous scheme.
+
 `allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript
@@ -12611,6 +12756,7 @@ Walk up from `start` until we find a workspace root marker. Used by
 both the MCP server (writing the active marker) and the Vite plugin
 (watching it) so they agree on a single shared location regardless of
 which subdirectory each process happens to be running in.
+
 Strong markers (workspace root): pnpm-workspace.yaml, .git directory.
 If neither is found anywhere up the chain, falls back to the highest
 package.json above `start`. For pnpm monorepos this finds the workspace
@@ -12648,15 +12794,18 @@ function mcpHttpTokenPath(cwd: string = process.cwd()): string
 
 Directory holding the MCP handshake state: the active-port marker and
 the per-launch HTTP bearer token.
+
 Defaults to the workspace root's cache (not the immediate cwd) so the
 MCP server and the Vite plugin always agree on a single location even
 when one runs from the repo root and the other from a subpackage.
+
 `LLUI_MCP_STATE_DIR` overrides it. Both this package and
 `@llui/vite-plugin` read that variable, so the two ends of the
 handshake move together — which is the point: the default is a single
 machine-global path per checkout, so two concurrent instances (two test
 runs, two agents driving the same repo) otherwise overwrite each
 other's marker and each connects the other's browser (issue #85).
+
 Read per call, not memoized, so a process that sets the variable during
 startup is still honored.
 
@@ -13146,6 +13295,7 @@ See [`@llui/agent-bridge`](/api/agent-bridge) for the full MCP tool list and CLI
 Compute the diff. Order of operations: removes first, then adds,
 then replaces. This is RFC 6902's recommended order — the receiver
 can apply ops sequentially without ambiguity.
+
 The implementation is a simple recursive walk; collection diffs
 are positional (index-based for arrays, key-based for objects)
 rather than structural (no LCS). Apps that pass identity-stable
@@ -13183,6 +13333,7 @@ Node adapter. Wraps the runtime-neutral core with a Node-specific
 eagerly, so this module only works where `ws` is available — use
 `@llui/agent/server/web` for Cloudflare Workers, Deno, or other
 WHATWG runtimes.
+
 Spec §10.1, §10.4.
 
 ```typescript
@@ -13196,6 +13347,7 @@ common denominator across Cloudflare Workers (`WebSocketPair`
 server half), Deno (`Deno.upgradeWebSocket().socket`), Bun's
 upgraded socket, and any other runtime that exposes a
 standards-compliant WebSocket object.
+
 The input type is intentionally the browser/global `WebSocket`
 interface — *not* the Node `ws` library's variant, which uses an
 EventEmitter API (`on('message', ...)`) rather than
@@ -13232,10 +13384,12 @@ function defaultRateLimiter(cfg: RateLimitConfig, now: () => number = () => Date
 ### `describeOp()`
 
 Per-op short verb + readable path. Useful for a flat detail view:
+
   - `{ op: 'replace', path: '/cart/total', value: 9 }` → `'changed cart.total'`
   - `{ op: 'add',     path: '/items/3' }`              → `'added items.3'`
   - `{ op: 'remove',  path: '/items/3' }`              → `'removed items.3'`
   - `{ op: 'replace', path: '/' }`                     → `'replaced state'`
+
 The path is converted from JSON-Pointer to dotted form (with
 `~0`/`~1` un-escaping) so it reads as a plain field accessor.
 
@@ -13261,6 +13415,7 @@ function detectSchemaChange(prev: LapDescribeResponse | null, next: Pick<LapDesc
 Recursively walk `value`. For any node a codec claims via
 `matchesRuntime`, replace it with `{ __codec, wire }`. Returns a
 fresh structure — never mutates the input.
+
 The codec match takes precedence over object/array recursion: a
 `Date` is technically `typeof === 'object'`, but the iso-date codec
 should claim it before the generic walker tries to enumerate keys.
@@ -13322,6 +13477,7 @@ function groupDiff(diff: StateDiff | undefined | null): DiffGroup[]
 Cloudflare Workers handler. Accepts a WebSocket upgrade using
 `WebSocketPair`, validates the token via
 `agent.acceptConnection`, and returns the 101 upgrade Response.
+
 Usage:
 ```ts
 const agent = createLluiAgentCore()
@@ -13342,6 +13498,7 @@ function handleCloudflareUpgrade(req: Request, agent: AgentCoreHandle): Promise<
 
 Deno handler. Uses `Deno.upgradeWebSocket(req)` to produce the
 response + socket pair, then plugs the socket into the registry.
+
 Usage:
 ```ts
 Deno.serve(async (req) => {
@@ -13368,10 +13525,12 @@ stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
 bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
 The prefix is intentionally generic so LLM clients don't mistake the
 token format for a hint about which MCP tool namespace to use.
+
 The token itself never persists; only the hash does. A leaked store
 therefore does not compromise live tokens, since the bearer secret
 isn't recoverable from the hash. This matches the standard "session
 cookie / API key" pattern.
+
 The opaque form is the only token format the server understands as
 of 0.0.35. The previous HMAC-signed JWT format is gone; clients
 carrying old tokens will fail with `unknown` on first call and need
@@ -13415,19 +13574,23 @@ function parseServerFrame(value: unknown): ServerFrame | null
 
 Route an incoming Worker `fetch` request to the Durable Object
 that owns its `tid`.
+
 The token travels in three places depending on the route:
   - LAP HTTP calls: `Authorization: Bearer <token>` header
   - Mint / resume HTTP calls: no token (identity resolver runs
     inside the DO via the LAP router; we route by origin or a
     special `/agent/mint` path — see below)
   - WebSocket upgrade: `?token=<token>` in the URL
+
 Requests that don't carry a tid (mint, resume-list, sessions) are
 routed to a "root" DO named `__root`, which handles identity /
 token store operations centrally. LAP and WS calls route to the
 per-tid DO so the pairing state stays local.
+
 This is the recommended entry for Cloudflare Workers deployments;
 users who need custom routing can write their own and call the
 underlying primitives directly.
+
 As of 0.0.35 the token format is opaque (random, not signed), so we
 can't recover `tid` from the token alone. The caller passes a
 `resolveTid` callback — typically `(token) => stub.fetch(...)` to
@@ -13447,6 +13610,7 @@ matching `rpc-reply` / `rpc-error`. Runs its own one-shot frame
 subscription against the registry — no state stored on the
 registry itself, which keeps the registry small enough to
 implement in a Durable Object or other stateful primitive.
+
 Rejects with `{code: 'paused'}` when the pairing is absent,
 `{code: 'timeout'}` when the browser doesn't reply in time,
 or whatever the browser sent in its `rpc-error` frame otherwise.
@@ -13467,12 +13631,14 @@ function signCookieValue(value: string, signingKey: string | Uint8Array): Promis
 ### `summarizeDiff()`
 
 One-line summary of the entire diff. Examples:
+
   - `[{ op: 'replace', path: '/cart/total', value: 9 }]`
     → "1 field changed"
   - `[{ op: 'add', path: '/items/-' }, { op: 'add', path: '/items/-' }]`
     → "2 items added"
   - mixed adds/removes/replaces across multiple regions
     → "5 changes across 3 regions"
+
 The summary collapses multiple ops on the same logical path
 (e.g. updating multiple fields on the same item) into a single
 "change" — counting raw op entries would surface implementation
@@ -13500,6 +13666,7 @@ function tokenHashOf(token: string): Promise<string | null>
 Long-poll for a state change under `path` (a JSON pointer; `undefined`
 watches the whole state). Used by `/lap/v1/wait` for external state
 pushes (WebSocket messages, timers) arriving while the LLM is idle.
+
 Subscription-driven: the server ARMS a `watch { id, path }` on the
 browser, which then emits a `state-update` carrying that `id` only
 when the pointer's resolved value actually changes — so an idle
@@ -13520,12 +13687,14 @@ Await a `confirm-resolved` frame for the given `confirmId`. Three-way:
   - `user-cancelled` — the user explicitly rejected.
   - `timeout`        — no resolution arrived in `timeoutMs`, or the
     pairing dropped before one did.
+
 Timeout is reported HONESTLY as `timeout` (not as a fake
 `user-cancelled`): the confirm is still live in the browser and a
 later approval may still fire, so callers must surface
 `pending-confirmation` / `still-pending` rather than lie about a
 rejection. Pairing drop maps to `timeout` for the same reason — the
 user wasn't present to cancel, they simply weren't reachable.
+
 LEVEL-TRIGGERED. The browser emits `confirm-resolved` exactly once.
 `/message` and `/confirm-result` long-poll in series: each tears its
 subscriber down on timeout, and the next re-arms a fresh one. If the
@@ -14046,6 +14215,7 @@ Per-top-level-path breakdown. Returns an array (stable order) where
 each entry describes the changes affecting one top-level region.
 Useful for a sidecar that wants to render a row per region with the
 affected fields beneath it.
+
 The returned `paths` are the FULL JSON-Pointer paths of the ops, so
 a consumer can render "/items/3/name" verbatim or further humanize
 it. The renderer doesn't make policy choices about how deeply to
@@ -14066,6 +14236,7 @@ export type DiffGroup = {
 ### `DispatchMode`
 
 Who can dispatch a Msg variant.
+
 - `'shared'` (default) — both UI bindings and the agent can dispatch.
 - `'human-only'` — UI-only. Agent calls to `/message` for these variants
   are rejected with `LapMessageRejectReason: 'human-only'`. Use for
@@ -14074,6 +14245,7 @@ Who can dispatch a Msg variant.
 - `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
   like batch operations or "explain this state" introspection variants.
   Lint warns if a view references one via `send({ type: 'X' })`.
+
 JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
 Absence of either tag → `'shared'`. The two tags are mutually exclusive
 (enforced by `llui/agent-exclusive-annotations` ESLint rule).
@@ -14132,19 +14304,23 @@ export type IdentityResolver = (req: Request) => Promise<string | null>
 Compute a structural diff between two state snapshots and return it
 in JSON-Patch-shaped form (RFC 6902 subset: `add`, `remove`,
 `replace`).
+
 Why JSON Patch shape: LLMs see this exact format in their training
 data — it's the standard for describing object mutations on the
 wire. The agent learns the schema implicitly and can answer "what
 changed?" in a sentence by reading the ops.
+
 Why not unified-diff or per-binding dirty masks: the dirty mask
 tracks what bindings need re-rendering, which is a layout concern.
 The agent wants to know what *values* changed, which is a state
 concern. Dirty masks miss field-level resolution; per-path JSON
 Patch gives it.
+
 Cost is O(state size) per dispatch. For typical app states (a few
 KB) that's microseconds. Apps with very large states (collections
 of thousands of items) should subscribe to specific slices via
 `query_state` / `wait_for_change` instead of reading full diffs.
+
 Path escaping follows JSON Pointer (RFC 6901): `/` becomes `~1`,
 `~` becomes `~0`. The escape happens per-segment.
 
@@ -14323,6 +14499,7 @@ it's a proxy for "how much activity happened during the drain window."
 `errors` surfaces sync throws from `onEffect` and unhandled rejections
 from effect handlers that fired during the drain window, so the LLM
 can see when an HTTP handler crashed silently.
+
 `warnings` surfaces non-blocking observations from the schema
 validator — typically `untyped-field` flags raised in strict mode
 when the agent provided a value for an `'unknown'`-typed field. The
@@ -14504,6 +14681,7 @@ Push narration prose into the activity feed without dispatching a
 Msg. The agent uses this for "I'm thinking…" / "About to do X
 because…" / "I noticed Y, going to investigate" — running commentary
 the user can read inline with agent actions.
+
 The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
 appends it to the per-tid recent-log buffer (visible to subsequent
 `describe_recent_actions` calls), AND pushes a `log-push` frame to
@@ -14860,6 +15038,7 @@ export type ServerFrame = z.infer<typeof serverFrameSchema>
 
 Options accepted by `createLluiAgentServer`. All values are
 optional and fall back to in-memory defaults.
+
 Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
 The new opaque-token scheme (token.ts) doesn't sign anything — the
 server stores the SHA-256 hash and looks tokens up. The option is
@@ -15187,11 +15366,13 @@ export interface PairingConnection {
 Registry of live browser pairings. Pure routing + hello cache —
 request-lifecycle state (in-flight RPC promises, confirm waits,
 long-polls) lives in the LAP handlers that need it, not here.
+
 Two implementations ship today:
   - `InMemoryPairingRegistry` for long-lived server processes
     (Node, Bun, Deno, Deno Deploy).
   - A Cloudflare Durable Object implementation (see
     `server/cloudflare`) for stateless Worker runtimes.
+
 Other runtimes can implement this interface the same way; the
 contract is intentionally small.
 
@@ -15286,6 +15467,7 @@ export interface RateLimiter {
 ### `TokenStore`
 
 Append-only, read-friendly storage for token records.
+
 Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
 value) on every authenticated request. The `tid` index is kept for
 the resume / revoke / sessions surfaces — those operate on session
@@ -15335,11 +15517,13 @@ Agent server instance scoped to a single Durable Object. All
 pairing state lives in the DO's in-process memory — which is safe
 here because the DO is a persistent addressable entity, not a
 one-shot Worker isolate.
+
 Users instantiate one of these inside their DO class's constructor
 and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
 WebSocket upgrades, the optional MCP endpoint, and the internal
 `/__resolve` token-resolution endpoint all flow through this single
 entry.
+
 ── SHARDED-DEPLOYMENT REQUIREMENT ────────────────────────────────
 `routeToAgentDO` shards by `tid`: the root DO (`__root`) owns
 `/agent/mint` and friends, while LAP/WS calls route to a per-tid DO.
@@ -15348,10 +15532,12 @@ minted on the root DO is INVISIBLE to a per-tid DO — `/__resolve`
 (and every LAP auth check) would 401. So the sharded recipe REQUIRES
 a single shared external `TokenStore` (a KV/D1-backed implementation
 of the `TokenStore` interface) injected into EVERY DO:
+
 ```ts
 const tokenStore = new KvTokenStore(env.AGENT_KV) // your adapter
 this.agent = new AgentPairingDurableObject({ tokenStore })
 ```
+
 The only no-shared-store option is to NOT shard — route everything
 through the root DO by passing `() => Promise.resolve('__root')` as
 `resolveTid`. Then all state (tokens + pairings) lives in one DO and
@@ -15471,6 +15657,7 @@ LAP wire-protocol version. Bumped on a breaking change to frame
 shapes / endpoint contracts. Sent by the browser in `hello.lapVersion`
 and returned by `/agent/mint` as `MintResponse.lapVersion` so the two
 ends can detect a mismatch.
+
 v2: every wire timestamp (`MintResponse.expiresAt`,
 `ResumeClaimResponse.expiresAt`) is MILLISECONDS-since-epoch, matching
 the server-side `TokenRecord` (`createdAt` / `lastSeenAt` / `expiresAt`).
@@ -15506,45 +15693,57 @@ const serverFrameSchema
 
 Wire-format codecs for non-JSON-safe values flowing across the LAP
 boundary.
+
 JSON natively supports `string | number | boolean | null | array |
 object`. Component messages and state often carry values that don't
 round-trip through JSON: `Date`, `Blob`, `File`, `Map`, `Set`,
 `BigInt`, `ArrayBuffer`. A codec is the convention that lets these
 cross the wire without forcing every component author to invent
 their own envelope.
+
 **Wire convention.** A non-JSON-safe runtime value travels as a
 tagged object:
+
   { __codec: '<name>', wire: <encoded form> }
+
 The runtime walks every value crossing the LAP boundary and applies
 the codec registry symmetrically:
+
   - **Outgoing** (component → agent, e.g. `stateAfter`): the encoder
     looks up a codec whose `matchesRuntime` returns true and replaces
     the value with its tagged shape.
   - **Incoming** (agent → component, e.g. dispatched `msg`): the
     decoder detects the tagged shape, calls the codec's `decode`,
     and substitutes the runtime value before `update()` runs.
+
 Component code never observes the tagged form. By the time a
 reducer sees `msg.value`, a real `Date` (or whatever) is in place;
 by the time the agent reads `stateAfter`, every `Date` has been
 encoded.
+
 **Authoring.** When a Msg variant carries a non-JSON-safe field,
 tag the variant's JSDoc with both `@intent` and `@codec("<name>")`.
 For example, a message carrying a `Date`:
+
     @intent("Set the parsed date")
     @codec("iso-date")
     | { type: 'setValue'; value: Date | null }
+
 (`@llui/components`' date-input does NOT need this — it keeps ISO
 strings in both State and Msg, per the JSON-serializable-State rule.)
+
 The `@codec` tag is documentation for human readers and the
 eventual schema generator that publishes the message catalogue to
 the agent client. The runtime encode/decode is registry-driven and
 doesn't need per-field metadata.
+
 **Defaults.** `makeDefaultCodecs()` ships with `iso-date` (Date ↔
 ISO 8601 string) and `epoch-millis` (Date ↔ number). The
 `epoch-millis` codec is registered but its `matchesRuntime` returns
 `false` by default — it's available for explicit decode but doesn't
 shadow `iso-date` on the encode side. Consumers who prefer epoch
 millis can construct a registry that lists `epoch-millis` first.
+
 **File / Blob.** Not in the default registry. File/Blob handling is
 environment-specific (browser File API vs. Node Buffer vs. workers)
 and the encoded form is large enough that consumers should opt in
@@ -15648,6 +15847,7 @@ registrars. Each tool's Zod schema (declared once in `tools.ts`)
 drives both runtime input validation and the JSON Schema published
 to `tools/list` — eliminating the hand-written-schema-vs-handler
 drift that the low-level `setRequestHandler` pattern is prone to.
+
 Forwarded tools (`kind: 'forward'`) share the `@llui/agent/mcp/executor`
 dispatch — the same code the server-side MCP runs — so describe
 caching, schemaHash invalidation, and error shaping behave identically
@@ -17876,6 +18076,7 @@ export interface WebSocketTransportOptions {
 
 A2UI protocol v0.9 — type definitions for the server→client message stream
 and the value/binding primitives shared across catalogs.
+
 Reference: https://a2ui.org/specification/v0.9-a2ui/
 
 ```typescript
@@ -17944,9 +18145,11 @@ Walk the tree and collect every link/image reference definition, keyed by
 lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
 The result is the WHOLE-document table — a definition anywhere, including one
 that arrives late in a streamed tail, resolves for a reference anywhere.
+
 Collection is incremental: blocks reused from the previous parse contribute
 their already-collected definitions instead of being re-walked, so a streamed
 append costs O(tail) rather than O(document).
+
 BREAKING (behaviour, not just the type): this used to build and hand back a
 FRESH, safely-mutable `Map` on every call. It now returns the LIVE memoized
 table for that tree. The `ReadonlyMap` type says so, but a cast defeats it —
@@ -17971,6 +18174,7 @@ function collectDocumentLabels(root: Root): DocumentLabels
 ### `createMarkdown()`
 
 Build a reactive Markdown view bound to a specific parser.
+
 - Plain `string` source → parsed once, rendered statically.
 - `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
   content hash (folding in the reference definitions each block resolves) and
@@ -18078,10 +18282,12 @@ function resolveUrl(url: string, node: Link | Image | LinkReference | ImageRefer
 
 Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
 relative/anchor/query URL — always safe), otherwise `null`.
+
 Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
 precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
 chars ignored first, the way a browser does — so `java\tscript:` or a leading
 control char cannot hide a dangerous scheme.
+
 `allowedProtocols` defaults to {@link defaultAllowedProtocols}.
 
 ```typescript
@@ -18122,6 +18328,7 @@ export type ParseFn = (src: string, opts?: MarkdownOptions) => Root
 
 Per-node-type render overrides, merged OVER the built-in {@link defaultRenderers}.
 Known mdast types are precisely typed; the string index admits custom node types.
+
 The index value is typed `NodeRenderer<never>` on purpose: a `(node: Heading) => …`
 renderer is assignable to `(node: never) => …` (parameters are contravariant, and
 `never` is a subtype of every type), so the precise per-type renderers and custom
@@ -18488,10 +18695,12 @@ function $setFrontmatter(source: string | null): void
 
 The block whose vertical band contains `clientY`, or `null` when the pointer
 is in no block's band.
+
 TWO passes, and the order matters. A block's OWN rect always wins outright;
 only a point in no block at all falls through to the widened search, where
 the NEAREST band within `tolerance` wins (ties biased upward, matching how a
 reader attributes a gap to the block above it).
+
 A single widened pass with first-match-wins — which this was — is wrong
 wherever two rects touch or nearly touch, and touching rects are the common
 case, not the exotic one: list items, table rows, consecutive lines, and any
@@ -18606,6 +18815,7 @@ function emojiPlugin(opts: EmojiPluginOptions = {}): MarkdownPlugin
 ### `findDropTarget()`
 
 The slot `clientY` points at, expressed relative to a neighbouring block.
+
 The document has `n + 1` slots for `n` blocks; the slot index is the count of
 blocks whose vertical midpoint is above the pointer. Two of those slots are
 where `sourceKey` already sits — dropping there is a no-op, so both return
@@ -18721,6 +18931,7 @@ function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin
 
 Merge a consumer theme over the default. `text` is merged per-key so a
 consumer overriding (say) `strikethrough` keeps the other default entries.
+
 Always returns a FRESH theme (never the shared `defaultTheme` singleton):
 Lexical caches resolved class arrays by MUTATING the `text` object it is
 handed (`text.__lexicalClassNameCache`). Handing it a fresh copy keeps the
@@ -18740,13 +18951,16 @@ function mermaidPlugin(opts: MermaidPluginOptions = {}): MarkdownPlugin
 ### `normalizeCodeInfo()`
 
 Canonicalize a fence info string.
+
 CommonMark's info string is the remainder of the opening-fence line with the
 surrounding whitespace stripped; a blank one means "no language". Two
 characters are removed rather than preserved, because keeping them would emit
 markdown that no longer re-imports to the same block:
+
 - a backtick — illegal in a backtick-fenced info string (it would terminate
   or corrupt the fence);
 - a newline — it would end the fence line entirely.
+
 Everything else survives verbatim, including spaces (`'lance table'`) and
 punctuation (`'c++'`, `'objective-c'`).
 
@@ -18767,6 +18981,7 @@ function orderTransformers(transformers: readonly Transformer[]): Transformer[]
 Parse a single line as CommonMark and return its image, or `null` when the
 line is not EXACTLY one image (inline image, two images, a linked image, an
 image in a list item or blockquote, plain text).
+
 `src` keeps whatever the document spelled — percent-encoding included; only
 CommonMark's own escapes and character references are resolved, because those
 are markdown syntax rather than part of the URL.
@@ -18779,6 +18994,7 @@ function parseImageLine(line: string): ImageData | null
 
 Parse the content BETWEEN the brackets. Returns `null` when the content is not
 a valid wikilink body.
+
 Deliberate choices, each load-bearing for exact round-tripping:
   * split on the FIRST `|` only, so `[[a|b|c]]` has alias `b|c` and re-exports
     byte-identically;
@@ -18792,29 +19008,12 @@ Deliberate choices, each load-bearing for exact round-tripping:
 function parseWikiLinkInner(inner: string): WikiLink | null
 ```
 
-### `publishSurfaceOpen()`
-
-Publish the open-state readers for `editor`'s plugin UIs, and return the
-detach. For the HOST (`markdownEditor`, or any host built on the same plugin
-contract); a plugin never calls this.
-Call it from the host's `lexicalForeign` **`register`** hook, whose return value
-IS the disposer — attach and detach are then the same closure, in the same
-disposer chain that releases the mount's other editor references. NOT from
-`onReady`: that hook has no symmetric teardown, so the detach would have to be
-written somewhere else and could drift out of step with the attach.
-`register` runs while the editor is being built, before any plugin's own
-`register` can matter and long before a key can be pressed — the readers only
-have to exist by the first keystroke, not by any earlier moment.
-
-```typescript
-function publishSurfaceOpen(editor: LexicalEditor, readers: SurfaceReaders): () => void
-```
-
 ### `registerListNodeUpgrade()`
 
 Replace a stock `ListNode` with a `MarkdownListNode` the first time the
 document touches it, so a list that never went through `$createListNode`
 cannot keep the merging transform.
+
 The registration IS the back-compat half's other end. `MARKDOWN_LIST_NODES`
 keeps stock `ListNode` registered so JSON written before this node existed
 still loads — but `$parseSerializedNodeImpl` (`LexicalUpdates.ts:433`) calls
@@ -18823,6 +19022,7 @@ CRDT document created by an older build, yields a GENUINE stock `ListNode`
 carrying `ListNode.$config().$transform`. Without this the #129 guarantee
 held only for documents created after the fix — the opposite of the ones the
 issue was reported from.
+
 The upgrade is on TOUCH, and the window that leaves open is ONE MICROTASK —
 not "until the user edits". `registerNodeTransform` itself calls
 `markNodesWithTypesAsDirty` (`LexicalEditor.ts:1545`), which dirties every
@@ -18831,6 +19031,7 @@ so both registration orders converge: `setEditorState` THEN register gives
 `list` synchronously and `md-list` after one microtask; register THEN
 `setEditorState` gives `md-list` immediately. That holds for a non-editable
 editor and for a list nobody ever edits, too.
+
 What it CANNOT do is pre-empt a stock node's OWN merging transform inside the
 update that first dirties it. A stock `ListNode` arriving BETWEEN two settled
 `md-list`s in a live update — exactly what `@lexical/yjs` produces, since
@@ -18843,6 +19044,7 @@ pre-#129 behaviour (stock merges all three as well), so it is not a
 regression — but the #129 guarantee does NOT extend to a live collab document
 mixing old and new builds. It is not closable from userland; #154 tracks the
 two upstream levers that would close it.
+
 Register it wherever `MARKDOWN_LIST_NODES` is registered; `corePlugin` does.
 
 ```typescript
@@ -18852,6 +19054,7 @@ function registerListNodeUpgrade(editor: LexicalEditor): () => void
 ### `registerMarkdownPaste()`
 
 Register the markdown-on-paste handler on `editor`. Returns a disposer.
+
 Plain-text pastes are converted as Markdown. Pastes that also carry
 `text/html` are ignored so Lexical's richer HTML import handles them.
 
@@ -18914,16 +19117,6 @@ editor — the same predicate the importer uses, so the two never disagree.
 
 ```typescript
 function splitFrontmatter(markdown: string): [source: string, rest: string] | null
-```
-
-### `surfaceGate()`
-
-The gate a plugin's `register` half reads: "is MY surface up?". Resolved at
-call time, so it is correct however late the host publishes and however the
-surface was closed (Escape, a chosen row, the caret leaving the trigger).
-
-```typescript
-function surfaceGate(editor: LexicalEditor, plugin: string): () => boolean
 ```
 
 ### `toolbar()`
@@ -19002,6 +19195,7 @@ Disposer-returning binding the collab layer installs on the live editor.
 `@llui/lexical-collab`'s `YjsCollab` and `@llui/lexical-loro`'s `LoroCollab`
 both satisfy this structurally, so `@llui/markdown-editor` needs neither a Yjs
 nor a Loro dependency of its own.
+
 At least one slot must be filled — a binding that fills neither registers
 nothing at all, which the union below rejects at compile time. Either way the
 built-in history stack is off in collab mode (the editor hard-codes it), so a
@@ -19119,14 +19313,6 @@ export type SerializedWikiLinkNode = Spread<
   { target: string; alias: string | null },
   SerializedTextNode
 >
-```
-
-### `SurfaceReaders`
-
-`plugin name` → "is that plugin's surface up right now?".
-
-```typescript
-export type SurfaceReaders = ReadonlyMap<string, () => boolean>
 ```
 
 ## Interfaces
@@ -19676,8 +19862,6 @@ The type-erased form stored on a plugin and consumed by the host.
 export interface PluginUI {
   init: () => unknown
   update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
-  /** See {@link PluginUISpec.isOpen}. */
-  isOpen?: (state: unknown) => boolean
   view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
   onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
 }
@@ -19693,18 +19877,6 @@ export interface PluginUISpec<S, M, E = never> {
   init: () => S
   /** Pure reducer over the slice; may return effects. */
   update?: (state: S, msg: M) => S | [S, E[]]
-  /**
-   * Is this plugin's floating surface UP right now? Declare it whenever the
-   * plugin's `register` half claims keys for that surface (a typeahead answering
-   * `true` to KEY_ESCAPE / KEY_ENTER / the arrows at COMMAND_PRIORITY_HIGH).
-   *
-   * The host publishes it per editor so `register` can gate on it — see
-   * `surfaceGate` in `./surface-open.js`, and issue #130 for what claiming a key
-   * on any other basis costs the host handler sitting below.
-   *
-   * Pure and cheap: it is called on the keystroke path, from live state.
-   */
-  isOpen?: (state: S) => boolean
   /** View contribution (overlays/panels), rendered by the host. */
   view?: (args: PluginViewArgs<S, M>) => Renderable
   /** Effect handler with live-editor access + host dispatch. */
@@ -19909,6 +20081,7 @@ const FRONTMATTER_BRIDGE_TYPE
 ### `GFM_NODES`
 
 Node classes required to render the GFM superset.
+
 `LexicalNodeConfig`, not `Klass<LexicalNode>`: lists are registered as a
 `{ replace, with, withKlass }` redirect onto `MarkdownListNode`, which is the
 only way to take a node's own `$config` transform out of play. See
@@ -20051,6 +20224,7 @@ function createCommitHub<Emit>(editor: LexicalEditor, emit: (msg: Emit) => void)
 ### `createWidgetRuntime()`
 
 Build the widget runtime for a set of registrations.
+
 Called by `lexicalForeign` ONLY when at least one widget is registered — when
 none are, `createEditor` is invoked exactly as it was before this seam
 existed, so every existing consumer sees zero behaviour change and zero
@@ -20126,6 +20300,7 @@ function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean):
 ### `nodeWidget()`
 
 Author-facing constructor for a {@link NodeWidget}.
+
 It exists for inference: `Source` is inferred from `source` and flows into
 `render`, `equals`, and `decorateHost` without the caller writing any type
 parameters. The returned descriptor is type-erased (the registry is
@@ -20246,8 +20421,10 @@ export type SerializedLLuiDecoratorNode = Spread<
 
 Where a widget's DOM sits relative to the host node's lexical-managed
 children.
+
   `'tail'` — after every managed child (the default, and the safe choice).
   `'head'` — before every managed child.
+
 There is deliberately no third value: an interleaved widget would skew
 `ElementDOMSlot.resolveChildIndex`, which counts raw `childNodes`, and
 mis-place the caret on click. See the header, clobbering path 2.
@@ -20281,6 +20458,7 @@ export interface BaseFormat {
 ### `CommitFacts`
 
 The selection facts shared by every per-commit plugin, derived once.
+
 A facts object is valid ONLY for the duration of the callback it is handed to:
 it is scoped to one read context, and its geometry memo is scoped to one
 commit. Do not retain it — copy out the plain values instead.
@@ -20393,6 +20571,7 @@ export interface DecoratorBridge {
 
 The seam's inbound write path — the ONE place that decides whether a value
 coming from the host is an echo of the live document.
+
 Handed to the host at {@link LexicalForeignOptions.onReady} so an imperative
 push (a `setValue`-style message) goes through the same authority as the
 controlled `value` signal. A host that writes markdown into the editor any
@@ -20592,6 +20771,7 @@ export interface SelectionContext {
 ### `ShortcutSpec`
 
 A keyboard shortcut bound to an editor action.
+
 `combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
 elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
 when it handled the event (which stops propagation / prevents default).
@@ -20651,6 +20831,7 @@ export interface WidgetRuntime {
 ### `WidgetSpec`
 
 A widget's rendering contract.
+
 The `source` / `equals` / `render` split is load-bearing, not ceremony. The
 tempting thinner API — `(node) => HTMLElement | null` — gives the runtime no
 way to know whether a rebuild is NEEDED, so every reconcile of the host would
@@ -20659,6 +20840,7 @@ and a fresh element every commit destroys the widget's own DOM state (scroll
 position in a wide result table, a focused cell). Here `source` is the cheap
 pure projection, `equals` is the gate, and `render` mutates a STABLE host.
 Same shape, and same reason, as `DecoratorMount.update`.
+
 Neither `source` nor `render` may throw: they run inside Lexical's reconciler,
 where an exception aborts the commit mid-flight.
 
@@ -20864,6 +21046,7 @@ export type CollabProvider = Provider
 
 The complete set of `lexicalForeign` options a Yjs session requires, as ONE
 object to spread — `lexicalForeign({ …, ...collab.foreign })`.
+
 Both members are preconditions the host used to have to remember, and both
 fail SILENTLY when forgotten: a surviving `@lexical/history` stack
 double-applies undo across peers, and a boot-time seed duplicates content on
@@ -21172,6 +21355,7 @@ as the recorded rationale for the ordering model, not as live limitations.
 ### `adoptLoroDocument()`
 
 Reconcile the ENTIRE shared document into the editor, with no dirty gate.
+
 Used at boot by a peer adopting a document it has no event history for (see
 `seed.ts`), and as the fallback whenever an event's container ancestry cannot
 be resolved. Full-fidelity and identity-preserving: adopting a document the
@@ -21184,10 +21368,12 @@ function adoptLoroDocument(target: InboundTarget): boolean
 ### `allocate()`
 
 `count` strictly increasing keys inside the open interval `(before, after)`.
+
 With `count === 1` the jitter is deliberately ignored (constraint 2). With
 `count > 1` the whole batch hangs off ONE anchor carrying the jitter digit, so
 two peers' concurrent batches occupy disjoint sub-intervals and cannot
 interleave (constraint 1).
+
 The anchor is a strict extension of a key already strictly below `after`, and
 every subsequent key extends the anchor further, so the whole batch stays
 inside the interval and in order.
@@ -21201,6 +21387,7 @@ function allocate(before: string | null, after: string | null, count: number, ji
 `count` keys placing new children at rendered index `index` among siblings
 whose positions are `positions` (ASCENDING — the order the projection
 renders).
+
 This is the only allocation entry point callers should use, because it is the
 only one that can see, and therefore honour, constraint 4. When the left
 neighbour's position EQUALS the right neighbour's — reachable whenever two
@@ -21208,6 +21395,7 @@ peers insert at the same slot concurrently — there is no key strictly between
 them. Rather than emit one that breaks the sort invariant, the right bound is
 widened to the first position STRICTLY greater than the left neighbour's, so
 the new children land after the whole equal-position group.
+
 That is a real, if narrow, loss of fidelity: the block lands one slot later
 than the user pointed at. It is chosen over the alternatives deliberately —
 repositioning the neighbour would be a localized rebalance (constraint 3), and
@@ -21220,6 +21408,7 @@ function allocateAt(positions: readonly string[], index: number, count: number, 
 ### `applyLoroToLexical()`
 
 Apply one Loro event batch to the editor.
+
 @returns whether anything was applied. `false` means the batch was an echo of
 our own write, or described no change the editor could see.
 
@@ -21250,6 +21439,7 @@ function applyTextDiff(text: LoroText, diff: TextDiff): void
 ### `between()`
 
 A key strictly between `a` and `b`, where `null` means unbounded.
+
 REQUIRES `a < b`. It does not check, and on equal or inverted bounds it
 returns a key OUTSIDE the interval rather than failing — see constraint 4.
 Prefer {@link allocateAt}, which cannot be called with a degenerate interval.
@@ -21261,6 +21451,7 @@ function between(a: string | null, b: string | null): string
 ### `bitmaskFromAttributes()`
 
 Read a Loro delta's attribute bag as a Lexical bitmask.
+
 Only `true` counts as set: Loro represents an unmark as an explicit `null`
 attribute in the delta, which must read as OFF, not as "present".
 
@@ -21279,6 +21470,7 @@ function bitmaskFromFormats(formats: Iterable<LoroTextFormat>): number
 ### `bootstrapDocument()`
 
 Bring the editor and the shared document into agreement at boot.
+
 Idempotent: calling it again on a populated document adopts (writing nothing
 and churning no NodeKeys), so a binding may safely call it on every sync
 event without tracking whether it already ran.
@@ -21298,6 +21490,7 @@ function childCount(element: ElementContainer): number
 ### `comparePositions()`
 
 The rendered order of two children: by `pos`, then by `uuid`.
+
 The uuid tiebreak is what makes this a TOTAL order even when two peers mint
 the same `pos`, which is exactly what keeps every peer rendering the same
 sequence. It resolves rendering only — it does not make the interval between
@@ -21320,10 +21513,12 @@ function containerId(container: Container): ContainerID
 ### `containerIsLive()`
 
 Whether a container still exists in the document.
+
 `getContainerById` keeps returning a usable handle for a DELETED container, so
 `isDeleted()` is the real test. The kind narrowing is not defensive padding:
 `Container` includes `LoroCounter`, `LoroList` and `LoroTree`, which this
 schema never uses, and only its two kinds may enter the registry.
+
 This is a LOCAL liveness question — "is the registry entry stale?" — not a
 projection question. See {@link orderedChildren}.
 
@@ -21334,6 +21529,7 @@ function containerIsLive(doc: LoroDoc, id: ContainerID): boolean
 ### `createElementChild()`
 
 Create an element child inside `children` and return its ATTACHED container.
+
 The carrier IS the element container: an element needs a `pos` anyway, so
 wrapping it in a second map would cost an extra container and an extra
 dereference for nothing. Only the attached handle has a stable `ContainerID`,
@@ -21346,6 +21542,7 @@ function createElementChild(children: ChildrenContainer, uuid: string, pos: stri
 ### `createTextChild()`
 
 Create a text child inside `children` and return its ATTACHED `LoroText`.
+
 The `LoroText` is created once, inside its carrier, and never moved or
 recreated — which is precisely what makes its `ContainerID` invariant across
 every reorder, and therefore what lets a peer's concurrent insertion into it
@@ -21367,10 +21564,12 @@ function deleteChild(children: ChildrenContainer, uuid: string): void
 
 Diff two run lists into the minimal explicit `mark`/`unmark` ops that turn
 `current` into `target`.
+
 `current` is what Loro holds after the text edit landed (so `expand` has
 already had its say); `target` is the runs Lexical actually produced. Both
 MUST describe the same character count — call this only after the text
 content has been reconciled.
+
 Each format is diffed INDEPENDENTLY (that is the whole point of decomposing
 the bitmask) and differing characters are coalesced into maximal ranges, so a
 whole-paragraph bolding is one op, not one per character.
@@ -21382,6 +21581,7 @@ function diffRunFormats(current: readonly TextRun[], target: readonly TextRun[])
 ### `diffText()`
 
 Cursor-free variant: the change is placed as far LEFT as possible.
+
 Equivalent to lib0's `simpleDiffString`. Use it only where no caret is known
 (a programmatic document change); prefer {@link diffTextWithCursor} on any
 user-typing path, where the leftmost placement is exactly the wrong guess.
@@ -21393,18 +21593,22 @@ function diffText(a: string, b: string): TextDiff
 ### `diffTextWithCursor()`
 
 Diff `a` → `b`, biased to place the change at `cursor`.
+
 A plain "common prefix / common suffix" diff is ambiguous whenever the edit
 sits next to repeated characters: typing `o` in `foo` could be described as an
 insert at index 1, 2 or 3, and the plain diff always picks the leftmost. Every
 peer then sees the character inserted at the wrong place, which drags remote
 carets and (through Loro's `expand`) can even attach the wrong formatting.
+
 Biasing the prefix scan to stop AT the cursor resolves the ambiguity in favour
 of where the user actually typed. `@lexical/yjs` uses `simpleDiffWithCursor`
 for exactly this reason; this is that algorithm (lib0's
 `simpleDiffStringWithCursor`), including its surrogate-pair rollbacks, ported
 so the package carries no lib0 dependency.
+
 Surrogate handling: the scans never stop between the halves of a surrogate
 pair, so an astral character is always inserted or deleted whole.
+
 @param cursor UTF-16 offset of the caret in `b` (the new string).
 
 ```typescript
@@ -21455,7 +21659,9 @@ function formatsFromBitmask(bitmask: number): LoroTextFormat[]
 
 Configure a `LoroDoc` for this schema and return its root element container,
 creating the root's schema keys if they are missing.
+
 Every peer MUST call this. Two reasons, both load-bearing:
+
 1. `configTextStyle` is LOCAL configuration, not replicated state. A peer that
    skips it resolves marks under different expand rules and diverges.
 2. The root's `props`/`children` are created with `ensureMergeable*`, which
@@ -21506,6 +21712,7 @@ function isTextContainer(child: unknown): child is LoroText
 ### `jitterFor()`
 
 A stable jitter digit for a peer.
+
 Takes Loro's own `peerId`, so peers need no coordination to pick distinct
 digits. Collisions across the {@link JITTER_DIGITS} alphabet only degrade to
 the un-jittered behaviour for the colliding pair; they are not a correctness
@@ -21518,6 +21725,7 @@ function jitterFor(peerId: bigint): string
 ### `longestIncreasingSubsequence()`
 
 The indices of a longest strictly-increasing subsequence of `values`.
+
 Patience sorting with a predecessor chain: O(n log n). Exported because it is
 the part of the reorder planner worth testing in isolation — the number of
 `pos` writes a drag-reorder costs is exactly `matched.length - lis.length`.
@@ -21529,6 +21737,7 @@ function longestIncreasingSubsequence(values: readonly number[]): number[]
 ### `loroCollab()`
 
 Build a collaborative-editing binding over a Loro document.
+
 The document is configured for this package's schema (`initDoc`) immediately,
 not at `register` time, so a transport may be attached to `collab.doc` before
 any editor exists.
@@ -21540,6 +21749,7 @@ function loroCollab(config: LoroCollabConfig = {}): LoroCollab
 ### `newUuid()`
 
 A fresh child identity.
+
 MUST be random. Two peers minting the same uuid would collide on one slot of
 the `children` map, whose last-writer-wins would silently discard a whole
 block — the same class of data loss `initDoc`'s `ensureMergeable*` exists to
@@ -21553,6 +21763,7 @@ function newUuid(): string
 
 Coalesce adjacent equal-format runs and drop empty ones, so two run lists
 describing the same content compare structurally equal.
+
 Necessary because Lexical's node boundaries are a rendering detail: `ab`+`c`
 and `abc` at the same format are the same document.
 
@@ -21563,10 +21774,12 @@ function normalizeRuns(runs: readonly TextRun[]): TextRun[]
 ### `orderedChildren()`
 
 An element's children in RENDERED order: sorted by `(pos, uuid)`.
+
 Malformed carriers are SKIPPED rather than thrown on. That is not defensive
 padding: a remote update can be applied while a carrier's keys are still
 arriving, and a partially-materialized child must not crash a render — it will
 appear on the next event, once its `pos` and `kind` have landed.
+
 Nothing here consults `isDeleted()`, and nothing may. Projection must depend
 ONLY on replicated state; a deleted carrier is simply absent from `keys()` on
 every peer, which is what makes this a pure function of the document.
@@ -21578,6 +21791,7 @@ function orderedChildren(element: ElementContainer): ChildEntry[]
 ### `projectTarget()`
 
 Project one Lexical element (or element-mirrored leaf) to a {@link TargetElement}.
+
 MUST be called inside a Lexical read (`editorState.read(() => …)`), because it
 reads node content. Uses only `lexical` (a peer dependency) — never
 `@lexical/markdown`. See {@link targetFromEditorState} for the common wrapper.
@@ -21590,9 +21804,11 @@ function projectTarget(node: LexicalNode): TargetElement
 
 Reconcile a parsed target tree into an existing Loro document, preserving the
 `ContainerID`s of unchanged and text-edited blocks, and commit under `origin`.
+
 A SIBLING to `syncLexicalToLoro` — it writes Loro directly rather than mirroring
 a Lexical update, matches by CONTENT rather than by `NodeKey`, and does NOT
 consult the `ContainerNodeMap` (which self-heals on the inbound bounce).
+
 @param doc    the shared document.
 @param root   its root element container, as returned by `initDoc`.
 @param target the desired tree, from {@link targetFromEditorState} /
@@ -21610,9 +21826,11 @@ function reconcileTargetIntoLoro(doc: LoroDoc, root: ElementContainer, target: T
 ### `registerLoroUndo()`
 
 Register Loro-backed undo/redo on an editor.
+
 Hand this to `lexicalForeign({ externalUndo })` — which forces the built-in
 `@lexical/history` stack off, so the two can never both be live. The returned
 disposer unregisters the commands and frees the manager.
+
 The manager is constructed HERE rather than at `loroCollab()` time on purpose:
 `lexicalForeign` calls `register` (which bootstraps the document) before
 `externalUndo`, so the boot-time seed is already committed and is NOT on the
@@ -21651,6 +21869,7 @@ function runsText(runs: readonly TextRun[]): string
 
 Fill the Loro document from an editor state with no previous state to diff
 against — the bootstrapping peer's initial seed.
+
 Structurally a full-fidelity diff, so it is also idempotent: seeding a
 document that already matches emits nothing and returns `0`.
 
@@ -21669,6 +21888,7 @@ function setChildPosition(carrier: ChildCarrier, pos: string): void
 ### `syncLexicalToLoro()`
 
 Mirror one Lexical update into the Loro document and commit it.
+
 @returns the number of Loro write operations emitted. `0` means the update
 was a genuine no-op for the shared document — nothing was committed, so no
 peer sees an event. Tests assert on this to catch pruning regressions.
@@ -21681,6 +21901,7 @@ function syncLexicalToLoro(target: OutboundTarget, update: OutboundUpdate): numb
 
 Project the root of an `EditorState` to a {@link TargetElement}, doing the read
 for you.
+
 The caller owns the markdown → editor-state parse (its own headless editor and
 `@lexical/markdown` transformer set); this projects the parsed tree into the
 plain, serializable shape {@link reconcileTargetIntoLoro} consumes. Uses only
@@ -21718,6 +21939,7 @@ export type ChildCarrier = LoroMap<CarrierShape>
 
 The container a child's IDENTITY is registered under in `mapping.ts`: the
 `LoroText` for a text run, the element map itself for an element.
+
 Both are invariant across every reorder, which is what lets the registry stay
 ignorant of the ordering model entirely.
 
@@ -21746,6 +21968,7 @@ export type ChildrenContainer = LoroMap<Record<string, ChildCarrier>>
 
 The map mirroring one Lexical `ElementNode` (or a `DecoratorNode` /
 `LineBreakNode`, which simply carry an empty `children` map).
+
 Every element except the ROOT is also a child carrier, so it additionally
 holds `uuid`, `pos` and `kind`. The root is reached through `doc.getMap` and
 has no siblings to be ordered among, so those keys are optional.
@@ -21772,12 +21995,15 @@ export type LoroTextFormat = (typeof LORO_TEXT_FORMATS)[number]
 
 The slice of `UpdateListenerPayload` this direction consumes. Declared as a
 `Pick` so an update listener can pass its payload straight through.
+
 Register it with a BLOCK body, never an expression body:
+
 ```ts
 editor.registerUpdateListener((payload) => {
   syncLexicalToLoro(target, payload)
 })
 ```
+
 Lexical 0.48 stores whatever an update listener RETURNS and calls it as a
 cleanup before the next invocation (`triggerListeners` in `LexicalUpdates`),
 so the concise `(payload) => syncLexicalToLoro(target, payload)` hands it this
@@ -21802,12 +22028,14 @@ export type PropsContainer = LoroMap<Record<string, PropValue>>
 ### `PropValue`
 
 A value storable in an element's `props` map: any JSON value.
+
 Most Lexical node props are scalars (`tag`, `format`, `indent`, …), but not
 all — `LLuiDecoratorNode.exportJSON()` emits `data: unknown`, an arbitrary
 JSON payload, and that payload is precisely what makes a decorator's mounted
 LLui sub-app reproducible on a peer. Loro stores a JSON value in a map slot as
 ONE last-writer-wins register, which is the same granularity a scalar gets, so
 widening the type costs nothing structurally.
+
 The LWW granularity is per KEY, not per nested field: two peers editing
 different fields of the same `data` object do not merge, the later write wins
 whole. Decorator payloads are small, opaque-to-us blobs, so that is the right
@@ -21869,6 +22097,7 @@ export interface BootstrapTarget {
 ### `CarrierShape`
 
 The keys EVERY child carrier holds, whatever it wraps.
+
 Typed as its own shape rather than as `ElementContainer | TextCarrier` so that
 the ordering keys can be written without narrowing: a union of two generic
 `LoroMap` signatures is not callable, and the position write is the one
@@ -22196,6 +22425,7 @@ class ContainerNodeMap {
 ### `AGENT_WRITE_ORIGIN`
 
 Commit origin stamped on the single agent-write commit.
+
 Distinct from `to-loro.ts`'s `OUTBOUND_ORIGIN` so the inbound path can tell an
 agent write apart from an echo of its own outbound write: `binding.ts` lists
 this origin among the LOCAL batches the inbound path must still APPLY, which is
@@ -22236,6 +22466,7 @@ const DEFAULT_MERGE_INTERVAL
 ### `DIGITS`
 
 The key alphabet, in ascending code-unit order.
+
 Base 62 buys ~5.9 binary subdivisions per character, which is what keeps
 growth at roughly one character per five same-spot inserts. Every character
 here must be ASCII and strictly ascending, because the comparator is plain
@@ -22249,6 +22480,7 @@ const DIGITS
 ### `FORMAT_BITS`
 
 Mark name → bit value, derived from Lexical rather than hardcoded.
+
 Built eagerly so a format this package names but Lexical does not define
 fails at module load — a loud boot error instead of a format that silently
 never round-trips.
@@ -22260,10 +22492,12 @@ const FORMAT_BITS: Readonly<Record<LoroTextFormat, number>>
 ### `INBOUND_TAGS`
 
 Tags stamped on every inbound writeback.
+
 `COLLABORATION_TAG` is echo layer (b): `to-loro.ts` skips updates carrying it,
 so our own writeback cannot bounce back into the shared document.
 `SKIP_SCROLL_INTO_VIEW_TAG` stops a peer's edit from yanking the local
 viewport.
+
 `PROGRAMMATIC_TAG` is deliberately ABSENT and must stay that way — echo layer
 (c). `packages/lexical/src/foreign.ts` treats that tag as "the host pushed new
 content: cancel pending outbound work and rebase", so a remote writeback
@@ -22301,6 +22535,7 @@ const KEY_DATA
 ### `KEY_KIND`
 
 Key on a child carrier discriminating an element from a text run.
+
 Explicit rather than inferred from which other keys are present: a remote
 update can be applied partially, and a carrier whose `type` has not landed yet
 must be SKIPPED by the projection, not mistaken for a text run.
@@ -22344,6 +22579,7 @@ const KEY_TYPE
 ### `KEY_UUID`
 
 Key on a child carrier holding its own uuid.
+
 Duplicated from the `children` map key so a carrier read in isolation still
 knows its identity, and so the ordering tiebreak needs no parent lookup.
 
@@ -22389,6 +22625,7 @@ const OUTBOUND_ORIGIN
 
 Update tags that mean "this update did not originate with the local user, do
 not mirror it".
+
 `COLLABORATION_TAG` is our own inbound writeback (echo layer b);
 `SKIP_COLLAB_TAG` is Lexical's standard opt-out, which hosts use for local-only
 decoration. `HISTORIC_TAG` is NOT here — see the file header.
@@ -22416,6 +22653,7 @@ const ROOT_TYPE
 ### `TEXT_MARK_EXPAND`
 
 The `expand` rule applied UNIFORMLY to every text format.
+
 Read `test/expand-semantics.test.ts` before changing this. `expand` is NOT
 the mechanism that reproduces Lexical's boundary behaviour — a 51-test spike
 proved no uniform table can, and that no per-format table can either (the
@@ -22424,6 +22662,7 @@ per-format inclusivity: its caret is uniformly left-biased). The Lexical→Loro
 direction replays RESULTING NODE STATE via explicit mark/unmark ops instead
 (see `diffRunFormats` in `text.ts`), which makes the local result correct
 regardless of `expand`.
+
 `expand` therefore governs exactly one thing: what happens to text a REMOTE
 peer inserts CONCURRENTLY at a mark boundary. `'after'` is the closest fit to
 Lexical's left-biased caret.

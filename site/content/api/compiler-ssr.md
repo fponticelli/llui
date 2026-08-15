@@ -31,9 +31,11 @@ replacement for the SSR build. Every `export const X = <expr>` becomes
 becomes a stub, and `export default <expr>` becomes a default stub.
 Returns `null` if the directive is absent (caller should fall through
 to the normal compiler pass).
+
 The client build is expected to skip this path entirely — Vite passes
 `{ ssr: false }` there, and the plugin checks that before invoking
 this function.
+
 Every export with a statically-known name is stubbed uniformly:
 
 - `export const/let NAME = …`, `export function NAME()`, `export class
@@ -45,12 +47,15 @@ __clientOnlyStub('NAME')`. (A stubbed function/class/enum is a value, not
   names are known, so each is stubbed (the `from './other.js'` source
   module is DROPPED, never pulled into the SSR graph).
 - `export default …` — stubbed as `export default __clientOnlyStub("default")`.
-  NOT stubbable (dropped from the output, WITH a warning):
+
+NOT stubbable (dropped from the output, WITH a warning):
+
 - `export * from './other.js'` — its re-exported names can't be
   enumerated statically, so they can't be stubbed. Any client-only
   value it re-exported is undefined during SSR; move the 'use client'
   directive to the source module.
-  Left untouched: `export type …` / `interface` (erased by TS anyway).
+
+Left untouched: `export type …` / `interface` (erased by TS anyway).
 
 ```typescript
 function transformUseClientSsr(mod: ParsedModule): UseClientTransformResult | null

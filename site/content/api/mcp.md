@@ -131,6 +131,7 @@ Walk up from `start` until we find a workspace root marker. Used by
 both the MCP server (writing the active marker) and the Vite plugin
 (watching it) so they agree on a single shared location regardless of
 which subdirectory each process happens to be running in.
+
 Strong markers (workspace root): pnpm-workspace.yaml, .git directory.
 If neither is found anywhere up the chain, falls back to the highest
 package.json above `start`. For pnpm monorepos this finds the workspace
@@ -168,15 +169,18 @@ function mcpHttpTokenPath(cwd: string = process.cwd()): string
 
 Directory holding the MCP handshake state: the active-port marker and
 the per-launch HTTP bearer token.
+
 Defaults to the workspace root's cache (not the immediate cwd) so the
 MCP server and the Vite plugin always agree on a single location even
 when one runs from the repo root and the other from a subpackage.
+
 `LLUI_MCP_STATE_DIR` overrides it. Both this package and
 `@llui/vite-plugin` read that variable, so the two ends of the
 handshake move together — which is the point: the default is a single
 machine-global path per checkout, so two concurrent instances (two test
 runs, two agents driving the same repo) otherwise overwrite each
 other's marker and each connects the other's browser (issue #85).
+
 Read per call, not memoized, so a process that sets the variable during
 startup is still honored.
 

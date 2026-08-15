@@ -76,6 +76,7 @@ function createCommitHub<Emit>(editor: LexicalEditor, emit: (msg: Emit) => void)
 ### `createWidgetRuntime()`
 
 Build the widget runtime for a set of registrations.
+
 Called by `lexicalForeign` ONLY when at least one widget is registered — when
 none are, `createEditor` is invoked exactly as it was before this seam
 existed, so every existing consumer sees zero behaviour change and zero
@@ -154,6 +155,7 @@ function matchesCombo(event: KeyboardEvent, combo: ParsedCombo, isMac: boolean):
 ### `nodeWidget()`
 
 Author-facing constructor for a {@link NodeWidget}.
+
 It exists for inference: `Source` is inferred from `source` and flows into
 `render`, `equals`, and `decorateHost` without the caller writing any type
 parameters. The returned descriptor is type-erased (the registry is
@@ -277,8 +279,10 @@ export type SerializedLLuiDecoratorNode = Spread<
 
 Where a widget's DOM sits relative to the host node's lexical-managed
 children.
+
 `'tail'` — after every managed child (the default, and the safe choice).
 `'head'` — before every managed child.
+
 There is deliberately no third value: an interleaved widget would skew
 `ElementDOMSlot.resolveChildIndex`, which counts raw `childNodes`, and
 mis-place the caret on click. See the header, clobbering path 2.
@@ -312,6 +316,7 @@ export interface BaseFormat {
 ### `CommitFacts`
 
 The selection facts shared by every per-commit plugin, derived once.
+
 A facts object is valid ONLY for the duration of the callback it is handed to:
 it is scoped to one read context, and its geometry memo is scoped to one
 commit. Do not retain it — copy out the plain values instead.
@@ -424,6 +429,7 @@ export interface DecoratorBridge {
 
 The seam's inbound write path — the ONE place that decides whether a value
 coming from the host is an echo of the live document.
+
 Handed to the host at {@link LexicalForeignOptions.onReady} so an imperative
 push (a `setValue`-style message) goes through the same authority as the
 controlled `value` signal. A host that writes markdown into the editor any
@@ -623,6 +629,7 @@ export interface SelectionContext {
 ### `ShortcutSpec`
 
 A keyboard shortcut bound to an editor action.
+
 `combo` is a normalized chord: `Mod` resolves to ⌘ on macOS and Ctrl
 elsewhere, e.g. `Mod-b`, `Mod-Shift-7`, `Mod-Alt-1`. `run` returns `true`
 when it handled the event (which stops propagation / prevents default).
@@ -682,6 +689,7 @@ export interface WidgetRuntime {
 ### `WidgetSpec`
 
 A widget's rendering contract.
+
 The `source` / `equals` / `render` split is load-bearing, not ceremony. The
 tempting thinner API — `(node) => HTMLElement | null` — gives the runtime no
 way to know whether a rebuild is NEEDED, so every reconcile of the host would
@@ -690,6 +698,7 @@ and a fresh element every commit destroys the widget's own DOM state (scroll
 position in a wide result table, a focused cell). Here `source` is the cheap
 pure projection, `equals` is the gate, and `render` mutates a STABLE host.
 Same shape, and same reason, as `DecoratorMount.update`.
+
 Neither `source` nor `render` may throw: they run inside Lexical's reconciler,
 where an exception aborts the commit mid-flight.
 
