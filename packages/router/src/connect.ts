@@ -719,11 +719,23 @@ export function connectRouter<R>(
    *    LOSSY (two routes differing only in a field no URL expresses project to
    *    one string), and for a TERMINATION test lossiness fails in the safe
    *    direction: it settles EARLY, degrading to exactly the single-hop
-   *    behaviour that shipped before, never to a refusal. A STRUCTURAL settle
-   *    test chains further and passes this same suite — it was demonstrated in
-   *    review — but a guard that ADDS a field per call then runs to the cap
-   *    where `href` settles on hop one, so the cost moves rather than
-   *    disappearing. Left open as #212 rather than guessed at.
+   *    behaviour that shipped before, never to a refusal or a hang.
+   *
+   *    NAME THE COST IN FULL: the skipped hop is a whole guard verdict, and a
+   *    verdict is not only a redirect. A guard that normalises `{admin}` to
+   *    `{admin, draft:true}` (same href, so it settles) and would answer
+   *    `false` for `{admin, draft:true}` never gets ASKED — the route is
+   *    dispatched and its URL written. Not a regression (identical on `main`
+   *    and on the single-hop commit, and the counterfactual is what the
+   *    paragraph above describes), but the missed hop can carry a BLOCK, not
+   *    just a missed redirect, which is the security-adjacent half. A guard
+   *    whose decision depends on a field the URL cannot express must not rely
+   *    on being re-asked about it.
+   *
+   *    A STRUCTURAL settle test chains further and passes this same suite — it
+   *    was demonstrated in review — but a guard that ADDS a field per call then
+   *    runs to the cap where `href` settles on hop one, so the cost moves
+   *    rather than disappearing. Left open as #212 rather than guessed at.
    * 2. THE HOP IS ADOPTED BEFORE THE SETTLE TEST. A guard that normalises `to`
    *    and hands back an equivalent route — #162's shape — settles immediately,
    *    but the route DISPATCHED is the one it returned, not the one it was
@@ -738,11 +750,22 @@ export function connectRouter<R>(
    *    proposals — so where the navigation is coming from does not change as
    *    the chain resolves.
    *
-   * A cycle (`a → b → a → …`) never settles, so the loop is capped at
-   * {@link MAX_REDIRECT_HOPS} and, on exhaustion, LANDS ON THE LAST ALLOWED HOP
-   * and warns — it does NOT block. Issue #161 named both; blocking converts an
-   * app bug into a dead navigation with the app stuck where it was, whereas
-   * landing leaves it usable and the warning names the guard as the cause.
+   * A chain that never settles — a cycle (`a → b → a → …`), or one that simply
+   * keeps producing new URLs — is capped at {@link MAX_REDIRECT_HOPS}. On
+   * exhaustion the loop RESTS ON THE LAST HOP and warns; it does NOT block.
+   * Issue #161 named both; blocking converts an app bug into a dead navigation
+   * with the app stuck where it was, whereas resting leaves it usable and the
+   * warning names the cap as the cause.
+   *
+   * Be precise about what that hop is: it is the last route the guard RETURNED,
+   * and it was never OFFERED — the cap is checked after the hop is taken, so no
+   * guard verdict exists for the route rested on, and it may be one the guard
+   * would have BLOCKED. That is a real unverified landing, and it is accepted
+   * because the alternative is worse and the surface is shrinking: under the
+   * single-hop behaviour this replaces, EVERY redirect landed unverified (the
+   * target was never re-offered). Multi-hop leaves exactly one such landing, at
+   * the cap boundary of a runaway chain the router already calls an app bug and
+   * warns about.
    *
    * Documented under "Guards" in `site/content/api/router.md` and pinned in
    * `test/guards.test.ts`.
@@ -773,9 +796,16 @@ export function connectRouter<R>(
       redirected = true
       if (!moved) break
       if (++hops >= MAX_REDIRECT_HOPS) {
+        // Say only what is KNOWN: the cap was reached. A cycle is the likeliest
+        // cause but not a provable one — a chain producing a NEW url every hop
+        // trips this too, so asserting "cycle" would misdirect the reader
+        // debugging exactly that case. The hop count and the resting url are
+        // the actionable half; the route rested on was never offered to the
+        // guard (see above).
         console.warn(
           `[@llui/router] beforeEnter redirected ${MAX_REDIRECT_HOPS} times without settling ` +
-            `(last: ${router.href(route)}). Resting on the last hop — the chain is a cycle.`,
+            `(resting on: ${router.href(route)}, never offered to the guard). ` +
+            `Fold the chain, or check it for a cycle.`,
         )
         break
       }

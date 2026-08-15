@@ -188,9 +188,19 @@ Four rules make that predictable:
   — the same projection the router writes to the address bar and matches routes
   back out of. It is deliberately lossy: two routes that differ only in a field
   no URL can express settle as one, which stops the chain early rather than
-  refusing the navigation. If your routes carry non-URL fields, do not rely on a
-  hop that moves only those — a structural settle test is the open alternative
-  ([#212]).
+  refusing the navigation.
+
+  **The skipped hop is a whole guard verdict, not just a missed redirect.** A
+  guard that normalises `{page:'admin'}` to `{page:'admin', draft:true}` — same
+  `href`, so the chain settles — and that would return **`false`** for
+  `{page:'admin', draft:true}` is **never asked**: the route is dispatched and
+  its URL written. So a guard whose decision depends on a field the URL cannot
+  express must not rely on being re-asked about it; decide on the fields your
+  `href` carries, or fold that check into the hop that produced the route. (This
+  is not new in the chaining release — a single-hop redirect was never re-asked
+  either — but it is the half worth stating.) A structural settle test is the
+  open alternative ([#212]).
+
 - **The hop is taken whether or not it moved the URL.** A guard that _normalises_
   `to` and returns an equivalent route settles immediately, and the route your
   reducer receives is the one the guard returned. (Since the URL did not move,
@@ -201,11 +211,17 @@ Four rules make that predictable:
 - **`from` is the route you are leaving, on every hop.** No hop is entered — they
   are proposals — so `from` does not advance as the chain resolves.
 
-A `beforeEnter` that never settles (`admin → login → admin → …`) is capped at
-**10 hops**. On exhaustion the router **rests on the last hop and warns** on the
-console; it does not block. A blocked navigation would leave your app stuck with
-no route change at all, which hides the bug; landing keeps it usable and the
-warning names the cause. ([#161])
+A `beforeEnter` that never settles — a cycle (`admin → login → admin → …`), or a
+chain that just keeps producing new URLs — is capped at **10 hops**. On
+exhaustion the router **rests on the last hop and warns** on the console; it does
+not block. A blocked navigation would leave your app stuck with no route change
+at all, which hides the bug; resting keeps it usable and the warning names the
+cap.
+
+Note what that resting route is: the last route your guard **returned**, which at
+the cap was **never offered back to it** — so it may be one the guard would have
+blocked. Treat the warning as a bug report against the chain, not as a supported
+resting place. ([#161])
 
 [#161]: https://github.com/fponticelli/llui/issues/161
 [#212]: https://github.com/fponticelli/llui/issues/212

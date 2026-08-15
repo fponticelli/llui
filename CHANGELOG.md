@@ -11,6 +11,52 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package declares `@llui/dom` as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## Unreleased
+
+Merged but not yet published. `/publish` folds this block into the next dated
+release entry and deletes it — do not leave it here across a release.
+
+### Breaking
+
+- **`@llui/router`** — **guard redirects now chain to a fixed point.**
+  `beforeEnter` is re-asked about each target it returns until it accepts one,
+  blocks one, or stops moving the URL (capped at 10 hops, then rests on the last
+  hop with a console warning). It used to be asked exactly **once** per
+  navigation, so a redirect target's own guard was never consulted. This is a
+  **semantic** break at every call site — `push()`, `replace()`, `navigate()`,
+  `link()` and the browser-driven listener — not an interface one: nothing fails
+  to compile, and a chained guard that previously rested on its first hop now
+  rests on the fixed point. A `beforeEnter` with side effects (analytics, an auth
+  probe) is now called once per hop rather than once per navigation. See
+  _Redirect chains_ in the router API docs. ([#161])
+- **`@llui/router`** — **`RouterEnv.replaceLocation` is removed.** Its only
+  caller, the hash-mode `replace()` effect, now writes with `replaceState`, which
+  carries the entry's `history.state` instead of dropping it and fires no
+  `hashchange`. Under a `<base href>` the old mechanism was worse than untidy: a
+  fragment-only `location.replace()` performs a cross-document navigation that
+  **unloads the app** (verified in Chrome), where `replaceState` moves the
+  address bar and nothing else. ([#164])
+
+### Migration
+
+- If you implement your own `RouterEnv`, **delete the `replaceLocation` member**.
+  With the documented pattern — an object literal annotated `const env:
+RouterEnv = {…}` — leaving it in is a compile error. It is **not** an error
+  behind an `as RouterEnv` cast or an unannotated factory; there the member is
+  simply dead, so grep for it.
+- If your `beforeEnter` returns a route that the same `beforeEnter` would itself
+  redirect, you no longer need to fold that chain by hand — but check that you
+  **want** the fixed point, and that the guard is safe to call more than once per
+  navigation.
+- If your guard's decision depends on a route field the URL cannot express, note
+  that the chain settles on `router.href` equality: a hop that moves only such a
+  field ends the chain, so that hop's verdict — including a `false` — is never
+  asked for. Decide on the fields your `href` carries. ([#212])
+
+[#161]: https://github.com/fponticelli/llui/issues/161
+[#164]: https://github.com/fponticelli/llui/issues/164
+[#212]: https://github.com/fponticelli/llui/issues/212
+
 ## 2026-08-10 — @llui/markdown-editor@0.7.0
 
 **Released:** `@llui/markdown-editor@0.7.0`; `@llui/devmode-annotate@0.3.2`
