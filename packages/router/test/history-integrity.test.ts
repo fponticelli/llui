@@ -575,6 +575,57 @@ describe('#150 history that grew behind the router — hash mode', () => {
   })
 })
 
+describe('#150 history that grew behind the router — HISTORY mode', () => {
+  // The same gap, with no address bar to blame. A foreign `history.pushState`
+  // (analytics, an embedded widget, another framework on the page) creates an
+  // entry and fires NOTHING — not `popstate`, not `hashchange` — so the router
+  // never learns it moved. Numbering the next push from the index it still holds
+  // put an index distance of 1 across a physical distance of 2, and the next
+  // guard-blocked traversal spanning that entry landed on it.
+  //
+  // The position now comes from the ENTRY rather than from `currentIndex`, so
+  // the foreign entry's stateless-ness is read as "unknown" and the push above it
+  // opens a run of its own.
+
+  beforeEach(async () => {
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('opens a new run above a foreign pushState instead of numbering through it', async () => {
+    let blockOther = false
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' })
+    expect(path()).toBe('/other')
+
+    // …and the stack grows behind the router's back.
+    history.pushState({ foreign: 'analytics' }, '', '/foreign')
+
+    navigate(routing, { page: 'admin' })
+    expect(path()).toBe('/admin')
+    send.mockClear()
+
+    const goSpy = vi.spyOn(history, 'go')
+    blockOther = true
+    history.go(-2) // → /other, two entries down and across the foreign one
+    expect(await waitForUrl(path, '/other')).toBe('/other')
+
+    // Nothing is rewound: the entries either side of the foreign one belong to
+    // different runs. Numbering through it computed `delta = 1` and deposited
+    // the user on `/foreign`, dispatching a route that is not even ours.
+    expect(await waitForUrl(path, '/foreign')).toBe('/other')
+    expect(goSpy).toHaveBeenCalledTimes(1) // ours, above — none of the router's
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
+    dispose()
+  })
+})
+
 describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
   // Browsers deliver traversals of any magnitude: a back-button long-press menu,
   // a `history.go(-n)`, a gesture. `restoreBlocked` computes `delta =

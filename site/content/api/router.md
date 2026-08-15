@@ -227,7 +227,11 @@ An entry it did **not** create is treated as **unknown**, in both modes, and no
 position is invented for one. That covers:
 
 - entries that existed before `connectRouter` ran (a deep link the user
-  navigated away from and came back to), and
+  navigated away from and came back to);
+- an entry created by a **foreign `history.pushState`** — analytics, an embedded
+  widget, another framework on the page — which fires no event, so the router
+  never learns the stack moved. It reads the entry it is standing on rather than
+  trusting its own last write, which is how it notices;
 - in **hash mode**, an entry created by the user **editing the fragment in the
   address bar**.
 

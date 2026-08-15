@@ -499,12 +499,27 @@ export function connectRouter<R>(
    * position, which OPENS a new run. `currentRun` is left holding the run to
    * stamp either way, so a caller only has to decide what index to write.
    *
-   * The landed entry's own stamp wins over `currentIndex`, which is not always
-   * the last thing we wrote: `history.go` is asynchronous, so an app that
-   * navigates in the same tick as a blocked pop pushes from the BLOCKED entry,
-   * truncating everything above it. Numbering from `currentIndex` there claims a
-   * depth the stack no longer has, and the next blocked back computes an
-   * unreachable delta — #103's original symptom, re-reachable (#139 review).
+   * The answer comes from the ENTRY, never from `currentIndex`, which is not
+   * always the last thing we wrote. Two ways it lies, in opposite directions:
+   *
+   * - `history.go` is asynchronous, so an app that navigates in the same tick as
+   *   a blocked pop pushes from the BLOCKED entry, truncating everything above
+   *   it. `currentIndex` there claims a depth the stack no longer has, and the
+   *   next blocked back computes an unreachable delta — #103's original symptom,
+   *   re-reachable (#139 review). The landed entry's own stamp says otherwise.
+   * - A FOREIGN `history.pushState` (analytics, an embedded widget, another
+   *   framework) creates an entry and fires NOTHING, so the router never learns
+   *   it moved. `currentIndex` still names the entry below, and numbering the
+   *   next push from it puts an index distance of 1 across a physical distance
+   *   of 2 — the same gap a hand-edited hash entry opens, in HISTORY mode, where
+   *   there is no address bar to blame. Reading the entry catches it: the state
+   *   under us is the foreign one and carries no stamp.
+   *
+   * So an unstamped entry is unknown even when we think we know where we are.
+   * The one case that costs is a foreign `replaceState` CLOBBERING a stamp of
+   * ours — the entry really is where `currentIndex` says, and the run restarts
+   * for nothing. Nothing distinguishes it from the foreign push above, and the
+   * two failure directions are a lost undo versus a wrong traversal.
    *
    * The `null` case is where a GAP in the index space would otherwise open. It
    * used to floor to `0` and number up from there, producing indices that LOOK
@@ -523,7 +538,6 @@ export function connectRouter<R>(
       currentRun = readRun(env.historyState)
       return landed
     }
-    if (currentIndex !== null && currentRun !== null) return currentIndex
     currentRun = mintRun()
     return null
   }
