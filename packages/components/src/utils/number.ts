@@ -9,6 +9,11 @@
  * `toFixed(0)` collapsed to 0; `increment` added a step without re-snapping, so
  * an off-grid value stayed off-grid forever; and `slider.setValue` skipped
  * clamping altogether while `setThumb` twelve lines below clamped.
+ *
+ * Being the one implementation is also why the NON-FINITE policy lives here and
+ * nowhere else (#152): `clamp` maps a `NaN`/`±Infinity` input to a defined legal
+ * value, so every component inherits a finite, in-range, on-grid result from
+ * every mutation path — including `init`, which a per-reducer guard would miss.
  */
 
 /**
@@ -31,7 +36,60 @@ const STEP_EPSILON = 1e-9
 /** `toFixed` accepts at most 100 fraction digits. */
 const MAX_FIXED_DIGITS = 100
 
+/**
+ * A finite value inside `[min, max]` for an input that names no position on it.
+ * It is ZERO CLAMPED INTO THE RANGE — 0 whenever the range holds 0, else the
+ * bound nearest to it (`min` for a range entirely above 0, `max` for one
+ * entirely below) — and 0 again if that bound is itself infinite, which only a
+ * degenerate range (`min: Infinity`, `max: -Infinity`) produces.
+ *
+ * Worked: `[0, 50]` -> 0, `[10, 50]` -> 10, `[-100, -10]` -> -10,
+ * `[-50, 50]` -> 0, `[-Infinity, -10]` -> -10, `[10, Infinity]` -> 10.
+ *
+ * DELIBERATE DIVERGENCE from the wording of #152's Option A ("`min` when
+ * finite, else the grid origin, else 0") and therefore from `gridOrigin`, which
+ * IS `min`-when-finite-else-0: the two agree for every range at or above zero
+ * and differ for one that straddles or sits below it, where Option A's reading
+ * would answer `min` (`[-50, 50]` -> -50) and this answers 0. Zero is the
+ * neutral point of the range, and a `NaN` has no direction that could justify
+ * jumping to the bottom of a range the user is sitting in the middle of.
+ * On-gridness does not depend on the choice — `clampToStep` clamps first and
+ * SNAPS afterwards, so the snap fixes whatever this returns.
+ */
+function finiteInRange(min: number, max: number): number {
+  const candidate = 0 < min ? min : 0 > max ? max : 0
+  return isFinite(candidate) ? candidate : 0
+}
+
+/**
+ * Where a NON-FINITE input lands. `±Infinity` keeps the answer the comparisons
+ * already gave it whenever the bound it points at is finite — `clamp(Infinity,
+ * 0, 50)` is still 50, which is what `angle-slider`'s Home/End rely on — so
+ * this only decides the cases where that bound is itself infinite. `NaN` has no
+ * direction at all, so it takes `finiteInRange` — zero clamped into the range,
+ * NOT the grid origin; see that function for why they differ.
+ */
+function nonFiniteFallback(n: number, min: number, max: number): number {
+  if (n === Infinity && isFinite(max)) return max
+  if (n === -Infinity && isFinite(min)) return min
+  return finiteInRange(min, max)
+}
+
+/**
+ * Bound `n` into `[min, max]`. The result is always FINITE: a non-finite input
+ * maps to a defined legal value instead of being stored verbatim.
+ *
+ * Every comparison against `NaN` is false, so `NaN` used to fall straight
+ * through to `return n` and land in state — package-wide, since this is the one
+ * clamp every mutation path routes through (#152). It is not merely a wrong
+ * number: `JSON.stringify(NaN)` (and `Infinity`) is `null`, so a non-finite
+ * value breaks the State-is-JSON-serializable invariant and with it devtools
+ * time-travel, `@llui/test` replay, agent state snapshots and SSR rehydration.
+ * Rejecting at this boundary is what lets every caller state its own
+ * postcondition — e.g. `slider`'s `withThumb` — without a finiteness caveat.
+ */
 export function clamp(n: number, min: number, max: number): number {
+  if (!isFinite(n)) return nonFiniteFallback(n, min, max)
   if (n < min) return min
   if (n > max) return max
   return n
@@ -77,10 +135,18 @@ function gridOrigin(grid: NumericGrid): number {
   return isFinite(min) ? min : 0
 }
 
-/** Nearest multiple of `step` from `origin`. A non-positive step is a no-op. */
+/**
+ * Nearest multiple of `step` from `origin`. A non-positive step is a no-op.
+ *
+ * A non-finite `value` names no position on the grid, so it snaps to the grid's
+ * own anchor — the same policy `clamp` applies to the range (#152). This is
+ * unreachable from `clampToStep`, which clamps first; it keeps the util's
+ * direct consumers on the same rule.
+ */
 export function snapToStep(value: number, step: number, origin = 0): number {
-  if (!(step > 0) || !isFinite(step)) return value
   const base = isFinite(origin) ? origin : 0
+  if (!isFinite(value)) return base
+  if (!(step > 0) || !isFinite(step)) return value
   return roundTo(base + Math.round((value - base) / step) * step, gridDecimals(step, base))
 }
 
@@ -89,6 +155,7 @@ export function snapToStep(value: number, step: number, origin = 0): number {
  * `[min, max]`: snapping can leave the range when an endpoint is not itself on
  * the grid (min 0, max 10, step 4 → 10 snaps up to 12), and the answer there is
  * the last grid value INSIDE the range, not an out-of-range or off-grid one.
+ * It is always FINITE too — the clamp rejects a non-finite input first (#152).
  */
 export function clampToStep(value: number, grid: NumericGrid): number {
   const min = grid.min ?? -Infinity

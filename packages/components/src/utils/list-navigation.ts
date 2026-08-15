@@ -94,12 +94,26 @@ export function nextEnabled(
  * checked radio, …) is honoured only while it is still an enabled member, and
  * the first enabled item answers otherwise. Null only when nothing is enabled.
  *
- * SCOPE: this guarantee holds for the widgets that ROUTE THROUGH here —
- * radio-group, toggle-group, tree-view and toolbar. It is not yet a
- * package-wide property: `menubar`, `navigation-menu` and `tags-input` still
- * compute `focused === x ? 0 : -1` inline, with no fallback, so shrinking the
- * list past the focused item drops them out of the Tab order — the same WCAG
- * failure, outside #126's named criteria. Tracked in #145.
+ * Every roving-tabindex widget in the package routes through here (#145 closed
+ * the last three: menubar, navigation-menu and tags-input). Keep it that way —
+ * an inline `focused === x ? 0 : -1` has no fallback, and since nothing prunes
+ * `focused` against the current list, removing or disabling the focused item
+ * leaves EVERY item at -1 and the widget disappears from the Tab order.
+ *
+ * `tags-input` is index-keyed and passes `String(i)` as the item identity (its
+ * `data-index`, and the only identity that survives duplicate tag values);
+ * `navigation-menu` passes either the membership list its consumer maintains or
+ * the ids handed to its own `item()`, filtered first to the ones not sealed
+ * inside a closed submenu — membership alone would seat the stop on an element
+ * inside a `hidden` panel, which is present, unique and untabbable.
+ *
+ * Null when nothing is enabled is deliberate and is a caller's problem to
+ * notice: a widget whose items are ALL disabled ends up with no tab stop at
+ * all. That is right for `radio-group`/`toggle-group`/`toolbar`/`tree-view`,
+ * whose items are genuinely `disabled` and therefore unfocusable anyway, and it
+ * is a 1 -> 0 change for `menubar`, whose triggers carry only `aria-disabled`
+ * and stay focusable. Any revision belongs here, applying to every caller at
+ * once — not in one component.
  */
 export function rovingTabStop(
   items: readonly string[],

@@ -88,6 +88,11 @@ export function init(opts: SliderInit = {}): SliderState {
  * `setValue([90,10,50])` gives `[10,10,50]` where the setThumb sequence gives
  * `[20,20,50]` — but every value either can produce is one a drag could
  * produce, which is the property that matters.
+ *
+ * That claim needs no finiteness caveat: `NaN` used to survive every comparison
+ * in `clamp` and land in state — a value no drag can produce and one
+ * `JSON.stringify` turns into `null` — and the shared grid now rejects it at
+ * the boundary (#152), so `rawValue` is normalised whatever the caller passes.
  */
 function withThumb(
   state: SliderState,

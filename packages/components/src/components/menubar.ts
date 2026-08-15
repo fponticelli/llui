@@ -4,6 +4,8 @@ import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { focusRovingItem } from '../utils/roving.js'
+import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
+import { deriveOnceN } from '../utils/derive.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -90,11 +92,6 @@ export function init(opts: MenubarInit): MenubarState {
 }
 
 // ---- pure helpers ----
-
-function firstEnabled(menus: string[], disabled: string[]): string | null {
-  for (const id of menus) if (!disabled.includes(id)) return id
-  return null
-}
 
 function navigable(menus: string[], disabled: string[]): string[] {
   return menus.filter((id) => !disabled.includes(id))
@@ -232,6 +229,31 @@ export function connect(
 ): MenubarParts {
   const base = opts.id
 
+  // The bar carries EXACTLY ONE tab stop: the focused trigger, or the first
+  // enabled menu when `focused` no longer names one. `focused` is never pruned
+  // against `menus`/`disabledMenus`, so the inline `s.focused === id ? 0 : -1`
+  // this replaces left EVERY trigger at -1 once the focused menu was removed or
+  // disabled — the menubar dropped out of the Tab order entirely and, having no
+  // other focusable element, became keyboard-unreachable (WCAG 2.1.1, #145).
+  // The fallback belongs in the shared helper, not in a remembered id.
+  // Answered ONCE per update and shared by every trigger (#124).
+  //
+  // ONE DISCLOSED REGRESSION, 1 -> 0 stops: with EVERY menu disabled the old
+  // inline form still gave the focused trigger a 0, and `rovingTabStop` returns
+  // null when nothing is enabled, so no trigger carries one. Triggers are
+  // disabled with `aria-disabled` only, so they stay focusable and a stop there
+  // was reachable. Kept as-is on three grounds: it is `rovingTabStop`'s
+  // documented contract and `radio-group` has behaved this way since #126, so
+  // fixing it here alone would re-split the rule the helper exists to unify;
+  // an all-disabled composite has nothing to operate and WAI-ARIA's "at least
+  // one tab stop" presumes an operable widget; and no message mutates `menus`
+  // or `disabledMenus`, so reaching the state needs an explicit
+  // `init({ focused })` over an all-disabled bar. A fix belongs in the shared
+  // helper, for every caller at once.
+  const stopId = deriveOnceN((menus: string[], disabled: string[], focused: string | null) =>
+    rovingTabStop(menus, disabled, focused),
+  )
+
   // A per-menu Send that wraps each MenuMsg in a `menuMsg` envelope so the
   // delegated menu.connect drives the embedded machine.
   const menuSend = (id: string): Send<MenuMsg> => {
@@ -285,7 +307,7 @@ export function connect(
       'data-part': 'trigger',
       'data-state': state.map((s) => (s.open === id ? 'open' : 'closed')),
       'data-value': id,
-      tabindex: state.map((s) => (s.focused === id ? 0 : -1)),
+      tabindex: state.map((s) => (stopId(s.menus, s.disabledMenus, s.focused) === id ? 0 : -1)),
       onClick: tagSend(send, ['openMenu', 'closeMenu'], () => {
         if (state.peek()?.open === id) {
           send({ type: 'closeMenu' })
