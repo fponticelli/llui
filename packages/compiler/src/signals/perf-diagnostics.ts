@@ -44,6 +44,8 @@ const REASON_HINTS: Record<string, string> = {
   'row-elem-dynamic-children': 'an element receives dynamic (non-array-literal) children',
   'row-elem-dynamic-args': 'an element receives dynamic (non-literal) arguments',
   'row-param-leak': 'a row param is passed into a call or position the compiler cannot follow',
+  'named-function-expression':
+    'the render/arm (or the helper it delegates to) is a NAMED function expression — its own name is a binding the lowered arrow cannot carry, so the call stays on the authoring path; use an arrow, or hoist it to a top-level `function` declaration',
   'arm-not-concise-array': 'the render is not a concise `(item) => [...]` arm',
   'arm-param-leak': 'a row param leaks into a verbatim helper call or handler',
   'helper-body-not-inlinable':
@@ -65,6 +67,7 @@ const REASON_HINTS: Record<string, string> = {
 
 /** Most-actionable-first ordering for the reasons included in a message. */
 const REASON_PRECEDENCE: readonly string[] = [
+  'named-function-expression',
   'decl-capture-risk',
   'helper-body-not-inlinable',
   'param-substitution-hygiene',

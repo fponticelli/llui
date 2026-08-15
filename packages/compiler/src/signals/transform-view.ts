@@ -301,6 +301,14 @@ function inlineHelperRender(
     reportBail('inline-helper', reason, fn.getStart(sf))
     return null
   }
+  // Inlining RELOCATES the helper's body into the caller. A named function
+  // EXPRESSION's own name is bound only inside that function, so a self-reference
+  // in the relocated body is unbound in the emitted module — #181 one pass over
+  // (`const other = function rowHelper(r) { … rowHelper … }` emitted a free
+  // `rowHelper`). A `function f(){}` DECLARATION is safe: its name is a
+  // module-level binding that survives the relocation.
+  const namedHelper = namedFunctionExpressionName(decl)
+  if (namedHelper !== null) return bail(`named-function-expression:${namedHelper}`)
   const params = decl.parameters
   if (params.length !== callEl.arguments.length) return bail('arg-count-mismatch')
   for (const p of params) if (!ts.isIdentifier(p.name)) return bail('destructured-param')
@@ -547,6 +555,44 @@ function unwrap(expr: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(expr) ? unwrap(expr.expression) : expr
 }
 
+/**
+ * The name a NAMED FUNCTION EXPRESSION binds over its own body (`function
+ * renderRow(row) { … }` → `'renderRow'`), or null for an arrow, an anonymous
+ * function expression, or anything else (issue #181).
+ *
+ * That name is a real binding, scoped to the function's own subtree and to
+ * nothing else — it is how a self-recursive row renderer calls itself. Every
+ * lowering below RELOCATES the body out of that function: an arm becomes
+ * `(getCtx) => [...]`, a row factory becomes `(doc, getCtx) => {...}` plus
+ * hoisted per-site consts, an inlined helper's body is spliced into the caller.
+ * The name does not travel with it, and nothing else in the emitted module binds
+ * it — so a surviving `renderRow(row)` is a FREE identifier and throws
+ * `ReferenceError` on the first row render, in a module that parses cleanly and
+ * that no type-check ever sees.
+ *
+ * So every such site DECLINES to lower when this returns non-null, leaving the
+ * whole primitive verbatim for the runtime authoring path — which keeps the
+ * function exactly as written, self-binding intact. The two alternatives were
+ * rejected: emitting the lowered arrow AS a named function expression rebinds
+ * the name to the LOWERED arm (a `(getCtx) => LoweredNode[]`, not the author's
+ * `(rowSignal) => Renderable`), so the recursive call compiles and silently
+ * misbehaves; and re-declaring the original function inside the emitted arm
+ * copies verbatim user source into a different lexical position and does
+ * nothing for the factory path, where the name can surface in a hoisted const
+ * outside any prelude's reach.
+ *
+ * The test is deliberately COARSE — every named function expression, referenced
+ * or not — rather than "the name survives in the lowered text". Over-approximating
+ * costs an optimization on a shape nobody writes except to recurse; under-
+ * approximating costs a runtime crash, and the completeness of a
+ * "did the name survive?" scan is exactly the property that has repeatedly
+ * failed here (#153/#157/#182/#194).
+ */
+function namedFunctionExpressionName(fn: ts.Node): string | null {
+  const f = ts.isParenthesizedExpression(fn) ? unwrap(fn.expression) : fn
+  return ts.isFunctionExpression(f) && f.name ? f.name.text : null
+}
+
 /** The first parameter name of a callback, or null (used to root a render arm's
  * narrowed signal, e.g. show/branch). */
 function firstParam(fn: ts.Expression): string | null {
@@ -654,6 +700,15 @@ function lowerArmArray(
   // ctx to rebuild a handle from) and keep the bail behavior.
   leaked?: Set<string>,
 ): { arr: string; decls: readonly string[] } | null {
+  // A NAMED function expression binds its own name over its body; the emitted
+  // arm is an anonymous arrow, so that binding would be gone (#181). Decline —
+  // `leaked` must NOT rescue this one: a row handle can rebuild an item/index
+  // param, but nothing can rebuild the function itself.
+  const selfName = namedFunctionExpressionName(fn)
+  if (selfName !== null) {
+    onBail?.(`named-function-expression:${selfName}`)
+    return null
+  }
   // Accept the BLOCK-BODY shape too (`(p) => { const x = …; return [...] }`):
   // the leading decls are kept VERBATIM in the emitted arm block — they run once
   // per arm/row build (the same render-once semantics as the factory's wire
@@ -1189,6 +1244,16 @@ function lowerRowFactory(
   sfIn: ts.SourceFile,
   collect?: Set<string>,
 ): string | null {
+  // The row body is relocated into the emitted `(doc, getCtx) => {…}` factory (and
+  // into per-each-site hoisted consts and the `_build` skeleton), so a NAMED
+  // function expression's own name would be left unbound — including in positions
+  // no prelude could rebind (#181). Checked FIRST, and on the ORIGINAL render:
+  // helper inlining below would re-emit it as a synthetic anonymous arrow.
+  const namedRender = namedFunctionExpressionName(fnIn)
+  if (namedRender !== null) {
+    reportBail('each-direct', `named-function-expression:${namedRender}`, fnIn.getStart(sfIn))
+    return null
+  }
   // Phase-2 helper-row inlining: `(item) => [rowHelper(item, …)]` → the helper's body
   // inlined (params → args), reducing to a normal inline row. The inlined arrow lives
   // in its own synthetic source file, so rebind `fn`/`sf` to the effective pair.
