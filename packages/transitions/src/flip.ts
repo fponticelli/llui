@@ -41,8 +41,15 @@ interface TrackedPosition {
 
 /**
  * The widest a delta of two whole-pixel layout positions can differ from the
- * true one: each position rounds by strictly less than half a pixel, so their
- * difference is off by strictly less than one.
+ * true one.
+ *
+ * Rounding puts each position's residue in the HALF-OPEN interval
+ * `(-0.5, +0.5]` — half a pixel IS attained at the top (`Math.round(0.5) === 1`)
+ * and is NOT at the bottom — so the two residues of a difference cannot sit at
+ * opposite closed ends and the difference is off by strictly less than one.
+ * (Measured sup over a 1/64 grid: 0.984375.) The bound is 1 because the interval
+ * is half-open, NOT because either residue is under half a pixel — it is exactly
+ * half a pixel that often.
  */
 const QUANTIZATION = 1
 
@@ -69,6 +76,19 @@ const QUANTIZATION = 1
  * structural reconcile, which is the cost balance #137 struck and #107 measured.
  * `offsetLeft`/`offsetTop` are reads like the rect: they force no layout of
  * their own once the pass's first read has flushed one.
+ *
+ * THE COST, stated at its real size: preferring `fine` absorbs a non-layout
+ * change too small to be told apart from quantization, and that window is just
+ * under TWO pixels, not one. Agreement is `|A - e| <= 1` for a non-layout change
+ * `A` against a quantization residue `e` that is itself under 1, so any
+ * `|A| < 2` can be taken for a move. Brute-force sweep over a 1/64 grid: worst
+ * absorbed 1.984375px (at `p = -2.515625`, `c = -2.5`), worst error when the
+ * fallback DOES fire 0.984375px, and a pure layout move (`A = 0`) is never
+ * misrouted and always exact. Reproduced in Chromium rather than only derived: a
+ * row at a 0.4375px offset moving 10.125px while its author transform changes by
+ * 1.875px emits `translate(0px, -12px)` — `fine` 12 against `coarse` 11 — and
+ * the pre-#185 code emits the same keyframe there. Bounded by the change itself,
+ * against the WHOLE change (30px, 33.66px) before #185, but it is 2px, not 1.
  */
 function layoutDelta(prev: TrackedPosition, current: TrackedPosition, axis: keyof Point): number {
   const fine = current.visual[axis] - prev.visual[axis]
@@ -231,7 +251,26 @@ function endRunOnFinish(
  * in-flight 33.66px into `dx` and jumped by it). Neither available measurement
  * is on its own both transform-free and sub-pixel exact, so both are taken and
  * {@link layoutDelta} decides — see there, including why reading the author
- * transform per row instead is not free.
+ * transform per row instead is not free, and the size of the one case it gets
+ * wrong.
+ *
+ * That choice has an exposure of its OWN, and it is a trade rather than a free
+ * win (#217). `offsetLeft`/`offsetTop` are relative to the row's
+ * `offsetParent`, so an ancestor whose `position` CHANGES between two passes
+ * moves every stored layout at once. Rows of one list always share an
+ * `offsetParent`, so a reorder alone can never trip it — but a structural change
+ * and an ancestor `position` change in ONE update can (a panel becoming
+ * `relative` to host a dropdown; a container going `sticky` on scroll), and
+ * there this is a REGRESSION on what the rect did: measured in Chromium, a
+ * wrapper going `static → relative` in the same update as a reorder glides the
+ * moved row 310px instead of 60 and two untouched rows 250px each (`static →
+ * sticky`: 240/120/180), where the rect-based code was correct. It is taken
+ * anyway because the exposure it REPLACES is commoner and worse — any scroll
+ * between two passes moved every stored rect, so a 200px page scroll plus a
+ * reorder glided the moved row 260px instead of 60 AND glided rows that had not
+ * moved at all by 200px, and an inner `overflow: auto` scroller did the same.
+ * No guard is in place: none has been costed against #107/#137, which is what
+ * #217 tracks.
  *
  * Interruption: the live `Animation` is retained per element and cancelled
  * before the next one starts, and the translation the running glide had already

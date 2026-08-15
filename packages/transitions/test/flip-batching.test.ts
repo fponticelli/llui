@@ -630,9 +630,9 @@ describe('flip() read/write batching', () => {
 
     it('absorbs an author change smaller than the offsets can resolve', () => {
       // The accepted cost of preferring the sub-pixel delta: a change that could
-      // BE quantization noise is treated as though it were. The error is then
-      // bounded by the change itself — under one pixel, against the whole change
-      // (30px, 33.66px above) before this fix.
+      // BE quantization noise is treated as though it were. This is the
+      // comfortable half of that window; the test below pins how far it really
+      // reaches, which is nearly 2px, not the 1px the bound looks like.
       const { parent, children, layout, transform, animations } = makeList(1)
       const child = children[0]!
       layout.set(child, { left: 0, top: 60 })
@@ -647,6 +647,35 @@ describe('flip() read/write batching', () => {
       expect(animations[0]!.keyframes).toEqual([
         { transform: 'translate(0px, 60.75px) matrix(1, 0, 0, 1, 0, -0.75)' },
         { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -0.75)' },
+      ])
+    })
+
+    it('absorbs a non-layout change of nearly TWO pixels, not one', () => {
+      // The size of the accepted cost, pinned at the bound rather than at a
+      // comfortable value — `QUANTIZATION` is 1, so the window LOOKS like 1px
+      // and is not: agreement is `|A - e| <= 1` for a non-layout change `A`
+      // against a residue `e` that is itself under 1, so any `|A| < 2` is taken
+      // for a move. Sweep over a 1/64 grid: worst absorbed 1.984375px.
+      //
+      // These numbers are a Chromium reproduction, not arithmetic: a 0.4375px
+      // padded offset, a 10.125px layout move, and an author transform changing
+      // by 1.875px across it. `fine` = 12, `coarse` = 11 - 0 = 11, and
+      // `|12 - 11| <= 1` takes `fine` — so 12px is emitted for a 10.125px move
+      // and the pre-#185 code emits the same keyframe here.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 0.4375 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 0)')
+      const f = flip()
+      f.enter!([child])
+
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 1.875)')
+      layout.set(child, { left: 0, top: 10.5625 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, -12px) matrix(1, 0, 0, 1, 0, 1.875)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, 1.875)' },
       ])
     })
 

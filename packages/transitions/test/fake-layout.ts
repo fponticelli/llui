@@ -19,6 +19,19 @@
  *   pitch report 0/33/67/100/133/167 for true tops of
  *   0/33.33/66.66/99.98/133.31/166.64.) The rounding is not incidental detail —
  *   it is the whole reason the rect is still read at all.
+ *
+ * WHAT THIS FIXTURE CANNOT SHOW, so that a green suite is not read as coverage:
+ * both channels are derived from ONE origin here, and a real browser's are not.
+ * `offsetLeft`/`offsetTop` are relative to the row's `offsetParent`, so an
+ * ancestor whose `position` changes moves them WITHOUT moving the rect — the
+ * two diverge at their origins, which is structurally unrepresentable below.
+ * That failure mode (#217) is reachable only in a browser and no test in this
+ * package can catch it.
+ *
+ * The layout boxes tests state here are also free to be finer than the 1/64
+ * `LayoutUnit` grid Blink can actually produce (`60.4` and friends). That is
+ * cosmetic: `flip.ts` is pure arithmetic over whatever numbers it is handed, and
+ * the grid only bounds which of them a browser can hand it.
  */
 
 export interface Box {
