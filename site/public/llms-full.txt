@@ -10481,7 +10481,6 @@ const frameEnv: RouterEnv = {
   setHash: (hash) => {
     frame.location.hash = hash
   },
-  replaceLocation: (url) => frame.location.replace(url),
   pushState: (state, url) => frame.history.pushState(state, '', url),
   // `url` is optional: omit it to replace the entry's STATE and leave the URL
   // alone. Passing `''` is not the same thing — it resolves against the base
@@ -10499,6 +10498,19 @@ const frameEnv: RouterEnv = {
 
 const framed = connectRouter(router, { env: frameEnv })
 ```
+
+> **Breaking change:** `RouterEnv.replaceLocation` is **gone**. It existed for
+> one call site — the hash-mode `replace()` effect — which now writes with
+> `replaceState(state, '#/…')` like every other replaced URL in the connector
+> ([#164]). `location.replace` **drops** the entry's `history.state` (so the
+> stamp, and any key your app owns there, had to be snapshotted and put back)
+> and **fires** a `hashchange` (so an echo had to be armed for an event whose
+> non-arrival would swallow a later genuine navigation onto the same hash).
+> `replaceState` has neither problem. If you implement your own `RouterEnv`,
+> delete the member — the interface is exactly what the connector touches, so an
+> unused one is drift.
+
+[#164]: https://github.com/fponticelli/llui/issues/164
 
 ## Guards
 
@@ -10521,6 +10533,54 @@ const routing = connectRouter(router, {
 ```
 
 Guards run in the effect handler and the popstate listener, keeping `update()` pure.
+
+### Redirects are single-hop
+
+A guard redirect is **single-hop**, in both modes and at every call site —
+`push()`, `replace()`, `navigate()`, `link()` and the browser-driven listener
+alike. `beforeEnter` is asked **once** per navigation; when it returns a target,
+that target is the destination and **its own guard is not re-run**.
+
+So this rests on `login`, not on `home`:
+
+```ts
+connectRouter(router, {
+  beforeEnter(to) {
+    if (to.page === 'admin') return { page: 'login' } // taken
+    if (to.page === 'login') return { page: 'home' } //  NOT re-asked
+  },
+})
+```
+
+The URL and the dispatched route still **agree** on `login` — a redirect writes
+the URL it dispatched (see _Navigation semantics_ below) — so nothing desyncs.
+What you get is the first hop, not the fixed point. **Fold the chain yourself**
+when you need one:
+
+```ts
+connectRouter(router, {
+  beforeEnter(to) {
+    if (to.page === 'admin') return isLoggedIn() ? { page: 'home' } : { page: 'login' }
+  },
+})
+```
+
+This is deliberate, not a limitation waiting to be lifted. Chaining to a fixed
+point needs an **equality on your `Route` type**, and the router has none it can
+compute: routes are fully generic, may be primitives (a string-union route is
+valid), and may carry fields no URL can express. Identity fails for any guard
+that rebuilds the object, structural equality is undefined for an arbitrary `R`,
+and `href()` is a lossy projection. Without a fixed-point test, an **idempotent**
+guard — one that normalises `to` and returns it, which the "return a Route"
+contract explicitly allows — would never settle, so a bounded loop would have to
+end by **blocking** a navigation that works today. `beforeLeave` could not be
+re-run per hop either: it is the unsaved-changes prompt.
+
+Your app has the route equality the router does not, and `beforeEnter` is a
+single function you own — so folding a chain is a local edit, not the middleware
+composition the framework would have to do for you. ([#161])
+
+[#161]: https://github.com/fponticelli/llui/issues/161
 
 ### Auth guard
 
@@ -10573,7 +10633,10 @@ The same contract holds in **both** `history` and `hash` mode:
   still reaches every entry above. What stops being reachable at that slot is the
   guarded route itself — returning to it would only redirect again. When the
   landed entry's position is unknown (see the blocked case below) the URL is
-  still written, but no index is invented for it.
+  still written, but no index is invented for it. The redirect target's **own**
+  guard is not re-run — see _Redirects are single-hop_ — so the URL and the
+  route agree on the first hop, and a guard that returns a route addressing the
+  URL already showing writes nothing at all.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
   **when the router knows the distance back to the entry it was on**. It knows

@@ -269,6 +269,78 @@ describe('router guards', () => {
     })
   })
 
+  describe('#161 a guard redirect is SINGLE-HOP, at every call site', () => {
+    // The DOCUMENTED behaviour, pinned so it is a decision rather than an
+    // accident. `beforeEnter` is asked once per navigation; when it returns a
+    // target, that target is the destination and its own guard is NOT re-run.
+    //
+    // Chaining to a fixed point was the alternative and is not available: it
+    // needs an equality on `R` the framework cannot compute (routes are generic,
+    // may be primitives, may carry fields no URL expresses), and without one an
+    // IDEMPOTENT guard — one that normalises `to` and returns it, which this API
+    // documents as valid and which is exactly #162's shape — never settles, so a
+    // bounded loop would have to end by BLOCKING a navigation that works today.
+    // `beforeEnter` is one function the app owns, so a chain is the app's to
+    // fold, with the route knowledge `connect.ts` does not have.
+    //
+    // If this ever becomes multi-hop, every expectation below moves to `/` and
+    // `{ page: 'home' }` — which is the point of asserting the intermediate
+    // route rather than merely "a redirect happened".
+    const chain = () => {
+      const seen: Route[] = []
+      const routing = connectRouter(makeRouter(), {
+        beforeEnter: (to) => {
+          seen.push(to)
+          if (to.page === 'admin') return { page: 'login' } as const
+          // The second hop. Never reached for a navigation onto `admin`.
+          if (to.page === 'login') return { page: 'home' } as const
+          return undefined
+        },
+      })
+      return { routing, seen }
+    }
+
+    it('push() rests on the first hop', () => {
+      const { routing, seen } = chain()
+      const send = vi.fn()
+      routing.handleEffect({
+        effect: routing.push({ page: 'admin' }),
+        send,
+        signal: new AbortController().signal,
+      })
+      expect(seen).toEqual([{ page: 'admin' }])
+      expect(location.pathname).toBe('/login')
+      // #143's property still holds — the URL and the dispatched route AGREE.
+      // What #161 is about is only that they agree on a route the guard itself
+      // would have moved on from.
+      expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+    })
+
+    it('replace() rests on the first hop', () => {
+      const { routing, seen } = chain()
+      routing.handleEffect({
+        effect: routing.replace({ page: 'admin' }),
+        send: vi.fn(),
+        signal: new AbortController().signal,
+      })
+      expect(seen).toEqual([{ page: 'admin' }])
+      expect(location.pathname).toBe('/login')
+    })
+
+    it('navigate() rests on the first hop', () => {
+      const { routing, seen } = chain()
+      const send = vi.fn()
+      routing.handleEffect({
+        effect: routing.navigate({ page: 'admin' }),
+        send,
+        signal: new AbortController().signal,
+      })
+      expect(seen).toEqual([{ page: 'admin' }])
+      expect(location.pathname).toBe('/login')
+      expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+    })
+  })
+
   describe('currentRoute tracking', () => {
     it('beforeEnter receives the previous route as from', () => {
       const router = makeRouter()

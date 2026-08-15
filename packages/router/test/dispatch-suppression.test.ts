@@ -93,7 +93,19 @@ describe('hash mode single dispatch (finding 2)', () => {
     dispose()
   })
 
-  it('replace() is URL-only — the echo hashchange does not dispatch (2b)', () => {
+  it('replace() is URL-only — and produces no hashchange to suppress (2b, #164)', async () => {
+    // This one CANNOT use `fireHashchange`, and the reason is the change #164
+    // made. The replace effect writes with `replaceState`, whose URL-and-history
+    // update steps fire no event at all — so a synthetic `hashchange` dispatched
+    // after it is not standing in for an echo the browser queued, it is
+    // asserting an event the platform will never deliver, and the listener is
+    // right to treat one as a genuine navigation.
+    //
+    // The real property is therefore stronger than "the echo is swallowed":
+    // there is no echo. Asserted by letting the event loop run, which is when a
+    // queued one would have landed. Under the previous `location.replace`
+    // mechanism jsdom DOES queue one here, and this settle is what would catch a
+    // revert that forgot to re-arm the suppression with it.
     const routing = connectRouter(hashRouter())
     const { send, dispose } = mountListener(routing)
 
@@ -104,7 +116,8 @@ describe('hash mode single dispatch (finding 2)', () => {
     })
 
     expect(send).not.toHaveBeenCalled()
-    fireHashchange()
+    expect(location.hash).toBe('#/admin')
+    await new Promise((r) => setTimeout(r, 10))
     expect(send).not.toHaveBeenCalled()
 
     dispose()

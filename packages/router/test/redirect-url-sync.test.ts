@@ -34,6 +34,8 @@ const defs = () => [
 
 /** The redirect target, as a Route — an inline literal widens to `{page: string}`. */
 const LOGIN: Route = { page: 'login' }
+/** The second hop of a redirect CHAIN, which is never taken (#161). */
+const HOME: Route = { page: 'home' }
 
 const hashRouter = () => createRouter<Route>(defs())
 const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
@@ -339,11 +341,6 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
       hash = next
       historyLength++
     },
-    replaceLocation(url) {
-      calls.push(`replaceLocation:${url}`)
-      applyUrl(url)
-      historyState = null
-    },
     pushState(state, url) {
       calls.push(`pushState:${url}`)
       historyState = state
@@ -601,6 +598,127 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     expect(send).not.toHaveBeenCalled()
 
     dispose()
+  })
+
+  it('#161 the LISTENER redirect is single-hop too, URL and route agreeing on it', () => {
+    // The call site #161 was reported from. The same rule as `push`/`replace`/
+    // `navigate`/`link` (pinned in `guards.test.ts`), asserted here at the env
+    // seam because this is the path that also WRITES the URL: what has to hold
+    // is that the single written URL and the single dispatched route name the
+    // same hop, so #143 is not reopened by the decision to leave chains to the
+    // app. `/home` — the second hop — is what a multi-hop reading would produce.
+    const rec = recordingEnv({ pathname: '/' })
+    const seen: Route[] = []
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => {
+        seen.push(to)
+        if (to.page === 'admin') return LOGIN
+        if (to.page === 'login') return HOME
+        return undefined
+      },
+    })
+    const { send, dispose } = mountListener(routing)
+
+    rec.land({ __llui_idx: 3 }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(seen).toEqual([{ page: 'admin' }])
+    expect(rec.calls).toEqual(['replaceState:/login'])
+    expect(rec.env.pathname).toBe('/login')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
+
+    dispose()
+  })
+
+  it('#162 a same-URL guard redirect writes NOTHING — history mode', () => {
+    // `runGuards` reports `redirected: true` for ANY non-`false`, non-nullish
+    // `beforeEnter` return, deliberately: routes are generic `R` and may be
+    // primitives, so there is no equality it could infer the flag from. A guard
+    // that NORMALISES its argument and hands back a structurally equal route is
+    // therefore a redirect as far as the listener is concerned — and used to
+    // issue a `replaceState` whose url was byte-identical to the one already
+    // showing, on every guarded browser navigation.
+    //
+    // Harmless in behaviour (no event, no length change, the same stamp written
+    // back), but the other two URL writes in this file already short-circuit on
+    // exactly this question, so a reader who learned the rule from `setHash`
+    // assumed this path had it too.
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      // Structurally equal, different identity.
+      beforeEnter: (to) => (to.page === 'admin' ? ({ page: 'admin' } as Route) : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    rec.land({ __llui_idx: 3, host: 'keep' }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual([])
+    // Everything else is unchanged: the URL, the entry's state, and the dispatch
+    // of the route the guard actually returned.
+    expect(rec.env.pathname).toBe('/admin')
+    expect(rec.env.historyState).toEqual({ __llui_idx: 3, host: 'keep' })
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
+
+    dispose()
+  })
+
+  it('#162 a same-URL guard redirect writes NOTHING — hash mode', () => {
+    // The two modes address DIFFERENT parts of the URL, so the short-circuit is
+    // not one string equality: this half is `sameHash`, which is also what
+    // `setHash` and the `replace()` effect ask.
+    const rec = recordingEnv({ hash: '#/' })
+    const routing = connectRouter(hashRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? ({ page: 'admin' } as Route) : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    rec.land({ __llui_idx: 3 }, '#/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual([])
+    expect(rec.env.hash).toBe('#/admin')
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
+
+    dispose()
+  })
+
+  it('#162 a redirect that DOES move the URL still writes it, in both modes', () => {
+    // The other direction, and the reason the short-circuit compares URLs rather
+    // than trusting `redirected`: over-applying it would silently switch #143's
+    // whole fix off. A one-character-different destination must still be written.
+    const hist = recordingEnv({ pathname: '/' })
+    const histRouting = connectRouter(historyRouter(), {
+      env: hist.env,
+      beforeEnter: (to) => (to.page === 'admin' ? LOGIN : undefined),
+    })
+    const histHost = mountListener(histRouting)
+    hist.land({ __llui_idx: 3 }, '/admin')
+    hist.calls.length = 0
+    hist.fire()
+    expect(hist.calls).toEqual(['replaceState:/login'])
+    expect(hist.env.pathname).toBe('/login')
+    histHost.dispose()
+
+    const hashRec = recordingEnv({ hash: '#/' })
+    const hashRouting = connectRouter(hashRouter(), {
+      env: hashRec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? LOGIN : undefined),
+    })
+    const hashHost = mountListener(hashRouting)
+    hashRec.land({ __llui_idx: 3 }, '#/admin')
+    hashRec.calls.length = 0
+    hashRec.fire()
+    expect(hashRec.calls).toEqual(['replaceState:#/login'])
+    expect(hashRec.env.hash).toBe('#/login')
+    hashHost.dispose()
   })
 
   it('rewinds NOTHING onto an entry numbered outside its run (#150)', async () => {
