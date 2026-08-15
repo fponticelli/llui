@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { LluiMcpServer, mcpActiveFilePath, mcpHttpTokenPath } from './index.js'
 import { tokensMatch, isLoopbackOrigin, isLoopbackAuthority } from './util/loopback.js'
+import { watchParent, parentWatchDisabled } from './util/parent-watch.js'
 
 /**
  * Parse `--http [port]` from argv. Returns:
@@ -73,6 +74,19 @@ function listen(server: HttpServer, port: number, host: string): Promise<number>
   })
 }
 
+/**
+ * Write a diagnostic without ever becoming the reason the process dies badly.
+ * The one caller that matters runs precisely when the parent is gone, i.e. when
+ * the inherited stderr pipe has no reader and the write raises EPIPE.
+ */
+function noteToStderr(message: string): void {
+  try {
+    process.stderr.write(message)
+  } catch {
+    // Nobody is listening; the shutdown below is the point, not the message.
+  }
+}
+
 /** Collapse a possibly-multi-valued request header to a single string. */
 function singleHeader(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
@@ -122,6 +136,18 @@ async function main(): Promise<void> {
     }
     process.on('SIGINT', shutdown)
     process.on('SIGTERM', shutdown)
+    // Nothing propagates a parent's death to a non-detached child, so without
+    // this a killed `pnpm dev` / vitest worker / MCP client leaves this process
+    // alive at PPID 1 forever (#192). Signals are not enough: the parent may
+    // die without sending one.
+    watchParent({
+      getPpid: () => process.ppid,
+      disabled: parentWatchDisabled(),
+      onParentGone: () => {
+        noteToStderr('[llui-mcp] parent process exited; shutting down\n')
+        shutdown()
+      },
+    })
     return
   }
 
@@ -194,6 +220,18 @@ async function main(): Promise<void> {
   })
   process.on('SIGTERM', () => {
     shutdown().catch(() => process.exit(1))
+  })
+  // HTTP mode is the orphan-prone one: it binds a port, so a survivor is not
+  // merely a stray process but a machine-global resource nobody can name. The
+  // 31 h orphan in #192 was exactly this path, spawned by a test whose parent
+  // was torn down without running its `finally`.
+  watchParent({
+    getPpid: () => process.ppid,
+    disabled: parentWatchDisabled(),
+    onParentGone: () => {
+      noteToStderr('[llui-mcp] parent process exited; shutting down\n')
+      shutdown().catch(() => process.exit(1))
+    },
   })
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {

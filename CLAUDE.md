@@ -18,6 +18,9 @@ pnpm turbo test           # Run tests (vitest) across all packages
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
 
+pnpm test:durations       # Record the per-file test-duration baseline from a full run (#193)
+pnpm check:test-durations # Re-run and diff against that baseline (load-normalized, see below)
+
 # Single package
 pnpm --filter @llui/dom build
 pnpm --filter @llui/dom test
@@ -37,6 +40,34 @@ pnpm bench --save             # Overwrite baseline with current results
 pnpm bench --all              # Also re-run all competitor frameworks (~15 min)
 pnpm bench:build              # Build jfb app only (no benchmark run)
 ```
+
+## Committing (parallel worktrees)
+
+- **Never run `git stash` in this repository.** `refs/stash` is ONE ref on the COMMON git dir — worktrees do not get their own — so two lanes stashing at overlapping times interleave on a single stack and a `pop`/`drop` acts on the wrong entry. Two lanes destroyed each other's entries this way in one batch of parallel agent work.
+- The pre-commit hook is that hazard automated, which is why it is not left to convention: `lint-staged`'s backup IS a `git stash`, and it resolves its own entry's INDEX in one `git` call and uses it in the next (`stash drop <n>` / `stash apply --index <n>`), so a lane that pushes in between shifts the index and the second call lands on someone else's entry. The hook therefore runs through `scripts/pre-commit.mjs`, which serializes every worktree's `lint-staged` behind a lock on the common git dir (#179).
+- **`SKIP_SIMPLE_GIT_HOOKS=1` DEFEATS THAT LOCK.** Its early exit lives in the wrapper `simple-git-hooks` generates, ahead of the line that invokes `scripts/pre-commit.mjs`, so exporting it does not merely skip formatting — it removes the serialization, and any lane that does so re-opens #179 for every lane racing it. Nothing in this repo can close that. It also loses the formatting gate outright (measured: an unformatted file commits and `prettier --check` then fails), which makes it strictly worse than `--no-stash`.
+- Two other options were measured and rejected, both written up in the header of `scripts/pre-commit.mjs` — read it before revisiting this: `--no-stash` (removes every stash call and changes nothing about what gets committed, but on a FAILING task with a partially staged file the unstaged hunks silently leave the working tree and index — recoverable only via `.git/lint-staged_unstaged.patch`, which no git command offers you and which the next run overwrites), and `SIMPLE_GIT_HOOKS_RC` (genuinely _can_ serialize, but it is an env var: it cannot be committed and binds only shells that export it, and #179 needs two unprotected lanes).
+- **The lock's stress tests are part of the contract, and their configuration is not decorative.** FOUR mutual-exclusion defects shipped past a GREEN version of `scripts/test/worktree-lock.test.ts`, each reachable only after the previous was fixed, and every one was found by contending harder rather than by reasoning. Do not lower the 48-process / ~0 ms-critical-section configuration, and do not drop the crash-recovery case (a third of contenders dying while holding) — that workload was absent, which is precisely why the fourth defect, on the stale-break path, was invisible.
+- What the lock guarantees, precisely: mutual exclusion under normal contention and while recovering crashed holders, measured at 0 violations across 32–64 contenders with and without extra CPU load. The one residual is a FOREIGN-HOST record aged out by `staleMs`, whose owner may still be alive because no PID is readable across machines — inherent to a filesystem lock shared across hosts, and not reachable here, where every worktree is on one machine.
+- Hooks are shared across worktrees, so a change to `simple-git-hooks.pre-commit` only reaches a lane after **that lane's** next `pnpm install`.
+
+## Spawned `llui-mcp` and the parent watchdog (#192)
+
+The CLI polls `process.ppid` and shuts down when the process that started it goes away, because nothing propagates a parent's death to a non-detached child and a killed `pnpm dev` / vitest worker otherwise leaves it alive at PPID 1 still holding its port (one was found 31 h old). It fires on the ppid CHANGING, not on it being 1, and does not arm when the process was started BY init. **It DOES arm under a shell** — `nohup llui-mcp … & disown` is not reparented by `disown`, so when that shell exits the server shuts itself down. Export **`LLUI_MCP_NO_PARENT_WATCH=1`** when deliberately daemonizing it; that is the only thing covering that case.
+
+## Test durations (#193)
+
+The workspace `testTimeout` is 30 s (#180), which cost the repo its accidental performance canary — the old 5 s default. The replacement is a per-file duration BASELINE, not a bigger/smaller timeout: `LLUI_TEST_DURATIONS=<dir>` makes every package emit vitest's stock `json` report, and `scripts/check-test-durations.mjs` folds those into per-file totals and compares them against `test-durations.baseline.json` **after dividing out a same-run load factor** (the median of all files' current/baseline ratios). A uniformly slower machine reports nothing; one file that got 6× slower still does.
+
+Four properties are load-bearing and each was learned the hard way:
+
+- **It is REPORT-ONLY.** `check:test-durations` exits 0 unless you pass `--gate`, and CI does not. An earlier revision gated and reddened on unchanged code — the baseline had been recorded on a loaded machine, so de-scaling inflated a file whose cost does not track load. Add `--gate` only after several main-branch runs show it stable.
+- **The thresholds are CALIBRATED against measured noise, not chosen.** Pairs of identical-code runs were compared under TWO conditions — quiet (load ~20 on 18 cores) and loaded (~300). A +40 ms floor produced **39 false regressions** loaded; +50 ms is fine quiet but still fires 16 times loaded. `4x / +400 ms` is the only pair with **zero** false positives in BOTH, and it still catches the 6× case #193 names. Calibrating on quiet data alone would have shipped a floor that fires on every busy CI runner. The sweep is in the header of `scripts/lib/test-durations.mjs` — re-run it before touching either number.
+- **The noise floor is an absolute DELTA (`--min-delta`), never a clamped denominator** (dividing by `max(baseline, floor)` rebases every cheap file against the floor, so a 4 ms file first reported at 150×). **But be clear what that buys: at the shipped defaults only 76 of 618 files are within resolution (against the current quiet baseline; the same thresholds covered 145 against a loaded one, because a quiet machine makes every file cheaper), and "a 5 ms unit test becoming 30 ms" — the example `vitest.shared.ts` cites — is NOT detected.** State the limit accurately, because "impossible" is too strong: measured over two identical runs, the per-file drift is p50 2.1 ms / p90 26.3 ms, and only 1.7% of sub-50 ms files drift by ≥ +25 ms — so +25 ms sits around the p97 edge of noise, and a much tighter `6x / +25 ms` does catch it at 0–2 false positives on a QUIET machine. It is not recoverable at zero false-positive cost, it flips with run order, and it is hopeless under load (the same +40 ms floor gave 39 false positives at load ~300). The old clamped-denominator design did not catch it either, and hid that it did not. Every run prints how many files are within resolution, so the coverage is stated rather than assumed. On quieter hardware, lower `--min-delta` and check the false-positive behaviour.
+- **The noise guard uses QUARTILES (p75/p25), not p90/p10.** Regressions live in the top tail, so a p90-based spread is inflated by the very outlier being looked for and silences itself. Above `--max-spread` the tool prints "not comparable" and gives no verdict.
+- **The baseline's recording conditions are stamped into it.** A baseline taken on a saturated machine has smear baked in; check `recordedUnder` before trusting a verdict, and re-record with `pnpm test:durations` on a quiet machine.
+
+Turbo runs tasks in STRICT env mode, so `LLUI_TEST_DURATIONS` is declared in `turbo.json`'s `test.env`; without that a `turbo test` is green and emits nothing. (CI uses `pnpm -r`, so that declaration only matters for `pnpm turbo test`.)
 
 ## Development Approach
 

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess } from 'node:child_process'
 import { request as httpRequest } from 'node:http'
 import { resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
-import { killChild } from './kill-child'
+import { killChild, spawnCli } from './kill-child'
 import { mcpHttpTokenPath } from '../src/index'
 
 /**
@@ -48,9 +48,17 @@ describe('llui-mcp --http integration', () => {
   let proc: ChildProcess | null = null
 
   beforeAll(async () => {
-    proc = spawn(process.execPath, [CLI_PATH, '--http', '0'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    // See doctor.test.ts: group-leader spawn so teardown reaps the whole tree
+    // (#192).
+    //
+    // The shape #192 asks about is here too: the `throw` below can leave this
+    // hook without ever reaching a teardown of its own. `proc` is ASSIGNED
+    // before anything can throw, so `afterAll`'s `killChild(proc)` still has a
+    // handle — but that only helps if `afterAll` runs, and a vitest teardown of
+    // the whole worker does not run it at all. Neither of the two guards here
+    // depends on that: the group spawn covers the case where teardown DOES run,
+    // and the CLI's parent watchdog covers the case where nothing does.
+    proc = spawnCli(process.execPath, [CLI_PATH, '--http', '0'])
     // Wait for the server to log its listening line; the logged string
     // carries the bound port and confirms the bind succeeded before we
     // send. The timeout is generous (not "1s is plenty") because a cold

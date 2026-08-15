@@ -1193,6 +1193,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           }
           mcpChild = null
         })
+        // Best-effort cleanup only, and knowingly so: `process.once('exit')`
+        // does not run when Vite is SIGKILLed, and nothing propagates a
+        // parent's death to a non-detached child — so this pair alone leaves
+        // the MCP alive at PPID 1, still holding its port (#192; one was found
+        // 31 h old). The actual guarantee is on the CHILD side: the CLI polls
+        // `process.ppid` and exits when the process that spawned it goes away
+        // (`@llui/mcp` src/util/parent-watch.ts). Keep both — this one makes the
+        // normal shutdown immediate and graceful, the watchdog covers the
+        // abnormal one this cannot see.
         const killChild = (): void => {
           if (mcpChild && !mcpChild.killed) mcpChild.kill('SIGTERM')
         }

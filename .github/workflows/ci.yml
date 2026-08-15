@@ -133,6 +133,37 @@ jobs:
         # running many package suites at once oversubscribes the 4-core runner
         # ~10x and starves timer-sensitive tests. Two at a time keeps load gentle.
         run: pnpm -r --workspace-concurrency=2 run test
+        # Opts this run into emitting per-file duration reports (#193). It costs
+        # nothing — vitest's stock `json` reporter runs alongside the default one
+        # — and it means the duration gate below reads the SAME run everyone
+        # looks at, rather than a second measurement pass that could drift from
+        # it.
+        env:
+          LLUI_TEST_DURATIONS: ${{ github.workspace }}/.test-durations
+
+      # The slow-test signal that replaced the 5 s timeout canary (#193). Reads
+      # the reports the step above just wrote (`--no-run`) and diffs per-file
+      # durations against the committed baseline AFTER dividing out a same-run
+      # load factor, so a slower runner reports nothing while a single file that
+      # got 6x slower still does.
+      #
+      # REPORT-ONLY ON PURPOSE — no `--gate`, so this step cannot fail the job.
+      # An earlier revision DID gate, and it reddened on unchanged code: the
+      # committed baseline had been recorded on a loaded machine, so de-scaling
+      # inflated a file whose cost does not track load and reported a 3.33x
+      # "regression" that was not one. This runner also compares linux/x64
+      # against a darwin/arm64 baseline, where that mismatch is larger, and no
+      # amount of local testing can prove that cross-platform comparison stable.
+      # Print the numbers, let a few main-branch runs establish whether they are
+      # trustworthy, and add `--gate` then — not before.
+      #
+      # `if: always()` so a failing suite still leaves the duration verdict
+      # visible instead of hiding it behind the first red step.
+      - name: Test durations (report only)
+        if: always()
+        run: pnpm check:test-durations --no-run
+        env:
+          LLUI_TEST_DURATIONS: ${{ github.workspace }}/.test-durations
 
       # Root `scripts/` belongs to no workspace package, so `turbo test` above
       # cannot see it — these tests run under their own vitest config and would

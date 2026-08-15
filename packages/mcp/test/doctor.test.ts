@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { killChild } from './kill-child'
+import { killChild, spawnCli } from './kill-child'
 
 // Integration test: `llui-mcp doctor` as a subcommand. Offline-only
 // (no long-lived server), so the suite spawns the CLI, captures the
@@ -51,9 +51,10 @@ describe('llui-mcp doctor', () => {
     // on the bind — one of them then died on the startup timeout below
     // with no hint of the real cause (issue #85). Doctor discovers the
     // port from the marker file, so nothing here needs to know it.
-    const server = spawn(process.execPath, [CLI_PATH, '--http', '0'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    // `spawnCli` (not bare `spawn`) so the child leads its own process group
+    // and teardown can reap it and anything it spawned — the second of the two
+    // #192 guards, the first being the CLI's own parent watchdog.
+    const server = spawnCli(process.execPath, [CLI_PATH, '--http', '0'])
     let stderr = ''
     server.stderr?.on('data', (b: Buffer) => (stderr += b.toString()))
     // Poll for the listening line. Generous cap (~30s): a cold `node`

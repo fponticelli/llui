@@ -16,7 +16,8 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md", "$TURBO_ROOT$/vitest.shared.ts"]
+      "inputs": ["$TURBO_DEFAULT$", "!README.md", "!CHANGELOG.md", "$TURBO_ROOT$/vitest.shared.ts"],
+      "env": ["LLUI_TEST_DURATIONS"]
     },
     "test:coverage": {
       "dependsOn": ["^build"],

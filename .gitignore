@@ -11,6 +11,11 @@ benchmarks/jfb-ticker/frameworks/*/package-lock.json
 # bundle-baseline.json is the persisted phase history; this is just the latest snapshot.
 benchmarks/bundle-composition.json
 
+# Raw vitest json reports written when LLUI_TEST_DURATIONS is set (#193). Only
+# the AGGREGATE — test-durations.baseline.json — is committed; these are one
+# file per package per run and are rewritten every time.
+.test-durations/
+
 # Editor workspace settings (peacock, etc.)
 .vscode/
 
