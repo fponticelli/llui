@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flip } from '../src/flip'
+import { fakeLayout } from './fake-layout'
 
 // Issue #107 — `flip()` never cancelled the prior WAAPI `Animation` (there was
 // no `.cancel()` anywhere in the package), interleaved a layout READ with an
@@ -7,7 +8,22 @@ import { flip } from '../src/flip'
 // computed the next glide's delta from the stored LAYOUT box rather than from
 // where the row visually is mid-glide — so an interrupted reorder jumped.
 
-type Op = 'read' | 'write'
+/**
+ * One operation the pass performed. The three read kinds are distinguished
+ * because their costs are NOT the same and the balance between them is the
+ * contract: `rect`/`offset` are geometry (both need clean layout, neither forces
+ * one after the first), while `style` is a `getComputedStyle`, which #137 took
+ * off every settled row and must stay off it.
+ */
+type Op = 'rect' | 'offset' | 'style' | 'write'
+
+const isRead = (op: Op): boolean => op !== 'write'
+
+/** The index of the pass's LAST read, or −1 if it made none. */
+function lastReadIndex(log: readonly Op[]): number {
+  for (let i = log.length - 1; i >= 0; i--) if (isRead(log[i]!)) return i
+  return -1
+}
 
 interface StubAnimation {
   cancel: () => void
@@ -32,20 +48,22 @@ function makeList(count: number) {
   // Layout position per child, and the transform the test wants reported.
   const layout = new Map<HTMLElement, { left: number; top: number }>()
   const transform = new Map<HTMLElement, string>()
+  // Shared by every row, as a viewport scroll is.
+  const scroll = { left: 0, top: 0 }
 
   const children: HTMLElement[] = []
   for (let i = 0; i < count; i++) {
     const child = document.createElement('div')
     parent.appendChild(child)
     layout.set(child, { left: 0, top: i * 10 })
-    child.getBoundingClientRect = () => {
-      log.push('read')
-      const { left, top } = layout.get(child)!
-      // A real `getBoundingClientRect` reports the VISUAL box, so a running
-      // FLIP transform is already folded in.
-      const [dx, dy] = parseTranslate(transform.get(child) ?? 'none')
-      return { left: left + dx, top: top + dy, width: 10, height: 10 } as DOMRect
-    }
+    // The row's LAYOUT box, reported through both channels: the rect with the
+    // running transform folded in (as a real `getBoundingClientRect` does) and
+    // the whole-pixel offsets.
+    fakeLayout(child, () => layout.get(child)!, {
+      transform: () => transform.get(child) ?? 'none',
+      scroll: () => scroll,
+      onRead: (kind) => log.push(kind),
+    })
     child.animate = ((keyframes: unknown) => {
       log.push('write')
       let settle!: () => void
@@ -79,29 +97,13 @@ function makeList(count: number) {
   const originalComputed = globalThis.getComputedStyle
   vi.stubGlobal('getComputedStyle', (el: Element, pseudo?: string | null) => {
     if (el instanceof HTMLElement && transform.has(el)) {
-      log.push('read')
+      log.push('style')
       return { transform: transform.get(el)! } as CSSStyleDeclaration
     }
     return originalComputed(el, pseudo)
   })
 
-  return { parent, children, log, animations, layout, transform }
-}
-
-function parseTranslate(value: string): [number, number] {
-  const m = value.match(/translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/)
-  if (m) return [parseFloat(m[1]!), parseFloat(m[2]!)]
-  // A BROWSER serializes a computed transform as `matrix(a, b, c, d, tx, ty)`,
-  // never as the authored function — so an author-set `transform` reads back in
-  // this form, and `getBoundingClientRect` folds it into the box. jsdom reports
-  // `none` for both, which is exactly why the author-transform case below was
-  // invisible to this suite.
-  const matrix = value.match(/^matrix\(([^)]*)\)$/)
-  if (matrix) {
-    const parts = matrix[1]!.split(',')
-    return [parseFloat(parts[4] ?? '0'), parseFloat(parts[5] ?? '0')]
-  }
-  return [0, 0]
+  return { parent, children, log, animations, layout, transform, scroll }
 }
 
 /** How many times the pass switched from writing back to reading. */
@@ -109,7 +111,7 @@ function forcedLayouts(log: Op[]): number {
   let count = 0
   let reading = false
   for (const op of log) {
-    if (op === 'read') {
+    if (isRead(op)) {
       if (!reading) count++
       reading = true
     } else {
@@ -159,7 +161,7 @@ describe('flip() read/write batching', () => {
 
     const firstWrite = log.indexOf('write')
     expect(firstWrite).toBeGreaterThan(0)
-    expect(log.lastIndexOf('read')).toBeLessThan(firstWrite)
+    expect(lastReadIndex(log)).toBeLessThan(firstWrite)
   })
 
   it('cancels the prior animation: N passes leave N−1 cancels and one live animation', () => {
@@ -321,8 +323,13 @@ describe('flip() read/write batching', () => {
     log.length = 0
     f.onTransition!({ entering: [], leaving: [], parent })
 
-    // Two rects + ONE computed transform (the moving row's author capture).
-    expect(log.filter((op) => op === 'read')).toHaveLength(3)
+    // The settled row pays GEOMETRY and nothing else: its rect and its two
+    // offsets, all of which resolve against a layout the pass has already
+    // flushed. The one `getComputedStyle` in the pass belongs to the row that is
+    // about to glide.
+    expect(log.filter((op) => op === 'style')).toHaveLength(1)
+    expect(log.filter((op) => op === 'rect')).toHaveLength(2)
+    expect(log.filter((op) => op === 'offset')).toHaveLength(4)
     expect(forcedLayouts(log)).toBe(1)
   })
 
@@ -458,7 +465,7 @@ describe('flip() read/write batching', () => {
       f.onTransition!({ entering: [], leaving: [], parent })
 
       expect(forcedLayouts(log)).toBe(1)
-      expect(log.lastIndexOf('read')).toBeLessThan(log.indexOf('write'))
+      expect(lastReadIndex(log)).toBeLessThan(log.indexOf('write'))
     })
 
     it('reuses the capture for a row that is already mid-glide', async () => {
@@ -486,12 +493,22 @@ describe('flip() read/write batching', () => {
         { transform: `translate(0px, -160px) ${AUTHOR}` },
         { transform: `translate(0, 0) ${AUTHOR}` },
       ])
-      // One rect + the in-flight glide's translation. No author read: there is
-      // nothing readable to re-read.
-      expect(log.filter((op) => op === 'read')).toHaveLength(2)
+      // ONE computed-style read, and it is the in-flight glide's translation —
+      // not a second one for the author, because there is nothing readable to
+      // re-read while our own animation owns `transform`.
+      expect(log.filter((op) => op === 'style')).toHaveLength(1)
+      expect(log.filter((op) => op === 'rect')).toHaveLength(1)
+      expect(log.filter((op) => op === 'offset')).toHaveLength(2)
 
       // Once the row settles, the author transform is read afresh — a row whose
-      // own transform CHANGED while it glided picks the new value up here.
+      // own transform CHANGED while it glided picks the new value up here, and
+      // BOTH keyframes carry it.
+      //
+      // The DELTA does not move with it. This assertion used to read −115 (the
+      // 100px layout move plus the author's −20 → −5 change), which is issue
+      // #185 written down as an expectation: the row was already DRAWN 15px
+      // lower before the reconcile and is drawn 15px lower after it, so animating
+      // that 15px starts the glide somewhere the row has never been.
       animations[1]!.settle()
       await Promise.resolve()
       await Promise.resolve()
@@ -499,8 +516,215 @@ describe('flip() read/write batching', () => {
       layout.set(child, { left: 0, top: 300 })
       f.onTransition!({ entering: [], leaving: [], parent })
       expect(animations[2]!.keyframes).toEqual([
-        { transform: 'translate(0px, -115px) matrix(1, 0, 0, 1, 0, -5)' },
+        { transform: 'translate(0px, -100px) matrix(1, 0, 0, 1, 0, -5)' },
         { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -5)' },
+      ])
+    })
+  })
+
+  // ── Issue #185 — a CHANGING author transform ──────────────────────────────
+  //
+  // #144 composed the row's own transform into the keyframes so the glide stops
+  // REPLACING it. The bookkeeping was left storing the box the row is DRAWN in,
+  // which is self-consistent only while that transform is the same on the pass
+  // that stored a position and the pass that measures against it — so a CONSTANT
+  // one cancels and a changing one lands in `dx`/`dy` as if the row had moved.
+  //
+  // Measured against the real `flip({ duration: 500, easing: 'linear' })` in
+  // headless Chromium 143, four 60px rows, the second one reordered to the top:
+  //
+  //   author `translateY(-20px)` → `translateY(-50px)` while SETTLED
+  //     before: `translate(0px, 90px) matrix(1, 0, 0, 1, 0, -50)`, row jumps
+  //             top 10 → 40 at glide start
+  //     after:  `translate(0px, 60px) matrix(1, 0, 0, 1, 0, -50)`, jump 0
+  //
+  //   author mid CSS-`transition: transform 400ms linear`, read at −33.66px
+  //     before: `translate(33.6628px, 60px) …`, row jumps 33.663px sideways
+  //     after:  `translate(0px, 60px) …`, jump 0
+  //
+  // jsdom can arbitrate none of that — no cascade, no WAAPI, no computed
+  // transform — so what is asserted here is the EMITTED KEYFRAMES, against
+  // fixtures that report a layout box the way a browser does (see
+  // `./fake-layout`).
+  describe('changing author transform (#185)', () => {
+    it('glides the LAYOUT distance when the author transform changed while settled', () => {
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 60 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -20)')
+      const f = flip()
+      f.enter!([child]) // baseline: layout top 60, drawn at 40
+
+      // The row's own transform changes while it is SETTLED: it is redrawn 30px
+      // higher, having moved nowhere. Then a reorder moves it 60px up.
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -50)')
+      layout.set(child, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60px) matrix(1, 0, 0, 1, 0, -50)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -50)' },
+      ])
+    })
+
+    it('does not fold an author transform that is itself in flight into the delta', () => {
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 60 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 0)')
+      const f = flip()
+      f.enter!([child])
+
+      // The AUTHOR's own `transition: transform` is a third of the way through a
+      // `translateX(-100px)`. No glide of ours is running, so this really is what
+      // the row is drawn at — and it is not a layout move.
+      transform.set(child, 'matrix(1, 0, 0, 1, -33.66, 0)')
+      layout.set(child, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60px) matrix(1, 0, 0, 1, -33.66, 0)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, -33.66, 0)' },
+      ])
+    })
+
+    it('keeps the delta SUB-PIXEL when the two measurements agree', () => {
+      // The offsets alone would answer 133 here. They are the layout box exactly
+      // but the CSSOM types them `long`, so the rect — which is exact whenever
+      // nothing but layout moved — is what the delta is taken from.
+      const { parent, children, layout, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 133.3125 })
+      const f = flip()
+      f.enter!([child])
+
+      layout.set(child, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 133.3125px)' },
+        { transform: 'translate(0, 0)' },
+      ])
+    })
+
+    it('keeps it sub-pixel with a CONSTANT author transform too', () => {
+      // A constant author transform shifts both stored positions equally, so it
+      // cancels out of the rect delta and the two measurements still agree — the
+      // fallback must not fire just because the row has a transform at all.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      const author = 'matrix(1, 0, 0, 1, 0, -20)'
+      layout.set(child, { left: 0, top: 133.3125 })
+      transform.set(child, author)
+      const f = flip()
+      f.enter!([child])
+
+      layout.set(child, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: `translate(0px, 133.3125px) ${author}` },
+        { transform: `translate(0, 0) ${author}` },
+      ])
+    })
+
+    it('absorbs an author change smaller than the offsets can resolve', () => {
+      // The accepted cost of preferring the sub-pixel delta: a change that could
+      // BE quantization noise is treated as though it were. This is the
+      // comfortable half of that window; the test below pins how far it really
+      // reaches, which is nearly 2px, not the 1px the bound looks like.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 60 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 0)')
+      const f = flip()
+      f.enter!([child])
+
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -0.75)')
+      layout.set(child, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60.75px) matrix(1, 0, 0, 1, 0, -0.75)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -0.75)' },
+      ])
+    })
+
+    it('absorbs a non-layout change of nearly TWO pixels, not one', () => {
+      // The size of the accepted cost, pinned at the bound rather than at a
+      // comfortable value — `QUANTIZATION` is 1, so the window LOOKS like 1px
+      // and is not: agreement is `|A - e| <= 1` for a non-layout change `A`
+      // against a residue `e` that is itself under 1, so any `|A| < 2` is taken
+      // for a move. Sweep over a 1/64 grid: worst absorbed 1.984375px.
+      //
+      // These numbers are a Chromium reproduction, not arithmetic: a 0.4375px
+      // padded offset, a 10.125px layout move, and an author transform changing
+      // by 1.875px across it. `fine` = 12, `coarse` = 11 - 0 = 11, and
+      // `|12 - 11| <= 1` takes `fine` — so 12px is emitted for a 10.125px move
+      // and the pre-#185 code emits the same keyframe here.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 0.4375 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 0)')
+      const f = flip()
+      f.enter!([child])
+
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 1.875)')
+      layout.set(child, { left: 0, top: 10.5625 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, -12px) matrix(1, 0, 0, 1, 0, 1.875)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, 1.875)' },
+      ])
+    })
+
+    it('does not glide a row because the VIEWPORT moved', () => {
+      // The same defect, from the other direction, and a bigger one: a rect is
+      // viewport-relative, so a scroll between two passes moved every stored
+      // position without moving any row. Measured against the real `flip()` in
+      // Chromium after a 200px scroll: the row that actually moved 60px glided
+      // `translate(0px, 260px)`, and a row that had not moved at all glided
+      // `translate(0px, 200px)`. The offsets are not viewport-relative, so the
+      // scroll shows up as a disagreement and is discarded.
+      const { parent, children, layout, animations, scroll } = makeList(2)
+      const [moved, still] = children as [HTMLElement, HTMLElement]
+      layout.set(moved, { left: 0, top: 60 })
+      layout.set(still, { left: 0, top: 120 })
+      const f = flip()
+      f.enter!([moved, still])
+
+      scroll.top = 200
+      layout.set(moved, { left: 0, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations).toHaveLength(1)
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60px)' },
+        { transform: 'translate(0, 0)' },
+      ])
+    })
+
+    it('measures each axis on its own', () => {
+      // A row moving on one axis while its author transform changes on the other
+      // must take the sub-pixel delta for the first and the fallback for the
+      // second — the decision is per axis, not per row.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      layout.set(child, { left: 0, top: 60.4 })
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, 0)')
+      const f = flip()
+      f.enter!([child])
+
+      transform.set(child, 'matrix(1, 0, 0, 1, -40, 0)')
+      layout.set(child, { left: 0, top: 0.1 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      // y: 60.3 — the sub-pixel delta, which the offsets (60 → 0) cannot state.
+      // x: 0 — the offsets', because the rect's −40 is the author's, not a move.
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(0px, 60.3px) matrix(1, 0, 0, 1, -40, 0)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, -40, 0)' },
       ])
     })
   })

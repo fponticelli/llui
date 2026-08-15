@@ -3,6 +3,7 @@ import { createRunScope } from '../src/anim'
 import { spring } from '../src/spring'
 import { stagger } from '../src/stagger'
 import { flip } from '../src/flip'
+import { fakeLayout } from './fake-layout'
 import animSource from '../src/anim.ts?raw'
 import transitionSource from '../src/transition.ts?raw'
 import presetsSource from '../src/presets.ts?raw'
@@ -292,7 +293,7 @@ describe('cancellation semantics survive the shared scope', () => {
     const child = document.createElement('div')
     parent.appendChild(child)
     let left = 0
-    child.getBoundingClientRect = () => ({ left, top: 0, width: 1, height: 1 }) as DOMRect
+    fakeLayout(child, () => ({ left, top: 0 }))
     const cancels: number[] = []
     child.animate = (() => {
       const index = cancels.push(0) - 1
