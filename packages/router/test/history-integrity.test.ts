@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
 import type { ConnectOptions } from '../src/connect'
@@ -47,8 +47,62 @@ async function waitForUrl(read: () => string, expected: string): Promise<string>
   return read()
 }
 
+/**
+ * Poll for a condition a URL comparison cannot express — notably a traversal
+ * onto an entry showing the SAME url (a foreign `pushState` to `location.href`),
+ * which moves `history.state` and nothing else.
+ */
+async function waitUntil(pred: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 2000
+  while (!pred() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2))
+  }
+  if (!pred()) throw new Error(`timed out waiting for ${what}`)
+}
+
+/** The router's stamp on a history entry, or `undefined` when it never wrote one. */
+function stampedIndex(state: unknown): unknown {
+  return state !== null && typeof state === 'object'
+    ? (state as Record<string, unknown>).__llui_idx
+    : undefined
+}
+
+/**
+ * The run every fabricated stamp in this file is numbered in.
+ *
+ * A test that hands the router a pre-existing position has to hand it a WHOLE
+ * one. An index with no run is what a build predating `__llui_run` wrote, and
+ * those builds restarted their numbering across entries they could not place
+ * without recording it — so the router (correctly) refuses to measure against
+ * one, and a bare `{ __llui_idx: n }` fixture would be testing the refusal
+ * rather than the arithmetic it means to drive (#150 review). The legacy shape
+ * itself is pinned in `legacy-stamps.test.ts`.
+ */
+const RUN = 'test-run'
+
+/** A stamp of the kind the router writes: an index AND the run it belongs to. */
+function stamp(index: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...extra, __llui_idx: index, __llui_run: RUN }
+}
+
 const path = () => location.pathname
 const hash = () => location.hash
+
+/**
+ * Every listener this file mounts, torn down after the test that mounted it
+ * WHETHER OR NOT it reached its own `dispose()`.
+ *
+ * A failing assertion throws before the trailing `dispose()`, leaking a mounted
+ * `hashchange` listener into every later test in the file — which then stamps
+ * the `location.hash` writes those tests use to build their fixtures, and they
+ * fail at their SETUP instead of on their own merits. That turns a mutation
+ * run's output into noise: the count is still "failures", but not of the thing
+ * the mutation broke (#150 review, finding N1).
+ */
+const mountedListeners: Array<() => void> = []
+afterEach(() => {
+  while (mountedListeners.length > 0) mountedListeners.pop()!()
+})
 
 function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   const send = vi.fn()
@@ -60,7 +114,16 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
     view: () => [...routing.listener(send), text('')],
   })
   const handle = mountApp(container, App)
-  return { send, dispose: () => handle.dispose() }
+  let disposed = false
+  // Idempotent, so the explicit `dispose()` each test ends with stays the
+  // documentation of its own lifecycle and the sweep above is pure insurance.
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    handle.dispose()
+  }
+  mountedListeners.push(dispose)
+  return { send, dispose }
 }
 
 function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
@@ -114,7 +177,7 @@ describe('#103 blocked back — history mode', () => {
     // An entry nobody stamped has no knowable position, so no delta can be
     // computed. The old code guessed 0, called history.go with an unreachable
     // delta, and left the flag armed — swallowing the user's NEXT genuine pop.
-    history.replaceState({ __llui_idx: 5 }, '', '/')
+    history.replaceState(stamp(5), '', '/')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -129,8 +192,8 @@ describe('#103 blocked back — history mode', () => {
     expect(goSpy).not.toHaveBeenCalled()
 
     // A genuine pop that the guard allows must still dispatch.
-    history.replaceState({ __llui_idx: 5 }, '', '/other')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 5 } }))
+    history.replaceState(stamp(5), '', '/other')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(5) }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
 
@@ -144,7 +207,7 @@ describe('#103 blocked back — history mode', () => {
     // entirely (the user pressing back again while it is in flight). An arm
     // that survives a non-matching landing swallows a LATER genuine popstate —
     // the same stuck-flag failure the boolean had (#103).
-    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -152,22 +215,22 @@ describe('#103 blocked back — history mode', () => {
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
 
     // A blocked pop onto a stamped entry arms the restore back to index 2.
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
     expect(send).not.toHaveBeenCalled()
 
     // The next popstate lands on a DIFFERENT index than the restore expected:
     // it is a genuine navigation and must NOT be swallowed.
-    history.replaceState({ __llui_idx: 0 }, '', '/other')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 0 } }))
+    history.replaceState(stamp(0), '', '/other')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(0) }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'other' } })
 
     // ...and the arm must be gone, or this one — which DOES carry the index the
     // restore was waiting for — is swallowed instead of dispatching.
-    history.replaceState({ __llui_idx: 2 }, '', '/admin')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 2 } }))
+    history.replaceState(stamp(2), '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(2) }))
     expect(send).toHaveBeenCalledTimes(2)
     expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'admin' } })
 
@@ -182,7 +245,7 @@ describe('#103 blocked back — history mode', () => {
     // claims a depth the stack no longer has, and the next blocked back then
     // computes an unreachable delta and leaves the URL sitting on the route it
     // just blocked: #103's original symptom, re-reachable.
-    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -190,8 +253,8 @@ describe('#103 blocked back — history mode', () => {
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
 
     // Blocked pop onto the entry stamped 1; its restore is armed but in flight.
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
 
     // The app navigates before the restore lands: the new entry sits directly
@@ -201,8 +264,8 @@ describe('#103 blocked back — history mode', () => {
 
     // …and a later blocked back is reachable: delta 1, not an overshoot of 2.
     goSpy.mockClear()
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
 
     goSpy.mockRestore()
@@ -324,24 +387,70 @@ describe('#103 blocked back — hash mode', () => {
     dispose()
   })
 
-  it('still tracks a genuine new fragment navigation (an address-bar edit)', async () => {
-    // The other half of the discriminator: a hash the USER typed is a real
-    // push, it grows the stack, and the entry it creates must be stamped — or
-    // a blocked back from it has no delta and restores nothing.
+  it('leaves the URL on the blocked route when the popped entry was hand-edited (#150)', async () => {
+    // THE ONE COST of #150, asserted rather than merely written down: a hash the
+    // USER typed lands on an entry the router never stamped, and #150 treats
+    // every unstamped entry as UNKNOWN. So a guard-blocked traversal OFF such an
+    // entry cannot be undone — the URL is left showing the route the guard
+    // refused, until the next navigation.
+    //
+    // This test is the exact INVERSE of the one it replaces ("still tracks a
+    // genuine new fragment navigation"), which asserted the restore this gives
+    // up. The trade is deliberate: the `history.length` discriminator that
+    // bought it is stale-by-construction (a foreign `pushState` or an iframe
+    // navigation grows the stack behind the router's back), and reading a
+    // traversal as a push stamps an INVERTED index that sends the NEXT blocked
+    // back two entries the wrong way — #103's failure, from a guess.
+    //
+    // The second half pins what SURVIVES: an entry the router created itself
+    // still carries its position, so a block there is still undone. Without it
+    // "treat everything as unknown, always" would pass this file.
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
       beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
     })
-    const { dispose } = mountListener(routing)
+    const { send, dispose } = mountListener(routing)
 
     location.hash = '#/other' // not through the router — a user navigation
     expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    // jsdom moves the URL synchronously and queues the event, so the listener
+    // has NOT run yet at this point — settle before reading what it did.
+    await settle()
+    // Nothing was written onto the entry the edit created: its position is
+    // unknown, and #150 refuses to invent one.
+    expect(stampedIndex(history.state)).toBeUndefined()
+    send.mockClear()
 
     blockHome = true
     history.back() // → the entry the router loaded on (bare '', i.e. `#/`)
     expect(await waitForUrl(hash, '')).toBe('')
-    // Known position on both sides → the block is undone by a traversal.
+
+    // Nothing is restored. Waiting for the pre-#150 outcome — a traversal back
+    // onto `#/other` — and never seeing it is the assertion; a fixed sleep could
+    // pass early on a loaded machine.
+    expect(await waitForUrl(hash, '#/other')).toBe('')
+    expect(send).not.toHaveBeenCalled()
+
+    // …and the capability that is NOT given up: two entries the ROUTER created
+    // carry their positions, so a block between them is still undone by a
+    // traversal. Push a pair of them and block the back onto the seeded root.
+    blockHome = false
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'admin' })
+    await settle()
+
+    blockHome = true
+    send.mockClear()
+    history.back() // → `#/other` (allowed — the guard only blocks `home`)
     expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    expect(send).toHaveBeenCalledTimes(1)
+
+    send.mockClear()
+    history.back() // → the seeded root, i.e. `home` — BLOCKED
+    expect(await waitForUrl(hash, '')).toBe('')
+    // Known index on both sides → the block IS undone, by a traversal.
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    expect(send).not.toHaveBeenCalled()
 
     dispose()
   })
@@ -385,6 +494,295 @@ describe('#103 blocked back — hash mode', () => {
     await settle() // let any dispatch the restore's echo could produce land
 
     expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+})
+
+describe('#150 history that grew behind the router — hash mode', () => {
+  // #139 classified an unstamped `hashchange` landing with `history.length >
+  // knownLength`: a push grows the session history, a traversal does not. But
+  // `knownLength` was only refreshed where the ROUTER observed or changed
+  // history, so growth it never saw left it stale-LOW — and stale-low reads a
+  // TRAVERSAL as a push, stamping an INVERTED index (the entry BELOW numbered
+  // ABOVE the one it sits under). #150 deletes the discriminator: every
+  // unstamped entry is UNKNOWN, in both modes.
+  //
+  // The growth here is a foreign `history.pushState` onto `location.href` —
+  // analytics, an embedded widget, another framework on the page. Same URL, so
+  // it fires no `hashchange`, and neither does the traversal back off it: the
+  // router sees NEITHER, which is exactly how the cached length goes stale. (An
+  // iframe navigation grows the joint session history the same way; jsdom cannot
+  // drive one, and the defect needs no iframe.)
+
+  beforeEach(async () => {
+    location.hash = ''
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  /**
+   * `#/ | #/other | #/admin` — three entries that pre-date the router — with
+   * `connectRouter` seeding the one it loads on (`#/admin`, index 0), then one
+   * entry of foreign growth above it and a traversal back down onto it.
+   */
+  async function grownBehindTheRouter(options?: ConnectOptions<Route>) {
+    location.hash = '#/'
+    await settle()
+    location.hash = '#/other'
+    await settle()
+    location.hash = '#/admin'
+    await settle()
+
+    const routing = connectRouter(hashRouter(), options)
+    const mounted = mountListener(routing)
+    expect(stampedIndex(history.state)).toBe(0)
+
+    history.pushState({ foreign: 'analytics' }, '', location.href)
+    history.back() // back onto our seeded entry — same url, so NO hashchange
+    await waitUntil(() => stampedIndex(history.state) === 0, 'the traversal onto #/admin')
+    expect(location.hash).toBe('#/admin')
+
+    return { routing, ...mounted }
+  }
+
+  it('stamps NOTHING on an entry it traverses onto, however stale a length would be', async () => {
+    const { send, dispose } = await grownBehindTheRouter()
+
+    history.back() // → the unstamped `#/other`, and this one DOES fire
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+
+    // With the discriminator this read as a push and wrote `{ __llui_idx: 1 }`
+    // onto an entry sitting BELOW the one stamped `0`. Its position is unknown
+    // and unknowable, so nothing at all is written.
+    expect(stampedIndex(history.state)).toBeUndefined()
+    // The navigation itself is unaffected — only the bookkeeping is refused.
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
+
+    dispose()
+  })
+
+  it('a later blocked back stays put instead of traversing past the blocked entry', async () => {
+    let blockOther = false
+    const { send, dispose } = await grownBehindTheRouter({
+      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+    })
+
+    history.back() // → `#/other` (unstamped → UNKNOWN)
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    history.forward() // → back onto `#/admin`, which IS stamped (0)
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+    send.mockClear()
+
+    const goSpy = vi.spyOn(history, 'go')
+    blockOther = true
+    history.back() // → `#/other`, blocked
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+
+    // The fabricated stamp made this the worst case rather than a no-op: `1`
+    // against the landed `0` is a NEGATIVE delta, so `history.go(-1)` traversed
+    // FURTHER BACK onto `#/`, two entries from where the user pressed back once.
+    // Waiting for that landing and never seeing it is the assertion.
+    expect(await waitForUrl(hash, '#/')).toBe('#/other')
+    expect(goSpy).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
+    dispose()
+  })
+})
+
+describe('#150 history that grew behind the router — HISTORY mode', () => {
+  // The same gap, with no address bar to blame. A foreign `history.pushState`
+  // (analytics, an embedded widget, another framework on the page) creates an
+  // entry and fires NOTHING — not `popstate`, not `hashchange` — so the router
+  // never learns it moved. Numbering the next push from the index it still holds
+  // put an index distance of 1 across a physical distance of 2, and the next
+  // guard-blocked traversal spanning that entry landed on it.
+  //
+  // The position now comes from the ENTRY rather than from `currentIndex`, so
+  // the foreign entry's stateless-ness is read as "unknown" and the push above it
+  // opens a run of its own.
+
+  beforeEach(async () => {
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('opens a new run above a foreign pushState instead of numbering through it', async () => {
+    let blockOther = false
+    const routing = connectRouter(historyRouter(), {
+      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' })
+    expect(path()).toBe('/other')
+
+    // …and the stack grows behind the router's back.
+    history.pushState({ foreign: 'analytics' }, '', '/foreign')
+
+    navigate(routing, { page: 'admin' })
+    expect(path()).toBe('/admin')
+    send.mockClear()
+
+    const goSpy = vi.spyOn(history, 'go')
+    blockOther = true
+    history.go(-2) // → /other, two entries down and across the foreign one
+    expect(await waitForUrl(path, '/other')).toBe('/other')
+
+    // Nothing is rewound: the entries either side of the foreign one belong to
+    // different runs. Numbering through it computed `delta = 1` and deposited
+    // the user on `/foreign`, dispatching a route that is not even ours.
+    expect(await waitForUrl(path, '/foreign')).toBe('/other')
+    expect(goSpy).toHaveBeenCalledTimes(1) // ours, above — none of the router's
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
+    dispose()
+  })
+})
+
+describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
+  // Browsers deliver traversals of any magnitude: a back-button long-press menu,
+  // a `history.go(-n)`, a gesture. `restoreBlocked` computes `delta =
+  // currentIndex - landed` and hands it to `history.go`, so the index space has
+  // to measure PHYSICAL distance for every magnitude, not just ±1.
+  //
+  // An entry the router cannot number breaks that. `#150` leaves a hand-edited
+  // hash entry unstamped (correct — its position is unknowable), and the next
+  // push then numbered from a `?? 0` floor, so `root(0) | hand-edited | admin(1)`
+  // read as an index distance of 1 across a PHYSICAL distance of 2: a blocked
+  // `history.go(-2)` computed `go(1)` and deposited the user on the hand-edited
+  // route, dispatching a navigate they never asked for (#150 review, finding B1).
+  //
+  // The fix is not to number that entry — nothing knows where it sits — but to
+  // stop pretending the numbering is continuous across it: each stamp carries the
+  // RUN it was numbered in, and a delta is computed only within one run.
+
+  beforeEach(async () => {
+    location.hash = ''
+    history.replaceState(null, '', '/')
+    await settle()
+  })
+
+  it('refuses a blocked go(-2) that spans a hand-edited entry, rather than landing on it', async () => {
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    // `#/` (seeded) | `#/other` (HAND-EDITED, unstamped) | `#/admin` (pushed).
+    location.hash = '#/other'
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+    expect(stampedIndex(history.state)).toBeUndefined()
+
+    navigate(routing, { page: 'admin' })
+    await settle()
+    expect(hash()).toBe('#/admin')
+    send.mockClear()
+
+    // The spy calls through — the traversal below has to actually happen — so it
+    // counts exactly the router's OWN `go`, of which there must be none.
+    const goSpy = vi.spyOn(history, 'go')
+    blockHome = true
+    history.go(-2) // straight past the hand-edited entry, onto the seeded root
+    expect(await waitForUrl(hash, '')).toBe('')
+
+    // The block is honoured and NOTHING is traversed. Before the fix this issued
+    // `go(1)` and landed on `#/other` — a route the user never asked for — and,
+    // because the armed echo was for `#/admin`, the mismatch let the landing
+    // DISPATCH as a genuine navigation.
+    //
+    // WHAT THIS PINS, precisely: refusing to number the hand-edited entry, and
+    // the run OPENING that follows it. It does NOT pin `restoreBlocked`'s run
+    // comparison — in this clean stack the run opened above the hand edit starts
+    // at 0 and the seeded root is 0 too, so `delta === 0` short-circuits before
+    // the runs are ever compared. `does not conflate two runs opened by two
+    // separate hand edits` is the test that pins the comparison: its two
+    // endpoints are indices 1 and 0, four physical entries apart, and it reddens
+    // in isolation when the comparison is dropped.
+    expect(await waitForUrl(hash, '#/other')).toBe('')
+    expect(goSpy).toHaveBeenCalledTimes(1) // ours, above — none of the router's
+    expect(send).not.toHaveBeenCalled()
+
+    goSpy.mockRestore()
+    dispose()
+  })
+
+  it('does not conflate two runs opened by two separate hand edits', async () => {
+    // Why the run id is MINTED rather than being a constant "everything after a
+    // gap" marker. Each hand edit opens a run, and both runs number from their
+    // own origin — so a single shared marker would make `admin(0)` and the
+    // seventh entry's `1` look like neighbours across FOUR physical entries.
+    //
+    // `#/`(0,A) | hand | `#/admin`(0,B) | `#/article/x`(1,B) | hand |
+    // `#/other`(0,C) | `#/`(1,C)
+    let blockAdmin = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    location.hash = '#/other'
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
+    await settle()
+    navigate(routing, { page: 'admin' })
+    navigate(routing, { page: 'article', slug: 'x' })
+    await settle()
+
+    location.hash = '#/article/y'
+    expect(await waitForUrl(hash, '#/article/y')).toBe('#/article/y')
+    await settle()
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'home' })
+    await settle()
+    expect(hash()).toBe('#/')
+    send.mockClear()
+
+    blockAdmin = true
+    history.go(-4) // → `#/admin`, four entries down and in ANOTHER run — BLOCKED
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+
+    // Two known indices, `1` and `0`, whose difference is not a distance: the
+    // correct rewind is four entries, and a shared run id would have computed
+    // one and deposited the user on `#/article/x`.
+    expect(await waitForUrl(hash, '#/article/x')).toBe('#/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+
+  it('still rewinds a blocked go(-2) when every entry between is its own', async () => {
+    // The other half: refusing across a run boundary must not become refusing
+    // always. A multi-entry traversal inside ONE run is exactly as computable as
+    // a single-entry one, and is undone the same way.
+    let blockHome = false
+    const routing = connectRouter(hashRouter(), {
+      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    navigate(routing, { page: 'other' })
+    navigate(routing, { page: 'admin' })
+    await settle()
+    expect(hash()).toBe('#/admin')
+    send.mockClear()
+
+    blockHome = true
+    history.go(-2) // → the seeded root, i.e. `home` — BLOCKED
+    expect(await waitForUrl(hash, '')).toBe('')
+    // Same run on both sides, so the delta IS the distance: back where we were,
+    // two entries forward, with nothing dispatched.
+    expect(await waitForUrl(hash, '#/admin')).toBe('#/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    // …and the stack is intact: `#/other` is still between them.
+    history.back()
+    expect(await waitForUrl(hash, '#/other')).toBe('#/other')
 
     dispose()
   })

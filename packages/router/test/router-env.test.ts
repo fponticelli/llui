@@ -40,10 +40,11 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
   let historyState: unknown = null
   // A synthetic session history still HAS the entry you are standing on, so it
   // starts at 1 — `0` is reserved for "there is no history here" (what
-  // `browserRouterEnv` reports off-browser, and what the seed checks). It grows
-  // on the two operations that create an entry, because the push-vs-traversal
-  // discriminator reads it; pinning it to a constant would make every unstamped
-  // hash entry read as a traversal.
+  // `browserRouterEnv` reports off-browser, and what the seed checks). It still
+  // grows on the two operations that create an entry, so the fake stays an
+  // honest model of the real surface, but nothing in `connect.ts` reads the
+  // count any more: #150 deleted the push-vs-traversal discriminator, so a
+  // constant here would change no classification.
   let historyLength = 1
 
   const env: RouterEnv = {
@@ -113,6 +114,21 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
 const signal = new AbortController().signal
 
 /**
+ * A stamp of the kind the router writes ITSELF: an index plus the RUN it is
+ * currently numbering in, read off the entry it last stamped.
+ *
+ * A bare `{ __llui_idx: n }` is not the same thing. An index only means a
+ * position within its run, so one fabricated outside the router's run is
+ * (correctly) refused as a delta endpoint — the guard that makes a blocked
+ * traversal across an entry the router could not number leave the URL alone
+ * instead of traversing to the wrong entry (#150 review).
+ */
+function ownStamp(state: unknown, index: number): Record<string, unknown> {
+  const run = state !== null && typeof state === 'object' ? (state as never)['__llui_run'] : null
+  return typeof run === 'string' ? { __llui_idx: index, __llui_run: run } : { __llui_idx: index }
+}
+
+/**
  * Construct against a recording env and drop the construction-time calls, so a
  * test that is about an EFFECT asserts only what the effect did.
  *
@@ -135,17 +151,78 @@ describe('connectRouter seeds the loaded entry through the env', () => {
     const rec = recordingEnv({ pathname: '/article/loaded' })
     connectRouter(makeRouter('history'), { env: rec.env })
     expect(rec.calls).toEqual(['replaceState:<no url>'])
-    expect(rec.env.historyState).toEqual({ __llui_idx: 0 })
+    // Index AND run: the seed numbers an entry whose position it does not know,
+    // so it opens a run of its own rather than joining whatever numbering an
+    // earlier lifetime of the router may have left on the entries below (#150
+    // review). Both halves travel together or a later delta is meaningless.
+    expect(rec.env.historyState).toEqual({ __llui_idx: 0, __llui_run: expect.any(String) })
     // The seed must not have moved the URL — the whole point of the omitted url.
     expect(rec.env.pathname).toBe('/article/loaded')
   })
 
   it('adopts an existing stamp instead of rewriting it', () => {
     const rec = recordingEnv({ pathname: '/' })
-    rec.env.replaceState({ __llui_idx: 7, hostKey: 'keep' })
+    // A WHOLE stamp — index and the run it was numbered in. That is what a
+    // previous lifetime of this connector leaves behind across a reload, and
+    // what makes the entries below it comparable with the ones above.
+    rec.env.replaceState({ __llui_idx: 7, __llui_run: 'r7', hostKey: 'keep' })
     rec.calls.length = 0
     connectRouter(makeRouter('history'), { env: rec.env })
     expect(rec.calls).toEqual([])
+  })
+
+  it('re-seeds an index left by a build that numbered without runs (#150 review)', () => {
+    // A stamp with no `__llui_run` is not a position this router can continue:
+    // every build that wrote one restarted its numbering across entries it could
+    // not place and recorded nothing about the restart, so its indices name no
+    // single run (`readPosition`). Adopting one is what let a delta be computed
+    // straight across a run boundary — measured in `legacy-stamps.test.ts`.
+    const rec = recordingEnv({ pathname: '/' })
+    rec.env.replaceState({ __llui_idx: 7, hostKey: 'keep' })
+    rec.calls.length = 0
+    connectRouter(makeRouter('history'), { env: rec.env })
+    // Re-stamped, not adopted: a fresh run starting at 0. The host's own key
+    // survives the rewrite (`stampCurrent` merges), and the stale index is
+    // overwritten rather than left beside a fresh run id, which would make it
+    // look measurable against the entries this run goes on to number.
+    expect(rec.calls).toEqual(['replaceState:<no url>'])
+    expect(rec.env.historyState).toEqual({
+      hostKey: 'keep',
+      __llui_idx: 0,
+      __llui_run: expect.any(String),
+    })
+  })
+
+  it('mints a FRESH run on every seed, never a constant one', () => {
+    // Two lifetimes of the connector share one session history — a reload, or a
+    // second router on the page. Each seeds an entry whose position it does not
+    // know, and the entries the earlier one numbered may still be sitting below
+    // it. A CONSTANT id would make those subtractable across exactly the gap
+    // that made them incomparable, which is the degenerate counter `mintRun`
+    // documents. Only the id's uniqueness is asserted; its shape is never read.
+    const runs = new Set<unknown>()
+    for (let i = 0; i < 5; i++) {
+      const rec = recordingEnv({ pathname: '/' })
+      connectRouter(makeRouter('history'), { env: rec.env })
+      runs.add((rec.env.historyState as Record<string, unknown>).__llui_run)
+    }
+    expect(runs.size).toBe(5)
+  })
+
+  it('re-seeds an entry whose run id is the empty string', () => {
+    // `''` is the one string that is not a run id. It is what `mintRun` would
+    // produce if `Math.random()` ever returned exactly `0` (`(0).toString(36)`
+    // is `'0'`, and `.slice(2)` of that is `''`), so it is excluded on BOTH
+    // sides: never minted, and never read back as a run. Without the read-side
+    // half, two unrelated writers that both left an empty id would have their
+    // entries declared subtractable.
+    const rec = recordingEnv({ pathname: '/' })
+    rec.env.replaceState({ __llui_idx: 4, __llui_run: '' })
+    rec.calls.length = 0
+    connectRouter(makeRouter('history'), { env: rec.env })
+    expect(rec.calls).toEqual(['replaceState:<no url>'])
+    expect(rec.env.historyState).toEqual({ __llui_idx: 0, __llui_run: expect.any(String) })
+    expect((rec.env.historyState as Record<string, unknown>).__llui_run).not.toBe('')
   })
 
   it('writes nothing where the env reports no history at all', () => {
@@ -305,7 +382,7 @@ describe('connectRouter routes history/location through an injectable env', () =
 
     // Two of our own pushes, then a pop back to the first.
     routing.handleEffect({ effect: routing.push({ page: 'home' }), send: vi.fn(), signal })
-    rec.env.pushState({ __llui_idx: 0 }, '/article/blocked')
+    rec.env.pushState(ownStamp(rec.env.historyState, 0), '/article/blocked')
     rec.calls.length = 0
     rec.handlers[0]!.handler()
 

@@ -69,6 +69,17 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   return { send, dispose: () => handle.dispose() }
 }
 
+/**
+ * A stamp of the kind the router writes ITSELF: an index plus the RUN it is
+ * currently numbering in, read off the entry it last stamped. An index is only a
+ * position WITHIN its run, so one fabricated outside the router's run is
+ * correctly refused as a delta endpoint (#150 review).
+ */
+function ownStamp(state: unknown, index: number): Record<string, unknown> {
+  const run = state !== null && typeof state === 'object' ? (state as never)['__llui_run'] : null
+  return typeof run === 'string' ? { __llui_idx: index, __llui_run: run } : { __llui_idx: index }
+}
+
 /** Drive a `navigate()` effect with its own send, so the listener's stays clean. */
 function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
   routing.handleEffect({
@@ -236,7 +247,7 @@ describe('#143 a guard redirect on a browser-driven navigation — hash mode', (
 
   it('keeps the forward entry and a later blocked back reachable', async () => {
     // AC 3 + AC 4 in hash mode, where a blocked back is undone by a suppressed
-    // traversal rather than by `pendingRestoreIndex`.
+    // traversal rather than by `pendingRestore`.
     let guardOn = false
     const routing = connectRouter(hashRouter(), {
       beforeEnter: (to) => {
@@ -283,9 +294,10 @@ interface Recorded {
   land(state: unknown, url: string): void
   /**
    * Grow the session history by one entry WITHOUT the router observing it — a
-   * foreign `pushState` or an iframe navigation, the #150 shape. Leaves
-   * `knownLength` stale-LOW, which is what makes the `history.length` re-read
-   * after a redirect write load-bearing.
+   * foreign `pushState` or an iframe navigation, the #150 shape. It is what made
+   * any cached `history.length` stale-LOW; since #150 nothing reads the length
+   * except the seed's "is there a history here" test, so this must now change
+   * NOTHING about how a landing is classified.
    */
   grow(): void
   /** Deliver the browser-driven URL change to the mounted listener. */
@@ -488,23 +500,22 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     dispose()
   })
 
-  it('re-reads history.length, so a LATER unstamped hashchange is not misread as a push', () => {
-    // `rewriteLandedUrl` ends with `noteLength()`. It looks like bookkeeping for
-    // a write that cannot change `history.length` — and it is, but the length it
-    // records is not only its OWN. `adoptLandedEntry` refreshes `knownLength` on
-    // every branch EXCEPT the one a redirect always takes: landing on a STAMPED
-    // entry returns early. So on the redirect path this is the only re-read, and
-    // dropping it leaves `knownLength` frozen at whatever it was before any
-    // history growth the router never saw (#150 — a foreign `pushState`, an
-    // iframe navigation).
+  it('leaves a LATER unstamped hashchange unstamped, however the stack grew (#150)', () => {
+    // The redirect path is where the deleted `history.length` discriminator was
+    // at its most stale. `adoptLandedEntry` returned early on a STAMPED entry —
+    // which is the entry every redirect lands on — so a traversal through the
+    // router's own entries never refreshed the cached length, and growth the
+    // router never saw (a foreign `pushState`, an iframe navigation) stayed
+    // invisible indefinitely. #143 patched that one hole with a re-read here;
+    // #150 removed the cache instead.
     //
-    // Stale-LOW is the dangerous direction. In hash mode `historyLength >
-    // knownLength` is the ONLY discriminator between a NEW fragment navigation
-    // (the user editing the address bar — a push) and a TRAVERSAL, and the two
-    // need opposite index handling. Stale-low makes the next unstamped
-    // `hashchange` read as a push: the router stamps an INVENTED index on an
-    // entry whose position it does not know, and every later blocked back
-    // computes its `history.go` delta from that fiction (#103's failure).
+    // Stale-LOW was the dangerous direction: it made the next unstamped
+    // `hashchange` read as a PUSH, stamping an INVENTED index onto an entry
+    // whose position the router does not know, and every later blocked back then
+    // computed its `history.go` delta from that fiction (#103's failure). This
+    // is the same trace at the injected-env seam that `history-integrity.test.ts`
+    // drives through real jsdom traversals: whatever the length says, an
+    // unstamped entry is UNKNOWN and nothing is written onto it.
     const rec = recordingEnv({ hash: '#/' })
     let guardOn = false
     const routing = connectRouter(hashRouter(), {
@@ -519,7 +530,7 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     const { dispose } = mountListener(routing)
 
     // #/ (idx 0, seeded) → #/admin (idx 1) → #/other (idx 2), each write's echo
-    // consumed. `knownLength` is now 3 and correct.
+    // consumed.
     navigate(routing, { page: 'admin' })
     rec.fire()
     navigate(routing, { page: 'other' })
@@ -529,10 +540,9 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     rec.grow()
     guardOn = true
 
-    // A traversal back onto the STAMPED #/admin entry, redirected to #/login.
-    // `adoptLandedEntry` takes its early return here, so the re-read inside
-    // `rewriteLandedUrl` is the one that resyncs `knownLength` to the grown
-    // stack.
+    // A traversal back onto the STAMPED #/admin entry, redirected to #/login —
+    // the landing `adoptLandedEntry` adopts and returns from, and the one a
+    // length cache could never learn anything from.
     rec.land({ __llui_idx: 1 }, '#/admin')
     rec.calls.length = 0
     rec.fire()
@@ -544,7 +554,7 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
     rec.calls.length = 0
     rec.fire()
 
-    // Without the re-read this is `['replaceState:<no url>']` with the entry
+    // Under a push classifier this is `['replaceState:<no url>']` with the entry
     // stamped `{ __llui_idx: 2 }` — an index invented for an entry the router
     // has never seen.
     expect(rec.calls).toEqual([])
@@ -576,12 +586,51 @@ describe('#143 the redirect writes ONE replace, carrying the landed index', () =
       send: vi.fn(),
       signal: new AbortController().signal,
     })
-    rec.land({ __llui_idx: 0 }, '/admin')
+    // Stamped in the run the router is numbering in — the entry below one of
+    // its own pushes. An index alone is not a position: it only means something
+    // against another index from the SAME run, so a bare `{ __llui_idx: 0 }`
+    // here is an entry the router could not have created and the rewind is
+    // (correctly) refused (#150 review).
+    rec.land(ownStamp(rec.env.historyState, 0), '/admin')
     rec.calls.length = 0
     rec.fire()
 
     expect(rec.calls.filter((c) => c.startsWith('replaceState'))).toEqual([])
     expect(rec.calls.some((c) => c.startsWith('go:'))).toBe(true)
+    expect(rec.env.pathname).toBe('/admin')
+    expect(send).not.toHaveBeenCalled()
+
+    dispose()
+  })
+
+  it('rewinds NOTHING onto an entry numbered outside its run (#150)', async () => {
+    // The inverse of the test above, and why the construction-time seed opens a
+    // RUN of its own rather than joining whatever numbering is already on the
+    // stack. `connectRouter` here loads on an unstamped entry and numbers it `0`
+    // — a number with no relation to an index some earlier lifetime of the
+    // router (or an older build, which stamped an index and no run) may have
+    // left on the entries BELOW it.
+    //
+    // Subtracting the two anyway is #103's failure from a guess: `1 - 0 = 1`
+    // here, against a physical distance nobody knows.
+    const rec = recordingEnv({ pathname: '/' })
+    const routing = connectRouter(historyRouter(), {
+      env: rec.env,
+      beforeEnter: (to) => (to.page === 'admin' ? false : undefined),
+    })
+    const { send, dispose } = mountListener(routing)
+
+    routing.handleEffect({
+      effect: routing.push({ page: 'other' }),
+      send: vi.fn(),
+      signal: new AbortController().signal,
+    })
+    // A bare index, with no run: not an entry this router numbered.
+    rec.land({ __llui_idx: 0 }, '/admin')
+    rec.calls.length = 0
+    rec.fire()
+
+    expect(rec.calls).toEqual([])
     expect(rec.env.pathname).toBe('/admin')
     expect(send).not.toHaveBeenCalled()
 
