@@ -77,11 +77,23 @@ export async function verifyAndReadTid(
     return { ok: false, status: 401, code: 'auth-failed' }
   }
   // A revoked token verifies as "ours" but must buy NOTHING — see the
-  // doc comment. `InMemoryTokenStore.revoke` also drops the hash index,
-  // so on that store this branch is unreachable through `revoke()`
-  // itself; it is reached by any store that keeps the row indexed (the
-  // interface does not require dropping it) and by a record created
-  // revoked. Fail closed on both.
+  // doc comment.
+  //
+  // BE PRECISE ABOUT WHAT THIS CLOSES, because #190 as filed was not:
+  // on the bundled `InMemoryTokenStore` this branch is UNREACHABLE
+  // through `revoke()`. That method deletes the `tokenHash` index entry,
+  // so `findByTokenHash` returns null and the lookup above already bails
+  // `401`. Measured both ways at `maxUnauthenticatedSessions: 1`: mint →
+  // `revoke(tid)` → `initialize` was 401 with occupancy 0 BEFORE this
+  // check and is identical after; only a record whose status is
+  // `revoked` while its hash is STILL INDEXED returned 200 and survived
+  // an anonymous burst.
+  //
+  // That shape is a custom `TokenStore`, and it is a supported one: the
+  // interface does not require dropping the index, and the row is
+  // deliberately kept "for audit / replay purposes". So this is genuine
+  // defence in depth for an implementor who keeps the row queryable —
+  // not a fix for a reachable hole in the shipped store.
   if (rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
   return { ok: true, tid: rec.tid }
 }

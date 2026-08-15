@@ -220,18 +220,22 @@ describe('MCP router — reported occupancy during a resurrect (#186)', () => {
   })
 
   /**
-   * The trap the fix had to avoid: the resurrect's `finally` covers the
-   * FAILURE paths too, so the release could not simply be MOVED up — it
-   * had to become released-once on BOTH routes. Get that wrong in the
-   * other direction and a reservation leaks permanently, because
-   * nothing sweeps a slot with no id.
+   * The REFUSAL routes, which are the ones a caller can actually drive:
+   * all three of them (the rate limiter, the fail-closed bearer check,
+   * a full quota) return BEFORE `reserveSlot` is reached, so a refused
+   * resurrect must cost nothing because it never took a slot in the
+   * first place. Repeated because a miscounted slot is cumulative — one
+   * would be invisible, eight are not.
    *
-   * Refusals are the reachable failure routes (401 on a bogus bearer,
-   * 404 on the defensive id mismatch), and a leaked slot is cumulative,
-   * so this drives the same refusal repeatedly and then checks the
-   * endpoint still allocates at full capacity.
+   * Note what this does NOT cover, since the distinction is exactly
+   * where a mutation slipped through review: it cannot detect a missing
+   * release in the trailing `finally`, because no route it drives has
+   * taken a reservation by the time it returns. The failure-AFTER-
+   * reservation route (a throw from `buildSession` / `connect` / the
+   * handshake) is the one that needs that `finally`, and it is covered
+   * in `router-reservation.test.ts`, which can force those throws.
    */
-  it('leaks no reservation across repeated failed resurrects', async () => {
+  it('leaks no reservation across repeated refused resurrects', async () => {
     const router = mkRouter({ maxSessions: 2, maxUnauthenticatedSessions: 2 })
 
     const doomed = await initialize(router)
@@ -720,6 +724,43 @@ describe('MCP router — a revoked bearer buys no admission (#190)', () => {
 
     // The un-evictable slot is what the defect actually bought, so the
     // check is that anonymous churn owns the whole quota afterwards.
+    for (let i = 0; i < 6; i++) {
+      expect((await initialize(router)).status).toBe(200)
+      expect(router.liveSessionCount()).toBe(1)
+    }
+  })
+
+  /**
+   * The REACHABLE half, and the correction to #190 as filed.
+   *
+   * Going through `store.revoke(tid)` — what `/agent/revoke` actually
+   * calls — never reaches the status check at all:
+   * `InMemoryTokenStore.revoke` deletes the `tokenHash` index entry, so
+   * `findByTokenHash` returns null and `verifyAndReadTid` bails on the
+   * uniform `401` one step earlier. That was true BEFORE this change
+   * and is true after; the issue's "a revoked token is admitted"
+   * measurement only reproduces from a record SEEDED revoked, i.e. a
+   * store that keeps the row indexed.
+   *
+   * Pinned in both directions so nobody "fixes" the docs back: the
+   * status code here is 401, and the admission is refused either way.
+   */
+  it('refuses a token revoked through the store with the uniform 401', async () => {
+    const store = new InMemoryTokenStore()
+    const live = await seedToken(store, { tid: 't-live' })
+    const router = mkRouter(
+      { maxSessions: 8, maxUnauthenticatedSessions: 1 },
+      { tokenStore: store },
+    )
+
+    await store.revoke('t-live')
+
+    const res = await router(initializeRequest({ authorization: `Bearer ${live.token}` }))
+    expect(res?.status).toBe(401)
+    expect(await res?.json()).toEqual({ error: { code: 'auth-failed' } })
+    expect(router.liveSessionCount()).toBe(0)
+
+    // Whichever code it answered with, it bought no un-evictable slot.
     for (let i = 0; i < 6; i++) {
       expect((await initialize(router)).status).toBe(200)
       expect(router.liveSessionCount()).toBe(1)

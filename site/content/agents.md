@@ -240,16 +240,24 @@ Two further rules apply to every `initialize`:
   address the server can't establish share one bucket. Set `rateLimiter`
   on the server options to change the rate.
 - An `Authorization: Bearer` header, **if present**, must be a valid LLui
-  agent token or the request is rejected having allocated nothing —
-  `401` for an unknown or expired token, `403 revoked` for one that was
-  explicitly revoked. Omitting the header is still fine; presenting a
-  bogus or dead one is not. A valid bearer only buys admission outside
-  the anonymous quota — every tool still refuses until `connect_session`
-  binds a token. A **revoked** token buys nothing anywhere: revocation
-  is checked at the same boundary that resolves the bearer, so it is
-  refused at admission and not merely at tool-call time. Otherwise it
-  could still hold slots outside the anonymous quota that an anonymous
-  caller can never reclaim.
+  agent token or the request is rejected `401` having allocated nothing.
+  Omitting the header is still fine; presenting a bogus or dead one is
+  not. A valid bearer only buys admission outside the anonymous quota —
+  every tool still refuses until `connect_session` binds a token.
+
+  A **revoked** token buys nothing here either. On the bundled
+  `InMemoryTokenStore` that already held before the check existed:
+  revoking drops the token's hash from the lookup index, so the bearer
+  no longer resolves at all and the request is refused `401` like any
+  other unknown token. The status is now **also** checked on the record
+  itself, which matters for a custom `TokenStore` — the interface does
+  not require dropping the index (the row is deliberately kept for
+  audit and replay), and a store that keeps it indexed would otherwise
+  let a dead `tid` buy admission outside the anonymous quota that an
+  anonymous caller can never reclaim. A record read back as `revoked` is
+  refused `403 revoked`, the same answer the LAP gate and the WebSocket
+  admission give. **Do not branch on `403` at this gate for the bundled
+  store** — it answers `401` there.
 
 Requests on an already-established session are not throttled here; their
 tool handlers reach LAP through the core router, which gates them on the
@@ -295,9 +303,9 @@ Five things about that are load-bearing:
 - A resurrect **is** an allocation, and passes the same three gates as a
   fresh `initialize`, in the same order: the rate limiter, then the
   fail-closed bearer check (a bearer is not required, but one that is
-  _presented_ must be valid or the request is `401` having allocated
-  nothing), then the quota. It is refused `429`, `401` or `503` on the
-  same terms.
+  _presented_ must be valid or the request is refused having allocated
+  nothing), then the quota. It is refused `429`, `401`, `403` or `503`
+  on the same terms.
 - What comes back is **provisional**. The bearer binding went with the
   old session, so a resurrected session sits inside the anonymous quota
   and every tool refuses until `connect_session` runs again. It also
@@ -311,8 +319,12 @@ Five things about that are load-bearing:
   session, the others use it. A request that loses that race does not
   inherit the winner's outcome — it re-derives its own through the same
   gates, so it is served if the winner's session is there and refused
-  `429`/`503`/`401`/`403` on the same terms if not. A `404` on this path
-  means one thing only: the server does not remember this ID.
+  `429`/`503`/`401`/`403` on the same terms if not. A refused resurrect
+  is no longer reported to the loser as a `404`: the ID is still
+  remembered and a later attempt still rebuilds it, so the honest answer
+  is the refusal. Barring one defensive branch that cannot be reached
+  (a rebuilt transport coming back under a different ID), a `404` here
+  means the server does not remember this ID.
 - **An explicit `DELETE` is durable.** Every other teardown reason — LRU
   eviction, the per-identity cap, either clock — is a decision the
   _server_ made that the client has no way to learn about, which is what

@@ -1011,8 +1011,15 @@ export function createMcpRouter(deps: McpRouterDeps, opts: McpRouterOptions = {}
           // the guardrail that keeps the with-session-id path — free
           // and unthrottled by design — from becoming a second
           // allocation door: only ids we handed out are rebuildable.
-          // It is also now the ONLY route to a 404 on this path, which
-          // is what makes the 404 mean what it says.
+          // It is also now the only REACHABLE route to a 404 here —
+          // which is what makes the 404 mean what it says. The one
+          // other `return … 404` in the resurrect path is the
+          // defensive `t.sessionId !== id` branch, documented there as
+          // impossible by construction (the SDK assigns the id from the
+          // generator during the handshake). "Reachable" rather than
+          // "only" because that branch is still code: if it ever fires
+          // it hands a client the answer this change exists to remove,
+          // and it should be re-examined rather than assumed.
           return jsonResponse({ error: 'session not found' }, 404)
         }
 

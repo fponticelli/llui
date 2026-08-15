@@ -121,3 +121,72 @@ describe('MCP router slot reservation (#102)', () => {
     })
   }
 })
+
+/**
+ * The same discipline on the RESURRECT path (#186), and specifically on
+ * the one route nothing else reaches.
+ *
+ * A resurrect releases its reservation TWICE over, from two places: the
+ * success route hands it back the instant `sessions.set` registers the
+ * session (no `await` between the two, or the slot is momentarily
+ * double-counted — that is #186), and a trailing `finally` covers
+ * everything else. Both are needed and the two are made safe by an
+ * idempotent `release()`.
+ *
+ * The `finally` half is invisible to every test that drives a REFUSAL,
+ * because all three refusal routes — the rate limiter, the fail-closed
+ * bearer check, a full quota — return BEFORE `reserveSlot` is reached.
+ * The only way to hold a reservation and then fail is to THROW after
+ * taking it, which is exactly what the fail points above force. Deleting
+ * the `finally` release left the whole suite green until this existed;
+ * a leaked reservation is permanent, since nothing sweeps a slot with
+ * no id.
+ */
+describe('MCP router slot reservation on the resurrect path (#186)', () => {
+  const initialize = async (router: ReturnType<typeof createMcpRouter>): Promise<string | null> => {
+    const res = await router(initializeRequest())
+    return res?.headers.get('mcp-session-id') ?? null
+  }
+
+  for (const point of FAIL_POINTS) {
+    it(`hands the slot back when a resurrect throws at ${point}`, async () => {
+      const router = createMcpRouter(
+        {
+          coreRouter: async () => null,
+          tokenStore: new InMemoryTokenStore(),
+          lapBasePath: '/agent/lap/v1',
+          rateLimiter: neverLimited,
+        },
+        { maxSessions: 4, maxUnauthenticatedSessions: 1 },
+      )
+
+      const doomed = await initialize(router)
+      await initialize(router) // evicts `doomed`, leaving a tombstone
+      expect(router.liveSessionCount()).toBe(1)
+
+      // The replay reserves a slot (evicting the live provisional to get
+      // it) and then throws with the reservation in hand — the state the
+      // trailing `finally` exists for.
+      failAt = point
+      await expect(
+        router(
+          new Request('http://local/agent/mcp', {
+            method: 'POST',
+            headers: { 'mcp-session-id': doomed as string },
+          }),
+        ),
+      ).rejects.toThrow(`allocation failed at ${point}`)
+
+      // Retained nothing, so it must cost nothing.
+      expect(router.liveSessionCount()).toBe(0)
+      expect(router.hasLiveSession(doomed as string)).toBe(false)
+
+      // The load-bearing consequence: a leaked reservation would still
+      // be counted as an anonymous slot, so the single anonymous slot
+      // would be spoken for and this would 503 against an EMPTY map.
+      const after = await router(initializeRequest())
+      expect(after?.status).toBe(200)
+      expect(router.liveSessionCount()).toBe(1)
+    })
+  }
+})
