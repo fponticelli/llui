@@ -15,9 +15,34 @@ import { ensureActive } from './active.js'
  * record all collapse to the same `auth-failed` so a probe-by-hash
  * leak surface is uniform.
  *
- * Status check (revoked / paused / etc.) is the caller's job — the gate
- * does its own follow-up `findByTid` to read the current status. This
- * function only cares whether the bearer is one of ours and unexpired.
+ * REVOCATION is the one status this function does read, and it is not
+ * folded into that uniform `auth-failed` (#190). Two reasons, in this
+ * order:
+ *
+ *   1. It has to be read HERE, not only by the caller, because this is
+ *      the function every ADMISSION gate routes through. The MCP
+ *      router treats a verified bearer as an admission credential: an
+ *      `initialize` carrying one is marked `admitted`, which puts the
+ *      session OUTSIDE `maxUnauthenticatedSessions` and makes it
+ *      un-evictable for an anonymous caller. Revocation was enforced
+ *      only at tool-call time, so a revoked token could not DRIVE the
+ *      app but could still buy un-evictable slots — resource admission
+ *      for a dead `tid`. "Revoked" has to mean revoked at every gate,
+ *      not only the last one.
+ *   2. It answers `403 revoked` rather than `401 auth-failed` because
+ *      that is what this codebase already answers everywhere else the
+ *      status is read — `withLapGates`' own follow-up check below and
+ *      `acceptConnection`'s WS admission both do — and the client
+ *      surface acts on it ("paste a new snippet"). Collapsing it into
+ *      `auth-failed` would keep the leak surface marginally more
+ *      uniform at the cost of changing an established answer, and the
+ *      "oracle" it costs is only reachable by someone already holding
+ *      the token value.
+ *
+ * Every OTHER status (paused / pending-resume / …) remains the
+ * caller's job — the LAP gate does its own follow-up `findByTid` for
+ * those, and its revoked branch is kept as defence in depth (it also
+ * covers a record that vanished between the two reads).
  */
 export type VerifyTidOptions = {
   /** Wall clock in ms; injectable for tests. Defaults to `Date.now()`. */
@@ -51,6 +76,25 @@ export async function verifyAndReadTid(
   if (isSlidingTtlExpired(rec, opts.slidingTtlMs, nowMs)) {
     return { ok: false, status: 401, code: 'auth-failed' }
   }
+  // A revoked token verifies as "ours" but must buy NOTHING — see the
+  // doc comment.
+  //
+  // BE PRECISE ABOUT WHAT THIS CLOSES, because #190 as filed was not:
+  // on the bundled `InMemoryTokenStore` this branch is UNREACHABLE
+  // through `revoke()`. That method deletes the `tokenHash` index entry,
+  // so `findByTokenHash` returns null and the lookup above already bails
+  // `401`. Measured both ways at `maxUnauthenticatedSessions: 1`: mint →
+  // `revoke(tid)` → `initialize` was 401 with occupancy 0 BEFORE this
+  // check and is identical after; only a record whose status is
+  // `revoked` while its hash is STILL INDEXED returned 200 and survived
+  // an anonymous burst.
+  //
+  // That shape is a custom `TokenStore`, and it is a supported one: the
+  // interface does not require dropping the index, and the row is
+  // deliberately kept "for audit / replay purposes". So this is genuine
+  // defence in depth for an implementor who keeps the row queryable —
+  // not a fix for a reachable hole in the shipped store.
+  if (rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
   return { ok: true, tid: rec.tid }
 }
 
