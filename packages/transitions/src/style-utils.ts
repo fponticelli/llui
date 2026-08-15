@@ -138,6 +138,34 @@ export function animatedProperties(
 }
 
 /**
+ * Build a `transition` shorthand that gives EVERY property its own duration and
+ * timing function: `transform 250ms ease-out, opacity 250ms ease-out`.
+ *
+ * The CSS Transitions shorthand is a COMMA-SEPARATED LIST of single-transitions,
+ * NOT a property list with one trailing timing — so `transform, opacity 250ms
+ * ease-out` declares two of them, the first of which omits every component and
+ * therefore takes the INITIAL `transition-duration` of **0s**. `slide()` and
+ * `scale()` shipped exactly that string: measured in Chromium 143 it expanded to
+ * `transition-duration: 0s, 0.4s`, only `transitionstart:opacity` fired, and the
+ * computed transform never left `matrix(1, 0, 0, 1, 0, 0)` for the whole run —
+ * neither preset animated its transform (#142). A 0s transition also fires no
+ * `transitionend`, so a {@link waitForEnd} naming that property always fell
+ * through to its fallback timer.
+ *
+ * Every `transition` value this package emits is built here so the grammar is
+ * stated exactly once. jsdom cannot catch a regression — its `cssstyle` stores
+ * the shorthand verbatim and never expands it (`style.transitionDuration` reads
+ * back `''`), so the tests assert the emitted STRING.
+ */
+export function transitionShorthand(
+  properties: readonly string[],
+  durationMs: number,
+  easing: string,
+): string {
+  return properties.map((p) => `${camelToKebab(p)} ${durationMs}ms ${easing}`).join(', ')
+}
+
+/**
  * The element's CURRENT rendered value for each of `properties` (kebab-case),
  * as a `Styles` object ready for {@link applyValue}. Properties the environment
  * cannot resolve are omitted rather than written as `''`, which would blank a

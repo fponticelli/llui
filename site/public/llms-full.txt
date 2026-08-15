@@ -10733,16 +10733,28 @@ when the glide completes (or is cancelled by anyone, including someone other
 than us): only while one is live is the computed transform ours to read, and
 a run left registered makes every later pass measure a row's own author
 transform as if it were a glide.
-Known defect (#144): the keyframes below set `transform` to a translation
-alone, so they REPLACE the row's own `transform` rather than composing with
-it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
-CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
-that amount when a glide starts and jumps back when it ends. The DELTA is
-unaffected — the author transform is folded into both the stored position and
-the new rect and cancels out — so this is bounded, cosmetic and
-self-correcting. The fix is to compose the author transform into both
-keyframes; see the issue for why that trades against the single-read rule
-above.
+Composition (#144): a WAAPI animation wins the cascade for the property it
+animates, so keyframes naming a bare `translate(...)` REPLACE the row's own
+`transform` for the length of the glide. A row carrying a constant author
+transform therefore jumped by that amount when a glide started and jumped back
+when it ended (measured in Chromium: a `.lift { transform: translateY(-20px) }`
+row resting at `top: 0` reported `top: 22` one frame into a 60px glide). Both
+keyframes are therefore emitted as `translate(…) <author transform>`, which
+puts the glide OUTSIDE the author's transform — the translation then means the
+same thing whatever the author's linear part is, and a row with no transform
+of its own still gets exactly the bare keyframes it always did.
+The author transform is read in the read phase, and ONLY for a row that is
+about to glide: rows that did not move keep paying nothing, which is the cost
+balance #137 struck when it stopped reading the computed transform on every
+settled row forever. A row that IS mid-glide cannot be read at all (our own
+animation owns `transform`), so the value captured when its glide started is
+cached and reused — an author transform that CHANGES mid-glide is therefore
+carried at its old value until the row next settles.
+The composition feeds back into the delta: the computed transform of a
+composed glide carries the author's translation too, so the read phase
+subtracts the cached author translation to recover our glide alone. Matrix
+multiplication makes that exact — `translate(g)·A` has translation
+`g + A.translation` for any A.
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
 (minus `leaving`) on each pass, so bulk-removed rows are never held and are
@@ -10819,10 +10831,10 @@ function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): Tra
 ### `scale()`
 
 Scale an element in/out from `from` to 1, optionally fading with it.
-> **Known defect (#142).** Carries the same malformed `transition` shorthand
-> as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
-> duration, so it snaps rather than scaling and never reports a
-> `transitionend` — the phase resolves on the fallback timer instead.
+Emits the same per-property shorthand as {@link slide} — `transform 200ms
+ease-out, opacity 200ms ease-out` — for the reason spelled out there (#142).
+`transform-origin` rides along in the active value but never transitions, so
+it is not one of the properties the phase waits on.
 
 ```typescript
 function scale(opts: ScaleOptions = {}): TransitionOptions
@@ -10831,16 +10843,11 @@ function scale(opts: ScaleOptions = {}): TransitionOptions
 ### `slide()`
 
 Slide an element in/out along one axis, optionally fading with it.
-> **Known defect (#142).** The active value is built as
-> `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
-> grammar reads as TWO single-transitions — the first, `transform`, taking the
-> initial `transition-duration` of **0s**. In a real browser the transform
-> therefore SNAPS and only the opacity animates. A 0s transition also fires no
-> `transitionend`, so `transform` never leaves the set of properties the phase
-> waits on (see {@link waitForEnd}) and the phase always resolves on the
-> fallback timer rather than on a real end — 16ms late, never a hang. Do not
-> read the property filter as "every shipped preset lines up with it": `fade()`
-> does, `slide()` and `scale()` do not until #142 lands.
+Both animated properties carry their own duration and easing in the emitted
+shorthand — `transform 250ms ease-out, opacity 250ms ease-out`. Writing the
+properties as one list with a single trailing timing (`transform, opacity
+250ms ease-out`) gives `transform` the initial duration of 0s, so it snaps
+and reports no `transitionend`; that was #142, and it is invisible to jsdom.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions

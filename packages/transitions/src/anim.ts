@@ -60,9 +60,12 @@ function endedProperty(e: Event): string | undefined {
  * 500ms` pair — removes the node mid-animation (issue #105). Every listed
  * property must end before the wait resolves; a property that never fires falls
  * through to the timer, so being over-inclusive can only cost the early resolve,
- * never a hang. That is not hypothetical: `slide()` and `scale()` name
- * `transform` but give it a 0s duration in their `transition` shorthand (#142),
- * so both currently resolve on the timer every time.
+ * never a hang. That safety net is not a licence to name a property the phase
+ * does not really animate: `slide()` and `scale()` named `transform` while
+ * giving it a 0s duration in their `transition` shorthand, so both resolved on
+ * the timer every time and #105's discrimination was inert for them until #142
+ * fixed the shorthand. Emit every active value through the package's one
+ * `transitionShorthand` helper (internal, `style-utils.ts`).
  *
  * Two deliberate escape hatches:
  *  - An EMPTY `properties` means "nothing to discriminate on" — a class-driven

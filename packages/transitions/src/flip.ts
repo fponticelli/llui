@@ -19,6 +19,46 @@ interface Point {
 const NO_TRANSLATION: Point = { left: 0, top: 0 }
 
 /**
+ * A row's OWN `transform` — the one the author declared (a hover lift, a drag
+ * offset, `scale(1.02)` on the active row) — captured while no glide of ours is
+ * overriding it.
+ */
+interface AuthorTransform {
+  /** The computed value, or `''` when the element has none. */
+  css: string
+  /**
+   * Its translation component. A composed keyframe serializes as
+   * `translate(dx, dy) <author>`, whose matrix translation is `(dx, dy)` PLUS
+   * this — so the read phase subtracts it back out to recover our glide alone.
+   */
+  translation: Point
+}
+
+const NO_AUTHOR_TRANSFORM: AuthorTransform = { css: '', translation: NO_TRANSLATION }
+
+/** The glide's resting end. Kept unitless so an uncomposed keyframe is unchanged. */
+const IDENTITY = 'translate(0, 0)'
+
+/** The element's computed `transform`, normalized so "none" reads as `''`. */
+function readTransform(el: HTMLElement): string {
+  if (typeof getComputedStyle !== 'function') return ''
+  const raw = getComputedStyle(el).transform
+  return !raw || raw === 'none' ? '' : raw
+}
+
+/**
+ * The row's own transform, for composing into a glide's keyframes. Only valid
+ * while no animation of ours is running on the element — a running WAAPI
+ * animation wins the cascade for `transform`, so `getComputedStyle` would report
+ * OUR value, not the author's.
+ */
+function readAuthorTransform(el: HTMLElement): AuthorTransform {
+  const css = readTransform(el)
+  if (css === '') return NO_AUTHOR_TRANSFORM
+  return { css, translation: parseTranslation(css) }
+}
+
+/**
  * The translation an in-flight glide has currently applied, read from the
  * element's computed `transform`.
  *
@@ -30,9 +70,11 @@ const NO_TRANSLATION: Point = { left: 0, top: 0 }
  * back to the pre-#107 layout-box delta.
  */
 function currentTranslation(el: HTMLElement): Point {
-  if (typeof getComputedStyle !== 'function') return NO_TRANSLATION
-  const raw = getComputedStyle(el).transform
-  if (!raw || raw === 'none') return NO_TRANSLATION
+  return parseTranslation(readTransform(el))
+}
+
+function parseTranslation(raw: string): Point {
+  if (raw === '') return NO_TRANSLATION
 
   const matrix = raw.match(/^matrix\(([^)]*)\)$/)
   if (matrix) {
@@ -126,16 +168,30 @@ function endRunOnFinish(
  * a run left registered makes every later pass measure a row's own author
  * transform as if it were a glide.
  *
- * Known defect (#144): the keyframes below set `transform` to a translation
- * alone, so they REPLACE the row's own `transform` rather than composing with
- * it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
- * CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
- * that amount when a glide starts and jumps back when it ends. The DELTA is
- * unaffected — the author transform is folded into both the stored position and
- * the new rect and cancels out — so this is bounded, cosmetic and
- * self-correcting. The fix is to compose the author transform into both
- * keyframes; see the issue for why that trades against the single-read rule
- * above.
+ * Composition (#144): a WAAPI animation wins the cascade for the property it
+ * animates, so keyframes naming a bare `translate(...)` REPLACE the row's own
+ * `transform` for the length of the glide. A row carrying a constant author
+ * transform therefore jumped by that amount when a glide started and jumped back
+ * when it ended (measured in Chromium: a `.lift { transform: translateY(-20px) }`
+ * row resting at `top: 0` reported `top: 22` one frame into a 60px glide). Both
+ * keyframes are therefore emitted as `translate(…) <author transform>`, which
+ * puts the glide OUTSIDE the author's transform — the translation then means the
+ * same thing whatever the author's linear part is, and a row with no transform
+ * of its own still gets exactly the bare keyframes it always did.
+ *
+ * The author transform is read in the read phase, and ONLY for a row that is
+ * about to glide: rows that did not move keep paying nothing, which is the cost
+ * balance #137 struck when it stopped reading the computed transform on every
+ * settled row forever. A row that IS mid-glide cannot be read at all (our own
+ * animation owns `transform`), so the value captured when its glide started is
+ * cached and reused — an author transform that CHANGES mid-glide is therefore
+ * carried at its old value until the row next settles.
+ *
+ * The composition feeds back into the delta: the computed transform of a
+ * composed glide carries the author's translation too, so the read phase
+ * subtracts the cached author translation to recover our glide alone. Matrix
+ * multiplication makes that exact — `translate(g)·A` has translation
+ * `g + A.translation` for any A.
  *
  * Element retention is deliberately weak: the tracked positions live in a
  * `WeakMap` and the working set is derived from `parent`'s live children
@@ -170,6 +226,12 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
   // exactly why it cannot live on the run scope.
   // run-scope-exempt: geometry, not liveness
   const positions = new WeakMap<Element, Point>()
+  // The row's OWN transform, captured the last time one was readable (i.e. with
+  // no glide of ours overriding it). Weak for the same reason as `positions`,
+  // and off the run scope for the same reason: it must outlive the glide that
+  // reads it, since a glide's own keyframes are what make it unreadable.
+  // run-scope-exempt: geometry, not liveness
+  const authors = new WeakMap<Element, AuthorTransform>()
   // The live glide per element, held on the package's shared run registry (#111):
   // the run's rollback IS `animation.cancel()`, so superseding a row's run is
   // exactly "stop the glide in flight", and `isActive` answers "is this row
@@ -210,20 +272,34 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
       // per row would sit in the middle of the read phase for no gain.
       const reduced = respectReduced && prefersReducedMotion()
 
-      // ── Read phase. Nothing here may touch the DOM: one write between two
-      // reads costs a forced layout PER ROW instead of one for the pass (#107).
+      // ── Read phase. Nothing from here to the write phase may touch the DOM:
+      // one write between two reads costs a forced layout PER ROW instead of one
+      // for the pass (#107). Both loops below are reads.
       const measured: Array<{ child: HTMLElement; rect: DOMRect; glide: Point }> = []
       for (const child of Array.from(parent.children)) {
         if (!(child instanceof HTMLElement)) continue
         if (leaving.has(child)) continue
-        // Only OUR glide displaces the row from its layout box. A constant
-        // author transform is folded into both the stored position and the new
-        // rect, so it cancels out and must not be read (or subtracted) here.
-        const glide = glides.isActive(child) ? currentTranslation(child) : NO_TRANSLATION
+        // Only OUR glide displaces the row from its layout box, and only while
+        // one is live is the computed transform ours to read at all. What is
+        // there then is `translate(glide) <author transform>`, whose matrix
+        // translation is the sum of the two — so the author's half (captured
+        // before this glide started) comes back out.
+        let glide = NO_TRANSLATION
+        if (glides.isActive(child)) {
+          const composed = currentTranslation(child)
+          const author = (authors.get(child) ?? NO_AUTHOR_TRANSFORM).translation
+          glide = { left: composed.left - author.left, top: composed.top - author.top }
+        }
         measured.push({ child, rect: child.getBoundingClientRect(), glide })
       }
 
-      // ── Write phase.
+      // Still the read phase: decide what each row needs and read the author
+      // transform of the ones that will actually glide. `positions` is a plain
+      // WeakMap write, and `supersede`/`animate` — the DOM writes — are deferred
+      // to the loop after this one.
+      const plays: Array<{ child: HTMLElement; dx: number; dy: number; author: AuthorTransform }> =
+        []
+      const stops: HTMLElement[] = []
       for (const { child, rect, glide } of measured) {
         // `rect` is the VISUAL box; subtract the running glide to recover the
         // layout box, which is what a later pass must measure against.
@@ -243,15 +319,32 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         // `transform` and would keep translating it toward a target this pass
         // has just invalidated, so it is stopped rather than left running.
         if (dx === 0 && dy === 0) {
-          glides.supersede(child)
+          stops.push(child)
           continue
         }
         if (typeof child.animate !== 'function') continue
 
+        // The one extra read this pass pays, and only for a row that is about to
+        // be animated anyway. A row mid-glide cannot be read (our own animation
+        // owns `transform`), so its capture is reused.
+        const author = glides.isActive(child)
+          ? (authors.get(child) ?? NO_AUTHOR_TRANSFORM)
+          : readAuthorTransform(child)
+        authors.set(child, author)
+        plays.push({ child, dx, dy, author })
+      }
+
+      // ── Write phase.
+      for (const child of stops) glides.supersede(child)
+      for (const { child, dx, dy, author } of plays) {
         // Supersede cancels the glide still in flight, if any.
         glides.supersede(child)
+        const from = `translate(${dx}px, ${dy}px)`
         const animation = child.animate(
-          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
+          [
+            { transform: author.css === '' ? from : `${from} ${author.css}` },
+            { transform: author.css === '' ? IDENTITY : `${IDENTITY} ${author.css}` },
+          ],
           { duration, easing, fill: 'backwards' },
         )
         // `?.` for the same reason `endRunOnFinish` guards: `animate()` is only

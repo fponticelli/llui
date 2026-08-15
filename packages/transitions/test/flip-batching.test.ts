@@ -231,12 +231,24 @@ describe('flip() read/write batching', () => {
       await Promise.resolve()
     }
 
-    // Every pass moved the row exactly 100px, so every glide is −100.
+    // Every pass moved the row exactly 100px, so every glide is −100 — and each
+    // one carries the author's transform along (#144), which is why the delta
+    // and the composition have to be read off the same keyframes.
+    const author = 'matrix(1, 0, 0, 1, 50, 0)'
     expect(animations).toHaveLength(3)
     expect(animations.map((a) => a.keyframes)).toEqual([
-      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
-      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
-      [{ transform: 'translate(-100px, 0px)' }, { transform: 'translate(0, 0)' }],
+      [
+        { transform: `translate(-100px, 0px) ${author}` },
+        { transform: `translate(0, 0) ${author}` },
+      ],
+      [
+        { transform: `translate(-100px, 0px) ${author}` },
+        { transform: `translate(0, 0) ${author}` },
+      ],
+      [
+        { transform: `translate(-100px, 0px) ${author}` },
+        { transform: `translate(0, 0) ${author}` },
+      ],
     ])
   })
 
@@ -257,11 +269,12 @@ describe('flip() read/write batching', () => {
     const f = flip()
     f.enter!([child])
 
+    const author = 'matrix(1, 0, 0, 1, 50, 0)'
     layout.set(child, { left: 100, top: 0 })
     f.onTransition!({ entering: [], leaving: [], parent })
     expect(animations[0]!.keyframes).toEqual([
-      { transform: 'translate(-100px, 0px)' },
-      { transform: 'translate(0, 0)' },
+      { transform: `translate(-100px, 0px) ${author}` },
+      { transform: `translate(0, 0) ${author}` },
     ])
 
     // Cancelled mid-glide by someone who is not us. The element goes straight
@@ -276,31 +289,41 @@ describe('flip() read/write batching', () => {
 
     expect(animations).toHaveLength(2)
     expect(animations[1]!.keyframes).toEqual([
-      { transform: 'translate(-100px, 0px)' },
-      { transform: 'translate(0, 0)' },
+      { transform: `translate(-100px, 0px) ${author}` },
+      { transform: `translate(0, 0) ${author}` },
     ])
   })
 
-  it('stops reading the computed transform once the glide has finished', async () => {
-    // The direct consequence of the run never ending: `getComputedStyle` was
-    // called for every surviving row on every structural reconcile, forever.
-    const { parent, children, layout, transform, animations, log } = makeList(1)
-    const child = children[0]!
-    transform.set(child, 'matrix(1, 0, 0, 1, 50, 0)')
+  it('reads the computed transform of a SETTLED row only when it is about to glide', async () => {
+    // The cost half of #107, re-struck by #144. The run never ending meant
+    // `getComputedStyle` ran for every surviving row on every structural
+    // reconcile, forever. Composing the author transform into the keyframes
+    // (#144) needs that value for every row that MOVES — but only for those:
+    // a settled row that stays put must still read nothing but its rect, and
+    // the extra read must land in the read phase so the pass still forces one
+    // layout.
+    const { parent, children, layout, transform, animations, log } = makeList(2)
+    const [a, b] = children as [HTMLElement, HTMLElement]
+    transform.set(a, 'matrix(1, 0, 0, 1, 50, 0)')
+    transform.set(b, 'matrix(1, 0, 0, 1, 50, 0)')
     const f = flip()
-    f.enter!([child])
+    f.enter!([a, b])
 
-    layout.set(child, { left: 100, top: 0 })
+    layout.set(a, { left: 100, top: 0 })
+    layout.set(b, { left: 0, top: 10 })
     f.onTransition!({ entering: [], leaving: [], parent })
     animations[0]!.settle()
     await Promise.resolve()
     await Promise.resolve()
 
-    // With the run ended, the next pass reads the rect and nothing else.
-    layout.set(child, { left: 200, top: 0 })
+    // `a` moves again, `b` has not moved since the baseline.
+    layout.set(a, { left: 200, top: 0 })
     log.length = 0
     f.onTransition!({ entering: [], leaving: [], parent })
-    expect(log.filter((op) => op === 'read')).toHaveLength(1)
+
+    // Two rects + ONE computed transform (the moving row's author capture).
+    expect(log.filter((op) => op === 'read')).toHaveLength(3)
+    expect(forcedLayouts(log)).toBe(1)
   })
 
   it('cancels a still-running glide when the row turns out not to have moved', async () => {
@@ -325,6 +348,161 @@ describe('flip() read/write batching', () => {
     expect(animations).toHaveLength(1) // nothing new to play…
     expect(animations[0]!.cancelled).toBe(1) // …and the old one is stopped.
     await Promise.resolve()
+  })
+
+  // ── Issue #144 — composing the row's own transform ────────────────────────
+  //
+  // A running WAAPI animation wins the cascade for the property it animates, so
+  // keyframes naming a bare `translate(...)` REPLACE the row's own `transform`
+  // for the length of the glide: the row jumps by that amount when the glide
+  // starts and jumps back when it ends. Measured in Chromium 143 against the
+  // real `flip()`: a `.lift { transform: translateY(-20px) }` row resting at
+  // `top: 0` reported `top: 22` one frame into a 60px glide, and its computed
+  // transform was `matrix(1, 0, 0, 1, 0, -57.99)` — the author's −20 gone.
+  // Composing the same author transform into both keyframes held it at `top: 0`.
+  //
+  // jsdom cannot arbitrate any of that (it has no cascade for `transform` and no
+  // WAAPI), so what is asserted here is the EMITTED KEYFRAMES.
+  describe('author-transform composition (#144)', () => {
+    const AUTHOR = 'matrix(1, 0, 0, 1, 0, -20)' // translateY(-20px), as a browser reports it
+
+    it('composes the row’s own transform into BOTH keyframes', () => {
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      transform.set(child, AUTHOR)
+      const f = flip()
+      f.enter!([child]) // baseline: layout {0,0}, so the row rests at −20
+
+      layout.set(child, { left: 0, top: 100 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      // Start keyframe: where the row WAS, with its own transform intact — so
+      // the first frame of the glide is exactly where it already was (no jump
+      // in). End keyframe: its own transform alone — so the frame the animation
+      // stops overriding is identical to the one before (no jump out).
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: `translate(0px, -100px) ${AUTHOR}` },
+        { transform: `translate(0, 0) ${AUTHOR}` },
+      ])
+    })
+
+    it('emits the bare keyframes for a row with no transform of its own', () => {
+      const { parent, children, layout, animations } = makeList(1)
+      const child = children[0]!
+      const f = flip()
+      f.enter!([child])
+
+      layout.set(child, { left: 100, top: 0 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: 'translate(-100px, 0px)' },
+        { transform: 'translate(0, 0)' },
+      ])
+    })
+
+    it('measures OUR glide alone while a composed glide is in flight', () => {
+      // The composition feeds back into the read phase: the computed transform
+      // of a composed glide is `translate(g)·author`, whose matrix translation
+      // is `g + author.translation`. Attributing all of that to the glide
+      // corrupts the delta of an INTERRUPTED reorder by exactly the author's
+      // offset — the #107 failure mode, reintroduced through the fix for #144.
+      const { parent, children, layout, transform, animations } = makeList(1)
+      const child = children[0]!
+      transform.set(child, AUTHOR)
+      const f = flip()
+      f.enter!([child]) // rests at −20 (layout 0 + author −20)
+
+      layout.set(child, { left: 0, top: 100 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+      expect(animations[0]!.keyframes).toEqual([
+        { transform: `translate(0px, -100px) ${AUTHOR}` },
+        { transform: `translate(0, 0) ${AUTHOR}` },
+      ])
+
+      // 40% through: the glide has −60 left to run, and the browser reports the
+      // COMPOSED value — −60 plus the author's −20.
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -80)')
+      // The row appears at 100 − 80 = 20, and must reach 200 − 20 = 180.
+      layout.set(child, { left: 0, top: 200 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[1]!.keyframes).toEqual([
+        { transform: `translate(0px, -160px) ${AUTHOR}` },
+        { transform: `translate(0, 0) ${AUTHOR}` },
+      ])
+    })
+
+    it('reads the author transform in the READ phase, ahead of every write', () => {
+      // The composition's read has to sit with the other reads. Taken in the
+      // write phase instead — after the `cancel()` that supersedes a row's
+      // in-flight glide — it puts a read between two writes, and #107's
+      // one-forced-layout-per-pass becomes one per row again.
+      const { parent, children, layout, transform, log } = makeList(2)
+      const [settled, gliding] = children as [HTMLElement, HTMLElement]
+      transform.set(settled, AUTHOR)
+      transform.set(gliding, AUTHOR)
+      const f = flip()
+      f.enter!([settled, gliding])
+
+      // Put `gliding` mid-glide so the next pass has a `cancel()` to issue.
+      layout.set(gliding, { left: 0, top: 100 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+      transform.set(gliding, 'matrix(1, 0, 0, 1, 0, -80)')
+
+      // Now BOTH rows move: one settled (its author transform must be read),
+      // one mid-glide (its capture is reused, and its glide is cancelled).
+      layout.set(settled, { left: 50, top: 0 })
+      layout.set(gliding, { left: 0, top: 200 })
+      log.length = 0
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(forcedLayouts(log)).toBe(1)
+      expect(log.lastIndexOf('read')).toBeLessThan(log.indexOf('write'))
+    })
+
+    it('reuses the capture for a row that is already mid-glide', async () => {
+      // Our own animation owns `transform` while it runs, so the computed value
+      // is OURS, not the author's — re-reading it there would compose the glide
+      // into its own keyframes. The capture from the glide's start is reused,
+      // and refreshed the next time the row is settled.
+      const { parent, children, layout, transform, animations, log } = makeList(1)
+      const child = children[0]!
+      transform.set(child, AUTHOR)
+      const f = flip()
+      f.enter!([child])
+
+      layout.set(child, { left: 0, top: 100 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      // Mid-glide, the row moves again. What is readable now is the composed
+      // value; the author transform must come from the earlier capture.
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -80)')
+      layout.set(child, { left: 0, top: 200 })
+      log.length = 0
+      f.onTransition!({ entering: [], leaving: [], parent })
+
+      expect(animations[1]!.keyframes).toEqual([
+        { transform: `translate(0px, -160px) ${AUTHOR}` },
+        { transform: `translate(0, 0) ${AUTHOR}` },
+      ])
+      // One rect + the in-flight glide's translation. No author read: there is
+      // nothing readable to re-read.
+      expect(log.filter((op) => op === 'read')).toHaveLength(2)
+
+      // Once the row settles, the author transform is read afresh — a row whose
+      // own transform CHANGED while it glided picks the new value up here.
+      animations[1]!.settle()
+      await Promise.resolve()
+      await Promise.resolve()
+      transform.set(child, 'matrix(1, 0, 0, 1, 0, -5)')
+      layout.set(child, { left: 0, top: 300 })
+      f.onTransition!({ entering: [], leaving: [], parent })
+      expect(animations[2]!.keyframes).toEqual([
+        { transform: 'translate(0px, -115px) matrix(1, 0, 0, 1, 0, -5)' },
+        { transform: 'translate(0, 0) matrix(1, 0, 0, 1, 0, -5)' },
+      ])
+    })
   })
 
   it('stores the untransformed layout box, so the next pass measures from it', () => {
