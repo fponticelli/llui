@@ -228,7 +228,12 @@ function combineSignals(
   const handles: SignalHandle<unknown>[] = []
   for (const s of sigs) {
     if (!isSignalHandle(s)) {
-      throw new TypeError('derived(): every input must be a signal (got a non-signal value)')
+      // Branded for the same reason as `compiledAway` — a row build reaches this,
+      // and an unbranded throw would render the whole list empty with one console
+      // line instead of naming the mis-wired call.
+      throw new LluiFrameworkError(
+        'derived(): every input must be a signal (got a non-signal value)',
+      )
     }
     handles.push(s)
   }

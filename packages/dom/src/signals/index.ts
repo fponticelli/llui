@@ -95,6 +95,15 @@ export {
   type StateHandle,
 } from './component.js'
 export type { BindingError } from './runtime.js'
+// Exported so packages that BUILD VIEWS on top of this runtime — @llui/components,
+// @llui/markdown, @llui/a2ui, @llui/lexical — can brand their own authoring
+// invariants. Their guards ("this part bag was spread onto the wrong element",
+// "this catalog node has no renderer") are the same class as `each`'s bare-fragment
+// row root and are reached the same way: from inside a binding commit. Left
+// unexported, every one of them is silently demoted to a console line by the mount
+// boundary, and the rule "brand your framework errors" is unactionable outside this
+// package.
+export { LluiFrameworkError, isFrameworkError } from './framework-error.js'
 // ── SSR (server render → string; client hydrates via hydrateSignalApp) ──
 export { renderToString, renderNodes, serializeNodes, type ServerDoc } from './ssr.js'
 

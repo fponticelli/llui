@@ -11,6 +11,7 @@ import { runBuild, runMounts, type SignalDoc } from './build-context.js'
 import type { SignalScope } from './runtime.js'
 import type { Renderable } from './element.js'
 import { buildAndPublishScope } from './scope-build.js'
+import { LluiFrameworkError } from './framework-error.js'
 
 export interface SignalMount {
   /** apply a new state; only bindings whose deps changed re-run and commit. */
@@ -71,7 +72,8 @@ export function mountSignal(
     const doc = anchor.ownerDocument as unknown as SignalDoc
     const built = renderSignalTree(doc, build, seed, false, getState)
     const parent = anchor.parentNode
-    if (!parent) throw new Error('mountSignal: anchor comment is not attached to a parent')
+    if (!parent)
+      throw new LluiFrameworkError('mountSignal: anchor comment is not attached to a parent')
     // Hydration: drop the server-rendered region (anchor → existing end sentinel)
     // before inserting the fresh client tree — same no-claim swap as containers.
     if (t.mode === 'replace') {

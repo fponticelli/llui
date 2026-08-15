@@ -465,6 +465,17 @@ function hydrateSignalApp<S, M, E = never>(
 ): SignalComponentHandle<S, M>
 ```
 
+### `isFrameworkError()`
+
+Is this throw a framework authoring invariant (so: fatal), rather than a data
+surprise the mount boundary should contain and report?
+
+Brand check — see this module's header for why it is not `instanceof`.
+
+```typescript
+function isFrameworkError(err: unknown): boolean
+```
+
 ### `isMountable()`
 
 ```typescript
@@ -2675,6 +2686,23 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
   /** build a row; `getCtx` exposes the row's live `{ item, state, index }` ctx
    * (same shape as `signalEach`) for runtime item/index handles. */
   renderRow: (getCtx: () => RowCtx<T>) => Renderable
+}
+```
+
+## Classes
+
+### `LluiFrameworkError`
+
+An error raised by the framework about the AUTHORING — a shape that cannot be
+mounted, a helper reached outside a build, a lowering that did not happen.
+Distinct from any throw originating in user accessor/commit code.
+
+Never contained by the mount error boundary; see {@link isFrameworkError}.
+
+```typescript
+class LluiFrameworkError extends Error {
+  __lluiFrameworkError
+  constructor(message: string)
 }
 ```
 

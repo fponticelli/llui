@@ -94,7 +94,15 @@ export function toBindingError(err: unknown, kind: BindingErrorKind): BindingErr
  *    `window.onerror`). #165 is precisely what invisible-and-contained costs.
  *  - The hook is tooling too (the agent bridge installs one), so a throw FROM it
  *    would escape the very loop that is containing the binding's throw. Contain
- *    it here or the fix reopens its own hole. */
+ *    it here or the fix reopens its own hole.
+ *
+ * SCOPE, because it is wider than "the mount boundary": this is the ONE reporter
+ * for both containment paths, so the console write also fires on the UPDATE path
+ * whenever a `setOnBindingError` hook is installed — i.e. once per contained
+ * binding throw in every agent/devtools session, where previously only the hook
+ * saw it. That is deliberate (the hook is a machine channel; a human debugging the
+ * same session should not have to install one to see the throw) and it is the
+ * reason the two paths share this function rather than each rolling their own. */
 function reportBindingError(err: unknown): void {
   console.error(
     `[llui] a binding threw and was isolated — the DOM it writes keeps its prior ` +

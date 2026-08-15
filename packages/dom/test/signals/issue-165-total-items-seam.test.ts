@@ -1,6 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
-import { each, virtualEach, branch, div, li, span, ul, text, p } from '../../src/signals/authoring'
+import {
+  each,
+  eachDirect,
+  virtualEach,
+  branch,
+  show,
+  div,
+  li,
+  span,
+  ul,
+  text,
+  p,
+} from '../../src/signals/authoring'
+import { derived } from '../../src/signals/handle'
 import { signalEach } from '../../src/signals/each'
 import { el, signalText } from '../../src/signals/dom'
 import type { Signal } from '../../src/signals/types'
@@ -457,5 +470,254 @@ describe('#165 — the reported shape: a nested each under an arm swapped loadin
     expect(warnings().length).toBe(1)
     expect(warnings()[0]).toContain('each')
     h.dispose()
+  })
+})
+
+// ── B3: what the mount guard does to the EFFECT SCHEDULE ─────────────────────
+//
+// The rule the guard implements is uniform: MOUNT is guarded, UPDATE is not.
+// What that produces is NOT uniform, because a subtree mounted during a `send`
+// may or may not be re-swept by the same round.
+//
+// This is the half the first cut of #165 got wrong. The PR body and CLAUDE.md
+// asserted flatly that "a binding throw at update aborts the settle round, which
+// drops that round's collected effects and reaches the `send` caller". That is
+// true for a TOP-LEVEL binding — which is all `scheduler-throw-path.test.ts` and
+// `issue-59-reentrant-effect-buffer.test.ts` exercise — and FALSE for a binding
+// belonging to a row mounted during that same send, which reaches the guard via
+// `each.ts`'s `row.scope!.mount(row.ctx)`.
+//
+// Both traces are pinned here because the effect frame is the contract
+// `commit-scope.ts` exists to protect, and neither pinned test covers this path.
+
+describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send', () => {
+  interface RowS {
+    rows: readonly Row[]
+  }
+  type FX = { type: 'FX' }
+
+  it('a ROW mounted mid-send is contained: send returns AND the round dispatches', () => {
+    // CHANGED BEHAVIOUR, deliberately and now disclosed. On `origin/main` this send
+    // threw and the round's effects were DROPPED. The round now completes: every
+    // other binding commits, nothing unwinds past the settle loop, so a `send` made
+    // from an effect is not stranded — the two hazards #57 names do not occur. What
+    // remains true is narrower than "the DOM is consistent": one binding's value is
+    // missing. The alternative is worse for data integrity — the reducer has ALREADY
+    // advanced state, so dropping its effects desyncs the state from the effect that
+    // was supposed to persist it.
+    const c = container()
+    const log: string[] = []
+    const h = mountSignalComponent<RowS, { type: 'add' }, FX>(c, {
+      name: 'RowMountEffectFrame',
+      init: () => ({ rows: [] }),
+      update: (s) => [
+        { rows: [...s.rows, { id: s.rows.length + 1, name: 'r' }] },
+        [{ type: 'FX' }],
+      ],
+      view: ({ state }) => [
+        el('h1', {}, ['header']),
+        ul([
+          each(state.at('rows'), {
+            key: (r) => r.id,
+            render: () => [
+              li([
+                signalText(() => {
+                  throw new Error('row mount boom')
+                }, ['item.id']),
+              ]),
+            ],
+          }),
+        ]),
+        el('footer', {}, ['footer']),
+      ],
+      onEffect: (e) => {
+        log.push(`effect:${e.type}`)
+      },
+    })
+    expect(() => h.send({ type: 'add' })).not.toThrow()
+    expect(log).toEqual(['effect:FX'])
+    expect(c.querySelector('footer')?.textContent).toBe('footer')
+    h.dispose()
+  })
+
+  it('an ARM mounted mid-send still throws and still DROPS the round’s effects', () => {
+    // UNCHANGED from origin/main, and NOT because the guard skips arms. The arm's
+    // fresh scope IS contained at mount — and is then re-run in the SAME round by
+    // the parent's `for (const c of this.children) c.update(...)` sweep
+    // (`runtime.ts`), which is the UNGUARDED path. So the throw escapes after all.
+    //
+    // The consequence worth stating plainly: for the `branch` loading→ready shape
+    // named as the incident trigger, part 3 of #165 currently buys NOTHING. The
+    // incident is fixed by parts 1 and 2 (the items seam), not by the boundary.
+    const c = container()
+    const log: string[] = []
+    interface ArmS {
+      phase: 'loading' | 'ready'
+    }
+    const h = mountSignalComponent<ArmS, { type: 'go' }, FX>(c, {
+      name: 'ArmMountEffectFrame',
+      init: () => ({ phase: 'loading' }),
+      update: () => [{ phase: 'ready' as const }, [{ type: 'FX' }]],
+      view: ({ state }) => [
+        branch(state.at('phase'), {
+          loading: () => [p([text('loading')])],
+          ready: () => [
+            div([
+              signalText(() => {
+                throw new Error('arm mount boom')
+              }, ['phase']),
+            ]),
+          ],
+        }),
+      ],
+      onEffect: (e) => {
+        log.push(`effect:${e.type}`)
+      },
+    })
+    expect(() => h.send({ type: 'go' })).toThrow(/arm mount boom/)
+    // Dropped, exactly as the commit-scope header requires of a round that throws.
+    expect(log).toEqual([])
+    h.dispose()
+  })
+
+  it('a TOP-LEVEL binding throw at update is untouched by the guard', () => {
+    // The property `scheduler-throw-path.test.ts` pins, restated here so the three
+    // traces sit side by side and a future change cannot move one without the
+    // difference being visible.
+    const c = container()
+    const log: string[] = []
+    interface St {
+      ok: boolean
+    }
+    const h = mountSignalComponent<St, { type: 'flip' }, FX>(c, {
+      name: 'TopLevelEffectFrame',
+      init: () => ({ ok: true }),
+      update: () => [{ ok: false }, [{ type: 'FX' }]],
+      view: () => [
+        el('span', {}, [
+          signalText(
+            (s) => {
+              if (!(s as St).ok) throw new Error('top boom')
+              return 'fine'
+            },
+            ['ok'],
+          ),
+        ]),
+      ],
+      onEffect: (e) => {
+        log.push(`effect:${e.type}`)
+      },
+    })
+    expect(() => h.send({ type: 'flip' })).toThrow(/top boom/)
+    expect(log).toEqual([])
+    h.dispose()
+  })
+})
+
+// ── N2: the third branded site had no covering test ──────────────────────────
+
+describe('#165 N2 — a divergent eachDirect row structure stays fatal', () => {
+  it('throws rather than being demoted to a console line', () => {
+    // `eachDirect` is a public hand-written API, so a data-conditional factory can
+    // emit a different binding structure per row — which would reuse the first row's
+    // masks and silently mis-gate the row. The dev guard is branded; without the
+    // brand the mount boundary would swallow it and ship the mis-masked row.
+    const c = container()
+    expect(() =>
+      mountSignalComponent<{ rows: readonly Row[] }, never>(c, {
+        name: 'DivergentDirectRow',
+        init: () => ({
+          rows: [
+            { id: 1, name: 'a' },
+            { id: 2, name: 'b' },
+          ],
+        }),
+        update: (s) => s,
+        view: ({ state }) => [
+          el('ul', {}, [
+            eachDirect(
+              state.at('rows'),
+              (r) => r.id,
+              (doc, getCtx) => {
+                const node = doc.createElement('li')
+                const first = (getCtx().item as Row).id === 1
+                return {
+                  nodes: [node as unknown as Node],
+                  // Row 1 emits one binding, row 2 emits a DIFFERENT set.
+                  bindings: first
+                    ? [
+                        {
+                          deps: ['item.name'],
+                          produce: (ctx: unknown) => String((ctx as { item: Row }).item.name),
+                          commit: (v: unknown) => {
+                            node.textContent = String(v)
+                          },
+                        },
+                      ]
+                    : [
+                        {
+                          deps: ['item.id'],
+                          produce: (ctx: unknown) => String((ctx as { item: Row }).item.id),
+                          commit: (v: unknown) => {
+                            node.textContent = String(v)
+                          },
+                        },
+                      ],
+                }
+              },
+            ),
+          ]),
+        ],
+      }),
+    ).toThrow(/emitted a different binding structure/)
+  })
+})
+
+// ── B1 / B2: the two authoring errors review found demoted ───────────────────
+
+describe('#165 B1/B2 — framework authoring errors are fatal, not console lines', () => {
+  it('B1: compiledAway() inside an each row stays fatal', () => {
+    // The guard behind all six lowering entry points. Unbranded it was swallowed,
+    // and a mis-wired build (no @llui/vite-plugin) rendered a blank section with one
+    // console line — #165's own failure mode reintroduced by the fix for #165.
+    const c = container()
+    expect(() =>
+      mountSignalComponent<{ rows: readonly Row[] }, never>(c, {
+        name: 'CompiledAwayInRow',
+        init: () => ({ rows: [{ id: 1, name: 'a' }] }),
+        update: (s) => s,
+        view: ({ state }) => [
+          ul([
+            each(state.at('rows'), {
+              key: (r) => r.id,
+              // A plain value where a signal handle is required — what an untransformed
+              // module produces at runtime.
+              render: () => [li([text('literal' as never), show('nope' as never, () => [])])],
+            }),
+          ]),
+        ],
+      }),
+    ).toThrow(/was not lowered by @llui\/vite-plugin/)
+  })
+
+  it('B2: derived() with a non-signal input inside an each row stays fatal', () => {
+    const c = container()
+    expect(() =>
+      mountSignalComponent<{ rows: readonly Row[] }, never>(c, {
+        name: 'DerivedInRow',
+        init: () => ({ rows: [{ id: 1, name: 'a' }] }),
+        update: (s) => s,
+        view: ({ state }) => [
+          ul([
+            each(state.at('rows'), {
+              key: (r) => r.id,
+              render: (item) => [
+                li([text(derived(item.at('name'), 'not-a-signal' as never, (a, b) => `${a}${b}`))]),
+              ],
+            }),
+          ]),
+        ],
+      }),
+    ).toThrow(/derived\(\): every input must be a signal/)
   })
 })

@@ -11,6 +11,7 @@
 import type { Signal, LiveSignal } from './types.js'
 import type { TransitionOptions } from '../types.js'
 import { isSignalHandle, rowHandle } from './handle.js'
+import { LluiFrameworkError } from './framework-error.js'
 import { react, type Mountable } from './build-context.js'
 import {
   signalText,
@@ -40,7 +41,12 @@ export type Send<M> = (msg: M) => void
 export type Reactive<T> = Signal<T> | T
 
 const compiledAway = (name: string): never => {
-  throw new Error(
+  // A FRAMEWORK authoring/wiring invariant, and branded as one: this is reachable
+  // from INSIDE a binding commit (a `branch` arm built by ArmController.switchTo, an
+  // `each` row built during the reconcile), where an unbranded throw would be
+  // contained by the mount boundary — turning "your vite plugin is not registered"
+  // into a silently blank section. That is #165's own failure mode one level up.
+  throw new LluiFrameworkError(
     `${name}() received a non-signal value at runtime — it was not lowered by @llui/vite-plugin.\n` +
       `Checklist:\n` +
       `  1. Is @llui/vite-plugin registered in your Vite config's \`plugins\`?\n` +
