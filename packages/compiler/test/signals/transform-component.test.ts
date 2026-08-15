@@ -57,6 +57,128 @@ function assertNoDuplicateTopLevelBindings(src: string): void {
   expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([])
 }
 
+/** Host/global names emitted or verbatim code may legitimately reference. */
+const KNOWN_GLOBALS = new Set([
+  'document',
+  'window',
+  'globalThis',
+  'console',
+  'undefined',
+  'NaN',
+  'Infinity',
+  'String',
+  'Number',
+  'Boolean',
+  'Object',
+  'Array',
+  'JSON',
+  'Math',
+  'Symbol',
+  'Promise',
+  'Date',
+  'Set',
+  'Map',
+  'setTimeout',
+  'requestAnimationFrame',
+])
+
+/** Every name the module BINDS anywhere, in any scope: imports, `const`/`let`/
+ * `var` (patterns included), parameters, catch variables, function/class
+ * DECLARATIONS and — the one that matters for #181 — a function/class
+ * EXPRESSION's own name, which is a binding over its own body. */
+function allBindingNames(sf: ts.SourceFile): Set<string> {
+  const out = new Set<string>()
+  const addBindingName = (n: ts.BindingName | undefined): void => {
+    if (!n) return
+    if (ts.isIdentifier(n)) out.add(n.text)
+    else for (const el of n.elements) if (ts.isBindingElement(el)) addBindingName(el.name)
+  }
+  const visit = (n: ts.Node): void => {
+    if (ts.isImportClause(n) && n.name) out.add(n.name.text)
+    else if (ts.isNamespaceImport(n)) out.add(n.name.text)
+    else if (ts.isImportSpecifier(n)) out.add(n.name.text)
+    else if (ts.isVariableDeclaration(n) || ts.isBindingElement(n) || ts.isParameter(n)) {
+      addBindingName(n.name)
+    } else if (
+      (ts.isFunctionDeclaration(n) ||
+        ts.isFunctionExpression(n) ||
+        ts.isClassDeclaration(n) ||
+        ts.isClassExpression(n) ||
+        ts.isEnumDeclaration(n)) &&
+      n.name &&
+      ts.isIdentifier(n.name)
+    ) {
+      out.add(n.name.text)
+    }
+    n.forEachChild(visit)
+  }
+  visit(sf)
+  return out
+}
+
+/** Identifiers `src` READS that it binds NOWHERE and that are not globals.
+ *
+ * SCOPE-BLIND, in both directions, and neither is a general gate:
+ *
+ * - It only catches a name whose bindings are ALL destroyed. That covers four of
+ *   the five #181 sites (repro 1 `div`, repro 2 `renderRow`, the factory's `f`,
+ *   pass-2's `nest`) — the relocated body was the name's only binding, so the
+ *   emitted module binds it nowhere while still parsing and still containing the
+ *   call text, which is exactly what `assertParses` + `toContain` cannot see. It
+ *   does NOT cover `inlineHelperRender`: there the helper's own declaration
+ *   (`const other = function rowHelper(…)`) SURVIVES in the emitted module, so a
+ *   free `rowHelper` in the inlined copy still reads as bound and this returns
+ *   `[]` on the broken output. The teeth of that test are its
+ *   `not.toContain('signalEachDirect')` assertion — measured: on the broken
+ *   output a real `ts.Program` reports `TS2304: Cannot find name 'rowHelper'`
+ *   while this oracle reports clean. Do not cite it as the check there.
+ * - It over-reports: a global outside `KNOWN_GLOBALS` (measured: `Intl`, `URL`,
+ *   `fetch`, `localStorage`) or an enum member reads as free. Harmless where it
+ *   is used — every call site here asserts `[]` on output that has neither — but
+ *   it is not a check to point at new code without extending the allowlist.
+ *
+ * Deliberately kept scope-blind: a scope-aware version would re-derive
+ * `scopeIntroduces` inside the test, which is the duplication CLAUDE.md warns
+ * about, and the assertion it would strengthen already has a `toContain` guard. */
+function unboundIdentifiers(src: string): string[] {
+  const sf = ts.createSourceFile('out.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const bound = allBindingNames(sf)
+  const free = new Set<string>()
+  const visit = (n: ts.Node): void => {
+    if (ts.isTypeNode(n) || ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n)) return
+    if (ts.isIdentifier(n)) {
+      const p = n.parent
+      const isNamePosition =
+        (ts.isPropertyAccessExpression(p) && p.name === n) ||
+        (ts.isQualifiedName(p) && p.right === n) ||
+        (ts.isPropertyAssignment(p) && p.name === n) ||
+        (ts.isBindingElement(p) && (p.propertyName === n || p.name === n)) ||
+        (ts.isParameter(p) && p.name === n) ||
+        (ts.isVariableDeclaration(p) && p.name === n) ||
+        ((ts.isFunctionDeclaration(p) ||
+          ts.isFunctionExpression(p) ||
+          ts.isClassDeclaration(p) ||
+          ts.isClassExpression(p) ||
+          ts.isMethodDeclaration(p) ||
+          ts.isPropertyDeclaration(p) ||
+          ts.isEnumDeclaration(p)) &&
+          p.name === n) ||
+        ts.isImportSpecifier(p) ||
+        ts.isExportSpecifier(p) ||
+        ts.isImportClause(p) ||
+        ts.isNamespaceImport(p) ||
+        ts.isLabeledStatement(p) ||
+        ts.isBreakStatement(p) ||
+        ts.isContinueStatement(p)
+      if (!isNamePosition && !bound.has(n.text) && !KNOWN_GLOBALS.has(n.text)) free.add(n.text)
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(sf)
+  return [...free].sort()
+}
+
 /** The local name any `@llui/dom` import in `src` binds the export `helper` to
  * (its canonical name, or the alias chosen around a collision), or null when the
  * file imports it under no name at all. */
@@ -1201,15 +1323,13 @@ describe('transformSignalComponentSource', () => {
       // It used to lower to a real `<div>` element — a call that never denotes
       // the framework helper compiled as one, with nothing to see in the output.
       //
-      // This asserts the `scopeIntroduces` half ONLY: the shadowed name is no
-      // longer treated as the `@llui/dom` helper. It does NOT assert that the
-      // recursion works. It does not — a SEPARATE, pre-existing codegen defect
-      // (#181) rewrites the `render` function into an ANONYMOUS arrow, dropping
-      // the function expression's own name, so the surviving `div([])` is an
-      // UNBOUND identifier and throws at row-render time. That pass is
-      // independent of this one: it drops the name identically on `main` and for
-      // a name that collides with no helper (`render: function renderRow(row) {
-      // return [div([renderRow(row)])] }` emits an equally unbound `renderRow`).
+      // This asserts the `scopeIntroduces` half: the shadowed name is no longer
+      // treated as the `@llui/dom` helper. The recursion ITSELF was broken by a
+      // second, independent codegen defect (#181) — the pass that rewrites an
+      // `each({ render })` function into an ANONYMOUS arrow dropped the function
+      // expression's own name, so the surviving `div([])` was an UNBOUND
+      // identifier that threw at row-render time. Both halves are asserted here
+      // now: the call is neither lowered nor unbound.
       const src = [
         "import { component, ul, each } from '@llui/dom'",
         'const C = component({',
@@ -1222,6 +1342,8 @@ describe('transformSignalComponentSource', () => {
       assertParses(out)
       expect(out).not.toContain('createElement("div")')
       expect(out).toContain('div([])')
+      // #181: the call text surviving is not enough — the NAME must still be bound.
+      expect(unboundIdentifiers(out)).toEqual([])
     })
 
     it('does NOT treat a `component(` call inside a self-named factory as the framework helper', () => {
@@ -1261,6 +1383,177 @@ describe('transformSignalComponentSource', () => {
       assertParses(out)
       expect(out).toContain('el("div"')
       expect(out).toContain('signalText')
+    })
+  })
+
+  // ── issue #181: a lowered arm/factory cannot carry a function EXPRESSION's
+  // own name ────────────────────────────────────────────────────────────────
+  // Every lowering here RELOCATES the callback's body out of the function that
+  // named it (an arm becomes `(getCtx) => [...]`, a factory becomes `(doc,
+  // getCtx) => {...}` + hoisted consts, an inlined helper is spliced into its
+  // caller). The name does not travel, nothing else in the module binds it, and
+  // the result parses cleanly — a `ReferenceError` on the first row render that
+  // no existing check saw. Every such site now DECLINES to lower a NAMED
+  // function expression, leaving the primitive verbatim for the authoring path.
+  describe('named function expression as a render/arm (#181)', () => {
+    const rows = (render: string, imports = 'component, ul, each, div, text'): string =>
+      [
+        `import { ${imports} } from '@llui/dom'`,
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        `  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: ${render} })])],`,
+        '})',
+      ].join('\n')
+
+    it('reproduction 1: a self-recursive render named after an element helper stays bound', () => {
+      // `function div(row) { return [div([])] }` — the name collides with the
+      // `@llui/dom` helper, so #153 is what stops the self-call being compiled
+      // into a real `<div>`; #181 is what stops the surviving call being unbound.
+      const out = transformSignalComponentSource(rows('function div(row) { return [div([])] }'))
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).not.toContain('signalEach')
+      expect(out).not.toContain('createElement("div")')
+    })
+
+    it('reproduction 2: a self-recursive render named after NOTHING stays bound', () => {
+      // The name collides with no helper, so `scopeIntroduces`/`HelperBindings`
+      // is not involved in either direction — this is the codegen defect alone.
+      // The broken output was `(getCtx) => { const row = rowHandle(getCtx,
+      // 'item'); return [el("div", {}, [renderRow(row)])] }`: the row PARAM was
+      // rebound, the function's NAME was not.
+      const out = transformSignalComponentSource(
+        rows('function renderRow(row) { return [div([renderRow(row)])] }'),
+      )
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).not.toContain('signalEach')
+      expect(out).toContain('function renderRow(row)')
+    })
+
+    it('declines the FACTORY path too, where no prelude could rebind the name', () => {
+      // The fast path hoists row-invariant parts to per-each-site consts and
+      // builds the skeleton in `_build`, both OUTSIDE any arm a prelude could
+      // extend — `applyAttr(_r0, "id", f.name)` was emitted with `f` unbound.
+      const out = transformSignalComponentSource(
+        rows('function f(row) { return [div({ id: f.name }, [])] }'),
+      )
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).not.toContain('signalEachDirect')
+    })
+
+    it('declines a view-HELPER each with a named render (pass-2 eachArm)', () => {
+      // `lowerHelperEach`'s mid-tier emits the same `(getCtx) => [...]` arm.
+      const src = [
+        "import { component, ul, li, each, text, type Renderable, type Signal } from '@llui/dom'",
+        'const rowsView = (items: Signal<{ id: number }[]>): Renderable =>',
+        "  [ul([each(items, { key: (r) => r.id, render: function nest(row) { return [li([text(row.at('id')), ...nest(row)])] } })])]",
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => rowsView(state.at('rows')),",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).not.toContain('eachArm')
+    })
+
+    it('declines INLINING a delegated helper that is a named function expression', () => {
+      // Same defect one pass over: inlining relocates the helper's BODY into the
+      // caller, so `const other = function rowHelper(r) { … rowHelper … }`
+      // emitted a free `rowHelper`. (A `function f(){}` DECLARATION is safe —
+      // its name is a module binding; the control below pins that.)
+      const src = [
+        "import { component, ul, each, li, text, type Renderable, type Signal } from '@llui/dom'",
+        'const other = function rowHelper(r: Signal<{ id: number }>): Renderable {',
+        "  return [li({ title: rowHelper.name }, [text(r.at('id'))])]",
+        '}',
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: (row) => other(row) })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      // THE TEETH OF THIS TEST ARE THE NEXT LINE, not the oracle: the helper's own
+      // declaration survives in the emitted module, so a free `rowHelper` in the
+      // INLINED copy still reads as bound and `unboundIdentifiers` returns `[]` on
+      // the broken output (a real `ts.Program` reports TS2304 there). Kept only as
+      // a consistency check; see the oracle's docstring.
+      expect(out).not.toContain('signalEachDirect')
+      expect(unboundIdentifiers(out)).toEqual([])
+    })
+
+    // ── controls: lowering is switched off for the NAMED shape only ──────────
+    it('control: the ANONYMOUS arrow with the same row body still lowers (factory)', () => {
+      const out = transformSignalComponentSource(rows("(row) => [div([text(row.at('id'))])]"))
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).toContain('signalEachDirect')
+    })
+
+    it('control: an ANONYMOUS function expression row still lowers', () => {
+      // The decline is keyed on the NAME, not on `function` vs `=>`: an
+      // anonymous function expression binds nothing, so it lowers as before.
+      const out = transformSignalComponentSource(
+        rows("function (row) { return [div([text(row.at('id'))])] }"),
+      )
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).toContain('signalEachDirect')
+    })
+
+    it('control: a row delegating to a top-level `function` DECLARATION still inlines', () => {
+      const src = [
+        "import { component, ul, each, li, text, type Renderable, type Signal } from '@llui/dom'",
+        'function rowHelper(r: Signal<{ id: number }>): Renderable {',
+        "  return [li([text(r.at('id'))])]",
+        '}',
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: (row) => rowHelper(row) })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(unboundIdentifiers(out)).toEqual([])
+      expect(out).toContain('signalEachDirect')
+      expect(out).toContain('createElement("li")')
+    })
+
+    // ── the row PARAM (the issue's second question) ──────────────────────────
+    // The dropped parameter is NOT a second defect: the arm's parameter is the
+    // row CTX accessor, not the row, so the render's own param is dropped only
+    // once every read of it has been rewritten to a ctx read — and when a read
+    // LEAKS into a verbatim position the arm's prelude rebinds it to a real
+    // runtime handle. Both directions are pinned so a regression in either shows.
+    it('a row param that is fully rewritten is dropped, and reads become ctx reads', () => {
+      const out = transformSignalComponentSource(rows("(row) => [div([text(row.at('id'))])]"))
+      expect(out).toContain('ctx.item.id')
+      expect(out).not.toMatch(/\(row\) =>/)
+      expect(unboundIdentifiers(out)).toEqual([])
+    })
+
+    it('a row param that LEAKS is rebound to a real handle in the arm prelude', () => {
+      const src = [
+        "import { component, ul, each, div, type Renderable, type Signal } from '@llui/dom'",
+        'const cell = (r: Signal<{ id: number }>): Renderable => [div([])]',
+        'const C = component({',
+        '  init: () => ({ rows: [] as { id: number }[] }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [ul([each(state.at('rows'), { key: (r) => r.id, render: (row) => [div([...cell(row)])] })])],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src)
+      assertParses(out)
+      expect(out).toContain("const row = rowHandle(getCtx, 'item')")
+      expect(unboundIdentifiers(out)).toEqual([])
     })
   })
 

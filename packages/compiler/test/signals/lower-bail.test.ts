@@ -153,6 +153,56 @@ function rowHelper(txt) { return li([text(txt + label)]) }`,
   })
 })
 
+// #181: a NAMED function expression binds its own name over its own body, and
+// no lowering can carry that binding into the code it emits. Every site that
+// relocates such a body declines, and says so through the SAME reason token so
+// the perf diagnostic can name the fix once.
+describe('onLowerBail — named function expression (#181)', () => {
+  it('a named each render bails BOTH tiers (factory and render arm)', () => {
+    const { out, bails } = bailsOf(
+      app(`each(state.at('todos'), {
+        key: (t) => t.id,
+        render: function renderRow(item) { return [li([text(item.at('label'))])] },
+      })`),
+    )
+    expect(reasons(bails, 'each-direct')).toContain('named-function-expression:renderRow')
+    expect(reasons(bails, 'each-render')).toContain('named-function-expression:renderRow')
+    expect(out).not.toContain('signalEach')
+  })
+
+  it('a named show arm bails', () => {
+    const { bails } = bailsOf(
+      app(`show(state.at('user'), function arm(u) { return [text(u.at('name'))] })`),
+    )
+    expect(reasons(bails, 'show')).toContain('named-function-expression:arm')
+  })
+
+  it('a delegated helper that is a named function EXPRESSION bails inlining', () => {
+    const { out, bails } = bailsOf(
+      app(
+        `each(state.at('todos'), {
+        key: (t) => t.id,
+        render: (item) => [rowHelper(item)],
+      })`,
+        `const rowHelper = function inner(item) { return [li([text(item.at('label'))])] }`,
+      ),
+    )
+    expect(reasons(bails, 'inline-helper')).toContain('named-function-expression:inner')
+    expect(out).not.toContain('signalEachDirect(')
+  })
+
+  it('control: an ANONYMOUS function expression render reports no such bail and lowers', () => {
+    const { out, bails } = bailsOf(
+      app(`each(state.at('todos'), {
+        key: (t) => t.id,
+        render: function (item) { return [li([text(item.at('label'))])] },
+      })`),
+    )
+    expect(reasons(bails).filter((r) => r.startsWith('named-function-expression'))).toEqual([])
+    expect(out).toContain('signalEachDirect(')
+  })
+})
+
 describe('onLowerBail — show/branch arms', () => {
   it('show arm leaking the narrowed param reports arm-param-leak', () => {
     const { bails } = bailsOf(app(`show(state.at('user'), (u) => [profileCard(u)])`))

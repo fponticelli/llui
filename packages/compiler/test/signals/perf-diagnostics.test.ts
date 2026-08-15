@@ -131,6 +131,22 @@ describe('onPerfDiagnostic — verbatim each sites', () => {
     expect(diags.length).toBe(1)
   })
 
+  it('names the fix for a NAMED function expression render (#181)', () => {
+    // The decline is deliberate and permanent for this shape, so the author needs
+    // the actionable half — an unrecognized token falls back to "see the reason
+    // token", which tells them nothing about what to change.
+    const src = app(`each(state.at('todos'), {
+      key: (t) => t.id,
+      render: function renderRow(item) { return [li([text(item.at('label'))])] },
+    })`)
+    const { out, diags } = diagsOf(src)
+    expect(out).toContain('each(') // stayed verbatim
+    expect(diags.length).toBe(1)
+    expect(diags[0]!.message).toContain('named-function-expression:renderRow')
+    expect(diags[0]!.message).toContain('NAMED function expression')
+    expect(diags[0]!.message).not.toContain('see the reason token')
+  })
+
   it('ignores show/branch bails (verbatim show is cheap; only each pays per-row)', () => {
     const { diags } = diagsOf(app(`show(someCond, () => [div([])])`))
     expect(diags).toEqual([])
