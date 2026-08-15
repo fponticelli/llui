@@ -23,7 +23,8 @@ import {
 import { buildAndPublishScope } from './scope-build.js'
 import { RowStateGate } from './row-state-gate.js'
 import { EMPTY_ROW_NODES, EMPTY_ROW_TEARDOWNS, type RowCtx } from './row.js'
-import type { EachSource } from './each.js'
+import { createItemsResolver, type EachSource } from './each.js'
+import { LluiFrameworkError } from './framework-error.js'
 
 export interface VirtualEachSpec<T> extends EachSource<T> {
   key: (item: T) => string | number
@@ -223,6 +224,11 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     if (row.wrapper.parentNode === spacer) spacer.removeChild(row.wrapper)
   }
 
+  // Totals the items seam exactly as `each` does — the gap #165 reports is on this
+  // path too, one `spec.items(...)` call away, and a fix that closed only `each`
+  // would leave the sibling primitive throwing.
+  const resolveItems = createItemsResolver<T>('virtualEach', spec.deps)
+
   const reconcile = (input: unknown): void => {
     // The structural binding passes the scope state straight through — the combined
     // row ctx when nested in a row, the component state at top level. Derive the two
@@ -233,7 +239,7 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
     lastState = input
     const rowState = inRow ? (input as { state: unknown }).state : input
     const itemsState = inRow && !itemsRowLocal ? (input as { state: unknown }).state : input
-    const items = spec.items(itemsState)
+    const items = resolveItems(spec.items(itemsState))
     ensureMetrics(items)
     spacer.style.setProperty('height', `${totalHeight(items.length)}px`)
 
@@ -259,7 +265,7 @@ function buildSignalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
           `(the rows share one live scope + wrapper). (virtualEach items deps: ` +
           `${JSON.stringify(spec.deps)})`
         console.error(msg)
-        throw new Error(msg)
+        throw new LluiFrameworkError(msg)
       }
       seen.add(k)
       const row = rows.get(k)

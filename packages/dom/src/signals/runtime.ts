@@ -28,6 +28,7 @@
 // See docs/proposals/signals/README.md "Runtime — output equality check".
 
 import { type PathTable, type SparseMask, computeDirtyInto, intersects } from './mask.js'
+import { isFrameworkError } from './framework-error.js'
 
 /** A binding-evaluation failure surfaced to a `setOnBindingError` hook. Shape
  * matches the agent's dispatch-envelope `drain.errors` entries. */
@@ -43,6 +44,29 @@ export interface BindingError {
  * a plain `string` on the wire-shaped {@link BindingError} (the agent re-maps it
  * into its own envelope), but the runtime only ever produces these two. */
 export type BindingErrorKind = 'binding' | 'subscriber'
+
+// Depth of commit ROUNDS currently in flight. A round is opened by
+// `component.ts`'s `commitToDom` around its `mount.update(next)` — the one place a
+// reconcile is driven — so a non-zero depth means "a settle round is reconciling
+// right now". `mount()` reads it to decide whether it may contain a throw.
+//
+// Kept here rather than read out of `commit-scope.ts` deliberately: that module's
+// guard/queue/effect-frame state is private and reachable only through a
+// `CommitToken`, and a read-only peephole into it would be a second way to observe
+// scheduler state. This is one integer owned by the binding driver that needs it.
+let commitRoundDepth = 0
+
+/** Mark `fn` as the DOM work of a commit round — see {@link commitRoundDepth} and
+ * `SignalScopeImpl.mount`. Costs one try/finally per ROUND (not per scope, not per
+ * binding), so it is off the hot per-row path entirely. */
+export function withCommitRound(fn: () => void): void {
+  commitRoundDepth++
+  try {
+    fn()
+  } finally {
+    commitRoundDepth--
+  }
+}
 
 // Active binding-error handler stack. A component installs its handler around
 // its synchronous mount + every send (both of which run all binding produce/
@@ -83,10 +107,42 @@ export function toBindingError(err: unknown, kind: BindingErrorKind): BindingErr
   }
 }
 
+/** Surface an isolated binding throw. Mirrors `component.ts`'s
+ * `reportSubscriberError` deliberately, and for the same reason:
+ *
+ *  - The console write is UNCONDITIONAL (not dev-gated). Containing a throw is
+ *    only an improvement while it stays VISIBLE — a dev-gated log would make the
+ *    throw vanish completely in a prod build with no hook installed, which is
+ *    strictly worse than the escape it replaces (that at least reached
+ *    `window.onerror`). #165 is precisely what invisible-and-contained costs.
+ *  - The hook is tooling too (the agent bridge installs one), so a throw FROM it
+ *    would escape the very loop that is containing the binding's throw. Contain
+ *    it here or the fix reopens its own hole.
+ *
+ * SCOPE, because it is wider than "the mount boundary": this is the ONE reporter
+ * for both containment paths, so the console write also fires on the UPDATE path
+ * whenever a `setOnBindingError` hook is installed — i.e. once per contained
+ * binding throw in every agent/devtools session, where previously only the hook
+ * saw it. That is deliberate (the hook is a machine channel; a human debugging the
+ * same session should not have to install one to see the throw) and it is the
+ * reason the two paths share this function rather than each rolling their own. */
 function reportBindingError(err: unknown): void {
+  console.error(
+    `[llui] a binding threw and was isolated — the DOM it writes keeps its prior ` +
+      `value and the sibling bindings still ran.`,
+    err,
+  )
   const handler = errorHandlers[errorHandlers.length - 1]
   if (!handler) return
-  handler(toBindingError(err, 'binding'))
+  try {
+    handler(toBindingError(err, 'binding'))
+  } catch (hookErr) {
+    console.error(
+      `[llui] the setOnBindingError hook threw while reporting a binding error. ` +
+        `It was isolated too.`,
+      hookErr,
+    )
+  }
 }
 
 /** The behavioral half of a binding: the accessor + the DOM write. The scope
@@ -116,7 +172,11 @@ export interface SignalBinding<V = unknown> {
 }
 
 export interface SignalScope {
-  /** mount: run every binding once against the initial state */
+  /** mount: run every binding once against the initial state. A binding that
+   * THROWS is contained to itself — reported (console + any `setOnBindingError`
+   * hook) and skipped, so its siblings still mount rather than the fragment being
+   * abandoned half-drawn (#165). This holds with or without a hook installed;
+   * {@link SignalScope.update} is the asymmetric half. */
   mount(state: unknown): void
   /** update: gate by dirty bits, commit only changed values (STRUCTURAL bindings
    * commit whenever their gate passes — see {@link SignalBinding.structural}), then
@@ -159,14 +219,46 @@ class SignalScopeImpl implements SignalScope {
     this.last = new Array<unknown>(bindings.length)
   }
 
+  // A mount OUTSIDE a commit round is guarded; a mount INSIDE one is not — unless a
+  // `setOnBindingError` hook is installed, in which case it is guarded too. That
+  // hooked case matches main in WHEN it engages, but not in what it does: this loop
+  // re-throws an `LluiFrameworkError` (see below), which main's hooked mount path
+  // reported and swallowed. The change is deliberate and in the fatal direction —
+  // the taxonomy is uniform wherever a throw is caught — but it is a change, not
+  // pre-existing behaviour.
+  //
+  // WHY GUARD AT ALL. A mount has no previous frame to fall back on. When a throw
+  // escaped this loop the enclosing fragment was abandoned HALF-DRAWN and stayed
+  // that way — the reporting incident rendered a header, a section heading and an
+  // empty table, then nothing, reading as a confident "there is no data" (#165).
+  // Nothing recovers from it: the DOM the loop already wrote is live, and no later
+  // state change re-runs the bindings it never reached.
+  //
+  // WHY ONLY OUTSIDE A ROUND. Containing a throw inside a round changes the
+  // SCHEDULE: the round completes instead of aborting, so its collected effects are
+  // DISPATCHED where `commit-scope.ts` says a round that throws must drop them
+  // (they would otherwise run `onEffect` against a half-reconciled DOM — and a
+  // contained binding failure IS a partially-reconciled DOM, close enough to the
+  // stated hazard that it must not be widened as a side effect of an unrelated
+  // fix). Measured against that cost, the in-round guard bought nothing for the
+  // incident that motivated this work: #165's own trigger shape is a `branch`
+  // loading→ready arm, and a freshly-mounted arm is re-run IN THE SAME ROUND by the
+  // parent's children sweep (the unguarded `update` path below), so it throws
+  // anyway. The initial mount — where the half-drawn document actually happens — is
+  // outside any commit round and is fully covered. Widening this is #216, on its own
+  // evidence.
+  //
+  // So: in-round behaviour is byte-identical to main, and `update` is untouched.
+  //
+  // Structure: ONE try region for the whole guarded loop (re-entered only after a
+  // throw, resuming at the next binding) rather than a try/catch PER BINDING — the
+  // per-iteration wrapper is what main's fast path existed to avoid.
   mount(state: unknown): void {
     const { bindings, last } = this
     const n = bindings.length
-    // Fast path: no binding-error hook installed (the common case). Run the
-    // hottest loop in the runtime WITHOUT a per-iteration try/catch — that wrapper
-    // is a V8 optimization barrier, and a throw here propagates by default exactly
-    // as before. The safe path is taken only while a hook is active (agent/debug).
-    if (errorHandlers.length === 0) {
+    if (commitRoundDepth > 0 && errorHandlers.length === 0) {
+      // Inside a round with no hook: main's path, verbatim. The throw propagates,
+      // the round aborts, and its effects are dropped by `drain`.
       for (let i = 0; i < n; i++) {
         const b = bindings[i]!
         const v = b.produce(state)
@@ -175,16 +267,24 @@ class SignalScopeImpl implements SignalScope {
       }
       return
     }
-    for (let i = 0; i < n; i++) {
-      const b = bindings[i]!
+    let i = 0
+    while (i < n) {
       try {
-        const v = b.produce(state)
-        b.commit(v)
-        last[i] = v
+        for (; i < n; i++) {
+          const b = bindings[i]!
+          const v = b.produce(state)
+          b.commit(v)
+          last[i] = v
+        }
       } catch (err) {
-        // Hook installed: report and continue siblings, leaving this binding's
-        // last value untouched (DOM keeps its prior value).
+        // A FRAMEWORK authoring invariant is not a data surprise and is NOT
+        // contained: swallowing "a row cannot have a `show` as its top-level node"
+        // mounts a tree that cannot be reconciled, and the failure then resurfaces
+        // as a `NotFoundError` three interactions later — the displacement #165 is
+        // filed about. See framework-error.ts.
+        if (isFrameworkError(err)) throw err
         reportBindingError(err)
+        i++ // skip the binding that threw; its `last` slot stays unwritten
       }
     }
   }

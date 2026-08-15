@@ -14,6 +14,7 @@
 // capture-and-reuse correct by construction.
 
 import type { SignalBinding, SignalScope } from './runtime.js'
+import { LluiFrameworkError } from './framework-error.js'
 
 /** The minimal node-factory surface the signal build needs from its document.
  * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
@@ -154,7 +155,8 @@ export function isReactive(v: unknown): v is Reactive {
 }
 
 export function requireCtx(): BuildCtx {
-  if (!ctx) throw new Error('signal DOM helper called outside a signal build (mountSignal)')
+  if (!ctx)
+    throw new LluiFrameworkError('signal DOM helper called outside a signal build (mountSignal)')
   return ctx
 }
 

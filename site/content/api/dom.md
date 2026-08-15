@@ -465,6 +465,17 @@ function hydrateSignalApp<S, M, E = never>(
 ): SignalComponentHandle<S, M>
 ```
 
+### `isFrameworkError()`
+
+Is this throw a framework authoring invariant (so: fatal), rather than a data
+surprise the mount boundary should contain and report?
+
+Brand check — see this module's header for why it is not `instanceof`.
+
+```typescript
+function isFrameworkError(err: unknown): boolean
+```
+
 ### `isMountable()`
 
 ```typescript
@@ -1808,7 +1819,14 @@ any component-state paths the rows read (so the list reconciles on either).
 
 ```typescript
 export interface EachSource<T> {
-  items: (state: unknown) => readonly T[]
+  /** Read the list out of the state the reconcile was handed.
+   *
+   * The return type is DELIBERATELY nullable even though every authoring entry
+   * point is typed `Signal<readonly T[]>`: the accessor is a path walk, and
+   * `mask.ts`'s `resolveSegs` is explicitly undefined-safe, so `state.at('items')`
+   * over an absent/late-arriving path produces `undefined` rather than throwing.
+   * The reconcile totals that with {@link createItemsResolver} — see #165. */
+  items: (state: unknown) => readonly T[] | null | undefined
   deps: readonly string[]
   /** See {@link BindingSpec.componentRooted}: `true` when the items accessor reads
    * the COMPONENT state (so a nested each reads `ctx.state`, not the enclosing row
@@ -2668,6 +2686,23 @@ export interface VirtualEachSpec<T> extends EachSource<T> {
   /** build a row; `getCtx` exposes the row's live `{ item, state, index }` ctx
    * (same shape as `signalEach`) for runtime item/index handles. */
   renderRow: (getCtx: () => RowCtx<T>) => Renderable
+}
+```
+
+## Classes
+
+### `LluiFrameworkError`
+
+An error raised by the framework about the AUTHORING — a shape that cannot be
+mounted, a helper reached outside a build, a lowering that did not happen.
+Distinct from any throw originating in user accessor/commit code.
+
+Never contained by the mount error boundary; see {@link isFrameworkError}.
+
+```typescript
+class LluiFrameworkError extends Error {
+  __lluiFrameworkError
+  constructor(message: string)
 }
 ```
 

@@ -18,6 +18,7 @@ import { resolveSegments } from './mask.js'
 // import handle).
 import { __inRowBuild } from './build-context.js'
 import { isRowLocalDep, rebaseComponentDep } from './row-rebase.js'
+import { LluiFrameworkError } from './framework-error.js'
 import type { Signal, MappedSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
@@ -122,7 +123,9 @@ function makeMappedHandle<T>(
     rowLocal,
     peek,
     at: (() => {
-      throw new Error('.at() on a mapped signal is unsupported — slice with .at() before .map()')
+      throw new LluiFrameworkError(
+        '.at() on a mapped signal is unsupported — slice with .at() before .map()',
+      )
     }) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>
       mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal)) as Signal<T>['map'],
@@ -225,7 +228,12 @@ function combineSignals(
   const handles: SignalHandle<unknown>[] = []
   for (const s of sigs) {
     if (!isSignalHandle(s)) {
-      throw new TypeError('derived(): every input must be a signal (got a non-signal value)')
+      // Branded for the same reason as `compiledAway` — a row build reaches this,
+      // and an unbranded throw would render the whole list empty with one console
+      // line instead of naming the mis-wired call.
+      throw new LluiFrameworkError(
+        'derived(): every input must be a signal (got a non-signal value)',
+      )
     }
     handles.push(s)
   }
