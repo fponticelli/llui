@@ -1,6 +1,7 @@
 import { resolveElements, type ElementSource } from './dom.js'
 import { getFocusables } from './focusables.js'
 import { getNestedLayers } from './nested-layer.js'
+import { engineFocus, runEngineFocus } from './engine-focus.js'
 
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
@@ -85,19 +86,25 @@ export function pushFocusTrap(opts: FocusTrapOptions): () => void {
   const containers = resolveElements(opts.container)
   const initial =
     typeof opts.initialFocus === 'function' ? opts.initialFocus() : (opts.initialFocus ?? null)
-  if (initial && initial instanceof HTMLElement) {
-    initial.focus()
-  } else if (containers.length > 0) {
-    const focusables = getFocusables(containers[0]!)
-    focusables[0]?.focus()
-  }
+  // Engine-initiated: activating a trap moves focus as bookkeeping, so no OTHER
+  // open layer may read it as an outside interaction (#155).
+  runEngineFocus(() => {
+    if (initial && initial instanceof HTMLElement) {
+      initial.focus()
+    } else if (containers.length > 0) {
+      const focusables = getFocusables(containers[0]!)
+      focusables[0]?.focus()
+    }
+  })
 
   return () => {
     const idx = stack.indexOf(trap)
     if (idx !== -1) stack.splice(idx, 1)
     maybeRemoveListener()
     if (restoreFocus && previouslyFocused && typeof previouslyFocused.focus === 'function') {
-      previouslyFocused.focus()
+      // Releasing a trap hands focus back — engine bookkeeping, invisible to
+      // other layers' outside-interaction watchers (#155).
+      engineFocus(previouslyFocused)
     }
   }
 }

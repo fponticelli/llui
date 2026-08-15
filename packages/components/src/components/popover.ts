@@ -4,6 +4,7 @@ import { LocaleContext } from '../locale.js'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
+import { engineFocus } from '../utils/engine-focus.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
@@ -278,7 +279,10 @@ export function overlay(opts: OverlayOptions): Mountable {
       disableEscape: !closeOnEscape,
       disableOutside: !closeOnOutsideClick,
       extra: (els) => {
-        if (restoreFocus) els.anchor?.focus()
+        // `engineFocus`, not a bare `.focus()`: restoring the trigger is the
+        // engine's own bookkeeping, and a SIBLING layer must not read it as an
+        // outside interaction and dismiss itself (#155).
+        if (restoreFocus && els.anchor) engineFocus(els.anchor)
       },
     },
   })

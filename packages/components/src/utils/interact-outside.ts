@@ -1,5 +1,6 @@
 import { resolveElements, isInAnyElement, composedTarget, type ElementSource } from './dom.js'
 import { isInNestedLayer } from './nested-layer.js'
+import { isEngineFocusInProgress } from './engine-focus.js'
 
 export interface InteractOutsideOptions {
   /** Element(s) that define the "inside" region. */
@@ -47,6 +48,12 @@ export function watchInteractOutside(opts: InteractOutsideOptions): () => void {
   }
 
   const handleFocus = (event: FocusEvent): void => {
+    // An engine-initiated focus move — a layer restoring focus to its trigger on
+    // teardown, a focus trap releasing, focus-on-open — is internal bookkeeping,
+    // not a user interaction, and no OTHER layer may observe it as one (#155).
+    // Gating it here and not in the pointer handler is the whole design: a
+    // genuine click that lands during a teardown must still dismiss.
+    if (isEngineFocusInProgress()) return
     if (opts.shouldDispatch && !opts.shouldDispatch(event)) return
     const target = composedTarget(event)
     const inside = resolveElements(opts.element)
