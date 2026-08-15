@@ -9,6 +9,7 @@ import { createCaptureRegistry } from '../src/notes/capture-registry.js'
 import { createEventBus } from '../src/notes/event-bus.js'
 import { createNotesMiddleware } from '../src/notes/middleware.js'
 import type { CreateNoteRequest, NoteFrontmatter, ServerEvent } from '../src/notes/types.js'
+import { waitUntil } from './wait-until.js'
 
 interface Fixture {
   notesRoot: string
@@ -72,23 +73,6 @@ function stopFixture(f: Fixture): Promise<void> {
   // case, which it cannot reach at all — see the agent WS tests).
   f.server.closeAllConnections()
   return new Promise((resolve) => f.server.close(() => resolve()))
-}
-
-/** Resolve once `predicate` holds, polling on a short interval.
- *
- *  A fixed `setTimeout` in front of an assertion is a race by construction:
- *  the duration is calibrated on one machine and nothing ties it to the
- *  event it stands in for, so a slower box or a loaded CI runner fails it
- *  nondeterministically (#95). Waiting on the condition itself removes the
- *  calibration. The budget is deliberately under vitest's 5s default so a
- *  genuine hang reports THIS message instead of an anonymous test timeout.
- */
-async function waitUntil(what: string, predicate: () => boolean, budgetMs = 2000): Promise<void> {
-  const deadline = Date.now() + budgetMs
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out after ${budgetMs}ms waiting for ${what}`)
-    await new Promise((r) => setTimeout(r, 2))
-  }
 }
 
 let f: Fixture
@@ -258,7 +242,7 @@ describe('GET /_llui/sessions', () => {
 })
 
 describe('GET /_llui/events (SSE)', () => {
-  it('emits note-created events to subscribed viewers', async () => {
+  it('emits note-created events to subscribed viewers', async (ctx) => {
     const ctrl = new AbortController()
     const eventsPromise = (async () => {
       const res = await fetch(`${f.base}/_llui/events?role=viewer`, { signal: ctrl.signal })
@@ -275,7 +259,7 @@ describe('GET /_llui/events (SSE)', () => {
     })()
     // The post only reaches the stream once the SSE handler has subscribed;
     // wait for that subscription, not for a duration.
-    await waitUntil('the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
+    await waitUntil(ctx, 'the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
     await fetch(`${f.base}/_llui/notes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -294,7 +278,7 @@ describe('GET /_llui/events (SSE)', () => {
   // FOREVER and this file dies on an anonymous hook timeout instead of failing
   // an assertion. That is how the real defect presented: a 2 s failure in the
   // test above cost 62 s to report. Costs one request and one poll.
-  it('teardown closes the server even with an SSE stream left open', async () => {
+  it('teardown closes the server even with an SSE stream left open', async (ctx) => {
     const res = await fetch(`${f.base}/_llui/events?role=viewer`)
     expect(res.status).toBe(200)
     // A PENDING read is what makes the connection genuinely un-reapable, and it
@@ -303,7 +287,7 @@ describe('GET /_llui/events (SSE)', () => {
     // enough — that gets torn down a few seconds later on its own.
     const reader = res.body!.getReader()
     void reader.read().catch(() => {})
-    await waitUntil('the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
+    await waitUntil(ctx, 'the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
     // Intentionally no abort and no drain — the fixture owns this connection.
   })
 })
@@ -320,7 +304,7 @@ describe('POST /_llui/capture-request', () => {
     expect(body.status).toBe('no-client')
   })
 
-  it('long-polls until a HUD fulfills via /_llui/notes', async () => {
+  it('long-polls until a HUD fulfills via /_llui/notes', async (ctx) => {
     // Subscribe as a HUD; record the requestId so we can fulfill via POST.
     const events: ServerEvent[] = []
     const unsub = f.bus.subscribe('hud', (e) => events.push(e))
@@ -331,7 +315,7 @@ describe('POST /_llui/capture-request', () => {
       body: JSON.stringify({ route: '/x' }),
     })
     // Wait for the event the middleware broadcasts, not for a duration.
-    await waitUntil('the capture-request broadcast', () =>
+    await waitUntil(ctx, 'the capture-request broadcast', () =>
       events.some((e) => e.type === 'capture-request'),
     )
     const requestEvent = events.find((e) => e.type === 'capture-request')

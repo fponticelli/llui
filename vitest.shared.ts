@@ -31,24 +31,43 @@ export default defineConfig({
     // budget once, here, and let packages state only their real deltas.
     //
     // Both numbers are measured against a deliberately saturated machine
-    // (18-core M5 Max, 72 spinner processes, load average 400–640) rather than
-    // picked as round numbers. Worst observed cases:
+    // (18-core M5 Max, CPU spinners + filesystem churn, load average 200–1000)
+    // rather than picked as round numbers. Worst observed cases, at load ~400:
     //
-    //   lexical-loro     harden.test.ts            33.0 s  (200-op 3-peer burst)
     //   @llui/mcp        playwright-e2e teardown   30.2 s  (see below)
-    //   lexical-loro     harden.test.ts (sibling)  14.9 s  (multi-block pastes)
     //   @llui/mcp        doctor.test.ts            10.8 s  (spawns dist/cli.js)
     //   markdown-editor  typing-loop.test.ts        6.4 s  (480 keystrokes)
+    //   lexical-loro     harden.test.ts             1.4 s  (heaviest burst trial)
     //
     // testTimeout 30 s is the number four separate files had converged on
-    // independently — but be honest about the headroom: it is NOT a multiple of
-    // the heaviest test, it is AT PARITY with it. `harden.test.ts`'s 200-op
-    // burst was measured at 33.0 s at load 520 (0.7 s idle, 10.0 s at load 200)
-    // and FAILS with `Test timed out in 30000ms` there. That is pre-existing and
-    // budget-identical to what `packages/lexical-loro` already set for itself,
-    // so raising the shared number would not be a fix — by the rule stated at
-    // the bottom of this comment, a test that approaches the budget wants to be
-    // CHEAPER, not to be given more room. Tracked rather than actioned here.
+    // independently. It did NOT have headroom when this comment was first
+    // written: `harden.test.ts`'s burst was one 200-operation run measured at
+    // 33.0 s at load 520 (0.7 s idle, 10.0 s at load 200) and it FAILED there
+    // with `Test timed out in 30000ms`. That was budget-identical to what
+    // `packages/lexical-loro` had already set for itself, so raising the shared
+    // number was never the fix — by the rule at the bottom of this comment, a
+    // test that approaches the budget wants to be CHEAPER. #197 made it cheaper,
+    // in two independent steps, and both are worth copying:
+    //
+    //   1. the burst's cost is QUADRATIC in its own length (the CRDT's, not the
+    //      document's), so the same total operation count split across six
+    //      independent SEEDED runs costs ~4x less and samples more — see the
+    //      rationale block in `harden.test.ts`;
+    //   2. `testTimeout` is a PER-TEST budget, so those six trials are six
+    //      `it()`s rather than one loop. Six trials in one test is a single test
+    //      whose duration is the sum of independent work, which is the shape
+    //      that ran out of budget in the first place.
+    //
+    // Together: 23–25 s at load 390 became 1.1–1.4 s per trial at load 220, and
+    // 4.1–5.9 s per trial at load 830–960.
+    //
+    // Two honest caveats on that table. It is a snapshot of a SHARED machine, so
+    // treat the numbers as a band, not a constant. And contention has no
+    // ceiling, so no budget and no amount of trimming makes a CPU-bound test
+    // load-proof — beyond load ~850 the thing that fails in that file is a
+    // hand-picked `expect(elapsed).toBeLessThan(5000)` regression guard, which
+    // is the #189 mistake wearing an assertion instead of a poll deadline
+    // (tracked as #218).
     //
     // hookTimeout 60 s is sized by a hard upstream floor, not by our own work:
     // under CPU saturation Chromium never completes a graceful shutdown, so
@@ -95,6 +114,13 @@ export default defineConfig({
     //
     // If a test starts approaching either number for reasons other than the
     // floor above, the fix is a cheaper test, not a bigger budget.
+    //
+    // And the budget only binds a test that lets it: a test that polls against
+    // its OWN `Date.now() + n` deadline is immune to everything stated here, so
+    // it flakes under contention no matter what these numbers say. That is #189,
+    // and the fix is `packages/vite-plugin/test/wait-until.ts` — wait on the
+    // condition, bounded by the test's `ctx.signal`, so `testTimeout` really is
+    // the one budget. Copy that pattern, not a millisecond literal.
     testTimeout: 30_000,
     hookTimeout: 60_000,
   },

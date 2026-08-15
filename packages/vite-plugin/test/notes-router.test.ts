@@ -8,6 +8,7 @@ import { createNote } from '../src/notes/store.js'
 import { appendStatus, currentStatus, readStatusHistory } from '../src/notes/status.js'
 import { resolveCliInvocation, startRouter, type ClaudeSpawner } from '../src/notes/router.js'
 import type { NoteFrontmatter } from '../src/notes/types.js'
+import { settle, waitUntil } from './wait-until.js'
 
 const fmTask: Omit<NoteFrontmatter, 'id' | 'ts'> = {
   author: 'human',
@@ -67,7 +68,7 @@ afterEach(() => {
 })
 
 describe('startRouter', () => {
-  it('claims a task note when note-created fires', async () => {
+  it('claims a task note when note-created fires', async (ctx) => {
     const bus = createEventBus()
     const spawner = mockSpawner(async () => ({ exitCode: 0 }))
     const handle = startRouter({
@@ -85,8 +86,7 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    // Drain the microtask queue + give the async pipeline a chance.
-    await new Promise((r) => setTimeout(r, 10))
+    await waitUntil(ctx, 'the router to spawn', () => spawner.calls.length >= 1)
 
     expect(spawner.calls).toHaveLength(1)
     const sessionDir = join(notesRoot, note.sessionId)
@@ -114,12 +114,14 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
+    // Negative assertion: the router must produce NOTHING for a non-task note,
+    // so there is no observable to wait on. See `settle`'s note on vacuity.
+    await settle()
     expect(spawner.calls).toHaveLength(0)
     handle.stop()
   })
 
-  it('marks task as "failed" when claude exits non-zero', async () => {
+  it('marks task as "failed" when claude exits non-zero', async (ctx) => {
     const bus = createEventBus()
     const spawner = mockSpawner(async () => ({
       exitCode: 1,
@@ -140,14 +142,17 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
-
     const sessionDir = join(notesRoot, note.sessionId)
+    await waitUntil(
+      ctx,
+      'the task to reach a terminal status',
+      () => currentStatus(sessionDir, note.id) === 'failed',
+    )
     expect(currentStatus(sessionDir, note.id)).toBe('failed')
     handle.stop()
   })
 
-  it('marks task as "failed" when claude times out', async () => {
+  it('marks task as "failed" when claude times out', async (ctx) => {
     const bus = createEventBus()
     const spawner = mockSpawner(async () => ({ exitCode: -1, timedOut: true }))
     const handle = startRouter({
@@ -164,15 +169,20 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
     const sessionDir = join(notesRoot, note.sessionId)
+    await waitUntil(
+      ctx,
+      'the task to reach a terminal status',
+      () => currentStatus(sessionDir, note.id) === 'failed',
+    )
+    expect(currentStatus(sessionDir, note.id)).toBe('failed')
     const last = readStatusHistory(sessionDir, note.id).at(-1)
     expect(last?.to).toBe('failed')
     expect(last?.reason).toMatch(/timed out/)
     handle.stop()
   })
 
-  it('parses an llui-reply block from stdout and creates a reply note + proposed status', async () => {
+  it('parses an llui-reply block from stdout and creates a reply note + proposed status', async (ctx) => {
     const bus = createEventBus()
     const replyJson = JSON.stringify({
       summary: 'replace Update with Save changes',
@@ -201,14 +211,17 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
-
     const sessionDir = join(notesRoot, note.sessionId)
+    await waitUntil(
+      ctx,
+      'the reply to be parsed into a proposed status',
+      () => currentStatus(sessionDir, note.id) === 'proposed',
+    )
     expect(currentStatus(sessionDir, note.id)).toBe('proposed')
     handle.stop()
   })
 
-  it('marks failed when stdout has no llui-reply block', async () => {
+  it('marks failed when stdout has no llui-reply block', async (ctx) => {
     const bus = createEventBus()
     const handle = startRouter({
       notesRoot,
@@ -227,13 +240,17 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
     const sessionDir = join(notesRoot, note.sessionId)
+    await waitUntil(
+      ctx,
+      'the task to reach a terminal status',
+      () => currentStatus(sessionDir, note.id) === 'failed',
+    )
     expect(currentStatus(sessionDir, note.id)).toBe('failed')
     handle.stop()
   })
 
-  it('marks failed when the llui-reply JSON is malformed', async () => {
+  it('marks failed when the llui-reply JSON is malformed', async (ctx) => {
     const bus = createEventBus()
     const handle = startRouter({
       notesRoot,
@@ -252,13 +269,17 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
     const sessionDir = join(notesRoot, note.sessionId)
+    await waitUntil(
+      ctx,
+      'the task to reach a terminal status',
+      () => currentStatus(sessionDir, note.id) === 'failed',
+    )
     expect(currentStatus(sessionDir, note.id)).toBe('failed')
     handle.stop()
   })
 
-  it('processes tasks serially (one at a time)', async () => {
+  it('processes tasks serially (one at a time)', async (ctx) => {
     const bus = createEventBus()
     let inFlight = 0
     let maxInFlight = 0
@@ -290,20 +311,17 @@ describe('startRouter', () => {
         author: 'human',
       })
     }
-    // Poll for all three spawner calls instead of a fixed sleep — under
-    // monorepo-wide concurrent test load, the event loop is slow enough
-    // that 3 × 5ms serial tasks + overhead occasionally exceeds an 80ms
-    // wall-clock budget. Cap at 2s so a genuine hang still fails fast.
-    const deadline = Date.now() + 2000
-    while (spawner.calls.length < 3 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5))
-    }
+    // Wait for the CONDITION, on the TEST's budget: 3 serial tasks are a dozen
+    // filesystem round-trips each, and a private 2 s deadline here is what #189
+    // blew (`expected 2 to be >= 3`) on a machine saturated by workspace-wide
+    // `turbo test`. Nothing was hung — see `wait-until.ts`.
+    await waitUntil(ctx, 'all three tasks to be spawned', () => spawner.calls.length >= 3)
     expect(spawner.calls.length).toBeGreaterThanOrEqual(3)
     expect(maxInFlight).toBe(1)
     handle.stop()
   })
 
-  it('with concurrency>1, serializes tasks PER chain but parallelizes ACROSS chains', async () => {
+  it('with concurrency>1, serializes tasks PER chain but parallelizes ACROSS chains', async (ctx) => {
     const bus = createEventBus()
     const inFlightByChain = new Map<string, number>()
     const maxInFlightByChain = new Map<string, number>()
@@ -352,10 +370,7 @@ describe('startRouter', () => {
         author: 'human',
       })
     }
-    const deadline = Date.now() + 2000
-    while (spawner.calls.length < 5 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5))
-    }
+    await waitUntil(ctx, 'all five tasks to be spawned', () => spawner.calls.length >= 5)
     expect(spawner.calls.length).toBeGreaterThanOrEqual(5)
     // PER chain: never more than 1 at a time.
     expect(maxInFlightByChain.get('alpha')).toBe(1)
@@ -366,15 +381,19 @@ describe('startRouter', () => {
     handle.stop()
   })
 
-  it('skips a task that is already claimed by someone else', async () => {
+  it('skips a task that is already claimed by someone else', async (ctx) => {
     const bus = createEventBus()
     const spawner = mockSpawner(async () => ({ exitCode: 0 }))
+    // Capture the router's decision log so the assertion below waits on the
+    // router HAVING DECIDED rather than on a duration. A bare sleep passes
+    // vacuously whenever contention keeps the router from getting that far.
+    const logged: string[] = []
     const handle = startRouter({
       notesRoot,
       projectRoot: notesRoot,
       bus,
       spawner,
-      log: () => {},
+      log: (msg) => logged.push(msg),
     })
 
     const note = createNote(notesRoot, { body: 'fix', frontmatter: fmTask, noteBody: {} })
@@ -395,7 +414,15 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
+    await waitUntil(
+      ctx,
+      'the router to skip the pre-claimed task',
+      // `|| calls.length > 0` so a REGRESSION reports as a length mismatch
+      // below rather than as an anonymous 30 s timeout.
+      () =>
+        logged.some((msg) => msg.includes(`skip ${note.id}: status claimed`)) ||
+        spawner.calls.length > 0,
+    )
 
     expect(spawner.calls).toHaveLength(0)
     handle.stop()
@@ -419,7 +446,9 @@ describe('startRouter', () => {
       filename: note.filename,
       author: 'human',
     })
-    await new Promise((r) => setTimeout(r, 10))
+    // Negative assertion: a stopped router emits nothing at all, so there is
+    // no observable to wait on. See `settle`'s note on vacuity.
+    await settle()
     expect(spawner.calls).toHaveLength(0)
   })
 })

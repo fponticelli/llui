@@ -12,6 +12,7 @@ import { createTrustedTaskRegistry } from '../src/notes/trusted-tasks.js'
 import { startRouter } from '../src/notes/router.js'
 import { createNote } from '../src/notes/store.js'
 import type { CreateNoteRequest, NoteFrontmatter } from '../src/notes/types.js'
+import { waitUntil } from './wait-until.js'
 
 const fmBase: Omit<NoteFrontmatter, 'id' | 'ts'> = {
   author: 'human',
@@ -451,16 +452,23 @@ describe('task-spawn capability token (S2)', () => {
 })
 
 describe('router task provenance', () => {
-  it('does not spawn for a note whose id was never marked trusted', async () => {
+  it('does not spawn for a note whose id was never marked trusted', async (ctx) => {
     const notesRoot = mkdtempSync(join(tmpdir(), 'llui-prov-'))
     const bus = createEventBus()
     const trusted = createTrustedTaskRegistry()
     let spawned = 0
+    // Capture the provenance gate's own decision line. Sleeping for a fixed
+    // duration and then asserting `spawned === 0` passes VACUOUSLY whenever
+    // contention keeps the router from reaching the gate at all — which is
+    // precisely the load this test is meant to survive (#189). Waiting for the
+    // gate to SAY it refused proves the branch was taken.
+    const logged: string[] = []
     const handle = startRouter({
       notesRoot,
       projectRoot: notesRoot,
       bus,
       trustedTasks: trusted,
+      log: (msg) => logged.push(msg),
       spawner: {
         spawn: async () => {
           spawned++
@@ -482,7 +490,14 @@ describe('router task provenance', () => {
         filename: note.filename,
         author: 'human',
       })
-      await new Promise((r) => setTimeout(r, 50))
+      await waitUntil(
+        ctx,
+        'the provenance gate to refuse the forged note',
+        // `|| spawned > 0` so a REGRESSION reports as `expected 1 to be 0`
+        // below rather than as an anonymous 30 s timeout.
+        () =>
+          logged.some((msg) => msg.includes(`skip untrusted task note ${note.id}`)) || spawned > 0,
+      )
       expect(spawned).toBe(0)
     } finally {
       handle.stop()
@@ -490,7 +505,7 @@ describe('router task provenance', () => {
     }
   })
 
-  it('spawns for a note that was marked trusted', async () => {
+  it('spawns for a note that was marked trusted', async (ctx) => {
     const notesRoot = mkdtempSync(join(tmpdir(), 'llui-prov-'))
     const bus = createEventBus()
     const trusted = createTrustedTaskRegistry()
@@ -520,7 +535,7 @@ describe('router task provenance', () => {
         filename: note.filename,
         author: 'human',
       })
-      await new Promise((r) => setTimeout(r, 50))
+      await waitUntil(ctx, 'the trusted note to be spawned for', () => spawned >= 1)
       expect(spawned).toBe(1)
     } finally {
       handle.stop()
