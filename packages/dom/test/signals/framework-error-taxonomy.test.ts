@@ -41,10 +41,16 @@ const SOURCES: Record<string, string> = import.meta.glob('../../src/**/*.ts', {
   eager: true,
 })
 
-/** `../../src/signals/each.ts` → `signals/each.ts` (the part after `src/`). */
+/** `../../src/signals/each.ts` → `signals/each.ts` (the part after `src/`).
+ *
+ * The ONLY file-identity in this module, deliberately. An earlier cut keyed the
+ * allow-list by BASENAME while reporting offenders by relative path, which was
+ * harmless while the glob was `src/signals/*.ts` and became a hole the moment it
+ * widened: `index.ts` and `types.ts` now exist in BOTH `src/` and `src/signals/`,
+ * so one allow-listed throw in `signals/types.ts` would have silently exempted
+ * `src/types.ts` too. A false negative, in the gate whose entire purpose is that
+ * branding cannot be forgotten. Do not reintroduce a second path form. */
 const relative = (path: string): string => path.slice(path.indexOf('/src/') + 5)
-/** `../../src/signals/each.ts` → `each.ts` */
-const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
 /**
  * Bare (unbranded) throws that are deliberately NOT `LluiFrameworkError`, keyed by
@@ -52,7 +58,7 @@ const basename = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
  * demotion by the mount boundary is not a hazard for it.
  */
 const ALLOWED_BARE_THROWS: Record<string, Array<{ fragment: string; why: string }>> = {
-  'debug-collect.ts': [
+  'signals/debug-collect.ts': [
     {
       fragment: 'unknown component:',
       why:
@@ -62,7 +68,7 @@ const ALLOWED_BARE_THROWS: Record<string, Array<{ fragment: string; why: string 
         'framework-fatal into a relay response.',
     },
   ],
-  'commit-scope.ts': [
+  'signals/commit-scope.ts': [
     {
       fragment: 'CommitToken.settle() was called outside its commit scope',
       why:
@@ -94,15 +100,13 @@ describe('#165 framework-error taxonomy is enforced, not remembered', () => {
     // vacuously, which is the one way an enforcement test fails silently.
     expect(Object.keys(SOURCES).length).toBeGreaterThan(30)
     for (const [path, text] of Object.entries(SOURCES)) {
-      const file = basename(path)
-      if (file === 'framework-error.ts') continue
+      const file = relative(path)
+      if (file === 'signals/framework-error.ts') continue
       for (const { ctor, tail } of bareThrows(text)) {
         if (ctor === 'LluiFrameworkError') continue
         const allowed = ALLOWED_BARE_THROWS[file] ?? []
         if (allowed.some((a) => tail.includes(a.fragment))) continue
-        offenders.push(
-          `${relative(path)}: throw new ${ctor}(…) — ${tail.slice(0, 120).replace(/\s+/g, ' ')}`,
-        )
+        offenders.push(`${file}: throw new ${ctor}(…) — ${tail.slice(0, 120).replace(/\s+/g, ' ')}`)
       }
     }
     expect(
@@ -115,19 +119,49 @@ describe('#165 framework-error taxonomy is enforced, not remembered', () => {
     ).toEqual([])
   })
 
+  it('every allow-list key names exactly one real file', () => {
+    // The guard on the guard. A key that matches NO file is a dead exemption that
+    // silently stops covering the throw it was written for; a key that matches
+    // MORE THAN ONE is the basename hole this file already had once — an exemption
+    // written for `signals/types.ts` also excusing `src/types.ts`. Both fail in the
+    // false-negative direction, which is the direction a build-failing gate cannot
+    // afford, so neither is left to review.
+    for (const key of Object.keys(ALLOWED_BARE_THROWS)) {
+      const matches = Object.keys(SOURCES).filter((p) => relative(p) === key)
+      expect(
+        matches.length,
+        `ALLOWED_BARE_THROWS key ${JSON.stringify(key)} matched ${matches.length} files. ` +
+          `Keys are paths relative to src/ (e.g. "signals/commit-scope.ts"), not bare ` +
+          `basenames — "types.ts" and "index.ts" each exist twice under the glob.`,
+      ).toBe(1)
+    }
+  })
+
+  it('an exemption is per-FILE, not per-basename', () => {
+    // Pins the fix directly: the colliding basenames are real, and an exemption
+    // keyed on one path must not reach its twin.
+    const colliding = ['types.ts', 'index.ts']
+    for (const name of colliding) {
+      const hits = Object.keys(SOURCES).filter(
+        (p) => relative(p).endsWith(`/${name}`) || relative(p) === name,
+      )
+      expect(hits.length, `expected ${name} to exist in more than one directory`).toBeGreaterThan(1)
+    }
+  })
+
   it('the two sites review caught (#165 B1/B2) are branded', () => {
     // Named explicitly so a refactor that re-bares them fails on the site, not just
     // on the generic sweep above.
     const read = (name: string): string => {
-      const hit = Object.entries(SOURCES).find(([p]) => basename(p) === name)
+      const hit = Object.entries(SOURCES).find(([p]) => relative(p) === name)
       if (!hit) throw new Error(`source not found in glob: ${name}`)
       return hit[1]
     }
-    const authoring = read('authoring.ts')
+    const authoring = read('signals/authoring.ts')
     expect(authoring).toContain('throw new LluiFrameworkError(')
     expect(authoring).not.toMatch(/const compiledAway[\s\S]{0,600}?throw new Error\(/)
 
-    const handle = read('handle.ts')
+    const handle = read('signals/handle.ts')
     expect(handle).not.toContain('throw new TypeError(')
   })
 
