@@ -45,6 +45,29 @@ export interface BindingError {
  * into its own envelope), but the runtime only ever produces these two. */
 export type BindingErrorKind = 'binding' | 'subscriber'
 
+// Depth of commit ROUNDS currently in flight. A round is opened by
+// `component.ts`'s `commitToDom` around its `mount.update(next)` — the one place a
+// reconcile is driven — so a non-zero depth means "a settle round is reconciling
+// right now". `mount()` reads it to decide whether it may contain a throw.
+//
+// Kept here rather than read out of `commit-scope.ts` deliberately: that module's
+// guard/queue/effect-frame state is private and reachable only through a
+// `CommitToken`, and a read-only peephole into it would be a second way to observe
+// scheduler state. This is one integer owned by the binding driver that needs it.
+let commitRoundDepth = 0
+
+/** Mark `fn` as the DOM work of a commit round — see {@link commitRoundDepth} and
+ * `SignalScopeImpl.mount`. Costs one try/finally per ROUND (not per scope, not per
+ * binding), so it is off the hot per-row path entirely. */
+export function withCommitRound(fn: () => void): void {
+  commitRoundDepth++
+  try {
+    fn()
+  } finally {
+    commitRoundDepth--
+  }
+}
+
 // Active binding-error handler stack. A component installs its handler around
 // its synchronous mount + every send (both of which run all binding produce/
 // commit work), so the stack top always attributes a throw to the right
@@ -196,33 +219,49 @@ class SignalScopeImpl implements SignalScope {
     this.last = new Array<unknown>(bindings.length)
   }
 
-  // MOUNT IS ALWAYS GUARDED; `update` (below) keeps its unguarded fast path. The
-  // asymmetry is the design, not an oversight — see #165.
+  // A mount OUTSIDE a commit round is guarded; a mount INSIDE one is not (unless a
+  // `setOnBindingError` hook is installed, which is main's pre-existing behaviour).
   //
-  // A mount has NO PREVIOUS FRAME to fall back on. When a throw escapes this loop
-  // the enclosing fragment is abandoned HALF-DRAWN and stays that way: the
-  // reporting incident rendered a header, a section heading and an empty table,
-  // then nothing — no rows, no totals, no footer, no error on screen, reading as a
-  // confident "there is no data". Nothing recovers from that; the DOM the loop
-  // already wrote is live and no later state change re-runs the bindings it never
-  // reached. So one binding's throw is contained to that binding: its slot in
-  // `last` stays untouched, every sibling still mounts, and the throw is REPORTED
-  // (console + any hook) rather than swallowed.
+  // WHY GUARD AT ALL. A mount has no previous frame to fall back on. When a throw
+  // escaped this loop the enclosing fragment was abandoned HALF-DRAWN and stayed
+  // that way — the reporting incident rendered a header, a section heading and an
+  // empty table, then nothing, reading as a confident "there is no data" (#165).
+  // Nothing recovers from it: the DOM the loop already wrote is live, and no later
+  // state change re-runs the bindings it never reached.
   //
-  // `update` deliberately does NOT get the same containment by default. A throw
-  // there leaves the PREVIOUS, consistent frame in the DOM and aborts the settle
-  // round, which drops that round's collected effects and propagates to the
-  // `send` caller — schedule contract pinned by `test/signals/
-  // scheduler-throw-path.test.ts` and spelled out in `commit-scope.ts`'s header.
-  // Containment there is opt-in via `setOnBindingError`, exactly as before.
+  // WHY ONLY OUTSIDE A ROUND. Containing a throw inside a round changes the
+  // SCHEDULE: the round completes instead of aborting, so its collected effects are
+  // DISPATCHED where `commit-scope.ts` says a round that throws must drop them
+  // (they would otherwise run `onEffect` against a half-reconciled DOM — and a
+  // contained binding failure IS a partially-reconciled DOM, close enough to the
+  // stated hazard that it must not be widened as a side effect of an unrelated
+  // fix). Measured against that cost, the in-round guard bought nothing for the
+  // incident that motivated this work: #165's own trigger shape is a `branch`
+  // loading→ready arm, and a freshly-mounted arm is re-run IN THE SAME ROUND by the
+  // parent's children sweep (the unguarded `update` path below), so it throws
+  // anyway. The initial mount — where the half-drawn document actually happens — is
+  // outside any commit round and is fully covered. Widening this is #216, on its own
+  // evidence.
   //
-  // Structure: ONE try region for the whole loop (re-entered only after a throw,
-  // resuming at the next binding) rather than a try/catch PER BINDING. The
-  // per-iteration wrapper was the thing the old fast path existed to avoid — this
-  // shape keeps the throw-free path a single plain loop inside a single try.
+  // So: in-round behaviour is byte-identical to main, and `update` is untouched.
+  //
+  // Structure: ONE try region for the whole guarded loop (re-entered only after a
+  // throw, resuming at the next binding) rather than a try/catch PER BINDING — the
+  // per-iteration wrapper is what main's fast path existed to avoid.
   mount(state: unknown): void {
     const { bindings, last } = this
     const n = bindings.length
+    if (commitRoundDepth > 0 && errorHandlers.length === 0) {
+      // Inside a round with no hook: main's path, verbatim. The throw propagates,
+      // the round aborts, and its effects are dropped by `drain`.
+      for (let i = 0; i < n; i++) {
+        const b = bindings[i]!
+        const v = b.produce(state)
+        b.commit(v)
+        last[i] = v
+      }
+      return
+    }
     let i = 0
     while (i < n) {
       try {

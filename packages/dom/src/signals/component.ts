@@ -12,7 +12,7 @@
 
 import { mountSignal, type SignalMount, type MountTarget } from './mount.js'
 import type { Renderable } from './element.js'
-import { withBindingErrors, toBindingError, type BindingError } from './runtime.js'
+import { withBindingErrors, withCommitRound, toBindingError, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import { createCommitScheduler, type CommitHost } from './commit-scope.js'
@@ -365,10 +365,14 @@ export function mountSignalComponent<S, M, E = never>(
     // closure) when no error handler is installed — the common case; a 1k-send
     // burst was allocating 1k closures here. Same for the subscriber sweep: a
     // Set iterator per commit is waste when nobody subscribed.
+    // `withCommitRound` marks this as round DOM work, which is what tells
+    // `SignalScopeImpl.mount` it may NOT contain a throw (see #165 / #216): a
+    // subtree mounted from inside this reconcile must abort the round exactly as it
+    // did before the boundary existed, so the effect schedule is unchanged.
     if (onBindingError) {
-      withBindingErrors(onBindingError, () => mount?.update(next))
+      withCommitRound(() => withBindingErrors(onBindingError, () => mount?.update(next)))
     } else {
-      mount?.update(next)
+      withCommitRound(() => mount?.update(next))
     }
     // Subscribers are the observers an app does NOT control tightly — devtools,
     // the agent bridge, a test harness — so one of them throwing must stay their

@@ -473,22 +473,22 @@ describe('#165 — the reported shape: a nested each under an arm swapped loadin
   })
 })
 
-// ── B3: what the mount guard does to the EFFECT SCHEDULE ─────────────────────
+// ── B3: the guard's boundary is the COMMIT ROUND, and the effect frame is unchanged
 //
-// The rule the guard implements is uniform: MOUNT is guarded, UPDATE is not.
-// What that produces is NOT uniform, because a subtree mounted during a `send`
-// may or may not be re-swept by the same round.
+// The rule: a mount OUTSIDE a commit round is guarded; a mount INSIDE one is not
+// (unless a `setOnBindingError` hook is installed — main's pre-existing behaviour).
 //
-// This is the half the first cut of #165 got wrong. The PR body and CLAUDE.md
-// asserted flatly that "a binding throw at update aborts the settle round, which
-// drops that round's collected effects and reaches the `send` caller". That is
-// true for a TOP-LEVEL binding — which is all `scheduler-throw-path.test.ts` and
-// `issue-59-reentrant-effect-buffer.test.ts` exercise — and FALSE for a binding
-// belonging to a row mounted during that same send, which reaches the guard via
-// `each.ts`'s `row.scope!.mount(row.ctx)`.
+// The first cut of #165 guarded every mount, which quietly changed a documented
+// schedule: a row mounted mid-`send` was contained, so the round COMPLETED and
+// DISPATCHED effects that `commit-scope.ts` says a round which throws must drop.
+// That was reverted deliberately. Two findings decided it: the in-round guard is
+// the only thing that changes the schedule, and it bought NOTHING for #165's own
+// trigger shape (a `branch` loading→ready arm is re-run in the same round by the
+// parent's children sweep — the unguarded `update` path — so it throws anyway).
+// Widening it is #216, to be judged on its own evidence.
 //
-// Both traces are pinned here because the effect frame is the contract
-// `commit-scope.ts` exists to protect, and neither pinned test covers this path.
+// So these four traces pin BOTH directions of the boundary. The in-round three are
+// byte-identical to `origin/main`; the out-of-round one is the #165 fix.
 
 describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send', () => {
   interface RowS {
@@ -496,15 +496,11 @@ describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send',
   }
   type FX = { type: 'FX' }
 
-  it('a ROW mounted mid-send is contained: send returns AND the round dispatches', () => {
-    // CHANGED BEHAVIOUR, deliberately and now disclosed. On `origin/main` this send
-    // threw and the round's effects were DROPPED. The round now completes: every
-    // other binding commits, nothing unwinds past the settle loop, so a `send` made
-    // from an effect is not stranded — the two hazards #57 names do not occur. What
-    // remains true is narrower than "the DOM is consistent": one binding's value is
-    // missing. The alternative is worse for data integrity — the reducer has ALREADY
-    // advanced state, so dropping its effects desyncs the state from the effect that
-    // was supposed to persist it.
+  it('a ROW mounted mid-send throws and DROPS the round’s effects, exactly as on main', () => {
+    // The trace the narrowing exists to preserve. The row's scope mounts from inside
+    // `commitToDom`'s reconcile, so `commitRoundDepth > 0` and the guard stands
+    // down: the throw escapes, `drain` never reaches its dispatch, and the effects
+    // this round collected are dropped. Contain this and the schedule changes.
     const c = container()
     const log: string[] = []
     const h = mountSignalComponent<RowS, { type: 'add' }, FX>(c, {
@@ -534,21 +530,55 @@ describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send',
         log.push(`effect:${e.type}`)
       },
     })
-    expect(() => h.send({ type: 'add' })).not.toThrow()
-    expect(log).toEqual(['effect:FX'])
+    expect(() => h.send({ type: 'add' })).toThrow(/row mount boom/)
+    expect(log).toEqual([])
+    h.dispose()
+  })
+
+  it('the SAME row binding IS contained when the mount is outside a round', () => {
+    // The other side of the boundary, and the whole of #165's fix: at the initial
+    // mount there is no round to abort, so the throw is contained, the sibling
+    // binding after it in the same row still commits, and the document is whole.
+    const c = container()
+    const h = mountSignalComponent<RowS, never>(c, {
+      name: 'RowMountOutsideRound',
+      init: () => ({ rows: [{ id: 1, name: 'r' }] }),
+      update: (s) => s,
+      view: ({ state }) => [
+        el('h1', {}, ['header']),
+        ul([
+          each(state.at('rows'), {
+            key: (r) => r.id,
+            render: () => [
+              li([
+                signalText(() => {
+                  throw new Error('row mount boom')
+                }, ['item.id']),
+                signalText(() => 'tail', ['item.id']),
+              ]),
+            ],
+          }),
+        ]),
+        el('footer', {}, ['footer']),
+      ],
+    })
+    expect(c.querySelector('h1')?.textContent).toBe('header')
+    expect(c.querySelector('li')?.textContent).toBe('tail')
     expect(c.querySelector('footer')?.textContent).toBe('footer')
     h.dispose()
   })
 
   it('an ARM mounted mid-send still throws and still DROPS the round’s effects', () => {
-    // UNCHANGED from origin/main, and NOT because the guard skips arms. The arm's
-    // fresh scope IS contained at mount — and is then re-run in the SAME round by
-    // the parent's `for (const c of this.children) c.update(...)` sweep
-    // (`runtime.ts`), which is the UNGUARDED path. So the throw escapes after all.
+    // UNCHANGED from origin/main. The arm mounts from inside the round, so the guard
+    // stands down for the same reason the row's does — and it would escape even if
+    // it did not, because the parent's `for (const c of this.children)
+    // c.update(...)` sweep re-runs the fresh arm IN THE SAME ROUND on the unguarded
+    // `update` path.
     //
-    // The consequence worth stating plainly: for the `branch` loading→ready shape
-    // named as the incident trigger, part 3 of #165 currently buys NOTHING. The
-    // incident is fixed by parts 1 and 2 (the items seam), not by the boundary.
+    // Worth stating plainly, because a reader will otherwise credit the boundary:
+    // for the `branch` loading→ready shape that #165's incident actually took, the
+    // mount boundary buys NOTHING. That page is saved by the items seam (parts 1
+    // and 2), not by part 3.
     const c = container()
     const log: string[] = []
     interface ArmS {
