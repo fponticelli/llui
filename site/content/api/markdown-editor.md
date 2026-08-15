@@ -517,11 +517,13 @@ function parseWikiLinkInner(inner: string): WikiLink | null
 Publish the open-state readers for `editor`'s plugin UIs, and return the
 detach. For the HOST (`markdownEditor`, or any host built on the same plugin
 contract); a plugin never calls this.
+
 Call it from the host's `lexicalForeign` **`register`** hook, whose return value
 IS the disposer — attach and detach are then the same closure, in the same
 disposer chain that releases the mount's other editor references. NOT from
 `onReady`: that hook has no symmetric teardown, so the detach would have to be
 written somewhere else and could drift out of step with the attach.
+
 `register` runs while the editor is being built, before any plugin's own
 `register` can matter and long before a key can be pressed — the readers only
 have to exist by the first keystroke, not by any earlier moment.

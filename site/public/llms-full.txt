@@ -10472,9 +10472,9 @@ const frameEnv: RouterEnv = {
   get historyState() {
     return frame.history.state
   },
-  // Load-bearing: it is what tells a NEW hash navigation apart from a
-  // traversal. A constant here makes every unstamped hash entry read as a
-  // traversal.
+  // A capability test, not a position: `0` means "no history here" and is the
+  // only value the connector distinguishes (it gates the construction-time
+  // seed). Any positive number will do for a surface that has a history.
   get historyLength() {
     return frame.history.length
   },
@@ -10564,21 +10564,104 @@ The same contract holds in **both** `history` and `hash` mode:
   **redirect** — the URL then points somewhere the caller never asked for, so the
   navigate message is dispatched and `state.route` and the URL stay in agreement.
   Use **`navigate()`** when you want the push _and_ the dispatch unconditionally.
+- A **redirected** browser navigation (back/forward or the address bar landing on
+  a route whose `beforeEnter` returns a different one) **replaces the entry it
+  landed on** with the redirect target, then dispatches it. `state.route` and the
+  URL agree, so a reload, a share or a bookmark goes to the redirect target
+  rather than back to the guarded route. The entry is _replaced_, never pushed:
+  `history.length` is unchanged, back still reaches the entry below and forward
+  still reaches every entry above. What stops being reachable at that slot is the
+  guarded route itself — returning to it would only redirect again. When the
+  landed entry's position is unknown (see the blocked case below) the URL is
+  still written, but no index is invented for it.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
-  **when the router knows where the popped entry sits**. It knows that for every
-  entry it created itself. It does **not** know it for an entry that existed
-  before `connectRouter` ran (a deep link the user then navigated away from and
-  came back to), because no browser API reports a position. Blocking a
-  navigation onto such an entry is **guard-honouring but not undoable**: nothing
-  is dispatched, `state.route` keeps the route you never left, and the URL is
-  left showing the blocked one until the next navigation — a visible
-  disagreement, deliberately preferred over a guessed `history.go(delta)`, which
-  traverses to the wrong entry and dispatches a route the user never asked for.
+  **when the router knows the distance back to the entry it was on**. It knows
+  that between two entries it created in one numbering run. It does **not** know
+  it for an entry it never stamped, nor across one, because no browser API
+  reports a position (see _Which entries the router can place_). Blocking a
+  navigation onto or across such an entry is **guard-honouring but not
+  undoable**: nothing is dispatched,
+  `state.route` keeps the route you never left, and the URL is left showing the
+  blocked one until the next navigation — a visible disagreement, deliberately
+  preferred over a guessed `history.go(delta)`, which traverses to the wrong
+  entry and dispatches a route the user never asked for.
 
 `link()` never intercepts a click carrying a modifier key, a non-`_self`
 `target`, a `download` attribute, or a `defaultPrevented` set by an earlier
 handler — those are the browser's to handle.
+
+### Which entries the router can place
+
+Every entry `connectRouter` creates is stamped with its position in
+`history.state` — an index under `__llui_idx` plus the numbering **run** it
+belongs to under `__llui_run`, both merged into whatever your app already keeps
+there — starting with the entry the app loaded on. Those are the entries a
+blocked navigation can be undone against.
+
+An entry it did **not** create is treated as **unknown**, in both modes, and no
+position is invented for one. That covers:
+
+- entries that existed before `connectRouter` ran (a deep link the user
+  navigated away from and came back to);
+- an entry created by a **foreign `history.pushState`** — analytics, an embedded
+  widget, another framework on the page — which fires no event, so the router
+  never learns the stack moved. It reads the entry it is standing on rather than
+  trusting its own last write, which is how it notices;
+- in **hash mode**, an entry created by the user **editing the fragment in the
+  address bar**;
+- an entry stamped by a **build of this router that predates `__llui_run`** — an
+  index with no run beside it. Every such build restarted its numbering across
+  entries it could not place and recorded nothing about the restart, so its
+  indices name no single run and continuing them would compute a delta straight
+  across a gap. The exposure is a **deploy window**: a tab that loaded an older
+  build, navigated, and then loaded a newer one on top of that stack loses the
+  undo for the entries the older build numbered. The entry the new build loads
+  on is re-stamped into a run of its own (your own `history.state` keys are
+  preserved), so everything it goes on to create is placeable as usual.
+
+Such an entry also **ends a run**. Indices count physical entries, so they only
+subtract to a distance while every entry between two of them was numbered in one
+pass; the entries the router numbers after an unknown one start a new run and
+count from their own origin. A delta is computed only within a single run.
+
+The address-bar edit itself works normally — guards run, the message is
+dispatched, `state.route` follows. What is given up is the _undo_, in two
+shapes — both of which leave the stack exactly as it was:
+
+- a guard-blocked traversal **onto** an entry the router never stamped;
+- a guard-blocked traversal **across** one — a `history.go(-3)` from a
+  back-button long-press menu, say, that spans a hand-edited entry.
+
+In both, the URL is left showing the route the guard refused until the next
+navigation, nothing is dispatched, and `state.route` keeps the route you never
+left.
+
+There is one gap no `history.state` scheme can close: an **iframe navigation**
+grows the _joint_ session history without moving the top-level document, so the
+entry it adds is invisible to the stamps above and below it, and even a
+single-step delta can under-count. That needs the Navigation API (below).
+
+That is an accepted trade, decided in [#150]. The alternative was to classify an
+unstamped `hashchange` by watching `history.length` grow — a push grows the
+session history, a traversal does not. It works only while the router has seen
+every change to the stack, and it cannot: a **foreign `history.pushState`**
+(analytics, an embedded widget, another framework on the page) or an **iframe
+navigation** grows the joint session history without firing anything the router
+listens to. The cached length then reads a traversal as a push and stamps an
+**inverted** index — the entry below numbered above the one it sits under — and
+the next blocked back computes its delta from that and traverses **two** entries
+backwards, landing somewhere the user never asked for. Refusing to guess costs
+an undo; guessing corrupts the stack.
+
+(The `popstate`-vs-`hashchange` distinction is not an alternative: assigning
+`location.hash` fires both events, in the same order as `history.back()` —
+measured in Chromium 143, with the `location.hash` half reproduced in this
+package's jsdom tests. `navigation.currentEntry.index` from the Navigation API
+is an authoritative position, immune to foreign `pushState` and iframes alike,
+and is the real fix once it can be relied on.)
+
+[#150]: https://github.com/fponticelli/llui/issues/150
 
 
 ## Functions
@@ -10888,16 +10971,30 @@ than us): only while one is live is the computed transform ours to read, and
 a run left registered makes every later pass measure a row's own author
 transform as if it were a glide.
 
-Known defect (#144): the keyframes below set `transform` to a translation
-alone, so they REPLACE the row's own `transform` rather than composing with
-it, and a running WAAPI animation wins the cascade. A row carrying a non-zero
-CONSTANT author transform (a hover lift, a drag offset) therefore jumps by
-that amount when a glide starts and jumps back when it ends. The DELTA is
-unaffected — the author transform is folded into both the stored position and
-the new rect and cancels out — so this is bounded, cosmetic and
-self-correcting. The fix is to compose the author transform into both
-keyframes; see the issue for why that trades against the single-read rule
-above.
+Composition (#144): a WAAPI animation wins the cascade for the property it
+animates, so keyframes naming a bare `translate(...)` REPLACE the row's own
+`transform` for the length of the glide. A row carrying a constant author
+transform therefore jumped by that amount when a glide started and jumped back
+when it ended (measured in Chromium: a `.lift { transform: translateY(-20px) }`
+row resting at `top: 0` reported `top: 22` one frame into a 60px glide). Both
+keyframes are therefore emitted as `translate(…) <author transform>`, which
+puts the glide OUTSIDE the author's transform — the translation then means the
+same thing whatever the author's linear part is, and a row with no transform
+of its own still gets exactly the bare keyframes it always did.
+
+The author transform is read in the read phase, and ONLY for a row that is
+about to glide: rows that did not move keep paying nothing, which is the cost
+balance #137 struck when it stopped reading the computed transform on every
+settled row forever. A row that IS mid-glide cannot be read at all (our own
+animation owns `transform`), so the value captured when its glide started is
+cached and reused — an author transform that CHANGES mid-glide is therefore
+carried at its old value until the row next settles.
+
+The composition feeds back into the delta: the computed transform of a
+composed glide carries the author's translation too, so the read phase
+subtracts the cached author translation to recover our glide alone. Matrix
+multiplication makes that exact — `translate(g)·A` has translation
+`g + A.translation` for any A.
 
 Element retention is deliberately weak: the tracked positions live in a
 `WeakMap` and the working set is derived from `parent`'s live children
@@ -10990,10 +11087,10 @@ function routeTransition(opts?: RouteTransitionOptions | TransitionOptions): Tra
 
 Scale an element in/out from `from` to 1, optionally fading with it.
 
-> **Known defect (#142).** Carries the same malformed `transition` shorthand
-> as {@link slide}: `transform, opacity 200ms ease-out` gives `transform` a 0s
-> duration, so it snaps rather than scaling and never reports a
-> `transitionend` — the phase resolves on the fallback timer instead.
+Emits the same per-property shorthand as {@link slide} — `transform 200ms
+ease-out, opacity 200ms ease-out` — for the reason spelled out there (#142).
+`transform-origin` rides along in the active value but never transitions, so
+it is not one of the properties the phase waits on.
 
 ```typescript
 function scale(opts: ScaleOptions = {}): TransitionOptions
@@ -11003,16 +11100,11 @@ function scale(opts: ScaleOptions = {}): TransitionOptions
 
 Slide an element in/out along one axis, optionally fading with it.
 
-> **Known defect (#142).** The active value is built as
-> `transition: transform, opacity 250ms ease-out`, which the CSS shorthand
-> grammar reads as TWO single-transitions — the first, `transform`, taking the
-> initial `transition-duration` of **0s**. In a real browser the transform
-> therefore SNAPS and only the opacity animates. A 0s transition also fires no
-> `transitionend`, so `transform` never leaves the set of properties the phase
-> waits on (see {@link waitForEnd}) and the phase always resolves on the
-> fallback timer rather than on a real end — 16ms late, never a hang. Do not
-> read the property filter as "every shipped preset lines up with it": `fade()`
-> does, `slide()` and `scale()` do not until #142 lands.
+Both animated properties carry their own duration and easing in the emitted
+shorthand — `transform 250ms ease-out, opacity 250ms ease-out`. Writing the
+properties as one list with a single trailing timing (`transform, opacity
+250ms ease-out`) gives `transform` the initial duration of 0s, so it snaps
+and reports no `transitionend`; that was #142, and it is invisible to jsdom.
 
 ```typescript
 function slide(opts: SlideOptions = {}): TransitionOptions
@@ -19008,6 +19100,26 @@ Deliberate choices, each load-bearing for exact round-tripping:
 function parseWikiLinkInner(inner: string): WikiLink | null
 ```
 
+### `publishSurfaceOpen()`
+
+Publish the open-state readers for `editor`'s plugin UIs, and return the
+detach. For the HOST (`markdownEditor`, or any host built on the same plugin
+contract); a plugin never calls this.
+
+Call it from the host's `lexicalForeign` **`register`** hook, whose return value
+IS the disposer — attach and detach are then the same closure, in the same
+disposer chain that releases the mount's other editor references. NOT from
+`onReady`: that hook has no symmetric teardown, so the detach would have to be
+written somewhere else and could drift out of step with the attach.
+
+`register` runs while the editor is being built, before any plugin's own
+`register` can matter and long before a key can be pressed — the readers only
+have to exist by the first keystroke, not by any earlier moment.
+
+```typescript
+function publishSurfaceOpen(editor: LexicalEditor, readers: SurfaceReaders): () => void
+```
+
 ### `registerListNodeUpgrade()`
 
 Replace a stock `ListNode` with a `MarkdownListNode` the first time the
@@ -19117,6 +19229,16 @@ editor — the same predicate the importer uses, so the two never disagree.
 
 ```typescript
 function splitFrontmatter(markdown: string): [source: string, rest: string] | null
+```
+
+### `surfaceGate()`
+
+The gate a plugin's `register` half reads: "is MY surface up?". Resolved at
+call time, so it is correct however late the host publishes and however the
+surface was closed (Escape, a chosen row, the caret leaving the trigger).
+
+```typescript
+function surfaceGate(editor: LexicalEditor, plugin: string): () => boolean
 ```
 
 ### `toolbar()`
@@ -19313,6 +19435,14 @@ export type SerializedWikiLinkNode = Spread<
   { target: string; alias: string | null },
   SerializedTextNode
 >
+```
+
+### `SurfaceReaders`
+
+`plugin name` → "is that plugin's surface up right now?".
+
+```typescript
+export type SurfaceReaders = ReadonlyMap<string, () => boolean>
 ```
 
 ## Interfaces
@@ -19862,6 +19992,8 @@ The type-erased form stored on a plugin and consumed by the host.
 export interface PluginUI {
   init: () => unknown
   update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
+  /** See {@link PluginUISpec.isOpen}. */
+  isOpen?: (state: unknown) => boolean
   view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
   onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
 }
@@ -19877,6 +20009,18 @@ export interface PluginUISpec<S, M, E = never> {
   init: () => S
   /** Pure reducer over the slice; may return effects. */
   update?: (state: S, msg: M) => S | [S, E[]]
+  /**
+   * Is this plugin's floating surface UP right now? Declare it whenever the
+   * plugin's `register` half claims keys for that surface (a typeahead answering
+   * `true` to KEY_ESCAPE / KEY_ENTER / the arrows at COMMAND_PRIORITY_HIGH).
+   *
+   * The host publishes it per editor so `register` can gate on it — see
+   * `surfaceGate` in `./surface-open.js`, and issue #130 for what claiming a key
+   * on any other basis costs the host handler sitting below.
+   *
+   * Pure and cheap: it is called on the keystroke path, from live state.
+   */
+  isOpen?: (state: S) => boolean
   /** View contribution (overlays/panels), rendered by the host. */
   view?: (args: PluginViewArgs<S, M>) => Renderable
   /** Effect handler with live-editor access + host dispatch. */
