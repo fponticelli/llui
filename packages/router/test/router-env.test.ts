@@ -47,6 +47,16 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
   // constant here would change no classification.
   let historyLength = 1
 
+  /**
+   * A fragment-only url addresses the HASH; anything else the path — what
+   * `history.pushState`/`replaceState` do with the url they are handed, and what
+   * the hash-mode `replace()` effect now depends on (#164).
+   */
+  const applyUrl = (url: string) => {
+    if (url.startsWith('#')) hash = url
+    else pathname = url
+  }
+
   const env: RouterEnv = {
     get hash() {
       return hash
@@ -68,14 +78,10 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
       hash = next
       historyLength++
     },
-    replaceLocation(url) {
-      calls.push(`replaceLocation:${url}`)
-      hash = url
-    },
     pushState(state, url) {
       calls.push(`pushState:${url}`)
       historyState = state
-      pathname = url
+      applyUrl(url)
       historyLength++
     },
     replaceState(state, url) {
@@ -83,7 +89,7 @@ function recordingEnv(initial?: { hash?: string; pathname?: string; search?: str
       historyState = state
       // An omitted url means "replace the entry's STATE, leave the URL alone" —
       // the same thing `history.replaceState(state, '')` means.
-      if (url !== undefined) pathname = url
+      if (url !== undefined) applyUrl(url)
     },
     back() {
       calls.push('back')
@@ -289,7 +295,13 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(rec.env.hash).toBe('#/article/z')
   })
 
-  it('hash-mode replace goes through env.replaceLocation', () => {
+  it('#164 hash-mode replace is ONE replaceState carrying the fragment', () => {
+    // Converged onto the mechanism `rewriteLandedUrl` already used (#164). It
+    // used to be `location.replace` — which fires a `hashchange` (so an echo had
+    // to be armed for it) and DROPS the entry's state (so the stamp had to be
+    // snapshotted before the write and put back after, as a second
+    // `replaceState:<no url>`). Three calls' worth of sequencing for a swap
+    // `replaceState` does in one, with no event and the state carried.
     const rec = recordingEnv({ hash: '#/' })
     const routing = connected('hash', rec)
     routing.handleEffect({
@@ -297,10 +309,73 @@ describe('connectRouter routes history/location through an injectable env', () =
       send: vi.fn(),
       signal,
     })
-    // `replaceLocation` DROPS the entry's state, so the stamp is put back after
-    // it — again with no url, the URL being where replaceLocation just put it.
-    expect(rec.calls).toEqual(['replaceLocation:#/article/z', 'replaceState:<no url>'])
+    expect(rec.calls).toEqual(['replaceState:#/article/z'])
+    // A FRAGMENT-only url addresses the hash, never the path — the reason the
+    // url is passed at all rather than written with a separate location touch.
     expect(rec.env.hash).toBe('#/article/z')
+    expect(rec.env.pathname).toBe('/')
+  })
+
+  it('#164 the hash replace CARRIES the entry state instead of destroying it', () => {
+    // The property the old three-call dance existed to reconstruct: whatever the
+    // host app (or another library) owns on the entry survives the swap. With
+    // `location.replace` it survived only because the caller snapshotted it
+    // first — one reordered line away from being lost. `stampCurrent` merges,
+    // and there is now nothing between the read and the write.
+    const rec = recordingEnv({ hash: '#/' })
+    rec.env.replaceState({ host: 'keep' })
+    const routing = connected('hash', rec)
+    routing.handleEffect({
+      effect: routing.replace({ page: 'article', slug: 'z' }),
+      send: vi.fn(),
+      signal,
+    })
+    expect(rec.env.historyState).toEqual({
+      host: 'keep',
+      __llui_idx: expect.any(Number),
+      __llui_run: expect.any(String),
+    })
+  })
+
+  it('#164 the hash replace arms NO echo, so the next hashchange still dispatches', () => {
+    // The hazard that came with `location.replace`: it fires a `hashchange`, so
+    // the write had to arm a suppression — and a pending echo is discarded only
+    // once the URL moves OFF the hash it was armed for. On any surface where
+    // that event does not arrive, the armed echo sits there and swallows the
+    // next genuine navigation onto the same hash. `replaceState` fires nothing,
+    // so nothing is armed and nothing can be swallowed.
+    const rec = recordingEnv({ hash: '#/' })
+    const routing = connectRouter(makeRouter('hash'), { env: rec.env })
+    const send = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = mountApp(
+      container,
+      component<{ n: number }, { type: 'noop' }, never>({
+        name: 'RouterEnvHashReplaceHost',
+        init: () => ({ n: 0 }),
+        update: (s) => [s, []],
+        view: () => [text('x'), ...routing.listener(send)],
+      }),
+    )
+
+    routing.handleEffect({
+      effect: routing.replace({ page: 'article', slug: 'z' }),
+      send: vi.fn(),
+      signal,
+    })
+    // A GENUINE browser-driven navigation onto the very hash the replace wrote —
+    // a second entry showing the same fragment, ordinary once a replace can
+    // produce one. It must dispatch.
+    rec.handlers[0]!.handler()
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'z' },
+    })
+
+    app.dispose()
+    document.body.removeChild(container)
   })
 
   it('back / forward / scroll go through the env', () => {

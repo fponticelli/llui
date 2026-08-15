@@ -65,8 +65,6 @@ export interface RouterEnv {
 
   /** Assign `location.hash` — a same-document navigation that fires `hashchange`. */
   setHash(hash: string): void
-  /** `location.replace(url)` — swap the current entry without growing history. */
-  replaceLocation(url: string): void
 
   pushState(state: unknown, url: string): void
   /**
@@ -124,7 +122,6 @@ export function browserRouterEnv(): RouterEnv {
     setHash: (hash) => {
       location.hash = hash
     },
-    replaceLocation: (url) => location.replace(url),
     pushState: (state, url) => history.pushState(state, '', url),
     // `null` rather than a forwarded `undefined`: both mean "leave the URL
     // alone" to `history.replaceState`, but only one says so on purpose.
@@ -155,12 +152,21 @@ export interface ConnectOptions<R> {
    * - `void` / `undefined` → allow navigation
    * - `false` → block navigation (stay on current route)
    * - a different `Route` → redirect to that route
+   *
+   * A redirect CHAINS: the target is offered back to this same function until it
+   * is accepted, blocked, or stops moving the URL (capped at 10 hops — see
+   * `runGuards`). So this may be called several times for one navigation, and
+   * only the settled route is dispatched. `from` is the route being LEFT on
+   * every hop — no hop is entered.
    */
   beforeEnter?: (to: R, from: R | null) => R | false | void
   /**
    * Called before leaving the current route. Return:
    * - `true` → allow navigation
    * - `false` → block (e.g. unsaved changes prompt)
+   *
+   * Called ONCE per navigation, before any `beforeEnter`, with the route
+   * originally REQUESTED as `to` — a redirect chain must not prompt N times.
    */
   beforeLeave?: (from: R, to: R) => boolean
 
@@ -298,6 +304,18 @@ function mintRun(): string {
 type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
 
 /**
+ * How many times `beforeEnter` may redirect within ONE navigation before the
+ * chain is declared non-terminating (#161).
+ *
+ * Only a chain that keeps MOVING the URL counts against it: the loop settles the
+ * moment a hop addresses the URL the previous one already did, so an idempotent
+ * guard — one that normalises `to` and hands back an equivalent route — stops on
+ * hop one and never approaches the cap. Reaching it means a genuine cycle
+ * (`a → b → a → …`), which is an app bug.
+ */
+const MAX_REDIRECT_HOPS = 10
+
+/**
  * A position this router can measure a delta against: an index AND the run it
  * was numbered in. Never one without the other — see {@link readPosition}.
  */
@@ -413,6 +431,32 @@ export function connectRouter<R>(
   function currentInput(): string {
     return router.mode === 'hash' ? env.hash : env.pathname + env.search
   }
+
+  /**
+   * Is `path` the URL that is ALREADY showing? The one same-URL predicate in
+   * this file (#162).
+   *
+   * It is not a single string equality, because the two modes address different
+   * parts of the URL: hash mode compares FRAGMENTS through {@link sameHash}
+   * (`''` and `'#/'` are the same place), history mode compares the path+query
+   * projection {@link currentInput} already matches routes against — the same
+   * string `router.href` produces in that mode.
+   *
+   * The two `replaceState` writers — the `replace()` effect and
+   * {@link rewriteLandedUrl} — ask it before writing. Their write fires no
+   * event, so a redundant one is invisible rather than harmful; they skip it
+   * because a reader who has learned the rule from {@link setHash} will assume
+   * it holds everywhere, and it now does.
+   *
+   * {@link setHash} is NOT one of its callers, deliberately: its guard MUST hold
+   * (see there) and what it asks about is the fragment unconditionally, so it
+   * calls {@link sameHash} directly rather than depending on a mode test made
+   * here.
+   */
+  function sameUrl(path: string): boolean {
+    return router.mode === 'hash' ? sameHash(env.hash, path) : currentInput() === path
+  }
+
   let currentRoute: R | null = (() => {
     try {
       return router.match(currentInput())
@@ -625,6 +669,14 @@ export function connectRouter<R>(
    * nothing may be armed or counted for it.
    */
   function setHash(newHash: string): boolean {
+    // `sameHash` DIRECTLY, not `sameUrl`. This guard is load-bearing — arming an
+    // echo for a write the browser will not report leaves a suppression pending
+    // that swallows a later genuine `hashchange` — and what it is asking about
+    // is the FRAGMENT, because that is what the line below writes. `sameUrl`
+    // answers the same question only while `router.mode === 'hash'`, which is
+    // true of all three of this function's callers today; routing a guard this
+    // load-bearing through a mode test made ELSEWHERE would make a fourth caller
+    // silently unsafe rather than obviously wrong (#162 review).
     if (sameHash(env.hash, newHash)) return false
     // Resolve the position (and the run) of the entry we are LEAVING before the
     // write replaces it.
@@ -651,24 +703,114 @@ export function connectRouter<R>(
    * explicitly rather than inferred by comparing routes: a guard may return a
    * structurally equal object, and `push`/`replace` need to know whether the
    * URL they are about to write is the one their caller actually asked for.
+   *
+   * A redirect CHAINS to a fixed point (#161), in both modes and at every call
+   * site — the loop lives here, so no call site needed changing. A `beforeEnter`
+   * that redirects `admin → login` and separately redirects `login → home` rests
+   * on `home`: each hop's target is offered to the guard in turn until the guard
+   * accepts it (returns nullish), blocks it, or stops moving it.
+   *
+   * FOUR things make that terminate and stay honest, and each is a decision:
+   *
+   * 1. THE SETTLE TEST IS `router.href`. A fixed point needs an equality on `R`,
+   *    and the only one this file can compute is the projection it already
+   *    treats as route identity everywhere else — the string it writes to the
+   *    URL, matches routes back out of, and compares in {@link sameUrl}. It is
+   *    LOSSY (two routes differing only in a field no URL expresses project to
+   *    one string), and for a TERMINATION test lossiness fails in the safe
+   *    direction: it settles EARLY, degrading to exactly the single-hop
+   *    behaviour that shipped before, never to a refusal or a hang.
+   *
+   *    NAME THE COST IN FULL: the skipped hop is a whole guard verdict, and a
+   *    verdict is not only a redirect. A guard that normalises `{admin}` to
+   *    `{admin, draft:true}` (same href, so it settles) and would answer
+   *    `false` for `{admin, draft:true}` never gets ASKED — the route is
+   *    dispatched and its URL written. Not a regression (identical on `main`
+   *    and on the single-hop commit, and the counterfactual is what the
+   *    paragraph above describes), but the missed hop can carry a BLOCK, not
+   *    just a missed redirect, which is the security-adjacent half. A guard
+   *    whose decision depends on a field the URL cannot express must not rely
+   *    on being re-asked about it.
+   *
+   *    A STRUCTURAL settle test chains further and passes this same suite — it
+   *    was demonstrated in review — but a guard that ADDS a field per call then
+   *    runs to the cap where `href` settles on hop one, so the cost moves
+   *    rather than disappearing. Left open as #212 rather than guessed at.
+   * 2. THE HOP IS ADOPTED BEFORE THE SETTLE TEST. A guard that normalises `to`
+   *    and hands back an equivalent route — #162's shape — settles immediately,
+   *    but the route DISPATCHED is the one it returned, not the one it was
+   *    asked about, and `redirected` is true for it. That is what shipped
+   *    before and what the same-URL short-circuit downstream expects: the flag
+   *    means "the guard replaced the object", never "the URL moved".
+   * 3. `beforeLeave` RUNS ONCE, before the loop, against the ORIGINALLY
+   *    REQUESTED route. It is the unsaved-changes PROMPT; asking it per hop
+   *    would prompt N times for one navigation. Running it first also keeps the
+   *    order right — a refused leave must run no `beforeEnter` at all.
+   * 4. `from` IS `currentRoute` ON EVERY HOP. No hop is ENTERED — they are
+   *    proposals — so where the navigation is coming from does not change as
+   *    the chain resolves.
+   *
+   * A chain that never settles — a cycle (`a → b → a → …`), or one that simply
+   * keeps producing new URLs — is capped at {@link MAX_REDIRECT_HOPS}. On
+   * exhaustion the loop RESTS ON THE LAST HOP and warns; it does NOT block.
+   * Issue #161 named both; blocking converts an app bug into a dead navigation
+   * with the app stuck where it was, whereas resting leaves it usable and the
+   * warning names the cap as the cause.
+   *
+   * Be precise about what that hop is: it is the last route the guard RETURNED,
+   * and it was never OFFERED — the cap is checked after the hop is taken, so no
+   * guard verdict exists for the route rested on, and it may be one the guard
+   * would have BLOCKED. That is a real unverified landing, and it is accepted
+   * because the alternative is worse and the surface is shrinking: under the
+   * single-hop behaviour this replaces, EVERY redirect landed unverified (the
+   * target was never re-offered). Multi-hop leaves exactly one such landing, at
+   * the cap boundary of a runaway chain the router already calls an app bug and
+   * warns about.
+   *
+   * Documented under "Guards" in `site/content/api/router.md` and pinned in
+   * `test/guards.test.ts`.
    */
   function runGuards(newRoute: R): GuardOutcome<R> {
     if (options?.beforeLeave && currentRoute !== null) {
       if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
     }
-    if (options?.beforeEnter) {
-      const result = options.beforeEnter(newRoute, currentRoute)
+    const beforeEnter = options?.beforeEnter
+    if (!beforeEnter) return { blocked: false, route: newRoute, redirected: false }
+
+    let route = newRoute
+    let redirected = false
+    for (let hops = 0; ; ) {
+      const result = beforeEnter(route, currentRoute)
       if (result === false) return { blocked: true }
       // Any non-`false`, non-nullish return is a redirect Route. Routes are
       // generic `R` and may be primitives (e.g. a string-union route), so
       // gate on nullishness, NOT `typeof === 'object'` — the latter silently
       // dropped string/number redirects and let navigation proceed to the
       // original target (an auth-guard bypass).
-      if (result !== undefined && result !== null) {
-        return { blocked: false, route: result as R, redirected: true }
+      if (result === undefined || result === null) break
+      const next = result as R
+      // Whether the URL MOVED decides only whether to ask again; the hop is
+      // taken either way (see 2 above).
+      const moved = router.href(next) !== router.href(route)
+      route = next
+      redirected = true
+      if (!moved) break
+      if (++hops >= MAX_REDIRECT_HOPS) {
+        // Say only what is KNOWN: the cap was reached. A cycle is the likeliest
+        // cause but not a provable one — a chain producing a NEW url every hop
+        // trips this too, so asserting "cycle" would misdirect the reader
+        // debugging exactly that case. The hop count and the resting url are
+        // the actionable half; the route rested on was never offered to the
+        // guard (see above).
+        console.warn(
+          `[@llui/router] beforeEnter redirected ${MAX_REDIRECT_HOPS} times without settling ` +
+            `(resting on: ${router.href(route)}, never offered to the guard). ` +
+            `Fold the chain, or check it for a cycle.`,
+        )
+        break
       }
     }
-    return { blocked: false, route: newRoute, redirected: false }
+    return { blocked: false, route, redirected }
   }
 
   /**
@@ -820,16 +962,27 @@ export function connectRouter<R>(
    * fix), but no index is invented for it — a guessed stamp is what turns a
    * later blocked back into a wrong-direction `history.go` (#103).
    *
-   * In HASH mode this is `replaceState` with a fragment-only url, NOT
-   * `location.replace` (what the hash `replace()` effect uses). Two reasons:
-   * `replaceState` fires neither `hashchange` nor `popstate` — the HTML spec's
-   * URL-and-history update steps fire no event at all, so there is no echo, and
-   * ARMING one for an event that never arrives would leave a suppression
-   * pending that swallows a later genuine hashchange onto the same hash —
-   * and `location.replace` DROPS the entry's state, which would take the stamp
-   * this path depends on with it.
+   * In HASH mode this is `replaceState` with a fragment-only url, which is now
+   * also what the hash `replace()` effect writes (#164). It was once the only
+   * one of the two: `location.replace` DROPS the entry's state — taking the
+   * stamp this path depends on with it — and it FIRES a `hashchange`, so its
+   * caller had to arm an echo, and an echo armed for an event that never
+   * arrives is only discarded once the URL moves off the hash it was armed for,
+   * swallowing a later genuine hashchange onto that same hash in the meantime.
+   * `replaceState` has neither problem: the HTML spec's URL-and-history update
+   * steps fire no event at all, and the state is carried rather than destroyed.
+   *
+   * A write that would not MOVE the URL is skipped (#162). `runGuards` reports
+   * `redirected` for any non-`false`, non-nullish `beforeEnter` return — it has
+   * no equality on `R` to do otherwise — so a guard that NORMALISES its argument
+   * and returns a structurally equal route reaches here on every guarded browser
+   * navigation, asking for the URL that is already showing. The stamp is not
+   * part of that question: `adoptLandedEntry` has already resynced the position
+   * FROM this entry, so the state this would write back is the state already on
+   * it.
    */
   function rewriteLandedUrl(path: string): void {
+    if (sameUrl(path)) return
     const pos =
       currentIndex === null || currentRun === null ? null : { index: currentIndex, run: currentRun }
     env.replaceState(pos === null ? env.historyState : stampCurrent(pos), path)
@@ -892,19 +1045,35 @@ export function connectRouter<R>(
         if (router.mode === 'hash') {
           if (effect.action === 'push') {
             setHash(finalPath)
-          } else if (!sameHash(env.hash, finalPath)) {
-            // `location.replace` swaps the current entry and DROPS its state —
-            // INCLUDING whatever the host app or another library owns on it, so
-            // snapshot it here and put it back with the stamp. This is the one
-            // re-stamp that cannot use `stampCurrent`: by the time it runs the
-            // state it should have merged is already gone.
-            const carried = stampCurrent(stand(replaceStamp()))
-            armEcho(finalPath)
-            env.replaceLocation(finalPath)
-            // The index is unchanged — nothing was pushed. No path: the URL is
-            // already where `replaceLocation` just put it, and a `''` here
-            // would resolve it away.
-            env.replaceState(carried)
+          } else if (!sameUrl(finalPath)) {
+            // ONE `replaceState` with a fragment-only url — the same mechanism
+            // `rewriteLandedUrl` uses, converged onto here in #164. It swaps the
+            // entry in place (so the index is unchanged — nothing was pushed),
+            // CARRIES the state instead of destroying it, and fires no event.
+            //
+            // It replaced a `location.replace` that needed three calls to do the
+            // same job and was worse at it: `location.replace` DROPS the entry's
+            // state — including whatever the host app or another library owns
+            // there — so the stamp had to be snapshotted before the write and
+            // put back after, and it FIRES a `hashchange`, so an echo had to be
+            // armed for an event whose non-arrival would leave a suppression
+            // pending that swallows a later genuine hashchange onto this same
+            // hash. `stampCurrent` merges the host's keys here as it does
+            // everywhere else, with no exception left for a reader to re-verify.
+            //
+            // Under a `<base href>` it is not merely tidier, it is the
+            // difference between working and not. Both spellings resolve the
+            // fragment-only url against the BASE rather than the document — but
+            // they do different things with the result. Measured in Chrome, on a
+            // document at `http://127.0.0.1:8791/page.html` with
+            // `<base href="/sub/dir/">`: `history.replaceState({…}, '', '#/x')`
+            // stays on the same document and keeps the entry's state, while
+            // `location.replace('#/zz')` performs a CROSS-DOCUMENT navigation
+            // that unloads the app entirely (the tab ended up on the server's
+            // directory listing for `/sub/dir/`). So the mechanism this replaced
+            // did not merely lose state under a base — it destroyed the running
+            // app; this one moves the address bar and nothing else.
+            env.replaceState(stampCurrent(stand(replaceStamp())), finalPath)
           }
         } else if (effect.action === 'push') {
           pushUrl(finalPath)

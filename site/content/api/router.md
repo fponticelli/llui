@@ -105,7 +105,6 @@ const frameEnv: RouterEnv = {
   setHash: (hash) => {
     frame.location.hash = hash
   },
-  replaceLocation: (url) => frame.location.replace(url),
   pushState: (state, url) => frame.history.pushState(state, '', url),
   // `url` is optional: omit it to replace the entry's STATE and leave the URL
   // alone. Passing `''` is not the same thing — it resolves against the base
@@ -123,6 +122,19 @@ const frameEnv: RouterEnv = {
 
 const framed = connectRouter(router, { env: frameEnv })
 ```
+
+> **Breaking change:** `RouterEnv.replaceLocation` is **gone**. It existed for
+> one call site — the hash-mode `replace()` effect — which now writes with
+> `replaceState(state, '#/…')` like every other replaced URL in the connector
+> ([#164]). `location.replace` **drops** the entry's `history.state` (so the
+> stamp, and any key your app owns there, had to be snapshotted and put back)
+> and **fires** a `hashchange` (so an echo had to be armed for an event whose
+> non-arrival would swallow a later genuine navigation onto the same hash).
+> `replaceState` has neither problem. If you implement your own `RouterEnv`,
+> delete the member — the interface is exactly what the connector touches, so an
+> unused one is drift.
+
+[#164]: https://github.com/fponticelli/llui/issues/164
 
 ## Guards
 
@@ -145,6 +157,74 @@ const routing = connectRouter(router, {
 ```
 
 Guards run in the effect handler and the popstate listener, keeping `update()` pure.
+
+### Redirect chains
+
+A guard redirect **chains to a fixed point**, in both modes and at every call
+site — `push()`, `replace()`, `navigate()`, `link()` and the browser-driven
+listener alike. `beforeEnter` is re-asked about each target it returns until it
+**accepts** one (returns nothing), **blocks** one (returns `false`), or **stops
+moving the URL**.
+
+So this rests on `home`:
+
+```ts
+connectRouter(router, {
+  beforeEnter(to) {
+    if (to.page === 'admin') return { page: 'login' } // hop 1
+    if (to.page === 'login') return { page: 'home' } //  hop 2 — re-asked
+  },
+})
+```
+
+Only the **settled** route is dispatched, and only its URL is written: the
+intermediate hops never reach the history stack and never reach your reducer.
+The URL and the dispatched route **agree** on it (see _Navigation semantics_
+below).
+
+Four rules make that predictable:
+
+- **The chain settles when the URL stops moving.** The equality is `router.href`
+  — the same projection the router writes to the address bar and matches routes
+  back out of. It is deliberately lossy: two routes that differ only in a field
+  no URL can express settle as one, which stops the chain early rather than
+  refusing the navigation.
+
+  **The skipped hop is a whole guard verdict, not just a missed redirect.** A
+  guard that normalises `{page:'admin'}` to `{page:'admin', draft:true}` — same
+  `href`, so the chain settles — and that would return **`false`** for
+  `{page:'admin', draft:true}` is **never asked**: the route is dispatched and
+  its URL written. So a guard whose decision depends on a field the URL cannot
+  express must not rely on being re-asked about it; decide on the fields your
+  `href` carries, or fold that check into the hop that produced the route. (This
+  is not new in the chaining release — a single-hop redirect was never re-asked
+  either — but it is the half worth stating.) A structural settle test is the
+  open alternative ([#212]).
+
+- **The hop is taken whether or not it moved the URL.** A guard that _normalises_
+  `to` and returns an equivalent route settles immediately, and the route your
+  reducer receives is the one the guard returned. (Since the URL did not move,
+  nothing is written — see _Navigation semantics_.)
+- **`beforeLeave` is asked once**, before the chain, about the route you
+  originally requested. It is the unsaved-changes prompt: one navigation, one
+  prompt, however many hops resolve it.
+- **`from` is the route you are leaving, on every hop.** No hop is entered — they
+  are proposals — so `from` does not advance as the chain resolves.
+
+A `beforeEnter` that never settles — a cycle (`admin → login → admin → …`), or a
+chain that just keeps producing new URLs — is capped at **10 hops**. On
+exhaustion the router **rests on the last hop and warns** on the console; it does
+not block. A blocked navigation would leave your app stuck with no route change
+at all, which hides the bug; resting keeps it usable and the warning names the
+cap.
+
+Note what that resting route is: the last route your guard **returned**, which at
+the cap was **never offered back to it** — so it may be one the guard would have
+blocked. Treat the warning as a bug report against the chain, not as a supported
+resting place. ([#161])
+
+[#161]: https://github.com/fponticelli/llui/issues/161
+[#212]: https://github.com/fponticelli/llui/issues/212
 
 ### Auth guard
 
@@ -197,7 +277,10 @@ The same contract holds in **both** `history` and `hash` mode:
   still reaches every entry above. What stops being reachable at that slot is the
   guarded route itself — returning to it would only redirect again. When the
   landed entry's position is unknown (see the blocked case below) the URL is
-  still written, but no index is invented for it.
+  still written, but no index is invented for it. The redirect target is itself
+  offered to the guard — see _Redirect chains_ — so the entry is replaced once,
+  with the **settled** route, and a guard that returns a route addressing the URL
+  already showing writes nothing at all.
 - A **blocked** browser navigation is undone by a history _traversal_, so the
   stack, its length and every forward entry are left exactly as they were —
   **when the router knows the distance back to the entry it was on**. It knows
