@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flip, mergeTransitions } from '../src/flip'
 import { fade } from '../src/presets'
+import { fakeLayout, type Box } from './fake-layout'
 
 describe('flip()', () => {
   beforeEach(() => {
@@ -31,9 +32,8 @@ describe('flip()', () => {
 
   it('captures position on enter', () => {
     const el = makeEl()
-    // Give the element a known rect via override
-    const rect = { left: 10, top: 20, width: 50, height: 50 } as DOMRect
-    el.getBoundingClientRect = () => rect
+    // Give the element a known layout box via override
+    fakeLayout(el, () => ({ left: 10, top: 20 }))
     const f = flip()
     f.enter!([el])
     // Positions map is private; infer by triggering onTransition
@@ -49,13 +49,13 @@ describe('flip()', () => {
     const animateSpy = vi.fn()
     el.animate = animateSpy as unknown as typeof el.animate
 
-    let rect = { left: 0, top: 0, width: 50, height: 50 } as DOMRect
-    el.getBoundingClientRect = () => rect
+    let box: Box = { left: 0, top: 0 }
+    fakeLayout(el, () => box)
 
     const f = flip({ duration: 200, easing: 'ease-in' })
     f.enter!([el])
     // Move element
-    rect = { left: 100, top: 50, width: 50, height: 50 } as DOMRect
+    box = { left: 100, top: 50 }
     f.onTransition!({ entering: [], leaving: [], parent: document.body })
     expect(animateSpy).toHaveBeenCalledTimes(1)
     const [keyframes, options] = animateSpy.mock.calls[0]!
@@ -70,13 +70,13 @@ describe('flip()', () => {
     const el = makeEl()
     const animateSpy = vi.fn()
     el.animate = animateSpy as unknown as typeof el.animate
-    let rect = { left: 0, top: 0, width: 50, height: 50 } as DOMRect
-    el.getBoundingClientRect = () => rect
+    let box: Box = { left: 0, top: 0 }
+    fakeLayout(el, () => box)
 
     const f = flip()
     f.enter!([el])
     f.leave!([el])
-    rect = { left: 100, top: 0, width: 50, height: 50 } as DOMRect
+    box = { left: 100, top: 0 }
     // The row is still in the DOM (leave animation deferred) but reported via
     // ctx.leaving — flip must skip it rather than glide a departing row.
     f.onTransition!({ entering: [], leaving: [el], parent: document.body })
@@ -87,7 +87,7 @@ describe('flip()', () => {
     const el = makeEl()
     const animateSpy = vi.fn()
     el.animate = animateSpy as unknown as typeof el.animate
-    el.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect
+    fakeLayout(el, () => ({ left: 0, top: 0 }))
 
     const f = flip()
     f.enter!([el])
@@ -103,8 +103,8 @@ describe('flip()', () => {
     const a = document.createElement('div')
     const b = document.createElement('div')
     container.append(a, b)
-    a.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect
-    b.getBoundingClientRect = () => ({ left: 0, top: 50 }) as DOMRect
+    fakeLayout(a, () => ({ left: 0, top: 0 }))
+    fakeLayout(b, () => ({ left: 0, top: 50 }))
     const aSpy = vi.fn()
     a.animate = aSpy as unknown as typeof a.animate
 
@@ -126,12 +126,12 @@ describe('flip()', () => {
     container.appendChild(el)
     const animateSpy = vi.fn()
     el.animate = animateSpy as unknown as typeof el.animate
-    let rect = { left: 0, top: 0, width: 10, height: 10 } as DOMRect
-    el.getBoundingClientRect = () => rect
+    let box: Box = { left: 0, top: 0 }
+    fakeLayout(el, () => box)
 
     const f = flip({ duration: 150 })
     f.enter!([el]) // baseline at {0,0}
-    rect = { left: 40, top: 0, width: 10, height: 10 } as DOMRect
+    box = { left: 40, top: 0 }
     f.onTransition!({ entering: [], leaving: [], parent: container })
     expect(animateSpy).toHaveBeenCalledTimes(1)
     document.body.removeChild(container)

@@ -10952,24 +10952,41 @@ FLIP (First-Last-Invert-Play) reorder animation for keyed lists.
 
 `onTransition` runs after a reconcile with `{ entering, leaving, parent }`.
 It compares each surviving child's last-known LAYOUT position (kept in a
-`WeakMap<Element, Point>`) against its new one and, for any that moved,
-plays an inverse-then-identity transform so the row appears to glide.
+`WeakMap<Element, TrackedPosition>`) against its new one and, for any that
+moved, plays an inverse-then-identity transform so the row appears to glide.
 
 A pass is split into a read phase and a write phase: every measurement
-(`getBoundingClientRect`, the computed transform) happens before the first
-`cancel()`/`animate()`, so a K-row reorder forces layout ONCE rather than
-once per row. Do not reintroduce a write between the reads.
+(`getBoundingClientRect`, `offsetLeft`/`offsetTop`, the computed transform)
+happens before the first `cancel()`/`animate()`, so a K-row reorder forces
+layout ONCE rather than once per row. Do not reintroduce a write between the
+reads. (Measured in Chromium 143 over a 200-row list via CDP
+`Performance.getMetrics` → `LayoutCount`, with layout left dirty as a
+reconcile leaves it: 1 forced layout for a settled pass, 1 for a pass where
+every row moves, 1 for a pass over rows already mid-glide. The same probe
+reports 200 for a deliberately interleaved read/write loop.)
+
+What the glide animates is the row's LAYOUT move, and nothing else. That is
+why the bookkeeping stores the layout box rather than the box the row is
+DRAWN in: the two differ by the row's own transform, which can change between
+two passes entirely independently of layout, and attributing that change to a
+move animates the row from a position it was never in (#185 — measured in
+Chromium: a row whose author transform changed `translateY(-20px)` →
+`translateY(-50px)` while settled glided 90px for a 60px move and jumped 30px
+at glide start; a row whose author transform was mid CSS-transition folded the
+in-flight 33.66px into `dx` and jumped by it). Neither available measurement
+is on its own both transform-free and sub-pixel exact, so both are taken and
+{@link layoutDelta} decides — see there, including why reading the author
+transform per row instead is not free.
 
 Interruption: the live `Animation` is retained per element and cancelled
-before the next one starts, and the new delta is measured from where the row
-VISUALLY is — its previous layout box plus whatever translation the running
-glide had already applied — so an interrupted reorder continues rather than
-jumping. `getBoundingClientRect` reports the transformed box, so the stored
-position is the rect with that translation subtracted back out. The run ENDS
-when the glide completes (or is cancelled by anyone, including someone other
-than us): only while one is live is the computed transform ours to read, and
-a run left registered makes every later pass measure a row's own author
-transform as if it were a glide.
+before the next one starts, and the translation the running glide had already
+applied is ADDED back to the delta, so an interrupted reorder continues from
+where the row currently appears rather than jumping. That translation is also
+subtracted from the rect before storing it, so the stored pair still describes
+a settled row. The run ENDS when the glide completes (or is cancelled by
+anyone, including someone other than us): only while one is live is the
+computed transform ours to read, and a run left registered makes every later
+pass measure a row's own author transform as if it were a glide.
 
 Composition (#144): a WAAPI animation wins the cascade for the property it
 animates, so keyframes naming a bare `translate(...)` REPLACE the row's own
@@ -10988,7 +11005,9 @@ balance #137 struck when it stopped reading the computed transform on every
 settled row forever. A row that IS mid-glide cannot be read at all (our own
 animation owns `transform`), so the value captured when its glide started is
 cached and reused — an author transform that CHANGES mid-glide is therefore
-carried at its old value until the row next settles.
+carried at its old value until the row next settles. That caveat is about the
+RENDERING only; the row's delta is unaffected, because the delta no longer
+reads the author transform at all (#185).
 
 The composition feeds back into the delta: the computed transform of a
 composed glide carries the author's translation too, so the read phase
