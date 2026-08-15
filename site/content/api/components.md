@@ -233,7 +233,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 67 components follow the same pattern:
+All 66 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -918,32 +918,6 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Parts:** `root`, `content`
 
 **Utilities:** `isRunning()`, `cssAnimationDirection()`, `axis()`
-
----
-
-### Menu Machine
-
-**State** (`MenuTreeState`):
-
-| Field                | Type                             |
-| -------------------- | -------------------------------- |
-| `open`               | `boolean`                        |
-| `status`             | `PresenceStatus`                 |
-| `skipAnimations`     | `boolean`                        |
-| `items`              | `MenuNode[]`                     |
-| `highlights`         | `Record<string, string \| null>` |
-| `openPath`           | `string[]`                       |
-| `checked`            | `string[]`                       |
-| `closeOnSelect`      | `boolean`                        |
-| `typeahead`          | `string`                         |
-| `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `TextDirection \| null`          |
-
-**Messages:** `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
-
-**Parts:** `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `rootKeyNav`
-
-**Utilities:** `statusOnOpen()`, `statusOnClose()`, `findItem()`, `levelItems()`, `navigable()`, `firstNav()`, `lastNav()`, `nextNav()`, `isDisabled()`, `setHighlight()`, `closedPatch()`, `deepestMenuLevel()`, `activeMenuHighlight()`, `reduceMenuTree()`, `createMenuTreeParts()`
 
 ---
 
@@ -1835,5 +1809,31 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Utilities:** `isExpanded()`, `isSelected()`, `isChecked()`, `isIndeterminate()`, `isRenaming()`, `isLoading()`, `isLoaded()`, `isLoadFailed()`
 
 ---
+
+## Top-Level Exports
+
+Besides the per-component namespaces (`import { menu } from '@llui/components'`), the components barrel re-exports these members directly, and `@llui/components` passes them through. Where the barrel name differs from the component's own, the barrel name is the only one that resolves on `@llui/components` — the component's own spelling is reachable through its namespace or its subpath entry (`@llui/components/table`).
+
+This table covers the **component** modules only. The package root additionally re-exports the locale surface (`en`, `LocaleContext`), the `format/` helpers and the shared `utils/` helpers (see [Utilities](#utilities) above); those are not listed here.
+
+| From `@llui/components`  | Component      | Declared as                  |
+| ------------------------ | -------------- | ---------------------------- |
+| `validateSchema()`       | `form`         | —                            |
+| `validateSchemaAsync()`  | `form`         | —                            |
+| `reorder()`              | `sortable`     | —                            |
+| `resolveTheme()`         | `theme-switch` | —                            |
+| `applyTheme()`           | `theme-switch` | —                            |
+| `watchSystemTheme()`     | `theme-switch` | —                            |
+| `visibleItems()`         | `breadcrumbs`  | —                            |
+| `isRowSelected()`        | `table`        | —                            |
+| `isAllSelected()`        | `table`        | —                            |
+| `isSomeSelected()`       | `table`        | —                            |
+| `sortDirectionFor()`     | `table`        | —                            |
+| `TABLE_HEADER_ROW_INDEX` | `table`        | `HEADER_ROW_INDEX` (aliased) |
+| `menubarInit()`          | `menubar`      | `init()` (aliased)           |
+| `menubarUpdate()`        | `menubar`      | `update()` (aliased)         |
+| `menubarConnect()`       | `menubar`      | `connect()` (aliased)        |
+| `menubarOverlay()`       | `menubar`      | `overlay()` (aliased)        |
+| `menubarMachine`         | `menubar`      | `menubar` (aliased)          |
 
 <!-- auto-api:end -->
