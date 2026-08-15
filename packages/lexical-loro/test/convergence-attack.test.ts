@@ -898,9 +898,15 @@ describe('convergence — volume and mapping drift', () => {
     // write with nothing upstream to trip over.
     //
     // This burst keeps its no-move shape so it stays a clean isolation of the
-    // create/delete registry churn it was written for. Move IS fuzzed, at higher
-    // volume and against concurrent deletes, in `test/harden.test.ts`
-    // ('a 200-operation randomized burst INCLUDING MOVES').
+    // create/delete registry churn it was written for. Move is fuzzed against
+    // concurrent deletes in `test/harden.test.ts`, by the six seeded trials
+    // named 'a randomized burst INCLUDING MOVES across three peers (seed 0x…)'.
+    //
+    // NOTE THE DEPTH, because this comment used to claim the opposite: those
+    // trials run 40 operations each, so at 150 THIS burst is the deepest
+    // concurrent interleaving in the package — it just has no moves in it.
+    // #197 shortened them (a burst's cost is quadratic in its own length), and
+    // the resulting gap — depth AND moves together — is tracked as #223.
     let seed = 0xc0ffee
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0

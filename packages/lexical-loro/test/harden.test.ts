@@ -1200,15 +1200,81 @@ describe('attack — nested structure and randomized volume', () => {
     expect(results[1]).toBe(results[0])
   })
 
-  it('survives a 200-operation randomized burst INCLUDING MOVES across three peers', () => {
-    // The burst in `convergence-attack.test.ts` deliberately EXCLUDES move,
-    // because `LoroMovableList` panicked on concurrent move/delete. That
-    // rationale is now obsolete: children no longer live in a movable list, and
-    // both pinned upstream defects in `test/loro-upstream.test.ts` are specific
-    // to `LoroMovableList`. A move is now an ordinary register write, so it can
-    // and must be fuzzed alongside everything else — including against the
-    // concurrent deletes that used to be fatal.
-    let seed = 0x5eed1234
+  /**
+   * WHY THESE BURSTS ARE MANY SHORT RUNS AND NOT ONE LONG ONE (#197).
+   *
+   * A burst's cost is QUADRATIC in its own length, and that is a property of the
+   * CRDT, not of the document. Measured on the mixed burst below, with the
+   * DOCUMENT pinned at 1–7 blocks and ~10–47 characters throughout:
+   *
+   *   ops   total    of which inbound (`flushInbox`)
+   *    40     62 ms    31 ms
+   *   200    639 ms   607 ms      ← 5x the ops, 20x the inbound cost
+   *
+   * The per-remote-update cost rises ~7x across a single 200-op run (0.5 ms →
+   * 3.5 ms per event batch) while the projected document does not grow at all.
+   * What DOES grow is history — the snapshot goes 9 KB → 26 KB over those 200
+   * ops — so each import resolves containers against a longer op log. A raw
+   * `LoroDoc.import` of primitive map writes is FLAT at ~0.01 ms/op, so this is
+   * the container-resolving inbound path, not `import` itself. (Whether that is
+   * reducible is a question for the binding, not for this file.)
+   *
+   * The consequence for test design is the whole point: op count buys SAMPLES of
+   * concurrent interleaving, and staleness depth is set by the flush cadence
+   * (p = 0.5 per peer per op — a peer is ~2 ops stale regardless of run length),
+   * NOT by how long the run is. So N independent runs of L ops sample strictly
+   * more interleavings than one run of N x L ops, assert convergence N times
+   * instead of once, and cost ~N times LESS. Each seed is a fixed constant, so a
+   * failure names the exact run to replay. Measured, near idle:
+   *
+   *   mixed  1 x 200  638 ms   ← what this was
+   *   mixed  6 x  40  158 ms   ← 240 operations, 6 trials, 4.0x cheaper
+   *   paste  1 x  60  254 ms   ← what the sibling was
+   *   paste  6 x  15  107 ms   ←  90 operations, 6 trials, 2.4x cheaper
+   *
+   * DO NOT chase this further by shortening the runs again. At a FIXED total op
+   * count the curve is already flat — 6x40, 8x30, 10x24, 12x20, 16x15 and 20x12
+   * all land within 125–158 ms — because per-run setup (three headless editors,
+   * three Loro docs, a settle) replaces exactly what the quadratic gives back.
+   * The paste shape is past its optimum in that direction: 10x10 (138 ms) and
+   * 12x8 (171 ms) are WORSE than 6x15 for the same work. Anything materially
+   * cheaper from here costs real operations, not just arrangement.
+   *
+   * WHAT IS GIVEN UP, and it is a real loss — do not read the paragraph above
+   * as saying otherwise (#223). CONVERGENCE AND WELL-FORMEDNESS UNDER
+   * RANDOMIZED CONCURRENT INTERLEAVING **WITH MOVES** NOW GOES NO DEEPER THAN
+   * 40 ACCUMULATED OPERATIONS, down from 200, and the paste trials build a
+   * ~26-block document rather than a ~107-block one.
+   *
+   * The three tests in 'hardening — cost of the ordering model' do NOT cover
+   * that, and an earlier version of this comment wrongly said they did. They are
+   * single-doc, single-peer, non-concurrent, built straight from carriers: they
+   * never construct a `collabNetwork`, never interleave peers, and never call
+   * `expectConverged` or `expectAllWellFormed`. What they genuinely pin is the
+   * narrower claim two paragraphs up — `pos` growth and import cost over long
+   * lives (2000 adversarial inserts, 2000 appends, 5000 carriers) — and nothing
+   * about convergence.
+   *
+   * The real partial backfill is `convergence-attack.test.ts`'s 150-operation
+   * three-peer burst, which is genuinely concurrent and genuinely deeper than
+   * these — but it deliberately EXCLUDES move. So the specific combination of
+   * depth AND moves is what no test now reaches.
+   *
+   * That is not a shortcut taken for speed: the depth is UNAFFORDABLE, and #222
+   * is why. Cost grows as (trials x length^2), so one 120-op trial costs ~9x a
+   * 40-op one — 37–53 s at load ~900, past the 30 s budget — and even 60 ops
+   * reaches ~21 s at the top of the measured band. Restoring the depth requires
+   * making a long history cheap to accumulate through the binding, which is
+   * exactly #222. Until then the trials, the total operations and the
+   * assertions all went UP, and the depth did not come back.
+   */
+  const BURST_SEEDS = [
+    0x5eed1234, 0x1234abcd, 0x0badc0de, 0x13572468, 0x0ff1ce55, 0x2468ace0,
+  ] as const
+
+  /** One randomized mixed-operation burst across three peers, from `seedValue`. */
+  const runMixedBurst = (seedValue: number, ops: number): void => {
+    let seed = seedValue
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0
       return seed / 0x100000000
@@ -1218,7 +1284,7 @@ describe('attack — nested structure and randomized volume', () => {
     setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
     network.settle()
 
-    for (let op = 0; op < 200; op++) {
+    for (let op = 0; op < ops; op++) {
       const peer = network.peers[Math.floor(random() * network.peers.length)]!
       const action = Math.floor(random() * 4)
       const size = blocks(peer).length
@@ -1253,14 +1319,11 @@ describe('attack — nested structure and randomized volume', () => {
     expectConverged(network)
     expectAllWellFormed(network)
     network.dispose()
-  })
+  }
 
-  it('survives a randomized burst of MULTI-BLOCK pastes and moves', () => {
-    // Combines the two riskiest operations: batch allocation (constraint 1) and
-    // register moves, under randomized delivery. Batches are what make two peers
-    // mint keys in the same interval, so this is where a batch-allocation
-    // regression would surface as divergence rather than as mere interleaving.
-    let seed = 0xfaceb00c
+  /** One randomized multi-block-paste + move burst across three peers. */
+  const runPasteBurst = (seedValue: number, ops: number): void => {
+    let seed = seedValue
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0
       return seed / 0x100000000
@@ -1270,7 +1333,7 @@ describe('attack — nested structure and randomized volume', () => {
     setParagraphs(network.a, ['head', 'tail'])
     network.settle()
 
-    for (let op = 0; op < 60; op++) {
+    for (let op = 0; op < ops; op++) {
       const peer = network.peers[Math.floor(random() * network.peers.length)]!
       const size = blocks(peer).length
       if (random() < 0.5) {
@@ -1287,5 +1350,37 @@ describe('attack — nested structure and randomized volume', () => {
     expectConverged(network)
     expectAllWellFormed(network)
     network.dispose()
-  })
+  }
+
+  // ONE TEST PER SEED, not one test looping over the seeds. `testTimeout` is a
+  // PER-TEST budget, so a trial is the right unit to give it to: six trials in
+  // one `it` re-creates the very thing #197 is about (a single test whose
+  // duration is the sum of independent work), while six `it`s do the same total
+  // work with each one an order of magnitude clear of the budget. It also makes
+  // a failure name the seed to replay instead of "one of six".
+  // A plain loop rather than `it.each`: `$var` interpolation renders a string
+  // case QUOTED (`seed 0x'5eed1234'`), and the seed is the one thing a reader
+  // has to be able to copy out of a failure verbatim.
+  for (const seed of BURST_SEEDS) {
+    const hex = `0x${seed.toString(16)}`
+
+    // The burst in `convergence-attack.test.ts` deliberately EXCLUDES move,
+    // because `LoroMovableList` panicked on concurrent move/delete. That
+    // rationale is now obsolete: children no longer live in a movable list, and
+    // both pinned upstream defects in `test/loro-upstream.test.ts` are specific
+    // to `LoroMovableList`. A move is now an ordinary register write, so it can
+    // and must be fuzzed alongside everything else — including against the
+    // concurrent deletes that used to be fatal.
+    it(`survives a randomized burst INCLUDING MOVES across three peers (seed ${hex})`, () => {
+      runMixedBurst(seed, 40)
+    })
+
+    // Combines the two riskiest operations: batch allocation (constraint 1) and
+    // register moves, under randomized delivery. Batches are what make two peers
+    // mint keys in the same interval, so this is where a batch-allocation
+    // regression would surface as divergence rather than as mere interleaving.
+    it(`survives a randomized burst of MULTI-BLOCK pastes and moves (seed ${hex})`, () => {
+      runPasteBurst(seed, 15)
+    })
+  }
 })
