@@ -105,7 +105,7 @@ describe('forwardLap', () => {
     )
     expect(result.ok).toBe(false)
     if (!result.ok) expect((result.error as { code: string }).code).toBe('network')
-  }, 10_000)
+  })
 })
 
 describe('budgetForPath', () => {

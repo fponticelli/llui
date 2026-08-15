@@ -63,6 +63,14 @@ function startFixture(): Promise<Fixture> {
 
 function stopFixture(f: Fixture): Promise<void> {
   rmSync(f.notesRoot, { recursive: true, force: true })
+  // Destroy any connection still open before awaiting the close. `close()`
+  // alone never fires its callback while a connection is NOT IDLE, and an SSE
+  // stream or an in-flight long-poll is exactly that — so a test that threw
+  // before releasing one turned this hook into an UNBOUNDED wait rather than a
+  // slow one (#191). `closeAllConnections()` DOES reach an active plain-HTTP
+  // response (unlike `closeIdleConnections()`, and unlike the UPGRADED-socket
+  // case, which it cannot reach at all — see the agent WS tests).
+  f.server.closeAllConnections()
   return new Promise((resolve) => f.server.close(() => resolve()))
 }
 

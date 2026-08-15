@@ -315,7 +315,7 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
   // so retry transient starvation on top of the generous poll deadline.
   it(
     'stamps devUrl when the marker is created after listening fires (dirWatcher path)',
-    { retry: 2, timeout: 15_000 },
+    { retry: 2 },
     async () => {
       // Full MCP-after-Vite integration: listening fires with no marker,
       // the plugin caches the URL, then MCP later writes the marker. The

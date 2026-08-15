@@ -63,6 +63,14 @@ function startFixture(): Promise<Fixture> {
 
 function stopFixture(f: Fixture): Promise<void> {
   rmSync(f.notesRoot, { recursive: true, force: true })
+  // Destroy any connection still open before awaiting the close. `close()`
+  // alone never fires its callback while a connection is NOT IDLE, and an SSE
+  // stream or an in-flight long-poll is exactly that — so a test that threw
+  // before releasing one turned this hook into an UNBOUNDED wait rather than a
+  // slow one (#191). `closeAllConnections()` DOES reach an active plain-HTTP
+  // response (unlike `closeIdleConnections()`, and unlike the UPGRADED-socket
+  // case, which it cannot reach at all — see the agent WS tests).
+  f.server.closeAllConnections()
   return new Promise((resolve) => f.server.close(() => resolve()))
 }
 
@@ -276,6 +284,27 @@ describe('GET /_llui/events (SSE)', () => {
     const text = await eventsPromise
     ctrl.abort()
     expect(text).toContain('note-created')
+  })
+
+  // Regression guard for #191. The stream here is deliberately NEVER aborted:
+  // `stopFixture` has to be able to close the server anyway. An SSE response
+  // that has not been `end()`ed is NOT IDLE, and `server.close()` does not
+  // invoke its callback while a non-idle connection is live — so if the
+  // `closeAllConnections()` in `stopFixture` is ever dropped, `afterEach` waits
+  // FOREVER and this file dies on an anonymous hook timeout instead of failing
+  // an assertion. That is how the real defect presented: a 2 s failure in the
+  // test above cost 62 s to report. Costs one request and one poll.
+  it('teardown closes the server even with an SSE stream left open', async () => {
+    const res = await fetch(`${f.base}/_llui/events?role=viewer`)
+    expect(res.status).toBe(200)
+    // A PENDING read is what makes the connection genuinely un-reapable, and it
+    // is the shape the real defect had (the failing test above was parked in
+    // `reader.read()` when it threw). Merely leaving the body unconsumed is not
+    // enough — that gets torn down a few seconds later on its own.
+    const reader = res.body!.getReader()
+    void reader.read().catch(() => {})
+    await waitUntil('the SSE viewer subscription', () => f.bus.countByRole('viewer') > 0)
+    // Intentionally no abort and no drain — the fixture owns this connection.
   })
 })
 
