@@ -45,8 +45,16 @@ export interface PinInputInit {
 }
 
 export function init(opts: PinInputInit = {}): PinInputState {
-  // The cell count — the bound every focus move is clamped into (#177).
-  const length = finiteBound(opts.length) ?? 4
+  // The cell count — the bound every focus move is clamped into, AND the length
+  // of the array built on the next line, which is why this one is normalised
+  // harder than the other bounds (#177). `new Array(n)` THROWS a RangeError for
+  // anything that is not a non-negative 32-bit integer, so `length: NaN`,
+  // `2.5` and `-1` were all a crash in `init` rather than a bad value in state.
+  // Finiteness alone does not close that: the floor and the truncation are part
+  // of the same precondition. What is left is the array-length ceiling — a
+  // count above 2^32-1 still throws — which is a request for four billion
+  // cells rather than a typo, and is not normalised away here.
+  const length = Math.max(0, Math.trunc(finiteBound(opts.length) ?? 4))
   const values = opts.values ?? new Array<string>(length).fill('')
   return {
     values,

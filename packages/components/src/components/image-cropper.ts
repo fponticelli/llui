@@ -265,6 +265,15 @@ export function update(
     case 'setAspectRatio': {
       // `null` is this bound's own spelling of "no constraint", so a
       // non-finite ratio takes it rather than dividing into every later fit.
+      //
+      // Stated because it is the ONE place in this change where an absent bound
+      // REMOVES a constraint instead of declining to add one: on a cropper
+      // already locked to 16:9, `setAspectRatio(NaN)` unlocks it, and later
+      // `setCrop`/`dragMove` are free-form. That is the nullable idiom being
+      // consistent (the same as `setAspectRatio(null)`), and it is strictly
+      // better than the `NaN`-poisoned rectangle it replaces — but it is not
+      // the "drop the write" answer the REQUIRED bounds take, so it is a
+      // deliberate difference rather than an oversight.
       const ratio = finiteBound(msg.ratio) ?? null
       return [
         {

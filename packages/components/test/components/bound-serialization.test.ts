@@ -254,19 +254,43 @@ describe('a dropped bound leaves the component still clamping (#177)', () => {
     }
   })
 
-  it('file-upload keeps enforcing its size limit', () => {
-    // `f.size > NaN` is false, so a poisoned `maxSize` accepted every file.
+  it('file-upload normalises a non-finite limit to its UNLIMITED sentinel', () => {
+    // Stated exactly, because the name of this test used to over-claim: 0 is
+    // `file-upload`'s "no limit" value (`state.maxSize > 0` gates the check),
+    // and it is also the documented default a refused bound falls back to. So
+    // for `maxSize` specifically, NaN -> 0 changes the STATE (serializable now)
+    // and NOT the enforcement: `f.size > NaN` and `f.size > 0 === false` both
+    // accept everything. The same holds for `minFileSize`, `maxFiles` and
+    // `tags-input.max`, whose sentinel is also 0.
     const s = fileUpload.init({ maxSize: NaN })
     expect(s.maxSize).toBe(0)
+    expectSerializableState(s, 'file-upload maxSize NaN')
+    const big = { id: 'a', name: 'a.txt', size: 10_000, type: 'text/plain', lastModified: 0 }
+    expect(fileUpload.validateFiles([big], s, 0).accepted).toHaveLength(1)
+
+    // What the normalisation DOES protect is a limit that is actually a limit:
+    // it stays enforced, and it is the only shape that ever rejected a file.
+    const limited = fileUpload.init({ maxSize: 50 })
+    const v = fileUpload.validateFiles([big], limited, 0)
+    expect(v.accepted).toHaveLength(0)
+    expect(v.rejected[0]?.errors[0]).toEqual({ code: 'TOO_LARGE', max: 50 })
   })
 
-  it('pin-input still builds a cell array', () => {
-    // `new Array(NaN)` THROWS — the poisoned bound was not merely stored here.
-    for (const bad of NON_FINITE) {
+  it('pin-input builds a cell array for a degenerate length', () => {
+    // `new Array(n)` THROWS a RangeError unless `n` is a non-negative integer,
+    // so `length` was a CRASH in `init` rather than a bad value in state — and
+    // finiteness alone does not close it: 2.5 and -1 are finite and throw.
+    for (const bad of [...NON_FINITE, 2.5, -1, -0.5]) {
       const s = pinInput.init({ length: bad })
-      expect(s.length).toBe(4)
-      expect(s.values).toHaveLength(4)
+      expect(Number.isSafeInteger(s.length), `length ${bad}`).toBe(true)
+      expect(s.length, `length ${bad}`).toBeGreaterThanOrEqual(0)
+      expect(s.values, `values ${bad}`).toHaveLength(s.length)
+      expectSerializableState(s, `pin-input length ${bad}`)
     }
+    // A usable count is untouched, fraction and all — it truncates, it does not
+    // round up to a cell the view would have nothing to render into.
+    expect(pinInput.init({ length: 6 }).length).toBe(6)
+    expect(pinInput.init({ length: 6.9 }).length).toBe(6)
   })
 
   it('floating-panel keeps clamping the panel size', () => {
