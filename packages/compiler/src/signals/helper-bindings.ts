@@ -45,20 +45,38 @@ export function bindingNames(name: ts.BindingName): string[] {
 }
 
 /** Does `node` — a scope-introducing node — declare a binding named `name` that
- * scopes over its subtree? Covers function-like params, block-level `var`/`let`/
- * `const`/`function`/`class` declarations, `for` initializers, and `catch`
- * bindings. (A declaration appearing after the use still lexically shadows, so
- * position within the scope is not considered — conservative: when unsure we
- * treat the name as shadowed, i.e. NOT a helper, which only forgoes lowering.)
+ * scopes over its subtree? Covers function-like params, a function/class
+ * EXPRESSION's own name, block-level `var`/`let`/`const`/`function`/`class`
+ * declarations, `for` initializers, and `catch` bindings. (A declaration
+ * appearing after the use still lexically shadows, so position within the scope
+ * is not considered — conservative: when unsure we treat the name as shadowed,
+ * i.e. NOT a helper, which only forgoes lowering.)
  *
  * Exported because every walker that carries a NAME through a subtree owes the
  * same discipline: a signal root, like a helper binding, stops being itself the
  * moment an inner scope rebinds its name — `each(…, (state) => …)` inside a view
  * whose bag root is also `state` is a plain row handle, not the component state.
- * `collect-signal-deps.ts` prunes its roots with this. Reuse it rather than
- * re-deriving shadowing per walker; the cases below are the ones hand-rolled
- * versions forget (`for` initializers, `catch`, hoisted function/class names). */
+ * `collect-signal-deps.ts` prunes its roots with this, and `tag-send-drift`
+ * decides dispatcher attribution with it. Reuse it rather than re-deriving
+ * shadowing per walker; the cases below are the ones hand-rolled versions forget
+ * (`for` initializers, `catch`, hoisted function/class names, and — until #153 —
+ * a function/class expression's own name). */
 export function scopeIntroduces(node: ts.Node, name: string): boolean {
+  // A function or class EXPRESSION binds its OWN name over its own subtree.
+  // That is how a self-recursive function expression calls itself, so inside
+  // `function send(m) { send(m) }` the identifier `send` is the FUNCTION, not
+  // whatever `send` meant outside — exactly the `items.forEach(({ send }) => …)`
+  // case in a different binding form (#153). Missing it left the name "live"
+  // inside a scope that had rebound it, which cost `tag-send-drift` two false
+  // positives on code that type-checks and made `function div() { div({}, []) }`
+  // lint AND lower as the `@llui/dom` helper inside its own body.
+  //
+  // A DECLARATION is deliberately not here: `function f() {}` / `class C {}`
+  // bind in the ENCLOSING scope, which the `Block` branch below (and, at module
+  // scope, `HelperBindings.fromSourceFile`) already owns.
+  if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name?.text === name) {
+    return true
+  }
   if (
     ts.isFunctionDeclaration(node) ||
     ts.isFunctionExpression(node) ||

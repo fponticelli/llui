@@ -1561,6 +1561,13 @@ function scanHandlerDispatches(
     // and forfeit completeness (it may dispatch anything, later).
     if (isReturnedFunction(n)) {
       complete = false
+      // …but a member node carries positions that are NOT part of its deferred
+      // body and DO run when the literal is built — see
+      // {@link memberBuildTimeExpressions}. They are walked with the OUTER
+      // liveness, not `inScope`: both a computed key and a decorator are
+      // evaluated outside the member's own parameter scope, so a parameter
+      // spelling the dispatcher must not prune them.
+      for (const e of memberBuildTimeExpressions(n)) walk(e, live)
       return
     }
 
@@ -1602,21 +1609,183 @@ function scanHandlerDispatches(
   return { dispatches, complete }
 }
 
-/** True when `n` is a function expression sitting in RETURN position — the body
- * of a `return`, or the concise body of an enclosing arrow. Parentheses around
- * it are transparent. A function passed as an ARGUMENT is NOT this: a
- * `setTimeout(() => send({type:'tick'}))` really does dispatch. */
+/** The node kinds whose BODY is deferred past the expression that builds them —
+ * what "a returned closure does not run" can be true OF. Arrow and function
+ * expressions used to be the whole list, which made the spelling decide the
+ * verdict: `{ h: function () { … } }` was skipped while the identical, more
+ * idiomatic `{ h() { … } }` was attributed (#182). A method shorthand, an
+ * accessor and a constructor defer exactly as an arrow does — none run when
+ * the object or class literal is built.
+ *
+ * NOT here, deliberately:
+ *   • `ClassStaticBlockDeclaration` — a static block RUNS when the class
+ *     expression is evaluated, i.e. inside the handler.
+ *   • the class expression ITSELF — only its function-like members defer; its
+ *     static field initializers and static blocks are ordinary code the walk
+ *     must keep reading. It is a transparent CONTAINER (see
+ *     {@link isTransparentReturnContainer}), never a skipped subtree. */
+function isDeferredBody(n: ts.Node): boolean {
+  return (
+    ts.isArrowFunction(n) ||
+    ts.isFunctionExpression(n) ||
+    ts.isMethodDeclaration(n) ||
+    ts.isGetAccessorDeclaration(n) ||
+    ts.isSetAccessorDeclaration(n) ||
+    ts.isConstructorDeclaration(n)
+  )
+}
+
+/** Everything on a SKIPPED member node that is nevertheless evaluated when the
+ * object or class literal is BUILT — i.e. inside the handler — and therefore
+ * must still be walked. A member is skipped as a whole subtree, so each of these
+ * has to be rescued by name; they are the same kind of exception as a returned
+ * class's `static {}` block and `static h = …` initializer, one level down.
+ *
+ *   • the COMPUTED name: `{ [k()]() { … } }` evaluates `k()` when the literal is
+ *     built. (An arrow in a PROPERTY position never had this problem — its
+ *     sibling `ComputedPropertyName` hangs off the `PropertyAssignment`, which
+ *     the walk keeps visiting. Skipping the member made a method the one
+ *     position where a computed key stopped being read.)
+ *   • the member's own DECORATORS and its parameters' DECORATORS: a decorator
+ *     expression is evaluated when the class expression is evaluated, exactly
+ *     like a heritage clause. Only classes have these, so an object-literal
+ *     member contributes none.
+ *
+ * A parameter DEFAULT is deliberately absent: it runs when the member is
+ * CALLED, which is the deferred half. */
+function memberBuildTimeExpressions(n: ts.Node): ts.Node[] {
+  const out: ts.Node[] = []
+  if (
+    ts.isMethodDeclaration(n) ||
+    ts.isGetAccessorDeclaration(n) ||
+    ts.isSetAccessorDeclaration(n)
+  ) {
+    if (ts.isComputedPropertyName(n.name)) out.push(n.name.expression)
+  }
+  if (ts.canHaveDecorators(n)) out.push(...(ts.getDecorators(n) ?? []))
+  if (ts.isFunctionLike(n)) {
+    for (const p of n.parameters) {
+      if (ts.canHaveDecorators(p)) out.push(...(ts.getDecorators(p) ?? []))
+    }
+  }
+  return out
+}
+
+/** True when `n` is a deferred-body node the handler RETURNS — reachable from
+ * the return expression (a `return` statement's operand, or the concise body of
+ * an enclosing arrow) WITHOUT passing through a call.
+ *
+ * "Without passing through a call" is the whole boundary, and both sides of it
+ * are load-bearing:
+ *
+ *   • A returned closure does not run when the handler runs, so neither its
+ *     dispatches nor its silence describe this tag. Direct return position was
+ *     always handled; a closure returned inside an object or array literal
+ *     (`return { h: () => send({type:'inner'}) }`, `return [() => …]`) was NOT,
+ *     and got attributed to the handler — a direction-1 false positive against
+ *     the rule's own doctrine, in a NON-BYPASSABLE build error (#157).
+ *   • A function passed as an ARGUMENT stays attributed:
+ *     `setTimeout(() => send({type:'tick'}))` really does dispatch, and so may
+ *     `use({ h: () => … })` — the call can invoke it immediately. Treating every
+ *     container as transparent would switch direction 1 off for the single most
+ *     common dispatch shape there is.
+ *
+ * TRANSPARENT means every position whose value can BECOME the returned value
+ * with no call in between — and it must mean the WHOLE of that, not the shapes
+ * that happened to be reported. This rule's sibling walk (the handler's
+ * parameter list) surfaced FOUR times, each round fixing one position further
+ * in, which is why the invariant in CLAUDE.md says the next walker has to mean
+ * all of it. So: the erased wrappers, object and array literals, a class
+ * expression's members, a class field's initializer, a conditional's arms, and a
+ * logical/comma operand. Anything else — a call argument above all, but also a
+ * variable declaration, a template, a `new` — ends the walk with `false`, which
+ * merely keeps the pre-existing attribution.
+ *
+ * The other half of "the whole of the position" is WHAT can sit there
+ * ({@link isDeferredBody}): the container list was widened for #157 while the
+ * start-kind guard still read arrow-or-function-expression only, so a method
+ * shorthand, an accessor, a constructor and a class-field arrow inside a
+ * returned container stayed attributed — the same false positive, one node kind
+ * out, and on the MORE idiomatic spelling (#182).
+ *
+ * Both directions agree about the shapes this widens: skipping the subtree
+ * removes a direction-1 attribution AND forfeits completeness, so direction 2
+ * cannot start reporting because of it. */
 function isReturnedFunction(n: ts.Node): boolean {
-  if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) return false
+  if (!isDeferredBody(n)) return false
   let cur: ts.Node = n
   let parent: ts.Node | undefined = cur.parent
-  while (parent !== undefined && ts.isParenthesizedExpression(parent)) {
+  while (parent !== undefined) {
+    if (ts.isReturnStatement(parent)) return true
+    if (ts.isArrowFunction(parent) && parent.body === cur) return true
+    if (!isTransparentReturnContainer(cur, parent)) return false
     cur = parent
     parent = cur.parent
   }
-  if (parent === undefined) return false
-  if (ts.isReturnStatement(parent)) return true
-  return ts.isArrowFunction(parent) && parent.body === cur
+  return false
+}
+
+/** Is `parent` a node that a returned value can sit INSIDE without being called
+ * — i.e. does "`parent` is returned" imply "`cur` is returned"? See
+ * {@link isReturnedFunction} for why the list is exactly this short. */
+function isTransparentReturnContainer(cur: ts.Node, parent: ts.Node): boolean {
+  // Erased wrappers: the value that reaches the return IS `cur`.
+  if (
+    ts.isParenthesizedExpression(parent) ||
+    ts.isAsExpression(parent) ||
+    ts.isSatisfiesExpression(parent) ||
+    ts.isTypeAssertionExpression(parent) ||
+    ts.isNonNullExpression(parent)
+  ) {
+    return parent.expression === cur
+  }
+  // `return [() => …]` — every ELEMENT of a returned array is returned with it.
+  // Spread (`return [...(() => …)]`) is a `SpreadElement`, which is not in this
+  // list and so ends the walk.
+  //
+  // The membership tests here and below (`elements`/`properties`/`members`)
+  // redden NO test today: every other direct child of these three nodes is
+  // already terminated earlier in the walk. They are defensive on purpose — an
+  // unconditional `true` answers for positions it never looked at, which is
+  // exactly the shape that turns unsound the day a kind is added above it, and
+  // this function has already been widened twice (#157, #182).
+  if (ts.isArrayLiteralExpression(parent)) return parent.elements.some((e) => e === cur)
+  // `return { h: () => … }` — via the property assignment that holds it.
+  if (ts.isPropertyAssignment(parent)) return parent.initializer === cur
+  // `return { h() { … } }` / `{ get h() { … } }` — a member sits directly under
+  // the object literal. Its computed NAME does not (see
+  // {@link memberBuildTimeExpressions}); it runs when the literal is built.
+  if (ts.isObjectLiteralExpression(parent)) return parent.properties.some((p) => p === cur)
+  // `return class { h() { … } }` — a MEMBER of a returned class expression is
+  // returned with it. A heritage clause (`extends mixin()`) is not a member and
+  // is evaluated at class-evaluation time, so it ends the walk.
+  if (ts.isClassExpression(parent)) return parent.members.some((m) => m === cur)
+  // `return class { h = () => … }` — a class field's initializer builds the
+  // closure but never calls it. This holds for a `static` field too: the
+  // initializer is evaluated inside the handler, but only the ARROW is skipped
+  // here, and any call in that initializer (`static h = compute()`) is an
+  // ordinary node the walk still reads.
+  if (ts.isPropertyDeclaration(parent)) return parent.initializer === cur
+  // `return cond ? () => … : null` — either ARM can be the returned value; the
+  // CONDITION cannot (it is consumed, not returned).
+  if (ts.isConditionalExpression(parent)) {
+    return parent.whenTrue === cur || parent.whenFalse === cur
+  }
+  // `return cached ?? (() => …)`, `a || (() => …)`, `(log(), () => …)`. For the
+  // short-circuit operators either operand can be the value; for the comma the
+  // left one is discarded, so only the right is.
+  if (ts.isBinaryExpression(parent)) {
+    const op = parent.operatorToken.kind
+    if (
+      op === ts.SyntaxKind.QuestionQuestionToken ||
+      op === ts.SyntaxKind.BarBarToken ||
+      op === ts.SyntaxKind.AmpersandAmpersandToken
+    ) {
+      return true
+    }
+    return op === ts.SyntaxKind.CommaToken && parent.right === cur
+  }
+  return false
 }
 
 /** True when `id` occupies the callee position of its parent call. */
