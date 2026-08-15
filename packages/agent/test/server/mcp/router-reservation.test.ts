@@ -177,13 +177,21 @@ describe('MCP router slot reservation on the resurrect path (#186)', () => {
         ),
       ).rejects.toThrow(`allocation failed at ${point}`)
 
-      // Retained nothing, so it must cost nothing.
+      // Retained nothing, so it must cost nothing. THIS is the
+      // assertion that fires on a missing release (`expected 1 to be
+      // +0`) — the reservation is still counted with no session behind
+      // it.
       expect(router.liveSessionCount()).toBe(0)
       expect(router.hasLiveSession(doomed as string)).toBe(false)
 
-      // The load-bearing consequence: a leaked reservation would still
-      // be counted as an anonymous slot, so the single anonymous slot
-      // would be spoken for and this would 503 against an EMPTY map.
+      // A SECOND, independent observable of the same leak, deliberately
+      // not reading the counter: a leaked reservation is still counted
+      // as an anonymous slot, so the single anonymous slot is spoken for
+      // and this 503s against an EMPTY map. It is unreachable while the
+      // count assertion above holds, and it earns its place by
+      // surviving the count being blinded — with the release deleted
+      // AND `occupancy()` reading only `sessions.size`, the assertion
+      // above passes and this one still fails.
       const after = await router(initializeRequest())
       expect(after?.status).toBe(200)
       expect(router.liveSessionCount()).toBe(1)
