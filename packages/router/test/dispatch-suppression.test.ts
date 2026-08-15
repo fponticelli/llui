@@ -38,6 +38,12 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   return { send, dispose: () => handle.dispose() }
 }
 
+/** A stamp of the kind the router writes: an index AND the run it belongs to. */
+const RUN = 'test-run'
+function stamp(index: number): Record<string, unknown> {
+  return { __llui_idx: index, __llui_run: RUN }
+}
+
 // jsdom fires the real hashchange asynchronously; these tests instead drive the
 // echo synchronously (dispatchEvent) and dispose before the async echo lands, so
 // each assertion is deterministic and free of cross-test timing leaks.
@@ -127,8 +133,13 @@ describe('history mode blocked popstate restores via history.go, never pushState
   })
 
   it('reverses a blocked back-navigation with history.go(delta) and does not pushState', () => {
-    // Seed: we are at index 1 on "/".
-    history.replaceState({ __llui_idx: 1 }, '', '/')
+    // Seed: we are at index 1 on "/", numbered in RUN. The run travels with the
+    // index or the router has no position to measure against — a bare
+    // `{ __llui_idx: n }` is what a build predating `__llui_run` wrote, and
+    // those restarted their numbering across gaps they never recorded, so the
+    // router refuses to subtract across one (#150 review; the legacy shape is
+    // pinned in `legacy-stamps.test.ts`).
+    history.replaceState(stamp(1), '', '/')
     const routing = connectRouter(historyRouter(), { beforeEnter: () => false })
     const { dispose } = mountListener(routing)
 
@@ -136,8 +147,8 @@ describe('history mode blocked popstate restores via history.go, never pushState
     const pushSpy = vi.spyOn(history, 'pushState')
 
     // Simulate the browser back button landing on /admin (index 0).
-    history.replaceState({ __llui_idx: 0 }, '', '/admin')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 0 } }))
+    history.replaceState(stamp(0), '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(0) }))
 
     // Blocked → restore forward one entry (1 - 0 = 1). No stray pushState.
     expect(goSpy).toHaveBeenCalledWith(1)
@@ -149,17 +160,17 @@ describe('history mode blocked popstate restores via history.go, never pushState
   })
 
   it('does not restore repeatedly — a second blocked popstate never grows history via pushState', () => {
-    history.replaceState({ __llui_idx: 2 }, '', '/')
+    history.replaceState(stamp(2), '', '/')
     const routing = connectRouter(historyRouter(), { beforeEnter: () => false })
     const { dispose } = mountListener(routing)
 
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
     const pushSpy = vi.spyOn(history, 'pushState')
 
-    history.replaceState({ __llui_idx: 1 }, '', '/admin')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
-    history.replaceState({ __llui_idx: 0 }, '', '/admin')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 0 } }))
+    history.replaceState(stamp(1), '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
+    history.replaceState(stamp(0), '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(0) }))
 
     expect(pushSpy).not.toHaveBeenCalled()
     // history.go was used for the restores (not pushState).

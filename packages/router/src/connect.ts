@@ -266,19 +266,10 @@ const STATE_KEY = '__llui_idx'
  *
  * An index is only ever comparable to another index from the SAME run — see
  * `mintRun` for what a run is and why the id has to live on the entry rather
- * than in a variable.
+ * than in a variable, and `readPosition` for why an entry carrying an index
+ * WITHOUT one of these is not a position at all.
  */
 const RUN_KEY = '__llui_run'
-
-/**
- * The run of an entry stamped by a build that pre-dates {@link RUN_KEY}.
- *
- * It is a real run id — such entries were numbered consecutively by that build,
- * so its numbering can be adopted and CONTINUED — but it is never MINTED: an
- * entry we number without knowing the position of the one below it always opens
- * a run of its own.
- */
-const LEGACY_RUN = ''
 
 /**
  * A fresh run id.
@@ -289,33 +280,69 @@ const LEGACY_RUN = ''
  * runs and a delta could be computed straight across the gap between them. The
  * only operation performed on the id is equality, so ~50 bits of entropy is
  * ample and the value is never parsed.
+ *
+ * The empty string is retried rather than returned. `Math.random()` may return
+ * exactly `0` (p ≈ 2⁻⁵³), whose base-36 rendering is `'0'` and whose `.slice(2)`
+ * is `''` — and {@link readPosition} treats an empty run as no run at all, so
+ * minting one would silently make the entry it stamped incomparable with the
+ * next one. The loop terminates with probability 1 and, in 300k mints measured,
+ * never ran twice.
  */
 function mintRun(): string {
-  return Math.random().toString(36).slice(2)
+  let id = ''
+  while (id === '') id = Math.random().toString(36).slice(2)
+  return id
 }
 
 /** The outcome of the guard pipeline for one navigation. */
 type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
 
-/** Our index stamped on a history entry, or `null` when nobody stamped it. */
-function readIndex(state: unknown): number | null {
-  if (state !== null && typeof state === 'object') {
-    const v = (state as Record<string, unknown>)[STATE_KEY]
-    if (typeof v === 'number') return v
-  }
-  return null
-}
+/**
+ * A position this router can measure a delta against: an index AND the run it
+ * was numbered in. Never one without the other — see {@link readPosition}.
+ */
+type Position = { index: number; run: string }
 
 /**
- * The run a STAMPED entry's index belongs to. Only meaningful where
- * {@link readIndex} returned a number; an absent key means {@link LEGACY_RUN}.
+ * The position stamped on a history entry, or `null` when the entry carries
+ * none this router can use.
+ *
+ * BOTH halves are required, and an index without a run is NOT a position (#150
+ * review). It is tempting to read an absent `__llui_run` as one distinguished
+ * "legacy" run, on the theory that a build predating the key numbered its
+ * entries consecutively so its numbering can be adopted and continued. That
+ * premise is FALSE for the builds that exist: `origin/fix/router-143`, the #139
+ * build and this PR's own revision `3d3e0ca7` all RESTART their numbering across
+ * an entry they could not place, and none of them record that they did. So an
+ * absent key does not name one run — it names every run every prior build ever
+ * opened, collapsed into a single comparable id, which is precisely the
+ * degenerate counter {@link mintRun} exists to rule out. Both failures were
+ * measured and are pinned in `test/legacy-stamps.test.ts`:
+ *
+ * - hash mode, a legacy stack whose numbering restarted across a hand edit — a
+ *   blocked `history.go(-4)` answered with a router-issued `go(2)` that landed
+ *   the user on the hand-edited entry;
+ * - history mode, no hand edit needed — the stack `origin/fix/router-143`
+ *   ITSELF produces around a foreign `pushState` (`/`{0} | `/tracker` foreign |
+ *   `/admin`{1}, one index across two physical entries): a blocked
+ *   `history.go(-2)` answered with `go(1)`, depositing the user on the analytics
+ *   entry with nothing dispatched, so `state.route` desynced too.
+ *
+ * The cost of refusing is a lost undo for a stack an older build numbered, for
+ * the length of a deploy window — the same known, documented outcome as an entry
+ * with no stamp at all, and the safe direction this whole mechanism argues for:
+ * a lost undo rather than a wrong traversal.
+ *
+ * An empty run id reads as no run for the same reason it is never minted: it is
+ * the value a foreign writer is likeliest to produce by accident, and treating
+ * it as an id would make two unrelated writers' entries subtractable.
  */
-function readRun(state: unknown): string {
-  if (state !== null && typeof state === 'object') {
-    const v = (state as Record<string, unknown>)[RUN_KEY]
-    if (typeof v === 'string') return v
-  }
-  return LEGACY_RUN
+function readPosition(state: unknown): Position | null {
+  if (state === null || typeof state !== 'object') return null
+  const index = (state as Record<string, unknown>)[STATE_KEY]
+  const run = (state as Record<string, unknown>)[RUN_KEY]
+  if (typeof index !== 'number' || typeof run !== 'string' || run === '') return null
+  return { index, run }
 }
 
 /** Normalize a hash for comparison: `''` and `'/x'` both mean `'#/'`-rooted. */
@@ -401,19 +428,18 @@ export function connectRouter<R>(
    *
    * Closes over `env` rather than reading `history.state` itself, so a stamp
    * lands on the injected surface like every other history touch here (#111).
+   *
+   * It takes the whole {@link Position}, never a bare index off `currentIndex`
+   * with the run read out of scope: an index and the run it was numbered in are
+   * one fact, and a stamp missing either half is not a position `readPosition`
+   * will hand back. Passing the pair is what makes writing an index without a
+   * run unrepresentable rather than merely unreachable.
    */
-  function stampCurrent(index: number): Record<string, unknown> {
+  function stampCurrent(pos: Position): Record<string, unknown> {
     const existing = env.historyState
     const base =
       existing !== null && typeof existing === 'object' ? (existing as Record<string, unknown>) : {}
-    const stamped: Record<string, unknown> = { ...base, [STATE_KEY]: index }
-    // The run travels with the index or the pair means nothing. `LEGACY_RUN` is
-    // spelled as the ABSENCE of the key — it is the run of a build that had no
-    // key — so continuing that numbering must also DELETE any id the merged
-    // base carried, rather than leave a stale one beside a fresh index.
-    if (currentRun === LEGACY_RUN) delete stamped[RUN_KEY]
-    else stamped[RUN_KEY] = currentRun
-    return stamped
+    return { ...base, [STATE_KEY]: pos.index, [RUN_KEY]: pos.run }
   }
 
   // Our position in the session history stack. The browser exposes no such
@@ -422,9 +448,9 @@ export function connectRouter<R>(
   // from. `null` means UNKNOWN — we are sitting on an entry nobody stamped, so
   // no delta can be derived and none may be guessed.
   let currentIndex: number | null = null
-  // The run `currentIndex` is numbered in, `null` whenever `currentIndex` is.
-  // Two indices are only comparable within one run (see the POSITION MODEL
-  // above and `standingIndex`).
+  // The run `currentIndex` is numbered in, `null` exactly when `currentIndex`
+  // is. Two indices are only comparable within one run (see the POSITION MODEL
+  // above and `standing`).
   let currentRun: string | null = null
   // `historyLength > 0` is the env's own "is there a history here" capability
   // test, replacing the `typeof history !== 'undefined'` guard this seed used
@@ -435,13 +461,13 @@ export function connectRouter<R>(
   // guards a WRITE, and `connectRouter` typically runs at module scope, so
   // without it an SSR import would throw where it used to no-op.
   if (env.historyLength > 0) {
-    const seeded = readIndex(env.historyState)
+    const seeded = readPosition(env.historyState)
     if (seeded !== null) {
       // An entry we (or a previous lifetime of this connector, across a reload)
       // already stamped: adopt its position AND its run, so the numbering
       // continues the one the entries below it belong to.
-      currentIndex = seeded
-      currentRun = readRun(env.historyState)
+      currentIndex = seeded.index
+      currentRun = seeded.run
     } else {
       // Seed the entry the app LOADED on. Without this stamp a pop back onto
       // it carries no index, `currentIndex` never resyncs across it, and every
@@ -455,12 +481,21 @@ export function connectRouter<R>(
       // (load, navigate, hand-edit the fragment, reload), and index `0` here is
       // no relation to their numbering. A fresh id makes those entries
       // incomparable instead of subtractable.
-      currentRun = mintRun()
+      //
+      // An entry carrying an index but NO run takes this branch too, and is
+      // re-stamped rather than adopted: a build that predates the run key
+      // restarted its numbering across entries it could not place and recorded
+      // nothing about it, so its indices are not a numbering this one can
+      // continue (`readPosition`). Host keys already on the entry survive —
+      // `stampCurrent` merges — and the stale index is overwritten rather than
+      // left beside a fresh run id that would make it look measurable.
+      const run = mintRun()
+      currentRun = run
       currentIndex = 0
       // No path: this re-stamps the entry we are ALREADY on. Passing `''` here
       // resolves against the document base and drops the fragment, silently
       // breaking hash mode (see `RouterEnv.replaceState`).
-      env.replaceState(stampCurrent(0))
+      env.replaceState(stampCurrent({ index: 0, run }))
     }
   }
 
@@ -485,19 +520,18 @@ export function connectRouter<R>(
     pendingEchoCount++
     pendingEchoHash = normHash(newHash)
   }
-  // The index a blocked navigation's `history.go` is restoring to, or `null`.
+  // The POSITION a blocked navigation's `history.go` is restoring to, or `null`.
   // Keyed on the destination rather than a bare flag: `history.go` is
   // asynchronous and a delta it cannot reach fires nothing at all, so a flag
-  // stays armed and swallows the next genuine popstate (#103).
-  let pendingRestoreIndex: number | null = null
-  /** The run `pendingRestoreIndex` is numbered in — the other half of its identity. */
-  let pendingRestoreRun: string | null = null
+  // stays armed and swallows the next genuine popstate (#103). Index and run
+  // travel together, because the same index in another run is another entry.
+  let pendingRestore: Position | null = null
 
   /**
-   * The index of the entry we are physically STANDING on, resolved as the RUN
-   * the caller is about to number in — `null` when that entry has no knowable
-   * position, which OPENS a new run. `currentRun` is left holding the run to
-   * stamp either way, so a caller only has to decide what index to write.
+   * The index of the entry we are physically STANDING on, together with the RUN
+   * the caller is about to number in — the index is `null` when that entry has
+   * no knowable position, which OPENS a new run. The run is always a real id, so
+   * a caller only has to decide what index to write.
    *
    * The answer comes from the ENTRY, never from `currentIndex`, which is not
    * always the last thing we wrote. Two ways it lies, in opposite directions:
@@ -514,6 +548,11 @@ export function connectRouter<R>(
    *   of 2 — the same gap a hand-edited hash entry opens, in HISTORY mode, where
    *   there is no address bar to blame. Reading the entry catches it: the state
    *   under us is the foreign one and carries no stamp.
+   *
+   * "Unstamped" here means `readPosition` returned `null`, which includes an
+   * entry carrying an index but no run — a stamp an older build wrote. Its
+   * numbering is not this one's to continue, so it opens a run like any other
+   * position we cannot measure.
    *
    * So an unstamped entry is unknown even when we think we know where we are.
    * The one case that costs is a foreign `replaceState` CLOBBERING a stamp of
@@ -532,25 +571,29 @@ export function connectRouter<R>(
    * which `restoreBlocked` turns into "leave the URL alone" rather than a wrong
    * `history.go`.
    */
-  function standingIndex(): number | null {
-    const landed = readIndex(env.historyState)
-    if (landed !== null) {
-      currentRun = readRun(env.historyState)
-      return landed
-    }
-    currentRun = mintRun()
-    return null
+  function standing(): { index: number | null; run: string } {
+    const landed = readPosition(env.historyState)
+    if (landed !== null) return { index: landed.index, run: landed.run }
+    return { index: null, run: mintRun() }
   }
 
-  /** The index for an entry we are about to CREATE above the one we stand on. */
-  function indexForPush(): number {
-    const standing = standingIndex()
-    return standing === null ? 0 : standing + 1
+  /** The stamp for an entry we are about to CREATE above the one we stand on. */
+  function pushStamp(): Position {
+    const from = standing()
+    return { index: from.index === null ? 0 : from.index + 1, run: from.run }
   }
 
-  /** The index for an entry we are about to REPLACE in place. */
-  function indexForReplace(): number {
-    return standingIndex() ?? 0
+  /** The stamp for an entry we are about to REPLACE in place. */
+  function replaceStamp(): Position {
+    const from = standing()
+    return { index: from.index ?? 0, run: from.run }
+  }
+
+  /** Adopt a stamp we are about to write as our own standing position. */
+  function stand(pos: Position): Position {
+    currentIndex = pos.index
+    currentRun = pos.run
+    return pos
   }
 
   /**
@@ -558,23 +601,20 @@ export function connectRouter<R>(
    * with nothing, because the entry does not exist yet (`stampCurrent`'s merge
    * would carry the state of the entry we are LEAVING onto it).
    */
-  function freshStamp(index: number): Record<string, unknown> {
-    const stamped: Record<string, unknown> = { [STATE_KEY]: index }
-    if (currentRun !== LEGACY_RUN && currentRun !== null) stamped[RUN_KEY] = currentRun
-    return stamped
+  function freshStamp(pos: Position): Record<string, unknown> {
+    return { [STATE_KEY]: pos.index, [RUN_KEY]: pos.run }
   }
 
   function pushUrl(path: string): void {
-    currentIndex = indexForPush()
-    env.pushState(freshStamp(currentIndex), path)
+    env.pushState(freshStamp(stand(pushStamp())), path)
   }
 
   function replaceUrl(path: string): void {
     // A replace swaps the entry in place, so it keeps THAT entry's index.
-    currentIndex = indexForReplace()
+    const pos = stand(replaceStamp())
     // The one re-stamp that legitimately carries a path: this navigation is
     // changing the URL as well as the entry's state.
-    env.replaceState(stampCurrent(currentIndex), path)
+    env.replaceState(stampCurrent(pos), path)
   }
 
   /**
@@ -588,14 +628,14 @@ export function connectRouter<R>(
     if (sameHash(env.hash, newHash)) return false
     // Resolve the position (and the run) of the entry we are LEAVING before the
     // write replaces it.
-    const next = indexForPush()
+    const next = pushStamp()
     armEcho(newHash)
     env.setHash(newHash)
     // The fragment navigation created its entry SYNCHRONOUSLY (only the
     // `hashchange` EVENT is queued), so stamp it now: setting the hash
     // cannot carry state itself, and the blocked-back restore needs an index on
     // every entry to compute a `history.go` delta from.
-    currentIndex = next
+    stand(next)
     // A fresh fragment entry carries no state, so this merges with nothing —
     // but every re-stamp in this file goes through `stampCurrent`, with no
     // exception for a reader to re-verify.
@@ -603,7 +643,7 @@ export function connectRouter<R>(
     // No path: re-stamping the entry the hash write just created. A `''` here
     // would resolve against the document base and throw the fragment away —
     // i.e. undo the navigation on the line above.
-    env.replaceState(stampCurrent(currentIndex))
+    env.replaceState(stampCurrent(next))
     return true
   }
   /**
@@ -658,18 +698,16 @@ export function connectRouter<R>(
    * genuine popstate (#103).
    */
   function consumePopstateRestore(): boolean {
-    if (pendingRestoreIndex === null) return false
-    const expected = pendingRestoreIndex
-    const expectedRun = pendingRestoreRun
-    pendingRestoreIndex = null
-    pendingRestoreRun = null
+    if (pendingRestore === null) return false
+    const expected = pendingRestore
+    pendingRestore = null
     // The RUN is half of the identity: the same index in another run is a
     // different entry, so matching on the number alone would swallow a genuine
     // popstate onto it and adopt a position we are not standing at.
-    if (readIndex(env.historyState) !== expected) return false
-    if (readRun(env.historyState) !== expectedRun) return false
-    currentIndex = expected
-    currentRun = expectedRun
+    const landed = readPosition(env.historyState)
+    if (landed === null) return false
+    if (landed.index !== expected.index || landed.run !== expected.run) return false
+    stand(expected)
     return true
   }
 
@@ -682,7 +720,9 @@ export function connectRouter<R>(
    * wrong-direction `history.go` (#103).
    *
    * DESIGN DECISION (#150): every unstamped entry is UNKNOWN — one rule, both
-   * modes.
+   * modes. So is an entry stamped with an index but no RUN, which is what an
+   * older build's stamp looks like: continuing its numbering computes a delta
+   * straight across a gap it restarted over and never recorded (`readPosition`).
    *
    * History mode never had a choice: `popstate` is always a traversal. Hash mode
    * looks like it does, because `hashchange` also fires for a NEW fragment
@@ -713,7 +753,7 @@ export function connectRouter<R>(
    *   again.
    *
    * THE COST, stated plainly: a hand-edited hash entry ENDS the run its
-   * neighbours were numbered in (see `standingIndex`), so a guard-blocked
+   * neighbours were numbered in (see `standing`), so a guard-blocked
    * traversal ONTO it, or ACROSS it, is not undone — the URL is left showing the
    * route the guard refused, nothing is dispatched, and `state.route` keeps the
    * route you never left. Two shapes, both leaving the stack untouched:
@@ -745,11 +785,11 @@ export function connectRouter<R>(
    * closes as a policy change rather than a new discriminator.
    */
   function adoptLandedEntry(): void {
-    const landed = readIndex(env.historyState)
-    currentIndex = landed
     // A position with no run is not a position: the run is what makes the next
     // delta subtractable, so the two are adopted and forgotten together.
-    currentRun = landed === null ? null : readRun(env.historyState)
+    const landed = readPosition(env.historyState)
+    currentIndex = landed === null ? null : landed.index
+    currentRun = landed === null ? null : landed.run
   }
 
   /**
@@ -771,7 +811,7 @@ export function connectRouter<R>(
    *
    * `go` + push was the alternative. It is rejected twice over: `history.go` is
    * ASYNCHRONOUS, so the push would have to be sequenced on a later popstate —
-   * the exact hazard `restoreBlocked` and `standingIndex` document — and a push
+   * the exact hazard `restoreBlocked` and `standing` document — and a push
    * from the rewound position TRUNCATES every forward entry, turning an auth
    * redirect into the stack corruption #103 fixed.
    *
@@ -790,7 +830,9 @@ export function connectRouter<R>(
    * this path depends on with it.
    */
   function rewriteLandedUrl(path: string): void {
-    env.replaceState(currentIndex === null ? env.historyState : stampCurrent(currentIndex), path)
+    const pos =
+      currentIndex === null || currentRun === null ? null : { index: currentIndex, run: currentRun }
+    env.replaceState(pos === null ? env.historyState : stampCurrent(pos), path)
   }
 
   /**
@@ -799,10 +841,11 @@ export function connectRouter<R>(
    */
   function restoreBlocked(): void {
     if (currentRoute === null) return
-    const landed = readIndex(env.historyState)
+    const landed = readPosition(env.historyState)
     // Both positions must be known for a delta to mean anything. When either is
-    // not, do NOTHING: no `history.go` with a guessed delta, and above all
-    // nothing armed for a restore that will not happen (#103).
+    // not — no stamp at all, or an index with no run to measure it in — do
+    // NOTHING: no `history.go` with a guessed delta, and above all nothing armed
+    // for a restore that will not happen (#103).
     if (currentIndex === null || currentRun === null || landed === null) return
     // …and they must be numbered in the SAME run, or their difference is not a
     // distance. `delta` is of any magnitude — browsers deliver multi-entry
@@ -812,8 +855,8 @@ export function connectRouter<R>(
     // on the blocked route, which is the same known, documented outcome as an
     // unstamped landing; guessing traverses to the wrong entry and dispatches a
     // route the user never asked for (#150 review).
-    if (readRun(env.historyState) !== currentRun) return
-    const delta = currentIndex - landed
+    if (landed.run !== currentRun) return
+    const delta = currentIndex - landed.index
     if (delta === 0) return
     if (router.mode === 'hash') {
       // `location.hash = restore` cannot be the mechanism — assigning the hash
@@ -824,8 +867,7 @@ export function connectRouter<R>(
       env.go(delta)
       return
     }
-    pendingRestoreIndex = currentIndex
-    pendingRestoreRun = currentRun
+    pendingRestore = { index: currentIndex, run: currentRun }
     env.go(delta)
   }
 
@@ -856,8 +898,7 @@ export function connectRouter<R>(
             // snapshot it here and put it back with the stamp. This is the one
             // re-stamp that cannot use `stampCurrent`: by the time it runs the
             // state it should have merged is already gone.
-            currentIndex = indexForReplace()
-            const carried = stampCurrent(currentIndex)
+            const carried = stampCurrent(stand(replaceStamp()))
             armEcho(finalPath)
             env.replaceLocation(finalPath)
             // The index is unchanged — nothing was pushed. No path: the URL is

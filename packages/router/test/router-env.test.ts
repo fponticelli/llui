@@ -162,10 +162,67 @@ describe('connectRouter seeds the loaded entry through the env', () => {
 
   it('adopts an existing stamp instead of rewriting it', () => {
     const rec = recordingEnv({ pathname: '/' })
-    rec.env.replaceState({ __llui_idx: 7, hostKey: 'keep' })
+    // A WHOLE stamp — index and the run it was numbered in. That is what a
+    // previous lifetime of this connector leaves behind across a reload, and
+    // what makes the entries below it comparable with the ones above.
+    rec.env.replaceState({ __llui_idx: 7, __llui_run: 'r7', hostKey: 'keep' })
     rec.calls.length = 0
     connectRouter(makeRouter('history'), { env: rec.env })
     expect(rec.calls).toEqual([])
+  })
+
+  it('re-seeds an index left by a build that numbered without runs (#150 review)', () => {
+    // A stamp with no `__llui_run` is not a position this router can continue:
+    // every build that wrote one restarted its numbering across entries it could
+    // not place and recorded nothing about the restart, so its indices name no
+    // single run (`readPosition`). Adopting one is what let a delta be computed
+    // straight across a run boundary — measured in `legacy-stamps.test.ts`.
+    const rec = recordingEnv({ pathname: '/' })
+    rec.env.replaceState({ __llui_idx: 7, hostKey: 'keep' })
+    rec.calls.length = 0
+    connectRouter(makeRouter('history'), { env: rec.env })
+    // Re-stamped, not adopted: a fresh run starting at 0. The host's own key
+    // survives the rewrite (`stampCurrent` merges), and the stale index is
+    // overwritten rather than left beside a fresh run id, which would make it
+    // look measurable against the entries this run goes on to number.
+    expect(rec.calls).toEqual(['replaceState:<no url>'])
+    expect(rec.env.historyState).toEqual({
+      hostKey: 'keep',
+      __llui_idx: 0,
+      __llui_run: expect.any(String),
+    })
+  })
+
+  it('mints a FRESH run on every seed, never a constant one', () => {
+    // Two lifetimes of the connector share one session history — a reload, or a
+    // second router on the page. Each seeds an entry whose position it does not
+    // know, and the entries the earlier one numbered may still be sitting below
+    // it. A CONSTANT id would make those subtractable across exactly the gap
+    // that made them incomparable, which is the degenerate counter `mintRun`
+    // documents. Only the id's uniqueness is asserted; its shape is never read.
+    const runs = new Set<unknown>()
+    for (let i = 0; i < 5; i++) {
+      const rec = recordingEnv({ pathname: '/' })
+      connectRouter(makeRouter('history'), { env: rec.env })
+      runs.add((rec.env.historyState as Record<string, unknown>).__llui_run)
+    }
+    expect(runs.size).toBe(5)
+  })
+
+  it('re-seeds an entry whose run id is the empty string', () => {
+    // `''` is the one string that is not a run id. It is what `mintRun` would
+    // produce if `Math.random()` ever returned exactly `0` (`(0).toString(36)`
+    // is `'0'`, and `.slice(2)` of that is `''`), so it is excluded on BOTH
+    // sides: never minted, and never read back as a run. Without the read-side
+    // half, two unrelated writers that both left an empty id would have their
+    // entries declared subtractable.
+    const rec = recordingEnv({ pathname: '/' })
+    rec.env.replaceState({ __llui_idx: 4, __llui_run: '' })
+    rec.calls.length = 0
+    connectRouter(makeRouter('history'), { env: rec.env })
+    expect(rec.calls).toEqual(['replaceState:<no url>'])
+    expect(rec.env.historyState).toEqual({ __llui_idx: 0, __llui_run: expect.any(String) })
+    expect((rec.env.historyState as Record<string, unknown>).__llui_run).not.toBe('')
   })
 
   it('writes nothing where the env reports no history at all', () => {

@@ -67,6 +67,24 @@ function stampedIndex(state: unknown): unknown {
     : undefined
 }
 
+/**
+ * The run every fabricated stamp in this file is numbered in.
+ *
+ * A test that hands the router a pre-existing position has to hand it a WHOLE
+ * one. An index with no run is what a build predating `__llui_run` wrote, and
+ * those builds restarted their numbering across entries they could not place
+ * without recording it — so the router (correctly) refuses to measure against
+ * one, and a bare `{ __llui_idx: n }` fixture would be testing the refusal
+ * rather than the arithmetic it means to drive (#150 review). The legacy shape
+ * itself is pinned in `legacy-stamps.test.ts`.
+ */
+const RUN = 'test-run'
+
+/** A stamp of the kind the router writes: an index AND the run it belongs to. */
+function stamp(index: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...extra, __llui_idx: index, __llui_run: RUN }
+}
+
 const path = () => location.pathname
 const hash = () => location.hash
 
@@ -159,7 +177,7 @@ describe('#103 blocked back — history mode', () => {
     // An entry nobody stamped has no knowable position, so no delta can be
     // computed. The old code guessed 0, called history.go with an unreachable
     // delta, and left the flag armed — swallowing the user's NEXT genuine pop.
-    history.replaceState({ __llui_idx: 5 }, '', '/')
+    history.replaceState(stamp(5), '', '/')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -174,8 +192,8 @@ describe('#103 blocked back — history mode', () => {
     expect(goSpy).not.toHaveBeenCalled()
 
     // A genuine pop that the guard allows must still dispatch.
-    history.replaceState({ __llui_idx: 5 }, '', '/other')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 5 } }))
+    history.replaceState(stamp(5), '', '/other')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(5) }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
 
@@ -189,7 +207,7 @@ describe('#103 blocked back — history mode', () => {
     // entirely (the user pressing back again while it is in flight). An arm
     // that survives a non-matching landing swallows a LATER genuine popstate —
     // the same stuck-flag failure the boolean had (#103).
-    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -197,22 +215,22 @@ describe('#103 blocked back — history mode', () => {
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
 
     // A blocked pop onto a stamped entry arms the restore back to index 2.
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
     expect(send).not.toHaveBeenCalled()
 
     // The next popstate lands on a DIFFERENT index than the restore expected:
     // it is a genuine navigation and must NOT be swallowed.
-    history.replaceState({ __llui_idx: 0 }, '', '/other')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 0 } }))
+    history.replaceState(stamp(0), '', '/other')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(0) }))
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'other' } })
 
     // ...and the arm must be gone, or this one — which DOES carry the index the
     // restore was waiting for — is swallowed instead of dispatching.
-    history.replaceState({ __llui_idx: 2 }, '', '/admin')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 2 } }))
+    history.replaceState(stamp(2), '', '/admin')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(2) }))
     expect(send).toHaveBeenCalledTimes(2)
     expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'admin' } })
 
@@ -227,7 +245,7 @@ describe('#103 blocked back — history mode', () => {
     // claims a depth the stack no longer has, and the next blocked back then
     // computes an unreachable delta and leaves the URL sitting on the route it
     // just blocked: #103's original symptom, re-reachable.
-    history.replaceState({ __llui_idx: 2 }, '', '/other')
+    history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
       beforeEnter: (to) => (to.page === 'article' ? false : undefined),
     })
@@ -235,8 +253,8 @@ describe('#103 blocked back — history mode', () => {
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
 
     // Blocked pop onto the entry stamped 1; its restore is armed but in flight.
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
 
     // The app navigates before the restore lands: the new entry sits directly
@@ -246,8 +264,8 @@ describe('#103 blocked back — history mode', () => {
 
     // …and a later blocked back is reachable: delta 1, not an overshoot of 2.
     goSpy.mockClear()
-    history.replaceState({ __llui_idx: 1 }, '', '/article/x')
-    window.dispatchEvent(new PopStateEvent('popstate', { state: { __llui_idx: 1 } }))
+    history.replaceState(stamp(1), '', '/article/x')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(1) }))
     expect(goSpy).toHaveBeenCalledWith(1)
 
     goSpy.mockRestore()
@@ -674,11 +692,19 @@ describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
     history.go(-2) // straight past the hand-edited entry, onto the seeded root
     expect(await waitForUrl(hash, '')).toBe('')
 
-    // The block is honoured and NOTHING is traversed: the two positions are
-    // known but belong to different runs, so their difference is not a distance.
-    // Before the fix this issued `go(1)` and landed on `#/other` — a route the
-    // user never asked for — and, because the armed echo was for `#/admin`, the
-    // mismatch let the landing DISPATCH as a genuine navigation.
+    // The block is honoured and NOTHING is traversed. Before the fix this issued
+    // `go(1)` and landed on `#/other` — a route the user never asked for — and,
+    // because the armed echo was for `#/admin`, the mismatch let the landing
+    // DISPATCH as a genuine navigation.
+    //
+    // WHAT THIS PINS, precisely: refusing to number the hand-edited entry, and
+    // the run OPENING that follows it. It does NOT pin `restoreBlocked`'s run
+    // comparison — in this clean stack the run opened above the hand edit starts
+    // at 0 and the seeded root is 0 too, so `delta === 0` short-circuits before
+    // the runs are ever compared. `does not conflate two runs opened by two
+    // separate hand edits` is the test that pins the comparison: its two
+    // endpoints are indices 1 and 0, four physical entries apart, and it reddens
+    // in isolation when the comparison is dropped.
     expect(await waitForUrl(hash, '#/other')).toBe('')
     expect(goSpy).toHaveBeenCalledTimes(1) // ours, above — none of the router's
     expect(send).not.toHaveBeenCalled()

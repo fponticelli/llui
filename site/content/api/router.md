@@ -233,7 +233,16 @@ position is invented for one. That covers:
   never learns the stack moved. It reads the entry it is standing on rather than
   trusting its own last write, which is how it notices;
 - in **hash mode**, an entry created by the user **editing the fragment in the
-  address bar**.
+  address bar**;
+- an entry stamped by a **build of this router that predates `__llui_run`** — an
+  index with no run beside it. Every such build restarted its numbering across
+  entries it could not place and recorded nothing about the restart, so its
+  indices name no single run and continuing them would compute a delta straight
+  across a gap. The exposure is a **deploy window**: a tab that loaded an older
+  build, navigated, and then loaded a newer one on top of that stack loses the
+  undo for the entries the older build numbered. The entry the new build loads
+  on is re-stamped into a run of its own (your own `history.state` keys are
+  preserved), so everything it goes on to create is placeable as usual.
 
 Such an entry also **ends a run**. Indices count physical entries, so they only
 subtract to a distance while every entry between two of them was numbered in one
