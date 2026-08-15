@@ -33,6 +33,18 @@ export interface PluginUISpec<S, M, E = never> {
   init: () => S
   /** Pure reducer over the slice; may return effects. */
   update?: (state: S, msg: M) => S | [S, E[]]
+  /**
+   * Is this plugin's floating surface UP right now? Declare it whenever the
+   * plugin's `register` half claims keys for that surface (a typeahead answering
+   * `true` to KEY_ESCAPE / KEY_ENTER / the arrows at COMMAND_PRIORITY_HIGH).
+   *
+   * The host publishes it per editor so `register` can gate on it — see
+   * `surfaceGate` in `./surface-open.js`, and issue #130 for what claiming a key
+   * on any other basis costs the host handler sitting below.
+   *
+   * Pure and cheap: it is called on the keystroke path, from live state.
+   */
+  isOpen?: (state: S) => boolean
   /** View contribution (overlays/panels), rendered by the host. */
   view?: (args: PluginViewArgs<S, M>) => Renderable
   /** Effect handler with live-editor access + host dispatch. */
@@ -46,6 +58,8 @@ export type HostEmit = (msg: unknown) => void
 export interface PluginUI {
   init: () => unknown
   update?: (state: unknown, msg: unknown) => unknown | [unknown, unknown[]]
+  /** See {@link PluginUISpec.isOpen}. */
+  isOpen?: (state: unknown) => boolean
   view?: (args: PluginViewArgs<unknown, unknown>) => Renderable
   onEffect?: (effect: unknown, ctx: PluginEffectContext<unknown>) => void
 }
@@ -59,6 +73,7 @@ export function definePluginUI<S, M, E = never>(spec: PluginUISpec<S, M, E>): Pl
   return {
     init: spec.init,
     update: spec.update ? (state, msg) => spec.update!(state as S, msg as M) : undefined,
+    isOpen: spec.isOpen ? (state) => spec.isOpen!(state as S) : undefined,
     view: spec.view
       ? (args) =>
           spec.view!({

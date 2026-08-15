@@ -43,6 +43,13 @@ export {
   definePluginUI,
 } from './plugins/ui.js'
 
+// The surface-open seam (#130). Both halves are exported because the type is
+// only meaningful with both: `surfaceGate` is what a PLUGIN's `register` half
+// reads to answer "is MY surface up?" — the only legitimate basis for claiming a
+// key at COMMAND_PRIORITY_HIGH — and `publishSurfaceOpen` is how a HOST built on
+// this plugin contract (as `markdownEditor` is) supplies the readers.
+export { surfaceGate, publishSurfaceOpen, type SurfaceReaders } from './plugins/surface-open.js'
+
 export { type CorePluginOptions, corePlugin } from './plugins/core.js'
 export {
   type InlineFormat,

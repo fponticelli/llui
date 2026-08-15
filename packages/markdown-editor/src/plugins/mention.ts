@@ -18,6 +18,7 @@ import type { CommitFacts } from '@llui/lexical'
 import { div, each, text, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, overlayRoot } from './overlay.js'
+import { surfaceGate } from './surface-open.js'
 import type { MarkdownPlugin } from './types.js'
 
 export interface Mention {
@@ -90,14 +91,12 @@ export function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin {
   return {
     name: 'mention',
     register: (editor, ctx) => {
-      // See the note in `slash.ts`: a keydown precedes the commit it causes, so
-      // the last commit's query is what a fresh read would return.
-      let liveQuery: string | null = null
-      const isActive = (): boolean => liveQuery !== null
+      // See the note in `slash.ts`: the gate is "the menu is UP", read from the
+      // live slice, not "the caret is on an `@`" (#130).
+      const isActive = surfaceGate(editor, 'mention')
 
       const refresh = (facts: CommitFacts): void => {
         const query = mentionQuery(facts)
-        liveQuery = query
         if (query === null) {
           ctx.emit({ type: 'plugin', name: 'mention', msg: { type: 'hide' } })
           return
@@ -141,6 +140,8 @@ export function mentionPlugin(opts: MentionPluginOptions = {}): MarkdownPlugin {
     },
     ui: definePluginUI<MentionState, MentionMsg, MentionEffect>({
       init: () => ({ open: false, query: '', items: [], index: 0, x: 0, y: 0 }),
+      // The gate `register` reads — see the note there and in `slash.ts`.
+      isOpen: (state) => state.open,
       update: (state, msg) => {
         switch (msg.type) {
           case 'show':
