@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Timer — counts elapsed time up from zero, or down from a configured
@@ -63,7 +64,10 @@ export function init(opts: TimerInit = {}): TimerState {
   return {
     running: false,
     direction: opts.direction ?? 'up',
-    targetMs: opts.targetMs ?? 0,
+    // `targetMs` is the bound the countdown stops at (0 = no target), and it
+    // is written straight into `elapsedMs` when it is reached — so a
+    // non-finite one is unserializable in two fields (#177).
+    targetMs: finiteBound(opts.targetMs) ?? 0,
     elapsedMs: opts.elapsedMs ?? 0,
     startedAt: null,
   }
@@ -90,8 +94,11 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
       }
       return [{ ...state, elapsedMs: elapsed, startedAt: msg.now }, []]
     }
-    case 'setTarget':
-      return [{ ...state, targetMs: msg.targetMs }, []]
+    case 'setTarget': {
+      const targetMs = finiteBound(msg.targetMs)
+      if (targetMs === undefined) return [state, []]
+      return [{ ...state, targetMs }, []]
+    }
   }
 }
 

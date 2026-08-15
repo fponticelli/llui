@@ -47,7 +47,7 @@ export type { TreeNode } from './tree-collection.js'
 
 export { deriveOnce, deriveOnceN, indexMap, membershipSet } from './derive.js'
 
-export { clamp, clampToStep, decimalPlaces, snapToStep, stepBy } from './number.js'
+export { clamp, clampToStep, decimalPlaces, finiteBound, snapToStep, stepBy } from './number.js'
 export type { NumericGrid } from './number.js'
 
 export { isDateOnly, parseDateValue } from './date.js'

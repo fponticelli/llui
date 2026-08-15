@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Marquee — continuously-scrolling content. The state machine tracks
@@ -56,7 +57,7 @@ export function init(opts: MarqueeInit = {}): MarqueeState {
   return {
     running: opts.running ?? true,
     direction: opts.direction ?? 'left',
-    durationSec: opts.durationSec ?? 20,
+    durationSec: finiteBound(opts.durationSec) ?? 20,
     pauseOnHover: opts.pauseOnHover ?? false,
     hovered: false,
     disabled: opts.disabled ?? false,
@@ -85,8 +86,13 @@ export function update(state: MarqueeState, msg: MarqueeMsg): [MarqueeState, nev
       return [{ ...state, hovered: false }, []]
     case 'setDirection':
       return [{ ...state, direction: msg.direction }, []]
-    case 'setDuration':
-      return [{ ...state, durationSec: Math.max(0, msg.durationSec) }, []]
+    case 'setDuration': {
+      // `Math.max(0, NaN)` is `NaN` and `Math.max(0, Infinity)` is `Infinity`,
+      // so the floor alone let both into state and out again as `null` (#177).
+      const durationSec = finiteBound(msg.durationSec)
+      if (durationSec === undefined) return [state, []]
+      return [{ ...state, durationSec: Math.max(0, durationSec) }, []]
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { LocaleContext } from '../locale.js'
+import { finiteBound } from '../utils/number.js'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.
@@ -44,7 +45,8 @@ export interface PinInputInit {
 }
 
 export function init(opts: PinInputInit = {}): PinInputState {
-  const length = opts.length ?? 4
+  // The cell count — the bound every focus move is clamped into (#177).
+  const length = finiteBound(opts.length) ?? 4
   const values = opts.values ?? new Array<string>(length).fill('')
   return {
     values,

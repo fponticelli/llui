@@ -161,6 +161,22 @@ describe('number-input.connect', () => {
     expect(read(p.increment.disabled, init({ value: 5, max: 10 }))).toBe(false)
   })
 
+  it('an ABSENT bound never disables a stepper, and is not announced (#177)', () => {
+    // An unbounded side has no key in state at all, so both the stepper gate
+    // and `aria-valuemin`/`max` read the absence rather than an infinity.
+    const p = connect(rootSignal(), vi.fn())
+    const unbounded = init({ value: 5 })
+    expect(read(p.increment.disabled, unbounded)).toBe(false)
+    expect(read(p.decrement.disabled, unbounded)).toBe(false)
+    expect(read(p.input['aria-valuemin'], unbounded)).toBeUndefined()
+    expect(read(p.input['aria-valuemax'], unbounded)).toBeUndefined()
+    // A bound that IS present is announced and does gate.
+    const bounded = init({ value: 5, min: 0, max: 5 })
+    expect(read(p.input['aria-valuemin'], bounded)).toBe(0)
+    expect(read(p.input['aria-valuemax'], bounded)).toBe(5)
+    expect(read(p.increment.disabled, bounded)).toBe(true)
+  })
+
   it('onInput keeps in-progress text and does not snap/commit live', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send)

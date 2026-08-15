@@ -14,6 +14,11 @@
  * nowhere else (#152): `clamp` maps a `NaN`/`±Infinity` input to a defined legal
  * value, so every component inherits a finite, in-range, on-grid result from
  * every mutation path — including `init`, which a per-reducer guard would miss.
+ *
+ * The BOUNDS take the same policy through `finiteBound` (#177). A bound names
+ * the grid rather than a position on it, so it never passes through `clamp` —
+ * which is how an unbounded `number-input` came to store `±Infinity` in state
+ * and a `setMin: NaN` came to switch one side of a range off entirely.
  */
 
 /**
@@ -25,6 +30,41 @@ export interface NumericGrid {
   min?: number
   max?: number
   step?: number
+}
+
+/**
+ * A bound as STATE may hold it: the finite number itself, or `undefined` for
+ * "no bound on this side". THE ONE normalizer for a bound, mirroring `clamp`'s
+ * role for a value (#177).
+ *
+ * `±Infinity` and an ABSENT bound already mean the same thing to every clamp in
+ * the package — `clampToStep` expands `grid.min ?? -Infinity` — but only one of
+ * the two spellings survives `JSON.stringify`, which writes `null` for both
+ * `Infinity` and `NaN`. State must be JSON-serializable (devtools time-travel,
+ * `@llui/test` replay, agent state snapshots, SSR rehydration all compare
+ * serialized state), so the infinite spelling belongs to the RUNTIME expansion
+ * and never to state: normalize at every write, let the grid expand the absence
+ * again. An unbounded `number-input` used to store `min: -Infinity` and
+ * rehydrate as `min: null` — a `number` field holding `null`, on the DEFAULT
+ * configuration.
+ *
+ * `NaN` collapses here too, and that is the half a `??` cannot rescue: `NaN` is
+ * not nullish, so a `NaN` bound reached `clamp`, every comparison against it
+ * was false, and THAT SIDE OF THE RANGE STOPPED CLAMPING — `angle-slider` after
+ * `setMin: NaN` stored -9999 for `setValue(-9999)`.
+ *
+ * Callers decide what an absent bound means for them, and there are exactly two
+ * idioms:
+ *   - UNBOUNDED-CAPABLE (`number-input`): store the `undefined` by OMITTING the
+ *     key, so the state shape IS a `NumericGrid` and round-trips identically.
+ *   - INTRINSICALLY BOUNDED (`angle-slider`, `slider`, `splitter`, …): a
+ *     required `min: number` cannot spell "unbounded", so `?? DEFAULT` at
+ *     `init` and REJECT the write in a `setMin`/`setMax` reducer — dropping a
+ *     meaningless bound keeps the range the component already had, which is the
+ *     only answer that cannot silently disable clamping.
+ */
+export function finiteBound(raw: number | null | undefined): number | undefined {
+  return typeof raw === 'number' && isFinite(raw) ? raw : undefined
 }
 
 /**
