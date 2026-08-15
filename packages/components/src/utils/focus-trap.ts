@@ -26,9 +26,11 @@ function handleKeydown(event: KeyboardEvent): void {
   const base = resolveElements(top.container)
   if (base.length === 0) return
   // Registered nested layers (e.g. a portaled overlay opened inside the trap)
-  // extend the trap — but skip any already contained by a base container so a
-  // focusable isn't counted twice.
-  const nested = getNestedLayers('focus').filter((n) => !base.some((c) => c.contains(n)))
+  // extend the trap — but only the ones nested inside THIS trap's container, so
+  // Tab cannot reach an unrelated layer that merely happens to be open (#171);
+  // and skip any already contained by a base container so a focusable isn't
+  // counted twice.
+  const nested = getNestedLayers('focus', base).filter((n) => !base.some((c) => c.contains(n)))
   const containers = nested.length ? [...base, ...nested] : base
 
   // Combine focusables from all container elements.

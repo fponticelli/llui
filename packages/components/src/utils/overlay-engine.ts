@@ -8,6 +8,7 @@ import { lockBodyScroll } from './remove-scroll.js'
 import { attachFloating, type Placement } from './floating.js'
 import { getElementByIdInScope } from './root-scope.js'
 import { engineFocus } from './engine-focus.js'
+import { focusLingeredInside } from './focus-restore.js'
 import type { TextDirection } from './direction.js'
 
 /**
@@ -185,16 +186,15 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   //
   // `outside` ONLY when this overlay pushes no dismissable layer. With a layer,
   // `shouldDispatch` already limits outside-clicks to the topmost one, which is
-  // ORDERED and therefore strictly better than the registry's flat, global
-  // answer. Adding `outside` on top of it breaks SIBLING layers: two popovers
-  // open at once, a click inside the lower one is an outside interaction for the
-  // upper one and must dismiss it — but the registry has no notion of which
-  // layer asked, so the upper one would read the click as "inside a nested
-  // layer" and stay open. (Pinned by `overlay-nested-layer.integration.test.ts`
-  // — "a pointerdown inside the lower sibling popover dismisses the upper one".)
-  // The dialog-with-an-inner-`select` case is NOT what this narrowing protects:
-  // that one is covered by `isModal` above, since a modal never registers at all
-  // whatever aspects it would have named.
+  // ORDERED — information the registry does not have and cannot derive from
+  // containment. Two SIBLING popovers are open, neither nested in the other: a
+  // click inside the lower one is an outside interaction for the upper one and
+  // must dismiss it, and only the stack's ordering says so. (Pinned by
+  // `overlay-nested-layer.integration.test.ts` — "a pointerdown inside the lower
+  // sibling popover dismisses the upper one".) The dialog-with-an-inner-`select`
+  // case is NOT what this narrowing protects: that one is covered by `isModal`
+  // above, since a modal never registers at all whatever aspects it would have
+  // named.
   //
   // Without a layer — a `tooltip` with `closeOnEscape: false` — nothing speaks
   // for the overlay at all, so a click inside it would dismiss the layer beneath.
@@ -250,7 +250,20 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       // Registered FIRST so it unwinds LAST (cleanups run LIFO): the trap and
       // sweep teardowns below may consult the registry on their way out.
       if (registersNestedLayer) {
-        cleanups.push(registerNestedLayer(els.content, { aspects: nestedLayerAspects }))
+        // The ANCHOR is the owner: a nested overlay's trigger really is rendered
+        // inside the layer it belongs to, even though its content is portaled to
+        // a body-level sibling. That is what lets an asking layer tell "opened
+        // from inside me" from "merely open at the same time" (#171).
+        //
+        // An anchorless overlay (`context-menu`) has no element to name, so it
+        // registers UNOWNED and keeps the flat, exempt-from-everything answer —
+        // see the fallback note in `nested-layer.ts`.
+        cleanups.push(
+          registerNestedLayer(els.content, {
+            aspects: nestedLayerAspects,
+            owner: els.anchor ?? undefined,
+          }),
+        )
       }
       if (opts.floating && !opts.floating.persistent) {
         cleanups.push(attachFloatingFor(els))
@@ -322,13 +335,11 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         // it lingered inside — if the user clicked elsewhere, respect that.
         let doRestore = false
         if (opts.restoreFocus) {
-          const active = document.activeElement
-          const boundaryEl = opts.restoreFocus.boundary === 'floating' ? els.floating : els.content
-          doRestore =
-            boundaryEl.contains(active) ||
-            (opts.restoreFocus.allowAnchorActive === true && active === els.anchor) ||
-            active === document.body ||
-            active === null
+          doRestore = focusLingeredInside({
+            boundary: opts.restoreFocus.boundary === 'floating' ? els.floating : els.content,
+            anchor: els.anchor,
+            allowAnchorActive: opts.restoreFocus.allowAnchorActive,
+          })
         }
         for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
         // `engineFocus`, not a bare `.focus()`: this move is the engine's own

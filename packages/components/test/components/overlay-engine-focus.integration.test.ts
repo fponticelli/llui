@@ -312,32 +312,36 @@ describe('#155 — a dismissal’s focus restore is invisible to sibling layers'
     return { send: (m) => sendRef(m) }
   }
 
-  // ACCEPTED A11Y CONSEQUENCE, asserted deliberately below — read before
-  // "fixing" this test. Because the popover is no longer dismissed when the
-  // dialog's trap activates, a fully interactive NON-MODAL layer coexists with
-  // a modal: the popover's positioner is not `aria-hidden`, not `inert`, and is
-  // Tab-reachable from inside the dialog (via the `focus` nested-layer aspect,
-  // `focus-trap.ts`). A modal that does not exclude the layer beneath it is not
-  // really modal.
+  // THE TWO HALVES THIS TEST HOLDS TOGETHER — read before changing either.
   //
-  // It is kept because the alternative is worse and the cause is elsewhere.
-  // The exemption comes from the FLAT `nested-layer.ts` registry — a lookup has
-  // no notion of which layer asked, so a modal's `hide`/`focus` sweep exempts
-  // EVERY registered layer, nested inside it or not. What #155's guard removed
-  // was only an ACCIDENTAL mitigation (the trap's own focusin misread as a user
-  // interaction — the very defect being fixed), and an unreliable one: on
-  // `main`, a modal whose content has no focusable element moves no focus, so
-  // the popover survives there too, in exactly this state. Measured both ways.
+  // (1) #155: activating the dialog's focus trap must NOT dismiss the popover
+  //     beneath it. That move is the engine's own bookkeeping, and reading it as
+  //     a user interaction is the defect `engine-focus.ts` exists to remove.
   //
-  // It also needs a PROGRAMMATIC modal open: a pointerdown on the dialog's
-  // trigger goes through the un-gated pointer path and dismisses the popover
-  // first.
+  // (2) #171: the surviving popover must nonetheless be EXCLUDED by the modal —
+  //     `aria-hidden`, `inert`, and unreachable by Tab from inside the dialog. A
+  //     modal that leaves a fully interactive non-modal layer beside it is not
+  //     really modal.
   //
-  // The real fix is a per-layer registry ("is this nested inside ME?"), tracked
-  // as #171. Do not patch it by having `pushFocusTrap` dismiss the layers below
-  // it — that regresses nested dialogs, whose inner trap pushes before the
-  // inner dialog's own dismissable layer.
-  it('a focus trap activating and releasing does not dismiss the popover beneath it — which leaves that popover interactive behind the modal (accepted, #171)', async () => {
+  // These used to be in conflict, and (2) was the half that lost: the FLAT
+  // `nested-layer.ts` registry had no notion of which layer was asking, so a
+  // modal's `hide`/`focus` sweep exempted EVERY registered layer, nested inside
+  // it or not. The assertions below were deliberately written to state that
+  // broken state so a fix would have to flip them; they are now flipped, and the
+  // registry is per-layer — the popover's owner (its trigger) is not inside the
+  // dialog's content, so it is not nested in the dialog and gets no exemption.
+  //
+  // Do NOT restore (2) by having `pushFocusTrap` dismiss the layers below it:
+  // that regresses nested dialogs, whose inner trap pushes BEFORE the inner
+  // dialog's own dismissable layer, so the layer it would dismiss is the OUTER
+  // dialog's. And do not restore it by re-reading the trap's `focusin` as a user
+  // interaction — that IS #155.
+  //
+  // The bad state needed a PROGRAMMATIC modal open to reach: a pointerdown on
+  // the dialog's trigger goes through the un-gated pointer path and dismisses
+  // the popover first. This test still opens both programmatically, so it is the
+  // configuration that exhibited the defect.
+  it('a focus trap activating does not dismiss the popover beneath it (#155), and the modal still excludes that popover from AT and from Tab (#171)', async () => {
     const { send } = makePopoverWithDialog()
     await tick()
 
@@ -361,15 +365,37 @@ describe('#155 — a dismissal’s focus restore is invisible to sibling layers'
     expect(document.getElementById('pop:content')).not.toBeNull()
     expect(_dismissableStackSize()).toBe(2)
 
-    // The accepted a11y cost, stated as an assertion rather than left implicit
-    // (see the comment above the test, and #171): the surviving popover is NOT
-    // excluded by the modal — its positioner carries neither `aria-hidden` nor
-    // `inert`, so it stays interactive and Tab-reachable beside a modal dialog.
-    // If a future change makes the modal exclude it, this is the assertion to
-    // flip — deliberately, not by deleting it.
+    // #171 — the surviving popover IS excluded by the modal. Non-vacuous: the
+    // popover really is registered as a nested layer (so the registry is what
+    // decides), and its trigger really is OUTSIDE the dialog's content, which is
+    // what makes it a sibling rather than a layer nested in the modal.
+    expect(_nestedLayerCount()).toBe(1)
+    const dlgContent = document.getElementById('dlg:content') as HTMLElement
+    const popTrigger = document.getElementById('pop:trigger') as HTMLElement
+    expect(dlgContent.contains(popTrigger)).toBe(false)
+
     const popPositioner = document.getElementById('pop:content')!.parentElement!
-    expect(popPositioner.getAttribute('aria-hidden')).toBeNull()
-    expect(popPositioner.hasAttribute('inert')).toBe(false)
+    expect(popPositioner.getAttribute('aria-hidden')).toBe('true')
+    expect(popPositioner.hasAttribute('inert')).toBe(true)
+
+    // …and the trap cannot reach it either. SHIFT+Tab, deliberately: focus is on
+    // the dialog's only focusable, so it is the trap's FIRST element and the wrap
+    // sends it to the trap's LAST one. That names the trap's whole container set
+    // in one assertion — with the flat registry the set was `[dlg:content,
+    // pop:content]` and the last focusable was the popover's control (measured as
+    // `TRAP-CYCLE containers=2 focusables=dlg-action,pop-action`). A forward Tab
+    // would be vacuous here: `dlg-action` is the FIRST focusable either way, so
+    // the trap declines to preventDefault and jsdom moves nothing.
+    const shiftTab = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    document.dispatchEvent(shiftTab)
+    expect(shiftTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).not.toBe(popAction)
+    expect(document.activeElement).toBe(dlgAction)
 
     // Now a click inside the POPOVER. It is outside the dialog, so the dialog
     // dismisses — and releasing its trap hands focus back to where it was before
@@ -400,15 +426,81 @@ describe('#155 — a dismissal’s focus restore is invisible to sibling layers'
     expect(document.getElementById('upper:content')).toBeNull()
     expect(document.getElementById('lower:content')).not.toBeNull()
 
-    // …and the suppression did not leak past the upper layer's restore: the very
-    // next genuine focus move dismisses the layer beneath. Non-vacuous — the
-    // restore really did pull focus off `elsewhere`, so this is a real move.
-    expect(document.activeElement).toBe(upperTrigger)
-    elsewhere.focus()
+    // #173 — and the dismissal did NOT yank focus back to the upper trigger.
+    // The user put focus on `elsewhere`; the popover's `dismiss.extra` now asks
+    // the same "did focus linger inside?" question the engine's teardown asks,
+    // and the answer here is no. (This assertion used to read `upperTrigger`,
+    // i.e. it pinned the yank.)
+    expect(document.activeElement).toBe(elsewhere)
+
+    // …and the #155 suppression did not leak past that dismissal: the very next
+    // genuine focus move dismisses the layer beneath. It has to be a move to a
+    // DIFFERENT element — re-focusing `elsewhere` raises no `focusin` at all,
+    // which is why this step uses the (now closed) upper trigger.
+    upperTrigger.focus()
     await tick()
     expect(document.getElementById('lower:content')).toBeNull()
-    // Its own restore then took focus back to ITS trigger — the same engine move,
-    // now with no layer left to observe it.
-    expect(document.activeElement).toBe(document.getElementById('lower:trigger'))
+    // Same rule again: focus stays where the user put it.
+    expect(document.activeElement).toBe(upperTrigger)
+  })
+
+  // The exact repro from #173, measured in real Chromium: two sibling popovers
+  // at the production default `restoreFocus: true`, and focus moves to a control
+  // inside the LOWER one. The upper dismisses (correct — the move is outside
+  // it), and its `dismiss.extra` used to yank focus to `upper:trigger`, off the
+  // control focus had just landed on, leaving the lower popover open with focus
+  // resting outside itself.
+  it('dismissing a popover does not yank focus out of the sibling popover the user just moved into (#173)', async () => {
+    const { send } = makeSiblings()
+    await tick()
+
+    const lowerAction = document.getElementById('lower-action') as HTMLElement
+    const lowerContent = document.getElementById('lower:content') as HTMLElement
+    const upperTrigger = document.getElementById('upper:trigger') as HTMLElement
+    expect(_dismissableStackSize()).toBe(2)
+
+    lowerAction.focus()
+    await tick()
+
+    // The upper (topmost) layer dismissed — the focus move really was outside it.
+    expect(document.getElementById('upper:content')).toBeNull()
+    // …and focus stayed exactly where the user put it.
+    expect(document.activeElement).toBe(lowerAction)
+    expect(document.activeElement).not.toBe(upperTrigger)
+    // The surviving popover is not left with focus outside itself.
+    expect(document.getElementById('lower:content')).not.toBeNull()
+    expect(lowerContent.contains(document.activeElement)).toBe(true)
+
+    send({ type: 'lower', msg: { type: 'close' } })
+    await tick()
+  })
+
+  // The other direction of #173's predicate — the restore must still HAPPEN when
+  // focus really did linger inside the dismissed popover. Without this the fix
+  // could be "never restore", which is a different bug.
+  it('a popover dismissed with focus still inside it does restore focus to its trigger', async () => {
+    const { send } = makeSiblings()
+    await tick()
+
+    const upperAction = document.getElementById('upper-action') as HTMLElement
+    const upperTrigger = document.getElementById('upper:trigger') as HTMLElement
+
+    // Focus rests INSIDE the upper popover, then it is closed programmatically
+    // (the Escape / close-button shape). Focus would otherwise be stranded on a
+    // node that is about to be removed.
+    upperAction.focus()
+    await tick()
+    expect(document.activeElement).toBe(upperAction)
+
+    // Non-vacuous: the close goes through `dismiss.extra`, so route it the way a
+    // dismissal does — Escape on the topmost layer.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await tick()
+
+    expect(document.getElementById('upper:content')).toBeNull()
+    expect(document.activeElement).toBe(upperTrigger)
+
+    send({ type: 'lower', msg: { type: 'close' } })
+    await tick()
   })
 })

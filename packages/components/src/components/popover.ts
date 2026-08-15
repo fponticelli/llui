@@ -5,6 +5,7 @@ import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { engineFocus } from '../utils/engine-focus.js'
+import { focusLingeredInside } from '../utils/focus-restore.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import type { PresenceStatus } from './presence.js'
 import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
@@ -279,10 +280,18 @@ export function overlay(opts: OverlayOptions): Mountable {
       disableEscape: !closeOnEscape,
       disableOutside: !closeOnOutsideClick,
       extra: (els) => {
+        // The SAME conditionality the engine's own teardown restore uses, from
+        // the same predicate (#173): pull focus back to the trigger only when it
+        // lingered inside the popover. A dismissal caused by focus moving
+        // somewhere the user chose must respect that move — restoring
+        // unconditionally yanked focus off the control they had just reached and
+        // could leave a sibling popover open with focus outside it.
+        if (!restoreFocus || !els.anchor) return
+        if (!focusLingeredInside({ boundary: els.content, anchor: els.anchor })) return
         // `engineFocus`, not a bare `.focus()`: restoring the trigger is the
         // engine's own bookkeeping, and a SIBLING layer must not read it as an
         // outside interaction and dismiss itself (#155).
-        if (restoreFocus && els.anchor) engineFocus(els.anchor)
+        engineFocus(els.anchor)
       },
     },
   })

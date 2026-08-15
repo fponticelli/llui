@@ -16,6 +16,13 @@ export type { FocusTrapOptions } from './focus-trap.js'
 // `engineFocus`/`runEngineFocus`, or every OTHER open layer reads it as an
 // outside interaction and dismisses (#155).
 export { engineFocus, runEngineFocus, isEngineFocusInProgress } from './engine-focus.js'
+export type { SyncEngineFocusBodyRequired } from './engine-focus.js'
+
+// The one rule for "should this layer pull focus back to its anchor?" — a
+// custom overlay's restore must ask it rather than restoring unconditionally
+// (#173).
+export { focusLingeredInside } from './focus-restore.js'
+export type { FocusRestoreQuery } from './focus-restore.js'
 
 export { setAriaHiddenOutside } from './aria-hidden.js'
 export { lockBodyScroll } from './remove-scroll.js'
@@ -26,7 +33,7 @@ export {
   isInNestedLayer,
   ALL_NESTED_LAYER_ASPECTS,
 } from './nested-layer.js'
-export type { NestedLayerAspect, NestedLayerOptions } from './nested-layer.js'
+export type { NestedLayerAspect, NestedLayerOptions, NestedLayerScope } from './nested-layer.js'
 
 export { getFocusables, isFocusable } from './focusables.js'
 export type { ElementSource } from './dom.js'

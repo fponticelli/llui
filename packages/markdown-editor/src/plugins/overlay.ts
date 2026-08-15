@@ -97,12 +97,22 @@ export function overlayRoot(cfg: OverlayRootConfig): Renderable {
     // Register once for the overlay's lifetime; the resolver returns the live
     // portal root only while open (and nothing when closed/unmounted), so the
     // single registration tracks open/closed without per-toggle churn.
-    onMount(() =>
-      registerNestedLayer(() => {
-        if (typeof document === 'undefined') return []
-        const el = document.querySelector(`[${NESTED_LAYER_ATTR}="${layerId}"]`)
-        return el ? [el] : []
-      }),
+    //
+    // `owner` is the element this plugin's view was mounted into — the editor's
+    // own DOM, in the main document tree. The portal root is a body-level
+    // sibling, so containment of the PORTAL says nothing; containment of the
+    // owner is what tells a host `dialog.overlay()` that this surface belongs to
+    // it and an unrelated modal elsewhere on the page that it does not (#171).
+    // Without it the registration is exempt from every layer on the page.
+    onMount((root) =>
+      registerNestedLayer(
+        () => {
+          if (typeof document === 'undefined') return []
+          const el = document.querySelector(`[${NESTED_LAYER_ATTR}="${layerId}"]`)
+          return el ? [el] : []
+        },
+        { owner: root },
+      ),
     ),
     show(cfg.open, () => [
       portal(() => [

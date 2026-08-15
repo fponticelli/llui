@@ -53,6 +53,31 @@
  */
 let depth = 0
 
+// Vite/Rollup substitute `import.meta.env.DEV` at build time; bundlers without
+// the substitution (raw tsc / a plain script tag) see it as undefined, so the
+// dev path stays off. Declared here rather than pulling in `vite/client`, the
+// same way `@llui/dom` does it — and with the SAME member shape, or the two
+// augmentations of the one global interface conflict (TS2717).
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+
+declare const SYNC_BODY_REQUIRED: unique symbol
+
+/**
+ * The type an ASYNC body collapses to in {@link runEngineFocus}'s parameter
+ * position. Nothing is assignable to it, so `runEngineFocus(async () => …)` is a
+ * compile error naming the contract rather than a silently inert call.
+ */
+export type SyncEngineFocusBodyRequired = {
+  readonly [SYNC_BODY_REQUIRED]: 'runEngineFocus requires a SYNCHRONOUS body — the guard is released the moment body returns'
+}
+
+/** `T`, unless `T` is a promise — see {@link SyncEngineFocusBodyRequired}. */
+type SyncEngineFocusBody<T> = T extends PromiseLike<unknown> ? SyncEngineFocusBodyRequired : T
+
 /**
  * Run `body` with engine-focus suppression active. Any `focusin` raised inside
  * it is invisible to `watchInteractOutside` — including one raised by a focus
@@ -60,17 +85,59 @@ let depth = 0
  * module comment: the window is the synchronous transitive closure, not just
  * the `.focus()` call).
  *
- * Synchronous by contract: the suppression is released when `body` RETURNS, so
- * a body that schedules a focus move for later gets no protection (and must not
- * — by then the move is indistinguishable from a user's).
+ * SYNCHRONOUS BY CONTRACT, AND THE CONTRACT IS ENFORCED (#172). The suppression
+ * is released when `body` RETURNS. An `async` body returns its promise at the
+ * first `await`, so the depth counter drops immediately and the focus move that
+ * eventually happens gets NO protection at all — a call that looks correct,
+ * compiles, and does nothing. The failure is safe (no protection, never a stuck
+ * guard: the decrement is in a `finally`), which is exactly why it is invisible,
+ * and this is a PUBLIC export documented as the thing a custom overlay "must"
+ * route its engine-initiated focus moves through. A consumer following that
+ * advice with an async body would reintroduce #155 in their app while believing
+ * they had prevented it.
+ *
+ * Two guards, because neither covers the other's case:
+ *
+ *  - The SIGNATURE rejects a promise-returning body at compile time. It is the
+ *    real guard — it fires before the code ever runs. Its one blind spot is a
+ *    body whose return type is an unresolved type parameter (a generic
+ *    pass-through wrapper): the conditional is deferred, so such a wrapper is
+ *    rejected too and must carry its own constraint. No caller does.
+ *  - A DEV-MODE warning catches what the type system cannot see: a JavaScript
+ *    consumer, an `any`-typed body, or a body that returns a thenable without
+ *    being declared as returning one. It cannot restore the protection — by the
+ *    time a thenable is in hand the guard is already released — so it only
+ *    reports.
+ *
+ * Deliberately NOT offered: an async-aware variant that holds the guard across
+ * an `await`. The guard is safe *because* no user event can be delivered inside
+ * its window (see the module comment); holding it across a suspension point
+ * hands the event loop back and would start swallowing genuine interactions.
  */
-export function runEngineFocus<T>(body: () => T): T {
+export function runEngineFocus<T>(body: () => SyncEngineFocusBody<T>): T {
   depth++
   try {
-    return body()
+    const result = body() as T
+    if (import.meta.env?.DEV === true && isThenable(result)) {
+      console.warn(
+        '[llui/components] runEngineFocus was given an ASYNC body. The suppression is ' +
+          'released when the body RETURNS, so the focus move it makes later is NOT ' +
+          'protected and every other open layer will read it as an outside interaction ' +
+          '(#155/#172). Move the focus call into a synchronous body.',
+      )
+    }
+    return result
   } finally {
     depth--
   }
+}
+
+function isThenable(value: unknown): boolean {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
 }
 
 /** Focus `el` as an engine-initiated move (see `runEngineFocus`). */

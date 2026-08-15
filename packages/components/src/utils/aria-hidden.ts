@@ -62,7 +62,12 @@ const snapshots = new WeakMap<Element, Snapshot>()
 export function setAriaHiddenOutside(target: Element): () => void {
   if (typeof document === 'undefined') return () => {}
   const claimed: Element[] = []
-  const exempt = [...getNestedLayers('hide'), ...document.querySelectorAll(LIVE_REGION_SELECTOR)]
+  // Only layers nested inside `target` are exempt. A layer that merely happens
+  // to be open elsewhere on the page is what this sweep exists to hide (#171).
+  const exempt = [
+    ...getNestedLayers('hide', target),
+    ...document.querySelectorAll(LIVE_REGION_SELECTOR),
+  ]
 
   const claim = (el: Element): void => {
     const count = ownership.get(el) ?? 0
