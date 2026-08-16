@@ -51,7 +51,12 @@ export function getFocusables(container: Element): HTMLElement[] {
 }
 
 function isVisible(el: HTMLElement): boolean {
-  if (el.hidden) return false
+  if (isInsideHiddenTree(el)) return false
+  const view = el.ownerDocument?.defaultView
+  if (view) {
+    const visibility = view.getComputedStyle(el).visibility
+    if (visibility === 'hidden' || visibility === 'collapse') return false
+  }
   // In jsdom there is no layout engine: `offsetParent` is always `null` and
   // `getClientRects()` is always empty, so a real geometry test would wrongly
   // reject EVERY element. Detect that environment and skip the geometry check.
@@ -64,6 +69,15 @@ function isVisible(el: HTMLElement): boolean {
   // `getClientRects()`, which is non-empty for any laid-out box.
   if (el.offsetParent !== null) return true
   return el.getClientRects().length > 0
+}
+
+function isInsideHiddenTree(el: Element): boolean {
+  let current: Element | null = el
+  while (current) {
+    if (current.hasAttribute('hidden')) return true
+    current = current.parentElement
+  }
+  return false
 }
 
 /**

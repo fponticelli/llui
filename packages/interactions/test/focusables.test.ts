@@ -68,6 +68,35 @@ describe('focusability', () => {
     expect(getFocusables(container)).toEqual([])
   })
 
+  it('excludes descendants of hidden ancestors in a layoutless environment', () => {
+    const container = elementFrom(`
+      <div>
+        <div hidden><button id="nested">Nested</button></div>
+        <button id="direct">Direct</button>
+      </div>
+    `)
+    document.body.append(container)
+
+    expect(getFocusables(container).map((element) => element.id)).toEqual(['direct'])
+
+    container.hidden = true
+    expect(getFocusables(container)).toEqual([])
+  })
+
+  it('excludes candidates hidden by computed CSS visibility before the layoutless fallback', () => {
+    const style = document.createElement('style')
+    style.textContent = '.concealed { visibility: hidden }'
+    const container = elementFrom(`
+      <div>
+        <button id="concealed" class="concealed">Concealed</button>
+        <button id="visible">Visible</button>
+      </div>
+    `)
+    document.body.append(style, container)
+
+    expect(getFocusables(container).map((element) => element.id)).toEqual(['visible'])
+  })
+
   it('honors disabled fieldset inheritance and its first-legend exception', () => {
     const container = elementFrom(`
       <div>
