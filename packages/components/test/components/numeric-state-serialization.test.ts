@@ -835,4 +835,25 @@ describe('zero-divisor numeric state requires a positive finite number (#214)', 
       expectSerializableState(updated, `cropper update extreme ratio ${ratio}`)
     })
   }
+
+  for (const bad of NON_FINITE) {
+    it(`normalizes every locked setCrop coordinate through finite crop bounds (${bad})`, () => {
+      const cropper = imageCropper.init({
+        image: { width: 400, height: 300 },
+        aspectRatio: 1,
+      })
+      const [updated] = imageCropper.update(cropper, {
+        type: 'setCrop',
+        crop: { x: bad, y: bad, width: bad, height: bad },
+      })
+      const expected =
+        bad === Infinity
+          ? { x: 100, y: 0, width: 300, height: 300 }
+          : { x: 0, y: 0, width: 20, height: 20 }
+
+      expect(updated).not.toBe(cropper)
+      expect(updated.crop).toStrictEqual(expected)
+      expectSerializableState(updated, `cropper locked setCrop ${bad}`)
+    })
+  }
 })

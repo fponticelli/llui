@@ -130,7 +130,11 @@ function fitCrop(
       minimumWidth = Math.min(minSize, maximum.width)
     }
   }
-  const width = Math.min(maximum.width, Math.max(0, crop.width, minimumWidth))
+  // Route the requested width through the same crop-value clamp as the free
+  // branch: NaN takes zero, infinities take the bound they point at. Apply the
+  // locked minimum afterwards, so a normalized zero still becomes the
+  // smallest usable on-ratio crop rather than poisoning both dimensions.
+  const width = Math.max(clamp(crop.width, 0, maximum.width), minimumWidth)
   const height = width / ratio
   return {
     x: clamp(crop.x, 0, image.width - width),
