@@ -37,7 +37,7 @@ describe('locale context override (finding 11)', () => {
     document.body.innerHTML = ''
   })
 
-  it('provided Locale overrides carousel, pagination and sortable strings', () => {
+  it('a public LocaleContext provider reaches independently sliced components', () => {
     const def = component<S, never, never>({
       name: 'T',
       init: () => [

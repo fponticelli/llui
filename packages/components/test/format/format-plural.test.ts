@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { formatPlural, resolvePluralCategory } from '../../src/format/format-plural'
 
 describe('formatPlural', () => {
@@ -39,6 +39,32 @@ describe('formatPlural', () => {
     expect(formatPlural(3, ordinals, { locale: 'en-US', type: 'ordinal' })).toBe('3rd')
     expect(formatPlural(4, ordinals, { locale: 'en-US', type: 'ordinal' })).toBe('4th')
   })
+
+  it('reuses the shared NumberFormat cache across calls', async () => {
+    const OriginalIntl = Intl
+    let constructions = 0
+    class CountingNumberFormat extends OriginalIntl.NumberFormat {
+      constructor(locales?: Intl.LocalesArgument, options?: Intl.NumberFormatOptions) {
+        super(locales, options)
+        constructions += 1
+      }
+    }
+    const countingIntl = Object.create(OriginalIntl) as typeof Intl
+    Object.defineProperty(countingIntl, 'NumberFormat', { value: CountingNumberFormat })
+    vi.stubGlobal('Intl', countingIntl)
+    vi.resetModules()
+    const { formatPlural: isolatedFormatPlural } = await import('../../src/format/format-plural')
+    const opts = { locale: 'en-US', minimumIntegerDigits: 7 }
+
+    isolatedFormatPlural(1, messages, opts)
+    isolatedFormatPlural(2, messages, opts)
+
+    expect(constructions).toBe(1)
+  })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('resolvePluralCategory', () => {

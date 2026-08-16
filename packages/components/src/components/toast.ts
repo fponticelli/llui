@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { toastLocale } from '../locale/toast.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import { finiteBound } from '../utils/number.js'
 import type { PresenceStatus } from './presence.js'
@@ -340,9 +340,9 @@ export function connect(
   send: Send<ToasterMsg>,
   opts: ConnectOptions = {},
 ): ToasterParts {
-  const locale = useContext(LocaleContext)
-  const regionLabel = opts.regionLabel ?? locale.toast.region
-  const closeLabel = opts.closeLabel ?? locale.toast.dismiss
+  const locale = toastLocale()
+  const regionLabel = opts.regionLabel ?? locale.region
+  const closeLabel = opts.closeLabel ?? locale.dismiss
 
   return {
     region: {

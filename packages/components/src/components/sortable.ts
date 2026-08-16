@@ -1,6 +1,6 @@
-import { tagSend, useContext } from '@llui/dom'
+import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { sortableLocale } from '../locale/sortable.js'
 
 /**
  * Sortable — pointer-based reorderable list.
@@ -266,7 +266,7 @@ export function connect(
   // The connect's `id` doubles as the cross-container identifier
   const containerId = opts.id
   const layout = opts.layout ?? '1d'
-  const locale = useContext(LocaleContext)
+  const locale = sortableLocale()
 
   // Snapshots taken at drag start — stable throughout the drag so computing
   // the target index is not affected by items visually shifting via CSS.
@@ -497,7 +497,7 @@ export function connect(
         const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId
       }),
-      'aria-label': locale.sortable.handle,
+      'aria-label': locale.handle,
       onPointerDown: tagSend(send, ['start'], (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null

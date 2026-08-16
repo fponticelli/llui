@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { tocLocale } from '../locale/toc.js'
 
 /**
  * Table of contents — a navigation list that tracks which heading is
@@ -143,14 +143,14 @@ export function connect(
   send: Send<TocMsg>,
   opts: ConnectOptions = {},
 ): TocParts {
-  const locale = useContext(LocaleContext)
+  const locale = tocLocale()
   const prefix = opts.hrefPrefix ?? '#'
-  const expandLabel = opts.expandLabel ?? locale.toc.expand
+  const expandLabel = opts.expandLabel ?? locale.expand
 
   return {
     root: {
       role: 'navigation',
-      'aria-label': opts.label ?? locale.toc.label,
+      'aria-label': opts.label ?? locale.label,
       'data-scope': 'toc',
       'data-part': 'root',
     },

@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { tourLocale } from '../locale/tour.js'
 
 /**
  * Tour — guided walkthrough over a sequence of steps, each targeting
@@ -201,7 +201,7 @@ export function connect(
   send: Send<TourMsg>,
   opts: ConnectOptions,
 ): TourParts {
-  const locale = useContext(LocaleContext)
+  const locale = tourLocale()
   const titleId = `${opts.id}:title`
   const descId = `${opts.id}:description`
   const closeOnBackdrop = opts.closeOnBackdropClick === true
@@ -259,7 +259,7 @@ export function connect(
     },
     closeTrigger: {
       type: 'button',
-      'aria-label': opts.closeLabel ?? locale.tour.close,
+      'aria-label': opts.closeLabel ?? locale.close,
       'data-scope': 'tour',
       'data-part': 'close-trigger',
       onClick: tagSend(send, ['stop'], () => send({ type: 'stop' })),

@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { cascadeSelectLocale } from '../locale/cascade-select.js'
 
 /**
  * Cascade select — a series of dependent selects where each level's
@@ -148,7 +148,7 @@ export function connect(
   send: Send<CascadeSelectMsg>,
   opts: ConnectOptions,
 ): CascadeSelectParts {
-  const locale = useContext(LocaleContext)
+  const locale = cascadeSelectLocale()
   const levelId = (i: number): string => `${opts.id}:level:${i}`
 
   return {
@@ -160,7 +160,7 @@ export function connect(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? locale.cascadeSelect.clear,
+      'aria-label': opts.clearLabel ?? locale.clear,
       disabled: state.map((s) => s.values.every((v) => v === null)),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',

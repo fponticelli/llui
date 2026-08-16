@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { signaturePadLocale } from '../locale/signature-pad.js'
 
 /**
  * Signature pad — capture free-form strokes on a canvas. The state
@@ -209,11 +209,11 @@ export function connect(
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
 ): SignaturePadParts {
-  const locale = useContext(LocaleContext)
+  const locale = signaturePadLocale()
   return {
     root: {
       role: 'application',
-      'aria-label': opts.label ?? locale.signaturePad.label,
+      'aria-label': opts.label ?? locale.label,
       'data-scope': 'signature-pad',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
@@ -226,7 +226,7 @@ export function connect(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? locale.signaturePad.clear,
+      'aria-label': opts.clearLabel ?? locale.clear,
       disabled: state.map((s) => isEmpty(s)),
       'data-scope': 'signature-pad',
       'data-part': 'clear-trigger',
@@ -234,7 +234,7 @@ export function connect(
     },
     undoTrigger: {
       type: 'button',
-      'aria-label': opts.undoLabel ?? locale.signaturePad.undo,
+      'aria-label': opts.undoLabel ?? locale.undo,
       disabled: state.map((s) => s.strokes.length === 0),
       'data-scope': 'signature-pad',
       'data-part': 'undo-trigger',

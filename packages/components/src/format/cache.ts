@@ -4,7 +4,11 @@ const MAX_CACHE = 64
 
 export function cached<T>(key: string, create: () => T): T {
   const existing = cache.get(key)
-  if (existing) return existing as T
+  if (existing !== undefined) {
+    cache.delete(key)
+    cache.set(key, existing)
+    return existing as T
+  }
   if (cache.size >= MAX_CACHE) {
     const first = cache.keys().next().value!
     cache.delete(first)

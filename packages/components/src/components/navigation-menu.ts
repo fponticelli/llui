@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { navigationMenuLocale } from '../locale/navigation-menu.js'
 import { flipArrow } from '../utils/direction.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { rovingTabStop } from '../utils/list-navigation.js'
@@ -211,7 +211,7 @@ export function connect(
   send: Send<NavMenuMsg>,
   opts: ConnectOptions,
 ): NavMenuParts {
-  const locale = useContext(LocaleContext)
+  const locale = navigationMenuLocale()
   const triggerId = (v: string): string => `${opts.id}:trigger:${v}`
   const contentId = (v: string): string => `${opts.id}:content:${v}`
   const closeOnLeave = opts.closeOnLeave !== false
@@ -346,7 +346,7 @@ export function connect(
 
   return {
     root: {
-      'aria-label': opts.label ?? locale.navigationMenu.label,
+      'aria-label': opts.label ?? locale.label,
       'data-scope': 'navigation-menu',
       'data-part': 'root',
       'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),

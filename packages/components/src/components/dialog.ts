@@ -1,6 +1,6 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { dialogLocale } from '../locale/dialog.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { presenceEndProps } from '../utils/presence-end.js'
@@ -212,8 +212,8 @@ export function connect(
   const triggerId = `${base}:trigger`
   const role = opts.role ?? 'dialog'
   const modal = opts.modal !== false
-  const locale = useContext(LocaleContext)
-  const closeLabel = opts.closeLabel ?? locale.dialog.close
+  const locale = dialogLocale()
+  const closeLabel = opts.closeLabel ?? locale.close
 
   return {
     trigger: {

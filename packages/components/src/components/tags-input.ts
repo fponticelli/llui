@@ -1,11 +1,11 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnce, deriveOnceN } from '../utils/derive.js'
 import { finiteBound } from '../utils/number.js'
-import { LocaleContext } from '../locale.js'
+import { tagsInputLocale } from '../locale/tags-input.js'
 
 /** No individual chip is disabled; the whole widget is or isn't. */
 const NO_DISABLED: readonly string[] = []
@@ -179,10 +179,10 @@ export function connect(
   send: Send<TagsInputMsg>,
   opts: ConnectOptions = {},
 ): TagsInputParts {
-  const locale = useContext(LocaleContext)
-  const inputLabel = opts.inputLabel ?? locale.tagsInput.input
-  const removeLabel = opts.removeLabel ?? locale.tagsInput.remove
-  const clearLabel = opts.clearLabel ?? locale.tagsInput.clear
+  const locale = tagsInputLocale()
+  const inputLabel = opts.inputLabel ?? locale.input
+  const removeLabel = opts.removeLabel ?? locale.remove
+  const clearLabel = opts.clearLabel ?? locale.clear
   const delimiters = opts.delimiters ?? [',']
   const commitOnBlur = opts.commitOnBlur !== false
   const validate = opts.validate

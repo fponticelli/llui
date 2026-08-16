@@ -47,6 +47,8 @@ export function formatPlural(
   const category = resolvePluralCategory(value, opts)
   const template = messages[category] ?? messages.other
   const locale = opts.locale ?? defaultLocale()
-  const formatted = new Intl.NumberFormat(locale).format(value)
+  const numberKey = cacheKey('num', locale, {})
+  const formatter = cached(numberKey, () => new Intl.NumberFormat(locale))
+  const formatted = formatter.format(value)
   return template.replace(/\{count\}/g, formatted)
 }

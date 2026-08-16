@@ -1,8 +1,8 @@
-import { tagSend, useContext } from '@llui/dom'
+import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
-import { LocaleContext } from '../locale.js'
+import { pinInputLocale } from '../locale/pin-input.js'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -222,8 +222,8 @@ export function connect(
   opts: ConnectOptions,
 ): PinInputParts {
   const labelId = `${opts.id}:label`
-  const locale = useContext(LocaleContext)
-  const inputLabel = opts.inputLabel ?? locale.pinInput.input
+  const locale = pinInputLocale()
+  const inputLabel = opts.inputLabel ?? locale.input
   const validate = opts.validate
 
   // Move real DOM focus to the field the reducer just made active. Roving

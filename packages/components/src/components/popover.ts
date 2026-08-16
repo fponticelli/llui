@@ -1,6 +1,6 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { popoverLocale } from '../locale/popover.js'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
@@ -149,13 +149,13 @@ export function connect(
   send: Send<PopoverMsg>,
   opts: ConnectOptions,
 ): PopoverParts {
-  const locale = useContext(LocaleContext)
+  const locale = popoverLocale()
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
   const titleId = `${base}:title`
   const descId = `${base}:description`
-  const closeLabel = opts.closeLabel ?? locale.popover.close
+  const closeLabel = opts.closeLabel ?? locale.close
 
   return {
     trigger: {

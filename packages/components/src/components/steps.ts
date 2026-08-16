@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { stepsLocale } from '../locale/steps.js'
 
 /**
  * Steps — progress indicator for multi-step flows (wizards, checkouts).
@@ -170,8 +170,8 @@ export function connect(
   send: Send<StepsMsg>,
   opts: ConnectOptions = {},
 ): StepsParts {
-  const locale = useContext(LocaleContext)
-  const label = opts.label ?? locale.steps.label
+  const locale = stepsLocale()
+  const label = opts.label ?? locale.label
   return {
     root: {
       role: 'group',

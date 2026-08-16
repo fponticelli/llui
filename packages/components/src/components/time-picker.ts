@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { timePickerLocale } from '../locale/time-picker.js'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -230,11 +230,11 @@ export function connect(
   send: Send<TimePickerMsg>,
   opts: ConnectOptions = {},
 ): TimePickerParts {
-  const locale = useContext(LocaleContext)
+  const locale = timePickerLocale()
   return {
     root: {
       role: 'group',
-      'aria-label': opts.label ?? locale.timePicker.label,
+      'aria-label': opts.label ?? locale.label,
       'data-scope': 'time-picker',
       'data-part': 'root',
       'data-format': state.map((s) => s.format),
@@ -242,7 +242,7 @@ export function connect(
     hoursInput: {
       type: 'number',
       role: 'spinbutton',
-      'aria-label': opts.hoursLabel ?? locale.timePicker.hours,
+      'aria-label': opts.hoursLabel ?? locale.hours,
       'aria-valuemin': state.map((s) => (s.format === '12' ? 1 : 0)),
       'aria-valuemax': state.map((s) => (s.format === '12' ? 12 : 23)),
       'aria-valuenow': state.map((s) => displayHours(s)),
@@ -267,7 +267,7 @@ export function connect(
     minutesInput: {
       type: 'number',
       role: 'spinbutton',
-      'aria-label': opts.minutesLabel ?? locale.timePicker.minutes,
+      'aria-label': opts.minutesLabel ?? locale.minutes,
       'aria-valuemin': 0,
       'aria-valuemax': 59,
       'aria-valuenow': state.map((s) => s.value.minutes),
@@ -291,7 +291,7 @@ export function connect(
     },
     periodTrigger: {
       type: 'button',
-      'aria-label': opts.periodLabel ?? locale.timePicker.period,
+      'aria-label': opts.periodLabel ?? locale.period,
       disabled: state.map((s) => s.disabled),
       'data-scope': 'time-picker',
       'data-part': 'period-trigger',

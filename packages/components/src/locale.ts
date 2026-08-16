@@ -1,137 +1,78 @@
-import { createContext } from '@llui/dom'
-import type { TextDirection } from './utils/direction.js'
+import type { Context } from '@llui/dom'
+import { enCarousel } from './locale/carousel.js'
+import { enCascadeSelect } from './locale/cascade-select.js'
+import { enClipboard } from './locale/clipboard.js'
+import { enColorPicker } from './locale/color-picker.js'
+import { enCombobox } from './locale/combobox.js'
+import { ComponentLocaleContext, type Locale } from './locale/context.js'
+import { enDateInput } from './locale/date-input.js'
+import { enDatePicker } from './locale/date-picker.js'
+import { enDialog } from './locale/dialog.js'
+import { enDrawer } from './locale/drawer.js'
+import { enFileUpload } from './locale/file-upload.js'
+import { enFloatingPanel } from './locale/floating-panel.js'
+import { enImageCropper } from './locale/image-cropper.js'
+import { enNavigationMenu } from './locale/navigation-menu.js'
+import { enNumberInput } from './locale/number-input.js'
+import { enPagination } from './locale/pagination.js'
+import { enPasswordInput } from './locale/password-input.js'
+import { enPinInput } from './locale/pin-input.js'
+import { enPopover } from './locale/popover.js'
+import { enProgress } from './locale/progress.js'
+import { enQrCode } from './locale/qr-code.js'
+import { enSignaturePad } from './locale/signature-pad.js'
+import { enSortable } from './locale/sortable.js'
+import { enSteps } from './locale/steps.js'
+import { enTagsInput } from './locale/tags-input.js'
+import { enTimePicker } from './locale/time-picker.js'
+import { enTimer } from './locale/timer.js'
+import { enToast } from './locale/toast.js'
+import { enToc } from './locale/toc.js'
+import { enTour } from './locale/tour.js'
 
-/** Per-component locale strings. Only components with user-facing text have entries. */
-export interface Locale {
-  /**
-   * App-wide reading direction. Optional and backward-compatible: when unset,
-   * components fall back to their own `dir` (default 'ltr') or DOM resolution.
-   * Lets an app set direction once via a `LocaleContext` provider; an explicit
-   * `dir` passed to a component always overrides this.
-   */
-  direction?: TextDirection
-  carousel: {
-    label: string
-    indicators: string
-    next: string
-    prev: string
-    slide: (index: number) => string
-    goToSlide: (index: number) => string
-  }
-  cascadeSelect: { clear: string }
-  clipboard: { copy: string }
-  colorPicker: { hue: string; saturation: string; lightness: string; hex: string }
-  combobox: { toggle: string; resultCount: (n: number) => string }
-  dateInput: { clear: string }
-  datePicker: {
-    prev: string
-    next: string
-    monthNames: string[]
-    grid: (year: number, month: number) => string
-  }
-  dialog: { close: string }
-  drawer: { close: string }
-  fileUpload: { remove: string; clear: string }
-  floatingPanel: { label: string; minimize: string; maximize: string; close: string }
-  imageCropper: { reset: string }
-  navigationMenu: { label: string }
-  numberInput: { increment: string; decrement: string }
-  pagination: { label: string; prev: string; next: string; page: (n: number) => string }
-  passwordInput: { show: string; hide: string }
-  pinInput: { input: (index: number) => string }
-  popover: { close: string }
-  progress: { loading: string }
-  qrCode: { label: string; download: string }
-  signaturePad: { label: string; clear: string; undo: string }
-  sortable: { handle: string }
-  steps: { label: string }
-  tagsInput: { input: string; remove: string; clear: string }
-  timePicker: { label: string; hours: string; minutes: string; period: string }
-  timer: { start: string; pause: string; reset: string }
-  toast: { region: string; dismiss: string }
-  toc: { label: string; expand: string }
-  tour: { close: string }
-}
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
+export type { Locale } from './locale/context.js'
 
 /** English locale — used as the default when no provider is in the tree. */
 export const en: Locale = {
   direction: 'ltr',
-  carousel: {
-    label: 'Carousel',
-    indicators: 'Slide indicators',
-    next: 'Next slide',
-    prev: 'Previous slide',
-    slide: (i) => `Slide ${i + 1}`,
-    goToSlide: (i) => `Go to slide ${i + 1}`,
-  },
-  cascadeSelect: { clear: 'Clear selection' },
-  clipboard: { copy: 'Copy to clipboard' },
-  colorPicker: { hue: 'Hue', saturation: 'Saturation', lightness: 'Lightness', hex: 'Hex color' },
-  combobox: {
-    toggle: 'Toggle options',
-    resultCount: (n) => (n === 1 ? '1 result' : `${n} results`),
-  },
-  dateInput: { clear: 'Clear date' },
-  datePicker: {
-    prev: 'Previous month',
-    next: 'Next month',
-    monthNames: MONTH_NAMES,
-    grid: (y, m) => `${MONTH_NAMES[m - 1]} ${y}`,
-  },
-  dialog: { close: 'Close' },
-  drawer: { close: 'Close' },
-  fileUpload: { remove: 'Remove file', clear: 'Clear files' },
-  floatingPanel: {
-    label: 'Floating panel',
-    minimize: 'Minimize',
-    maximize: 'Maximize',
-    close: 'Close',
-  },
-  imageCropper: { reset: 'Reset crop' },
-  navigationMenu: { label: 'Main navigation' },
-  numberInput: { increment: 'Increase value', decrement: 'Decrease value' },
-  pagination: {
-    label: 'Pagination',
-    prev: 'Previous page',
-    next: 'Next page',
-    page: (n) => `Page ${n}`,
-  },
-  passwordInput: { show: 'Show password', hide: 'Hide password' },
-  pinInput: { input: (i) => `Digit ${i + 1}` },
-  popover: { close: 'Close' },
-  progress: { loading: 'Loading\u2026' },
-  qrCode: { label: 'QR code', download: 'Download QR code' },
-  signaturePad: { label: 'Signature pad', clear: 'Clear signature', undo: 'Undo last stroke' },
-  sortable: {
-    handle:
-      'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
-  },
-  steps: { label: 'Progress' },
-  tagsInput: { input: 'Add tag', remove: 'Remove tag', clear: 'Clear all tags' },
-  timePicker: { label: 'Time', hours: 'Hours', minutes: 'Minutes', period: 'Toggle AM/PM' },
-  timer: { start: 'Start timer', pause: 'Pause timer', reset: 'Reset timer' },
-  toast: { region: 'Notifications', dismiss: 'Dismiss notification' },
-  toc: { label: 'Table of contents', expand: 'Toggle section' },
-  tour: { close: 'Close tour' },
+  carousel: enCarousel,
+  cascadeSelect: enCascadeSelect,
+  clipboard: enClipboard,
+  colorPicker: enColorPicker,
+  combobox: enCombobox,
+  dateInput: enDateInput,
+  datePicker: enDatePicker,
+  dialog: enDialog,
+  drawer: enDrawer,
+  fileUpload: enFileUpload,
+  floatingPanel: enFloatingPanel,
+  imageCropper: enImageCropper,
+  navigationMenu: enNavigationMenu,
+  numberInput: enNumberInput,
+  pagination: enPagination,
+  passwordInput: enPasswordInput,
+  pinInput: enPinInput,
+  popover: enPopover,
+  progress: enProgress,
+  qrCode: enQrCode,
+  signaturePad: enSignaturePad,
+  sortable: enSortable,
+  steps: enSteps,
+  tagsInput: enTagsInput,
+  timePicker: enTimePicker,
+  timer: enTimer,
+  toast: enToast,
+  toc: enToc,
+  tour: enTour,
 }
 
 /**
- * Locale context. Components read from this via `useContext(LocaleContext)`.
- * English defaults are provided — apps that don't call `provide()` get English for free.
+ * Locale context. Components resolve their own English fallback so component
+ * subpath bundles only carry that component's strings. This public context and
+ * the lightweight component context share an id, preserving `provide()`
+ * behavior while retaining the complete English locale as the public default.
  */
-export const LocaleContext = createContext<Locale>(en, 'LocaleContext')
+export const LocaleContext: Context<Locale> = {
+  id: ComponentLocaleContext.id,
+  default: en,
+}

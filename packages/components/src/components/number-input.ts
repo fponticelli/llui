@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { numberInputLocale } from '../locale/number-input.js'
 import { clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
@@ -218,9 +218,9 @@ export function connect(
   send: Send<NumberInputMsg>,
   opts: ConnectOptions = {},
 ): NumberInputParts {
-  const locale = useContext(LocaleContext)
-  const incrementLabel = opts.incrementLabel ?? locale.numberInput.increment
-  const decrementLabel = opts.decrementLabel ?? locale.numberInput.decrement
+  const locale = numberInputLocale()
+  const incrementLabel = opts.incrementLabel ?? locale.increment
+  const decrementLabel = opts.decrementLabel ?? locale.decrement
   const validate = opts.validate
 
   // Commit the in-progress text (blur / Enter). We never commit live from

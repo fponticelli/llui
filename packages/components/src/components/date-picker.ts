@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { LocaleContext } from '../locale.js'
+import { datePickerLocale } from '../locale/date-picker.js'
 import { formatDate } from '../format/format-date.js'
 import { finiteBound } from '../utils/number.js'
 import { defaultLocale } from '../format/defaults.js'
@@ -522,9 +522,9 @@ export function connect(
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
 ): DatePickerParts {
-  const localeStrings = useContext(LocaleContext)
-  const prevLabel = opts.prevLabel ?? localeStrings.datePicker.prev
-  const nextLabel = opts.nextLabel ?? localeStrings.datePicker.next
+  const localeStrings = datePickerLocale()
+  const prevLabel = opts.prevLabel ?? localeStrings.prev
+  const nextLabel = opts.nextLabel ?? localeStrings.next
   const localeTag = opts.locale ?? defaultLocale()
   const gridLabel = opts.gridLabel ?? ((y: number, m: number) => monthLabel(y, m, localeTag))
   const isRange = opts.mode === 'range'

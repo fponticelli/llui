@@ -1,6 +1,6 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { drawerLocale } from '../locale/drawer.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import type { PresenceStatus } from './presence.js'
@@ -166,14 +166,14 @@ export function connect(
   send: Send<DrawerMsg>,
   opts: ConnectOptions,
 ): DrawerParts {
-  const locale = useContext(LocaleContext)
+  const locale = drawerLocale()
   const side = opts.side ?? 'right'
   const base = opts.id
   const contentId = `${base}:content`
   const titleId = `${base}:title`
   const descId = `${base}:description`
   const triggerId = `${base}:trigger`
-  const closeLabel = opts.closeLabel ?? locale.drawer.close
+  const closeLabel = opts.closeLabel ?? locale.close
 
   return {
     trigger: {

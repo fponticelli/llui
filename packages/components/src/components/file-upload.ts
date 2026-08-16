@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
+import { fileUploadLocale } from '../locale/file-upload.js'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -548,7 +548,7 @@ export function connect(
   send: Send<FileUploadMsg>,
   opts: ConnectOptions,
 ): FileUploadParts {
-  const locale = useContext(LocaleContext)
+  const locale = fileUploadLocale()
   const inputId = `${opts.id}:input`
 
   // The component owns the lifetime of the handles its State references: once
@@ -561,8 +561,8 @@ export function connect(
   if (__currentBuildInfo() !== null) {
     onTeardown(() => releaseAllFiles(state.peek()))
   }
-  const removeLabel = opts.removeLabel ?? locale.fileUpload.remove
-  const clearLabel = opts.clearLabel ?? locale.fileUpload.clear
+  const removeLabel = opts.removeLabel ?? locale.remove
+  const clearLabel = opts.clearLabel ?? locale.clear
 
   /**
    * Send, then free every handle the message left unreachable — the ones the

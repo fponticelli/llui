@@ -1,6 +1,6 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { comboboxLocale } from '../locale/combobox.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
 import { type Placement } from '../utils/floating.js'
@@ -534,13 +534,13 @@ export function connect(
   send: Send<ComboboxMsg>,
   opts: ConnectOptions,
 ): ComboboxParts {
-  const locale = useContext(LocaleContext)
+  const locale = comboboxLocale()
   const base = opts.id
   const inputId = `${base}:input`
   const contentId = `${base}:content`
   const itemId = (value: string): string => `${base}:item:${encodeURIComponent(value)}`
   const groupLabelId = (id: string): string => `${base}:group:${id}:label`
-  const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
+  const triggerLabel = opts.triggerLabel ?? locale.toggle
 
   // Derived once per update and shared by every item, instead of a full array
   // scan inside each item's props on every update (#124).
@@ -704,7 +704,7 @@ export function connect(
         if (s.status === 'error') return s.error ?? ''
         if (s.status === 'loaded') {
           const n = s.filteredItems.filter((v) => v !== CREATE_OPTION_VALUE).length
-          return locale.combobox.resultCount(n)
+          return locale.resultCount(n)
         }
         return ''
       }),

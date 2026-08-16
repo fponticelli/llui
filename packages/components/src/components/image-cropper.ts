@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { imageCropperLocale } from '../locale/image-cropper.js'
 import { clamp, finiteBound } from '../utils/number.js'
 
 /**
@@ -354,7 +354,7 @@ export function connect(
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
 ): ImageCropperParts {
-  const locale = useContext(LocaleContext)
+  const locale = imageCropperLocale()
   return {
     root: {
       'data-scope': 'image-cropper',
@@ -394,7 +394,7 @@ export function connect(
     }),
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? locale.imageCropper.reset,
+      'aria-label': opts.resetLabel ?? locale.reset,
       'data-scope': 'image-cropper',
       'data-part': 'reset-trigger',
       onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),

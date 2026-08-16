@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { paginationLocale } from '../locale/pagination.js'
 import { flipArrow, type TextDirection } from '../utils/direction.js'
 import { finiteBound } from '../utils/number.js'
 
@@ -279,11 +279,11 @@ export function connect(
   send: Send<PaginationMsg>,
   opts: ConnectOptions = {},
 ): PaginationParts {
-  const locale = useContext(LocaleContext)
-  const label = opts.label ?? locale.pagination.label
-  const prevLabel = opts.prevLabel ?? locale.pagination.prev
-  const nextLabel = opts.nextLabel ?? locale.pagination.next
-  const pageLabel = opts.pageLabel ?? locale.pagination.page
+  const locale = paginationLocale()
+  const label = opts.label ?? locale.label
+  const prevLabel = opts.prevLabel ?? locale.prev
+  const nextLabel = opts.nextLabel ?? locale.next
+  const pageLabel = opts.pageLabel ?? locale.page
 
   // Route roving focus through the direction stored in State (the source of
   // truth `flipArrow` consumes), read one-shot at keydown time.

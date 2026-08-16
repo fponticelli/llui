@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { carouselLocale } from '../locale/carousel.js'
 import { flipArrow } from '../utils/direction.js'
 import { finiteBound } from '../utils/number.js'
 
@@ -385,12 +385,12 @@ export function connect(
   send: Send<CarouselMsg>,
   opts: ConnectOptions,
 ): CarouselParts {
-  const locale = useContext(LocaleContext)
-  const label = opts.label ?? locale.carousel.label
-  const indicatorLabel = opts.indicatorLabel ?? locale.carousel.indicators
-  const nextLabel = opts.nextLabel ?? locale.carousel.next
-  const prevLabel = opts.prevLabel ?? locale.carousel.prev
-  const slideLabelFn = opts.slideLabel ?? locale.carousel.slide
+  const locale = carouselLocale()
+  const label = opts.label ?? locale.label
+  const indicatorLabel = opts.indicatorLabel ?? locale.indicators
+  const nextLabel = opts.nextLabel ?? locale.next
+  const prevLabel = opts.prevLabel ?? locale.prev
+  const slideLabelFn = opts.slideLabel ?? locale.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
 
   return {
@@ -480,7 +480,7 @@ export function connect(
       indicator: {
         type: 'button',
         role: 'tab',
-        'aria-label': locale.carousel.goToSlide(index),
+        'aria-label': locale.goToSlide(index),
         'aria-selected': state.map((s) => s.current === index),
         'aria-controls': slideId(index),
         'data-scope': 'carousel',

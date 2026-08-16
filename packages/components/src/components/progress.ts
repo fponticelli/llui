@@ -1,5 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
-import { en } from '../locale.js'
+import { enProgress } from '../locale/progress.js'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -151,7 +151,7 @@ export function connect(
 
 function defaultFormat(state: ProgressState): string {
   const p = percent(state)
-  if (p === null) return en.progress.loading
+  if (p === null) return enProgress.loading
   return `${Math.round(p)}%`
 }
 

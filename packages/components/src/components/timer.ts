@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { timerLocale } from '../locale/timer.js'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -206,7 +206,7 @@ export function connect(
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
 ): TimerParts {
-  const locale = useContext(LocaleContext)
+  const locale = timerLocale()
   return {
     root: {
       'data-scope': 'timer',
@@ -222,7 +222,7 @@ export function connect(
     },
     startTrigger: {
       type: 'button',
-      'aria-label': opts.startLabel ?? locale.timer.start,
+      'aria-label': opts.startLabel ?? locale.start,
       'data-scope': 'timer',
       'data-part': 'start-trigger',
       disabled: state.map((s) => s.running),
@@ -230,7 +230,7 @@ export function connect(
     },
     pauseTrigger: {
       type: 'button',
-      'aria-label': opts.pauseLabel ?? locale.timer.pause,
+      'aria-label': opts.pauseLabel ?? locale.pause,
       'data-scope': 'timer',
       'data-part': 'pause-trigger',
       disabled: state.map((s) => !s.running),
@@ -238,7 +238,7 @@ export function connect(
     },
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? locale.timer.reset,
+      'aria-label': opts.resetLabel ?? locale.reset,
       'data-scope': 'timer',
       'data-part': 'reset-trigger',
       onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),

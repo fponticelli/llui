@@ -1,6 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { qrCodeLocale } from '../locale/qr-code.js'
 
 /**
  * QR code — renders a QR matrix as SVG. llui does not bundle a QR
@@ -159,8 +158,8 @@ export function connect(
   send: Send<QrCodeMsg>,
   opts: ConnectOptions = {},
 ): QrCodeParts {
-  const locale = useContext(LocaleContext)
-  const label = opts.label ?? locale.qrCode.label
+  const locale = qrCodeLocale()
+  const label = opts.label ?? locale.label
   const filename = opts.downloadFilename ?? 'qrcode.svg'
 
   return {
@@ -190,7 +189,7 @@ export function connect(
     },
     downloadTrigger: {
       type: 'button',
-      'aria-label': opts.downloadLabel ?? locale.qrCode.download,
+      'aria-label': opts.downloadLabel ?? locale.download,
       'data-scope': 'qr-code',
       'data-part': 'download-trigger',
       onClick: () => {

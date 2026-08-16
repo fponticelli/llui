@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { floatingPanelLocale } from '../locale/floating-panel.js'
 import { clamp, finiteBound } from '../utils/number.js'
 
 /**
@@ -314,11 +314,11 @@ export function connect(
   send: Send<FloatingPanelMsg>,
   opts: ConnectOptions = {},
 ): FloatingPanelParts {
-  const locale = useContext(LocaleContext)
+  const locale = floatingPanelLocale()
   return {
     root: {
       role: 'dialog',
-      'aria-label': opts.label ?? locale.floatingPanel.label,
+      'aria-label': opts.label ?? locale.label,
       'data-scope': 'floating-panel',
       'data-part': 'root',
       'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
@@ -347,21 +347,21 @@ export function connect(
     },
     minimizeTrigger: {
       type: 'button',
-      'aria-label': opts.minimizeLabel ?? locale.floatingPanel.minimize,
+      'aria-label': opts.minimizeLabel ?? locale.minimize,
       'data-scope': 'floating-panel',
       'data-part': 'minimize-trigger',
       onClick: tagSend(send, ['toggleMinimize'], () => send({ type: 'toggleMinimize' })),
     },
     maximizeTrigger: {
       type: 'button',
-      'aria-label': opts.maximizeLabel ?? locale.floatingPanel.maximize,
+      'aria-label': opts.maximizeLabel ?? locale.maximize,
       'data-scope': 'floating-panel',
       'data-part': 'maximize-trigger',
       onClick: tagSend(send, ['toggleMaximize'], () => send({ type: 'toggleMaximize' })),
     },
     closeTrigger: {
       type: 'button',
-      'aria-label': opts.closeLabel ?? locale.floatingPanel.close,
+      'aria-label': opts.closeLabel ?? locale.close,
       'data-scope': 'floating-panel',
       'data-part': 'close-trigger',
       onClick: tagSend(send, ['close'], () => send({ type: 'close' })),

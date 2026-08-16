@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { colorPickerLocale } from '../locale/color-picker.js'
 import { clamp } from '../utils/number.js'
 
 /**
@@ -392,7 +392,7 @@ export function connect(
   send: Send<ColorPickerMsg>,
   opts: ConnectOptions = {},
 ): ColorPickerParts {
-  const locale = useContext(LocaleContext)
+  const locale = colorPickerLocale()
   const fine = opts.step ?? 1
   const coarse = opts.coarseStep ?? 10
   return {
@@ -406,7 +406,7 @@ export function connect(
       min: 0,
       max: 360,
       step: 1,
-      'aria-label': opts.hueLabel ?? locale.colorPicker.hue,
+      'aria-label': opts.hueLabel ?? locale.hue,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(s.hsv.h)),
       'data-scope': 'color-picker',
@@ -420,7 +420,7 @@ export function connect(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.saturationLabel ?? locale.colorPicker.saturation,
+      'aria-label': opts.saturationLabel ?? locale.saturation,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(stateHsl(s).s)),
       style: state.map((s) => {
@@ -438,7 +438,7 @@ export function connect(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.lightnessLabel ?? locale.colorPicker.lightness,
+      'aria-label': opts.lightnessLabel ?? locale.lightness,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(stateHsl(s).l)),
       style: state.map((s) => {
@@ -454,7 +454,7 @@ export function connect(
     hexInput: {
       type: 'text',
       autocomplete: 'off',
-      'aria-label': opts.hexLabel ?? locale.colorPicker.hex,
+      'aria-label': opts.hexLabel ?? locale.hex,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => toHex(stateHsl(s))),
       'data-scope': 'color-picker',
@@ -478,15 +478,12 @@ export function connect(
     },
     areaThumb: {
       role: 'slider',
-      'aria-label':
-        opts.areaLabel ?? `${locale.colorPicker.saturation} / ${locale.colorPicker.lightness}`,
+      'aria-label': opts.areaLabel ?? `${locale.saturation} / ${locale.lightness}`,
       // Required on role="slider" (#122). Horizontal axis = saturation, 0..100
       // — the slider defaults for valuemin/valuemax already match.
       'aria-valuenow': state.map((s) => s.hsv.s),
       // 2D value: report both saturation and value (HSV) axes.
-      'aria-valuetext': state.map(
-        (s) => `${locale.colorPicker.saturation} ${s.hsv.s}%, Value ${s.hsv.v}%`,
-      ),
+      'aria-valuetext': state.map((s) => `${locale.saturation} ${s.hsv.s}%, Value ${s.hsv.v}%`),
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       'data-scope': 'color-picker',

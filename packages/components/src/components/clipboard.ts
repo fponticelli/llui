@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
-import { LocaleContext } from '../locale.js'
+import { tagSend } from '@llui/dom'
+import { clipboardLocale } from '../locale/clipboard.js'
 
 /**
  * Clipboard — copy-to-clipboard with transient "copied" feedback. The
@@ -107,8 +107,8 @@ export function connect(
   send: Send<ClipboardMsg>,
   opts: ConnectOptions = {},
 ): ClipboardParts {
-  const locale = useContext(LocaleContext)
-  const copyLabel = opts.copyLabel ?? locale.clipboard.copy
+  const locale = clipboardLocale()
+  const copyLabel = opts.copyLabel ?? locale.copy
   return {
     root: {
       'data-scope': 'clipboard',
