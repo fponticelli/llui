@@ -211,8 +211,9 @@ export interface SignalScope {
    * {@link SignalScope.update} is the asymmetric half. */
   mount(state: unknown): void
   /** update: gate by dirty bits, output-compare value bindings, always commit
-   * structural bindings whose gate passes, then propagate to child scopes (mounted
-   * content of conditional/structural primitives). */
+   * structural bindings whose gate passes, then propagate to the child scopes that
+   * were present when this update began. Children mounted during the update are
+   * already current from mount and join the next update's cohort. */
   update(oldState: unknown, newState: unknown): void
   /** register a child scope that should receive the same state updates (e.g.
    * `show`/`branch` content that reads the owning component's state). */
@@ -226,8 +227,8 @@ export interface SignalScope {
  * one scope PER ROW, so this is a CLASS (one allocation per row, methods on the
  * prototype) rather than a closure-captured object literal (which allocated the
  * object PLUS four method closures per row) — ~50% less per-row create cost and
- * proportionally less GC pressure on large lists. `last`/`children`/`dirty` are
- * instance fields with the same lazy-allocation discipline as before.
+ * proportionally less GC pressure on large lists. `last`/`children`/
+ * `pendingChildren`/`dirty` are instance fields with lazy-allocation discipline.
  */
 class SignalScopeImpl implements SignalScope {
   // Last produced value per binding, indexed by binding POSITION (lockstep with
@@ -236,6 +237,10 @@ class SignalScopeImpl implements SignalScope {
   // Child scopes (show/branch/each content). Lazy — a LEAF row (no structural
   // children, the common list-row case) never allocates a Set. `null` ⇒ none.
   private children: Set<SignalScope> | null = null
+  // Children mounted while this scope is updating belong to the NEXT update
+  // cohort. Lazy — the normal no-structural-change path allocates nothing.
+  private pendingChildren: Set<SignalScope> | null = null
+  private updateInProgress = false
   // Dirty chunk-set, reused across this scope's updates (update is synchronous and
   // non-reentrant per scope). Lazy — a row created and never individually updated
   // never allocates one.
@@ -272,15 +277,11 @@ class SignalScopeImpl implements SignalScope {
   // (they would otherwise run `onEffect` against a half-reconciled DOM — and a
   // contained binding failure IS a partially-reconciled DOM, close enough to the
   // stated hazard that it must not be widened as a side effect of an unrelated
-  // fix). Measured against that cost, the in-round guard bought nothing for the
-  // incident that motivated this work: #165's own trigger shape is a `branch`
-  // loading→ready arm, and a freshly-mounted arm is re-run IN THE SAME ROUND by the
-  // parent's children sweep (the unguarded `update` path below), so it throws
-  // anyway. The initial mount — where the half-drawn document actually happens — is
-  // outside any commit round and is fully covered. Widening this is #216, on its own
-  // evidence.
-  //
-  // So: in-round behaviour is byte-identical to main, and `update` is untouched.
+  // fix). A binding in a row/arm mounted during a round still throws directly from
+  // this mount loop; deferring that fresh scope's child traversal until the next
+  // update (#225) does not contain or reschedule the mount failure. The initial
+  // mount — where the half-drawn document actually happens — is outside any commit
+  // round and is fully covered.
   //
   // Structure: ONE try region for the whole guarded loop (re-entered only after a
   // throw, resuming at the next binding) rather than a try/catch PER BINDING — the
@@ -322,6 +323,36 @@ class SignalScopeImpl implements SignalScope {
   }
 
   update(oldState: unknown, newState: unknown): void {
+    const childrenAtStart = this.children
+    // A scope with no children at entry has no cohort to traverse. Run the binding
+    // hot path without a per-scope try/finally; any children it mounts are added to
+    // the live Set but deliberately wait for the next update.
+    if (childrenAtStart === null) {
+      this.updateBindings(oldState, newState)
+      return
+    }
+    this.updateInProgress = true
+    try {
+      this.updateBindings(oldState, newState)
+      // A removal mutates this live entry cohort immediately; additions are
+      // deferred by addChild and cannot extend its Set iterator.
+      for (const child of childrenAtStart) child.update(oldState, newState)
+    } finally {
+      this.updateInProgress = false
+      const pending = this.pendingChildren
+      if (pending !== null) {
+        this.pendingChildren = null
+        if (pending.size > 0) {
+          const children = this.children ?? (this.children = new Set<SignalScope>())
+          for (const child of pending) children.add(child)
+        }
+      }
+    }
+  }
+
+  /** Binding-only hot path, split from child-cohort bookkeeping so leaf scopes
+   * (the common `each` row) do not pay a try/finally on every update. */
+  private updateBindings(oldState: unknown, newState: unknown): void {
     const { bindings, last, table, masks } = this
     // Skip the whole binding sweep when nothing this scope tracks changed — the
     // common case for an unchanged `each` row whose item ref is identical.
@@ -349,17 +380,22 @@ class SignalScopeImpl implements SignalScope {
         }
       }
     }
-    // propagate to mounted child scopes (own bindings above may have added/removed
-    // children; newly-mounted children are already current and no-op via output-eq).
-    if (this.children !== null) for (const c of this.children) c.update(oldState, newState)
   }
 
   addChild(child: SignalScope): void {
-    ;(this.children ??= new Set<SignalScope>()).add(child)
+    const target = this.updateInProgress
+      ? (this.pendingChildren ??= new Set<SignalScope>())
+      : (this.children ??= new Set<SignalScope>())
+    target.add(child)
   }
 
   removeChild(child: SignalScope): void {
-    this.children?.delete(child)
+    const children = this.children
+    if (children !== null) {
+      children.delete(child)
+      if (children.size === 0) this.children = null
+    }
+    this.pendingChildren?.delete(child)
   }
 }
 
