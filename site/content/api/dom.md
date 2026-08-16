@@ -1011,11 +1011,12 @@ sufficient alone:
   since `'touch'` and `'blur'` are equally valid `M['type']`.
 
 That rule BAILS rather than guess, so it is a backstop and not a proof: it
-recognizes `tagSend` only when imported from the `@llui/dom` specifier (a
-barrel re-export or a relative import is invisible — issue #146), reads only a
-literal variant list (`as const` and `satisfies` are read through; a hoisted
-`VARIANTS` identifier is not) with an inline handler, and reports an
-over-declaration only when nothing in the handler body could dispatch unseen.
+recognizes `tagSend` only when the binding's import provenance resolves to
+`@llui/dom` (directly, through a barrel, or through a relative module inside
+that package), reads only a literal variant list (`as const` and `satisfies`
+are read through; a hoisted `VARIANTS` identifier is not) with an inline
+handler, and reports an over-declaration only when nothing in the handler body
+could dispatch unseen.
 
 **Library authors, one quiet consequence of that last bail.** The
 over-declaration half survives exactly one kind of call on a handler

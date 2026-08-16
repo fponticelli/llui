@@ -29,7 +29,7 @@ Neither is a standalone interactions consumer. The checked external consumers we
 - `buildlab-com/dungeonlogs/packages/ui/src/atoms/modal.ts` and `popover.ts` qualify: both
   implement custom overlays with the interaction primitives and no LLui component machine.
 - `buildlab-com/stillkeel/packages/web/src/components/spark-tooltip.ts` does not qualify: it
-  contains tooltip presentation behavior but does not consume these interaction primitives.
+  imports `attachFloating`, but also builds on the LLui tooltip component machine.
 
 The two dungeonlogs modules establish separate install-graph demand. The existing
 `@llui/components/utils` entry point remains as a compatibility re-export.
