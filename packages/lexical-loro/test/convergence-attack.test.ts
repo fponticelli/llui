@@ -31,48 +31,20 @@ import {
   $isElementNode,
   $isTextNode,
   type ElementNode,
-  type LexicalEditor,
   type LexicalNode,
 } from 'lexical'
-import { $createQuoteNode, HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { $createListItemNode, $createListNode, ListItemNode, ListNode } from '@lexical/list'
-import { LLuiDecoratorNode, $createLLuiDecoratorNode, $isLLuiDecoratorNode } from '@llui/lexical'
+import { $createQuoteNode } from '@lexical/rich-text'
+import { $createListItemNode, $createListNode } from '@lexical/list'
+import { $createLLuiDecoratorNode, $isLLuiDecoratorNode } from '@llui/lexical'
 
-import { loroCollab } from '../src/index.js'
+import { collabNetwork, edit, setParagraphs } from './collaboration.js'
 import {
   documentBlockCount,
   expectAllWellFormed,
   expectConverged,
-  Network,
   projectEditor,
   type Peer,
 } from './network.js'
-
-const NODES = [HeadingNode, QuoteNode, ListNode, ListItemNode, LLuiDecoratorNode]
-
-function collabNetwork(names?: readonly string[]): Network {
-  return new Network({
-    ...(names ? { names } : {}),
-    nodes: NODES,
-    bind: (editor, doc) => {
-      const collab = loroCollab({ doc, shouldBootstrap: false })
-      const dispose = collab.register(editor)
-      return { dispose }
-    },
-  })
-}
-
-function edit(peer: Peer, fn: (editor: LexicalEditor) => void): void {
-  peer.editor.update(() => fn(peer.editor), { discrete: true })
-}
-
-function setParagraphs(peer: Peer, texts: readonly string[]): void {
-  edit(peer, () => {
-    const root = $getRoot()
-    root.clear()
-    for (const text of texts) root.append($createParagraphNode().append($createTextNode(text)))
-  })
-}
 
 function blocks(peer: Peer): string[] {
   const out: string[] = []
@@ -853,6 +825,9 @@ describe('convergence — commutativity (delivery order is irrelevant)', () => {
 })
 
 describe('convergence — volume and mapping drift', () => {
+  const TEXT_CHURN_OPERATIONS = 120
+  const TEXT_CHURN_SEED = 0xbeef
+
   const REGISTRY_CHURN_TRIALS = [
     { seed: 0x00c0ffee, operations: 50 },
     { seed: 0x51a7e11a, operations: 50 },
@@ -943,45 +918,48 @@ describe('convergence — volume and mapping drift', () => {
     })
   }
 
-  it('survives a 120-operation burst of pure text churn in one block', () => {
+  it(`survives ${TEXT_CHURN_OPERATIONS} operations of pure text churn in one block (seed 0x${TEXT_CHURN_SEED.toString(16)})`, () => {
     // Isolates the text path: no structural ops at all, so any divergence is a
     // run-diff / mark bug rather than a list-reconciliation one.
-    let seed = 0xbeef
+    let seed = TEXT_CHURN_SEED
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0
       return seed / 0x100000000
     }
 
     const network = collabNetwork(['a', 'b', 'c'])
-    setParagraphs(network.a, ['seed'])
-    network.settle()
+    try {
+      setParagraphs(network.a, ['seed'])
+      network.settle()
 
-    for (let op = 0; op < 120; op++) {
-      const peer = network.peers[Math.floor(random() * network.peers.length)]!
-      edit(peer, () => {
-        const block = $getRoot().getFirstChildOrThrow<ElementNode>()
-        const text = block.getFirstChild()
-        if (text == null || !$isTextNode(text)) {
-          block.append($createTextNode('x'))
-          return
-        }
-        const content = text.getTextContent()
-        if (random() < 0.35 && content.length > 2) {
-          const cut = Math.floor(random() * (content.length - 1))
-          text.setTextContent(content.slice(0, cut) + content.slice(cut + 1))
-        } else {
-          const at = Math.floor(random() * (content.length + 1))
-          text.setTextContent(content.slice(0, at) + op.toString(36) + content.slice(at))
-        }
-        if (random() < 0.2) text.setFormat(Math.floor(random() * 4))
-      })
-      for (const other of network.peers) if (random() < 0.5) other.flushInbox()
+      for (let op = 0; op < TEXT_CHURN_OPERATIONS; op++) {
+        const peer = network.peers[Math.floor(random() * network.peers.length)]!
+        edit(peer, () => {
+          const block = $getRoot().getFirstChildOrThrow<ElementNode>()
+          const text = block.getFirstChild()
+          if (text == null || !$isTextNode(text)) {
+            block.append($createTextNode('x'))
+            return
+          }
+          const content = text.getTextContent()
+          if (random() < 0.35 && content.length > 2) {
+            const cut = Math.floor(random() * (content.length - 1))
+            text.setTextContent(content.slice(0, cut) + content.slice(cut + 1))
+          } else {
+            const at = Math.floor(random() * (content.length + 1))
+            text.setTextContent(content.slice(0, at) + op.toString(36) + content.slice(at))
+          }
+          if (random() < 0.2) text.setFormat(Math.floor(random() * 4))
+        })
+        for (const other of network.peers) if (random() < 0.5) other.flushInbox()
+      }
+
+      network.settle()
+      expectConverged(network)
+      expectAllWellFormed(network)
+    } finally {
+      network.dispose()
     }
-
-    network.settle()
-    expectConverged(network)
-    expectAllWellFormed(network)
-    network.dispose()
   })
 
   it('survives repeated create/delete of the SAME position (registry recycling)', () => {

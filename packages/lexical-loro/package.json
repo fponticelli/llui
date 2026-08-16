@@ -16,7 +16,7 @@
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
     "test": "vitest run",
-    "test:contention": "node ../../scripts/with-cpu-contention.mjs -- pnpm exec vitest run test/convergence-attack.test.ts test/to-loro.test.ts test/harden.test.ts --reporter=verbose",
+    "test:contention": "node ../../scripts/with-cpu-contention.mjs -- pnpm exec vitest run test/convergence.test.ts test/convergence-attack.test.ts test/to-loro.test.ts test/harden.test.ts --reporter=verbose",
     "test:stress": "vitest run --config vitest.stress.config.ts"
   },
   "peerDependencies": {

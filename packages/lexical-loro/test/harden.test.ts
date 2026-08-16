@@ -43,11 +43,8 @@ import {
   REDO_COMMAND,
   UNDO_COMMAND,
   type ElementNode,
-  type LexicalEditor,
 } from 'lexical'
-import { HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { $createListItemNode, $createListNode, ListItemNode, ListNode } from '@lexical/list'
-import { LLuiDecoratorNode } from '@llui/lexical'
+import { $createListItemNode, $createListNode } from '@lexical/list'
 
 import { LoroDoc, type VersionVector } from 'loro-crdt'
 
@@ -57,46 +54,14 @@ import {
   elementChildren,
   initDoc,
   LORO_TEXT_FORMATS,
-  loroCollab,
   newUuid,
   orderedChildren,
   type ChildrenContainer,
   type ElementContainer,
 } from '../src/index.js'
 import { appendElement, appendText, moveChild } from './children.js'
-import {
-  expectAllWellFormed,
-  expectConverged,
-  Network,
-  projectEditor,
-  type Peer,
-} from './network.js'
-
-const NODES = [HeadingNode, QuoteNode, ListNode, ListItemNode, LLuiDecoratorNode]
-
-function collabNetwork(names?: readonly string[]): Network {
-  return new Network({
-    ...(names ? { names } : {}),
-    nodes: NODES,
-    bind: (editor, doc) => {
-      const collab = loroCollab({ doc, shouldBootstrap: false })
-      const dispose = collab.register(editor)
-      return { dispose }
-    },
-  })
-}
-
-function edit(peer: Peer, fn: (editor: LexicalEditor) => void): void {
-  peer.editor.update(() => fn(peer.editor), { discrete: true })
-}
-
-function setParagraphs(peer: Peer, texts: readonly string[]): void {
-  edit(peer, () => {
-    const root = $getRoot()
-    root.clear()
-    for (const text of texts) root.append($createParagraphNode().append($createTextNode(text)))
-  })
-}
+import { collabNetwork, edit, setParagraphs } from './collaboration.js'
+import { expectAllWellFormed, expectConverged, projectEditor, type Peer } from './network.js'
 
 /** The text of every top-level block, in rendered order. */
 function blocks(peer: Peer): string[] {

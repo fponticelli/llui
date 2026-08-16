@@ -71,6 +71,9 @@ function blocks(peer: Peer): string[] {
 }
 
 describe('convergence', () => {
+  const RANDOMIZED_OPERATIONS = 40
+  const RANDOMIZED_SEED = 0x5eed
+
   it('a document created on one peer appears on the other', () => {
     const network = collabNetwork()
     setParagraphs(network.a, ['hello', 'world'])
@@ -309,14 +312,14 @@ describe('convergence', () => {
     network.dispose()
   })
 
-  it('converges under randomized concurrent editing (property test)', () => {
+  it(`converges under ${RANDOMIZED_OPERATIONS} randomized concurrent operations (seed 0x${RANDOMIZED_SEED.toString(16)})`, () => {
     // Hand-written cases test the shapes an author thought of. This one tests
-    // the ones they did not: it drives three peers through 40 rounds of random
+    // the ones they did not: it drives three peers through 40 operations of random
     // typing, block insertion, block deletion and block reordering, with random
     // delivery, and asserts only the property that must always hold. A seeded
     // PRNG keeps a failure reproducible.
     //
-    // Raising ROUNDS is how you hunt for new bugs — it found several real ones
+    // Raising RANDOMIZED_OPERATIONS is how you hunt for new bugs — it found several real ones
     // (see `to-loro.ts` `containerMatches`/`isTombstone`/`syncElement`'s `fresh`
     // flag, and `to-lexical.ts` `collectDirtyElements`/`liveChildren`).
     //
@@ -329,12 +332,11 @@ describe('convergence', () => {
     // converge and no binding-level change can fix it; only if the documents
     // agree while the EDITORS differ is the bug ours.
     //
-    // ROUNDS is capped here because past ~100 rounds both upstream defects fire
+    // RANDOMIZED_OPERATIONS is capped here because past ~100 operations both upstream defects fire
     // routinely, which makes the test a flaky detector of somebody else's bug.
     // The deterministic, upstream-free regressions live in
     // `convergence-attack.test.ts`.
-    const ROUNDS = 40
-    let seed = 0x5eed
+    let seed = RANDOMIZED_SEED
     const random = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0
       return seed / 0x100000000
@@ -342,44 +344,48 @@ describe('convergence', () => {
     const pick = <T>(values: readonly T[]): T => values[Math.floor(random() * values.length)]!
 
     const network = collabNetwork(['a', 'b', 'c'])
-    setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
-    network.settle()
+    try {
+      setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
+      network.settle()
 
-    for (let round = 0; round < ROUNDS; round++) {
-      const peer = pick(network.peers)
-      const action = Math.floor(random() * 4)
-      edit(peer, () => {
-        const root = $getRoot()
-        const size = root.getChildrenSize()
-        if (size === 0) {
-          root.append($createParagraphNode().append($createTextNode('re')))
-          return
+      for (let operation = 0; operation < RANDOMIZED_OPERATIONS; operation++) {
+        const peer = pick(network.peers)
+        const action = Math.floor(random() * 4)
+        edit(peer, () => {
+          const root = $getRoot()
+          const size = root.getChildrenSize()
+          if (size === 0) {
+            root.append($createParagraphNode().append($createTextNode('re')))
+            return
+          }
+          const index = Math.floor(random() * size)
+          const block = root.getChildAtIndex<ElementNode>(index)
+          if (block === null) return
+          if (action === 0) {
+            const text = block.getFirstChild()
+            if ($isTextNode(text)) {
+              text.setTextContent(text.getTextContent() + operation.toString(36))
+            } else block.append($createTextNode(operation.toString(36)))
+          } else if (action === 1) {
+            block.insertAfter($createParagraphNode().append($createTextNode(`n${operation}`)))
+          } else if (action === 2 && size > 1) {
+            block.remove()
+          } else if (size > 1) {
+            const other = root.getChildAtIndex(Math.floor(random() * size))
+            if (other !== null && !other.is(block)) other.insertBefore(block)
+          }
+        })
+        // Deliver to a random subset, so peers routinely edit from stale state.
+        for (const other of network.peers) {
+          if (random() < 0.5) other.flushInbox()
         }
-        const index = Math.floor(random() * size)
-        const block = root.getChildAtIndex<ElementNode>(index)
-        if (block === null) return
-        if (action === 0) {
-          const text = block.getFirstChild()
-          if ($isTextNode(text)) text.setTextContent(text.getTextContent() + round.toString(36))
-          else block.append($createTextNode(round.toString(36)))
-        } else if (action === 1) {
-          block.insertAfter($createParagraphNode().append($createTextNode(`n${round}`)))
-        } else if (action === 2 && size > 1) {
-          block.remove()
-        } else if (size > 1) {
-          const other = root.getChildAtIndex(Math.floor(random() * size))
-          if (other !== null && !other.is(block)) other.insertBefore(block)
-        }
-      })
-      // Deliver to a random subset, so peers routinely edit from stale state.
-      for (const other of network.peers) {
-        if (random() < 0.5) other.flushInbox()
       }
-    }
 
-    network.settle()
-    expectConverged(network)
-    for (const peer of network.peers) peer.dispose()
+      network.settle()
+      expectConverged(network)
+    } finally {
+      network.dispose()
+    }
   })
 
   it('disposing a binding stops it syncing', () => {

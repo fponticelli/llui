@@ -19,7 +19,7 @@ describe('@llui/lexical-loro test lanes', () => {
 
     expect(manifest.scripts?.['test']).toBe('vitest run')
     expect(manifest.scripts?.['test:contention']).toBe(
-      'node ../../scripts/with-cpu-contention.mjs -- pnpm exec vitest run test/convergence-attack.test.ts test/to-loro.test.ts test/harden.test.ts --reporter=verbose',
+      'node ../../scripts/with-cpu-contention.mjs -- pnpm exec vitest run test/convergence.test.ts test/convergence-attack.test.ts test/to-loro.test.ts test/harden.test.ts --reporter=verbose',
     )
     expect(normalConfig.test?.include).toEqual(['test/**/*.test.ts'])
     expect(normalConfig.test?.include).not.toContain('test/stress/**/*.stress.ts')

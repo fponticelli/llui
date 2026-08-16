@@ -5,16 +5,11 @@ import {
   $getRoot,
   $isTextNode,
   type ElementNode,
-  type LexicalEditor,
 } from 'lexical'
-import { HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { ListItemNode, ListNode } from '@lexical/list'
-import { LLuiDecoratorNode } from '@llui/lexical'
 
-import { loroCollab } from '../../src/index.js'
-import { expectAllWellFormed, expectConverged, Network, type Peer } from '../network.js'
+import { collabNetwork, edit, setParagraphs } from '../collaboration.js'
+import { expectAllWellFormed, expectConverged, type Peer } from '../network.js'
 
-const NODES = [HeadingNode, QuoteNode, ListNode, ListItemNode, LLuiDecoratorNode]
 const DEEP_HISTORY = { seed: 0x5eed1234, operations: 220 } as const
 
 interface ActionCounts {
@@ -22,29 +17,6 @@ interface ActionCounts {
   insert: number
   delete: number
   move: number
-}
-
-function collabNetwork(): Network {
-  return new Network({
-    names: ['a', 'b', 'c'],
-    nodes: NODES,
-    bind: (editor, doc) => {
-      const collab = loroCollab({ doc, shouldBootstrap: false })
-      return { dispose: collab.register(editor) }
-    },
-  })
-}
-
-function edit(peer: Peer, fn: (editor: LexicalEditor) => void): void {
-  peer.editor.update(() => fn(peer.editor), { discrete: true })
-}
-
-function setParagraphs(peer: Peer, texts: readonly string[]): void {
-  edit(peer, () => {
-    const root = $getRoot()
-    root.clear()
-    for (const text of texts) root.append($createParagraphNode().append($createTextNode(text)))
-  })
 }
 
 function blockCount(peer: Peer): number {
@@ -100,7 +72,7 @@ describe('deep concurrent move history', () => {
     const counts: ActionCounts = { text: 0, insert: 0, delete: 0, move: 0 }
     let staleEdits = 0
     let partialDeliveries = 0
-    const network = collabNetwork()
+    const network = collabNetwork(['a', 'b', 'c'])
 
     try {
       setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
